@@ -3191,14 +3191,18 @@ def _stack_backward_traversal(
         if keep and n_gated > 0
         else torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
     )
-    # Inference retains no per-layer upstream state. Two buffers carry the
-    # reverse recurrence without exposing an unrolled layer stack for
-    # functionalization into select-scatter copies.
-    g_spare = (
-        torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
-        if not keep and n_gated > 0
-        else None
-    )
+    # Without weight gradients or saved per-layer state, the owned residual
+    # buffer can also hold the next layer's gradient. The GEMM reads its matrix
+    # input from the separate gz buffer; each output tile reads only its own
+    # residual elements before overwriting them. Never alias gz or caller inputs.
+    # Weight-gradient and second-order traversals retain their original buffers.
+    g_spare = None
+    if not keep and n_gated > 0:
+        g_spare = (
+            torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
+            if with_weights
+            else g_cur
+        )
     wrap_triton(_stack_gemm_bwd_kernel)[
         (triton.cdiv(n_edge, block_m) * n_tiles, n_focus)
     ](

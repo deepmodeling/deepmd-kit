@@ -36,6 +36,9 @@ from deepmd.utils.bridging import (
     DEFAULT_FRACTION_INNER,
     DEFAULT_FRACTION_OUTER,
 )
+from deepmd.utils.data_config import (
+    data_group_configs,
+)
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     FULL_VALIDATION_PROFILES,
@@ -3643,7 +3646,7 @@ def model_args(
         "For an energy model it is the energy of an isolated atom, so with `vacuum_ref` in the fitting net an atom "
         "without neighbors gives exactly this energy. Four forms are accepted: a dict keyed by element symbol, "
         "e.g. `{'energy': {'O': -430.1, 'H': -13.6}}`; the name of a bundled table of isolated-atom energies, e.g. "
-        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25` and `odac25`, which takes precedence "
+        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25`, `odac25`, `openmd` and `domain_cluster`, which takes precedence "
         "over a file of the same name; "
         "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
         "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
@@ -3651,7 +3654,9 @@ def model_args(
         "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
         "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
         "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
-        "changed by fine-tuning or `dp change-bias`. Dipole models apply no output bias and take no preset."
+        "changed by fine-tuning. `dp change-bias` fits from its input data without reapplying the model's stored "
+        "preset; explicit `--bias-value` values override the bias directly. "
+        "Dipole models apply no output bias and take no preset."
     )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
@@ -5773,15 +5778,15 @@ def loss_args() -> list[Argument]:
 
 
 #  --- Training configurations: --- #
-def training_data_args() -> list[
-    Argument
-]:  # ! added by Ziyao: new specification style for data systems.
+def training_data_args() -> Argument:
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item is expanded recursively in input order. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "either directly or beneath a parent directory."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -5797,10 +5802,15 @@ def training_data_args() -> list[
 - string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model and needs no configuration of its own: a descriptor reading a flat node axis (the graph route of the PyTorch Exportable backend) takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms with `atype = -1` that the neighbor list, the model and the loss all skip. Unlike `"max:N"`, which leaves an under-filled batch whenever an nloc group is small, this keeps every batch close to `N` atoms. A lone frame with nloc > `N` still forms a batch of its own.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. A group expanding to multiple "
+        "sources including LMDB must omit this option; use separate training_data "
+        "groups with prob to assign source probabilities."
+    )
     doc_min_pair_dist = (
         "Minimum pairwise atomic distance threshold in Å. "
         "Frames containing any atom pair closer than this distance are excluded "
@@ -5842,7 +5852,10 @@ If MPI is used, the value should be considered as the batch size per task.'
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " When a group expands to multiple sources including LMDB, only "
+            "prob_sys_size and prob_uniform are supported. Use separate groups to configure "
+            "individual LMDB system probabilities.",
             alias=[
                 "auto_prob_style",
             ],
@@ -5862,12 +5875,28 @@ If MPI is used, the value should be considered as the batch size per task.'
             default=0.0,
             doc=supported_backends("pt", "pt_expt") + doc_min_pair_dist,
         ),
+        Argument(
+            "prob",
+            [float, None],
+            optional=True,
+            default=None,
+            doc="The probability of selecting a training batch from this entire "
+            "group. Applies when training_data is a list of group dictionaries. "
+            "Assigned probabilities must be non-negative and sum to at most one. "
+            "Groups without prob share the remaining probability in proportion "
+            "to their batch counts. If every group specifies prob, their sum "
+            "must be one. Within-group auto_prob and sys_probs remain independent.",
+        ),
     ]
 
-    doc_training_data = "Configurations of training data."
+    doc_training_data = (
+        "Training data configured as one dictionary or a nonempty list of group "
+        "dictionaries. Each group has its own systems, batch_size and within-group "
+        "sampling rules; prob optionally controls the group's total probability."
+    )
     return Argument(
         "training_data",
-        dict,
+        [dict, list[dict]],
         optional=True,
         sub_fields=args,
         sub_variants=[],
@@ -5884,7 +5913,9 @@ def validation_data_args() -> list[
         "The data systems for validation. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "including multiple LMDB paths and parent directories containing LMDB datasets."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
@@ -5898,10 +5929,14 @@ def validation_data_args() -> list[
 - string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
 - string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model: a descriptor reading a flat node axis takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms that the neighbor list, the model and the loss all skip.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. Must be omitted when the "
+        "validation data expands to multiple sources including LMDB."
+    )
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
 
     args = [
@@ -5928,7 +5963,9 @@ def validation_data_args() -> list[
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " Only prob_sys_size and prob_uniform are supported when systems expands to "
+            "multiple sources including LMDB.",
             alias=[
                 "auto_prob_style",
             ],
@@ -6126,8 +6163,11 @@ def training_args(
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
-        "or an empty dict, defaults to weights proportional to the number of "
-        "systems per task."
+        "or an empty dict, defaults to each task's native data size: the number "
+        "of NPY/HDF5 systems, or retained LMDB frames on the PyTorch and "
+        "PyTorch Exportable backends. Grouped inputs sum their native sizes "
+        "without applying group probabilities. Batch size and nominal epoch "
+        "length do not affect these default weights."
     )
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
@@ -6883,6 +6923,7 @@ def gen_json_schema(multi_task: bool = False) -> str:
         JSON schema.
     """
     from deepmd.utils.json_schema import (
+        with_data_groups,
         with_model_presets,
     )
 
@@ -6894,7 +6935,9 @@ def gen_json_schema(multi_task: bool = False) -> str:
     )
     return json.dumps(
         with_model_presets(
-            generate_json_schema(arg), generate_json_schema(model_args()), multi_task
+            with_data_groups(generate_json_schema(arg), multi_task),
+            generate_json_schema(model_args()),
+            multi_task,
         )
     )
 
@@ -6973,6 +7016,23 @@ def normalize(
     """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
+    training = data.get("training", {})
+    task_configs = training.get("data_dict", {}).values() if multi_task else (training,)
+    group_argument = training_data_args()
+    for task in task_configs:
+        groups = task.get("training_data")
+        if groups is None:
+            continue
+        data_group_configs(groups)
+        if isinstance(groups, list):
+            normalized = [
+                group_argument.normalize_value(group, trim_pattern="_*")
+                for group in groups
+            ]
+            if check:
+                for group in normalized:
+                    group_argument.check_value(group, strict=True)
+            task["training_data"] = normalized
     if check:
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)

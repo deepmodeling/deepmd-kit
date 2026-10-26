@@ -1112,7 +1112,7 @@ def test_replicated_numpy_filter_reads_a_complete_local_pass(
     trainer.multi_task = False
     trainer.world_size = world_size
     trainer.training_data_by_task = {"Default": data}
-    trainer.min_pair_dist_by_task = {"Default": 0.5}
+    trainer.pair_filter_enabled_by_task = {"Default": True}
     with (
         patch("deepmd.utils.data.dp_random.shuffle"),
         patch.object(data, "get_batch", wraps=data.get_batch) as get_batch,

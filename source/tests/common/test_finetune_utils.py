@@ -4,6 +4,8 @@ from copy import (
     deepcopy,
 )
 
+import pytest
+
 from deepmd.utils import (
     finetune,
 )
@@ -331,6 +333,16 @@ def test_spin_free_multitask_branch_requires_finetune_statistics() -> None:
     _, rules = finetune.FinetuneRuleBuilder(pretrained, target).build()
     assert rules["magnetic"].convert_to_native_spin
     assert not rules["magnetic"].get_resuming()
+
+
+@pytest.mark.parametrize("type_map", [["Fe", "C", "Ni"], ["Fe"], ["C", "Fe"]])
+def test_spin_free_conversion_rejects_changed_type_map(type_map: list[str]) -> None:
+    with pytest.raises(ValueError, match="identical ordered type maps"):
+        finetune.FinetuneRuleBuilder(
+            _model_config(["Fe", "C"]),
+            _native_spin_model_config(type_map, ["Fe"]),
+            change_model_params=False,
+        ).build()
 
 
 def test_finetune_rule_builder_rejects_virtual_spin_pretraining():

@@ -46,9 +46,8 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
     LmdbTestDataNlocView,
     _chop_mixed_nloc,
-    _expand_indices_by_blocks,
     _merge_lmdb_chunks,
-    _remap_atom_types,
+    _resample_indices_by_blocks,
     collate_lmdb_frames,
     collect_lmdb_sampling_groups,
     compute_block_targets,
@@ -56,6 +55,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     decode_lmdb_frame,
     is_lmdb,
     make_neighbor_stat_data,
+    system_block_lookup,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
@@ -1888,6 +1888,124 @@ class TestTypeMapRemapping(unittest.TestCase):
     def tearDownClass(cls):
         cls._tmpdir.cleanup()
 
+    def _subset_type_map_lmdb(
+        self, name: str, second_type: int = 2, *, first_type: int = 2
+    ) -> str:
+        """Build two frames using a sparse source type map and a virtual atom."""
+        path = _create_lmdb_with_virtual_type(f"{self._tmpdir.name}/{name}.lmdb")
+        with lmdb.open(path) as environment, environment.begin(write=True) as txn:
+            meta = msgpack.unpackb(txn.get(b"__metadata__"), raw=False)
+            meta.update(
+                nframes=2,
+                type_map=["O", "He", "H"],
+                frame_nlocs=[3, 3],
+                system_info={"natoms": [1, 0, 1]},
+            )
+            txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+            frame = msgpack.unpackb(txn.get(b"000000000000"), raw=False)
+            for index, last_type in enumerate((first_type, second_type)):
+                frame["atom_types"] = {
+                    "type": "<i8",
+                    "shape": [3],
+                    "data": np.array([0, -1, last_type], dtype=np.int64).tobytes(),
+                }
+                txn.put(
+                    format(index, "012d").encode(),
+                    msgpack.packb(frame, use_bin_type=True),
+                )
+        return path
+
+    def test_unused_elements_allow_a_reordered_model_subset(self) -> None:
+        path = self._subset_type_map_lmdb("unused_elements")
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        for index in range(2):
+            np.testing.assert_array_equal(reader[index]["atype"], [1, -1, 0])
+            np.testing.assert_array_equal(reader[index]["natoms"], [3, 3, 1, 1])
+        batch = reader.decode_batch([0, 1])
+        np.testing.assert_array_equal(batch["atype"], [[1, -1, 0], [1, -1, 0]])
+        test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        np.testing.assert_array_equal(test_data.get_test()["type"], batch["atype"])
+        original_types = LmdbTestData(path, shuffle_test=False)
+        np.testing.assert_array_equal(
+            original_types.get_test()["type"], [[0, -1, 2], [0, -1, 2]]
+        )
+
+    def test_unsupported_element_in_a_later_frame_is_rejected(self) -> None:
+        path = self._subset_type_map_lmdb("used_unsupported_element", second_type=1)
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        np.testing.assert_array_equal(reader[0]["atype"], [1, -1, 0])
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            reader.__getitem__(1)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            reader.decode_batch([0, 1])
+        iterator = LmdbBatchIterator(
+            reader, LmdbBatchSampler(reader, shuffle=False), num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            next(iterator)
+        test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            test_data.get_test()
+        selected = LmdbTestData(
+            path, type_map=["H", "O"], shuffle_test=False, max_frames=1
+        )
+        np.testing.assert_array_equal(selected.get_test()["type"], [[1, -1, 0]])
+
+    def test_batch_selection_ignores_unsupported_first_frame(self) -> None:
+        """Layout discovery reads a frame belonging to the requested batch."""
+        path = self._subset_type_map_lmdb("unsupported_first_batch", first_type=1)
+        for num_workers in (0, 2):
+            with self.subTest(num_workers=num_workers):
+                reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+                self.addCleanup(reader.close)
+                iterator = LmdbBatchIterator(reader, [[1, 1]], num_workers=num_workers)
+                self.addCleanup(iterator.close)
+                np.testing.assert_array_equal(
+                    next(iterator)["atype"], [[1, -1, 0], [1, -1, 0]]
+                )
+                with self.assertRaisesRegex(ValueError, "frame 0.*He.*model type_map"):
+                    reader.decode_batch([0])
+
+    def test_testdata_probe_ignores_unsupported_first_frame(self) -> None:
+        """PBC discovery is independent of element validation and frame selection."""
+        for box_kind in ("cells", "box", "zero", "missing"):
+            with self.subTest(box_kind=box_kind):
+                path = self._subset_type_map_lmdb(
+                    f"unsupported_first_test_{box_kind}", first_type=1
+                )
+                with (
+                    lmdb.open(path) as environment,
+                    environment.begin(write=True) as txn,
+                ):
+                    frame = msgpack.unpackb(txn.get(b"000000000000"), raw=False)
+                    if box_kind == "box":
+                        frame["box"] = frame.pop("cells")
+                    elif box_kind == "zero":
+                        frame["cells"]["data"] = np.zeros((3, 3)).tobytes()
+                    elif box_kind == "missing":
+                        del frame["cells"]
+                    txn.put(b"000000000000", msgpack.packb(frame, use_bin_type=True))
+                test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+                self.assertEqual(test_data.pbc, box_kind in ("cells", "box"))
+                np.testing.assert_array_equal(
+                    test_data.get_test_by_indices([1])["type"], [[1, -1, 0]]
+                )
+                with self.assertRaisesRegex(ValueError, "frame 0.*He.*model type_map"):
+                    test_data.get_test_by_indices([0])
+
+    def test_subset_remapping_reaches_parallel_decoder_workers(self) -> None:
+        path = self._subset_type_map_lmdb("parallel_subset")
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        iterator = LmdbBatchIterator(
+            reader, LmdbBatchSampler(reader, shuffle=False), num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        np.testing.assert_array_equal(next(iterator)["atype"], [[1, -1, 0], [1, -1, 0]])
+
     def test_reader_no_remap_when_match(self):
         reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
         self.assertIsNone(reader._type_remap)
@@ -1914,8 +2032,10 @@ class TestTypeMapRemapping(unittest.TestCase):
         self.assertEqual(natoms[3], 2)  # O count
 
     def test_reader_missing_element_raises(self):
+        reader = LmdbDataReader(self._lmdb_path, ["O"])
+        self.addCleanup(reader.close)
         with self.assertRaises(ValueError):
-            LmdbDataReader(self._lmdb_path, ["O"])
+            reader.__getitem__(0)
 
     def test_reader_no_type_map_in_metadata(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -1945,8 +2065,9 @@ class TestTypeMapRemapping(unittest.TestCase):
         self.assertIsNotNone(td._type_remap)
 
     def test_testdata_missing_element_raises(self):
+        td = LmdbTestData(self._lmdb_path, type_map=["O"], shuffle_test=False)
         with self.assertRaises(ValueError):
-            LmdbTestData(self._lmdb_path, type_map=["O"], shuffle_test=False)
+            td.get_test()
 
     def test_testdata_no_type_map_in_metadata(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -1971,8 +2092,11 @@ class TestTypeMapRemapping(unittest.TestCase):
 
     def test_positive_out_of_range_type_still_raises(self):
         """A malformed real type must not be mistaken for a virtual sentinel."""
+        path = self._subset_type_map_lmdb("invalid_type_index", second_type=3)
+        reader = LmdbDataReader(path, ["H", "O"])
+        self.addCleanup(reader.close)
         with self.assertRaises(IndexError):
-            _remap_atom_types(np.array([0, 2]), np.array([1, 0]))
+            reader.__getitem__(1)
 
 
 # ============================================================
@@ -1982,7 +2106,7 @@ class TestTypeMapRemapping(unittest.TestCase):
 
 class TestAutoProb(unittest.TestCase):
     """Test auto_prob support: frame_system_ids, compute_block_targets,
-    _expand_indices_by_blocks, and LmdbBatchSampler with block_targets.
+    _resample_indices_by_blocks, and LmdbBatchSampler with block_targets.
     """
 
     @classmethod
@@ -2014,6 +2138,48 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(reader.nsystems, 1)
         self.assertIsNone(reader.frame_system_ids)
         tmpdir.cleanup()
+
+    def test_uniform_targets_balance_retained_systems(self) -> None:
+        self.assertEqual(
+            compute_block_targets("prob_uniform", 3, [1, 0, 9]),
+            [([0], 5), ([2], 5)],
+        )
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [9, 9]), [])
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [0, 0]), [])
+
+    def test_uniform_target_count_is_bounded(self) -> None:
+        """Uniform quotas stay within one rounding unit per retained system."""
+        counts = [100000] + [1] * 999
+        targets = compute_block_targets("prob_uniform", len(counts), counts)
+        self.assertEqual({target for _, target in targets}, {101})
+        total = sum(target for _, target in targets)
+        self.assertEqual(total, 101000)
+        self.assertGreaterEqual(total, sum(counts))
+        self.assertLess(total, sum(counts) + len(counts))
+
+    def test_uniform_sampler_balances_a_bounded_pass(self) -> None:
+        """A uniform pass can undersample large systems without losing them."""
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"], batch_size=7)
+        self.addCleanup(reader.close)
+        targets = compute_block_targets(
+            "prob_uniform", reader.nsystems, reader.system_nframes
+        )
+        sampler = LmdbBatchSampler(reader, seed=42, block_targets=targets)
+        seen: set[int] = set()
+        for epoch in range(16):
+            sampler.set_epoch(epoch)
+            expected_batches = len(sampler)
+            batches = list(sampler)
+            self.assertEqual(len(batches), expected_batches)
+            indices = np.concatenate(batches)
+            self.assertEqual(len(indices), 600)
+            np.testing.assert_array_equal(
+                np.bincount(reader.frame_system_ids[indices]), [200, 200, 200]
+            )
+            seen.update(indices.tolist())
+            sampler.set_epoch(epoch)
+            self.assertEqual(list(sampler), batches)
+        self.assertEqual(seen, set(range(len(reader))))
 
     def test_compute_block_targets_equal_weight(self):
         result = compute_block_targets(
@@ -2067,8 +2233,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 25), ([1], 25)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         sys0 = [i for i in expanded if frame_system_ids[i] == 0]
         sys1 = [i for i in expanded if frame_system_ids[i] == 1]
@@ -2079,8 +2249,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 5), ([1], 5)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         self.assertEqual(sorted(expanded), list(range(10)))
 
@@ -2092,8 +2266,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 10
         block_targets = [([0], 23)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         self.assertEqual(len(expanded), 23)
         counts = Counter(expanded)
@@ -2106,8 +2284,12 @@ class TestAutoProb(unittest.TestCase):
         results = []
         for seed in range(5):
             rng = np.random.default_rng(seed)
-            expanded = _expand_indices_by_blocks(
-                list(range(10)), frame_system_ids, block_targets, rng
+            expanded = _resample_indices_by_blocks(
+                list(range(10)),
+                frame_system_ids,
+                system_block_lookup(block_targets),
+                [target for _, target in block_targets],
+                rng,
             )
             results.append(sorted(expanded[10:]))
         unique = {tuple(r) for r in results}
@@ -2160,6 +2342,16 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(len(sampler), len(batches))
         self.assertEqual(sum(map(len, batches)), 3)
         self.assertEqual(sorted(counts), [1, 2])
+
+        sampler = LmdbBatchSampler(
+            TwoSignatureReader(), shuffle=False, seed=42, block_targets=[([0], 1)]
+        )
+        seen: set[int] = set()
+        for _ in range(16):
+            batches = list(sampler)
+            self.assertEqual(sum(map(len, batches)), 1)
+            seen.update(index for batch in batches for index in batch)
+        self.assertEqual(seen, {0, 1})
 
     def test_sampler_tolerates_blocks_that_omit_a_system(self):
         """A system no auto_prob block names is passed through, not rejected.

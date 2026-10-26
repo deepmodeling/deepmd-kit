@@ -230,6 +230,12 @@ def _validate_native_spin_finetune(
     pretrained_types = _native_spin_types(pretrained_config)
     if pretrained_types is None:
         if pretrained_config.get("spin") is None:
+            if target_config["type_map"] != pretrained_config["type_map"]:
+                raise ValueError(
+                    "Spin-free to native-spin fine-tuning requires identical ordered "
+                    f"type maps: pretrained={pretrained_config['type_map']}, "
+                    f"target={target_config['type_map']}."
+                )
             return True
         raise ValueError(
             "Native-spin fine-tuning requires a spin-free or native-spin "
@@ -242,6 +248,71 @@ def _validate_native_spin_finetune(
             f"target={sorted(target_types)}."
         )
     return False
+
+
+def _inherit_native_spin_fitting_widths(
+    target: dict[str, Any], pretrained: Mapping[str, Any]
+) -> None:
+    """Resolve automatic target widths against the pretrained fitting layout."""
+    from deepmd.utils.argcheck import (
+        descrpt_args_plugin,
+        fitting_args_plugin,
+    )
+
+    descriptor_schema = descrpt_args_plugin.get_argument("dpa4c")
+    fitting_schema = fitting_args_plugin.get_argument("dpa4_ener")
+    descriptor_types = {descriptor_schema.name, *descriptor_schema.alias}
+    glu_types = {fitting_schema.name, *fitting_schema.alias}
+    fitting = target.get("fitting_net", {})
+    source_fitting = pretrained.get("fitting_net", {})
+    if (
+        target.get("descriptor", {}).get("type") not in descriptor_types
+        or pretrained.get("descriptor", {}).get("type") not in descriptor_types
+        or fitting.get("type") not in glu_types
+        or source_fitting.get("type") not in glu_types
+    ):
+        return
+    neuron = fitting_schema.normalize_value(fitting).get("neuron")
+    target_widths = [0] if neuron is None else list(neuron)
+    if 0 not in target_widths:
+        return
+    source_fitting = fitting_schema.normalize_value(source_fitting)
+    source_neuron = source_fitting.get("neuron")
+    source_widths = [0] if source_neuron is None else list(source_neuron)
+    if len(target_widths) != len(source_widths):
+        raise ValueError(
+            "Automatic native-spin fitting widths require matching layer counts: "
+            f"pretrained={len(source_widths)}, target={len(target_widths)}."
+        )
+    if 0 in source_widths:
+        from deepmd.dpmodel.descriptor.dpa4c import (
+            DescrptDPA4C,
+        )
+        from deepmd.dpmodel.fitting.dpa4_ener import (
+            _resolve_auto_neuron,
+        )
+
+        descriptor_params = descriptor_schema.normalize_value(pretrained["descriptor"])
+        descriptor_params.pop("type")
+        descriptor_params.update(
+            ntypes=len(pretrained["type_map"]), type_map=list(pretrained["type_map"])
+        )
+        descriptor = DescrptDPA4C(**descriptor_params)
+        source_widths = _resolve_auto_neuron(
+            source_widths,
+            dim_descrpt=descriptor.get_dim_out(),
+            numb_fparam=source_fitting.get("numb_fparam", 0),
+            numb_aparam=source_fitting.get("numb_aparam", 0),
+            dim_case_embd=source_fitting.get("dim_case_embd", 0),
+            case_film_embd=source_fitting.get("case_film_embd", False),
+            use_aparam_as_mask=source_fitting.get("use_aparam_as_mask", False),
+        )
+    for alias in fitting_schema.sub_fields["neuron"].alias:
+        fitting.pop(alias, None)
+    fitting["neuron"] = [
+        source_width if target_width == 0 else target_width
+        for source_width, target_width in zip(source_widths, target_widths, strict=True)
+    ]
 
 
 class FinetuneRuleItem:
@@ -474,6 +545,8 @@ class FinetuneRuleBuilder:
                 model_branch_chosen=model_branch_chosen,
                 random_fitting=new_fitting,
             )
+        if convert_to_native_spin and not new_fitting:
+            _inherit_native_spin_fitting_widths(single_config, single_config_chosen)
         return single_config, finetune_rule
 
     def _apply_pretrained_model_params(

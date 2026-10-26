@@ -41,6 +41,15 @@ from deepmd.pt_expt.train.wrapper import (
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
+)
+from deepmd.utils.finetune import (
+    FinetuneRuleBuilder,
+)
 from deepmd.utils.model_preset import (
     get_model_preset,
 )
@@ -261,6 +270,92 @@ def test_native_spin_statistics_preserve_pretrained_geometry(magnitude: float) -
     assert torch.count_nonzero(actual["force_mag"]) == 0
 
 
+def test_fresh_dpa4c_spin_statistics_keep_closed_gate_scale() -> None:
+    descriptor = _learned(_build("pt_expt", _config("dpa4c", True))).descriptor
+    descriptor.compute_input_stats([_inputs()])
+    start = descriptor.readout.get_dim_out()
+    stop = start + descriptor.spin.get_dim_out()
+    assert torch.count_nonzero(descriptor.spin.spin_gate) == 0
+    torch.testing.assert_close(
+        descriptor.mean[start:stop],
+        torch.zeros_like(descriptor.mean[start:stop]),
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        descriptor.stddev[start:stop],
+        torch.ones_like(descriptor.stddev[start:stop]),
+        rtol=0,
+        atol=0,
+    )
+
+
+@pytest.mark.parametrize("fitting_type", ["dpa4_ener", "sezm_ener"])
+@pytest.mark.parametrize("neuron", ["omitted", None, [0], [0, 8], [8, 0]])
+def test_dpa4c_auto_width_inherits_source_architecture(
+    fitting_type: str, neuron: str | list[int] | None
+) -> None:
+    source_config = _config("dpa4c", False)
+    source_config["fitting_net"]["type"] = fitting_type
+    if neuron == "omitted":
+        source_config["fitting_net"].pop("neuron")
+    else:
+        source_config["fitting_net"]["neuron"] = neuron
+    target_config = deepcopy(source_config)
+    target_config["spin"] = {"scheme": "native", "use_spin": [True, False]}
+    original = deepcopy(target_config)
+    source = _pretrained("pt_expt", source_config)
+    config, _ = FinetuneRuleBuilder(
+        source_config, target_config, change_model_params=False
+    ).build()
+    assert config["fitting_net"]["neuron"] == _learned(source).fitting_net.neuron
+    assert target_config == original
+    target = _build("pt_expt", config)
+    target.load_state_dict(get_native_spin_finetune_state(target, source))
+    inputs = _inputs()
+    spin = inputs.pop("spin")
+    expected = source(**inputs)
+    actual = target(**inputs, spin=spin)
+    for key in ("energy", "force", "virial"):
+        torch.testing.assert_close(actual[key], expected[key], rtol=1e-11, atol=1e-11)
+
+
+@pytest.mark.parametrize("explicit_width", [False, True])
+@pytest.mark.parametrize("source_auto", [False, True])
+def test_dpa4c_width_aliases_preserve_explicit_config(
+    explicit_width: bool, source_auto: bool
+) -> None:
+    source_config = _config("dpa4c", False)
+    source_config["fitting_net"].update(
+        type="dpa4_ener", neuron=[0] if source_auto else [64]
+    )
+    source = _build("pt_expt", source_config)
+    source_script = deepcopy(source_config)
+    source_script["descriptor"]["type"] = "DPA4C"
+    source_script["fitting_net"]["n_neuron"] = source_script["fitting_net"].pop(
+        "neuron"
+    )
+    target = deepcopy(source_script)
+    target["spin"] = {"scheme": "native", "use_spin": [True, False]}
+    requested = [64] if explicit_width else [0]
+    target["fitting_net"]["n_neuron"] = requested
+    original = deepcopy(target)
+    resolved, _ = FinetuneRuleBuilder(
+        source_script, target, change_model_params=False
+    ).build()
+    config = normalize(
+        update_deepmd_input(_make_config("unused", resolved), warning=False)
+    )
+    model_config = config["model"]
+    expected = requested if explicit_width else _learned(source).fitting_net.neuron
+    assert model_config["fitting_net"]["neuron"] == expected
+    assert "n_neuron" not in model_config["fitting_net"]
+    assert target == original
+    model = _build("pt_expt", model_config)
+    if expected == _learned(source).fitting_net.neuron:
+        model.load_state_dict(get_native_spin_finetune_state(model, source))
+
+
 @pytest.mark.parametrize("resnet_dt", [False, True])
 @pytest.mark.parametrize("residual_side", ["source", "target"])
 @pytest.mark.parametrize("width_multiple", [1, 2])
@@ -450,6 +545,24 @@ def test_spin_free_native_finetune_cli_options(
     )
 
 
+@pytest.mark.parametrize("mode", ["transfer", "random", "pretrain_script"])
+@pytest.mark.parametrize("multitask", [False, True])
+def test_dpa4c_auto_width_finetune_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, multitask: bool
+) -> None:
+    _run_spin_free_native_finetune_cli(
+        "pt_expt",
+        "dpa4c",
+        "dpa4_ener",
+        False,
+        multitask,
+        mode,
+        tmp_path,
+        monkeypatch,
+        auto_width=True,
+    )
+
+
 def _run_spin_free_native_finetune_cli(
     backend: str,
     descriptor: str,
@@ -459,9 +572,13 @@ def _run_spin_free_native_finetune_cli(
     mode: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    auto_width: bool = False,
 ) -> None:
     source_config = _config(descriptor, False)
     source_config["fitting_net"]["type"] = fitting_type
+    if auto_width:
+        source_config["fitting_net"].pop("neuron")
     source = _pretrained(backend, source_config)
     wrapper_cls = PTModelWrapper if backend == "pt" else ModelWrapper
     wrapper = wrapper_cls(
@@ -503,6 +620,8 @@ def _run_spin_free_native_finetune_cli(
 
     target_config = _config(descriptor, True, bridged)
     target_config["fitting_net"]["type"] = fitting_type
+    if auto_width:
+        target_config["fitting_net"].pop("neuron")
     options = []
     if mode == "random":
         initial_fitting = dict(
@@ -577,6 +696,10 @@ def _run_spin_free_native_finetune_cli(
     )
     params = saved["model"]["_extra_state"]["model_params"]
     model_params = params["model_dict"]["magnetic"] if multitask else params
+    if auto_width:
+        assert (
+            model_params["fitting_net"]["neuron"] == _learned(source).fitting_net.neuron
+        )
     assert model_params["spin"]["scheme"] == "native"
     assert model_params["spin"]["use_spin"] == [True, False]
     assert (

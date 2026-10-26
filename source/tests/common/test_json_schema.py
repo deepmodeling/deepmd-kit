@@ -49,6 +49,27 @@ def _assert_valid(validator: Draft202012Validator, data: dict[str, Any]) -> None
     assert not errors, [(list(error.path), error.message) for error in errors]
 
 
+@pytest.mark.parametrize("multi_task", [False, True])
+def test_training_group_schema(
+    validators: dict[bool, Draft202012Validator], multi_task: bool
+) -> None:
+    model = {"preset": "dpa4-nano-v20260911"}
+    if multi_task:
+        model = {"model_dict": {"a": model}}
+    data = _input(model, multi_task)
+    task = data["training"]["data_dict"]["a"] if multi_task else data["training"]
+    task["training_data"] = [
+        {"systems": "first.lmdb", "prob": 0.6},
+        {"systems": ["second.lmdb", "third.lmdb"], "prob": 0.4},
+    ]
+    _assert_valid(validators[multi_task], data)
+
+    task["training_data"][1]["batch_size"] = False
+    assert not validators[multi_task].is_valid(data)
+    task["training_data"] = []
+    assert not validators[multi_task].is_valid(data)
+
+
 def test_preset_user_example(validators: dict[bool, Draft202012Validator]) -> None:
     data = _input(
         {
