@@ -11,6 +11,9 @@ from shutil import (
     copyfile,
     copytree,
 )
+from typing import (
+    Any,
+)
 from unittest.mock import (
     Mock,
     patch,
@@ -36,6 +39,7 @@ from deepmd.dpmodel.train.data_progress import (
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
+from deepmd.pt_expt.train import training as training_module
 from deepmd.pt_expt.train.ema import (
     EMA_CHECKPOINT_KEY,
 )
@@ -248,17 +252,87 @@ def _assert_records_equal(expected: list, actual: list) -> None:
         torch.testing.assert_close(energy, other_energy, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("mode", ["directory", "lmdb", "ragged"])
-def test_restart_matches_uninterrupted_training(tmp_path, monkeypatch, mode) -> None:
+@pytest.mark.parametrize("mode", ["directory", "hdf5", "grouped"])
+def test_setup_statistics_preserve_training_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Fresh setup statistics consume samples without consuming training state."""
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / ("data.h5" if mode == "hdf5" else "data")
+    if mode == "hdf5":
+        _write_hdf5(path)
+    else:
+        _write_directory(path)
+    system = str(path) + ("#/system" if mode == "hdf5" else "")
+    config = _config(system, mode="directory")
+    if mode == "grouped":
+        second = tmp_path / "second"
+        _write_directory(second)
+        for task in config["training"]["data_dict"].values():
+            task["training_data"] = [
+                {"systems": [system], "batch_size": 1, "prob": 0.4},
+                {"systems": [str(second)], "batch_size": 1, "prob": 0.6},
+            ]
+    for model in config["model"]["model_dict"].values():
+        model["data_stat_nbatch"] = 3
+    snapshots = []
+    make_stat_input = training_module.make_stat_input
+
+    def record_statistics(data: Any, nbatches: int, filter_enabled: bool) -> list[dict]:
+        before = collect_training_data_progress({"statistics": data})
+        assert "statistics" in before["tasks"]
+        sampled = make_stat_input(data, nbatches, filter_enabled)
+        assert collect_training_data_progress({"statistics": data}) != before
+        snapshots.append((data, before))
+        return sampled
+
+    monkeypatch.setattr(training_module, "make_stat_input", record_statistics)
+    trainer = get_trainer(config)
+    try:
+        assert len(snapshots) == len(trainer.training_data_by_task)
+        for data, expected in snapshots:
+            assert collect_training_data_progress({"statistics": data}) == expected
+    finally:
+        trainer._close_data_systems()
+
+
+@pytest.mark.parametrize(
+    ("mode", "seed"),
+    [
+        ("directory", 19),
+        ("lmdb", 19),
+        ("ragged", 19),
+        ("grouped", 19),
+        ("grouped", None),
+    ],
+)
+def test_restart_matches_uninterrupted_training(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, seed: int | None
+) -> None:
     """Real training matches across passes, display, validation and setup."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
-    path = tmp_path / ("data" if mode == "directory" else "data.lmdb")
-    if mode == "directory":
+    path = tmp_path / ("data" if mode in {"directory", "grouped"} else "data.lmdb")
+    if mode in {"directory", "grouped"}:
         _write_directory(path)
     else:
         _write_lmdb(path, mixed=mode == "ragged")
-    config = _config(path, mode=mode)
+    config = _config(path, mode="directory" if mode == "grouped" else mode)
+    config["training"]["seed"] = seed
+    if mode == "grouped":
+        lmdb_paths = [tmp_path / f"part_{index}.lmdb" for index in range(2)]
+        for lmdb_path in lmdb_paths:
+            _write_lmdb(lmdb_path, mixed=False)
+        for task in config["training"]["data_dict"].values():
+            task["training_data"] = [
+                {"systems": [str(path)], "batch_size": 1, "prob": 0.4},
+                {
+                    "systems": [str(item) for item in lmdb_paths],
+                    "batch_size": "mix:7",
+                    "auto_prob": "prob_uniform",
+                    "prob": 0.6,
+                },
+            ]
     dp_random.seed(19)
     uninterrupted = get_trainer(deepcopy(config))
     if mode == "ragged":
@@ -752,7 +826,7 @@ def test_filtered_rank_progress_restores_its_own_cursor(tmp_path, monkeypatch) -
         trainer._configured_data_seed = 7
         trainer._task_rng = np.random.default_rng(7)
         trainer.training_data_by_task = {"Default": data}
-        trainer.min_pair_dist_by_task = {"Default": 2.0}
+        trainer.pair_filter_enabled_by_task = {"Default": True}
         return trainer, data
 
     originals = [make_rank(rank) for rank in range(2)]

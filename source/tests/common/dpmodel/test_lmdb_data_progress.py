@@ -185,6 +185,7 @@ def test_same_pass_restore_reuses_sampling_plan(
     with closing(_system(lmdb_path, batch_size=1, world_size=world_size)) as data:
         _draw(data, 1)
         saved = data.state_dict()
+        frame_counts = data._sampler.batch_frame_counts()
         with patch.object(
             lmdb_module,
             "_build_all_batches",
@@ -195,6 +196,7 @@ def test_same_pass_restore_reuses_sampling_plan(
             expected = _draw(data, 1)
             data.load_state_dict(saved)
             assert _draw(data, 1) == expected
+            assert data._sampler.batch_frame_counts() is frame_counts
 
 
 @pytest.mark.parametrize("world_size", [1, 2])

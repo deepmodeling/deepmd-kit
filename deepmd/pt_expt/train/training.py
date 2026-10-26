@@ -61,6 +61,9 @@ from deepmd.dpmodel.train import (
     change_model_out_bias_by_task,
     resolve_step_schedule,
 )
+from deepmd.dpmodel.train.data import (
+    add_training_data_requirements,
+)
 from deepmd.dpmodel.train.data_progress import (
     DATA_PROGRESS_CHECKPOINT_KEY,
     collect_training_data_progress,
@@ -155,7 +158,9 @@ from deepmd.pt_expt.utils.stat import (
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
-    min_pair_dist_requirement,
+)
+from deepmd.utils.data_group import (
+    epoch_batch_counts,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -1931,7 +1936,7 @@ class Trainer(AbstractTrainer):
 
         reset_epoch_streams()
         self.valid_numb_batch_by_task: dict[str, int] = {}
-        self.min_pair_dist_by_task: dict[str, float] = {}
+        self.pair_filter_enabled_by_task: dict[str, bool] = {}
         for model_key in self.model_keys:
             data_requirement = list(self.losses[model_key].label_requirement)
             data_requirement += get_additional_data_requirement(self.models[model_key])
@@ -1940,19 +1945,14 @@ class Trainer(AbstractTrainer):
                 if self.multi_task
                 else training_params
             )
-            pair_filter = min_pair_dist_requirement(
-                self.model_params_by_task[model_key],
-                float(
-                    (task_params.get("training_data") or {}).get("min_pair_dist", 0.0)
-                ),
-            )
-            self.min_pair_dist_by_task[model_key] = (
-                0.0 if pair_filter is None else float(pair_filter.default)
-            )
-            # Only training frames are filtered, so only the training data
-            # pays for the derived margin.
-            self.training_data_by_task[model_key].add_data_requirements(
-                data_requirement + ([] if pair_filter is None else [pair_filter])
+            self.pair_filter_enabled_by_task[model_key] = (
+                add_training_data_requirements(
+                    self.training_data_by_task[model_key],
+                    task_params["training_data"],
+                    self.model_params_by_task[model_key],
+                    data_requirement,
+                    lambda data, requirements: data.add_data_requirements(requirements),
+                )
             )
             if self.validation_data_by_task[model_key] is not None:
                 self.validation_data_by_task[model_key].add_data_requirements(
@@ -2029,12 +2029,12 @@ class Trainer(AbstractTrainer):
             def _make_sample(
                 _d: DeepmdDataSystem = _data,
                 _n: int = _nbatch,
-                _min_pair_dist: float = self.min_pair_dist_by_task[model_key],
+                _filter_enabled: bool = self.pair_filter_enabled_by_task[model_key],
             ) -> list[dict[str, np.ndarray]]:
                 # Statistics run only on the chief. They must not advance its
-                # training cursor or the shared task/system selection RNG.
+                # training cursors or data-source selection RNGs.
                 with preserve_training_data_progress({"statistics": _d}):
-                    return make_stat_input(_d, _n, _min_pair_dist)
+                    return make_stat_input(_d, _n, _filter_enabled)
 
             self._sample_funcs[model_key] = _make_sample
 
@@ -2831,11 +2831,15 @@ class Trainer(AbstractTrainer):
         RuntimeError
             If one local reader pass of consecutive batches holds no valid frame.
         """
-        filter_enabled = self.min_pair_dist_by_task[task_key] > 0.0
+        filter_enabled = self.pair_filter_enabled_by_task[task_key]
         discarded = 0
         while True:
-            batch = normalize_batch(data_sys.get_batch())
-            frame_mask = pair_margin_frame_mask(batch, filter_enabled)
+            raw_batch = data_sys.get_batch()
+            batch = normalize_batch(raw_batch)
+            batch_filter_enabled = getattr(
+                raw_batch, "pair_filter_enabled", filter_enabled
+            )
+            frame_mask = pair_margin_frame_mask(batch, batch_filter_enabled)
             if frame_mask is None or frame_mask.all():
                 return batch
             if frame_mask.any():
@@ -2863,23 +2867,23 @@ class Trainer(AbstractTrainer):
         Returns
         -------
         int
-            Number of steps covering one pass over the task's training data.
+            Nominal number of optimizer steps in one training epoch.
 
         Notes
         -----
-        A data system reports ``nbatches[i]``, the batch count of system ``i``,
-        and ``sys_probs[i]``, the probability of drawing from that system, from
-        which ``compute_total_numb_batch`` derives the dataset-wide epoch
-        length ``ceil(max_i(nbatches[i] / sys_probs[i]))``. LMDB data reports
-        that global count while its sampler shards batches evenly across ranks;
-        legacy data systems remain replicated. In both cases one rank takes
-        ``ceil(total / world_size)`` optimizer steps per scheduled epoch. This
-        differs from the local reader pass length for replicated data, which
-        the data system exposes through ``get_batch_pass_length``.
+        The epoch length is ``ceil(max_i(local_batches[i] / sys_probs[i]))``.
+        Each LMDB contributes its sampler's rank-local workload, including
+        its own distributed padding. Replicated NumPy readers contribute
+        their global batch counts divided by world size. Size-based sampling
+        uses global source sizes without per-rank padding; uniform sampling
+        corrects for each native stream's rank-averaged batch frame count.
+        This scheduled workload differs from a replicated reader's pass length,
+        which is exposed separately through ``get_batch_pass_length``.
         """
         data = self.training_data_by_task[model_key]
-        total = compute_total_numb_batch(data.nbatches, data.sys_probs)
-        return int(np.ceil(total / self.world_size))
+        return compute_total_numb_batch(
+            epoch_batch_counts(data, self.world_size), data.sys_probs
+        )
 
     # ------------------------------------------------------------------
     # Distribution helpers

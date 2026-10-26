@@ -99,7 +99,8 @@ def _collect_stat_batches(
         if "natoms_vec" in stat_data:
             stat_data["natoms_vec"] = stat_data["natoms_vec"].astype(np.int32)
         batch = normalize_batch(stat_data)
-        frame_mask = pair_margin_frame_mask(batch, min_pair_dist > 0.0)
+        filter_enabled = getattr(stat_data, "pair_filter_enabled", min_pair_dist > 0.0)
+        frame_mask = pair_margin_frame_mask(batch, filter_enabled)
         if frame_mask is not None and not frame_mask.all():
             if not frame_mask.any():
                 continue
