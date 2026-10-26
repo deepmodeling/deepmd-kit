@@ -936,6 +936,73 @@ class TestDPTestDensity(unittest.TestCase):
         finally:
             os.unlink(model_path)
 
+    def test_dp_test_uses_default_fparam(self) -> None:
+        params = deepcopy(model_density)
+        params["fitting_net"].update(numb_fparam=1, default_fparam=[0.5])
+        fd, model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(fd)
+        default_system = Path(tempfile.mkdtemp(dir=self.tmpdir.name)) / "default"
+        explicit_system = Path(tempfile.mkdtemp(dir=self.tmpdir.name)) / "explicit"
+        shutil.copytree(self.system, default_system)
+        shutil.copytree(self.system, explicit_system)
+        np.save(
+            explicit_system / "set.000" / "fparam.npy",
+            np.full((self.nframes, 1), 0.5),
+        )
+        try:
+            torch.jit.save(torch.jit.script(get_model(params)), model_path)
+            detail_paths = []
+            for name, system in (
+                ("default", default_system),
+                ("explicit", explicit_system),
+            ):
+                detail_file = os.path.join(self.tmpdir.name, f"detail_fparam_{name}")
+                dp_test(
+                    model=model_path,
+                    system=str(system),
+                    datafile=None,
+                    numb_test=0,
+                    rand_seed=None,
+                    shuffle_test=False,
+                    detail_file=detail_file,
+                    atomic=False,
+                )
+                detail_paths.append(detail_file)
+            for frame in range(self.nframes):
+                np.testing.assert_allclose(
+                    np.loadtxt(f"{detail_paths[0]}.density.out.{frame}"),
+                    np.loadtxt(f"{detail_paths[1]}.density.out.{frame}"),
+                )
+        finally:
+            os.unlink(model_path)
+
+    def test_dp_test_without_periodic_box(self) -> None:
+        system = Path(tempfile.mkdtemp(dir=self.tmpdir.name)) / "nopbc-system"
+        shutil.copytree(self.system, system)
+        (system / "set.000" / "box.npy").unlink()
+        (system / "nopbc").touch()
+        detail_file = os.path.join(self.tmpdir.name, "detail_nopbc")
+        dp_test(
+            model=self.model_path,
+            system=str(system),
+            datafile=None,
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=detail_file,
+            atomic=False,
+        )
+        set_dir = system / "set.000"
+        ref = DeepDensity(self.model_path).eval(
+            np.load(set_dir / "coord.npy"),
+            None,
+            np.loadtxt(system / "type.raw", dtype=int),
+            grid=np.load(set_dir / "grid.npy"),
+        )
+        for frame in range(self.nframes):
+            detail = np.loadtxt(f"{detail_file}.density.out.{frame}", skiprows=1)
+            np.testing.assert_allclose(detail[:, 1], ref[frame], rtol=1e-5, atol=1e-6)
+
     def test_dp_test_shuffle(self) -> None:
         # grid/density must be shuffled together with the frames: every
         # (label, pred) row written by the shuffled run must match a row
