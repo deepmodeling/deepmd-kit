@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Generated-input checks for the opt-in frozen Neo edge-cohort prototype."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from types import SimpleNamespace
+from types import (
+    SimpleNamespace,
+)
 
 import pytest
 import torch

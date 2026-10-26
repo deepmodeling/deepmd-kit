@@ -8,12 +8,18 @@ still have full edge extent. This Python runtime launcher is an online-compile
 prototype; standalone AOTInductor/C++ deployment is not validated.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import torch
 import triton
-from torch import Tensor
-from torch.library import wrap_triton
+from torch import (
+    Tensor,
+)
+from torch.library import (
+    wrap_triton,
+)
 
 from . import so2_value_path as sv
 
