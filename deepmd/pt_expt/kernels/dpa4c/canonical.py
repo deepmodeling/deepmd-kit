@@ -459,12 +459,10 @@ def dpa4c_canonical_compress_energy_force(
     from deepmd.pt_expt.kernels.edge_force_virial import (
         canonical_edge_force_virial,
         canonical_op_available,
+        frame_scalar_sum,
     )
     from deepmd.pt_expt.kernels.edge_force_virial import (
         ensure_registered as ensure_force_registered,
-    )
-    from deepmd.pt_expt.kernels.edge_force_virial import (
-        frame_scalar_sum,
     )
     from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,

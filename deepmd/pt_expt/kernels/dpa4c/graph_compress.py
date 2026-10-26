@@ -2233,12 +2233,10 @@ def dpa4c_graph_compress_energy_force(
     """
     from deepmd.pt_expt.kernels.edge_force_virial import (
         edge_force_virial,
+        frame_scalar_sum,
     )
     from deepmd.pt_expt.kernels.edge_force_virial import (
         ensure_registered as ensure_force_registered,
-    )
-    from deepmd.pt_expt.kernels.edge_force_virial import (
-        frame_scalar_sum,
     )
     from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
