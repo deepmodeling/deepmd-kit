@@ -40,11 +40,15 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    make_preset_out_bias,
+    override_assigned_bias,
+)
 from deepmd.utils.stat_file import (
     load_output_stat_full_scan,
-    load_paired_items,
-    replace_paired_items,
+    load_output_stats,
     save_output_stat_full_scan,
+    save_output_stats,
 )
 
 log = logging.getLogger(__name__)
@@ -61,39 +65,52 @@ __all__ = [
     "_restore_observed_type_from_file",
     "_save_observed_type_to_file",
     "collect_observed_types",
-    "min_pair_dist_frame_mask",
     "observed_types_from_counts",
+    "pair_margin_frame_mask",
     "scan_redu_stats",
     "select_batch_frames",
 ]
 
 
-def min_pair_dist_frame_mask(
+def pair_margin_frame_mask(
     batch: dict[str, Any],
-    min_pair_dist: float,
+    enabled: bool,
 ) -> torch.Tensor | None:
     """
-    Return the valid-frame mask for a minimum pair-distance threshold.
+    Return the valid-frame mask of the pair-clearance filter.
+
+    The derived field holds each frame's margin against the thresholds its atom
+    pairs carry, so a frame is kept when that margin reaches one, whatever
+    length scale sized them. The registered filter radius is already
+    spent on that margin and takes no part in this comparison.
 
     Parameters
     ----------
     batch
         Data batch containing frame-aligned tensors.
-    min_pair_dist
-        Minimum allowed pair distance in Å.
+    enabled
+        Whether the pair-clearance filter is configured for this data.
 
     Returns
     -------
     torch.Tensor or None
         Boolean mask with shape (nframes), or ``None`` when filtering is
-        disabled or the distance field is unavailable.
+        disabled.
+
+    Raises
+    ------
+    RuntimeError
+        If the batch carries a placeholder instead of a derived margin, which
+        would otherwise accept every frame silently.
     """
-    if min_pair_dist <= 0.0 or "min_pair_dist" not in batch:
+    if not enabled:
         return None
-    distances = batch["min_pair_dist"]
-    if not isinstance(distances, torch.Tensor):
-        return None
-    return distances.reshape(-1) >= float(min_pair_dist)
+    if not batch.get("find_pair_margin", False):
+        raise RuntimeError(
+            "The pair-clearance filter is enabled, but the data source did not "
+            "derive the pair margin of the batch."
+        )
+    return batch["pair_margin"].reshape(-1) >= 1.0
 
 
 def select_batch_frames(
@@ -139,6 +156,8 @@ def make_stat_input(
     dataloaders: list[Any],
     nbatches: int,
     min_pair_dist: float = 0.0,
+    *,
+    filter_enabled_by_system: Sequence[bool] | None = None,
 ) -> list[dict[str, Any]]:
     """Pack data for statistics.
 
@@ -151,8 +170,13 @@ def make_stat_input(
     nbatches
         Maximum number of valid batches collected from each system.
     min_pair_dist
-        Minimum allowed pair distance in Å. Frames below the threshold are
-        excluded before statistics are accumulated.
+        Radius the training-frame filter was registered with. When
+        positive, frames holding a pair inside its window are dropped before
+        the statistics are accumulated, so they see the frames the optimizer
+        sees.
+    filter_enabled_by_system
+        Optional source-specific filter policies for grouped datasets. The
+        registered requirements retain each source's filter radius.
 
     Returns
     -------
@@ -163,12 +187,17 @@ def make_stat_input(
     lst = []
     log.info("Packing data for statistics from %d systems", len(datasets))
     for system_index in range(len(datasets)):
+        filter_enabled = (
+            min_pair_dist > 0.0
+            if filter_enabled_by_system is None
+            else filter_enabled_by_system[system_index]
+        )
         sys_stat = {}
         with torch.device("cpu"):
             dataloader = dataloaders[system_index]
             dataloader_size = len(dataloader)
             target_batches = min(nbatches, dataloader_size)
-            scan_limit = dataloader_size if min_pair_dist > 0.0 else target_batches
+            scan_limit = dataloader_size if filter_enabled else target_batches
             iterator = iter(dataloader)
             accepted_batches = 0
             scanned_batches = 0
@@ -182,7 +211,7 @@ def make_stat_input(
                     except StopIteration:
                         break
                 scanned_batches += 1
-                frame_mask = min_pair_dist_frame_mask(stat_data, min_pair_dist)
+                frame_mask = pair_margin_frame_mask(stat_data, filter_enabled)
                 if frame_mask is not None and not torch.any(frame_mask):
                     continue
                 if frame_mask is not None:
@@ -212,9 +241,8 @@ def make_stat_input(
             if min_pair_dist > 0.0:
                 log.info(
                     "Skipping data system %d in statistics because no frame "
-                    "satisfies min_pair_dist=%s.",
+                    "keeps every atom pair beyond the filter radius.",
                     system_index,
-                    min_pair_dist,
                 )
             else:
                 log.info(
@@ -261,6 +289,8 @@ def scan_redu_stats(
     keys: Sequence[str],
     intensive: bool = False,
     min_pair_dist: float = 0.0,
+    *,
+    filter_enabled_by_system: Sequence[bool] | None = None,
 ) -> ReduScanResult:
     """Accumulate exact reduced-label statistics over every training frame.
 
@@ -281,8 +311,11 @@ def scan_redu_stats(
     intensive
         Whether the fitting target is intensive.
     min_pair_dist
-        Minimum allowed pair distance in Angstrom. Frames below the threshold
-        are excluded.
+        Radius the training-frame filter was registered with. When
+        positive, frames holding a pair inside its window are excluded.
+    filter_enabled_by_system
+        Optional source-specific filter policies for grouped datasets. The
+        registered requirements retain each source's filter radius.
 
     Returns
     -------
@@ -301,9 +334,14 @@ def scan_redu_stats(
         "Scanning all frames of %d systems for output statistics", len(dataloaders)
     )
     with torch.device("cpu"):
-        for dataloader in dataloaders:
+        for system_index, dataloader in enumerate(dataloaders):
+            filter_enabled = (
+                min_pair_dist > 0.0
+                if filter_enabled_by_system is None
+                else filter_enabled_by_system[system_index]
+            )
             for batch in _full_pass_loader(dataloader):
-                frame_mask = min_pair_dist_frame_mask(batch, min_pair_dist)
+                frame_mask = pair_margin_frame_mask(batch, filter_enabled)
                 if frame_mask is not None:
                     if not torch.any(frame_mask):
                         continue
@@ -335,35 +373,6 @@ def scan_redu_stats(
         ntypes,
     )
     return ReduScanResult(stats=stats, natoms_total=natoms_total, nframes=nframes)
-
-
-def _restore_from_file(
-    stat_file_path: DPPath | None,
-    keys: list[str],
-) -> tuple[dict | None, dict | None]:
-    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in keys]
-    items = load_paired_items(stat_file_path, pairs)
-    if items is None:
-        return None, None
-    cached_keys = [key for key in keys if f"bias_atom_{key}" in items]
-    ret_bias = {key: items[f"bias_atom_{key}"] for key in cached_keys}
-    ret_std = {key: items[f"std_atom_{key}"] for key in cached_keys}
-    return ret_bias, ret_std
-
-
-def _save_to_file(
-    stat_file_path: DPPath,
-    requested_keys: list[str],
-    bias_out: dict,
-    std_out: dict,
-) -> None:
-    assert stat_file_path is not None
-    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in requested_keys]
-    items = {
-        **{f"bias_atom_{key}": value for key, value in bias_out.items()},
-        **{f"std_atom_{key}": value for key, value in std_out.items()},
-    }
-    replace_paired_items(stat_file_path, pairs, items)
 
 
 def _post_process_stat(
@@ -466,31 +475,6 @@ def _reduce_model_prediction(
     return reduced
 
 
-def _make_preset_out_bias(
-    ntypes: int,
-    ibias: list[np.ndarray | None],
-) -> np.ndarray | None:
-    """Make preset out bias.
-
-    output:
-        a np array of shape [ntypes, *(odim0, odim1, ...)] is any item is not None
-        None if all items are None.
-    """
-    if len(ibias) != ntypes:
-        raise ValueError("the length of preset bias list should be ntypes")
-    if all(ii is None for ii in ibias):
-        return None
-    for refb in ibias:
-        if refb is not None:
-            break
-    refb = np.array(refb)
-    nbias = [
-        np.full_like(refb, np.nan, dtype=np.float64) if ii is None else ii
-        for ii in ibias
-    ]
-    return np.array(nbias)
-
-
 def _fill_stat_with_global(
     atomic_stat: np.ndarray | None,
     global_stat: np.ndarray,
@@ -549,9 +533,12 @@ def compute_output_stats(
     rcond : float, optional
         The condition number for the regression of atomic energy.
     preset_bias : dict[str, list[Optional[np.ndarray]]], optional
-        Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
+        Assigned values of the returned bias, given by key:value pairs.
+        The value is a list with one element per type: None leaves the type to the
+        statistics, an np.ndarray of output shape assigns the type.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The values live in the frame of the returned bias: absolute biases without
+        `model_forward`, shifts of the model's stored bias with `model_forward`.
         The `set_davg_zero` key in the descriptor should be set.
     model_forward : Callable[..., dict[str, torch.Tensor]], optional
         The wrapped forward function of atomic model.
@@ -581,6 +568,14 @@ def compute_output_stats(
     assert isinstance(keys, list)
     requested_keys = list(keys)
 
+    # Per-type constraints participate in both cache validation and regression.
+    assigned_bias = {
+        kk: make_preset_out_bias(ntypes, preset_bias[kk])
+        if preset_bias is not None and kk in preset_bias
+        else None
+        for kk in keys
+    }
+
     # a full scan cannot replace the sampled path for delta bias or type-blind
     # statistics, so resolve it before the cache is consulted
     redu_scanner = get_redu_stat_scanner(merged)
@@ -593,8 +588,13 @@ def compute_output_stats(
         )
         redu_scanner = None
 
+    # Model residuals depend on parameters not recorded in the statistics cache.
+    # Neither reuse nor persist them as absolute output statistics.
+    if model_forward is not None:
+        stat_file_path = None
+
     # try to restore the bias from stat file
-    bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    bias_atom_e, std_atom_e = load_output_stats(stat_file_path, keys, assigned_bias)
     if (
         bias_atom_e is not None
         and redu_scanner is not None
@@ -706,7 +706,7 @@ def compute_output_stats(
             ntypes,
             keys,
             rcond,
-            preset_bias,
+            assigned_bias,
             global_sampled_idx,
             stats_distinguish_types,
             intensive,
@@ -719,6 +719,7 @@ def compute_output_stats(
             keys,
             atomic_sampled_idx,
             model_pred_a,
+            assigned_bias,
         )
 
         # merge global/atomic bias
@@ -744,11 +745,12 @@ def compute_output_stats(
             # withdraw any standing claim before the values it describes are
             # replaced, so an interruption leaves the cache looking sampled
             save_output_stat_full_scan(stat_file_path, False)
-            _save_to_file(
+            save_output_stats(
                 stat_file_path,
                 requested_keys,
                 bias_atom_e,
                 std_atom_e,
+                assigned_bias,
             )
             save_output_stat_full_scan(stat_file_path, redu_scanner is not None)
 
@@ -762,7 +764,7 @@ def _compute_output_stats_global(
     ntypes: int,
     keys: list[str],
     rcond: float | None = None,
-    preset_bias: dict[str, list[np.ndarray | None]] | None = None,
+    assigned_bias: dict[str, np.ndarray | None] | None = None,
     global_sampled_idx: dict | None = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
@@ -814,15 +816,8 @@ def _compute_output_stats_global(
         if len(input_natoms[kk]) > 0
     }
     nf = {kk: merged_natoms[kk].shape[0] for kk in keys if kk in merged_natoms}
-    if preset_bias is not None:
-        assigned_atom_ener = {
-            kk: _make_preset_out_bias(ntypes, preset_bias[kk])
-            if kk in preset_bias.keys()
-            else None
-            for kk in keys
-        }
-    else:
-        assigned_atom_ener = dict.fromkeys(keys)
+    if assigned_bias is None:
+        assigned_bias = dict.fromkeys(keys)
 
     if model_pred is None:
         stats_input = merged_output
@@ -856,7 +851,7 @@ def _compute_output_stats_global(
     for kk in keys:
         if scan is not None and kk in scan.stats:
             bias_atom_e[kk], std_atom_e[kk] = scan.stats[kk].solve(
-                assigned_bias=assigned_atom_ener[kk],
+                assigned_bias=assigned_bias[kk],
                 rcond=rcond,
                 type_mask=type_mask,
             )
@@ -867,7 +862,6 @@ def _compute_output_stats_global(
                     compute_stats_do_not_distinguish_types(
                         stats_input[kk],
                         merged_natoms[kk],
-                        assigned_bias=assigned_atom_ener[kk],
                         intensive=intensive,
                     )
                 )
@@ -875,7 +869,7 @@ def _compute_output_stats_global(
                 bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                     stats_input[kk],
                     merged_natoms[kk],
-                    assigned_bias=assigned_atom_ener[kk],
+                    assigned_bias=assigned_bias[kk],
                     rcond=rcond,
                     intensive=intensive,
                 )
@@ -926,6 +920,7 @@ def _compute_output_stats_atomic(
     keys: list[str],
     atomic_sampled_idx: dict | None = None,
     model_pred: dict[str, np.ndarray] | None = None,
+    assigned_bias: dict[str, np.ndarray | None] | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Compute output statistics from atomic labels."""
     # return directly if no atomic samples
@@ -933,6 +928,8 @@ def _compute_output_stats_atomic(
         len(v) == 0 for v in atomic_sampled_idx.values()
     ):
         return {}, {}
+    if assigned_bias is None:
+        assigned_bias = dict.fromkeys(keys)
 
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {
@@ -1004,6 +1001,9 @@ def _compute_output_stats_atomic(
                 nan_padding.fill(np.nan)
                 bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
                 std_atom_e[kk] = np.concatenate([std_atom_e[kk], nan_padding], axis=0)
+            # the per-type means are independent, so an assigned type is
+            # overridden exactly
+            bias_atom_e[kk] = override_assigned_bias(bias_atom_e[kk], assigned_bias[kk])
         else:
             # this key does not have atomic labels, skip it.
             continue

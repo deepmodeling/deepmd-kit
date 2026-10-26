@@ -136,9 +136,13 @@ def _project_frames(
     to applying it on the grid field while touching ``n_frames``-fold fewer rows
     than the ``G``-point grid.
     """
-    n_batch, coeff_dim, n_focus, _ = coeff.shape
-    projected = proj(coeff.reshape(n_batch, coeff_dim, n_focus, n_frames, -1))
-    return projected.reshape(n_batch, coeff_dim, n_focus, -1)
+    n_batch, coeff_dim, n_focus, n_channels = coeff.shape
+    projected = proj(
+        coeff.reshape(n_batch, coeff_dim, n_focus, n_frames, n_channels // n_frames)
+    )
+    return projected.reshape(
+        n_batch, coeff_dim, n_focus, n_frames * projected.shape[-1]
+    )
 
 
 def _project_pair_in_one_transform(
@@ -149,12 +153,12 @@ def _project_pair_in_one_transform(
     to_grid: Callable[[torch.Tensor], torch.Tensor],
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Project two equally shaped coefficient operands in one linear transform."""
-    n_batch, coeff_dim, n_focus, _ = left.shape
-    frame_shape = (n_batch, coeff_dim, n_focus, n_frames, -1)
+    n_batch, coeff_dim, n_focus, n_channels = left.shape
+    frame_shape = (n_batch, coeff_dim, n_focus, n_frames, n_channels // n_frames)
     pair = torch.cat(
         [left.reshape(frame_shape), right.reshape(frame_shape)],
         dim=-1,
-    ).reshape(n_batch, coeff_dim, n_focus, -1)
+    ).reshape(n_batch, coeff_dim, n_focus, 2 * n_channels)
     return torch.chunk(to_grid(pair), chunks=2, dim=-1)
 
 
@@ -347,10 +351,13 @@ class GridMLP(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply the two coefficient-space channel projections."""
         if self.mode == "self":
-            shape = (*left.shape[:-1], self.n_frames, -1)
+            n_channels = left.shape[-1]
+            shape = (*left.shape[:-1], self.n_frames, n_channels // self.n_frames)
             fused = torch.cat(
                 [left.reshape(shape), right.reshape(shape)], dim=-1
-            ).reshape(*left.shape[:-1], -1)  # per-frame concat -> (N, D, F, K*2C)
+            ).reshape(
+                *left.shape[:-1], 2 * n_channels
+            )  # per-frame concat -> (N, D, F, K*2C)
             left = _project_frames(fused, self.left_proj, self.n_frames)
             right = _project_frames(fused, self.right_proj, self.n_frames)
         else:
@@ -1091,10 +1098,13 @@ class BaseGridNet(nn.Module):
         )
 
     def _to_grid(self, coeff: torch.Tensor) -> torch.Tensor:
-        # The per-frame channel width is inferred so the projector also serves
-        # widened operands (e.g. a branch hidden width ``n_branches * C``).
-        n_batch, coeff_dim, n_focus, _ = coeff.shape
-        coeff_view = coeff.reshape(n_batch, coeff_dim, n_focus, self.n_frames, -1)
+        # Derive the per-frame width from the channel axis so empty batches
+        # and widened operands (e.g. ``n_branches * C``) are both valid.
+        n_batch, coeff_dim, n_focus, n_channels = coeff.shape
+        n_channels //= self.n_frames
+        coeff_view = coeff.reshape(
+            n_batch, coeff_dim, n_focus, self.n_frames, n_channels
+        )
         to_grid = self.projector.to_grid_mat.reshape(
             self.projector.grid_size,
             coeff_dim,
@@ -1104,7 +1114,7 @@ class BaseGridNet(nn.Module):
 
     def _from_grid(self, grid: torch.Tensor) -> torch.Tensor:
         # Channel width is inferred to match the (possibly widened) grid field.
-        n_batch, _, n_focus, _ = grid.shape
+        n_batch, _, n_focus, n_channels = grid.shape
         coeff_dim = self.projector.coeff_dim // self.n_frames
         from_grid = self.projector.from_grid_mat.reshape(
             coeff_dim,
@@ -1112,11 +1122,11 @@ class BaseGridNet(nn.Module):
             self.projector.grid_size,
         )
         coeff = torch.einsum("dkg,ngfc->ndfkc", from_grid, grid)
-        return coeff.reshape(n_batch, coeff_dim, n_focus, -1)
+        return coeff.reshape(n_batch, coeff_dim, n_focus, self.n_frames * n_channels)
 
     def _from_grid_scalar(self, grid: torch.Tensor) -> torch.Tensor:
         """Project a grid field to the ``l=0`` coefficient only."""
-        n_batch, _, n_focus, _ = grid.shape
+        n_batch, _, n_focus, n_channels = grid.shape
         coeff_dim = self.projector.coeff_dim // self.n_frames
         from_grid = self.projector.from_grid_mat.reshape(
             coeff_dim,
@@ -1124,7 +1134,7 @@ class BaseGridNet(nn.Module):
             self.projector.grid_size,
         )[0:1]
         coeff = torch.einsum("dkg,ngfc->ndfkc", from_grid, grid)
-        return coeff.reshape(n_batch, 1, n_focus, -1)
+        return coeff.reshape(n_batch, 1, n_focus, self.n_frames * n_channels)
 
     def _scalar_so3_product(
         self,
@@ -1135,14 +1145,15 @@ class BaseGridNet(nn.Module):
         weight = self._scalar_product_weight
         if weight is None:
             raise RuntimeError("SO(3) scalar product weights are unavailable")
-        n_batch, coeff_dim, n_focus, _ = left.shape
-        left_view = left.reshape(n_batch, coeff_dim, n_focus, self.n_frames, -1)
+        n_batch, coeff_dim, n_focus, n_channels = left.shape
+        left_view = left.reshape(
+            n_batch, coeff_dim, n_focus, self.n_frames, n_channels // self.n_frames
+        )
         right_view = right.reshape_as(left_view)
-        scalar = torch.einsum(
-            "ndfkc,dk,ndfkc->nfc",
-            left_view,
-            weight,
-            right_view,
+        # A weighted diagonal product-sum over (d, k); written out so that no
+        # contraction-path search runs on the symbolic node count under export.
+        scalar = (left_view * weight[None, :, None, :, None] * right_view).sum(
+            dim=(1, 3)
         )
         return scalar[:, None, :, :]
 
@@ -1157,9 +1168,9 @@ class BaseGridNet(nn.Module):
             return value.transpose(1, 2), tuple(value.shape)
         if self.layout == "fndc":
             return value.permute(1, 2, 0, 3), tuple(value.shape)
-        n_batch, coeff_dim, _ = value.shape
+        n_batch, coeff_dim, n_channels = value.shape
         return (
-            value.reshape(n_batch, coeff_dim, self.n_focus, -1),
+            value.reshape(n_batch, coeff_dim, self.n_focus, n_channels // self.n_focus),
             tuple(value.shape),
         )
 
@@ -1178,7 +1189,7 @@ class BaseGridNet(nn.Module):
             return value.permute(2, 0, 1, 3)
         n_batch, input_coeff_dim, _ = shape_info
         coeff_dim = 1 if scalar_only else input_coeff_dim
-        return value.reshape(n_batch, coeff_dim, -1)
+        return value.reshape(n_batch, coeff_dim, value.shape[2] * value.shape[3])
 
     def _slice_scalar_layout(self, value: torch.Tensor) -> torch.Tensor:
         """Select the degree axis from a restored full-layout tensor."""

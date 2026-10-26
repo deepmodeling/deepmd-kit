@@ -33,6 +33,10 @@ import msgpack
 import numpy as np
 
 from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_margin_single,
+    pair_half_thresholds,
+)
 from deepmd.dpmodel.utils.lmdb_data import (
     DistributedLmdbBatchSampler,
     LmdbBatchIterator,
@@ -42,9 +46,8 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
     LmdbTestDataNlocView,
     _chop_mixed_nloc,
-    _expand_indices_by_blocks,
     _merge_lmdb_chunks,
-    _remap_atom_types,
+    _resample_indices_by_blocks,
     collate_lmdb_frames,
     collect_lmdb_sampling_groups,
     compute_block_targets,
@@ -52,6 +55,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     decode_lmdb_frame,
     is_lmdb,
     make_neighbor_stat_data,
+    system_block_lookup,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
@@ -1202,17 +1206,20 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(result["find_energy"], 1.0)
         self.assertEqual(result["find_force"], 1.0)
 
-    def test_min_pair_dist_requirement_computed(self):
-        path = _create_grid_lmdb(f"{self._tmpdir.name}/grid_min_pair.lmdb", nframes=1)
+    def test_pair_margin_requirement_computed(self):
+        path = _create_grid_lmdb(
+            f"{self._tmpdir.name}/grid_pair_margin.lmdb", nframes=1
+        )
         reader = LmdbDataReader(path, ["TYPE"], batch_size=1)
         reader.add_data_requirement(
             [
                 DataRequirementItem(
-                    "min_pair_dist",
+                    "pair_margin",
                     ndof=1,
                     atomic=False,
                     must=False,
                     high_prec=False,
+                    default=0.5,
                     source_policy="derived",
                 )
             ]
@@ -1220,14 +1227,15 @@ class TestLmdbDataReader(unittest.TestCase):
 
         frame = reader[0]
 
-        self.assertEqual(frame["find_min_pair_dist"], np.float32(1.0))
-        np.testing.assert_allclose(frame["min_pair_dist"], np.array([1.0]))
+        # The grid spaces its atoms 1 Å apart, which is twice the window.
+        self.assertEqual(frame["find_pair_margin"], np.float32(1.0))
+        np.testing.assert_allclose(frame["pair_margin"], np.array([2.0]))
 
-    def test_min_pair_dist_requirement_defaults_without_atype(self):
+    def test_pair_margin_requirement_defaults_without_atype(self):
         raw_frame = _make_frame(natoms=6, seed=0)
         raw_frame.pop("atom_types")
         requirement = DataRequirementItem(
-            "min_pair_dist",
+            "pair_margin",
             ndof=1,
             default=0.25,
             source_policy="derived",
@@ -1236,7 +1244,7 @@ class TestLmdbDataReader(unittest.TestCase):
             ntypes=2,
             natoms=6,
             type_remap=None,
-            data_requirements={"min_pair_dist": requirement},
+            data_requirements={"pair_margin": requirement},
         )
 
         frame = decode_lmdb_frame(
@@ -1246,20 +1254,20 @@ class TestLmdbDataReader(unittest.TestCase):
             copy_arrays=True,
         )
 
-        self.assertEqual(frame["find_min_pair_dist"], np.float32(0.0))
-        np.testing.assert_allclose(frame["min_pair_dist"], np.array([0.25]))
+        self.assertEqual(frame["find_pair_margin"], np.float32(0.0))
+        np.testing.assert_allclose(frame["pair_margin"], np.array([0.25]))
 
-    def test_derived_min_pair_dist_ignores_raw_presence_for_grouping(self):
+    def test_derived_pair_margin_ignores_raw_presence_for_grouping(self):
         """Derived fields neither partition frames nor trust stored values."""
         path = _create_grid_lmdb(
-            f"{self._tmpdir.name}/derived_min_pair.lmdb",
+            f"{self._tmpdir.name}/derived_pair_margin.lmdb",
             nframes=2,
         )
         environment = lmdb.open(path, readonly=False, lock=False)
         with environment.begin(write=True) as transaction:
             key = format(0, "012d").encode()
             frame = msgpack.unpackb(transaction.get(key), raw=False)
-            frame["min_pair_dist"] = {
+            frame["pair_margin"] = {
                 "type": "<f8",
                 "shape": (1,),
                 "data": np.array([99.0], dtype=np.float64).tobytes(),
@@ -1271,10 +1279,10 @@ class TestLmdbDataReader(unittest.TestCase):
         reader.add_data_requirement(
             [
                 DataRequirementItem(
-                    "min_pair_dist",
+                    "pair_margin",
                     ndof=1,
                     atomic=False,
-                    default=0.0,
+                    default=0.5,
                     source_policy="derived",
                 )
             ]
@@ -1287,8 +1295,8 @@ class TestLmdbDataReader(unittest.TestCase):
             groups = collect_lmdb_sampling_groups(reader)
 
         self.assertEqual(len(groups), 1)
-        np.testing.assert_allclose(reader[0]["min_pair_dist"], [1.0])
-        np.testing.assert_allclose(reader[1]["min_pair_dist"], [1.0])
+        np.testing.assert_allclose(reader[0]["pair_margin"], [2.0])
+        np.testing.assert_allclose(reader[1]["pair_margin"], [2.0])
 
 
 # ============================================================
@@ -1880,6 +1888,124 @@ class TestTypeMapRemapping(unittest.TestCase):
     def tearDownClass(cls):
         cls._tmpdir.cleanup()
 
+    def _subset_type_map_lmdb(
+        self, name: str, second_type: int = 2, *, first_type: int = 2
+    ) -> str:
+        """Build two frames using a sparse source type map and a virtual atom."""
+        path = _create_lmdb_with_virtual_type(f"{self._tmpdir.name}/{name}.lmdb")
+        with lmdb.open(path) as environment, environment.begin(write=True) as txn:
+            meta = msgpack.unpackb(txn.get(b"__metadata__"), raw=False)
+            meta.update(
+                nframes=2,
+                type_map=["O", "He", "H"],
+                frame_nlocs=[3, 3],
+                system_info={"natoms": [1, 0, 1]},
+            )
+            txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+            frame = msgpack.unpackb(txn.get(b"000000000000"), raw=False)
+            for index, last_type in enumerate((first_type, second_type)):
+                frame["atom_types"] = {
+                    "type": "<i8",
+                    "shape": [3],
+                    "data": np.array([0, -1, last_type], dtype=np.int64).tobytes(),
+                }
+                txn.put(
+                    format(index, "012d").encode(),
+                    msgpack.packb(frame, use_bin_type=True),
+                )
+        return path
+
+    def test_unused_elements_allow_a_reordered_model_subset(self) -> None:
+        path = self._subset_type_map_lmdb("unused_elements")
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        for index in range(2):
+            np.testing.assert_array_equal(reader[index]["atype"], [1, -1, 0])
+            np.testing.assert_array_equal(reader[index]["natoms"], [3, 3, 1, 1])
+        batch = reader.decode_batch([0, 1])
+        np.testing.assert_array_equal(batch["atype"], [[1, -1, 0], [1, -1, 0]])
+        test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        np.testing.assert_array_equal(test_data.get_test()["type"], batch["atype"])
+        original_types = LmdbTestData(path, shuffle_test=False)
+        np.testing.assert_array_equal(
+            original_types.get_test()["type"], [[0, -1, 2], [0, -1, 2]]
+        )
+
+    def test_unsupported_element_in_a_later_frame_is_rejected(self) -> None:
+        path = self._subset_type_map_lmdb("used_unsupported_element", second_type=1)
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        np.testing.assert_array_equal(reader[0]["atype"], [1, -1, 0])
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            reader.__getitem__(1)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            reader.decode_batch([0, 1])
+        iterator = LmdbBatchIterator(
+            reader, LmdbBatchSampler(reader, shuffle=False), num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            next(iterator)
+        test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            test_data.get_test()
+        selected = LmdbTestData(
+            path, type_map=["H", "O"], shuffle_test=False, max_frames=1
+        )
+        np.testing.assert_array_equal(selected.get_test()["type"], [[1, -1, 0]])
+
+    def test_batch_selection_ignores_unsupported_first_frame(self) -> None:
+        """Layout discovery reads a frame belonging to the requested batch."""
+        path = self._subset_type_map_lmdb("unsupported_first_batch", first_type=1)
+        for num_workers in (0, 2):
+            with self.subTest(num_workers=num_workers):
+                reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+                self.addCleanup(reader.close)
+                iterator = LmdbBatchIterator(reader, [[1, 1]], num_workers=num_workers)
+                self.addCleanup(iterator.close)
+                np.testing.assert_array_equal(
+                    next(iterator)["atype"], [[1, -1, 0], [1, -1, 0]]
+                )
+                with self.assertRaisesRegex(ValueError, "frame 0.*He.*model type_map"):
+                    reader.decode_batch([0])
+
+    def test_testdata_probe_ignores_unsupported_first_frame(self) -> None:
+        """PBC discovery is independent of element validation and frame selection."""
+        for box_kind in ("cells", "box", "zero", "missing"):
+            with self.subTest(box_kind=box_kind):
+                path = self._subset_type_map_lmdb(
+                    f"unsupported_first_test_{box_kind}", first_type=1
+                )
+                with (
+                    lmdb.open(path) as environment,
+                    environment.begin(write=True) as txn,
+                ):
+                    frame = msgpack.unpackb(txn.get(b"000000000000"), raw=False)
+                    if box_kind == "box":
+                        frame["box"] = frame.pop("cells")
+                    elif box_kind == "zero":
+                        frame["cells"]["data"] = np.zeros((3, 3)).tobytes()
+                    elif box_kind == "missing":
+                        del frame["cells"]
+                    txn.put(b"000000000000", msgpack.packb(frame, use_bin_type=True))
+                test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+                self.assertEqual(test_data.pbc, box_kind in ("cells", "box"))
+                np.testing.assert_array_equal(
+                    test_data.get_test_by_indices([1])["type"], [[1, -1, 0]]
+                )
+                with self.assertRaisesRegex(ValueError, "frame 0.*He.*model type_map"):
+                    test_data.get_test_by_indices([0])
+
+    def test_subset_remapping_reaches_parallel_decoder_workers(self) -> None:
+        path = self._subset_type_map_lmdb("parallel_subset")
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        iterator = LmdbBatchIterator(
+            reader, LmdbBatchSampler(reader, shuffle=False), num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        np.testing.assert_array_equal(next(iterator)["atype"], [[1, -1, 0], [1, -1, 0]])
+
     def test_reader_no_remap_when_match(self):
         reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
         self.assertIsNone(reader._type_remap)
@@ -1906,8 +2032,10 @@ class TestTypeMapRemapping(unittest.TestCase):
         self.assertEqual(natoms[3], 2)  # O count
 
     def test_reader_missing_element_raises(self):
+        reader = LmdbDataReader(self._lmdb_path, ["O"])
+        self.addCleanup(reader.close)
         with self.assertRaises(ValueError):
-            LmdbDataReader(self._lmdb_path, ["O"])
+            reader.__getitem__(0)
 
     def test_reader_no_type_map_in_metadata(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -1937,8 +2065,9 @@ class TestTypeMapRemapping(unittest.TestCase):
         self.assertIsNotNone(td._type_remap)
 
     def test_testdata_missing_element_raises(self):
+        td = LmdbTestData(self._lmdb_path, type_map=["O"], shuffle_test=False)
         with self.assertRaises(ValueError):
-            LmdbTestData(self._lmdb_path, type_map=["O"], shuffle_test=False)
+            td.get_test()
 
     def test_testdata_no_type_map_in_metadata(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -1963,8 +2092,11 @@ class TestTypeMapRemapping(unittest.TestCase):
 
     def test_positive_out_of_range_type_still_raises(self):
         """A malformed real type must not be mistaken for a virtual sentinel."""
+        path = self._subset_type_map_lmdb("invalid_type_index", second_type=3)
+        reader = LmdbDataReader(path, ["H", "O"])
+        self.addCleanup(reader.close)
         with self.assertRaises(IndexError):
-            _remap_atom_types(np.array([0, 2]), np.array([1, 0]))
+            reader.__getitem__(1)
 
 
 # ============================================================
@@ -1974,7 +2106,7 @@ class TestTypeMapRemapping(unittest.TestCase):
 
 class TestAutoProb(unittest.TestCase):
     """Test auto_prob support: frame_system_ids, compute_block_targets,
-    _expand_indices_by_blocks, and LmdbBatchSampler with block_targets.
+    _resample_indices_by_blocks, and LmdbBatchSampler with block_targets.
     """
 
     @classmethod
@@ -2006,6 +2138,48 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(reader.nsystems, 1)
         self.assertIsNone(reader.frame_system_ids)
         tmpdir.cleanup()
+
+    def test_uniform_targets_balance_retained_systems(self) -> None:
+        self.assertEqual(
+            compute_block_targets("prob_uniform", 3, [1, 0, 9]),
+            [([0], 5), ([2], 5)],
+        )
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [9, 9]), [])
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [0, 0]), [])
+
+    def test_uniform_target_count_is_bounded(self) -> None:
+        """Uniform quotas stay within one rounding unit per retained system."""
+        counts = [100000] + [1] * 999
+        targets = compute_block_targets("prob_uniform", len(counts), counts)
+        self.assertEqual({target for _, target in targets}, {101})
+        total = sum(target for _, target in targets)
+        self.assertEqual(total, 101000)
+        self.assertGreaterEqual(total, sum(counts))
+        self.assertLess(total, sum(counts) + len(counts))
+
+    def test_uniform_sampler_balances_a_bounded_pass(self) -> None:
+        """A uniform pass can undersample large systems without losing them."""
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"], batch_size=7)
+        self.addCleanup(reader.close)
+        targets = compute_block_targets(
+            "prob_uniform", reader.nsystems, reader.system_nframes
+        )
+        sampler = LmdbBatchSampler(reader, seed=42, block_targets=targets)
+        seen: set[int] = set()
+        for epoch in range(16):
+            sampler.set_epoch(epoch)
+            expected_batches = len(sampler)
+            batches = list(sampler)
+            self.assertEqual(len(batches), expected_batches)
+            indices = np.concatenate(batches)
+            self.assertEqual(len(indices), 600)
+            np.testing.assert_array_equal(
+                np.bincount(reader.frame_system_ids[indices]), [200, 200, 200]
+            )
+            seen.update(indices.tolist())
+            sampler.set_epoch(epoch)
+            self.assertEqual(list(sampler), batches)
+        self.assertEqual(seen, set(range(len(reader))))
 
     def test_compute_block_targets_equal_weight(self):
         result = compute_block_targets(
@@ -2059,8 +2233,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 25), ([1], 25)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         sys0 = [i for i in expanded if frame_system_ids[i] == 0]
         sys1 = [i for i in expanded if frame_system_ids[i] == 1]
@@ -2071,8 +2249,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 5), ([1], 5)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         self.assertEqual(sorted(expanded), list(range(10)))
 
@@ -2084,8 +2266,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 10
         block_targets = [([0], 23)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         self.assertEqual(len(expanded), 23)
         counts = Counter(expanded)
@@ -2098,8 +2284,12 @@ class TestAutoProb(unittest.TestCase):
         results = []
         for seed in range(5):
             rng = np.random.default_rng(seed)
-            expanded = _expand_indices_by_blocks(
-                list(range(10)), frame_system_ids, block_targets, rng
+            expanded = _resample_indices_by_blocks(
+                list(range(10)),
+                frame_system_ids,
+                system_block_lookup(block_targets),
+                [target for _, target in block_targets],
+                rng,
             )
             results.append(sorted(expanded[10:]))
         unique = {tuple(r) for r in results}
@@ -2152,6 +2342,16 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(len(sampler), len(batches))
         self.assertEqual(sum(map(len, batches)), 3)
         self.assertEqual(sorted(counts), [1, 2])
+
+        sampler = LmdbBatchSampler(
+            TwoSignatureReader(), shuffle=False, seed=42, block_targets=[([0], 1)]
+        )
+        seen: set[int] = set()
+        for _ in range(16):
+            batches = list(sampler)
+            self.assertEqual(sum(map(len, batches)), 1)
+            seen.update(index for batch in batches for index in batch)
+        self.assertEqual(seen, {0, 1})
 
     def test_sampler_tolerates_blocks_that_omit_a_system(self):
         """A system no auto_prob block names is passed through, not rejected.
@@ -2941,6 +3141,112 @@ class TestDecoderPoolFailure(unittest.TestCase):
 
         self._assert_same_batch(batch, self._reader.decode_batch([4, 5, 6, 7]))
         self.assertFalse(iterator._pool.healthy)
+
+
+class TestDerivedMinPairDist(unittest.TestCase):
+    """A batch derives `pair_margin` as the frames of that batch carry it."""
+
+    @staticmethod
+    def _requirement(
+        fraction: float, length_scale: str = "absolute"
+    ) -> list[DataRequirementItem]:
+        return [
+            DataRequirementItem(
+                "pair_margin",
+                ndof=1,
+                atomic=False,
+                must=False,
+                high_prec=False,
+                default=fraction,
+                source_policy="derived",
+                length_scale=length_scale,
+            )
+        ]
+
+    def _margins(self, fraction: float, length_scale: str = "absolute") -> np.ndarray:
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(fraction, length_scale))
+        return reader.decode_batch(list(range(6)))["pair_margin"].reshape(-1)
+
+    def _frame_margins(
+        self, fraction: float, length_scale: str = "absolute"
+    ) -> np.ndarray:
+        """Margins of the frame read path, which visits every pair.
+
+        The batch read bounds its scan at a margin of one, so a frame that
+        clears its window carries a value it reaches rather than its exact
+        margin; the frame read path has no such bound.
+        """
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(fraction, length_scale))
+        return np.concatenate([reader[index]["pair_margin"] for index in range(6)])
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._path = _create_lmdb(f"{self._tmpdir.name}/derived.lmdb", nframes=6)
+        # Frames without periodicity carry a cell of zeros, which the readers
+        # may mix with periodic ones in one batch.
+        environment = lmdb.open(self._path, map_size=10 * 1024 * 1024)
+        with environment.begin(write=True) as transaction:
+            for index in (1, 4):
+                key = format(index, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                frame["cells"]["data"] = np.zeros((3, 3)).tobytes()
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        environment.close()
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    def test_batch_matches_the_frames_it_holds(self) -> None:
+        """A window no frame clears leaves both read-backs exact."""
+        wide = 10.0
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(wide))
+        expected = np.concatenate([reader[index]["pair_margin"] for index in range(6)])
+        self.assertTrue((expected < 1.0).all())
+        batch = reader.decode_batch(list(range(6)))
+        self.assertEqual(float(batch["find_pair_margin"]), 1.0)
+        self.assertEqual(batch["pair_margin"].shape, (6, 1))
+        np.testing.assert_allclose(
+            batch["pair_margin"].reshape(-1), expected, rtol=1e-12, atol=1e-12
+        )
+
+    def test_a_threshold_keeps_the_side_of_every_frame(self) -> None:
+        """The window each frame is judged against is its own radius."""
+        wide = 10.0
+        distances = self._margins(wide) * wide
+        fraction = float(np.median(distances))
+        margins = self._margins(fraction)
+        self.assertTrue((margins < 1.0).any() and (margins >= 1.0).any())
+        np.testing.assert_array_equal(margins < 1.0, distances < fraction)
+
+    def test_a_covalent_window_sizes_each_pair_by_its_elements(self) -> None:
+        """Oxygen and hydrogen carry different windows on the same geometry."""
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(0.5, "covalent"))
+        half = pair_half_thresholds(0.5, "covalent", ["O", "H"])
+        for index in range(6):
+            frame = reader[index]
+            box = None if not frame["box"].any() else frame["box"]
+            np.testing.assert_allclose(
+                frame["pair_margin"],
+                [
+                    compute_min_pair_margin_single(
+                        frame["coord"], box, frame["atype"], half
+                    )
+                ],
+                rtol=1e-12,
+            )
+        # Half of the Pyykko single-bond radii puts the three pair thresholds
+        # at 0.63 Å for O-O, 0.475 Å for O-H and 0.32 Å for H-H, and an
+        # absolute window is one threshold for all three: no radius reproduces
+        # the covalent margins, which stay between the two extreme ones.
+        covalent = self._frame_margins(0.5, "covalent")
+        for threshold in (0.32, 0.475, 0.63):
+            self.assertFalse(np.allclose(covalent, self._frame_margins(threshold)))
+        self.assertTrue((covalent >= self._frame_margins(0.63)).all())
+        self.assertTrue((covalent <= self._frame_margins(0.32)).all())
 
 
 if __name__ == "__main__":

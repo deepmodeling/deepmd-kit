@@ -8,12 +8,18 @@ backend:
 dp --pt-expt train input.json
 ```
 
-The model section spells out the `Neo` grade. The same architecture is
-available as the named preset `dpa4c-neo-v20260901`: writing
-`"preset": "dpa4c-neo-v20260901"` in the model section fills in the
-118-element `type_map`, `descriptor` and `fitting_net`, and the run-specific
-entries written next to it take precedence: the water `type_map`, `use_amp`
-and `seed`.
+The recommended new-training path selects the `Nano` grade with the named preset
+`dpa4c-nano-v20260911`. Available v20260911 grades are `nano`, `mini`, `neo`,
+`air`, and `plus`. The preset supplies the 118-element `type_map`,
+`descriptor` and `fitting_net`; the explicit water `type_map` replaces the
+element list, while `use_amp` and `seed` supply run-specific settings.
+
+`input-zbl.json` is the same model with ZBL zone bridging: `bridging_method`
+adds the analytical ZBL repulsion to the learned energy, and a pair closer than
+the inner radius of the bridging window interacts through ZBL alone. The window
+follows the covalent bond length of each element pair, so it needs no setting
+of its own. The model trains, compresses and deploys exactly like the plain
+one.
 
 DPA4C is built for extreme-speed molecular dynamics, so its arguments are best
 read as a budget split between two quantities: inference throughput and the

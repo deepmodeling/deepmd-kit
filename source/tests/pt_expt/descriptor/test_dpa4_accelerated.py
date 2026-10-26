@@ -48,6 +48,9 @@ from deepmd.pt_expt.utils import (
 from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
 )
+from ...dpa4_fixtures import (
+    jitter_zero_arrays,
+)
 
 
 def _make_descriptor(
@@ -57,11 +60,13 @@ def _make_descriptor(
     precision: str = "float32",
     *,
     source_gated: bool = False,
+    env_exp: int | list[int] | None = None,
 ) -> DescrptDPA4:
     return DescrptDPA4(
         ntypes=ntypes,
         sel=sel,
         rcut=rcut,
+        env_exp=env_exp,
         channels=32,
         n_radial=8,
         lmax=2,
@@ -76,19 +81,22 @@ def _make_descriptor(
         random_gamma=False,
         precision=precision,
         seed=7,
-        inner_clamp_r_inner=0.8 if source_gated else None,
-        inner_clamp_r_outer=1.2 if source_gated else None,
+        inner_clamp_f_inner=0.8 if source_gated else None,
+        inner_clamp_f_outer=1.2 if source_gated else None,
+        inner_clamp_scale="absolute",
     )
 
 
 @pytest.mark.parametrize(
-    ("precision", "expected_bound"),
+    ("precision", "expected_bound"),  # descriptor dtype and CUDA binding eligibility
     [("float32", True), ("float64", False)],
 )
+@pytest.mark.parametrize("env_exp", [5, [7, 5]])  # single vs double envelope
 def test_fp32_only_cuda_bindings(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     precision: str,
     expected_bound: bool,
+    env_exp: int | list[int],
 ) -> None:
     """Bind the handwritten CUDA path only for its supported precision."""
     for name in (
@@ -100,10 +108,14 @@ def test_fp32_only_cuda_bindings(
         monkeypatch.setenv(name, "0")
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     monkeypatch.setattr(edge_radial, "op_available", lambda: True)
+    # Binding eligibility is independent of native operator registration.
+    monkeypatch.setattr(edge_radial, "ensure_registered", lambda: None)
     monkeypatch.setattr(grid_pair, "op_available", lambda: True)
     monkeypatch.setattr(zonal_scatter, "op_available", lambda: True)
 
-    descriptor = _make_descriptor(2, [20], 4.0, precision=precision).eval()
+    descriptor = _make_descriptor(
+        2, [20], 4.0, precision=precision, env_exp=env_exp
+    ).eval()
     initial_embeddings = [
         module
         for module in descriptor.modules()
@@ -186,8 +198,15 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(output.sum(), coord)[0]
         return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
-    def test_source_gated_flash_retains_dense_rotations(self, monkeypatch) -> None:
-        """Source-gated flash inference retains the rotations its fallback uses."""
+    def test_source_gated_inference_takes_the_fused_convolution(
+        self, monkeypatch
+    ) -> None:
+        """A bridged descriptor runs the fused convolution and matches the dense path.
+
+        The source gate is folded into the edge envelope, so the fused
+        convolution and the flash attention see it through the one factor they
+        already weight by, and the dense per-edge rotations are not built.
+        """
         if not so2_conv.op_available():
             pytest.skip("the DPA4 CUDA inference operators are unavailable")
         if not SO2_VALUE_PATH_TRITON_AVAILABLE:
@@ -223,15 +242,20 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             pytest.skip("the descriptor layout has no fused CUDA convolution")
         assert conv._flash_atten_fn is not None
         assert conv._cuda_value_train is None
-        assert not accelerated._wigner_free_conv
-        assert accelerated._build_full_wigner()
+        assert accelerated._wigner_free_conv
+        assert not accelerated._build_full_wigner()
 
         output, gradient = self._step(accelerated)
         np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)
         np.testing.assert_allclose(gradient, dense_gradient, rtol=2e-4, atol=2e-5)
 
-    @pytest.mark.parametrize("backend", ["triton", "cuda", "cutile"])
-    def test_forward_and_coordinate_gradient(self, monkeypatch, backend) -> None:
+    @pytest.mark.parametrize(
+        "backend", ["triton", "cuda", "cutile"]
+    )  # inference kernels
+    @pytest.mark.parametrize("env_exp", [None, 5])  # default double vs single envelope
+    def test_forward_and_coordinate_gradient(
+        self, monkeypatch: pytest.MonkeyPatch, backend: str, env_exp: int | None
+    ) -> None:
         if backend == "triton" and not FORCE_ASSEMBLY_TRITON_AVAILABLE:
             pytest.skip("Triton is unavailable")
         if backend == "cutile" and not CUTILE_AVAILABLE:
@@ -244,7 +268,10 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             "DP_CUTE_INFER",
         ):
             monkeypatch.setenv(name, "0")
-        data = _make_descriptor(self.nt, self.sel_mix, self.rcut).serialize()
+        data = _make_descriptor(
+            self.nt, self.sel_mix, self.rcut, env_exp=env_exp
+        ).serialize()
+        data = jitter_zero_arrays(data, np.random.default_rng(73))
         reference = DescrptDPA4.deserialize(data).to(self.device).eval()
 
         levels = {
@@ -284,6 +311,7 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         coord_ref, atype, nlist = self._inputs()
         output_ref = reference(coord_ref, atype, nlist)[0]
         grad_ref = torch.autograd.grad(output_ref.sum(), coord_ref)[0]
+        assert grad_ref.abs().max().item() > 1e-10
 
         coord, atype, nlist = self._inputs()
         output = accelerated(coord, atype, nlist)[0]

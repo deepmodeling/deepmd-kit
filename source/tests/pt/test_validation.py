@@ -9,6 +9,7 @@ from pathlib import (
     Path,
 )
 from unittest.mock import (
+    MagicMock,
     patch,
 )
 
@@ -267,11 +268,92 @@ def _make_spin_task_config() -> dict:
 
 
 class TestValidationHelpers(unittest.TestCase):
+    @staticmethod
+    def _run_best_candidate(
+        validator: FullValidator,
+        *,
+        display_step: int,
+        selected_metric_value: float,
+        directory_checkpoint: bool = False,
+    ) -> str:
+        """Exercise selection, writing and reconciliation through the public flow."""
+
+        def save_checkpoint(path: Path, **kwargs) -> None:
+            if directory_checkpoint:
+                path.mkdir()
+            else:
+                path.touch()
+
+        with patch.object(
+            validator,
+            "evaluate_all_systems",
+            return_value={validator.metric_key: selected_metric_value},
+        ):
+            result = validator.run(
+                step_id=display_step,
+                display_step=display_step,
+                lr=1e-3,
+                save_checkpoint=save_checkpoint,
+            )
+        return result.saved_best_path
+
     def test_resolve_full_validation_start_step(self) -> None:
         self.assertEqual(resolve_full_validation_start_step(0, 2000000), 0)
         self.assertEqual(resolve_full_validation_start_step(0.1, 2000000), 200000)
         self.assertEqual(resolve_full_validation_start_step(5000, 2000000), 5000)
         self.assertIsNone(resolve_full_validation_start_step(1, 2000000))
+
+    def test_full_validator_releases_workspace_after_restoring_model(self) -> None:
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as tmpdir:
+                model = _DummyModel()
+                eval_context = MagicMock()
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "full_val_start": 0.0,
+                        "save_best": False,
+                        "full_val_file": str(Path(tmpdir) / "val.log"),
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=model,
+                    state_store={},
+                    num_steps=10,
+                    rank=0,
+                    restart_training=False,
+                    checkpoint_dir=Path(tmpdir),
+                    model_eval_context=lambda: eval_context,
+                )
+
+                def evaluate() -> dict[str, float]:
+                    self.assertFalse(model.training)
+                    if fail:
+                        raise RuntimeError("validation failure")
+                    return {validator.metric_key: 1.0}
+
+                def release() -> None:
+                    self.assertTrue(model.training)
+                    eval_context.__exit__.assert_called_once()
+
+                with (
+                    patch.object(
+                        validator, "evaluate_all_systems", side_effect=evaluate
+                    ),
+                    patch("torch.cuda.is_available", return_value=True),
+                    patch("torch.cuda.empty_cache", side_effect=release) as empty_cache,
+                ):
+                    if fail:
+                        with self.assertRaisesRegex(RuntimeError, "validation failure"):
+                            validator.run(
+                                step_id=1, display_step=1, lr=1e-3, save_checkpoint=None
+                            )
+                    else:
+                        result = validator.run(
+                            step_id=1, display_step=1, lr=1e-3, save_checkpoint=None
+                        )
+                        self.assertEqual(result.metrics[validator.metric_key], 1.0)
+                empty_cache.assert_called_once()
 
     def test_full_validator_rotates_best_checkpoint(self) -> None:
         train_infos = {}
@@ -296,26 +378,23 @@ class TestValidationHelpers(unittest.TestCase):
                     rank=0,
                     restart_training=False,
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 
@@ -400,7 +479,8 @@ class TestValidationHelpers(unittest.TestCase):
                 )
                 # The directory is created recursively at construction time.
                 self.assertTrue(best_dir.is_dir())
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
@@ -433,26 +513,26 @@ class TestValidationHelpers(unittest.TestCase):
                     restart_training=False,
                     best_checkpoint_suffix=".jax",
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 

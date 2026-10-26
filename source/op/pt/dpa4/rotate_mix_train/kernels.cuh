@@ -3,21 +3,20 @@
 // Kernel bodies of the SeZM rotation / degree-mixing training operators.
 // Included by the (degree, rank, dtype) build shards and by the host file; the
 // kernels live in a named namespace so explicit instantiations link across
-// translation units.
+// translation units. The header carries device code and its launchers only and
+// stays free of ATen: the input validation and the runtime dispatch live in the
+// host file, so the shards compile without the framework headers. Arithmetic
+// runs in ``acc_type<scalar_t>``: float for the float and bfloat16 storage
+// types, double for the optional float64 instantiations.
 
 #pragma once
 
-#include <ATen/ATen.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
-namespace dpa4_sezm_kernels {
+#include "../sezm_types.cuh"
 
-#define DPA4_RM_CHECK_LAUNCH(what)                                        \
-  do {                                                                    \
-    cudaError_t err = cudaGetLastError();                                 \
-    TORCH_CHECK(err == cudaSuccess, what, ": ", cudaGetErrorString(err)); \
-  } while (0)
+namespace dpa4_sezm_kernels {
 
 constexpr int kMaxLmax = 6;
 constexpr int kMaxRank = 4;
@@ -30,8 +29,9 @@ constexpr int kWideChannelLanes = 384;
 __host__ inline int lane_count(int c_wide) { return ((c_wide + 31) / 32) * 32; }
 
 // Block-wide sum over the channel lanes. Every thread contributes one value;
-// lane 0 of the block receives the total. ``smem`` holds one float per warp.
-__device__ __forceinline__ float block_channel_sum(float v, float* smem) {
+// lane 0 of the block receives the total. ``smem`` holds one value per warp.
+template <typename acc_t>
+__device__ __forceinline__ acc_t block_channel_sum(acc_t v, acc_t* smem) {
   const int lane = threadIdx.x & 31;
   const int warp = threadIdx.x >> 5;
   for (int off = 16; off > 0; off >>= 1) {
@@ -42,9 +42,9 @@ __device__ __forceinline__ float block_channel_sum(float v, float* smem) {
   }
   __syncthreads();
   const int n_warps = (blockDim.x + 31) >> 5;
-  float total = 0.0f;
+  acc_t total = acc_t(0);
   if (warp == 0) {
-    total = (lane < n_warps) ? smem[lane] : 0.0f;
+    total = (lane < n_warps) ? smem[lane] : acc_t(0);
     for (int off = 16; off > 0; off >>= 1) {
       total += __shfl_down_sync(0xffffffff, total, off);
     }
@@ -58,10 +58,11 @@ __device__ __forceinline__ float block_channel_sum(float v, float* smem) {
 // The caller separates the accumulation phase from the write-out phase with
 // one ``__syncthreads`` for the whole batch of slots, instead of paying two
 // block-wide barriers per reduced scalar as ``block_channel_sum`` does.
-__device__ __forceinline__ void warp_partial_sum(float v,
+template <typename acc_t>
+__device__ __forceinline__ void warp_partial_sum(acc_t v,
                                                  int slot,
                                                  int n_warps,
-                                                 float* __restrict__ part) {
+                                                 acc_t* __restrict__ part) {
   for (int off = 16; off > 0; off >>= 1) {
     v += __shfl_down_sync(0xffffffff, v, off);
   }
@@ -71,9 +72,10 @@ __device__ __forceinline__ void warp_partial_sum(float v,
 }
 
 // Cross-warp completion of one batched slot.
-__device__ __forceinline__ float finish_partial_sum(
-    const float* __restrict__ part, int slot, int n_warps) {
-  float t = 0.0f;
+template <typename acc_t>
+__device__ __forceinline__ acc_t
+finish_partial_sum(const acc_t* __restrict__ part, int slot, int n_warps) {
+  acc_t t = acc_t(0);
   for (int w = 0; w < n_warps; ++w) {
     t += part[slot * n_warps + w];
   }
@@ -95,6 +97,7 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
                                       long x_sd,
                                       int cf,
                                       int c_wide) {
+  using acc_t = typename acc_type<scalar_t>::type;
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
@@ -112,23 +115,23 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
   const scalar_t* edge_runs = wig + edge * NW;
 
   // === Phase 1. Rotate to the local frame (registers) ===
-  float xr[DIM];
+  acc_t xr[DIM];
 #pragma unroll
   for (int r = 0; r < DIM; ++r) {
-    xr[r] = active ? (float)xb[r * x_sd] : 0.0f;
+    xr[r] = active ? (acc_t)xb[r * x_sd] : acc_t(0);
   }
-  float xl[RED];
+  acc_t xl[RED];
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
-    float a0 = 0.0f, am = 0.0f, ap = 0.0f;
+    acc_t a0 = acc_t(0), am = acc_t(0), ap = acc_t(0);
 #pragma unroll
     for (int j = 0; j < 2 * l + 1; ++j) {
-      const float xv = xr[base + j];
-      a0 += (float)edge_runs[base + j] * xv;
+      const acc_t xv = xr[base + j];
+      a0 += (acc_t)edge_runs[base + j] * xv;
       if (l >= 1) {
-        am += (float)edge_runs[DIM + base - 1 + j] * xv;
-        ap += (float)edge_runs[2 * DIM + base - 2 + j] * xv;
+        am += (acc_t)edge_runs[DIM + base - 1 + j] * xv;
+        ap += (acc_t)edge_runs[2 * DIM + base - 2 + j] * xv;
       }
     }
     xl[l] = a0;
@@ -149,34 +152,34 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
     const scalar_t* rad = kc + edge * (long)NS0 * c_wide + c;
 #pragma unroll
     for (int o = 0; o < NS0; ++o) {
-      ub[o * cf] = (scalar_t)(xl[o] * (float)rad[o * (long)c_wide]);
+      ub[o * cf] = (scalar_t)(xl[o] * (acc_t)rad[o * (long)c_wide]);
     }
 #pragma unroll
     for (int o = 0; o < L; ++o) {
-      const float r = (float)rad[(o + 1) * (long)c_wide];
+      const acc_t r = (acc_t)rad[(o + 1) * (long)c_wide];
       ub[(NS0 + o) * cf] = (scalar_t)(xl[NS0 + o] * r);
       ub[(NS0 + L + o) * cf] = (scalar_t)(xl[NS0 + L + o] * r);
     }
     return;
   }
-  float cbv[RANK > 0 ? RANK : 1];
+  acc_t cbv[RANK > 0 ? RANK : 1];
 #pragma unroll
   for (int t = 0; t < RANK; ++t) {
-    cbv[t] = (float)cb[t * (long)c_wide + c];
+    cbv[t] = (acc_t)cb[t * (long)c_wide + c];
   }
   const scalar_t* kb = kc + edge * (long)(NS0 * NS0 + L * L) * RANK;
 #pragma unroll
   for (int o = 0; o < NS0; ++o) {
-    float acc = 0.0f;
+    acc_t acc = acc_t(0);
 #pragma unroll
     for (int i = 0; i < NS0; ++i) {
       if (RANK == 1) {
-        acc += (float)kb[i * NS0 + o] * xl[i];
+        acc += (acc_t)kb[i * NS0 + o] * xl[i];
       } else {
-        float keff = 0.0f;
+        acc_t keff = acc_t(0);
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          keff += (float)kb[(i * NS0 + o) * RANK + t] * cbv[t];
+          keff += (acc_t)kb[(i * NS0 + o) * RANK + t] * cbv[t];
         }
         acc += keff * xl[i];
       }
@@ -188,18 +191,18 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
   }
 #pragma unroll
   for (int o = 0; o < L; ++o) {
-    float an = 0.0f, aq = 0.0f;
+    acc_t an = acc_t(0), aq = acc_t(0);
 #pragma unroll
     for (int i = 0; i < L; ++i) {
       if (RANK == 1) {
-        const float k = (float)kb[NS0 * NS0 + i * L + o];
+        const acc_t k = (acc_t)kb[NS0 * NS0 + i * L + o];
         an += k * xl[NS0 + i];
         aq += k * xl[NS0 + L + i];
       } else {
-        float keff = 0.0f;
+        acc_t keff = acc_t(0);
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          keff += (float)kb[(NS0 * NS0 + i * L + o) * RANK + t] * cbv[t];
+          keff += (acc_t)kb[(NS0 * NS0 + i * L + o) * RANK + t] * cbv[t];
         }
         an += keff * xl[NS0 + i];
         aq += keff * xl[NS0 + L + i];
@@ -221,23 +224,25 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
 // group the degree-l row starts at l^2, so the three bases are ``l^2``,
 // ``DIM + l^2 - 1`` and ``2 * DIM + l^2 - 2``.
 // ---------------------------------------------------------------------------
-template <typename scalar_t, int L>
-__device__ __forceinline__ void rotate_lane(const float* __restrict__ xr,
+template <typename scalar_t,
+          int L,
+          typename acc_t = typename acc_type<scalar_t>::type>
+__device__ __forceinline__ void rotate_lane(const acc_t* __restrict__ xr,
                                             const scalar_t* __restrict__ runs,
-                                            float* __restrict__ xl) {
+                                            acc_t* __restrict__ xl) {
   constexpr int NS0 = L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
-    float a0 = 0.0f, am = 0.0f, ap = 0.0f;
+    acc_t a0 = acc_t(0), am = acc_t(0), ap = acc_t(0);
 #pragma unroll
     for (int j = 0; j < 2 * l + 1; ++j) {
-      const float xv = xr[base + j];
-      a0 += (float)runs[base + j] * xv;
+      const acc_t xv = xr[base + j];
+      a0 += (acc_t)runs[base + j] * xv;
       if (l >= 1) {
-        am += (float)runs[DIM + base - 1 + j] * xv;
-        ap += (float)runs[2 * DIM + base - 2 + j] * xv;
+        am += (acc_t)runs[DIM + base - 1 + j] * xv;
+        ap += (acc_t)runs[2 * DIM + base - 2 + j] * xv;
       }
     }
     xl[l] = a0;
@@ -251,24 +256,27 @@ __device__ __forceinline__ void rotate_lane(const float* __restrict__ xr,
 // Degree mixing of one lane against a compact rank-RANK kernel (RANK >= 1),
 // accumulated onto the output rows. The kernel block is read in place; at
 // high degree and rank it exceeds any reasonable register budget.
-template <typename scalar_t, int L, int RANK>
-__device__ __forceinline__ void degree_mix_acc(const float* __restrict__ xl,
+template <typename scalar_t,
+          int L,
+          int RANK,
+          typename acc_t = typename acc_type<scalar_t>::type>
+__device__ __forceinline__ void degree_mix_acc(const acc_t* __restrict__ xl,
                                                const scalar_t* __restrict__ kb,
-                                               const float* __restrict__ cbv,
-                                               float* __restrict__ out) {
+                                               const acc_t* __restrict__ cbv,
+                                               acc_t* __restrict__ out) {
   constexpr int NS0 = L + 1;
 #pragma unroll
   for (int o = 0; o < NS0; ++o) {
-    float acc = 0.0f;
+    acc_t acc = acc_t(0);
 #pragma unroll
     for (int i = 0; i < NS0; ++i) {
       if (RANK == 1) {
-        acc += (float)kb[i * NS0 + o] * xl[i];
+        acc += (acc_t)kb[i * NS0 + o] * xl[i];
       } else {
-        float keff = 0.0f;
+        acc_t keff = acc_t(0);
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          keff += (float)kb[(i * NS0 + o) * RANK + t] * cbv[t];
+          keff += (acc_t)kb[(i * NS0 + o) * RANK + t] * cbv[t];
         }
         acc += keff * xl[i];
       }
@@ -280,18 +288,18 @@ __device__ __forceinline__ void degree_mix_acc(const float* __restrict__ xl,
   }
 #pragma unroll
   for (int o = 0; o < L; ++o) {
-    float an = 0.0f, aq = 0.0f;
+    acc_t an = acc_t(0), aq = acc_t(0);
 #pragma unroll
     for (int i = 0; i < L; ++i) {
       if (RANK == 1) {
-        const float k = (float)kb[NS0 * NS0 + i * L + o];
+        const acc_t k = (acc_t)kb[NS0 * NS0 + i * L + o];
         an += k * xl[NS0 + i];
         aq += k * xl[NS0 + L + i];
       } else {
-        float keff = 0.0f;
+        acc_t keff = acc_t(0);
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          keff += (float)kb[(NS0 * NS0 + i * L + o) * RANK + t] * cbv[t];
+          keff += (acc_t)kb[(NS0 * NS0 + i * L + o) * RANK + t] * cbv[t];
         }
         an += keff * xl[NS0 + i];
         aq += keff * xl[NS0 + L + i];
@@ -339,6 +347,7 @@ __launch_bounds__(MAX_THREADS, MIN_BLOCKS) void rotate_mix_fwd_pair_kernel(
     long h_sd,
     int cf,
     int c_wide) {
+  using acc_t = typename acc_type<scalar_t>::type;
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
@@ -354,23 +363,23 @@ __launch_bounds__(MAX_THREADS, MIN_BLOCKS) void rotate_mix_fwd_pair_kernel(
   const long row_w = (long)RED * cf;
   const long s = src[edge];
 
-  float cbv[RANK > 0 ? RANK : 1];
+  acc_t cbv[RANK > 0 ? RANK : 1];
 #pragma unroll
   for (int t = 0; t < RANK; ++t) {
-    cbv[t] = (float)cb[t * (long)c_wide + c];
+    cbv[t] = (acc_t)cb[t * (long)c_wide + c];
   }
 
   // === Rotated lanes: xl_x for u0 and the h_gkc term; xl_s for the summed
   // kc-mixed cotangent terms (linearity of the mixer merges them) ===
   const scalar_t* db = wig + edge * NW;
-  float xl_x[RED];
-  float xl_s[RED];
+  acc_t xl_x[RED];
+  acc_t xl_s[RED];
   {
-    float xr[DIM];
+    acc_t xr[DIM];
     const scalar_t* xb = x + s * x_sn + c;
 #pragma unroll
     for (int r = 0; r < DIM; ++r) {
-      xr[r] = (float)xb[r * x_sd];
+      xr[r] = (acc_t)xb[r * x_sd];
     }
     rotate_lane<scalar_t, L>(xr, db, xl_x);
     if (h_gwig != nullptr) {
@@ -378,15 +387,15 @@ __launch_bounds__(MAX_THREADS, MIN_BLOCKS) void rotate_mix_fwd_pair_kernel(
     } else {
 #pragma unroll
       for (int r = 0; r < RED; ++r) {
-        xl_s[r] = 0.0f;
+        xl_s[r] = acc_t(0);
       }
     }
     const scalar_t* hxb = h_gx + s * h_sn + c;
 #pragma unroll
     for (int r = 0; r < DIM; ++r) {
-      xr[r] = (float)hxb[r * h_sd];
+      xr[r] = (acc_t)hxb[r * h_sd];
     }
-    float xl_h[RED];
+    acc_t xl_h[RED];
     rotate_lane<scalar_t, L>(xr, db, xl_h);
 #pragma unroll
     for (int r = 0; r < RED; ++r) {
@@ -405,19 +414,19 @@ __launch_bounds__(MAX_THREADS, MIN_BLOCKS) void rotate_mix_fwd_pair_kernel(
         h_gkc != nullptr ? h_gkc + edge * (long)NS0 * c_wide + c : nullptr;
 #pragma unroll
     for (int o = 0; o < NS0; ++o) {
-      const float r = (float)rad[o * (long)c_wide];
+      const acc_t r = (acc_t)rad[o * (long)c_wide];
       ub[o * cf] = (scalar_t)(xl_x[o] * r);
-      float h = xl_s[o] * r;
+      acc_t h = xl_s[o] * r;
       if (hrad != nullptr) {
-        h += xl_x[o] * (float)hrad[o * (long)c_wide];
+        h += xl_x[o] * (acc_t)hrad[o * (long)c_wide];
       }
       hb[o * cf] = (scalar_t)h;
     }
 #pragma unroll
     for (int o = 0; o < L; ++o) {
-      const float r = (float)rad[(o + 1) * (long)c_wide];
-      const float hr =
-          hrad != nullptr ? (float)hrad[(o + 1) * (long)c_wide] : 0.0f;
+      const acc_t r = (acc_t)rad[(o + 1) * (long)c_wide];
+      const acc_t hr =
+          hrad != nullptr ? (acc_t)hrad[(o + 1) * (long)c_wide] : acc_t(0);
       ub[(NS0 + o) * cf] = (scalar_t)(xl_x[NS0 + o] * r);
       ub[(NS0 + L + o) * cf] = (scalar_t)(xl_x[NS0 + L + o] * r);
       hb[(NS0 + o) * cf] = (scalar_t)(xl_s[NS0 + o] * r + xl_x[NS0 + o] * hr);
@@ -428,12 +437,12 @@ __launch_bounds__(MAX_THREADS, MIN_BLOCKS) void rotate_mix_fwd_pair_kernel(
   }
 
   const scalar_t* kb = kc + edge * (long)(NS0 * NS0 + L * L) * RANK;
-  float out_u[RED];
-  float out_h[RED];
+  acc_t out_u[RED];
+  acc_t out_h[RED];
 #pragma unroll
   for (int r = 0; r < RED; ++r) {
-    out_u[r] = 0.0f;
-    out_h[r] = 0.0f;
+    out_u[r] = acc_t(0);
+    out_h[r] = acc_t(0);
   }
   degree_mix_acc<scalar_t, L, RANK>(xl_x, kb, cbv, out_u);
   degree_mix_acc<scalar_t, L, RANK>(xl_s, kb, cbv, out_h);
@@ -486,6 +495,7 @@ __global__ __launch_bounds__(
                                             long h_sd,
                                             int cf,
                                             int c_wide) {
+  using acc_t = typename acc_type<scalar_t>::type;
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
@@ -494,8 +504,8 @@ __global__ __launch_bounds__(
   constexpr int KC_SLOTS = RANK > 0 ? (NS0 * NS0 + L * L) * RANK : 1;
   constexpr int WIG_SLOTS = NW;
   constexpr int MAX_WARPS = (MAX_THREADS + 31) / 32;
-  __shared__ float part_kc[KC_SLOTS * MAX_WARPS];
-  __shared__ float part_wig[WIG_SLOTS * MAX_WARPS];
+  __shared__ acc_t part_kc[KC_SLOTS * MAX_WARPS];
+  __shared__ acc_t part_wig[WIG_SLOTS * MAX_WARPS];
 
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
@@ -516,17 +526,17 @@ __global__ __launch_bounds__(
   const scalar_t* hxb = h_gx + s * h_sn + (active ? c : 0);
   // xl_x: rot(wig) x, feeds the h_gkc-route basis partials.
   // xl_s: rot(wig) h_e + rot(h_gwig) x, feeds the kernel curvature.
-  float xl_x[RED];
-  float xl_s[RED];
+  acc_t xl_x[RED];
+  acc_t xl_s[RED];
   {
-    float xr[DIM];
+    acc_t xr[DIM];
 #pragma unroll
     for (int r = 0; r < DIM; ++r) {
-      xr[r] = active ? (float)xb[r * x_sd] : 0.0f;
+      xr[r] = active ? (acc_t)xb[r * x_sd] : acc_t(0);
     }
     rotate_lane<scalar_t, L>(xr, db, xl_x);
     if (dbh != nullptr) {
-      float xl_w[RED];
+      acc_t xl_w[RED];
       rotate_lane<scalar_t, L>(xr, dbh, xl_w);
 #pragma unroll
       for (int r = 0; r < RED; ++r) {
@@ -535,14 +545,14 @@ __global__ __launch_bounds__(
     } else {
 #pragma unroll
       for (int r = 0; r < RED; ++r) {
-        xl_s[r] = 0.0f;
+        xl_s[r] = acc_t(0);
       }
     }
 #pragma unroll
     for (int r = 0; r < DIM; ++r) {
-      xr[r] = active ? (float)hxb[r * h_sd] : 0.0f;
+      xr[r] = active ? (acc_t)hxb[r * h_sd] : acc_t(0);
     }
-    float xl_h[RED];
+    acc_t xl_h[RED];
     rotate_lane<scalar_t, L>(xr, db, xl_h);
 #pragma unroll
     for (int r = 0; r < RED; ++r) {
@@ -550,18 +560,18 @@ __global__ __launch_bounds__(
     }
   }
 
-  float cbv[RANK > 0 ? RANK : 1];
+  acc_t cbv[RANK > 0 ? RANK : 1];
 #pragma unroll
   for (int t = 0; t < RANK; ++t) {
-    cbv[t] = active ? (float)cb[t * (long)c_wide + c] : 0.0f;
+    cbv[t] = active ? (acc_t)cb[t * (long)c_wide + c] : acc_t(0);
   }
 
   const scalar_t* gub =
       gu + (long)(c / cf) * n_edge * row_w + edge * row_w + (c % cf);
-  float gy[RED];
+  acc_t gy[RED];
 #pragma unroll
   for (int r = 0; r < RED; ++r) {
-    gy[r] = active ? (float)gub[r * cf] : 0.0f;
+    gy[r] = active ? (acc_t)gub[r * cf] : acc_t(0);
   }
   // === Phase 1. Kernel curvature: gy contracted against the summed lanes ===
   if (RANK == 0) {
@@ -580,7 +590,7 @@ __global__ __launch_bounds__(
     for (int i = 0; i < NS0; ++i) {
 #pragma unroll
       for (int o = 0; o < NS0; ++o) {
-        const float prod = gy[o] * xl_s[i];
+        const acc_t prod = gy[o] * xl_s[i];
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
           warp_partial_sum(prod * cbv[t], (i * NS0 + o) * RANK + t, n_warps,
@@ -592,7 +602,7 @@ __global__ __launch_bounds__(
     for (int i = 0; i < L; ++i) {
 #pragma unroll
       for (int o = 0; o < L; ++o) {
-        const float prod =
+        const acc_t prod =
             gy[NS0 + o] * xl_s[NS0 + i] + gy[NS0 + L + o] * xl_s[NS0 + L + i];
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
@@ -616,27 +626,27 @@ __global__ __launch_bounds__(
           ? nullptr
           : (RANK == 0 ? h_gkc + edge * (long)NS0 * c_wide
                        : h_gkc + edge * (long)(NS0 * NS0 + L * L) * RANK);
-  float pcb_acc[RANK > 0 ? RANK : 1];
+  acc_t pcb_acc[RANK > 0 ? RANK : 1];
 #pragma unroll
   for (int t = 0; t < RANK; ++t) {
-    pcb_acc[t] = 0.0f;
+    pcb_acc[t] = acc_t(0);
   }
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
     // g_k: local gradient through the stored kernel (row l).
     // g_h: local gradient through the kernel cotangent (row l).
-    float g0k = 0.0f, gmk = 0.0f, gpk = 0.0f;
-    float g0h = 0.0f, gmh = 0.0f, gph = 0.0f;
+    acc_t g0k = acc_t(0), gmk = acc_t(0), gpk = acc_t(0);
+    acc_t g0h = acc_t(0), gmh = acc_t(0), gph = acc_t(0);
     if (RANK == 0) {
-      const float rad_l = active ? (float)kb[l * (long)c_wide + c] : 0.0f;
+      const acc_t rad_l = active ? (acc_t)kb[l * (long)c_wide + c] : acc_t(0);
       g0k = gy[l] * rad_l;
       if (l >= 1) {
         gmk = gy[NS0 + l - 1] * rad_l;
         gpk = gy[NS0 + L + l - 1] * rad_l;
       }
       if (khb != nullptr) {
-        const float hr = active ? (float)khb[l * (long)c_wide + c] : 0.0f;
+        const acc_t hr = active ? (acc_t)khb[l * (long)c_wide + c] : acc_t(0);
         g0h = gy[l] * hr;
         if (l >= 1) {
           gmh = gy[NS0 + l - 1] * hr;
@@ -644,24 +654,24 @@ __global__ __launch_bounds__(
         }
       }
     } else {
-      float raw0[RANK > 0 ? RANK : 1];
+      acc_t raw0[RANK > 0 ? RANK : 1];
 #pragma unroll
       for (int t = 0; t < RANK; ++t) {
-        raw0[t] = 0.0f;
+        raw0[t] = acc_t(0);
       }
 #pragma unroll
       for (int o = 0; o < NS0; ++o) {
-        float keff = 0.0f, heff = 0.0f;
+        acc_t keff = acc_t(0), heff = acc_t(0);
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          const float k = (float)kb[(l * NS0 + o) * RANK + t];
+          const acc_t k = (acc_t)kb[(l * NS0 + o) * RANK + t];
           keff += k * cbv[t];
           raw0[t] += k * gy[o];
         }
         if (khb != nullptr) {
 #pragma unroll
           for (int t = 0; t < RANK; ++t) {
-            heff += (float)khb[(l * NS0 + o) * RANK + t] * cbv[t];
+            heff += (acc_t)khb[(l * NS0 + o) * RANK + t] * cbv[t];
           }
           g0h += heff * gy[o];
         }
@@ -674,28 +684,28 @@ __global__ __launch_bounds__(
       if (khb != nullptr) {
 #pragma unroll
         for (int o = 0; o < NS0; ++o) {
-          float hraw[RANK > 0 ? RANK : 1];
+          acc_t hraw[RANK > 0 ? RANK : 1];
 #pragma unroll
           for (int t = 0; t < RANK; ++t) {
-            hraw[t] = (float)khb[(l * NS0 + o) * RANK + t] * gy[o];
+            hraw[t] = (acc_t)khb[(l * NS0 + o) * RANK + t] * gy[o];
             pcb_acc[t] += hraw[t] * xl_x[l];
           }
         }
       }
       if (l >= 1) {
-        float rawm[RANK > 0 ? RANK : 1];
-        float rawp[RANK > 0 ? RANK : 1];
+        acc_t rawm[RANK > 0 ? RANK : 1];
+        acc_t rawp[RANK > 0 ? RANK : 1];
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          rawm[t] = 0.0f;
-          rawp[t] = 0.0f;
+          rawm[t] = acc_t(0);
+          rawp[t] = acc_t(0);
         }
 #pragma unroll
         for (int o = 0; o < L; ++o) {
-          float keff = 0.0f, heff = 0.0f;
+          acc_t keff = acc_t(0), heff = acc_t(0);
 #pragma unroll
           for (int t = 0; t < RANK; ++t) {
-            const float k = (float)kb[(NS0 * NS0 + (l - 1) * L + o) * RANK + t];
+            const acc_t k = (acc_t)kb[(NS0 * NS0 + (l - 1) * L + o) * RANK + t];
             keff += k * cbv[t];
             rawm[t] += k * gy[NS0 + o];
             rawp[t] += k * gy[NS0 + L + o];
@@ -705,8 +715,8 @@ __global__ __launch_bounds__(
           if (khb != nullptr) {
 #pragma unroll
             for (int t = 0; t < RANK; ++t) {
-              const float h =
-                  (float)khb[(NS0 * NS0 + (l - 1) * L + o) * RANK + t];
+              const acc_t h =
+                  (acc_t)khb[(NS0 * NS0 + (l - 1) * L + o) * RANK + t];
               heff += h * cbv[t];
               pcb_acc[t] += h * (gy[NS0 + o] * xl_x[NS0 + l - 1] +
                                  gy[NS0 + L + o] * xl_x[NS0 + L + l - 1]);
@@ -726,17 +736,17 @@ __global__ __launch_bounds__(
 #pragma unroll
       for (int j = 0; j < 2 * l + 1; ++j) {
         const int col = base + j;
-        const float xv = active ? (float)xb[col * x_sd] : 0.0f;
-        const float hv = active ? (float)hxb[col * h_sd] : 0.0f;
+        const acc_t xv = active ? (acc_t)xb[col * x_sd] : acc_t(0);
+        const acc_t hv = active ? (acc_t)hxb[col * h_sd] : acc_t(0);
         // Wigner curvature: kc-route outer product against the cotangent
         // rows plus h_gkc-route outer product against the feature rows.
         warp_partial_sum(g0k * hv + g0h * xv, base + j, n_warps, part_wig);
-        float gx_row = 0.0f;
+        acc_t gx_row = acc_t(0);
         if (dbh != nullptr) {
-          gx_row += (float)dbh[base + j] * g0k;
+          gx_row += (acc_t)dbh[base + j] * g0k;
         }
         if (khb != nullptr) {
-          gx_row += (float)db[base + j] * g0h;
+          gx_row += (acc_t)db[base + j] * g0h;
         }
         if (l >= 1) {
           const int minus = DIM + base - 1 + j;
@@ -744,10 +754,10 @@ __global__ __launch_bounds__(
           warp_partial_sum(gmk * hv + gmh * xv, minus, n_warps, part_wig);
           warp_partial_sum(gpk * hv + gph * xv, plus, n_warps, part_wig);
           if (dbh != nullptr) {
-            gx_row += (float)dbh[minus] * gmk + (float)dbh[plus] * gpk;
+            gx_row += (acc_t)dbh[minus] * gmk + (acc_t)dbh[plus] * gpk;
           }
           if (khb != nullptr) {
-            gx_row += (float)db[minus] * gmh + (float)db[plus] * gph;
+            gx_row += (acc_t)db[minus] * gmh + (acc_t)db[plus] * gph;
           }
         }
         if (gxb != nullptr && active) {
@@ -806,6 +816,7 @@ __global__ __launch_bounds__(
                                            long x_sd,
                                            int cf,
                                            int c_wide) {
+  using acc_t = typename acc_type<scalar_t>::type;
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
@@ -816,10 +827,19 @@ __global__ __launch_bounds__(
   constexpr int KC_SLOTS = RANK > 0 ? (NS0 * NS0 + L * L) * RANK : 1;
   constexpr int WIG_SLOTS = NW;
   constexpr int MAX_WARPS = (MAX_THREADS + 31) / 32;
-  __shared__ float part_kc[KC_SLOTS * MAX_WARPS];
-  __shared__ float part_wig[WIG_SLOTS * MAX_WARPS];
-  __shared__ scalar_t edge_runs[L == kMaxLmax ? NW : 1];
-  __shared__ scalar_t edge_kernel[L == kMaxLmax ? KC_SLOTS : 1];
+  // The top degree stages the edge's Wigner runs and compact kernel in
+  // shared memory, where phases 0 and 2 re-read them. Staging applies while
+  // the whole static footprint fits the 48 KiB static shared-memory limit;
+  // the double scratch of the widest top-degree variant leaves no room.
+  constexpr int SCRATCH_BYTES =
+      (KC_SLOTS + WIG_SLOTS) * MAX_WARPS * (int)sizeof(acc_t);
+  constexpr int STAGED_BYTES = (NW + KC_SLOTS) * (int)sizeof(scalar_t);
+  constexpr bool STAGE =
+      L == kMaxLmax && SCRATCH_BYTES + STAGED_BYTES <= 48 * 1024;
+  __shared__ acc_t part_kc[KC_SLOTS * MAX_WARPS];
+  __shared__ acc_t part_wig[WIG_SLOTS * MAX_WARPS];
+  __shared__ scalar_t edge_runs[STAGE ? NW : 1];
+  __shared__ scalar_t edge_kernel[STAGE ? KC_SLOTS : 1];
 
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
@@ -833,7 +853,7 @@ __global__ __launch_bounds__(
   const long s = src[edge];
   const scalar_t* xb = x + s * x_sn + (active ? c : 0);
   const scalar_t* db = wig + edge * NW;
-  if constexpr (L == kMaxLmax) {
+  if constexpr (STAGE) {
     for (int i = threadIdx.x; i < NW; i += blockDim.x) {
       edge_runs[i] = db[i];
     }
@@ -851,24 +871,24 @@ __global__ __launch_bounds__(
   // === Phase 0. Recompute the rotated rows (the raw rows are re-read from
   // L2 in phase 2 rather than held: DIM registers per thread are exactly
   // what caps this kernel's residency) ===
-  float xl[RED];
+  acc_t xl[RED];
   {
-    float xr[DIM];
+    acc_t xr[DIM];
 #pragma unroll
     for (int r = 0; r < DIM; ++r) {
-      xr[r] = active ? (float)xb[r * x_sd] : 0.0f;
+      xr[r] = active ? (acc_t)xb[r * x_sd] : acc_t(0);
     }
 #pragma unroll
     for (int l = 0; l <= L; ++l) {
       const int base = l * l;
-      float a0 = 0.0f, am = 0.0f, ap = 0.0f;
+      acc_t a0 = acc_t(0), am = acc_t(0), ap = acc_t(0);
 #pragma unroll
       for (int j = 0; j < 2 * l + 1; ++j) {
-        const float xv = xr[base + j];
-        a0 += (float)db[base + j] * xv;
+        const acc_t xv = xr[base + j];
+        a0 += (acc_t)db[base + j] * xv;
         if (l >= 1) {
-          am += (float)db[DIM + base - 1 + j] * xv;
-          ap += (float)db[2 * DIM + base - 2 + j] * xv;
+          am += (acc_t)db[DIM + base - 1 + j] * xv;
+          ap += (acc_t)db[2 * DIM + base - 2 + j] * xv;
         }
       }
       xl[l] = a0;
@@ -879,10 +899,10 @@ __global__ __launch_bounds__(
     }
   }
 
-  float cbv[RANK > 0 ? RANK : 1];
+  acc_t cbv[RANK > 0 ? RANK : 1];
 #pragma unroll
   for (int t = 0; t < RANK; ++t) {
-    cbv[t] = active ? (float)cb[t * (long)c_wide + c] : 0.0f;
+    cbv[t] = active ? (acc_t)cb[t * (long)c_wide + c] : acc_t(0);
   }
 
   // The raw upstream rows: the degree-kernel and channel-basis gradients
@@ -890,10 +910,10 @@ __global__ __launch_bounds__(
   // rank-1 form folds the single basis in at use.
   const scalar_t* gub =
       gu + (long)(c / cf) * n_edge * row_w + edge * row_w + (c % cf);
-  float gy[RED];
+  acc_t gy[RED];
 #pragma unroll
   for (int r = 0; r < RED; ++r) {
-    gy[r] = active ? (float)gub[r * cf] : 0.0f;
+    gy[r] = active ? (acc_t)gub[r * cf] : acc_t(0);
   }
 
   // === Phase 1. Degree-kernel (or radial-feature) gradient ===
@@ -913,7 +933,7 @@ __global__ __launch_bounds__(
     for (int i = 0; i < NS0; ++i) {
 #pragma unroll
       for (int o = 0; o < NS0; ++o) {
-        const float prod = gy[o] * xl[i];
+        const acc_t prod = gy[o] * xl[i];
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
           warp_partial_sum(prod * cbv[t], (i * NS0 + o) * RANK + t, n_warps,
@@ -925,7 +945,7 @@ __global__ __launch_bounds__(
     for (int i = 0; i < L; ++i) {
 #pragma unroll
       for (int o = 0; o < L; ++o) {
-        const float prod =
+        const acc_t prod =
             gy[NS0 + o] * xl[NS0 + i] + gy[NS0 + L + o] * xl[NS0 + L + i];
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
@@ -942,38 +962,37 @@ __global__ __launch_bounds__(
   scalar_t* gdb = gw + edge * NW;
   scalar_t* gxb = gxe + edge * (long)DIM * c_wide + (active ? c : 0);
   const scalar_t* kb =
-      RANK == 0
-          ? kc + edge * (long)NS0 * c_wide
-          : (L == kMaxLmax ? edge_kernel
-                           : kc + edge * (long)(NS0 * NS0 + L * L) * RANK);
-  float pcb_acc[RANK > 0 ? RANK : 1];
+      RANK == 0 ? kc + edge * (long)NS0 * c_wide
+                : (STAGE ? edge_kernel
+                         : kc + edge * (long)(NS0 * NS0 + L * L) * RANK);
+  acc_t pcb_acc[RANK > 0 ? RANK : 1];
 #pragma unroll
   for (int t = 0; t < RANK; ++t) {
-    pcb_acc[t] = 0.0f;
+    pcb_acc[t] = acc_t(0);
   }
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
-    float g0 = 0.0f, gm = 0.0f, gp = 0.0f;
+    acc_t g0 = acc_t(0), gm = acc_t(0), gp = acc_t(0);
     if (RANK == 0) {
-      const float rad_l = active ? (float)kb[l * (long)c_wide + c] : 0.0f;
+      const acc_t rad_l = active ? (acc_t)kb[l * (long)c_wide + c] : acc_t(0);
       g0 = gy[l] * rad_l;
       if (l >= 1) {
         gm = gy[NS0 + l - 1] * rad_l;
         gp = gy[NS0 + L + l - 1] * rad_l;
       }
     } else {
-      float raw0[RANK > 0 ? RANK : 1];
+      acc_t raw0[RANK > 0 ? RANK : 1];
 #pragma unroll
       for (int t = 0; t < RANK; ++t) {
-        raw0[t] = 0.0f;
+        raw0[t] = acc_t(0);
       }
 #pragma unroll
       for (int o = 0; o < NS0; ++o) {
-        float keff = 0.0f;
+        acc_t keff = acc_t(0);
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          const float k = (float)kb[(l * NS0 + o) * RANK + t];
+          const acc_t k = (acc_t)kb[(l * NS0 + o) * RANK + t];
           keff += k * cbv[t];
           raw0[t] += k * gy[o];
         }
@@ -984,19 +1003,19 @@ __global__ __launch_bounds__(
         pcb_acc[t] += raw0[t] * xl[l];
       }
       if (l >= 1) {
-        float rawm[RANK > 0 ? RANK : 1];
-        float rawp[RANK > 0 ? RANK : 1];
+        acc_t rawm[RANK > 0 ? RANK : 1];
+        acc_t rawp[RANK > 0 ? RANK : 1];
 #pragma unroll
         for (int t = 0; t < RANK; ++t) {
-          rawm[t] = 0.0f;
-          rawp[t] = 0.0f;
+          rawm[t] = acc_t(0);
+          rawp[t] = acc_t(0);
         }
 #pragma unroll
         for (int o = 0; o < L; ++o) {
-          float keff = 0.0f;
+          acc_t keff = acc_t(0);
 #pragma unroll
           for (int t = 0; t < RANK; ++t) {
-            const float k = (float)kb[(NS0 * NS0 + (l - 1) * L + o) * RANK + t];
+            const acc_t k = (acc_t)kb[(NS0 * NS0 + (l - 1) * L + o) * RANK + t];
             keff += k * cbv[t];
             rawm[t] += k * gy[NS0 + o];
             rawp[t] += k * gy[NS0 + L + o];
@@ -1015,13 +1034,13 @@ __global__ __launch_bounds__(
 #pragma unroll
       for (int j = 0; j < 2 * l + 1; ++j) {
         const int col = base + j;
-        const float xv = active ? (float)xb[col * x_sd] : 0.0f;
-        float gx_row = (float)db[base + j] * g0;
+        const acc_t xv = active ? (acc_t)xb[col * x_sd] : acc_t(0);
+        acc_t gx_row = (acc_t)db[base + j] * g0;
         warp_partial_sum(g0 * xv, base + j, n_warps, part_wig);
         if (l >= 1) {
           const int minus = DIM + base - 1 + j;
           const int plus = 2 * DIM + base - 2 + j;
-          gx_row += (float)db[minus] * gm + (float)db[plus] * gp;
+          gx_row += (acc_t)db[minus] * gm + (acc_t)db[plus] * gp;
           warp_partial_sum(gm * xv, minus, n_warps, part_wig);
           warp_partial_sum(gp * xv, plus, n_warps, part_wig);
         }
@@ -1064,6 +1083,7 @@ __global__ void segment_sum_kernel(const scalar_t* __restrict__ rows,
                                    scalar_t* __restrict__ out,
                                    long n_seg,
                                    long feat) {
+  using acc_t = typename acc_type<scalar_t>::type;
   const long seg = blockIdx.x;
   if (seg >= n_seg) {
     return;
@@ -1072,66 +1092,11 @@ __global__ void segment_sum_kernel(const scalar_t* __restrict__ rows,
   const long hi = row_ptr[seg + 1];
   for (long f = blockIdx.y * (long)blockDim.x + threadIdx.x; f < feat;
        f += (long)gridDim.y * blockDim.x) {
-    float acc = 0.0f;
+    acc_t acc = acc_t(0);
     for (long i = lo; i < hi; ++i) {
-      acc += (float)rows[order[i] * feat + f];
+      acc += (acc_t)rows[order[i] * feat + f];
     }
     out[seg * feat + f] = (scalar_t)acc;
-  }
-}
-
-inline void check_rotate_inputs(const at::Tensor& x,
-                                const at::Tensor& src,
-                                const at::Tensor& runs,
-                                int64_t lmax,
-                                int64_t n_focus,
-                                int64_t rank,
-                                const char* who) {
-  TORCH_CHECK(x.is_cuda() && x.dim() == 3 && x.stride(2) == 1, who,
-              ": x must be (N, D, C_wide) with unit channel stride");
-  TORCH_CHECK(1 <= lmax && lmax <= kMaxLmax, who, ": unsupported lmax");
-  TORCH_CHECK(0 <= rank && rank <= kMaxRank, who, ": unsupported rank");
-  TORCH_CHECK(1 <= n_focus && n_focus <= kMaxRotateFocus, who,
-              ": unsupported focus count");
-  TORCH_CHECK(x.size(1) == (lmax + 1) * (lmax + 1), who,
-              ": x degree dimension does not match lmax");
-  TORCH_CHECK(x.size(2) % n_focus == 0, who,
-              ": channel width must split into the focus streams");
-  TORCH_CHECK(x.size(2) <= kNarrowChannelLanes ||
-                  (lmax == kMaxLmax && x.size(2) <= kWideChannelLanes),
-              who, ": channel width exceeds the supported block lane count");
-  const int64_t dim = (lmax + 1) * (lmax + 1);
-  TORCH_CHECK(runs.is_contiguous() && runs.dim() == 2 &&
-                  runs.size(0) == src.size(0) && runs.size(1) == 3 * dim - 2,
-              who, ": runs must be contiguous (E, 3 * DIM - 2)");
-  TORCH_CHECK(src.scalar_type() == at::kLong, who, ": src must be int64");
-}
-
-// Dispatch helper over the compile-time (L, RANK) grid.
-template <typename F>
-void dispatch_l_rank(int64_t lmax, int64_t rank, const F& f) {
-  const int key = (int)lmax * 8 + (int)rank;
-  switch (key) {
-#define DPA4_RM_CASE(L, R)                                                 \
-  case L * 8 + R:                                                          \
-    f(std::integral_constant<int, L>{}, std::integral_constant<int, R>{}); \
-    break;
-#define DPA4_RM_CASES_FOR_L(L) \
-  DPA4_RM_CASE(L, 0)           \
-  DPA4_RM_CASE(L, 1)           \
-  DPA4_RM_CASE(L, 2)           \
-  DPA4_RM_CASE(L, 3)           \
-  DPA4_RM_CASE(L, 4)
-    DPA4_RM_CASES_FOR_L(1)
-    DPA4_RM_CASES_FOR_L(2)
-    DPA4_RM_CASES_FOR_L(3)
-    DPA4_RM_CASES_FOR_L(4)
-    DPA4_RM_CASES_FOR_L(5)
-    DPA4_RM_CASES_FOR_L(6)
-#undef DPA4_RM_CASES_FOR_L
-#undef DPA4_RM_CASE
-    default:
-      TORCH_CHECK(false, "sezm_rotate_mix: unsupported (lmax, rank)");
   }
 }
 

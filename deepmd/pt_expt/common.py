@@ -17,6 +17,8 @@ new attributes.
 
 from collections.abc import (
     Callable,
+    Iterable,
+    Iterator,
 )
 from functools import (
     wraps,
@@ -193,8 +195,37 @@ def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
     return wrapped_cls.deserialize(value.serialize())
 
 
+class BufferList(torch.nn.Module):
+    """Hold tensors as persistent buffers behind the interface of a list.
+
+    An index table moves with its module and enters the ``state_dict``, but no
+    optimizer updates it, which makes it a buffer rather than a parameter. The
+    entries are registered under their positions, the keys a
+    ``torch.nn.ParameterList`` uses.
+
+    Parameters
+    ----------
+    tensors : Iterable[torch.Tensor]
+        The entries, in order.
+    """
+
+    def __init__(self, tensors: Iterable[torch.Tensor]) -> None:
+        super().__init__()
+        for index, tensor in enumerate(tensors):
+            self.register_buffer(str(index), tensor)
+
+    def __len__(self) -> int:
+        return len(self._buffers)
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        return self._buffers[str(range(len(self))[index])]
+
+    def __iter__(self) -> Iterator[torch.Tensor]:
+        return iter(self._buffers.values())
+
+
 def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
-    """Try to convert a plain list to ModuleList or ParameterList.
+    """Try to convert a plain list to ModuleList, ParameterList or BufferList.
 
     Returns the converted container, or None if no conversion is needed
     (e.g., empty list, list of scalars/strings).
@@ -222,20 +253,46 @@ def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
                 )
             converted.append(c)
         return torch.nn.ModuleList(converted)
-    # List of numpy arrays → ParameterList
+    # List of numpy arrays → ParameterList, or BufferList when every array is
+    # an index table: a module's parameters are what an optimizer receives, and
+    # sharded optimizers require them to share one floating-point type.
     if all(isinstance(v, np.ndarray) for v in value):
         from deepmd.pt_expt.utils import env  # deferred - avoids circular import
 
-        params = []
-        for v in value:
-            t = torch.as_tensor(v, device=env.DEVICE)
-            params.append(
+        tensors = [torch.as_tensor(v, device=env.DEVICE) for v in value]
+        if not any(t.is_floating_point() or t.is_complex() for t in tensors):
+            return BufferList(tensors)
+        return torch.nn.ParameterList(
+            [
                 torch.nn.Parameter(
                     t, requires_grad=t.is_floating_point() or t.is_complex()
                 )
-            )
-        return torch.nn.ParameterList(params)
+                for t in tensors
+            ]
+        )
     return None
+
+
+def _module_buffer_device(obj: torch.nn.Module, name: str) -> torch.device:
+    """Device for a numpy array assigned as a buffer on ``obj``.
+
+    Prefer the existing buffer of the same name when it already holds a
+    tensor, then any parameter or non-None buffer on the module, then
+    ``env.DEVICE``. Assignments after ``Module.to`` therefore keep residency
+    with the module rather than jumping back to the process default device.
+    """
+    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
+
+    if "_buffers" in obj.__dict__:
+        existing = obj._buffers.get(name)
+        if existing is not None:
+            return existing.device
+    for tensor in obj.parameters():
+        return tensor.device
+    for tensor in obj.buffers():
+        if tensor is not None:
+            return tensor.device
+    return env.DEVICE
 
 
 def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, Any]:
@@ -248,9 +305,9 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     1. **numpy arrays → torch buffers**: State such as statistics (davg, dstd) that
        is saved in state_dict and moved with .to(device). An array the owning
        class lists in ``CONFIG_DERIVED_ARRAYS`` becomes a NON-persistent buffer
-       instead: being a pure function of the configuration it is rebuilt by
-       ``__init__``, so adopting a stored copy would let a checkpoint whose
-       configuration differs override the built value.
+       instead: it is either rebuilt by ``__init__`` from the configuration or
+       resolved at export time, so adopting a stored copy would let a
+       checkpoint override the value the model builds for itself.
     2. **None values → clear buffers**: Setting an existing buffer to None.
     3. **dpmodel objects → pt_expt modules**: Nested dpmodel objects like
        AtomExcludeMaskDP or NetworkCollectionDP are converted to their pt_expt
@@ -284,6 +341,10 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     - In dpmodel, all persistent arrays use `self.xxx = np.array(...)`. Scalars
       use `.item()`, lists use `.tolist()`. So `isinstance(value, np.ndarray)`
       reliably identifies buffer-worthy attributes.
+    - A numpy array becomes a buffer on the module's current device (see
+      :func:`_module_buffer_device`), not unconditionally on ``env.DEVICE``, so
+      a later assignment after ``Module.to`` does not pull tensors back to the
+      process default device.
     - torch.Tensor values assigned to existing buffers fall through to
       torch.nn.Module.__setattr__, which correctly updates them.
     - dpmodel objects are identified by registry lookup (exact type match), so
@@ -293,10 +354,10 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
 
     **Circular import resolution:**
 
-    The function uses a deferred import `from deepmd.pt_expt.utils import env`
-    inside the function body. This breaks the circular dependency chain:
-    common.py → utils/__init__.py → exclude_mask.py → common.py. The import is
-    cached by Python after the first call, so there's no performance penalty.
+    Device resolution and related helpers defer
+    ``from deepmd.pt_expt.utils import env`` so this module does not import
+    ``utils`` at load time (common.py → utils/__init__.py → exclude_mask.py →
+    common.py). The import is cached after the first call.
 
     **Usage pattern:**
 
@@ -319,11 +380,9 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     >>> # Case 3: dpmodel object → pt_expt module
     >>> obj.emask = AtomExcludeMaskDP(...)  # becomes AtomExcludeMask module
     """
-    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
-
     # numpy array → torch buffer
     if isinstance(value, np.ndarray) and "_buffers" in obj.__dict__:
-        tensor = torch.as_tensor(value, device=env.DEVICE)
+        tensor = torch.as_tensor(value, device=_module_buffer_device(obj, name))
         if name in obj._buffers:
             obj._buffers[name] = tensor
             return True, tensor
@@ -344,7 +403,8 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
         obj._buffers[name] = None
         return True, None
 
-    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList
+    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList /
+    # BufferList
     if isinstance(value, list) and "_modules" in obj.__dict__:
         converted_list = _try_convert_list(name, value)
         if converted_list is not None:

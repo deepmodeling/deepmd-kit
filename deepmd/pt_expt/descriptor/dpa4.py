@@ -54,11 +54,11 @@ class InnerClamp(InnerClampDP):
         return self.call(*args, **kwargs)
 
 
-# InnerClamp/BridgingSwitch are parameter-free (scalar bridging radii only,
+# InnerClamp/BridgingSwitch are parameter-free (the two window fractions only,
 # no serialize()); rebuild fresh from the stored constructor arguments.
 register_dpmodel_mapping(
     InnerClampDP,
-    lambda v: InnerClamp(v.r_inner, v.r_outer),
+    lambda v: InnerClamp(v.f_inner, v.f_outer),
 )
 
 
@@ -70,7 +70,7 @@ class BridgingSwitch(BridgingSwitchDP):
 
 register_dpmodel_mapping(
     BridgingSwitchDP,
-    lambda v: BridgingSwitch(v.r_inner, v.r_outer),
+    lambda v: BridgingSwitch(v.f_inner, v.f_outer),
 )
 
 
@@ -159,14 +159,13 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
 
 def _promote_trainable(module: torch.nn.Module, names: tuple[str, ...]) -> None:
     """Re-register the given float buffers of *module* as Parameters."""
-    if not getattr(module, "trainable", True):
-        return
+    trainable = bool(getattr(module, "trainable", True))
     for name in names:
         buf = module._buffers.get(name)
         if buf is None or not buf.is_floating_point():
             continue
         del module._buffers[name]
-        setattr(module, name, torch.nn.Parameter(buf, requires_grad=True))
+        setattr(module, name, torch.nn.Parameter(buf, requires_grad=trainable))
 
 
 def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
@@ -199,19 +198,32 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
 class DescrptDPA4(DescrptDPA4DP):
     _update_sel_cls = UpdateSel
 
+    #: The per-element length scales of the bridging window follow from
+    #: ``type_map``, which the constructor resolves on every load, so the
+    #: buffer they land in stays out of the state dict.
+    CONFIG_DERIVED_ARRAYS = ("contact_radius",)
+
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the descriptor, of the tensors that take the
+        AdamW path under HybridMuon: the first layer of the radial embedding and
+        the radial projection of the environment seed, which read the radial
+        basis and whose rows for rarely visited separations receive almost no
+        gradient.
+        """
+        return [
+            "radial_embedding.net.0.",
+            "env_seed_embedding.rbf_proj_layer1.",
+        ]
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # The fused convolution paths consume only the three structural rows of
-        # each Wigner degree block. Source-gated attention bypasses that fused
-        # convolution, so its dense per-edge rotations remain available.
-        self._wigner_free_conv = (
-            self.bridging_switch is None
-            and bool(self.blocks)
-            and all(
-                getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
-                and not block.so2_conv._cuda_conv_fn._compete
-                for block in self.blocks
-            )
+        # each Wigner degree block.
+        self._wigner_free_conv = bool(self.blocks) and all(
+            getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
+            and not block.so2_conv._cuda_conv_fn._compete
+            for block in self.blocks
         )
         self._packed_wigner_train = bool(self.blocks) and all(
             getattr(block.so2_conv, "_cuda_value_train", None) is not None

@@ -48,6 +48,9 @@ from .property_model import (
 from .spin_model import (
     SpinModel,
 )
+from .unimol_pretrain_model import (
+    UniMolPretrainModel,
+)
 
 __all__ = [
     "DOSModel",
@@ -61,5 +64,6 @@ __all__ = [
     "PolarModel",
     "PropertyModel",
     "SpinModel",
+    "UniMolPretrainModel",
     "make_model",
 ]

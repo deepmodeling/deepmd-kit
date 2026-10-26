@@ -49,6 +49,17 @@ struct Arguments {
   float rcut = 0.0f;
   float eps = 0.0f;
   float degree_floor = 0.0f;
+  // Inner bridging switch of the edge envelope, as the two dimensionless
+  // fractions of a pair's own length scale that bound its window and the
+  // reciprocal of their difference. A bridged launch without a window keeps
+  // the outer fraction at zero, which no edge lies below.
+  float f_inner = 0.0f;
+  float f_outer = 0.0f;
+  float inverse_f_width = 0.0f;
+  // Whether the launch belongs to a zone-bridging composition, that is whether
+  // it carries a bridging window or an analytical pair potential. Only the
+  // bridged specializations evaluate either.
+  bool bridged = false;
   bool canonical = false;
   // Whether the native spin branch is active. The neighbour spin width is
   // derived from the degree profile, so presence is the whole runtime choice.
@@ -71,6 +82,11 @@ struct Arguments {
   const float* coupling_value = nullptr;
   const float* output_mean = nullptr;
   const float* output_inv_std = nullptr;
+  // Per-element length scale in Å, indexed by atom type over the whole type
+  // table including the padding row. The sum of the two entries of a pair is
+  // the distance the window fractions are measured against. Read by the
+  // bridged specializations only.
+  const float* contact_radius = nullptr;
   const float* descriptor_gradient = nullptr;
   const float* state = nullptr;
 
@@ -84,6 +100,18 @@ struct Arguments {
   const float* spin = nullptr;
   const float* spin_pair = nullptr;
   const float* spin_type = nullptr;
+
+  // === Analytical pair potential ===
+  // Present together or not at all, and read by the edge backward only, which
+  // is the one scan that sees an edge together with the energy cotangent of
+  // its destination. ``pair_table`` holds, per ordered type pair, the four
+  // amplitudes and the four decay rates of the screened Coulomb series
+  // V(r) = (1/r) sum_k A_k exp(-c_k r). ``pair_seed`` is that cotangent and
+  // ``pair_energy`` the fp64 node energies onto which the scan adds V/2 per
+  // edge. Both are node indexed and offset by the caller, like ``descriptor``.
+  const float* pair_table = nullptr;
+  const double* pair_seed = nullptr;
+  double* pair_energy = nullptr;
 
   float* descriptor = nullptr;
   float* state_out = nullptr;
@@ -364,22 +392,45 @@ struct Profile {
       NodeLanes != 0 ? NodeLanes : kNodeLanesNarrow;
   static constexpr int NodeGroups = kWarpSize / NodeWidth;
   static constexpr int Threads = kWarpSize;
-
-  // Resident blocks the edge kernels are compiled for. A block is one warp, so
-  // thirty-two of them exhaust the 65,536-register file at sixty-four
-  // registers per thread, and a lower target raises the per-thread budget in
-  // proportion at the cost of occupancy.
-  //
-  // Degree two holds its geometric working set in that budget and spills only
-  // what the five spin families add, so twenty-four blocks buy eighty
-  // registers, remove the spill outright and are worth 2.0% to 4.5% of the
-  // step. Degree three overflows the budget on geometry alone -- it spills
-  // without the spin branch and still spills at eighty and at ninety-six
-  // registers -- so the occupancy it would give up buys an incomplete fix and
-  // costs 7.4% to 9.6%. The relief is therefore taken only where it is
-  // complete.
-  static constexpr int MinBlocksPerSm = (HasSpin && Lmax == 2) ? 24 : 32;
 };
+
+/// Resident blocks an edge kernel is compiled for, passed as the minimum block
+/// count of its launch bounds.
+///
+/// A block is one warp, so the count sets the register budget per thread:
+/// thirty-two blocks exhaust the 65,536-register file at sixty-four registers
+/// per thread, and a lower count raises the budget in proportion at the cost of
+/// occupancy. Zero sets no budget and leaves the register count to the
+/// compiler.
+template <int Channels, int Lmax, bool HasModes, bool HasSpin>
+constexpr int edge_resident_blocks() {
+  // Measured on compute capability 9.0, degree two holds its geometric working
+  // set in sixty-four registers and spills only what the five spin families
+  // add, so twenty-four blocks buy eighty registers, remove the spill outright
+  // and are worth 2.0% to 4.5% of the step. Degree three overflows the budget
+  // on geometry alone -- it spills without the spin branch and still spills at
+  // eighty and at ninety-six registers -- so the occupancy it would give up
+  // buys an incomplete fix and costs 7.4% to 9.6%. The relief is therefore
+  // taken only where it is complete.
+  if (HasSpin && Lmax == 2) {
+    return 24;
+  }
+#if defined(__CUDA_ARCH__) && \
+    (__CUDA_ARCH__ == 890 || (__CUDA_ARCH__ >= 1200 && __CUDA_ARCH__ < 1300))
+  // A multiprocessor of compute capability 8.9 or 12.x holds at most
+  // twenty-four blocks, so eighty registers is the tightest budget there. It
+  // serves the radial-mode kernels of sixty-four channels and more, to which
+  // the compiler gives 86 to 128 registers: the budget restores the resident
+  // warps those counts cost for a spill of at most 80 bytes and shortens the
+  // plain kernels by 3% to 13% on 12.0. The other kernels run fastest on the
+  // compiler's own count, which keeps the spin families in registers and suits
+  // the narrow profiles, whose two-lane edge groups keep sixteen edges in
+  // flight per warp.
+  return HasModes && Channels >= 64 ? 24 : 0;
+#else
+  return 32;
+#endif
+}
 
 /// Scalar widths that own a compiled specialization.
 #define DPA4C_FOR_EACH_CHANNEL(macro) \

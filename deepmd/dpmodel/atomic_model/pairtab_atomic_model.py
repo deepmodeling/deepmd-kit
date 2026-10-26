@@ -232,18 +232,17 @@ class PairTabAtomicModel(BaseAtomicModel):
         compute_or_load_out_stat : bool
             Whether to compute the output statistics.
         """
+        observed_stat_path = stat_file_path
+        if stat_file_path is not None and self.type_map is not None:
+            observed_stat_path = stat_file_path / " ".join(self.type_map)
+        self._collect_and_set_observed_type(
+            sampled_func if callable(sampled_func) else lambda: sampled_func,
+            observed_stat_path,
+            preset_observed_type,
+        )
         if compute_or_load_out_stat:
             wrapped_sampler = self._make_wrapped_sampler(sampled_func)
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
-
-        if stat_file_path is not None and self.type_map is not None:
-            stat_file_path /= " ".join(self.type_map)
-
-        self._collect_and_set_observed_type(
-            sampled_func if callable(sampled_func) else lambda: sampled_func,
-            stat_file_path,
-            preset_observed_type,
-        )
 
     def forward_atomic(
         self,

@@ -52,6 +52,7 @@ from deepmd.dpmodel.train import (
     RankContext,
     ShardingPolicy,
     TrainerConfig,
+    TrainingMetricAccumulator,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
@@ -60,9 +61,16 @@ from deepmd.dpmodel.train import (
     change_model_out_bias_by_task,
     resolve_step_schedule,
 )
+from deepmd.dpmodel.train.data import (
+    add_training_data_requirements,
+)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
+)
+from deepmd.dpmodel.utils.dist_check import (
+    pair_margin_frame_mask,
+    select_frames,
 )
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
@@ -70,11 +78,17 @@ from deepmd.dpmodel.utils.learning_rate import (
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 from deepmd.loggers.training import (
     log_parameter_counts,
 )
 from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
+)
+from deepmd.pt.optimizer.hybrid_muon import (
+    adam_route_patterns,
 )
 from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
@@ -96,6 +110,7 @@ from deepmd.pt_expt.loss import (
     EnergySpinLoss,
     PropertyLoss,
     TensorLoss,
+    UniMolLoss,
 )
 from deepmd.pt_expt.model import (
     get_model,
@@ -136,6 +151,9 @@ from deepmd.pt_expt.utils.stat import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.data_group import (
+    epoch_batch_counts,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -279,6 +297,11 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     per-node moment input and return additional magnetic outputs. A spin task
     must therefore never reuse a spin-free task's compiled graph even when the
     descriptor and fitting parameters are shared.
+
+    The fitting's vacuum-reference state selects static branches in the
+    atomic model and fitting. Shared weights do not make those branches
+    interchangeable: tasks without a preset bias disable the reference,
+    while a folded reference no longer appends isolated atoms to the graph.
     """
     descriptor_id: int = 0
     try:
@@ -292,14 +315,19 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
         pass
 
     fitting_id: int = id(model)
+    vacuum_state = (0, 0)
     try:
         fitting = model.get_fitting_net()
+        vacuum_state = (
+            int(fitting.vacuum_ref),
+            int(fitting.needs_vacuum_descriptor()),
+        )
         for _, child in fitting.named_children():
             fitting_id = id(child)
             break
     except AttributeError:
         pass
-    return (int(model.has_spin()), descriptor_id, fitting_id)
+    return (int(model.has_spin()), descriptor_id, fitting_id, *vacuum_state)
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +371,10 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "unimol":
+        # Self-supervised: it takes no learning rate and no model geometry,
+        # because its targets come from the corruption it defines itself.
+        return UniMolLoss(**loss_params)
     else:
         raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 
@@ -810,9 +842,9 @@ def _trace_and_compile_graph(
         nloc_trace += 1
     trace_N = trace_nf * nloc_trace
 
-    # Shared with the .pt2 export trace (serialization.py) so the two graph
-    # traces can never desync on the input schema.  Training uses the run-time
-    # float precision and device; optional tensors match the actual call.
+    # The positional input order is shared with .pt2 export (serialization.py).
+    # Training uses the runtime precision, device, and optional-input presence;
+    # its graph builders omit the CSR metadata carried by deployment inputs.
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
         check_graph_trace_torch_version,
@@ -853,6 +885,7 @@ def _trace_and_compile_graph(
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
         want_spin=spin is not None,
+        canonicalize=False,
     )
     (
         s_atype,
@@ -879,10 +912,10 @@ def _trace_and_compile_graph(
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
-        destination_order: torch.Tensor,
-        destination_row_ptr: torch.Tensor,
-        source_order: torch.Tensor,
-        source_row_ptr: torch.Tensor,
+        destination_order: torch.Tensor | None,
+        destination_row_ptr: torch.Tensor | None,
+        source_order: torch.Tensor | None,
+        source_row_ptr: torch.Tensor | None,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
@@ -1073,9 +1106,15 @@ class _CompiledModel(torch.nn.Module):
         cache_key = (*self._structure_key, self.training)
         cached = self._compiled_by_structure.get(cache_key)
         if cached is not None:
-            log.info("Reusing the graph compiled for an earlier task (%s).", attributes)
+            log.debug(
+                "Reusing the graph compiled for an earlier task (%s).", attributes
+            )
             return cached
-        log.info("Tracing and compiling the model (%s).", attributes)
+        log.info(
+            "Tracing and compiling the model (%s).",
+            attributes,
+            extra={"rank_scope": "all"},
+        )
         started = time.perf_counter()
         compiled = trace()
         # ``torch.compile`` only schedules the Inductor compile; it runs on the
@@ -1104,6 +1143,7 @@ class _CompiledModel(torch.nn.Module):
             "Finished compiling (%s) in %.1f s.",
             attributes,
             time.perf_counter() - started,
+            extra={"rank_scope": "all"},
         )
 
     def __getattr__(self, name: str) -> Any:
@@ -1327,7 +1367,6 @@ class _CompiledModel(torch.nn.Module):
 
         if self._task_buf_order:
             try:
-                _fitting = self.original_model.get_fitting_net()
                 _am = getattr(self.original_model, "atomic_model", None)
                 _vals: list[torch.Tensor] = []
                 for _name in self._task_buf_order:
@@ -1335,6 +1374,9 @@ class _CompiledModel(torch.nn.Module):
                         _actual = _name[len(_AM_PREFIX) :]
                         _vals.append(_am._buffers[_actual])
                     else:
+                        # Only a fitting-net buffer needs the fitting net; a
+                        # composition promotes atomic-model buffers alone.
+                        _fitting = self.original_model.get_fitting_net()
                         _vals.append(getattr(_fitting, _name))
                 task_buf_vals: tuple = tuple(_vals)
             except AttributeError as exc:
@@ -1633,7 +1675,6 @@ class _CompiledModel(torch.nn.Module):
 
         if self._task_buf_order:
             try:
-                _fitting = _model.get_fitting_net()
                 _am = getattr(_model, "atomic_model", None)
                 _vals: list[torch.Tensor] = []
                 for _name in self._task_buf_order:
@@ -1641,6 +1682,9 @@ class _CompiledModel(torch.nn.Module):
                         _actual = _name[len(_AM_PREFIX) :]
                         _vals.append(_am._buffers[_actual])
                     else:
+                        # Only a fitting-net buffer needs the fitting net; a
+                        # composition promotes atomic-model buffers alone.
+                        _fitting = _model.get_fitting_net()
                         _vals.append(getattr(_fitting, _name))
                 task_buf_vals: tuple = tuple(_vals)
             except AttributeError as exc:
@@ -1861,17 +1905,65 @@ class Trainer(AbstractTrainer):
         self.loss = self.losses if self.multi_task else self.losses[DEFAULT_TASK_KEY]
 
         # Data requirements ---------------------------------------------------
+        # Draw sequences for input-corrupting objectives live in the process, so
+        # a second run in one interpreter would otherwise continue the first
+        # run's sequence instead of repeating it.
+        from deepmd.dpmodel.utils.unimol_transform import (
+            reset_epoch_streams,
+        )
+
+        reset_epoch_streams()
         self.valid_numb_batch_by_task: dict[str, int] = {}
+        self.pair_filter_enabled_by_task: dict[str, bool] = {}
         for model_key in self.model_keys:
             data_requirement = list(self.losses[model_key].label_requirement)
             data_requirement += get_additional_data_requirement(self.models[model_key])
-            self.training_data_by_task[model_key].add_data_requirements(
-                data_requirement
+            task_params = (
+                training_params["data_dict"][model_key]
+                if self.multi_task
+                else training_params
+            )
+            self.pair_filter_enabled_by_task[model_key] = (
+                add_training_data_requirements(
+                    self.training_data_by_task[model_key],
+                    task_params["training_data"],
+                    self.model_params_by_task[model_key],
+                    data_requirement,
+                    lambda data, requirements: data.add_data_requirements(requirements),
+                )
             )
             if self.validation_data_by_task[model_key] is not None:
                 self.validation_data_by_task[model_key].add_data_requirements(
                     data_requirement
                 )
+            # A self-supervised objective builds its labels by corrupting the
+            # input, which has to happen as the data is read.
+            for split, dataset in (
+                ("training", self.training_data_by_task[model_key]),
+                ("validation", self.validation_data_by_task[model_key]),
+            ):
+                if dataset is None:
+                    continue
+                # A fresh transform per dataset is not enough: an objective that
+                # corrupts its input derives its draw sequence from this label,
+                # so two datasets given the same one share a generator and a
+                # validation pass advances the corruption training is about to
+                # see. The task name is in it too, so two Uni-Mol tasks in one
+                # multi-task run do not collide either.
+                frame_transform = self.losses[model_key].frame_transform(
+                    self.model_params_by_task[model_key]["type_map"],
+                    stream=f"{model_key}/{split}",
+                )
+                if frame_transform is None:
+                    break
+                if not hasattr(dataset, "set_frame_transform"):
+                    raise ValueError(
+                        f"the {self.losses[model_key].__class__.__name__} "
+                        "objective corrupts its input as the data is read, "
+                        "which this dataset type does not support; convert "
+                        "the data to LMDB first"
+                    )
+                dataset.set_frame_transform(frame_transform)
             if self.multi_task:
                 valid_params = (
                     training_params["data_dict"][model_key].get("validation_data", {})
@@ -1913,9 +2005,11 @@ class Trainer(AbstractTrainer):
 
             @functools.lru_cache
             def _make_sample(
-                _d: DeepmdDataSystem = _data, _n: int = _nbatch
+                _d: DeepmdDataSystem = _data,
+                _n: int = _nbatch,
+                _filter_enabled: bool = self.pair_filter_enabled_by_task[model_key],
             ) -> list[dict[str, np.ndarray]]:
-                return make_stat_input(_d, _n)
+                return make_stat_input(_d, _n, _filter_enabled)
 
             self._sample_funcs[model_key] = _make_sample
 
@@ -2149,6 +2243,19 @@ class Trainer(AbstractTrainer):
                 # Selective weight copy (per-branch key remapping)
                 pretrained_state = pretrained_wrapper.state_dict()
                 target_state = self._unwrapped.state_dict()
+                # A plain model and its zone-bridging composition hold the same
+                # learned descriptor and fitting net at different paths.
+                learned_paths = {
+                    model_key: (
+                        _learned_part_path(self._unwrapped.model[model_key]),
+                        _learned_part_path(
+                            pretrained_wrapper.model[
+                                finetune_links[model_key].get_model_branch()
+                            ]
+                        ),
+                    )
+                    for model_key in self.model_keys
+                }
                 new_state = {}
                 for key in target_state:
                     if key == "_extra_state":
@@ -2163,6 +2270,15 @@ class Trainer(AbstractTrainer):
                         finetune_rule = finetune_links[model_key]
                         _key_from = finetune_rule.get_model_branch()
                         pretrained_key = key.replace(f".{model_key}.", f".{_key_from}.")
+                        path, source_path = learned_paths[model_key]
+                        if (
+                            pretrained_key not in pretrained_state
+                            and path is not None
+                            and source_path is not None
+                        ):
+                            pretrained_key = _move_learned_key(
+                                pretrained_key, path, source_path
+                            )
                         use_random = (
                             finetune_rule.get_random_fitting()
                             and ".descriptor." not in key
@@ -2252,9 +2368,11 @@ class Trainer(AbstractTrainer):
                 torch.optim.Adam if opt_type == "Adam" else torch.optim.AdamW,
                 lr=initial_lr,
                 betas=adam_betas,
+                eps=float(optimizer_params["adam_eps"]),
                 weight_decay=weight_decay,
             )
         else:
+            adam_patterns = adam_route_patterns(self.models.values())
             self.optimizer = self._create_optimizer(
                 HybridMuonOptimizer,
                 lr=initial_lr,
@@ -2267,6 +2385,7 @@ class Trainer(AbstractTrainer):
                 enable_gram=bool(optimizer_params["enable_gram"]),
                 flash_muon=bool(optimizer_params["flash_muon"]),
                 magma_muon=bool(optimizer_params["magma_muon"]),
+                adam_patterns=adam_patterns,
                 # Sharded parameters are DTensors, and several torch._foreach_*
                 # ops lack sharding propagation, so the per-tensor path applies.
                 use_foreach=False if self.sharding.shards_parameters else None,
@@ -2323,13 +2442,23 @@ class Trainer(AbstractTrainer):
                 restart_training=self.restart_training,
             ),
             rank_context=RankContext(rank=self.rank, world_size=self.world_size),
+            metric_accumulator=(
+                TrainingMetricAccumulator(
+                    {
+                        key: loss.training_metric_names
+                        for key, loss in self.losses.items()
+                    }
+                )
+                if training_params.get("disp_avg", False)
+                else None
+            ),
         )
         self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
             validation_data=self.validation_data if not self.multi_task else None,
         )
 
-        if self.rank == 0:
+        if is_node_main_process(self.rank):
             log_parameter_counts(
                 {key: count_parameters(self.models[key]) for key in self.model_keys},
                 multi_task=self.multi_task,
@@ -2600,7 +2729,11 @@ class Trainer(AbstractTrainer):
         if data_sys is None:
             return {}, {}
 
-        batch = normalize_batch(data_sys.get_batch())
+        batch = (
+            self._next_training_batch(data_sys, task_key)
+            if is_train
+            else normalize_batch(data_sys.get_batch())
+        )
         input_dict, label_dict = split_batch(batch)
 
         # Drop optional inputs whose find_* flag is False so the model sees None.
@@ -2635,6 +2768,57 @@ class Trainer(AbstractTrainer):
 
         return input_dict, label_dict
 
+    def _next_training_batch(self, data_sys: Any, task_key: str) -> dict[str, Any]:
+        """Fetch the next training batch of a task, without its too-close frames.
+
+        Frames holding an atom pair closer than the task's frame filter allows
+        are dropped, and a batch left empty is replaced by the next one.
+        The retry is local to the rank and involves no collective, so
+        distributed ranks stay in lockstep: every rank still contributes
+        exactly one batch per optimizer step.
+
+        Parameters
+        ----------
+        data_sys : Any
+            Training data system of the task.
+        task_key : str
+            Resolved task key.
+
+        Returns
+        -------
+        dict[str, Any]
+            Normalized NumPy batch with at least one frame.
+
+        Raises
+        ------
+        RuntimeError
+            If one local reader pass of consecutive batches holds no valid frame.
+        """
+        filter_enabled = self.pair_filter_enabled_by_task[task_key]
+        discarded = 0
+        while True:
+            raw_batch = data_sys.get_batch()
+            batch = normalize_batch(raw_batch)
+            batch_filter_enabled = getattr(
+                raw_batch, "pair_filter_enabled", filter_enabled
+            )
+            frame_mask = pair_margin_frame_mask(batch, batch_filter_enabled)
+            if frame_mask is None or frame_mask.all():
+                return batch
+            if frame_mask.any():
+                return select_frames(batch, frame_mask)
+            discarded += 1
+            if discarded >= data_sys.get_batch_pass_length():
+                raise RuntimeError(
+                    f"No training frame of task {task_key!r} keeps every atom "
+                    "pair beyond the frame-filter radius within "
+                    f"{discarded} consecutive batches. A bridged model filters "
+                    "at the midpoint of its bridging window, so lower "
+                    "`bridging_fraction_inner` or `bridging_fraction_outer` "
+                    "there, or `training_data.min_pair_dist` on any other "
+                    "model, or clean the dataset."
+                )
+
     def _epoch_length(self, model_key: str) -> int:
         """Return the steps this rank takes during one epoch of a task.
 
@@ -2646,21 +2830,23 @@ class Trainer(AbstractTrainer):
         Returns
         -------
         int
-            Number of steps covering one pass over the task's training data.
+            Nominal number of optimizer steps in one training epoch.
 
         Notes
         -----
-        A data system reports ``nbatches[i]``, the batch count of system ``i``,
-        and ``sys_probs[i]``, the probability of drawing from that system, from
-        which ``compute_total_numb_batch`` derives the dataset-wide epoch
-        length ``ceil(max_i(nbatches[i] / sys_probs[i]))``. LMDB data reports
-        that global count while its sampler shards batches evenly across ranks;
-        legacy data systems remain replicated. In both cases one rank takes
-        ``ceil(total / world_size)`` steps per epoch.
+        The epoch length is ``ceil(max_i(local_batches[i] / sys_probs[i]))``.
+        Each LMDB contributes its sampler's rank-local workload, including
+        its own distributed padding. Replicated NumPy readers contribute
+        their global batch counts divided by world size. Size-based sampling
+        uses global source sizes without per-rank padding; uniform sampling
+        corrects for each native stream's rank-averaged batch frame count.
+        This scheduled workload differs from a replicated reader's pass length,
+        which is exposed separately through ``get_batch_pass_length``.
         """
         data = self.training_data_by_task[model_key]
-        total = compute_total_numb_batch(data.nbatches, data.sys_probs)
-        return int(np.ceil(total / self.world_size))
+        return compute_total_numb_batch(
+            epoch_batch_counts(data, self.world_size), data.sys_probs
+        )
 
     # ------------------------------------------------------------------
     # Distribution helpers
@@ -2744,7 +2930,7 @@ class Trainer(AbstractTrainer):
 
     def _log_sharding_strategy(self) -> None:
         """Report the distribution strategy once the wrapper is in place."""
-        if self.sharding.enabled and self.rank == 0:
+        if self.sharding.enabled:
             log.info(self.sharding.describe())
 
     def _load_optimizer_state(self, optimizer_state_dict: dict[str, Any]) -> None:
@@ -2873,13 +3059,19 @@ class Trainer(AbstractTrainer):
 
     @property
     def checkpoint_is_collective(self) -> bool:
-        """Whether assembling a checkpoint needs every rank."""
-        return self.sharding.enabled
+        """Whether checkpoint preflight needs every rank."""
+        return self.is_distributed
+
+    def ensure_finite_gradients_for_checkpoint(self) -> None:
+        """Check the accumulated gradient norm on all ranks before publication."""
+        self.nonfinite_grad_guard.raise_if_nonfinite(
+            self.wrapper.named_parameters, synchronize=self.is_distributed
+        )
 
     def save_checkpoint(self, step: int) -> None:
-        # Abort before writing if any gradient norm since the previous
-        # checkpoint was non-finite, so a diverged interval is not persisted.
-        self.nonfinite_grad_guard.raise_if_nonfinite(self.wrapper.named_parameters)
+        self.ensure_finite_gradients_for_checkpoint()
+        if self.rank != 0 and not self.sharding.enabled:
+            return
         ckpt_path = self.ckpt_store.path_for(step)
         self._save_checkpoint_to_path(ckpt_path, step=step)
         if self.rank == 0:
@@ -3085,7 +3277,10 @@ class Trainer(AbstractTrainer):
             return
         if self.opt_type not in ("Adam", "AdamW", "HybridMuon"):
             return
-        log.info("Compiling training graphs before the first collective.")
+        log.info(
+            "Compiling training graphs before the first collective.",
+            extra={"rank_scope": "all"},
+        )
         start = time.time()
         inner = self._unwrapped
         trainable_parameters = tuple(
@@ -3105,6 +3300,7 @@ class Trainer(AbstractTrainer):
         log.info(
             "Training graphs ready in %.1f s; waiting for the other ranks.",
             time.time() - start,
+            extra={"rank_scope": "all"},
         )
         store = dist.distributed_c10d._get_default_store()
         key = "deepmd/precompile_ready"
@@ -3123,8 +3319,7 @@ class Trainer(AbstractTrainer):
             super().run(self.training_tasks)
             if self.change_bias_after_training and self.num_steps > self.start_step:
                 self._change_bias_after_training()
-                if self.rank_context.is_chief:
-                    self.save_checkpoint(self.num_steps)
+                self.save_checkpoint(self.num_steps)
         finally:
             self._close_data_systems()
         if self.rank_context.is_chief:
@@ -3177,6 +3372,7 @@ class Trainer(AbstractTrainer):
                 display_step=display_step,
                 lr=learning_rate,
                 save_checkpoint=save_checkpoint,
+                prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
             )
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
@@ -3250,6 +3446,15 @@ class Trainer(AbstractTrainer):
         return TrainStepResult(
             task_key=task_key,
             step=step,
+            train_results=(
+                {
+                    key: value.detach() if torch.is_tensor(value) else value
+                    for key, value in more_loss.items()
+                    if "l2_" not in key
+                }
+                if self.metric_accumulator is not None
+                else None
+            ),
             payload={
                 "loss": loss,
                 "more_loss": more_loss,
@@ -3345,10 +3550,38 @@ class Trainer(AbstractTrainer):
         }
 
 
+def _learned_part_path(model: torch.nn.Module) -> str | None:
+    """Return the state-dict path of the learned descriptor-fitting part of a model.
+
+    A plain model holds that part as its atomic model and a composition with
+    one learned sub-model, such as a zone-bridging one, as that sub-model, so
+    fine-tuning between the two transfers the part across the paths. A model
+    without a single learned part returns ``None``.
+    """
+    atomic_model = model.atomic_model
+    if getattr(atomic_model, "descriptor", None) is not None:
+        return "atomic_model."
+    learned = [
+        index
+        for index, child in enumerate(getattr(atomic_model, "models", ()))
+        if getattr(child, "descriptor", None) is not None
+    ]
+    return f"atomic_model.models.{learned[0]}." if len(learned) == 1 else None
+
+
+def _move_learned_key(key: str, path: str, source_path: str) -> str:
+    """Rewrite a descriptor or fitting-net key from one learned-part path to another."""
+    for part in ("descriptor.", "fitting_net."):
+        if f".{path}{part}" in key:
+            return key.replace(f".{path}{part}", f".{source_path}{part}", 1)
+    return key
+
+
 def model_change_out_bias(
     _model: Any,
     _sample_func: Any,
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> Any:
     """Change the output bias of a model based on sampled data.
 
@@ -3360,6 +3593,9 @@ def model_change_out_bias(
         Callable that returns sampled data for bias computation.
     _bias_adjust_mode
         ``"change-by-statistic"`` or ``"set-by-statistic"``.
+    preset_out_bias
+        Optional preset override. An empty mapping ignores checkpoint presets;
+        omitting it preserves training and fine-tuning behavior.
 
     Returns
     -------
@@ -3374,6 +3610,7 @@ def model_change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
         recompute_input_stats=isinstance(_model, DPModelCommon),
+        preset_out_bias=preset_out_bias,
     )
 
 

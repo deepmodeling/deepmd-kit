@@ -13,6 +13,8 @@ from typing import (
     Any,
 )
 
+import numpy as np
+
 from deepmd.dpmodel.utils.lmdb_data import (
     DistributedLmdbBatchSampler,
     LmdbBatchIterator,
@@ -211,6 +213,10 @@ class LmdbDataSystem:
         self._reader.add_data_requirement(data_requirement)
         self._refresh_stat_groups()
 
+    def set_frame_transform(self, transform) -> None:  # noqa: ANN001
+        """Install a per-frame transform on the underlying reader."""
+        self._reader.set_frame_transform(transform)
+
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""
         iterator = getattr(self, "_batch_iterator", None)
@@ -227,6 +233,41 @@ class LmdbDataSystem:
     def get_nsystems(self) -> int:
         """Return one logical LMDB training dataset."""
         return 1
+
+    def get_model_sampling_size(self) -> int:
+        """Count retained frames, matching native PyTorch LMDB task weights."""
+        return len(self._reader)
+
+    @property
+    def uniform_sampling_mass(self) -> float:
+        """Return the queued batch's systems-per-frame selection weight."""
+        return self._batch_iterator.uniform_sampling_mass
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        """Return the pending pass's mean systems-per-frame selection weight."""
+        return self._batch_iterator.uniform_nominal_mass
+
+    def get_batch_pass_length(self) -> int:
+        """Return the local pass length belonging to the last returned batch."""
+        return self._batch_iterator.batch_pass_length
+
+    def get_epoch_batch_counts(self, world_size: int) -> np.ndarray:
+        """Return the actual local workload after distributed batch padding."""
+        return np.asarray([len(self._sampler)], dtype=np.float64)
+
+    def get_ntypes(self) -> int:
+        return len(self.type_map)
+
+    def get_type_map(self) -> list[str]:
+        return self.type_map
+
+    def get_batch_size(self) -> list[int]:
+        return [self._reader.batch_size]
+
+    @property
+    def system_dirs(self) -> list[str]:
+        return [self._reader.lmdb_path]
 
     @property
     def nbatches(self) -> list[int]:

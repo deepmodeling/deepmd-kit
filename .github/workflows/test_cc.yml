@@ -181,6 +181,7 @@ jobs:
           TF_INTRA_OP_PARALLELISM_THREADS: 1
           TF_INTER_OP_PARALLELISM_THREADS: 1
           LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
+          DPA4SPIN_LMP_REQUIRED: ${{ matrix.enable_pytorch && '1' || '0' }}
           ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
           ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
           ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}

@@ -249,7 +249,7 @@ class GatedActivation(nn.Module):
             gw = weight.permute(1, 0, 2).contiguous()
             gwt = weight.permute(1, 2, 0).contiguous()
             out = self._fused_gated_act(
-                x.reshape(n_focus, n_edge, -1).contiguous(),
+                x.reshape(n_focus, n_edge, x.shape[2] * x.shape[3]).contiguous(),
                 gw,
                 gwt,
                 self.lmax,

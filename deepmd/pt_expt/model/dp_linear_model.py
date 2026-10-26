@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import types
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -47,6 +50,14 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     forward_lower_graph_exportable_with_comm = (
         EnergyModel.forward_lower_graph_exportable_with_comm
     )
+    # The compact canonical deployment resolves its descriptor, fitting net
+    # and analytical pair potential through the atomic model's fused
+    # decomposition, so a bridged compressed composition deploys through the
+    # same two methods as its learned part alone.
+    forward_lower_canonical_graph = EnergyModel.forward_lower_canonical_graph
+    forward_lower_canonical_graph_exportable = (
+        EnergyModel.forward_lower_canonical_graph_exportable
+    )
 
     def __init__(
         self,
@@ -55,6 +66,12 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     ) -> None:
         DPModelCommon.__init__(self)
         DPLinearModel_.__init__(self, *args, **kwargs)
+
+    def compute_fitting_input_stats(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> None:
+        """Recompute the input statistics of every learned sub-model's fitting net."""
+        self.atomic_model.compute_fitting_input_stats(sampled_func)
 
     def forward(
         self,

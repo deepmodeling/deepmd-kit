@@ -17,9 +17,9 @@ Supported configuration
 focus-stream count, an attention layout matching the value stream, two or more
 mixing layers with an identity final layer, and a radial mixer that is either
 absent or ``degree_channel`` of any rank. The kernels are templated on degree
-and focus width only; every other dimension is a runtime argument. The
-bridging-mode source gate reshapes the softmax normalization and is declined at
-call time.
+and focus width only; every other dimension is a runtime argument. A bridged
+model reaches the kernels unchanged, because its source gate is folded into the
+edge envelope the kernels already weight by.
 
 Usage and pitfalls
 ------------------
@@ -61,6 +61,9 @@ from typing import (
 )
 
 import torch
+from torch._subclasses.fake_tensor import (
+    FakeTensor,
+)
 
 __all__ = [
     "SO2ConvCuda",
@@ -183,7 +186,10 @@ def wigner_run_tables(lmax: int) -> tuple[torch.Tensor, ...]:
         exps.to(torch.int8).contiguous(),
         dexps.to(torch.int8).contiguous(),
     )
-    _RUN_TABLE_CACHE[lmax] = tables
+    # Tables built under a tracing mode are fake tensors bound to that trace;
+    # only real tables are shared across calls.
+    if not any(isinstance(table, FakeTensor) for table in tables):
+        _RUN_TABLE_CACHE[lmax] = tables
     return tables
 
 
