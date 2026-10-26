@@ -79,6 +79,36 @@ def test_compiled_dynamic_cohort() -> None:
             torch.testing.assert_close(a, b, atol=0, rtol=0)
 
 
+def test_make_fx_retains_runtime_cohorts(monkeypatch) -> None:
+    """A small tracing example must not disable batching on larger inputs."""
+    from torch.fx.experimental.proxy_tensor import (
+        make_fx,
+    )
+
+    graph = make_fx(ecs.cohort_backward, tracing_mode="symbolic")(*operands(37))
+    assert any(
+        node.op == "call_function"
+        and node.target == torch.ops.sezm_triton.so2_cohort_input_bwd.default
+        for node in graph.graph.nodes
+    )
+    calls = []
+    original = ecs.cohort_input_backward_impl
+
+    def observed(go, z, alpha, w0t, w1t, gw, gwt, cap):
+        calls.append((go.shape[0], cap))
+        return original(go, z, alpha, w0t, w1t, gw, gwt, cap)
+
+    monkeypatch.setattr(ecs, "cohort_input_backward_impl", observed)
+    compiled = torch.compile(graph, fullgraph=True, dynamic=True)
+    for edges in (37, 8193, 16385):
+        args = operands(edges)
+        actual = compiled(*args)
+        expected = sv._mixing_stack_bwd_impl(*args)
+        assert calls[-1] == (edges, ecs.COHORT_EDGES)
+        for got, ref in zip(actual, expected, strict=True):
+            torch.testing.assert_close(got, ref, atol=0, rtol=0)
+
+
 @pytest.mark.parametrize("dynamic", [False, True])
 def test_compiled_native_backward(dynamic: bool) -> None:
     """Optional strides must preserve the default native compilation path."""

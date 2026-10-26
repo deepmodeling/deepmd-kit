@@ -377,10 +377,10 @@ def cohort_backward(
     if not supports_edge_cohort(grad_out, z_all, lmax, focus_dim, apply_alpha):
         raise ValueError("unsupported edge-cohort layout")
     grad_alpha = _cohort_alpha_backward(grad_out, x_local, alpha)
-    input_backward = (
-        _single_cohort_input_backward
-        if grad_out.shape[0] <= SINGLE_COHORT_MAX_EDGES
-        else _cohort_input_backward
+    # make_fx/AOT may trace with a small example and retain that route for
+    # larger inputs. Keep edge partitioning inside the opaque runtime operator
+    # so its loop always uses the actual edge count, not the tracing example.
+    grad_u0 = _cohort_input_backward(
+        grad_out, z_all, alpha, w0t, w1t, gw, gwt, COHORT_EDGES
     )
-    grad_u0 = input_backward(grad_out, z_all, alpha, w0t, w1t, gw, gwt, COHORT_EDGES)
     return grad_u0, grad_alpha
