@@ -2394,11 +2394,21 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
         with self.assertRaises(ValueError):
             DeepPot(self.tmpfile.name, nlist_backend="bogus")
 
-    def test_vesin_requested_but_unavailable_raises(self) -> None:
-        if self._vesin_available():
-            self.skipTest("vesin.torch is installed; cannot test the missing path")
-        with self.assertRaises(ImportError):
-            DeepPot(self.tmpfile.name, nlist_backend="vesin")
+    def test_requested_backend_unavailable_raises(self) -> None:
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        for method, probe, message in (
+            ("vesin", "is_vesin_torch_available", r"vesin\[torch\]"),
+            ("nv", "is_nv_available", "nvalchemi-toolkit-ops"),
+        ):
+            with (
+                self.subTest(method=method),
+                mock.patch.object(auto_neighbor_list, probe, return_value=False),
+                self.assertRaisesRegex(ImportError, message),
+            ):
+                DeepPot(self.tmpfile.name, nlist_backend=method)
 
     def test_vesin_matches_native(self) -> None:
         if not self._vesin_available():

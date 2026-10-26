@@ -322,12 +322,15 @@ class DeepEval(DeepEvalBackend):
     def _setup_neighbor_backend(self, nlist_backend: str) -> None:
         """Resolve the graph or neighbor-list construction strategy.
 
-        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` and ``"nv"``
-        select accelerated searches, raising for unavailable or unsupported
-        inputs. ``"auto"`` selects by frame count and available libraries,
-        falling back to the native builder when none applies. Graph-routed
-        artifacts use ``neighbor_graph_method`` instead and reject nlist-specific
-        controls rather than silently changing or ignoring the requested lower.
+        ``"native"`` retains unbuffered construction and ignores
+        ``neighbor_skin``: edge-vector artifacts use the batch-aware Vesin/NV
+        policy, with dense carry-all edges only when both optional libraries
+        are unavailable; nlist artifacts retain native extended coordinates.
+        ``"vesin"`` and ``"nv"`` select the corresponding search, raising for
+        unavailable or unsupported inputs. ``"auto"`` selects by frame count and
+        available libraries, falling back to the native builder when none applies.
+        Graph-routed artifacts use ``neighbor_graph_method`` instead and reject
+        nlist-specific controls rather than silently changing or ignoring the requested lower.
         Results are unchanged either way; only the neighbor-search cost differs.
         """
         from deepmd.pt_expt.utils.env import (

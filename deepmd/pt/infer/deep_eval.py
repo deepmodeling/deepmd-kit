@@ -287,12 +287,14 @@ class DeepEval(DeepEvalBackend):
     def _setup_nlist_backend(self, nlist_backend: str) -> None:
         """Resolve the neighbor-list construction strategy from a user choice.
 
-        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` / ``"nv"``
-        force the O(N) ``vesin.torch`` / ``nvalchemiops`` cell list (raising if
-        unavailable or the model/inputs are unsupported); ``"auto"`` picks the
-        available O(N) builder by frame count and otherwise falls back to the
-        native builder. Results are unchanged either way -- only the
-        neighbor-search cost differs.
+        ``"native"`` retains the model's unbuffered construction policy and
+        ignores ``neighbor_skin``. For self-built SeZM/DPA4 models this is a
+        batch-aware Vesin/NV strategy, with dense carry-all edges only when both
+        optional libraries are unavailable. Other models retain their native
+        extended-coordinate construction. ``"vesin"`` / ``"nv"`` force the
+        corresponding search (raising for unavailable or unsupported inputs);
+        ``"auto"`` selects by frame count and available libraries. Results are
+        unchanged either way -- only the neighbor-search cost differs.
         """
         inner = self.dp.model["Default"]
         self_built = getattr(inner, "use_self_built_nlist", None)
