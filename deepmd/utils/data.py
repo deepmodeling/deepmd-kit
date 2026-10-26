@@ -322,6 +322,30 @@ class DeepmdData:
         """
         return self.get_single_frame(index, num_worker)
 
+    @functools.cached_property
+    def _sampling_set_nframes(self) -> np.ndarray:
+        """Count frames in each set after its on-disk copy weights are applied."""
+        sizes = []
+        for set_dir, nframes in zip(
+            self.dirs, np.diff([0, *self.prefix_sum]), strict=True
+        ):
+            _, copies = self._load_data(
+                set_dir, "numb_copy", int(nframes), 1, must=False, default=1, dtype=int
+            )
+            sizes.append(int(copies.sum()))
+        return np.asarray(sizes, dtype=np.int64)
+
+    def get_mean_batch_nframes(self, batch_size: int) -> float:
+        """Return the initial pass's mean batch size, including undersized sets.
+
+        A set smaller than one batch is returned whole. Larger sets drop their
+        short tail, as in :meth:`get_batch`. Copy weights are applied before
+        counting batches.
+        """
+        sizes = self._sampling_set_nframes
+        counts = np.maximum(1, sizes // batch_size)
+        return float(np.dot(counts, np.minimum(sizes, batch_size)) / counts.sum())
+
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
 
@@ -794,7 +818,12 @@ class DeepmdData:
             self.batch_set = self._load_set(set_name)
             if self.modifier is not None:
                 self.modifier.modify_data(self.batch_set, self)
-        self.batch_set, _ = self._shuffle_data(self.batch_set)
+            self.batch_set, _ = self._shuffle_data(self.batch_set)
+        else:
+            # Resident frames already contain their requested copies.
+            indices = np.arange(self.batch_set["coord"].shape[0], dtype=np.int64)
+            dp_random.shuffle(indices)
+            self.batch_set = self._get_subdata(self.batch_set, indices)
         self.reset_get_batch()
 
     def reset_get_batch(self) -> None:

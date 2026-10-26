@@ -61,6 +61,7 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
+    create_dataset,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
@@ -70,7 +71,6 @@ from deepmd.pt.utils.finetune import (
 )
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
-    is_lmdb,
 )
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
@@ -90,9 +90,14 @@ from deepmd.utils.compat import (
 from deepmd.utils.data import (
     min_pair_dist_requirement,
 )
-from deepmd.utils.data_system import (
-    get_data,
+from deepmd.utils.data_group import (
+    GroupedDataset,
+)
+from deepmd.utils.data_path import (
     process_systems,
+)
+from deepmd.utils.data_system import (
+    get_neighbor_stat_data,
 )
 from deepmd.utils.model_preset import (
     expand_model_preset,
@@ -155,8 +160,8 @@ def get_trainer(
         rank: int = 0,
         seed: int | None = None,
     ) -> tuple[
-        DpLoaderSet | LmdbDataset,
-        DpLoaderSet | LmdbDataset | None,
+        DpLoaderSet | LmdbDataset | GroupedDataset,
+        DpLoaderSet | LmdbDataset | GroupedDataset | None,
         StatFileSpec,
     ]:
         # get data modifier
@@ -167,11 +172,6 @@ def get_trainer(
 
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data")
-        validation_systems = (
-            validation_dataset_params["systems"] if validation_dataset_params else None
-        )
-        training_systems = training_dataset_params["systems"]
-
         stat_file_spec = StatFileSpec(
             data_dict_single.get("stat_file"),
             data_dict_single.get("stat_file_mode", "update"),
@@ -179,56 +179,22 @@ def get_trainer(
 
         rank_seed = [rank, seed % (2**32)] if seed is not None else None
 
-        def _make_dp_loader_set(
-            systems: str | list[str],
-            dataset_params: dict[str, Any],
-        ) -> DpLoaderSet:
-            """Create a DpLoaderSet from systems with pattern expansion."""
-            patterns = dataset_params.get("rglob_patterns")
-            systems = process_systems(systems, patterns=patterns)
-            return DpLoaderSet(
-                systems,
-                dataset_params["batch_size"],
+        train_data_single = create_dataset(
+            training_dataset_params,
+            model_params_single["type_map"],
+            seed=rank_seed,
+            modifier=modifier,
+        )
+        validation_data_single = (
+            create_dataset(
+                validation_dataset_params,
                 model_params_single["type_map"],
                 seed=rank_seed,
                 modifier=modifier,
             )
-
-        # LMDB path: single string → LmdbDataset
-        if isinstance(training_systems, str) and is_lmdb(training_systems):
-            auto_prob = training_dataset_params.get("auto_prob", None)
-            train_data_single = LmdbDataset(
-                training_systems,
-                model_params_single["type_map"],
-                training_dataset_params["batch_size"],
-                auto_prob_style=auto_prob,
-            )
-            if (
-                validation_systems is not None
-                and isinstance(validation_systems, str)
-                and is_lmdb(validation_systems)
-            ):
-                validation_data_single = LmdbDataset(
-                    validation_systems,
-                    model_params_single["type_map"],
-                    validation_dataset_params["batch_size"],
-                )
-            elif validation_systems is not None:
-                validation_data_single = _make_dp_loader_set(
-                    validation_systems, validation_dataset_params
-                )
-            else:
-                validation_data_single = None
-        else:
-            # Standard npy path
-            train_data_single = _make_dp_loader_set(
-                training_systems, training_dataset_params
-            )
-            validation_data_single = (
-                _make_dp_loader_set(validation_systems, validation_dataset_params)
-                if validation_systems
-                else None
-            )
+            if validation_dataset_params is not None
+            else None
+        )
         return (
             train_data_single,
             validation_data_single,
@@ -399,21 +365,9 @@ def train(
 
         if not multi_task:
             type_map = config["model"].get("type_map")
-            training_systems = config["training"]["training_data"].get("systems")
-            if (
-                training_systems is not None
-                and isinstance(training_systems, str)
-                and is_lmdb(training_systems)
-            ):
-                from deepmd.dpmodel.utils.lmdb_data import (
-                    make_neighbor_stat_data,
-                )
-
-                train_data = make_neighbor_stat_data(training_systems, type_map)
-            else:
-                train_data = get_data(
-                    config["training"]["training_data"], 0, type_map, None
-                )
+            train_data = get_neighbor_stat_data(
+                config["training"]["training_data"], type_map
+            )
             config["model"], min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, config["model"]
             )
@@ -421,26 +375,10 @@ def train(
             min_nbor_dist = {}
             for model_item in config["model"]["model_dict"]:
                 type_map = config["model"]["model_dict"][model_item].get("type_map")
-                training_systems = config["training"]["data_dict"][model_item][
-                    "training_data"
-                ].get("systems")
-                if (
-                    training_systems is not None
-                    and isinstance(training_systems, str)
-                    and is_lmdb(training_systems)
-                ):
-                    from deepmd.dpmodel.utils.lmdb_data import (
-                        make_neighbor_stat_data,
-                    )
-
-                    train_data = make_neighbor_stat_data(training_systems, type_map)
-                else:
-                    train_data = get_data(
-                        config["training"]["data_dict"][model_item]["training_data"],
-                        0,
-                        type_map,
-                        None,
-                    )
+                train_data = get_neighbor_stat_data(
+                    config["training"]["data_dict"][model_item]["training_data"],
+                    type_map,
+                )
                 config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
                     BaseModel.update_sel(
                         train_data, type_map, config["model"]["model_dict"][model_item]

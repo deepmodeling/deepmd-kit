@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""JSON Schema for model inputs before preset expansion."""
+"""JSON Schema for model presets and grouped data input forms."""
 
 import json
 import re
@@ -12,6 +12,24 @@ from deepmd.utils.model_preset_data import (
 )
 
 _REGIONS = ("type_map", "descriptor", "fitting_net")
+
+
+def with_data_groups(schema: dict[str, Any], multi_task: bool) -> dict[str, Any]:
+    """Describe the same training-data fields for dictionaries and list items."""
+    training = schema["properties"]["training"]
+    if multi_task:
+        training = training["properties"]["data_dict"]["additionalProperties"]
+    data = training["properties"]["training_data"]
+    data["items"] = {
+        "type": "object",
+        "properties": data["properties"],
+        "required": data["required"],
+    }
+    if "allOf" in data:
+        data["items"]["allOf"] = data["allOf"]
+    data["minItems"] = 1
+    data["properties"]["prob"].update(minimum=0, maximum=1)
+    return schema
 
 
 def _preset_pattern(names: list[str]) -> str:
