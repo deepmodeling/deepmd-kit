@@ -19,18 +19,21 @@ def process_sys_probs(
     share the remaining probability in proportion to their batch counts.
     A fully assigned probability vector does not depend on batch counts.
     """
-    probabilities = np.asarray(sys_probs, dtype=np.float64)
+    probabilities = np.asarray(sys_probs)
+    if not np.issubdtype(probabilities.dtype, np.floating):
+        probabilities = probabilities.astype(np.float64)
     if probabilities.ndim != 1:
         raise ValueError("Sampling probabilities must be one-dimensional.")
     if not np.all(np.isfinite(probabilities)):
         raise ValueError("Sampling probabilities must be finite.")
     assigned = probabilities >= 0
     assigned_sum = float(probabilities[assigned].sum())
-    if assigned_sum > 1.0 + 1e-8:
+    tolerance = max(1e-8, float(np.finfo(probabilities.dtype).eps))
+    if assigned_sum > 1.0 + tolerance:
         raise ValueError("The sum of assigned probabilities must not exceed 1.")
     result = np.where(assigned, probabilities, 0.0)
     remaining = max(0.0, 1.0 - assigned_sum)
-    if remaining > 1e-8:
+    if remaining > tolerance:
         sizes = np.asarray(nbatch, dtype=np.float64)
         if probabilities.shape != sizes.shape:
             raise ValueError(
@@ -119,7 +122,13 @@ def group_probabilities(
     ):
         raise ValueError("A group's prob must be non-negative or omitted.")
     resolved = process_sys_probs(
-        [-1.0 if probability is None else probability for probability in probabilities],
+        np.asarray(
+            [
+                -1.0 if probability is None else probability
+                for probability in probabilities
+            ],
+            dtype=np.float64,
+        ),
         sizes,
     )
     if np.any((np.asarray(sizes) == 0) & (resolved > 0)):
