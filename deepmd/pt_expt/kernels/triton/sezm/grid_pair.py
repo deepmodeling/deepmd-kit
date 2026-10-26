@@ -1033,7 +1033,7 @@ def _slot_partition(p_dim: int) -> tuple[int, int]:
 def _launch_kwargs(
     shape_key: _ShapeKey, config: _LaunchConfig
 ) -> dict[str, int | bool]:
-    """Use identical specialization parameters for validation and execution."""
+    """Share static geometry and tile parameters between validation and execution."""
     _, p_dim, c_per, n_focus, n_frames, packed, n_grid, _ = shape_key
     p_hi, p_lo = _slot_partition(p_dim)
     c_blk, block_g, stages = config
@@ -1072,6 +1072,10 @@ def _select_launch_config(
     its handles checks the device's resource limits before a configuration
     enters the cache or a traced graph. Fake-tensor tracing therefore makes
     the same choice as eager execution.
+
+    The probe admits a tile configuration, not a byte-identical runtime binary.
+    Scalar and pointer-alignment specialization of the actual launch can still
+    produce a separate compiled artifact.
 
     The channel cap keeps the ``n_acc`` fp32 accumulator tiles register
     resident. Exact shared-memory requirements are checked by Triton, whose

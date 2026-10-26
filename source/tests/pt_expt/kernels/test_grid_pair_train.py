@@ -131,6 +131,48 @@ def test_launch_selection_retries_and_caches(
 
 
 @pytest.mark.usefixtures("isolated_launch_selection")
+def test_admitted_launch_preserves_runtime_arguments_and_reuses_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An admitted tile executes with each input's actual layout and pair count."""
+    probes = []
+    loaded = []
+    launches = []
+
+    class Kernel:
+        fn = SimpleNamespace(__name__="test_kernel")
+
+        def warmup(self, *args: object, **kwargs: object) -> SimpleNamespace:
+            probes.append((args, kwargs))
+            return SimpleNamespace(_init_handles=lambda: loaded.append(True))
+
+    class Launcher:
+        def __getitem__(self, grid: tuple[int, int]) -> Callable[..., None]:
+            def execute(*args: object, **kwargs: object) -> None:
+                launches.append((grid, args, kwargs))
+
+            return execute
+
+    kernel = Kernel()
+    monkeypatch.setattr(grid_pair_module, "wrap_triton", lambda candidate: Launcher())
+    for n_node in (2, 3):
+        value = torch.empty(49, n_node, 2, 192, device="cpu").permute(1, 0, 2, 3)
+        strides = value.stride()
+        grid_pair_module._launch(kernel, value, 587, 3, False, (value, *strides), 1)
+        grid, args, kwargs = launches[-1]
+        assert grid == (2 * n_node, 2)
+        assert args[0] is value
+        assert args[1:-1] == strides
+        assert args[-1] == 2 * n_node
+        assert kwargs == {
+            key: val for key, val in probes[0][1].items() if key != "grid"
+        }
+    assert len(probes) == len(loaded) == 1
+    assert len(launches) == 2
+    assert grid_pair_module._select_launch_config.cache_info().hits == 1
+
+
+@pytest.mark.usefixtures("isolated_launch_selection")
 def test_launch_rejection_is_cached_and_reported() -> None:
     """An exhausted selector prevents execution and reuses its cached miss."""
     attempts = []
@@ -546,6 +588,7 @@ def test_cold_compiled_force_backward(
     fallback_ops = set()
     probed_ops = set()
     admitted_ops = set()
+    probe_inputs = {}
     reference = grid_pair_module._eager_packed
 
     def record_fallback(op: str, *args: torch.Tensor) -> tuple[torch.Tensor, ...]:
@@ -566,6 +609,7 @@ def test_cold_compiled_force_backward(
             **kwargs: object,
         ) -> CompiledKernel:
             probed_ops.add(_op)
+            probe_inputs[_op] = (_warmup, args, kwargs)
             if force_reference:
                 raise grid_pair_module.triton.runtime.errors.OutOfResources(
                     2, 1, "test"
@@ -648,6 +692,31 @@ def test_cold_compiled_force_backward(
             assert fallback_ops == probed_ops - admitted_ops
             if force_reference:
                 assert not admitted_ops
+            else:
+                for op in probed_ops - admitted_ops:
+                    warmup, args, kwargs = probe_inputs[op]
+                    # Probe only after the cold compiled execution. This uses
+                    # the original kernel, independently of the selector's
+                    # admission decision, without warming the traced path.
+                    try:
+                        minimum = warmup(
+                            *args,
+                            **(
+                                kwargs
+                                | {
+                                    "C_BLK": 16,
+                                    "BLOCK_G": 16,
+                                    "num_stages": 1,
+                                    "num_warps": 4,
+                                }
+                            ),
+                        )
+                        minimum._init_handles()
+                    except grid_pair_module.triton.runtime.errors.OutOfResources:
+                        continue
+                    pytest.fail(
+                        f"{op} rejected every tile although its minimum tile loads"
+                    )
             expected = force_forward(*inputs, *projectors)
             expected_gradients = force_loss_gradient(expected, inputs)
             for got, want in zip(
