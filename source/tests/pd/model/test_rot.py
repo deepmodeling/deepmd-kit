@@ -19,13 +19,9 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (  # model_dpau,
-    model_dos,
     model_dpa1,
     model_dpa2,
-    model_hybrid,
     model_se_e2_a,
-    model_spin,
-    model_zbl,
 )
 
 dtype = paddle.float64
@@ -161,14 +157,6 @@ class TestEnergyModelSeA(unittest.TestCase, RotTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
-class TestDOSModelSeA(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_dos)
-        self.type_split = False
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
 class TestEnergyModelDPA1(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
@@ -180,51 +168,6 @@ class TestEnergyModelDPA2(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestForceModelDPA2(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_dpa2)
-        model_params["fitting_net"]["type"] = "direct_force_ener"
-        self.type_split = True
-        self.test_virial = False
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelHybrid(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_hybrid)
-        self.type_split = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestForceModelHybrid(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_hybrid)
-        model_params["fitting_net"]["type"] = "direct_force_ener"
-        self.type_split = True
-        self.test_virial = False
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelZBL(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_zbl)
-        self.type_split = False
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelSpinSeA(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_spin)
-        self.type_split = False
-        self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 

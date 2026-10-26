@@ -62,85 +62,32 @@ class ModelTestCase:
     epsilon_dict: dict[str, float | None]
     """Dictionary of epsilons in each test."""
 
-    def test_get_type_map(self) -> None:
-        """Test get_type_map."""
+    def test_metadata(self) -> None:
+        """Model metadata survives serialization and supported JIT conversion."""
         for module in self.modules_to_test:
             self.assertEqual(module.get_type_map(), self.expected_type_map)
-
-    def test_get_rcut(self) -> None:
-        """Test get_rcut."""
-        for module in self.modules_to_test:
             self.assertAlmostEqual(module.get_rcut(), self.expected_rcut)
-
-    def test_get_dim_fparam(self) -> None:
-        """Test get_dim_fparam."""
-        for module in self.modules_to_test:
             self.assertEqual(module.get_dim_fparam(), self.expected_dim_fparam)
-
-    def test_get_dim_aparam(self) -> None:
-        """Test get_dim_aparam."""
-        for module in self.modules_to_test:
             self.assertEqual(module.get_dim_aparam(), self.expected_dim_aparam)
-
-    def test_get_sel_type(self) -> None:
-        """Test get_sel_type."""
-        for module in self.modules_to_test:
             self.assertEqual(module.get_sel_type(), self.expected_sel_type)
-
-    def test_is_aparam_nall(self) -> None:
-        """Test is_aparam_nall."""
-        for module in self.modules_to_test:
             self.assertEqual(module.is_aparam_nall(), self.expected_aparam_nall)
-
-    def test_model_output_type(self) -> None:
-        """Test model_output_type."""
-        for module in self.modules_to_test:
             self.assertEqual(
                 module.model_output_type(), self.expected_model_output_type
             )
-
-    def test_get_nnei(self) -> None:
-        """Test get_nnei."""
-        expected_nnei = sum(self.expected_sel)
-        for module in self.modules_to_test:
-            self.assertEqual(module.get_nnei(), expected_nnei)
-
-    def test_get_ntypes(self) -> None:
-        """Test get_ntypes."""
-        for module in self.modules_to_test:
+            self.assertEqual(module.get_nnei(), sum(self.expected_sel))
             self.assertEqual(module.get_ntypes(), len(self.expected_type_map))
-
-    def test_has_message_passing(self) -> None:
-        """Test has_message_passing."""
-        for module in self.modules_to_test:
             self.assertEqual(
                 module.has_message_passing(), self.expected_has_message_passing
             )
 
-    def test_has_spin(self) -> None:
-        """Test has_spin.
+    def test_capabilities(self) -> None:
+        """Check Python capabilities on the unfrozen model.
 
-        Declared on the base model with a concrete default of ``False``
-        (direct method call, never a ``getattr`` probe); spin model wrappers
-        override it to ``True`` -- which is exactly the suite's ``test_spin``
-        flag. Checked on the raw module only (not the jit-scripted copies in
-        ``modules_to_test``): the capability contract is a Python-API
-        contract, and pt's TorchScript models do not ``@torch.jit.export``
-        it.
+        These methods are not all exported by TorchScript.
         """
         expected = getattr(self, "test_spin", False)
         self.assertEqual(self.module.has_spin(), expected)
 
-    def test_chg_spin_capability_contract(self) -> None:
-        """chg-spin queries are declared on the base model with concrete
-        defaults (False/0/None) -- direct calls, never ``hasattr`` probes.
-
-        ``has_default_chg_spin`` was merged into ``get_default_chg_spin``
-        (predicate: ``get_default_chg_spin() is not None``). Its absence on
-        the dpmodel side is pinned in
-        source/tests/universal/dpmodel/model/test_model.py -- pt is frozen
-        and still declares the (now-redundant) method.
-        """
         assert isinstance(self.module.has_chg_spin_ebd(), bool)
         assert isinstance(self.module.get_dim_chg_spin(), int)
         dcs = self.module.get_default_chg_spin()
@@ -148,12 +95,6 @@ class ModelTestCase:
         # torch.Tensor -- pin the shape contract, not the container type.
         assert dcs is None or len(dcs) == self.module.get_dim_chg_spin()
 
-    def test_property_capability_contract(self) -> None:
-        """Property queries are declared on the base model with concrete
-        defaults: ``get_var_name`` returns ``None`` for non-property models
-        (the support predicate), ``get_intensive`` defaults ``False``,
-        ``get_task_dim`` raises for non-property models.
-        """
         vn = self.module.get_var_name()
         assert vn is None or isinstance(vn, str)
         assert isinstance(self.module.get_intensive(), bool)

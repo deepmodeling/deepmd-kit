@@ -7,7 +7,8 @@ Part A: Model-level tests (FinetuneTest mixin)
 
 Part B: CLI end-to-end tests (TestFinetuneCLI)
   - test_finetune_cli
-  - test_finetune_cli_use_pretrain_script
+  - test_finetune_from_pte
+  - test_finetune_from_pt2
   - test_finetune_random_fitting
 """
 
@@ -599,124 +600,97 @@ class TestFinetuneCLI(unittest.TestCase):
                             f"when random_fitting=True",
                         )
 
-    def test_finetune_cli(self) -> None:
-        """Train -> finetune via main() dispatcher -> verify checkpoint exists."""
+    def _check_finetune_artifact(self, suffix: str) -> None:
+        """Reuse one pretrained artifact for both CLI configuration policies."""
         from deepmd.pt_expt.entrypoints.main import (
-            main,
+            freeze,
         )
 
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_cli_")
         old_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            # Phase 1: train pretrained model
-            config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            config = update_deepmd_input(config, warning=False)
-            config = normalize(config)
-            ckpt_path = self._train_pretrained(config, tmpdir)
-
-            # Save original bias
-            state = torch.load(ckpt_path, map_location=DEVICE, weights_only=True)
-            model_state = state["model"] if "model" in state else state
-            original_model = get_model(model_state["_extra_state"]["model_params"]).to(
-                DEVICE
+            config = normalize(
+                update_deepmd_input(
+                    _make_config(self.data_dir, model_se_e2_a), warning=False
+                )
             )
-            original_wrapper = ModelWrapper(original_model)
-            original_wrapper.load_state_dict(model_state)
-            original_bias = to_numpy_array(original_model.get_out_bias()).copy()
+            checkpoint = self._train_pretrained(config, tmpdir)
+            pretrained = torch.load(checkpoint, map_location=DEVICE, weights_only=True)
+            pretrained = pretrained["model"] if "model" in pretrained else pretrained
+            artifact = os.path.join(tmpdir, "pretrained" + suffix)
+            if suffix == ".pt":
+                shutil.copy2(checkpoint, artifact)
+            else:
+                freeze(model=checkpoint, output=artifact)
+            self.assertTrue(os.path.exists(artifact))
 
-            # Phase 2: finetune via CLI (lr=0 so weights stay unchanged)
-            ft_config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            ft_config["learning_rate"]["start_lr"] = 1e-30
-            ft_config["learning_rate"]["stop_lr"] = 1e-30
-            ft_config_file = os.path.join(tmpdir, "finetune_input.json")
-            with open(ft_config_file, "w") as f:
-                json.dump(ft_config, f)
-
-            main(
-                [
-                    "train",
-                    ft_config_file,
-                    "--finetune",
-                    ckpt_path,
-                    "--skip-neighbor-stat",
-                ]
-            )
-
-            # Verify new checkpoint exists
-            ft_ckpt = os.path.join(tmpdir, "model.ckpt.pt")
-            self.assertTrue(os.path.exists(ft_ckpt), "Finetune checkpoint not found")
-
-            # Load finetuned model and verify bias changed
-            ft_state = torch.load(ft_ckpt, map_location=DEVICE, weights_only=True)
-            ft_model_state = ft_state["model"] if "model" in ft_state else ft_state
-            ft_model = get_model(ft_model_state["_extra_state"]["model_params"]).to(
-                DEVICE
-            )
-            ft_wrapper = ModelWrapper(ft_model)
-            ft_wrapper.load_state_dict(ft_model_state)
-            ft_bias = to_numpy_array(ft_model.get_out_bias())
-
-            # Bias should have been adjusted (may or may not differ depending
-            # on data, but the checkpoint should at least be valid)
-            self.assertEqual(original_bias.shape, ft_bias.shape)
-
-            # Inherited weights (descriptor + fitting) must match pretrained.
-            # lr=0 so training step doesn't modify weights.
-            self._assert_inherited_weights_match(
-                ft_model_state, model_state, random_fitting=False
-            )
+            for use_pretrain_script in (False, True):
+                with self.subTest(use_pretrain_script=use_pretrain_script):
+                    output_dir = os.path.join(tmpdir, str(use_pretrain_script))
+                    os.mkdir(output_dir)
+                    os.chdir(output_dir)
+                    self._run_finetune_cli(artifact, pretrained, use_pretrain_script)
         finally:
             os.chdir(old_cwd)
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-    def test_finetune_cli_use_pretrain_script(self) -> None:
-        """Finetune with --use-pretrain-script -> config copied from pretrained."""
+    def _run_finetune_cli(
+        self, artifact: str, pretrained: dict, use_pretrain_script: bool
+    ) -> None:
+        """Fine-tune in an isolated output directory and verify the chosen policy."""
         from deepmd.pt_expt.entrypoints.main import (
             main,
         )
 
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_pretrain_")
-        old_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        try:
-            # Phase 1: train pretrained model
-            config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            config = update_deepmd_input(config, warning=False)
-            config = normalize(config)
-            ckpt_path = self._train_pretrained(config, tmpdir)
+        model_params = deepcopy(model_se_e2_a)
+        if use_pretrain_script:
+            model_params["descriptor"]["neuron"] = [4, 8]
+        config = _make_config(self.data_dir, model_params)
+        if not use_pretrain_script:
+            config["learning_rate"]["start_lr"] = 1e-30
+            config["learning_rate"]["stop_lr"] = 1e-30
+        with open("finetune_input.json", "w") as handle:
+            json.dump(config, handle)
+        flags = ["train", "finetune_input.json", "--finetune", artifact]
+        if use_pretrain_script:
+            flags.append("--use-pretrain-script")
+        main([*flags, "--skip-neighbor-stat"])
 
-            # Phase 2: finetune with --use-pretrain-script
-            # Use a config with different descriptor neuron sizes
-            ft_model_params = deepcopy(model_se_e2_a)
-            ft_model_params["descriptor"]["neuron"] = [4, 8]  # different
-            ft_config = _make_config(self.data_dir, ft_model_params, numb_steps=1)
-            ft_config_file = os.path.join(tmpdir, "finetune_input.json")
-            with open(ft_config_file, "w") as f:
-                json.dump(ft_config, f)
-
-            main(
-                [
-                    "train",
-                    ft_config_file,
-                    "--finetune",
-                    ckpt_path,
-                    "--use-pretrain-script",
-                    "--skip-neighbor-stat",
-                ]
-            )
-
-            # Verify the output config was updated from pretrained
-            with open(os.path.join(tmpdir, "out.json")) as f:
-                output_config = json.load(f)
-            # Descriptor neuron should be from pretrained, not from ft_config
+        self.assertTrue(os.path.exists("model.ckpt.pt"))
+        state = torch.load("model.ckpt.pt", map_location=DEVICE, weights_only=True)
+        state = state["model"] if "model" in state else state
+        self.assertIn("_extra_state", state)
+        if use_pretrain_script:
+            with open("out.json") as handle:
+                output_config = json.load(handle)
             self.assertEqual(
                 output_config["model"]["descriptor"]["neuron"],
                 model_se_e2_a["descriptor"]["neuron"],
             )
-        finally:
-            os.chdir(old_cwd)
-            shutil.rmtree(tmpdir, ignore_errors=True)
+        else:
+            self._assert_inherited_weights_match(state, pretrained)
+            biases = []
+            for model_state in (pretrained, state):
+                model = get_model(model_state["_extra_state"]["model_params"]).to(
+                    DEVICE
+                )
+                wrapper = ModelWrapper(model)
+                wrapper.load_state_dict(model_state)
+                biases.append(tuple(model.get_out_bias().shape))
+            self.assertEqual(*biases)
+
+    def test_finetune_cli(self) -> None:
+        """Fine-tune a checkpoint with explicit or pretrained model configuration."""
+        self._check_finetune_artifact(".pt")
+
+    def test_finetune_from_pte(self) -> None:
+        """Fine-tune a .pte artifact under both configuration policies."""
+        self._check_finetune_artifact(".pte")
+
+    def test_finetune_from_pt2(self) -> None:
+        """Fine-tune a .pt2 artifact under both configuration policies."""
+        self._check_finetune_artifact(".pt2")
 
     def test_finetune_random_fitting(self) -> None:
         """Finetune with --model-branch RANDOM -> descriptor from pretrained, fitting random."""
@@ -867,238 +841,6 @@ class TestFinetuneCLI(unittest.TestCase):
     def test_finetune_random_fitting_into_bridged(self) -> None:
         """A RANDOM fitting of a bridged target takes the plain descriptor."""
         self._finetune_across_bridging(source_bridged=False, model_branch="RANDOM")
-
-    def test_finetune_from_pte(self) -> None:
-        """Train -> freeze to .pte -> finetune from .pte -> verify checkpoint."""
-        from deepmd.pt_expt.entrypoints.main import (
-            freeze,
-            main,
-        )
-
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_pte_")
-        old_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        try:
-            # Phase 1: train pretrained model
-            config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            config = update_deepmd_input(config, warning=False)
-            config = normalize(config)
-            ckpt_path = self._train_pretrained(config, tmpdir)
-
-            # Phase 2: freeze to .pte
-            pte_path = os.path.join(tmpdir, "frozen.pte")
-            freeze(model=ckpt_path, output=pte_path)
-            self.assertTrue(os.path.exists(pte_path))
-
-            # Phase 3: finetune from .pte via CLI (lr=0 so weights stay unchanged)
-            ft_config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            ft_config["learning_rate"]["start_lr"] = 1e-30
-            ft_config["learning_rate"]["stop_lr"] = 1e-30
-            ft_config_file = os.path.join(tmpdir, "finetune_input.json")
-            with open(ft_config_file, "w") as f:
-                json.dump(ft_config, f)
-
-            main(
-                [
-                    "train",
-                    ft_config_file,
-                    "--finetune",
-                    pte_path,
-                    "--skip-neighbor-stat",
-                ]
-            )
-
-            # Verify new checkpoint exists
-            ft_ckpt = os.path.join(tmpdir, "model.ckpt.pt")
-            self.assertTrue(os.path.exists(ft_ckpt), "Finetune checkpoint not found")
-
-            # Load finetuned model and verify it's valid
-            ft_state = torch.load(ft_ckpt, map_location=DEVICE, weights_only=True)
-            ft_model_state = ft_state["model"] if "model" in ft_state else ft_state
-            self.assertIn("_extra_state", ft_model_state)
-
-            # Load pretrained from .pt for weight comparison
-            pre_state = torch.load(ckpt_path, map_location=DEVICE, weights_only=True)
-            pre_model_state = pre_state["model"] if "model" in pre_state else pre_state
-
-            # Inherited weights must match pretrained
-            self._assert_inherited_weights_match(
-                ft_model_state, pre_model_state, random_fitting=False
-            )
-        finally:
-            os.chdir(old_cwd)
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_finetune_from_pte_use_pretrain_script(self) -> None:
-        """Train -> freeze to .pte -> finetune with --use-pretrain-script."""
-        from deepmd.pt_expt.entrypoints.main import (
-            freeze,
-            main,
-        )
-
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_pte_ups_")
-        old_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        try:
-            # Phase 1: train pretrained model
-            config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            config = update_deepmd_input(config, warning=False)
-            config = normalize(config)
-            ckpt_path = self._train_pretrained(config, tmpdir)
-
-            # Phase 2: freeze to .pte (embeds model_params)
-            pte_path = os.path.join(tmpdir, "frozen.pte")
-            freeze(model=ckpt_path, output=pte_path)
-
-            # Phase 3: finetune from .pte with --use-pretrain-script
-            ft_model_params = deepcopy(model_se_e2_a)
-            ft_model_params["descriptor"]["neuron"] = [4, 8]  # different
-            ft_config = _make_config(self.data_dir, ft_model_params, numb_steps=1)
-            ft_config_file = os.path.join(tmpdir, "finetune_input.json")
-            with open(ft_config_file, "w") as f:
-                json.dump(ft_config, f)
-
-            main(
-                [
-                    "train",
-                    ft_config_file,
-                    "--finetune",
-                    pte_path,
-                    "--use-pretrain-script",
-                    "--skip-neighbor-stat",
-                ]
-            )
-
-            # Verify the output config was updated from pretrained
-            with open(os.path.join(tmpdir, "out.json")) as f:
-                output_config = json.load(f)
-            # Descriptor neuron should be from pretrained, not from ft_config
-            self.assertEqual(
-                output_config["model"]["descriptor"]["neuron"],
-                model_se_e2_a["descriptor"]["neuron"],
-            )
-        finally:
-            os.chdir(old_cwd)
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_finetune_from_pt2(self) -> None:
-        """Train -> freeze to .pt2 -> finetune from .pt2 -> verify checkpoint."""
-        from deepmd.pt_expt.entrypoints.main import (
-            freeze,
-            main,
-        )
-
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_pt2_")
-        old_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        try:
-            # Phase 1: train pretrained model
-            config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            config = update_deepmd_input(config, warning=False)
-            config = normalize(config)
-            ckpt_path = self._train_pretrained(config, tmpdir)
-
-            # Phase 2: freeze to .pt2
-            pt2_path = os.path.join(tmpdir, "frozen.pt2")
-            freeze(model=ckpt_path, output=pt2_path)
-            self.assertTrue(os.path.exists(pt2_path))
-
-            # Save pretrained weights before finetune overwrites model.ckpt.pt
-            pre_ckpt_copy = os.path.join(tmpdir, "pretrained_copy.pt")
-            shutil.copy2(ckpt_path, pre_ckpt_copy)
-
-            # Phase 3: finetune from .pt2 via CLI (lr=0 so weights stay unchanged)
-            ft_config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            ft_config["learning_rate"]["start_lr"] = 1e-30
-            ft_config["learning_rate"]["stop_lr"] = 1e-30
-            ft_config_file = os.path.join(tmpdir, "finetune_input.json")
-            with open(ft_config_file, "w") as f:
-                json.dump(ft_config, f)
-
-            main(
-                [
-                    "train",
-                    ft_config_file,
-                    "--finetune",
-                    pt2_path,
-                    "--skip-neighbor-stat",
-                ]
-            )
-
-            # Verify new checkpoint exists
-            ft_ckpt = os.path.join(tmpdir, "model.ckpt.pt")
-            self.assertTrue(os.path.exists(ft_ckpt), "Finetune checkpoint not found")
-
-            # Load finetuned model and verify it's valid
-            ft_state = torch.load(ft_ckpt, map_location=DEVICE, weights_only=True)
-            ft_model_state = ft_state["model"] if "model" in ft_state else ft_state
-            self.assertIn("_extra_state", ft_model_state)
-
-            # Load pretrained from saved copy (finetune overwrites model.ckpt.pt)
-            pre_state = torch.load(
-                pre_ckpt_copy, map_location=DEVICE, weights_only=True
-            )
-            pre_model_state = pre_state["model"] if "model" in pre_state else pre_state
-
-            # Inherited weights must match pretrained
-            self._assert_inherited_weights_match(
-                ft_model_state, pre_model_state, random_fitting=False
-            )
-        finally:
-            os.chdir(old_cwd)
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_finetune_from_pt2_use_pretrain_script(self) -> None:
-        """Train -> freeze to .pt2 -> finetune with --use-pretrain-script."""
-        from deepmd.pt_expt.entrypoints.main import (
-            freeze,
-            main,
-        )
-
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_pt2_ups_")
-        old_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        try:
-            # Phase 1: train pretrained model
-            config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
-            config = update_deepmd_input(config, warning=False)
-            config = normalize(config)
-            ckpt_path = self._train_pretrained(config, tmpdir)
-
-            # Phase 2: freeze to .pt2 (embeds model_params)
-            pt2_path = os.path.join(tmpdir, "frozen.pt2")
-            freeze(model=ckpt_path, output=pt2_path)
-
-            # Phase 3: finetune from .pt2 with --use-pretrain-script
-            ft_model_params = deepcopy(model_se_e2_a)
-            ft_model_params["descriptor"]["neuron"] = [4, 8]  # different
-            ft_config = _make_config(self.data_dir, ft_model_params, numb_steps=1)
-            ft_config_file = os.path.join(tmpdir, "finetune_input.json")
-            with open(ft_config_file, "w") as f:
-                json.dump(ft_config, f)
-
-            main(
-                [
-                    "train",
-                    ft_config_file,
-                    "--finetune",
-                    pt2_path,
-                    "--use-pretrain-script",
-                    "--skip-neighbor-stat",
-                ]
-            )
-
-            # Verify the output config was updated from pretrained
-            with open(os.path.join(tmpdir, "out.json")) as f:
-                output_config = json.load(f)
-            # Descriptor neuron should be from pretrained, not from ft_config
-            self.assertEqual(
-                output_config["model"]["descriptor"]["neuron"],
-                model_se_e2_a["descriptor"]["neuron"],
-            )
-        finally:
-            os.chdir(old_cwd)
-            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # Native-spin descriptors, paired with the fitting types they require. Each
