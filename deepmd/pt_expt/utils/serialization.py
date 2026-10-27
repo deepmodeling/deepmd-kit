@@ -1985,8 +1985,9 @@ def _trace_and_export_impl(
     )
 
     # Graph-form exports use a dynamic edge axis. Energy models translate to
-    # public energy keys; other outputs (a graph-only DPA4C dipole or
-    # polarizability model) keep the internal keys of the common lower.
+    # public energy keys; other outputs (a graph-only DPA4C dipole,
+    # polarizability, DOS or property model) keep the internal keys of the
+    # common lower.
     if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         import math
 
@@ -2034,11 +2035,15 @@ def _trace_and_export_impl(
                 "with-comm .pt2 export requires an energy model"
             )
         canonical = lower_kind in ("dpa1_canonical", "dpa4c_canonical")
-        required_method = (
-            "forward_lower_canonical_graph_exportable"
-            if canonical
-            else "forward_lower_graph_exportable"
-        )
+        if canonical:
+            required_method = "forward_lower_canonical_graph_exportable"
+        elif "energy" in model.atomic_output_def().keys():
+            required_method = "forward_lower_graph_exportable"
+        else:
+            # Any other output (dipole, polar, dos, property) exports the
+            # common lower with its internal keys, as the dense tensorial
+            # artifacts do; see the ``graph_output_keys`` metadata.
+            required_method = "forward_common_lower_graph_exportable"
         if not hasattr(model, required_method):
             raise NotImplementedError(
                 f"model {type(model).__name__} has no {required_method}"
@@ -2204,7 +2209,7 @@ def _trace_and_export_impl(
                     _allow_non_fake_inputs=True,
                 )
             else:
-                traced = model.forward_lower_graph_exportable(
+                traced = getattr(model, required_method)(
                     *sample_inputs[:10],
                     fparam=sample_inputs[10],
                     aparam=sample_inputs[11],

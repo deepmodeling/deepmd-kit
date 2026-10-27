@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Freezing and evaluating dipole and polarizability models.
+"""Freezing and evaluating non-energy models.
 
-DPA4C is graph-only, so its tensorial models freeze to the graph lower with
-the internal output keys and are evaluated through ``DeepDipole`` /
-``DeepPolar`` from the frozen archive and from a training checkpoint alike.
-The dense polarizability case pins the ``polar`` request alias, which the
-pt_expt inference previously answered with NaN.
+DPA4C is graph-only, so its dipole, polarizability, DOS and property models
+freeze to the graph lower with the internal output keys and are evaluated
+from the frozen archive and from a training checkpoint alike. The dense
+polarizability case pins the ``polar`` request alias, which the pt_expt
+inference previously answered with NaN, and ``eval_full`` pins the
+component-major layout of the per-atom tensor derivatives.
 """
 
 import os
@@ -48,7 +49,7 @@ from deepmd.pt_expt.utils.serialization import (
 WATER_TENSOR = Path(__file__).parents[2] / "pt" / "water_tensor"
 
 
-def _params(kind: str, descriptor: dict | None = None) -> dict:
+def _params(kind: str, descriptor: dict | None = None, **fitting: object) -> dict:
     return {
         "type_map": ["O", "H"],
         "atom_exclude_types": [1],
@@ -68,6 +69,7 @@ def _params(kind: str, descriptor: dict | None = None) -> dict:
             "neuron": [16, 16],
             "precision": "float64",
             "seed": 19,
+            **fitting,
         },
     }
 
@@ -191,17 +193,7 @@ def test_default_freeze_is_a_graph_pt2() -> None:
 
 def test_dense_polar_request_alias() -> None:
     """``DeepPolar`` requests ``polar``; the model emits ``polarizability``."""
-    descriptor = {
-        "type": "se_e2_a",
-        "sel": [8, 16],
-        "rcut_smth": 0.5,
-        "rcut": 3.0,
-        "neuron": [4, 8],
-        "axis_neuron": 4,
-        "precision": "float64",
-        "seed": 17,
-    }
-    model = get_model(_params("polar", descriptor)).to(env.DEVICE).eval()
+    model = get_model(_params("polar", SE_E2_A)).to(env.DEVICE).eval()
     tmpdir = tempfile.mkdtemp()
     try:
         pte = os.path.join(tmpdir, "polar.pte")
@@ -217,5 +209,126 @@ def test_dense_polar_request_alias() -> None:
         np.testing.assert_allclose(
             dp.eval(coord, cell, atype, atomic=False), total, atol=1e-10, rtol=1e-10
         )
+    finally:
+        shutil.rmtree(tmpdir)
+
+
+SE_E2_A = {
+    "type": "se_e2_a",
+    "sel": [8, 16],
+    "rcut_smth": 0.5,
+    "rcut": 3.0,
+    "neuron": [4, 8],
+    "axis_neuron": 4,
+    "precision": "float64",
+    "seed": 17,
+}
+
+
+@pytest.mark.parametrize("route", ["graph-pte", "graph-ckpt", "dense-pte"])
+def test_eval_full_derivatives_are_component_major(route: str) -> None:
+    """``eval_full`` returns force and atomic virial as ``(nf, 3, natoms, *)``.
+
+    The model lays the derivatives of a vector output out atom-major. The
+    force of component ``c`` on atom ``a`` must equal minus the derivative
+    of the global dipole component ``c`` with respect to that atom, which a
+    central difference checks independently of any output layout.
+    """
+    params = _params("dipole", SE_E2_A if route == "dense-pte" else None)
+    model = get_model(params).to(env.DEVICE).eval()
+    tmpdir = tempfile.mkdtemp()
+    try:
+        if route == "dense-pte":
+            path = os.path.join(tmpdir, "dipole.pte")
+            deserialize_to_file(
+                path, {"model": model.serialize()}, do_atomic_virial=True
+            )
+        else:
+            path = os.path.join(tmpdir, "model.ckpt.pt")
+            _save_checkpoint(model, params, path)
+            if route == "graph-pte":
+                pte = os.path.join(tmpdir, "frozen_model.pte")
+                freeze(model=path, output=pte)
+                path = pte
+        dp = DeepEval(path)
+        coord, cell, atype = _frames()
+        nf, natoms = coord.shape[:2]
+        _, force, virial, _, atom_virial = dp.eval_full(coord, cell, atype, atomic=True)
+        assert force.shape == (nf, 3, natoms, 3)
+        assert atom_virial.shape == (nf, 3, natoms, 9)
+
+        step = 1e-5
+        for atom, axis in ((0, 0), (1, 2), (2, 1)):
+            shift = np.zeros_like(coord)
+            shift[:, atom, axis] = step
+            plus = dp.eval(coord + shift, cell, atype, atomic=False)
+            minus = dp.eval(coord - shift, cell, atype, atomic=False)
+            np.testing.assert_allclose(
+                force[:, :, atom, axis],
+                -(plus - minus) / (2.0 * step),
+                atol=1e-6,
+                rtol=1e-6,
+            )
+        np.testing.assert_allclose(
+            atom_virial.sum(axis=2), virial, atol=1e-10, rtol=1e-10
+        )
+        ret = model(
+            torch.tensor(
+                coord, dtype=torch.float64, device=env.DEVICE, requires_grad=True
+            ),
+            torch.tensor(np.tile(atype, (nf, 1)), device=env.DEVICE),
+            box=torch.tensor(cell, dtype=torch.float64, device=env.DEVICE),
+        )
+        np.testing.assert_allclose(
+            virial,
+            ret["virial"].detach().cpu().numpy().reshape(nf, 3, 9),
+            atol=1e-10,
+            rtol=1e-10,
+        )
+    finally:
+        shutil.rmtree(tmpdir)
+
+
+@pytest.mark.parametrize(
+    ("kind", "fitting"),
+    [
+        ("dos", {"numb_dos": 5}),
+        ("property", {"task_dim": 3, "property_name": "foo"}),
+    ],
+)
+def test_dos_and_property_freeze_and_eval(kind: str, fitting: dict) -> None:
+    """Graph-only DOS and property models export the common lower too."""
+    params = _params(kind, **fitting)
+    model = get_model(params).to(env.DEVICE).eval()
+    tmpdir = tempfile.mkdtemp()
+    try:
+        ckpt = os.path.join(tmpdir, "model.ckpt.pt")
+        _save_checkpoint(model, params, ckpt)
+        pte = os.path.join(tmpdir, "frozen_model.pte")
+        freeze(model=ckpt, output=pte)
+        coord, cell, atype = _frames()
+        nf = coord.shape[0]
+        ret = model(
+            torch.tensor(coord, dtype=torch.float64, device=env.DEVICE),
+            torch.tensor(np.tile(atype, (nf, 1)), device=env.DEVICE),
+            box=torch.tensor(cell, dtype=torch.float64, device=env.DEVICE),
+        )
+        name = "dos" if kind == "dos" else model.get_var_name()
+        for path in (pte, ckpt):
+            dp = DeepEval(path)
+            assert dp.deep_eval.metadata["graph_output_keys"] == "internal"
+            total, atomic = dp.eval(coord, cell, atype, atomic=True)
+            np.testing.assert_allclose(
+                total,
+                ret[name].detach().cpu().numpy().reshape(total.shape),
+                atol=1e-10,
+                rtol=1e-10,
+            )
+            np.testing.assert_allclose(
+                atomic,
+                ret[f"atom_{name}"].detach().cpu().numpy().reshape(atomic.shape),
+                atol=1e-10,
+                rtol=1e-10,
+            )
     finally:
         shutil.rmtree(tmpdir)

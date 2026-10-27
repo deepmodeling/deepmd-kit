@@ -107,8 +107,8 @@ def model_exports_graph_lower(model: Any) -> bool:
 
     Export and inference are output-agnostic, so besides every model that
     trains on the graph lower this admits a graph-only model with any
-    fitting output (a DPA4C dipole or polarizability model), which has no
-    dense lower to export. Compiled training keeps the energy-only
+    fitting output (a DPA4C dipole, polarizability, DOS or property model),
+    which has no dense lower to export. Compiled training keeps the energy-only
     :func:`model_uses_graph_lower`.
 
     Parameters

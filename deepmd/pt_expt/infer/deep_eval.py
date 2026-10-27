@@ -115,6 +115,47 @@ _GRAPH_CATEGORY_TO_KEY = {
 }
 
 
+def _fold_output(
+    value: np.ndarray,
+    odef: "OutputVariableDef",
+    shape: list[int],
+    nframes: int,
+    natoms: int,
+) -> np.ndarray:
+    """Reshape a model output to the shape the inference API expects.
+
+    The model lays per-atom derivatives out atom-major, ``(nf, natoms,
+    *shape, 3)`` or ``(..., 9)``, while the API expects the component axes
+    first, ``(nf, *shape, natoms, 3)``. A scalar output (energy) has a
+    single component, where the two layouts coincide; a vector or tensor
+    output (dipole, polarizability) needs the atom axis moved.
+
+    Parameters
+    ----------
+    value
+        The model output on the frame and atom axes.
+    odef
+        The requested output definition.
+    shape
+        The shape the API expects, from ``_get_output_shape``.
+    nframes, natoms
+        Number of frames and atoms per frame.
+
+    Returns
+    -------
+    np.ndarray
+        The output reshaped to ``shape``.
+    """
+    if odef.category == OutputVariableCategory.DERV_R:
+        width = 3
+    elif odef.category == OutputVariableCategory.DERV_C:
+        width = 9
+    else:
+        return value.reshape(shape)
+    value = value.reshape(nframes, natoms, -1, width)
+    return np.swapaxes(value, 1, 2).reshape(shape)
+
+
 def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
     """Map a native-spin request def to its graph-spin public model key.
 
@@ -1248,8 +1289,10 @@ class DeepEval(DeepEvalBackend):
         return [int(t) for t in self.metadata.get("sel_type", [])]
 
     def get_numb_dos(self) -> int:
-        """Get the number of DOS."""
-        return 0
+        """Get the number of DOS; zero for a model without a DOS output."""
+        if self._dpmodel is None:
+            return 0
+        return int(self._dpmodel.get_numb_dos())
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
@@ -1986,7 +2029,13 @@ class DeepEval(DeepEvalBackend):
             if key in model_predict:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 if model_predict[key] is not None:
-                    out = model_predict[key].detach().cpu().numpy().reshape(shape)
+                    out = _fold_output(
+                        model_predict[key].detach().cpu().numpy(),
+                        odef,
+                        shape,
+                        nframes,
+                        natoms,
+                    )
                 else:
                     out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 results.append(out)
@@ -2165,7 +2214,11 @@ class DeepEval(DeepEvalBackend):
                 gkey = _GRAPH_CATEGORY_TO_KEY.get(odef.category)
             val = model_ret.get(gkey) if gkey is not None else None
             if val is not None:
-                results.append(val.detach().cpu().numpy().reshape(shape))
+                results.append(
+                    _fold_output(
+                        val.detach().cpu().numpy(), odef, shape, nframes, natoms
+                    )
+                )
             else:
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
