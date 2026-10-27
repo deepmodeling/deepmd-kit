@@ -185,7 +185,7 @@ def test_fine_tune_locates_the_learned_part_by_structure() -> None:
     A descriptor exclusion gives the child its own pair exclusion, which keeps
     the composition off the fused route, but not its learned part off its path.
     """
-    from deepmd.pt_expt.train.training import (
+    from deepmd.pt.utils.finetune import (
         _learned_part_path,
     )
 

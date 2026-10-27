@@ -4,6 +4,8 @@ from copy import (
     deepcopy,
 )
 
+import pytest
+
 from deepmd.utils import (
     finetune,
 )
@@ -298,22 +300,62 @@ def test_finetune_rule_builder_accepts_compatible_native_spin_transfers():
         ),
     )
     for pretrained, target in compatible_pairs:
-        finetune.FinetuneRuleBuilder(
+        _, rules = finetune.FinetuneRuleBuilder(
             pretrained,
             target,
             change_model_params=False,
         ).build()
+        assert not rules["Default"].convert_to_native_spin
 
 
-def test_finetune_rule_builder_rejects_non_native_spin_pretraining():
-    try:
+def test_finetune_rule_builder_accepts_spin_free_pretraining() -> None:
+    pretrained = _model_config(["Fe", "C"])
+    target = _native_spin_model_config(["Fe", "C"], ["Fe"])
+    target["preset_out_bias"] = {"energy": {"Fe": -1.0, "C": -2.0}}
+    target["bridging_method"] = "zbl"
+    original = deepcopy(target)
+    for change_model_params in (False, True):
+        config, rules = finetune.FinetuneRuleBuilder(
+            pretrained, target, change_model_params=change_model_params
+        ).build()
+        assert rules["Default"].convert_to_native_spin
+        assert config["spin"] == original["spin"]
+        assert config["preset_out_bias"] == original["preset_out_bias"]
+        assert config["bridging_method"] == "zbl"
+        assert target == original
+
+
+def test_spin_free_multitask_branch_requires_finetune_statistics() -> None:
+    pretrained = {"model_dict": {"magnetic": _model_config(["Fe", "C"])}}
+    target = {
+        "model_dict": {"magnetic": _native_spin_model_config(["Fe", "C"], ["Fe"])}
+    }
+    _, rules = finetune.FinetuneRuleBuilder(pretrained, target).build()
+    assert rules["magnetic"].convert_to_native_spin
+    assert not rules["magnetic"].get_resuming()
+
+
+@pytest.mark.parametrize("type_map", [["Fe", "C", "Ni"], ["Fe"], ["C", "Fe"]])
+def test_spin_free_conversion_rejects_changed_type_map(type_map: list[str]) -> None:
+    with pytest.raises(ValueError, match="identical ordered type maps"):
         finetune.FinetuneRuleBuilder(
             _model_config(["Fe", "C"]),
+            _native_spin_model_config(type_map, ["Fe"]),
+            change_model_params=False,
+        ).build()
+
+
+def test_finetune_rule_builder_rejects_virtual_spin_pretraining():
+    pretrained = _model_config(["Fe", "C"])
+    pretrained["spin"] = {"use_spin": [True, False], "scheme": "deepspin"}
+    try:
+        finetune.FinetuneRuleBuilder(
+            pretrained,
             _native_spin_model_config(["Fe", "C"], [True, False]),
             change_model_params=False,
         ).build()
     except ValueError as exc:
-        assert "requires a native-spin pretrained model" in str(exc)
+        assert "requires a spin-free or native-spin pretrained model" in str(exc)
     else:
         raise AssertionError("expected ValueError")
 
