@@ -1596,7 +1596,9 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
     model = BaseModel.deserialize(data["model"])
     if not (model_exports_graph_lower(model) and _supports_graph_export(model)):
         return None
-    if allow_canonical:
+    # The compact canonical ABIs and their fused operators produce energy,
+    # force and virial; any other output takes the generic graph lower.
+    if allow_canonical and "energy" in model.atomic_output_def().keys():
         from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
             canonical_model_eligible as dpa1_canonical_eligible,
         )

@@ -135,6 +135,10 @@ def _fused_energy_force_graph(
     edge scan evaluates alongside. Masks and graph preparation stay with the
     atomic model itself, which owns the exclusions.
     """
+    # The fused operators reduce by sum and emit energy-style derivatives,
+    # which a non-energy output (an intensive property, a DOS) does not share.
+    if "energy" not in model.atomic_output_def().keys():
+        return None
     am = model.atomic_model
     parts = am.fused_decomposition()
     if parts is None:
