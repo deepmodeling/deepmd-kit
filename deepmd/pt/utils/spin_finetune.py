@@ -63,9 +63,9 @@ def get_native_spin_finetune_state(
     Raises
     ------
     ValueError
-        If the learned parts, descriptor families, type maps or tensor shapes
-        are incompatible with spin-free transfer, or widening the fitting input
-        changes an implicit residual connection.
+        If the learned parts, descriptor or fitting families, type maps,
+        network layouts or tensor shapes are incompatible with spin-free transfer,
+        or widening the fitting input changes an implicit residual connection.
     """
     path = _learned_part_path(model)
     source_path = _learned_part_path(pretrained_model)
@@ -93,6 +93,8 @@ def get_native_spin_finetune_state(
     expanded = _expanded_spin_state(
         descriptor, source, learned, random_fitting=random_fitting
     )
+    if not random_fitting:
+        _validate_fitting_networks(source.fitting_net, learned.fitting_net)
     state = model.state_dict()
     for key, value in source.state_dict().items():
         target_key = path + key
@@ -280,6 +282,35 @@ def _expanded_fitting_input_state(
         for name, module in target.named_modules(remove_duplicate=False)
         if id(module) in expanded
     }
+
+
+def _validate_fitting_networks(
+    source: torch.nn.Module, target: torch.nn.Module
+) -> None:
+    """Require complete fitting-network transfer, including frozen weights."""
+    if type(source) is not type(target):
+        raise ValueError(
+            "Spin-free transfer requires matching fitting network types: "
+            f"source={type(source).__name__}, target={type(target).__name__}."
+        )
+    # PT and pt_expt register their networks under these respective paths.
+    # Root buffers hold output biases, statistics and runtime defaults, not
+    # the learned network layout. Frozen network weights remain in state_dict.
+    source_keys, target_keys = (
+        {
+            key
+            for key in fitting.state_dict()
+            if key.startswith(("filter_layers.", "nets."))
+        }
+        for fitting in (source, target)
+    )
+    if source_keys != target_keys:
+        raise ValueError(
+            "Spin-free transfer requires matching fitting network state keys: "
+            f"source-only={sorted(source_keys - target_keys)}, "
+            f"target-only={sorted(target_keys - source_keys)}. "
+            "Use a compatible fitting architecture or select finetune_head='RANDOM'."
+        )
 
 
 def _check_shape(key: str, expected: tuple[int, ...], actual: tuple[int, ...]) -> None:

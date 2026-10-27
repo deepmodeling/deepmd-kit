@@ -466,13 +466,21 @@ def test_dpa4c_transfer_fitting_input_projection(
 
 
 @pytest.mark.parametrize(
-    "source_type, target_type", [("ener", "dpa4_ener"), ("dpa4_ener", "ener")]
+    "backend, descriptor, source_type, target_type",
+    [
+        ("pt", "dpa4", "property", "dpa4_ener"),
+        ("pt_expt", "dpa4", "ener", "dpa4_ener"),
+        ("pt_expt", "dpa4c", "ener", "dpa4_ener"),
+        ("pt_expt", "dpa4c", "dpa4_ener", "ener"),
+    ],
 )
-def test_dpa4c_transfer_rejects_changed_fitting_family(
-    source_type: str, target_type: str
+def test_spin_free_transfer_rejects_changed_fitting_family(
+    backend: str, descriptor: str, source_type: str, target_type: str
 ) -> None:
-    source_config = _config("dpa4c", False)
-    target_config = _config("dpa4c", True)
+    source_config = _config(descriptor, False)
+    target_config = _config(descriptor, True)
+    if backend == "pt_expt":
+        source_config["type"] = target_config["type"] = "standard"
     for config, fitting_type in (
         (source_config, source_type),
         (target_config, target_type),
@@ -480,10 +488,77 @@ def test_dpa4c_transfer_rejects_changed_fitting_family(
         config["fitting_net"].update(
             type=fitting_type, neuron=[16 if fitting_type == "ener" else 8]
         )
-    source = _build("pt_expt", source_config)
-    target = _build("pt_expt", target_config)
+        if fitting_type == "property":
+            config["fitting_net"].update(task_dim=1, property_name="energy")
+    source = _build(backend, source_config)
+    target = _build(backend, target_config)
+    initial = {key: value.clone() for key, value in target.state_dict().items()}
     with pytest.raises(ValueError, match="matching fitting network types"):
         get_native_spin_finetune_state(target, source)
+    for key, value in target.state_dict().items():
+        torch.testing.assert_close(value, initial[key], rtol=0, atol=0)
+    target.load_state_dict(
+        get_native_spin_finetune_state(target, source, random_fitting=True)
+    )
+    for key, value in target.state_dict().items():
+        if ".fitting_net." in key:
+            torch.testing.assert_close(value, initial[key], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    "backend, descriptor, source_neuron, target_neuron, trainable",
+    [
+        ("pt", "dpa4", [8], [8, 8], True),
+        ("pt", "dpa4", [8, 8], [8], True),
+        ("pt_expt", "dpa4", [8], [8, 8], True),
+        ("pt_expt", "dpa4c", [8], [8, 8], True),
+        ("pt_expt", "dpa4c", [8, 8], [8], True),
+        ("pt_expt", "dpa4c", [8], [8, 8], False),
+    ],
+)
+def test_spin_free_transfer_rejects_changed_fitting_layers(
+    backend: str,
+    descriptor: str,
+    source_neuron: list[int],
+    target_neuron: list[int],
+    trainable: bool,
+) -> None:
+    source_config = _config(descriptor, False)
+    target_config = _config(descriptor, True)
+    for config, neuron in (
+        (source_config, source_neuron),
+        (target_config, target_neuron),
+    ):
+        config["fitting_net"].update(
+            type="dpa4_ener", neuron=neuron, trainable=trainable
+        )
+    source = _build(backend, source_config)
+    target = _build(backend, target_config)
+    initial = {key: value.clone() for key, value in target.state_dict().items()}
+    with pytest.raises(ValueError, match="matching fitting network state keys"):
+        get_native_spin_finetune_state(target, source)
+    for key, value in target.state_dict().items():
+        torch.testing.assert_close(value, initial[key], rtol=0, atol=0)
+    target.load_state_dict(
+        get_native_spin_finetune_state(target, source, random_fitting=True)
+    )
+    for key, value in target.state_dict().items():
+        if ".fitting_net." in key:
+            torch.testing.assert_close(value, initial[key], rtol=0, atol=0)
+
+
+def test_spin_free_transfer_preserves_target_default_fparam() -> None:
+    source_config = _config("dpa4", False)
+    source_config["fitting_net"]["numb_fparam"] = 1
+    target_config = deepcopy(source_config)
+    target_config["spin"] = {"scheme": "native", "use_spin": [True, False]}
+    target_config["fitting_net"]["default_fparam"] = [0.25]
+    source = _build("pt", source_config)
+    target = _build("pt", target_config)
+    fitting = _learned(target).fitting_net
+    expected = fitting.default_fparam_tensor.clone()
+    target.load_state_dict(get_native_spin_finetune_state(target, source))
+    torch.testing.assert_close(fitting.default_fparam_tensor, expected, rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("fitting_type", ["ener", "dpa4_ener"])
