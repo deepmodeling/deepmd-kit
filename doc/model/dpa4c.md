@@ -242,6 +242,20 @@ loss settings. The option leaves the invariant descriptor unchanged, but
 compression emits invariant features only, so a model that sets it cannot be
 compressed.
 
+DPA4C has no dense lower, so these models train, freeze and evaluate on the
+graph lower. Compiled training (`enable_compile`) supports energy models only;
+train them in eager mode. Freezing writes a graph `.pt2` that the Python
+interface evaluates, for example with `dp test` (add `--atomic` for systems
+labelled with atomic tensors):
+
+```bash
+dp --pt-expt freeze -o frozen_model.pt2
+dp --pt-expt test -m frozen_model.pt2 -s path/to/system --atomic
+```
+
+The C++ tensor interface does not load pt_expt models, so the frozen archive
+cannot be used by LAMMPS `compute deeptensor/atom` or `fix dplr`.
+
 ## Zone bridging
 
 DPA4C can add an analytical short-range repulsion to the learned energy, so that

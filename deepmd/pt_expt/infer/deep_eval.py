@@ -98,6 +98,14 @@ if TYPE_CHECKING:
 # local-only (``N == sum(n_node)`` nodes, no ghosts), so its outputs are already
 # at local-atom resolution and require no ``communicate_extended_output``
 # fold-back.
+#: Request names of the generic inference API whose model output key differs.
+#: ``DeepPolar`` requests ``polar``, the polarizability fitting emits
+#: ``polarizability`` (the pt backend's ``_OUTDEF_DP2BACKEND`` does the same).
+_OUTPUT_KEY_ALIASES = {
+    f"polar{suffix}": f"polarizability{suffix}"
+    for suffix in ("", "_redu", "_derv_r", "_derv_c_redu", "_derv_c")
+}
+
 _GRAPH_CATEGORY_TO_KEY = {
     OutputVariableCategory.OUT: "atom_energy",
     OutputVariableCategory.REDU: "energy",
@@ -706,10 +714,13 @@ class DeepEval(DeepEvalBackend):
         model = wrapper.model["Default"].eval()
 
         from deepmd.pt_expt.model.graph_lower import (
-            model_uses_graph_lower,
+            model_exports_graph_lower,
         )
 
-        use_graph_lower = model_uses_graph_lower(model)
+        use_graph_lower = model_exports_graph_lower(model)
+        # A graph-only non-energy model (DPA4C dipole/polar) keeps the
+        # internal keys of the common lower, like its frozen artifact.
+        energy_keys = "energy" in model.atomic_output_def().keys()
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -770,6 +781,7 @@ class DeepEval(DeepEvalBackend):
             )
 
             self.metadata["graph_edge_dtype"] = graph_edge_dtype(model, "graph")
+            self.metadata["graph_output_keys"] = "energy" if energy_keys else "internal"
         if self._is_spin:
             self.metadata["ntypes_spin"] = model.spin.get_ntypes_spin()
             self.metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
@@ -779,7 +791,8 @@ class DeepEval(DeepEvalBackend):
         # graph-forward semantics; all other checkpoints use the dense lower.
         # The dense runner emits internal keys consumed by
         # ``communicate_extended_output``, while the graph runner emits local
-        # public keys consumed directly by ``_eval_model_graph``.
+        # public keys (internal keys for a non-energy model) consumed directly
+        # by ``_eval_model_graph``.
         #
         # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin)
         # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
@@ -834,8 +847,8 @@ class DeepEval(DeepEvalBackend):
                     _translate_energy_keys,
                 )
 
-                do_grad_r = model.do_grad_r("energy")
-                do_grad_c = model.do_grad_c("energy")
+                do_grad_r = energy_keys and model.do_grad_r("energy")
+                do_grad_c = energy_keys and model.do_grad_c("energy")
 
                 def _eager_runner_graph(
                     atype: torch.Tensor,
@@ -869,6 +882,8 @@ class DeepEval(DeepEvalBackend):
                         aparam=aparam,
                         charge_spin=charge_spin,
                     )
+                    if not energy_keys:
+                        return model_ret
                     return _translate_energy_keys(
                         model_ret,
                         do_grad_r=do_grad_r,
@@ -1965,13 +1980,13 @@ class DeepEval(DeepEvalBackend):
         # Translate internal keys to backend names and collect results
         results = []
         for odef in request_defs:
-            # odef.name is the internal key (e.g. "energy_derv_r")
-            # _OUTDEF_DP2BACKEND maps it to backend name (e.g. "force")
-            # but model_predict uses internal keys from communicate_extended_output
-            if odef.name in model_predict:
+            # odef.name is the internal key (e.g. "energy_derv_r"), which
+            # model_predict uses too, up to the request aliases.
+            key = _OUTPUT_KEY_ALIASES.get(odef.name, odef.name)
+            if key in model_predict:
                 shape = self._get_output_shape(odef, nframes, natoms)
-                if model_predict[odef.name] is not None:
-                    out = model_predict[odef.name].detach().cpu().numpy().reshape(shape)
+                if model_predict[key] is not None:
+                    out = model_predict[key].detach().cpu().numpy().reshape(shape)
                 else:
                     out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 results.append(out)
@@ -2128,7 +2143,9 @@ class DeepEval(DeepEvalBackend):
 
         Exported artifacts accept a dynamic edge axis. Input preparation uses
         the artifact's geometry dtype and layout; both forwards return local
-        public outputs without extended-atom communication.
+        outputs without extended-atom communication: the public energy keys,
+        or the internal keys when ``graph_output_keys`` metadata says
+        ``"internal"``.
         """
         model_inputs, nframes, natoms = self._prepare_graph_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
@@ -2139,9 +2156,13 @@ class DeepEval(DeepEvalBackend):
             model_ret = self.exported_module(*model_inputs)
 
         results = []
+        internal_keys = self.metadata.get("graph_output_keys") == "internal"
         for odef in request_defs:
             shape = self._get_output_shape(odef, nframes, natoms)
-            gkey = _GRAPH_CATEGORY_TO_KEY.get(odef.category)
+            if internal_keys:
+                gkey = _OUTPUT_KEY_ALIASES.get(odef.name, odef.name)
+            else:
+                gkey = _GRAPH_CATEGORY_TO_KEY.get(odef.category)
             val = model_ret.get(gkey) if gkey is not None else None
             if val is not None:
                 results.append(val.detach().cpu().numpy().reshape(shape))

@@ -1272,6 +1272,14 @@ def _collect_metadata(
     meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
     if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
         meta["canonical_index_dtype"] = "uint32"
+    # Key convention of a graph-form artifact: an energy model emits the
+    # public energy keys, any other output the internal keys of the common
+    # lower. A record without this field predates non-energy graph exports
+    # and is an energy artifact.
+    if lower_kind == "graph":
+        meta["graph_output_keys"] = (
+            "energy" if "energy" in model.atomic_output_def().keys() else "internal"
+        )
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
@@ -1579,14 +1587,14 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
         lower.
     """
     from deepmd.pt_expt.model.graph_lower import (
-        model_uses_graph_lower,
+        model_exports_graph_lower,
     )
     from deepmd.pt_expt.model.model import (
         BaseModel,
     )
 
     model = BaseModel.deserialize(data["model"])
-    if not (model_uses_graph_lower(model) and _supports_graph_export(model)):
+    if not (model_exports_graph_lower(model) and _supports_graph_export(model)):
         return None
     if allow_canonical:
         from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
@@ -1976,7 +1984,9 @@ def _trace_and_export_impl(
         lower_kind=lower_kind,
     )
 
-    # Graph-form exports use a dynamic edge axis and an energy-model contract.
+    # Graph-form exports use a dynamic edge axis. Energy models translate to
+    # public energy keys; other outputs (a graph-only DPA4C dipole or
+    # polarizability model) keep the internal keys of the common lower.
     if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         import math
 
@@ -2003,17 +2013,17 @@ def _trace_and_export_impl(
         # silently divergent artifact.  Assert the gate at the innermost
         # layer too.
         from deepmd.pt_expt.model.graph_lower import (
-            model_uses_graph_lower,
+            model_exports_graph_lower,
         )
 
-        if not model_uses_graph_lower(model):
+        if not model_exports_graph_lower(model):
             raise ValueError(
                 f"lower_kind={lower_kind!r} requested but the model is not "
-                "graph-lower eligible (model_uses_graph_lower() is False: "
+                "graph-lower eligible (model_exports_graph_lower() is False: "
                 "check uses_graph_lower() gates such as set_davg_zero, "
                 "compression, use_three_body, disable_graph_lower(), and "
-                "the energy-output requirement); freeze with the default "
-                "lower_kind instead."
+                "the energy-output requirement for descriptors that keep a "
+                "dense lower); freeze with the default lower_kind instead."
             )
         if with_comm_dict and not hasattr(
             model, "forward_lower_graph_exportable_with_comm"

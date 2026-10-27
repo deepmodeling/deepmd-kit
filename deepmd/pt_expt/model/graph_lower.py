@@ -100,3 +100,25 @@ def model_uses_graph_lower(model: Any) -> bool:
     if atomic_model is None:
         return False
     return bool(atomic_model.uses_graph_lower())
+
+
+def model_exports_graph_lower(model: Any) -> bool:
+    """Return whether a model is frozen and evaluated through the graph lower.
+
+    Export and inference are output-agnostic, so besides every model that
+    trains on the graph lower this admits a graph-only model with any
+    fitting output (a DPA4C dipole or polarizability model), which has no
+    dense lower to export. Compiled training keeps the energy-only
+    :func:`model_uses_graph_lower`.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing the atomic-model and descriptor capability interfaces.
+
+    Returns
+    -------
+    bool
+        ``True`` when the model exports the ``NeighborGraph`` lower.
+    """
+    return model_uses_graph_lower(model) or model_requires_graph_lower(model)
