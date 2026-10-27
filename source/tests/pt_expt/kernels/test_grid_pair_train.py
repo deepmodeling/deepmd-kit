@@ -582,6 +582,9 @@ def test_cold_compiled_force_backward(
     and the single-focus feed-forward grid. A device with no viable fused
     configuration must retain the reference composition through compilation.
     """
+    # Inductor requires native BF16 support, not autocast's software emulation.
+    if amp and not torch.cuda.is_bf16_supported(including_emulation=False):
+        pytest.skip("Compiled BF16 requires native device support")
     torch._dynamo.reset()
     monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
     monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
