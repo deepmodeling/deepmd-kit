@@ -7,6 +7,7 @@ import gc
 import json
 import logging
 import os
+import sys
 import zipfile
 from collections.abc import (
     Callable,
@@ -23,6 +24,9 @@ from pathlib import (
 )
 from threading import (
     Barrier,
+)
+from types import (
+    ModuleType,
 )
 from unittest import (
     mock,
@@ -55,6 +59,10 @@ from ..common.sezm_config import (
     _tiny_sezm_model_params,
     _tiny_sezm_native_spin_model_params,
 )
+from .compile_utils import (
+    _COMPILE_SUPPORT_ERROR,
+    REQUIRES_SUPPORTED_COMPILE,
+)
 from .model.test_dpa4_export import (
     _DPA4_CONFIG,
 )
@@ -73,18 +81,38 @@ from .test_dp_freeze import (
 _LEVELS = ("DP_CUDA_INFER", "DP_TRITON_INFER", "DP_CUTILE_INFER", "DP_CUTE_INFER")
 
 
+def _device_bindings() -> Iterator[tuple[ModuleType, str]]:
+    """Locate imported backend device aliases without importing more modules."""
+    for name, module in tuple(sys.modules.items()):
+        if not name.startswith(("deepmd.pt.", "deepmd.pt_expt.")) or module is None:
+            continue
+        for attribute in ("DEVICE", "device"):
+            if isinstance(vars(module).get(attribute), torch.device):
+                yield module, attribute
+
+
 @pytest.fixture(autouse=True, params=["cpu"])
 def inference_device(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
-) -> str:
+) -> Iterator[str]:
     device = request.param
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip("CUDA is required")
-    for module in (pt_env, env, freeze_pt2):
-        monkeypatch.setattr(module, "DEVICE", torch.device(device))
+    original_devices = {"pt": pt_env.DEVICE, "pt_expt": env.DEVICE}
+    selected_device = torch.device(device)
+    bindings = set(_device_bindings())
+    for module, attribute in bindings:
+        monkeypatch.setattr(module, attribute, selected_device)
     for name in (*_LEVELS, "DP_COMPILE_INFER"):
         monkeypatch.delenv(name, raising=False)
-    return device
+    yield device
+    # Lazy imports can retain aliases that were not present at fixture setup.
+    for module, attribute in set(_device_bindings()) - bindings:
+        if getattr(module, attribute) is selected_device:
+            backend = (
+                "pt_expt" if module.__name__.startswith("deepmd.pt_expt.") else "pt"
+            )
+            setattr(module, attribute, original_devices[backend])
 
 
 def _config(kind: str) -> dict:
@@ -296,6 +324,7 @@ def test_graph_neighbor_options_reach_evaluator(
     )
 
 
+@REQUIRES_SUPPORTED_COMPILE
 def test_native_spin_edge_freeze_preserves_neighbor_options(tmp_path: Path) -> None:
     config = _tiny_sezm_native_spin_model_params()
     # Edge inputs retain all cutoff neighbors independently of dense capacity.
@@ -530,7 +559,21 @@ def test_single_task_pt_freeze_ignores_head(
     )
 
 
-@pytest.mark.parametrize("kind", ["pt", "dpa4", "dpa4c", "dpa1", "dpa2"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        pytest.param(
+            "pt",
+            marks=pytest.mark.skipif(
+                bool(_COMPILE_SUPPORT_ERROR), reason=_COMPILE_SUPPORT_ERROR
+            ),
+        ),
+        "dpa4",
+        "dpa4c",
+        "dpa1",
+        "dpa2",
+    ],
+)
 @pytest.mark.parametrize("inference_device", ["cpu", "cuda"], indirect=True)
 def test_automatic_freeze_single_artifact_matches_eager(
     tmp_path: Path,
