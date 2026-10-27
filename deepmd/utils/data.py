@@ -1078,23 +1078,6 @@ class DeepmdData:
         special_shape: str | None = None,
     ) -> np.ndarray:
         is_hessian = special_shape == "hessian" or key == "hessian"
-        if atomic:
-            natoms = self.natoms
-            idx_map = self.idx_map
-            # if type_sel, then revise natoms and idx_map
-            if type_sel is not None:
-                # Use vectorized operations for better performance
-                sel_mask = np.isin(self.atom_type, type_sel)
-                natoms_sel = np.sum(sel_mask)
-                idx_map_sel = self._idx_map_sel(self.atom_type, type_sel)
-            else:
-                natoms_sel = natoms
-                idx_map_sel = idx_map
-            ndof = ndof_ * natoms
-        else:
-            ndof = ndof_
-            natoms_sel = 0
-            idx_map_sel = None
         if dtype is not None:
             pass
         elif high_prec:
@@ -1102,6 +1085,8 @@ class DeepmdData:
         else:
             dtype = GLOBAL_NP_FLOAT_PRECISION
         path = self._get_data_path(set_name, key)
+        # Frame-major data does not have an atom axis, so validate and return
+        # it before preparing atom-selection bookkeeping.
         if special_shape == "frame_major" and path.is_file():
             data = path.load_numpy().astype(dtype)
             if data.ndim not in (2, 3):
@@ -1137,6 +1122,23 @@ class DeepmdData:
                     "at least one point per frame"
                 )
             return np.float32(1.0), data
+        if atomic:
+            natoms = self.natoms
+            idx_map = self.idx_map
+            # if type_sel, then revise natoms and idx_map
+            if type_sel is not None:
+                # Use vectorized operations for better performance
+                sel_mask = np.isin(self.atom_type, type_sel)
+                natoms_sel = np.sum(sel_mask)
+                idx_map_sel = self._idx_map_sel(self.atom_type, type_sel)
+            else:
+                natoms_sel = natoms
+                idx_map_sel = idx_map
+            ndof = ndof_ * natoms
+        else:
+            ndof = ndof_
+            natoms_sel = 0
+            idx_map_sel = None
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error

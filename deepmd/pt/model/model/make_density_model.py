@@ -26,6 +26,9 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.region import (
     normalize_coord,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 log = logging.getLogger(__name__)
 
@@ -351,6 +354,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             self,
             merged: Any,
             bias_adjust_mode: str = "change-by-statistic",
+            stat_file_path: DPPath | None = None,
         ) -> None:
             """Change the output bias according to the input data.
 
@@ -361,6 +365,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             ``change-by-statistic`` mode never reaches the atomic-level
             no-op.
             """
+            del merged, bias_adjust_mode, stat_file_path
             log.warning(
                 "change_out_bias is not supported for density models; skipping."
             )

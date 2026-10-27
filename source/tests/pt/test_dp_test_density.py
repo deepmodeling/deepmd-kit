@@ -173,6 +173,11 @@ class TestDPTestDensity(unittest.TestCase):
         bias_before = model.atomic_model.out_bias.detach().clone()
         model.change_out_bias(self.input_dict)
         model.change_out_bias(self.input_dict, bias_adjust_mode="set-by-statistic")
+        # Keep both no-op overrides compatible with their base APIs.
+        model.change_out_bias(self.input_dict, "set-by-statistic", None)
+        model.atomic_model.change_out_bias(
+            self.input_dict, None, "set-by-statistic", None, None
+        )
         torch.testing.assert_close(model.atomic_model.out_bias, bias_before)
 
     def test_pair_excl_involving_grid_type_applies_in_forward(self) -> None:

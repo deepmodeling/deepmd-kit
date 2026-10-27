@@ -409,6 +409,8 @@ class DPDensityAtomicModel(DPAtomicModel):
         sample_merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
+        model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
+        observed_type: list[str] | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -421,6 +423,13 @@ class DPDensityAtomicModel(DPAtomicModel):
         This guard stays until output-stat support is designed for grid
         models; tracked in https://github.com/deepmodeling/deepmd-kit/issues/6029.
         """
+        del (
+            sample_merged,
+            stat_file_path,
+            bias_adjust_mode,
+            model_forward,
+            observed_type,
+        )
         log.warning("change_out_bias is not supported for density models; skipping.")
 
     def compute_or_load_stat(
