@@ -294,6 +294,9 @@ def test_eval_full_derivatives_are_component_major(route: str) -> None:
     [
         ("dos", {"numb_dos": 5}),
         ("property", {"task_dim": 3, "property_name": "foo"}),
+        # A property that is itself named ``polar`` must not be renamed by
+        # the ``polar`` request alias of DeepPolar.
+        ("property", {"task_dim": 3, "property_name": "polar"}),
     ],
 )
 def test_dos_and_property_freeze_and_eval(kind: str, fitting: dict) -> None:
@@ -338,5 +341,39 @@ def test_dos_and_property_freeze_and_eval(kind: str, fitting: dict) -> None:
             dp = DeepEval(pte)
             dp.deep_eval._dpmodel = None
             assert dp.get_numb_dos() == fitting["numb_dos"]
+    finally:
+        shutil.rmtree(tmpdir)
+
+
+def test_dense_property_named_polar_keeps_its_key() -> None:
+    """The ``polar`` alias applies only when the exact key is absent."""
+    params = _params("property", SE_E2_A, task_dim=3, property_name="polar")
+    model = get_model(params).to(env.DEVICE).eval()
+    tmpdir = tempfile.mkdtemp()
+    try:
+        pte = os.path.join(tmpdir, "property.pte")
+        deserialize_to_file(pte, {"model": model.serialize()})
+        dp = DeepEval(pte)
+        assert dp.deep_eval.metadata["lower_input_kind"] == "nlist"
+        coord, cell, atype = _frames()
+        nf = coord.shape[0]
+        ret = model(
+            torch.tensor(coord, dtype=torch.float64, device=env.DEVICE),
+            torch.tensor(np.tile(atype, (nf, 1)), device=env.DEVICE),
+            box=torch.tensor(cell, dtype=torch.float64, device=env.DEVICE),
+        )
+        total, atomic = dp.eval(coord, cell, atype, atomic=True)
+        np.testing.assert_allclose(
+            total,
+            ret["polar"].detach().cpu().numpy().reshape(total.shape),
+            atol=1e-10,
+            rtol=1e-10,
+        )
+        np.testing.assert_allclose(
+            atomic,
+            ret["atom_polar"].detach().cpu().numpy().reshape(atomic.shape),
+            atol=1e-10,
+            rtol=1e-10,
+        )
     finally:
         shutil.rmtree(tmpdir)

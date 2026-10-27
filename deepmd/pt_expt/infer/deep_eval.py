@@ -106,6 +106,19 @@ _OUTPUT_KEY_ALIASES = {
     for suffix in ("", "_redu", "_derv_r", "_derv_c_redu", "_derv_c")
 }
 
+
+def _output_key(name: str, outputs: dict) -> str:
+    """Model output key that answers the request ``name``.
+
+    An exact key wins, so an output that genuinely carries the requested
+    name (a property fitting named ``polar``) is never renamed; the alias
+    applies only when the exact key is absent.
+    """
+    if name in outputs:
+        return name
+    return _OUTPUT_KEY_ALIASES.get(name, name)
+
+
 _GRAPH_CATEGORY_TO_KEY = {
     OutputVariableCategory.OUT: "atom_energy",
     OutputVariableCategory.REDU: "energy",
@@ -1259,6 +1272,10 @@ class DeepEval(DeepEvalBackend):
                 d.name for d in self._model_output_def.def_outp.get_data().values()
             ]
             var_name = None
+        # Only a property model names its output freely, and it may pick a
+        # name below (``polar``), so its own name is matched first.
+        if var_name is not None and var_name in model_output_type:
+            return DeepProperty
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -1269,8 +1286,6 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif var_name is not None and var_name in model_output_type:
-            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -2028,7 +2043,7 @@ class DeepEval(DeepEvalBackend):
         for odef in request_defs:
             # odef.name is the internal key (e.g. "energy_derv_r"), which
             # model_predict uses too, up to the request aliases.
-            key = _OUTPUT_KEY_ALIASES.get(odef.name, odef.name)
+            key = _output_key(odef.name, model_predict)
             if key in model_predict:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 if model_predict[key] is not None:
@@ -2212,7 +2227,7 @@ class DeepEval(DeepEvalBackend):
         for odef in request_defs:
             shape = self._get_output_shape(odef, nframes, natoms)
             if internal_keys:
-                gkey = _OUTPUT_KEY_ALIASES.get(odef.name, odef.name)
+                gkey = _output_key(odef.name, model_ret)
             else:
                 gkey = _GRAPH_CATEGORY_TO_KEY.get(odef.category)
             val = model_ret.get(gkey) if gkey is not None else None
