@@ -31,30 +31,45 @@ ROTATION = torch.tensor(
 )
 
 
+def _config(fitting_type: str, **fitting: object) -> dict:
+    return {
+        "type_map": ["O", "H"],
+        "atom_exclude_types": [1],
+        "descriptor": {
+            "type": "dpa4c",
+            "rcut": 3.0,
+            "channels": 16,
+            "lmax": 2,
+            "n_radial": 4,
+            "precision": "float64",
+            "seed": 17,
+            "output_rot_mat": True,
+        },
+        "fitting_net": {
+            "type": fitting_type,
+            "neuron": [16, 16],
+            "precision": "float64",
+            "seed": 19,
+            **fitting,
+        },
+    }
+
+
 def _model(fitting_type: str, **fitting: object) -> torch.nn.Module:
-    return get_model(
-        {
-            "type_map": ["O", "H"],
-            "atom_exclude_types": [1],
-            "descriptor": {
-                "type": "dpa4c",
-                "rcut": 3.0,
-                "channels": 16,
-                "lmax": 2,
-                "n_radial": 4,
-                "precision": "float64",
-                "seed": 17,
-                "output_rot_mat": True,
-            },
-            "fitting_net": {
-                "type": fitting_type,
-                "neuron": [16, 16],
-                "precision": "float64",
-                "seed": 19,
-                **fitting,
-            },
-        }
-    ).to(env.DEVICE)
+    return get_model(_config(fitting_type, **fitting)).to(env.DEVICE)
+
+
+@pytest.mark.parametrize("fitting_type", ["dipole", "polar"])
+@pytest.mark.parametrize("flag", [False, None])
+def test_tensor_fitting_requires_rot_mat(fitting_type: str, flag: bool | None) -> None:
+    """A tensorial fitting is rejected at build time without ``output_rot_mat``."""
+    config = _config(fitting_type)
+    if flag is None:
+        del config["descriptor"]["output_rot_mat"]
+    else:
+        config["descriptor"]["output_rot_mat"] = flag
+    with pytest.raises(ValueError, match="output_rot_mat"):
+        get_model(config)
 
 
 def _frame(nframes: int = 2) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
