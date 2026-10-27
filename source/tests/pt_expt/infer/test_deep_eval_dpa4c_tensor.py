@@ -317,6 +317,8 @@ def test_dos_and_property_freeze_and_eval(kind: str, fitting: dict) -> None:
         for path in (pte, ckpt):
             dp = DeepEval(path)
             assert dp.deep_eval.metadata["graph_output_keys"] == "internal"
+            if kind == "dos":
+                assert dp.get_numb_dos() == fitting["numb_dos"]
             total, atomic = dp.eval(coord, cell, atype, atomic=True)
             np.testing.assert_allclose(
                 total,
@@ -330,5 +332,11 @@ def test_dos_and_property_freeze_and_eval(kind: str, fitting: dict) -> None:
                 atol=1e-10,
                 rtol=1e-10,
             )
+        if kind == "dos":
+            # An archive without model.json carries no dpmodel; the DOS width
+            # then comes from the fitting output metadata.
+            dp = DeepEval(pte)
+            dp.deep_eval._dpmodel = None
+            assert dp.get_numb_dos() == fitting["numb_dos"]
     finally:
         shutil.rmtree(tmpdir)

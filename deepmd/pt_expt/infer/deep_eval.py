@@ -1290,9 +1290,12 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS; zero for a model without a DOS output."""
-        if self._dpmodel is None:
-            return 0
-        return int(self._dpmodel.get_numb_dos())
+        if self._dpmodel is not None:
+            return int(self._dpmodel.get_numb_dos())
+        # Metadata-only archives keep the fitting output shapes.
+        if "dos" in self._model_output_def.keys():
+            return int(self._model_output_def["dos"].shape[0])
+        return 0
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
