@@ -332,24 +332,34 @@ now summed with.
 ## Model compression
 
 Compression is the deployment step. It replaces the analytic radial functions
-and their type-pair modulation with tabulated splines evaluated by fused CUDA
-kernels, and re-exports the model in the compact canonical graph form that the
-fast inference path consumes. Because the radial map is analytically bounded and
+and their type-pair modulation with tabulated splines evaluated by fused CPU or
+CUDA kernels. Eligible CUDA models use the compact canonical graph form;
+CPU models use the graph form with their dedicated kernels. Because the radial map is analytically bounded and
 vanishes at `rcut`, the table needs no extrapolation region and no overflow
 checking.
 
-Train, freeze, then compress the frozen archive:
+Freeze and compress a checkpoint in one operation:
 
 ```bash
 dp --pt-expt train input.json
-dp --pt-expt freeze -c model.ckpt.pt -o frozen_model --lower-kind graph
-dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2
+dp --pt-expt freeze -c model.ckpt.pt -o compressed_model --compress
 ```
 
-The two archives are not interchangeable. `frozen_model.pt2` carries the plain
-graph lower and is the uncompressed intermediate; `compressed_model.pt2` carries
-the compact canonical graph lower and is what you deploy. Compression selects
-that lower on its own, so it takes no lower-kind option of its own.
+This writes `compressed_model.pt2` directly using the default compression
+settings, without compiling an intermediate uncompressed archive. Compression
+selects the export schema appropriate to the model and target device.
+
+To compress an existing frozen archive or choose the spline spacing, use the
+compression command:
+
+```bash
+dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2 --step 0.01
+```
+
+For ASE, `DP(model="model.pt", freeze=True)` automatically compresses supported
+DPA4C checkpoints and exports a single-process `.pt2`. If compression is not
+supported, ASE warns and retains the ordinary freeze path. See the
+[ASE interface](../third-party/ase.md).
 
 Only `-s, --step` applies to DPA4C; it sets the uniform spline spacing in Å, and
 a smaller value means a finer table and a larger model. The `--extrapolate`,
@@ -359,14 +369,15 @@ computed from data; DPA4C needs none of them and ignores them.
 
 Compression requires:
 
-- the PyTorch Exportable backend on CUDA;
+- the PyTorch Exportable backend;
 - `precision: "float32"`;
 - `channels`, `lmax` and `radial_modes` inside the compiled sets listed above;
 - an empty
   {ref}`exclude_types <model[standard]/descriptor[dpa4c]/exclude_types>`, since
   the fused kernel has no type-exclusion branch.
 
-`dp --pt-expt compress` reports an explicit error when any of these is not met.
+`dp --pt-expt compress` and `freeze --compress` report an explicit error when
+any of these is not met.
 A model that excludes type pairs still trains and runs; deploy it as the
 uncompressed graph archive.
 

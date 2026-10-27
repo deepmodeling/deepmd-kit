@@ -43,6 +43,7 @@ def test_fusion_size_defaults_to_eight(monkeypatch) -> None:
     assert inference_options["max_fusion_size"] == 8
     assert inference_options["cpp.min_chunk_size"] == 1
     assert inference_options["cpp.dynamic_threads"] is True
+    assert "cpp.max_horizontal_fusion_size" not in inference_options
 
 
 def test_torch_211_inference_keeps_default_cpp_parallelism(monkeypatch) -> None:
@@ -53,6 +54,9 @@ def test_torch_211_inference_keeps_default_cpp_parallelism(monkeypatch) -> None:
 
     assert "cpp.min_chunk_size" not in inference_options
     assert "cpp.dynamic_threads" not in inference_options
+    assert inference_options["cpp.max_horizontal_fusion_size"] == 1
+    assert "cpp.simdlen" not in inference_options
+    assert "cpp.max_horizontal_fusion_size" not in build_inductor_compile_options()
 
 
 def test_fusion_size_environment_is_shared(monkeypatch) -> None:

@@ -92,6 +92,7 @@ __all__ = [
     "build_charge_state_artifacts",
     "build_compression_artifacts",
     "build_radial_table",
+    "compression_ineligibility_reason",
     "coupling_records",
     "descriptor_profile",
     "dpa4c_graph_compress",
@@ -210,6 +211,55 @@ def mega_eligible(descriptor: Any) -> bool:
         and int(getattr(descriptor, "radial_modes", -1)) in SUPPORTED_RADIAL_MODES
         and str(getattr(descriptor, "precision", "")).lower() in ("float32", "single")
     )
+
+
+def compression_ineligibility_reason(descriptor: Any) -> str | None:
+    """Return why a DPA4C descriptor cannot build a compressed snapshot.
+
+    The same device-independent conditions govern explicit compression and
+    automatic deployment. Kernel availability is checked by the inference
+    dispatcher rather than by artifact construction.
+
+    Parameters
+    ----------
+    descriptor
+        DPA4C descriptor with its configuration and parameters loaded.
+
+    Returns
+    -------
+    str or None
+        Diagnostic for an unsupported configuration or initial charge state,
+        or ``None`` when these compression prerequisites are satisfied.
+    """
+    if descriptor.exclude_types:
+        return (
+            "DPA4C compressed inference has no type-exclusion branch, so a "
+            "descriptor with a non-empty `exclude_types` cannot reach the "
+            "fused path. Drop the exclusions, or deploy the uncompressed "
+            "graph archive."
+        )
+    if descriptor.stddev.dtype != torch.float32:
+        return (
+            "DPA4C compression requires descriptor precision `float32`, "
+            f"got {descriptor.stddev.dtype}"
+        )
+    if not mega_eligible(descriptor):
+        return (
+            "DPA4C compression supports "
+            f"channels {SUPPORTED_CHANNELS}, lmax {SUPPORTED_LMAX} and "
+            f"radial_modes {SUPPORTED_RADIAL_MODES}, got "
+            f"channels={descriptor.channels}, lmax={descriptor.lmax}, "
+            f"radial_modes={descriptor.radial_modes}"
+        )
+    if (
+        descriptor.charge_spin_embedding is not None
+        and descriptor.default_chg_spin is None
+    ):
+        return (
+            "A charge-conditioned DPA4C snapshot requires `default_chg_spin` "
+            "to supply its initial frame condition."
+        )
+    return None
 
 
 # === Compiled profile ===
@@ -673,27 +723,10 @@ def build_compression_artifacts(
         If the descriptor excludes type pairs, or is not an fp32 model with a
         compiled specialization.
     """
-    if getattr(descriptor, "exclude_types", None):
-        raise ValueError(
-            "DPA4C compressed CUDA has no type-exclusion branch, so a "
-            "descriptor with a non-empty `exclude_types` cannot reach the "
-            "fused path. Drop the exclusions, or deploy the uncompressed "
-            "graph archive."
-        )
+    reason = compression_ineligibility_reason(descriptor)
+    if reason is not None:
+        raise ValueError(reason)
     descriptor_state = descriptor.stddev
-    if descriptor_state.dtype != torch.float32:
-        raise ValueError(
-            "DPA4C compressed CUDA requires descriptor precision `float32`, "
-            f"got {descriptor_state.dtype}"
-        )
-    if not mega_eligible(descriptor):
-        raise ValueError(
-            "DPA4C compressed CUDA supports "
-            f"channels {SUPPORTED_CHANNELS}, lmax {SUPPORTED_LMAX} and "
-            f"radial_modes {SUPPORTED_RADIAL_MODES}, got "
-            f"channels={descriptor.channels}, lmax={descriptor.lmax}, "
-            f"radial_modes={descriptor.radial_modes}"
-        )
     device = descriptor_state.device
     profile = descriptor_profile(
         descriptor.channels,
