@@ -216,6 +216,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         sizes every pair by the sum of its covalent radii and therefore needs
         ``type_map``, ``"absolute"`` gives every pair a unit scale so the
         fractions are radii in Å.
+    output_rot_mat
+        Whether to expose the degree-one moments as the equivariant fitting
+        input ``rot_mat`` with shape ``(..., C_1, 3)``, as required by the
+        dipole and polarizability fittings. It changes neither the invariant
+        descriptor nor any parameter.
 
     Raises
     ------
@@ -281,6 +286,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         inner_clamp_f_inner: float | None = None,
         inner_clamp_f_outer: float | None = None,
         inner_clamp_scale: str = "covalent",
+        output_rot_mat: bool = False,
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
         if spin is not None:
@@ -338,6 +344,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.use_spin = None if use_spin is None else [bool(flag) for flag in use_spin]
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
         self.default_chg_spin = default_chg_spin
+        self.output_rot_mat = bool(output_rot_mat)
         # The spin branch reads the leading channels of the shared radial map,
         # so its width is derived rather than exposed.
         self.spin_channels = (
@@ -495,7 +502,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         comm_dict: dict | None = None,
         spin: Array | None = None,
         charge_spin: Array | None = None,
-    ) -> tuple[Array, None]:
+    ) -> tuple[Array, Array | None]:
         """Evaluate DPA4C on a flat neighbor graph.
 
         Parameters
@@ -532,7 +539,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Rotation- and permutation-invariant node features with shape
             ``(N, get_dim_out())`` and the same floating dtype as ``edge_vec``.
         rot_mat
-            ``None``. DPA4C does not expose an equivariant fitting input.
+            Degree-one moments with shape ``(N, C_1, 3)`` when
+            ``output_rot_mat`` is set, otherwise ``None``.
 
         Raises
         ------
@@ -554,7 +562,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             )
 
         # === Step 2. Evaluate the graph-native equations ===
-        descriptor, _ = self.evaluate_graph(
+        descriptor, _, rot_mat = self.evaluate_graph(
             graph,
             atype,
             type_embedding,
@@ -567,7 +575,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # === Step 3. Restore the graph input dtype ===
         if descriptor.dtype != in_dtype:
             descriptor = xp.astype(descriptor, in_dtype)
-        return descriptor, None
+        if rot_mat is not None and rot_mat.dtype != in_dtype:
+            rot_mat = xp.astype(rot_mat, in_dtype)
+        return descriptor, rot_mat
 
     def require_spin(self, spin: Array | None) -> Array:
         """Return the per-node moment a spin-conditioned descriptor must receive.
@@ -646,7 +656,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         fparam: Array | None = None,
         comm_dict: dict | None = None,
         charge_spin: Array | None = None,
-    ) -> tuple[Array, None, None, None, Array]:
+    ) -> tuple[Array, Array | None, None, None, Array]:
         """Adapt a bounded dense neighbor list to the graph-native equations.
 
         This method exists for the common descriptor ABI and numerical
@@ -682,7 +692,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Invariant features with shape
             ``(F, N_local, get_dim_out())``.
         rot_mat
-            ``None``.
+            Degree-one moments with shape ``(F, N_local, C_1, 3)`` when
+            ``output_rot_mat`` is set, otherwise ``None``.
         g2
             ``None``.
         h2
@@ -708,7 +719,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         )
 
         # === Step 2. Evaluate the same graph-native equations ===
-        descriptor, envelope = self.evaluate_graph(
+        descriptor, envelope, rot_mat = self.evaluate_graph(
             graph,
             atype_local,
             self.type_embedding.call(),
@@ -722,7 +733,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             (nf, nloc, descriptor.shape[-1]),
         )
         envelope = xp.reshape(envelope, (nf, nloc, nnei, 1))
-        return descriptor, None, None, None, envelope
+        if rot_mat is not None:
+            rot_mat = xp.reshape(rot_mat, (nf, nloc, *rot_mat.shape[1:]))
+        return descriptor, rot_mat, None, None, envelope
 
     def evaluate_graph(
         self,
@@ -731,7 +744,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         type_embedding: Array,
         spin: Array | None = None,
         charge_spin: Array | None = None,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array | None]:
         """Evaluate the graph-native descriptor equations.
 
         The pipeline is edge amplitudes, one destination reduction into
@@ -758,6 +771,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Invariant node features with shape ``(N, get_dim_out())``.
         envelope
             Masked per-edge C³ envelope with shape ``(E, 1)``.
+        rot_mat
+            Degree-one moments with shape ``(N, C_1, 3)`` when
+            ``output_rot_mat`` is set, otherwise ``None``.
 
         Raises
         ------
@@ -847,6 +863,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 divisors,
             ),
             envelope[:, None],
+            self.build_rot_mat(moments) if self.output_rot_mat else None,
         )
 
     def build_center_type_features(
@@ -1255,6 +1272,30 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             ],
             axis=-1,
         )
+
+    def build_rot_mat(self, moments: Array) -> Array:
+        r"""Extract the degree-one moments as the equivariant fitting input.
+
+        The degree-one harmonic is the Cartesian unit vector, so each channel
+        of :math:`X^{(1)}_{ic}` is a polar vector that rotates with the
+        frame. The flat layout stores every degree component-major, so the
+        block is transposed into the channel-major ``rot_mat`` convention of
+        the dipole and polarizability fittings.
+
+        Parameters
+        ----------
+        moments
+            Flat degree-wise moments with shape ``(N, S)``.
+
+        Returns
+        -------
+        Array
+            Degree-one moments with shape ``(N, C_1, 3)``.
+        """
+        xp = array_api_compat.array_namespace(moments)
+        block = moments[:, self.degree_offsets[1] : self.degree_offsets[2]]
+        block = xp.reshape(block, (moments.shape[0], 3, self.degree_channels[1]))
+        return xp.permute_dims(block, (0, 2, 1))
 
     # === Backend primitives ===
     # A backend wrapper overrides these to reach native kernels; the equations
@@ -1866,6 +1907,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 "stddev": to_numpy_array(self.stddev),
             },
         }
+        # Version 3 only adds the flag, so a model without it keeps version 2
+        # and stays readable by releases that predate the flag.
+        if self.output_rot_mat:
+            data["@version"] = 3
+            data["output_rot_mat"] = True
         if self.compress:
             data["compress"] = {
                 "@variables": {
@@ -1890,7 +1936,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Reconstructed descriptor with restored trainable components.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
         compression = data.pop("compress", None)
@@ -2054,8 +2100,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         return self.readout.get_dim_out() + spin_dim + self.channels + 2
 
     def get_dim_emb(self) -> int:
-        """Return zero because fitting receives no equivariant channels."""
-        return 0
+        """Return the width ``C_1`` of ``rot_mat``, or zero without it."""
+        return self.degree_channels[1] if self.output_rot_mat else 0
 
     def mixed_types(self) -> bool:
         """Return whether the descriptor consumes a mixed-type neighbor list."""
@@ -2124,6 +2170,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
 
     def uses_graph_lower(self) -> bool:
         """Return whether graph-native lowering is supported."""
+        return True
+
+    def requires_graph_lower(self) -> bool:
+        """Return ``True``: the graph lower is the only form DPA4C has.
+
+        See :meth:`disable_graph_lower` for why no dense lower exists.
+        """
         return True
 
     def disable_graph_lower(self) -> None:

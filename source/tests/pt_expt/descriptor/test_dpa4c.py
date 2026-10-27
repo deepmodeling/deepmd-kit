@@ -220,6 +220,47 @@ class TestDPA4C:
         assert replica.exclude_types == [[0, 1]]
         assert replica.readout is base.readout
 
+    @pytest.mark.parametrize("structure", STRUCTURES)
+    def test_rot_mat_parity_and_gradients(self, structure: dict[str, int]) -> None:
+        descriptor = self.build(output_rot_mat=True, **structure)
+        coord_ext, atype_ext, mapping, nlist = self._inputs(self.coord)
+        rot_mat = descriptor(coord_ext, atype_ext, nlist, mapping=mapping)[1]
+        assert rot_mat.shape == (1, 5, descriptor.get_dim_emb(), 3)
+        reference = DPDescrptDPA4C.deserialize(descriptor.serialize())(
+            coord_ext.cpu().numpy(),
+            atype_ext.cpu().numpy(),
+            nlist.cpu().numpy(),
+            mapping=mapping.cpu().numpy(),
+        )[1]
+        np.testing.assert_allclose(
+            rot_mat.detach().cpu().numpy(), reference, atol=3e-12, rtol=3e-12
+        )
+        graph, atype_local = graph_from_dense_quartet(
+            coord_ext, atype_ext, nlist, mapping
+        )
+        _, graph_rot_mat = descriptor.call_graph(graph, atype_local)
+        torch.testing.assert_close(
+            graph_rot_mat, rot_mat.reshape(graph_rot_mat.shape), atol=1e-12, rtol=1e-12
+        )
+        # The radial network reaches the dipole through the moments alone.
+        rot_mat.square().sum().backward()
+        radial = [
+            parameter
+            for name, parameter in descriptor.named_parameters()
+            if name.startswith("radial_embedding.layers.0.")
+        ]
+        assert radial
+        for parameter in radial:
+            assert parameter.grad is not None
+            assert torch.isfinite(parameter.grad).all()
+        assert any(parameter.grad.abs().sum() > 0 for parameter in radial)
+
+    def test_compression_rejects_rot_mat(self) -> None:
+        descriptor = self.build(precision="float32", output_rot_mat=True)
+        with pytest.raises(ValueError, match="output_rot_mat"):
+            descriptor.enable_compression(0.5)
+        assert not descriptor.compress
+
     def test_compression_rejects_excluded_pairs(self) -> None:
         """The fused kernel has no type-exclusion branch.
 

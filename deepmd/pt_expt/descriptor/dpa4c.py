@@ -166,7 +166,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         comm_dict: dict | None = None,
         spin: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Evaluate the graph descriptor with compressed CUDA dispatch.
 
         Parameters
@@ -193,10 +193,13 @@ class DescrptDPA4C(DescrptDPA4CDP):
         descriptor
             Invariant descriptor with shape ``(N, get_dim_out())``.
         rot_mat
-            ``None``.
+            Degree-one moments with shape ``(N, C_1, 3)`` when
+            ``output_rot_mat`` is set, otherwise ``None``. The compressed
+            branch emits invariants only and is never taken with the flag.
         """
         if (
             self.compress
+            and not self.output_rot_mat
             and not self.training
             and not self.exclude_types
             and fused_operators_enabled()
@@ -642,13 +645,19 @@ class DescrptDPA4C(DescrptDPA4CDP):
         Raises
         ------
         ValueError
-            If compression is already enabled, the descriptor excludes type
-            pairs, or the descriptor configuration has no compiled CUDA
-            specialization.
+            If compression is already enabled, the descriptor exposes
+            ``output_rot_mat``, the descriptor excludes type pairs, or the
+            descriptor configuration has no compiled CUDA specialization.
         """
         del min_nbor_dist, table_extrapolate, table_stride_2, check_frequency
         if self.compress:
             raise ValueError("Compression is already enabled.")
+        if self.output_rot_mat:
+            raise ValueError(
+                "DPA4C compression emits invariant features only and cannot "
+                "serve `output_rot_mat`, which the dipole and polarizability "
+                "fittings require."
+            )
         from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             build_compression_artifacts,
         )

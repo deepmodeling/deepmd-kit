@@ -33,6 +33,35 @@ def graph_edge_dtype(model: Any, lower_kind: str) -> str:
     return str(model.atomic_model.graph_edge_dtype())
 
 
+def model_requires_graph_lower(model: Any) -> bool:
+    """Return whether a model can only run on the ``NeighborGraph`` lower.
+
+    Unlike :func:`model_uses_graph_lower` this holds for any fitting output:
+    a graph-only descriptor (DPA4C) has no dense lower to fall back on, so a
+    dipole or polarizability model built on it must take the graph route
+    too.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing the atomic-model capability interface.
+
+    Returns
+    -------
+    bool
+        ``True`` when the model is mixed-type and its atomic model has no
+        dense lower.
+    """
+    mixed_types = getattr(model, "mixed_types", None)
+    atomic_model = getattr(model, "atomic_model", None)
+    if mixed_types is None or atomic_model is None:
+        return False
+    try:
+        return bool(mixed_types()) and bool(atomic_model.requires_graph_lower())
+    except (AttributeError, NotImplementedError):
+        return False
+
+
 def model_uses_graph_lower(model: Any) -> bool:
     """Return whether a model's default lower uses ``NeighborGraph``.
 

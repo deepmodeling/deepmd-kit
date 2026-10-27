@@ -808,7 +808,12 @@ def make_model(
             # ``KeyError('energy')`` -- and gating ONLY the compiled side
             # would diverge eager (graph) from compiled (dense) instead.
             # An EXPLICIT ``neighbor_graph_method=`` above stays available
-            # for non-energy models (eager-only, output-agnostic).
+            # for non-energy models (eager-only, output-agnostic). A
+            # graph-only descriptor (DPA4C) has no dense lower to fall back
+            # on, so it takes the graph for every output; the trainer rejects
+            # compiling such a non-energy model instead.
+            if self.mixed_types() and self.atomic_model.requires_graph_lower():
+                return getattr(self, "neighbor_graph_method", "dense")
             if "energy" not in self.atomic_output_def().keys():
                 return None
             if self.mixed_types() and self.atomic_model.uses_graph_lower():

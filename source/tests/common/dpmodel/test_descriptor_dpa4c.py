@@ -2034,3 +2034,100 @@ def test_virtual_atom_spin_scheme_is_refused() -> None:
                 "fitting_net": {"neuron": [8, 8], "seed": 1},
             }
         )
+
+
+class TestDPA4CRotMat:
+    """The degree-one moments exposed as the equivariant fitting input."""
+
+    ROTATION = np.array(
+        [
+            [-2.0 / 3.0, 2.0 / 15.0, 11.0 / 15.0],
+            [2.0 / 3.0, -1.0 / 3.0, 2.0 / 3.0],
+            [1.0 / 3.0, 14.0 / 15.0, 2.0 / 15.0],
+        ],
+        dtype=np.float64,
+    )
+
+    @staticmethod
+    def build(output_rot_mat: bool, **overrides: Any) -> DescrptDPA4C:
+        return DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            n_radial=4,
+            precision="float64",
+            seed=23,
+            output_rot_mat=output_rot_mat,
+            **{"channels": 16, "lmax": 2, **overrides},
+        )
+
+    @staticmethod
+    def rot_mat(
+        descriptor: DescrptDPA4C,
+        coord: np.ndarray = COORD,
+    ) -> np.ndarray:
+        coord_ext, atype_ext, mapping, nlist = dense_inputs(descriptor, coord)
+        return descriptor(coord_ext, atype_ext, nlist, mapping=mapping)[1]
+
+    @pytest.mark.parametrize("lmax", [2, 3, 4])
+    def test_width_and_shape(self, lmax: int) -> None:
+        plain = self.build(False, lmax=lmax)
+        tensorial = self.build(True, lmax=lmax)
+        assert plain.get_dim_emb() == 0
+        assert self.rot_mat(plain) is None
+        width = tensorial.degree_channels[1]
+        assert width > 0
+        assert tensorial.get_dim_emb() == width
+        assert self.rot_mat(tensorial).shape == (1, 5, width, 3)
+        # The flag adds an output, never a parameter or an invariant.
+        assert tensorial.get_dim_out() == plain.get_dim_out()
+        np.testing.assert_array_equal(evaluate(tensorial), evaluate(plain))
+
+    def test_matches_explicit_degree_one_moments(self) -> None:
+        descriptor = self.build(True)
+        graph, atype_local = build_graph(descriptor)
+        amplitude, harmonics, envelope = edge_features(descriptor, graph, atype_local)
+        width = descriptor.degree_channels[1]
+        n_node = atype_local.shape[0]
+        numerator = np.zeros((n_node, width, 3))
+        mass = np.zeros(n_node)
+        for edge, dst in enumerate(graph.edge_index[1]):
+            numerator[dst] += (
+                envelope[edge]
+                * amplitude[edge, :width, None]
+                * harmonics[edge, None, 1:4]
+            )
+            mass[dst] += envelope[edge] ** 4
+        reference = numerator / np.sqrt(mass + 0.25)[:, None, None]
+        _, rot_mat = descriptor.call_graph(graph, atype_local)
+        np.testing.assert_allclose(rot_mat, reference, atol=1e-13, rtol=1e-12)
+        np.testing.assert_allclose(
+            self.rot_mat(descriptor)[0], reference, atol=1e-13, rtol=1e-12
+        )
+
+    def test_rotates_and_reflects_as_a_polar_vector(self) -> None:
+        descriptor = self.build(True, lmax=3)
+        reference = self.rot_mat(descriptor)
+        rotated = self.rot_mat(descriptor, COORD @ self.ROTATION.T)
+        np.testing.assert_allclose(
+            rotated, reference @ self.ROTATION.T, atol=1e-12, rtol=1e-12
+        )
+        reflection = np.diag([-1.0, 1.0, 1.0])
+        reflected = self.rot_mat(descriptor, COORD @ reflection)
+        np.testing.assert_allclose(
+            reflected, reference @ reflection, atol=1e-12, rtol=1e-12
+        )
+        translated = self.rot_mat(descriptor, COORD + np.array([1.7, -0.8, 2.1]))
+        np.testing.assert_allclose(translated, reference, atol=1e-12, rtol=1e-12)
+
+    def test_serialization_versions_and_roundtrip(self) -> None:
+        plain = self.build(False).serialize()
+        assert plain["@version"] == 2
+        assert "output_rot_mat" not in plain
+        data = self.build(True).serialize()
+        assert data["@version"] == 3
+        assert data["output_rot_mat"] is True
+        restored = DescrptDPA4C.deserialize(data)
+        assert restored.get_dim_emb() == restored.degree_channels[1]
+        np.testing.assert_array_equal(
+            self.rot_mat(restored), self.rot_mat(self.build(True))
+        )

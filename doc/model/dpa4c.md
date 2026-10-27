@@ -202,6 +202,46 @@ and evaluation and inference are governed independently by `DP_AMP_INFER`. A
 model trained in full precision can therefore be evaluated under mixed
 precision, and the reverse.
 
+### Dipole and polarizability
+
+The degree-one moments of DPA4C are exact equivariant vectors, one per
+degree-one channel. Setting
+{ref}`output_rot_mat <model[standard]/descriptor[dpa4c]/output_rot_mat>` hands
+them to the fitting network as its equivariant input, so the standard `dipole`
+and `polar` fitting networks can be trained with the `tensor` loss:
+
+```json
+{
+  "type_map": [
+    "O",
+    "H"
+  ],
+  "atom_exclude_types": [
+    1
+  ],
+  "descriptor": {
+    "type": "dpa4c",
+    "rcut": 6.0,
+    "channels": 32,
+    "lmax": 2,
+    "output_rot_mat": true
+  },
+  "fitting_net": {
+    "type": "dipole",
+    "neuron": [
+      128,
+      128,
+      128
+    ]
+  }
+}
+```
+
+See [training tensorial properties](train-fitting-tensor.md) for the data and
+loss settings. The option leaves the invariant descriptor unchanged, but
+compression emits invariant features only, so a model that sets it cannot be
+compressed.
+
 ## Zone bridging
 
 DPA4C can add an analytical short-range repulsion to the learned energy, so that
