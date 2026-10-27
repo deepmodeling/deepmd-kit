@@ -34,6 +34,7 @@ from deepmd.pt_expt.train import (
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     min_pair_dist_requirement,
 )
@@ -143,6 +144,9 @@ def get_trainer(
     is_distributed = dist.is_available() and dist.is_initialized()
     rank = dist.get_rank() if is_distributed else 0
     world_size = dist.get_world_size() if is_distributed else 1
+    if data_seed is not None:
+        seed32 = data_seed % (2**32)
+        dp_random.seed([rank, seed32] if is_distributed else seed32)
 
     def factory(
         task_config: TrainingTaskConfig,

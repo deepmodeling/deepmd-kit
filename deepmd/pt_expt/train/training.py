@@ -64,6 +64,12 @@ from deepmd.dpmodel.train import (
 from deepmd.dpmodel.train.data import (
     add_training_data_requirements,
 )
+from deepmd.dpmodel.train.data_progress import (
+    DATA_PROGRESS_CHECKPOINT_KEY,
+    collect_training_data_progress,
+    preserve_training_data_progress,
+    restore_training_data_progress,
+)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
@@ -157,6 +163,7 @@ from deepmd.pt_expt.utils.env import (
 from deepmd.pt_expt.utils.stat import (
     make_stat_input,
 )
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -1818,6 +1825,7 @@ class Trainer(AbstractTrainer):
 
         model_params = config["model"]
         training_params = config["training"]
+        self._configured_data_seed = training_params.get("seed")
         optimizer_params = config.get("optimizer", {})
         validating_params = config.get("validating", {}) or {}
 
@@ -1854,6 +1862,20 @@ class Trainer(AbstractTrainer):
         self.is_distributed = dist.is_available() and dist.is_initialized()
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
+        # Rank-local data draws must not change the shared task-selection sequence.
+        self._task_rng = np.random.default_rng(
+            None
+            if self._configured_data_seed is None
+            else self._configured_data_seed % (2**32)
+        )
+        if (
+            self.is_distributed
+            and self.multi_task
+            and self._configured_data_seed is None
+        ):
+            self._task_rng.bit_generator.state = self._broadcast_value_from_rank0(
+                self._task_rng.bit_generator.state if self.rank == 0 else None
+            )
         self.sharding = ShardingPolicy.from_training_params(
             training_params, is_distributed=self.is_distributed
         )
@@ -2017,7 +2039,10 @@ class Trainer(AbstractTrainer):
                 _n: int = _nbatch,
                 _filter_enabled: bool = self.pair_filter_enabled_by_task[model_key],
             ) -> list[dict[str, np.ndarray]]:
-                return make_stat_input(_d, _n, _filter_enabled)
+                # Statistics run only on the chief. They must not advance its
+                # training cursors or data-source selection RNGs.
+                with preserve_training_data_progress({"statistics": _d}):
+                    return make_stat_input(_d, _n, _filter_enabled)
 
             self._sample_funcs[model_key] = _make_sample
 
@@ -2138,6 +2163,7 @@ class Trainer(AbstractTrainer):
         # cannot be copied into sharded parameters.
         ema_state_dict = None
         optimizer_state_dict = None
+        data_progress = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
             is_pte = resume_model.endswith((".pte", ".pt2"))
@@ -2160,6 +2186,11 @@ class Trainer(AbstractTrainer):
                     )
                     ema_state_dict = (
                         state_dict.get(EMA_CHECKPOINT_KEY) if continues_run else None
+                    )
+                    data_progress = (
+                        state_dict.get(DATA_PROGRESS_CHECKPOINT_KEY)
+                        if continues_run
+                        else None
                     )
                     state_dict = state_dict["model"]
                 else:
@@ -2473,6 +2504,12 @@ class Trainer(AbstractTrainer):
                 {key: count_parameters(self.models[key]) for key in self.model_keys},
                 multi_task=self.multi_task,
             )
+
+        # Data requirements, layout, statistics and compilation may all draw
+        # batches during setup. Restore only after those steps have finished.
+        self._restore_data_progress(
+            data_progress, reset=training_params.get("reset_data_progress", False)
+        )
 
     def _create_full_validators(
         self,
@@ -3049,6 +3086,7 @@ class Trainer(AbstractTrainer):
     def _broadcast_value_from_rank0(self, value: Any) -> Any:
         """Return rank 0's copy of ``value`` on every rank.
 
+        Unseeded task-selection RNG state must agree across ranks at startup.
         Epoch lengths round a quotient of sampling probabilities that is often
         an exact integer in real arithmetic, so a last-bit difference between
         ranks -- as reduction kernels dispatched for different CPU features
@@ -3069,8 +3107,86 @@ class Trainer(AbstractTrainer):
 
     @property
     def checkpoint_is_collective(self) -> bool:
-        """Whether checkpoint preflight needs every rank."""
-        return self.is_distributed
+        """Whether checkpoint preflight and data collection need every rank."""
+        # Frame filtering can consume different numbers of local batches, so
+        # even plain DDP must contribute every rank's cursor at save time.
+        return self.is_distributed or self.sharding.enabled
+
+    def _collect_data_progress(self) -> dict[str, Any]:
+        """Gather compact rank-local progress only at a checkpoint boundary."""
+        local_progress = collect_training_data_progress(self.training_data_by_task)
+        ranks: list[Any] = [local_progress]
+        if self.is_distributed:
+            ranks = [None] * self.world_size
+            dist.all_gather_object(ranks, local_progress)
+        return {
+            "version": 1,
+            "world_size": self.world_size,
+            "configured_seed": self._configured_data_seed,
+            "task_rng": self._task_rng.bit_generator.state,
+            "ranks": ranks,
+        }
+
+    def _restore_data_progress(
+        self, progress: Mapping[str, Any] | None, *, reset: bool = False
+    ) -> None:
+        """Restore progress unless an explicit reset or topology change prevents it.
+
+        Validate the rank envelope before either fallback. An explicit reset
+        retains all newly initialized sources and the selection RNG together,
+        without partially applying saved task state or bypassing model restart.
+        """
+        if progress is None:
+            return
+        if not isinstance(progress, Mapping):
+            raise ValueError("Data-progress checkpoint must be a mapping.")
+        if type(progress.get("version")) is not int or progress["version"] != 1:
+            raise ValueError("Unsupported distributed data-progress version.")
+        saved_world_size = progress.get("world_size")
+        if type(saved_world_size) is not int or saved_world_size < 1:
+            raise ValueError("Data-progress checkpoint world size must be positive.")
+        ranks = progress.get("ranks")
+        if not isinstance(ranks, list) or len(ranks) != saved_world_size:
+            raise ValueError("Data-progress checkpoint must contain every rank.")
+        if not all(isinstance(state, Mapping) for state in ranks):
+            raise ValueError("Data-progress checkpoint rank states must be mappings.")
+        if reset:
+            if self.rank == 0:
+                log.warning(
+                    "training.reset_data_progress is true. Model, optimizer and "
+                    "step are restored, but training data order and selection "
+                    "RNG restart from their newly initialized state. Batches "
+                    "may repeat; exact data-order continuation is unavailable."
+                )
+            return
+        if saved_world_size != self.world_size:
+            # Model/optimizer/step restart has always allowed a new topology.
+            # Rank-local cursors cannot be remapped safely, particularly after
+            # filtering, so retain the freshly initialized data and RNG instead.
+            if self.rank == 0:
+                log.warning(
+                    "Checkpoint world size changed from %d to %d. Model, optimizer "
+                    "and step are restored, but training data order and selection "
+                    "RNG restart from their newly initialized state; exact "
+                    "data-order continuation is unavailable.",
+                    saved_world_size,
+                    self.world_size,
+                )
+            return
+        if "configured_seed" not in progress or "task_rng" not in progress:
+            raise ValueError(
+                "Data-progress checkpoint lacks its seed or task RNG identity; "
+                "set training.reset_data_progress=true to restart data sampling."
+            )
+        if progress["configured_seed"] != self._configured_data_seed:
+            raise ValueError(
+                "Training data progress is incompatible: training.seed changed; "
+                "set training.reset_data_progress=true to restart data sampling."
+            )
+        task_rng = np.random.default_rng(0)
+        task_rng.bit_generator.state = progress["task_rng"]
+        restore_training_data_progress(self.training_data_by_task, ranks[self.rank])
+        self._task_rng = task_rng
 
     def ensure_finite_gradients_for_checkpoint(self) -> None:
         """Check the accumulated gradient norm on all ranks before publication."""
@@ -3080,10 +3196,11 @@ class Trainer(AbstractTrainer):
 
     def save_checkpoint(self, step: int) -> None:
         self.ensure_finite_gradients_for_checkpoint()
+        data_progress = self._collect_data_progress()
         if self.rank != 0 and not self.sharding.enabled:
             return
         ckpt_path = self.ckpt_store.path_for(step)
-        self._save_checkpoint_to_path(ckpt_path, step=step)
+        self._save_checkpoint_to_path(ckpt_path, step=step, data_progress=data_progress)
         if self.rank == 0:
             self.ckpt_store.publish(ckpt_path)
             self.ckpt_store.prune(ckpt_path)
@@ -3100,10 +3217,12 @@ class Trainer(AbstractTrainer):
         save_path: Path,
         lr: float = 0.0,
         step: int = 0,
+        *,
+        data_progress: dict[str, Any] | None = None,
     ) -> None:
         """Save a checkpoint selected by full validation."""
         del lr
-        self._save_checkpoint_to_path(save_path, step=step)
+        self._save_checkpoint_to_path(save_path, step=step, data_progress=data_progress)
 
     def _save_full_validation_ema_checkpoint(
         self,
@@ -3125,6 +3244,7 @@ class Trainer(AbstractTrainer):
         *,
         step: int,
         use_ema_weights: bool = False,
+        data_progress: dict[str, Any] | None = None,
     ) -> None:
         """Serialize the current trainer state to an explicit checkpoint path.
 
@@ -3139,6 +3259,9 @@ class Trainer(AbstractTrainer):
             Such a checkpoint is a deployment snapshot: it carries neither the
             optimizer state nor the EMA state, both of which describe the live
             weights it does not contain.
+        data_progress : dict or None, optional
+            Rank-local progress already gathered before chief-only validation.
+            Ordinary checkpoints collect it on every rank while being written.
         """
         if use_ema_weights:
             with self.model_ema.apply_shadow(self.model):
@@ -3149,7 +3272,7 @@ class Trainer(AbstractTrainer):
                     include_ema_state=False,
                 )
             return
-        self._write_checkpoint(ckpt_path, step=step)
+        self._write_checkpoint(ckpt_path, step=step, data_progress=data_progress)
 
     def _write_checkpoint(
         self,
@@ -3158,6 +3281,7 @@ class Trainer(AbstractTrainer):
         step: int,
         include_optimizer: bool = True,
         include_ema_state: bool = True,
+        data_progress: dict[str, Any] | None = None,
     ) -> None:
         """Serialize the wrapper, and optionally optimizer and EMA state."""
         self._unwrapped.train_infos["step"] = step
@@ -3180,6 +3304,8 @@ class Trainer(AbstractTrainer):
         finally:
             for task_key, compiled in compiled_backup.items():
                 wrapper.model[task_key] = compiled
+        if include_optimizer and data_progress is None:
+            data_progress = self._collect_data_progress()
         # Sharded state is assembled on the chief; the other ranks have played
         # their part in the collectives above and hold nothing to write.
         if self.rank != 0:
@@ -3187,6 +3313,7 @@ class Trainer(AbstractTrainer):
         state: dict[str, Any] = {"model": model_state}
         if optim_state is not None:
             state["optimizer"] = optim_state
+            state[DATA_PROGRESS_CHECKPOINT_KEY] = data_progress
         if include_ema_state and self.model_ema is not None:
             state[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3296,15 +3423,16 @@ class Trainer(AbstractTrainer):
         trainable_parameters = tuple(
             parameter for parameter in inner.parameters() if parameter.requires_grad
         )
-        for task in self.training_tasks:
-            input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
-            _, loss, _ = inner(
-                **input_dict,
-                cur_lr=self.scheduler.get_last_lr()[0],
-                label=label_dict,
-                task_key=task.key,
-            )
-            torch.autograd.grad(loss, trainable_parameters, allow_unused=True)
+        with preserve_training_data_progress(self.training_data_by_task):
+            for task in self.training_tasks:
+                input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
+                _, loss, _ = inner(
+                    **input_dict,
+                    cur_lr=self.scheduler.get_last_lr()[0],
+                    label=label_dict,
+                    task_key=task.key,
+                )
+                torch.autograd.grad(loss, trainable_parameters, allow_unused=True)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         log.info(
@@ -3371,27 +3499,45 @@ class Trainer(AbstractTrainer):
         learning_rate: float,
     ) -> None:
         """Run the active full validation flows for one step."""
-        for validator, save_checkpoint in (
-            (self.full_validator, self._save_full_validation_checkpoint),
-            (self.ema_full_validator, self._save_full_validation_ema_checkpoint),
+        for validator, save_checkpoint, include_progress in (
+            (self.full_validator, self._save_full_validation_checkpoint, True),
+            (self.ema_full_validator, self._save_full_validation_ema_checkpoint, False),
         ):
-            if validator is None:
+            if validator is None or not validator.should_run(display_step):
                 continue
-            validator.run(
-                step_id=display_step,
-                display_step=display_step,
-                lr=learning_rate,
-                save_checkpoint=save_checkpoint,
-                prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
-            )
+            # Plain DDP's validator calls its save hook only on the chief.
+            # Gather before entering it, while every rank is here, and pass
+            # the result through so that hook never starts another collective.
+            if include_progress and validator.save_best:
+                save_checkpoint = functools.partial(
+                    save_checkpoint, data_progress=self._collect_data_progress()
+                )
+            random_state = dp_random.get_state()
+
+            def save_with_training_rng(
+                *args: Any, _save: Callable = save_checkpoint, **kwargs: Any
+            ) -> None:
+                # Best checkpoints are written inside validation. Record the
+                # training RNG, not the draws made by validation-data reads.
+                dp_random.set_state(random_state)
+                _save(*args, **kwargs)
+
+            try:
+                validator.run(
+                    step_id=display_step,
+                    display_step=display_step,
+                    lr=learning_rate,
+                    save_checkpoint=save_with_training_rng,
+                    prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
+                )
+            finally:
+                dp_random.set_state(random_state)
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
-        """Select a task using DeePMD's seeded random helper."""
+        """Select a task independently of rank-local data draws."""
         if not tasks.is_multitask:
             return tasks[tasks.keys[0]]
-        from deepmd.utils import random as dp_random
-
-        model_index = dp_random.choice(
+        model_index = self._task_rng.choice(
             np.arange(len(tasks), dtype=np.int_),
             p=tasks.probabilities,
         )
@@ -3413,12 +3559,22 @@ class Trainer(AbstractTrainer):
         self.wrapper.eval()
         self._display_cur_lr_sched = step_result.payload["cur_lr_sched"]
         try:
-            return super().collect_display_results(
-                tasks,
-                active_task=active_task,
-                step=step,
-                step_result=step_result,
-            )
+            # Only inactive tasks need extra training batches for display.
+            # The chief alone evaluates them, so those reads must be peeks.
+            # Preserving the RNG also isolates validation, whose cursor is not
+            # part of a training checkpoint, from future task/system choices.
+            display_data = {
+                task.key: task.training_data
+                for task in tasks
+                if task.key != active_task.key and self.metric_accumulator is None
+            }
+            with preserve_training_data_progress(display_data):
+                return super().collect_display_results(
+                    tasks,
+                    active_task=active_task,
+                    step=step,
+                    step_result=step_result,
+                )
         finally:
             self._display_cur_lr_sched = None
             self.wrapper.train()

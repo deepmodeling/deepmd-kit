@@ -1890,20 +1890,6 @@ def _make_gradient_test_st_config(
     }
 
 
-def _deterministic_task_choice(task_sequence: list[int]):
-    """Return a patched dp_random.choice that forces task selection order."""
-    original = dp_random.choice
-    it = iter(task_sequence)
-
-    def patched(a, size=None, replace=True, p=None):
-        # Task selection: array with >=2 elements and probability vector
-        if hasattr(a, "__len__") and len(a) >= 2 and p is not None:
-            return next(it)
-        return original(a, size=size, replace=replace, p=p)
-
-    return patched
-
-
 def _make_recording_step(
     trainer,
     modules_to_record: dict,
@@ -2003,9 +1989,12 @@ class TestMultiTaskGradient(unittest.TestCase):
             {"desc": mt_desc, "fit_1": mt_fit_1, "fit_2": mt_fit_2},
             mt_grads,
         )
-        with patch(
-            "deepmd.utils.random.choice",
-            _deterministic_task_choice([0, 1]),
+        with patch.object(
+            mt_trainer,
+            "select_task",
+            side_effect=[
+                mt_trainer.training_tasks[key] for key in ("model_1", "model_2")
+            ],
         ):
             mt_trainer.run()  # 2 steps: task_0 then task_1
 
@@ -2150,8 +2139,8 @@ class TestCompileCaseEmbdVaryingNframes(unittest.TestCase):
     The test uses two systems with different atom counts and per-system
     ``batch_size=[2, 3]`` so every branch's compiled graph sees both
     nframes values.  ``dim_case_embd=2`` is deliberately chosen to also
-    collide numerically with the nframes=2 runtime case.  ``dp_random.choice``
-    is mocked so both tasks and both systems are sampled.
+    collide numerically with the nframes=2 runtime case. Tasks are selected
+    explicitly, and ``dp_random.choice`` controls data-system selection.
     """
 
     @classmethod
