@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from collections.abc import (
+    Callable,
+)
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -58,3 +61,15 @@ class DPModelCommon:
     def get_descriptor(self) -> BaseDescriptor:
         """Get the descriptor."""
         return self.atomic_model.descriptor
+
+    def compute_fitting_input_stats(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> None:
+        """Recompute the input statistics of the fitting network from a sample.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        """
+        self.get_fitting_net().compute_input_stats(sampled_func)

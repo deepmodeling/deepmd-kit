@@ -1,10 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Kernel-level selection for pt_expt serialization."""
 
+import json
 import os
 import sys
+import zipfile
+from pathlib import (
+    Path,
+)
 from types import (
     ModuleType,
+)
+from unittest import (
+    mock,
 )
 
 import pytest
@@ -261,3 +269,41 @@ def test_target_policy_only_suppresses_incompatible_dpa4_accelerators(
         assert tuple(os.environ[name] for name in _INFER_LEVELS) == expected
 
     assert all(os.environ[name] == "1" for name in _INFER_LEVELS)
+
+
+@pytest.mark.parametrize("single_process", [False, True])
+def test_communication_artifact_is_optional(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, single_process: bool
+) -> None:
+    """The default includes communication; a single-process export omits it."""
+    data = {"model": {"type": "dpa4"}}
+
+    def trace(*args: object, **kwargs: object) -> tuple:
+        return (
+            None,
+            {"has_comm_artifact": True, "has_chg_spin_ebd": False},
+            data,
+            ["energy"],
+        )
+
+    def compile_package(exported: object, package_path: str, **kwargs: object) -> None:
+        with zipfile.ZipFile(package_path, "w") as archive:
+            archive.writestr("model/data.pkl", b"")
+
+    monkeypatch.setattr(serialization, "_trace_and_export", trace)
+    output = tmp_path / "model.pt2"
+    kwargs = {"with_comm": False} if single_process else {}
+    with mock.patch(
+        "torch._inductor.aoti_compile_and_package", side_effect=compile_package
+    ) as compile_mock:
+        serialization.deserialize_to_file(
+            str(output), data, lower_kind="graph", **kwargs
+        )
+
+    assert compile_mock.call_count == (1 if single_process else 2)
+    with zipfile.ZipFile(output) as archive:
+        metadata = json.loads(archive.read("model/extra/metadata.json"))
+        assert metadata["has_comm_artifact"] is (not single_process)
+        assert ("model/extra/forward_lower_with_comm.pt2" in archive.namelist()) is (
+            not single_process
+        )

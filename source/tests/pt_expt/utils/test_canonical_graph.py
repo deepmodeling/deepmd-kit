@@ -9,6 +9,7 @@ from deepmd.pt_expt.utils.canonical_graph import (
     UINT32_MAX,
     CanonicalGraph,
     canonical_graph_from_neighbor_graph,
+    canonical_graph_from_pairs,
     validate_canonical_graph_shapes,
 )
 
@@ -73,3 +74,59 @@ def test_storage_exceeding_uint32_range_is_rejected() -> None:
     )
     with pytest.raises(ValueError, match="exceeds the uint32 range"):
         validate_canonical_graph_shapes(graph, 1)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("edge_count", [0, 1, 5])
+def test_pairs_preserve_geometry_and_both_csr_views(
+    device: str, edge_count: int
+) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+    center = torch.tensor([3, 1, 0, 3, 1], device=device)[:edge_count]
+    source = torch.tensor([2, 0, 1, 2, 1], device=device)[:edge_count]
+    vectors = torch.arange(15, dtype=torch.float64, device=device).reshape(5, 3)
+    graph = canonical_graph_from_pairs(
+        center,
+        source,
+        vectors[:edge_count],
+        torch.tensor([2, 99, 2, 99], device=device)[::2],
+        4,
+    )
+    validate_canonical_graph_shapes(graph, 4)
+    torch.testing.assert_close(
+        graph.destination_row_ptr.diff(), torch.bincount(center, minlength=4)
+    )
+    torch.testing.assert_close(
+        graph.source_row_ptr.diff(), torch.bincount(source, minlength=4)
+    )
+    destination = torch.repeat_interleave(
+        torch.arange(4, device=device), graph.destination_row_ptr.diff()
+    )
+    payload = (
+        torch.cat(
+            (
+                destination[:, None],
+                graph.source[:edge_count].to(torch.int64)[:, None],
+                graph.edge_vec[:edge_count],
+            ),
+            dim=1,
+        )
+        .cpu()
+        .tolist()
+    )
+    expected = (
+        torch.cat((center[:, None], source[:, None], vectors[:edge_count]), dim=1)
+        .cpu()
+        .tolist()
+    )
+    assert sorted(payload) == sorted(expected)
+    by_source = graph.source.to(torch.int64).index_select(
+        0, graph.source_order[:edge_count].to(torch.int64)
+    )
+    torch.testing.assert_close(
+        by_source,
+        torch.repeat_interleave(
+            torch.arange(4, device=device), graph.source_row_ptr.diff()
+        ),
+    )

@@ -46,6 +46,11 @@ from deepmd.pt_expt.utils.comm import (
     ensure_comm_registered,
 )
 
+from ...common.sezm_config import (
+    _tiny_sezm_model_params,
+    _tiny_sezm_native_spin_model_params,
+)
+
 _COMM_KEYS = (
     "send_list",
     "send_proc",
@@ -133,53 +138,6 @@ _SKIP_OFF_COMPILE_TORCH_REASON = (
 )
 
 
-def _tiny_sezm_model_params() -> dict:
-    """Minimal fp64 SeZM config for self-contained export tests.
-
-    ``precision="float64"`` is what unlocks the ``rtol=1e-10, atol=1e-10``
-    parity pt_expt enforces; fp32 accumulation alone drifts in the 1e-6
-    range.  All other knobs are tuned to keep ``make_fx`` tracing time
-    in the low-single-digit seconds.
-    """
-    return {
-        "type": "SeZM",
-        "type_map": ["A", "B"],
-        "descriptor": {
-            "type": "SeZM",
-            "sel": [2, 2],
-            "rcut": 3.0,
-            "channels": 4,
-            "n_focus": 1,
-            "n_radial": 3,
-            "radial_mlp": [6],
-            "use_env_seed": True,
-            "l_schedule": [1, 0],
-            "mmax": 1,
-            "so2_norm": False,
-            "so2_layers": 1,
-            "n_atten_head": 1,
-            "sandwich_norm": [True, False, True, False],
-            "ffn_neurons": 8,
-            "ffn_blocks": 1,
-            "s2_activation": [False, True],
-            "mlp_bias": False,
-            "layer_scale": False,
-            "use_amp": False,
-            "activation_function": "silu",
-            "glu_activation": True,
-            "precision": "float64",
-            "seed": 7,
-        },
-        "fitting_net": {
-            "neuron": [8],
-            "activation_function": "silu",
-            "precision": "float64",
-            "seed": 7,
-        },
-        "use_compile": False,
-    }
-
-
 def _tiny_sezm_spin_model_params() -> dict:
     """Minimal fp64 SeZM spin config for freeze routing tests."""
     params = copy.deepcopy(_tiny_sezm_model_params())
@@ -188,17 +146,6 @@ def _tiny_sezm_spin_model_params() -> dict:
         "use_spin": [True, False],
         "virtual_scale": 0.2,
         "scheme": "deepspin",
-    }
-    return params
-
-
-def _tiny_sezm_native_spin_model_params() -> dict:
-    """Minimal fp64 native-spin SeZM config for freeze routing tests."""
-    params = copy.deepcopy(_tiny_sezm_model_params())
-    params["type_map"] = ["O", "H"]
-    params["spin"] = {
-        "use_spin": [True, False],
-        "scheme": "native",
     }
     return params
 

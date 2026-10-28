@@ -31,6 +31,10 @@ from deepmd.dpmodel.model.make_model import (
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
 )
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+    remap_preset_out_bias,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -489,6 +493,12 @@ class SpinModel(NativeOP):
             preset_observed_type=preset_observed_type,
         )
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the backbone's AdamW patterns with its parameter path."""
+        return [
+            f"backbone_model.{p}" for p in self.backbone_model.adam_route_patterns()
+        ]
+
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
@@ -498,6 +508,10 @@ class SpinModel(NativeOP):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the backbone fitting into its bias."""
+        self.backbone_model.fold_vacuum_reference()
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -593,6 +607,7 @@ class SpinModel(NativeOP):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         bias_adjust_mode: str = "change-by-statistic",
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -610,13 +625,24 @@ class SpinModel(NativeOP):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        preset_out_bias : dict, optional
+            Preset on the public real-atom type map. It is normalized and
+            extended with unassigned virtual types before forwarding. Omit
+            to retain the model preset; an empty dict fits without fixing
+            preset outputs. Non-finite stored cells covered by a checkpoint
+            preset are recovered before residual fitting.
         """
+        preset_out_bias = remap_preset_out_bias(
+            normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
+            list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),
+        )
         spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         self.backbone_model.change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(

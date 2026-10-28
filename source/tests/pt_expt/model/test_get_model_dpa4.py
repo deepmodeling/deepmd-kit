@@ -238,16 +238,19 @@ class TestGetModelDPA4(unittest.TestCase):
         cases = {
             "spin": ({"use_spin": [True, False], "virtual_scale": [0.3]}, "Spin DPA4"),
             "lora": ({"rank": 4}, "`lora` is not supported"),
-            "preset_out_bias": (
-                {"energy": [None, 1.0]},
-                "`preset_out_bias` is not supported",
-            ),
         }
         for key, (value, msg_regex) in cases.items():
             raw = _make_raw_model_config()
             raw[key] = value
             with self.assertRaisesRegex(NotImplementedError, msg_regex):
                 get_model(raw)
+
+    def test_preset_out_bias_accepted(self) -> None:
+        """A model-level ``preset_out_bias`` reaches the atomic model."""
+        raw = _make_raw_model_config()
+        raw["preset_out_bias"] = {"energy": [None, 1.0]}
+        model = get_model(raw)
+        self.assertEqual(model.atomic_model.preset_out_bias, {"energy": [None, [1.0]]})
 
     def test_native_spin_capability_gate_standard_config(self) -> None:
         """The generic ``supports_native_spin()`` gate rejects a dense descriptor.

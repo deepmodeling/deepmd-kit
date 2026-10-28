@@ -79,12 +79,15 @@ template <int Channels,
           int Lmax,
           bool HasModes,
           bool HasSpin,
+          bool Bridged,
           bool Canonical,
           typename index_t>
 __global__ __launch_bounds__(
     Profile<Channels, Lmax, HasSpin>::Threads,
-    Profile<Channels, Lmax, HasSpin>::
-        MinBlocksPerSm) void forward_kernel(Arguments args) {
+    edge_resident_blocks<Channels,
+                         Lmax,
+                         HasModes,
+                         HasSpin>()) void forward_kernel(Arguments args) {
   using P = Profile<Channels, Lmax, HasSpin>;
   constexpr int EdgeWidth = P::ForwardEdgeWidth;
   constexpr int Groups = kWarpSize / EdgeWidth;
@@ -111,6 +114,10 @@ __global__ __launch_bounds__(
   const auto* destination_order =
       static_cast<const index_t*>(args.destination_order);
   const int center_type = static_cast<int>(args.atype[args.node_begin + node]);
+  // The centre half of every pair length scale is a block constant, like the
+  // centre type it follows.
+  const float center_radius =
+      Bridged ? __ldg(args.contact_radius + center_type) : 0.0f;
   const long begin = args.destination_row_ptr[node];
   const long end = args.destination_row_ptr[node + 1];
   const int radial_modes = HasModes ? args.radial_modes : 0;
@@ -144,17 +151,20 @@ __global__ __launch_bounds__(
     // broadcasting it from a leader. The addresses are identical inside the
     // group, so the memory system serves one transaction either way, whereas
     // a leader-only branch pays the same issue slots and adds ten shuffles.
-    const EdgeGeometry geometry = load_geometry<Canonical, index_t>(
-        edge, args.rcut, args.eps, args.edge_vec, edge_index, args.atype);
-    const TableLocation location =
-        locate_table<Canonical>(geometry.radius, args.table_stride,
-                                args.table_max, args.interval_count);
+    const long source = static_cast<long>(edge_index[edge]);
+    const int source_type = static_cast<int>(args.atype[source]);
     if constexpr (!Canonical) {
       if (center_type >= args.type_count - 1 ||
-          geometry.source_type >= args.type_count - 1) {
+          source_type >= args.type_count - 1) {
         continue;
       }
     }
+    const EdgeGeometry geometry = load_geometry<Bridged>(
+        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
+        args.inverse_f_width, center_radius, args.contact_radius, args.eps,
+        args.edge_vec);
+    const TableLocation location = locate_table<Canonical>(
+        geometry.seen, args.table_stride, args.table_max, args.interval_count);
     const TableRow row = table_row(args.table, location, args.table_width);
     const float coordinate = location.coordinate;
     if constexpr (HasModes) {
@@ -1459,12 +1469,15 @@ template <int Channels,
           int Lmax,
           bool HasModes,
           bool HasSpin,
+          bool Bridged,
           bool Canonical,
           typename index_t>
 __global__ __launch_bounds__(
     Profile<Channels, Lmax, HasSpin>::Threads,
-    Profile<Channels, Lmax, HasSpin>::
-        MinBlocksPerSm) void edge_backward_kernel(Arguments args) {
+    edge_resident_blocks<Channels,
+                         Lmax,
+                         HasModes,
+                         HasSpin>()) void edge_backward_kernel(Arguments args) {
   using P = Profile<Channels, Lmax, HasSpin>;
   constexpr int EdgeWidth = P::BackwardEdgeWidth;
   constexpr int Groups = kWarpSize / EdgeWidth;
@@ -1486,6 +1499,10 @@ __global__ __launch_bounds__(
   const auto* destination_order =
       static_cast<const index_t*>(args.destination_order);
   const int center_type = static_cast<int>(args.atype[args.node_begin + node]);
+  // The centre half of every pair length scale is a block constant, like the
+  // centre type it follows.
+  const float center_radius =
+      Bridged ? __ldg(args.contact_radius + center_type) : 0.0f;
   const long begin = args.destination_row_ptr[node];
   const long end = args.destination_row_ptr[node + 1];
   const int radial_modes = HasModes ? args.radial_modes : 0;
@@ -1494,6 +1511,14 @@ __global__ __launch_bounds__(
       __ldg(args.moment_gradient + gradient_offset + P::MomentWidth);
   const float angular_mass_gradient =
       __ldg(args.moment_gradient + gradient_offset + P::MomentWidth + 1);
+  // Only a bridged specialization carries the analytical pair potential, and
+  // its descriptor-only backward still runs without one. Half of every pair
+  // energy belongs to the destination, so the half and the node's energy
+  // cotangent fold into one weight of the radial slope.
+  const bool has_pair = Bridged && args.pair_table != nullptr;
+  const float pair_weight =
+      has_pair ? 0.5f * static_cast<float>(args.pair_seed[node]) : 0.0f;
+  float pair_energy = 0.0f;
 
   // The scalar cotangent is one vector of width C0 that every edge rereads.
   // Holding it in registers costs one entry per channel tile and spills the
@@ -1586,14 +1611,11 @@ __global__ __launch_bounds__(
       }
       continue;
     }
-    const EdgeGeometry geometry = load_geometry<Canonical, index_t>(
-        edge, args.rcut, args.eps, args.edge_vec, edge_index, args.atype);
-    const TableLocation location =
-        locate_table<Canonical>(geometry.radius, args.table_stride,
-                                args.table_max, args.interval_count);
+    const long source = static_cast<long>(edge_index[edge]);
+    const int source_type = static_cast<int>(args.atype[source]);
     if constexpr (!Canonical) {
       if (center_type >= args.type_count - 1 ||
-          geometry.source_type >= args.type_count - 1) {
+          source_type >= args.type_count - 1) {
         if (thread == leader) {
           args.edge_gradient[edge * 3 + 0] = 0.0f;
           args.edge_gradient[edge * 3 + 1] = 0.0f;
@@ -1606,6 +1628,25 @@ __global__ __launch_bounds__(
         }
         continue;
       }
+    }
+    const EdgeGeometry geometry = load_geometry<Bridged>(
+        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
+        args.inverse_f_width, center_radius, args.contact_radius, args.eps,
+        args.edge_vec);
+    const TableLocation location = locate_table<Canonical>(
+        geometry.seen, args.table_stride, args.table_max, args.interval_count);
+    // The pair term depends on the geometry alone, so it starts here and runs
+    // alongside the channel scan; its slope joins the radial cotangent at the
+    // tail, which keeps the exponentials off the dependency chain of the scan.
+    float pair_slope = 0.0f;
+    if (has_pair) {
+      const long pair_row = static_cast<long>(center_type) * args.type_count +
+                            geometry.source_type;
+      const PairTerm term =
+          pair_term<EdgeWidth>(args.pair_table + pair_row * 8, base_channel,
+                               geometry.radius, geometry.inverse_radius);
+      pair_energy = fmaf(0.5f, term.energy, pair_energy);
+      pair_slope = term.slope;
     }
     const TableRow row = table_row(args.table, location, args.table_width);
     const float coordinate = location.coordinate;
@@ -1869,9 +1910,13 @@ __global__ __launch_bounds__(
           fmaf(4.0f * squared * envelope, angular_mass_gradient,
                fmaf(2.0f * envelope, scalar_mass_gradient, envelope_gradient));
     }
-    radial_gradient = fmaf(envelope_gradient,
-                           c3_envelope_derivative(geometry.radius, args.rcut),
-                           radial_gradient);
+    // The table terms above differentiate the length the table reads; the
+    // pair potential acts on the true length and joins after the chain rule.
+    radial_gradient = radial_chain<Bridged>(geometry, args, center_radius,
+                                            radial_gradient, envelope_gradient);
+    if constexpr (Bridged) {
+      radial_gradient = fmaf(pair_weight, pair_slope, radial_gradient);
+    }
 
     // The basis VJP is linear in the radial and angular cotangents, so
     // applying it per lane reduces three Cartesian components instead of the
@@ -1910,6 +1955,14 @@ __global__ __launch_bounds__(
       }
     }
   }
+  if (has_pair) {
+    // The lanes hold disjoint terms of disjoint edge groups, so one reduction
+    // over the warp is the pair energy of the node.
+    const float total = warp_sum(pair_energy);
+    if (thread == 0) {
+      args.pair_energy[node] += static_cast<double>(total);
+    }
+  }
 }
 
 template <bool Canonical, typename index_t>
@@ -1941,12 +1994,14 @@ template <int Channels,
           int Lmax,
           bool HasModes,
           bool HasSpin,
+          bool Bridged,
           bool Canonical,
           typename index_t>
 struct ForwardLauncher {
   static void run(const Arguments& args, cudaStream_t stream) {
     using P = Profile<Channels, Lmax, HasSpin>;
-    forward_kernel<Channels, Lmax, HasModes, HasSpin, Canonical, index_t>
+    forward_kernel<Channels, Lmax, HasModes, HasSpin, Bridged, Canonical,
+                   index_t>
         <<<static_cast<int>(args.node_count), P::Threads, 0, stream>>>(args);
   }
 };
@@ -1955,6 +2010,7 @@ template <int Channels,
           int Lmax,
           bool HasModes,
           bool HasSpin,
+          bool Bridged,
           bool Canonical,
           typename index_t>
 struct BackwardLauncher {
@@ -2015,7 +2071,8 @@ struct BackwardLauncher {
     } else {
       launch_node_backward<kNodeLanesNarrow>(args, stream);
     }
-    edge_backward_kernel<Channels, Lmax, HasModes, HasSpin, Canonical, index_t>
+    edge_backward_kernel<Channels, Lmax, HasModes, HasSpin, Bridged, Canonical,
+                         index_t>
         <<<static_cast<int>(args.node_count), P::Threads, 0, stream>>>(args);
     // The reserved edge slots beyond the physical count are only known on the
     // device, so the grid is sized from the storage bound and the surplus
@@ -2043,23 +2100,44 @@ template <int Channels,
           int Lmax,
           bool HasModes,
           bool HasSpin,
-          template <int, int, bool, bool, bool, typename> class L>
+          bool Bridged,
+          template <int, int, bool, bool, bool, bool, typename> class L>
 void dispatch_topology(const Arguments& args, cudaStream_t stream) {
   const bool wide = args.index_kind == IndexKind::Bits64;
   if (args.canonical) {
     if (wide) {
-      L<Channels, Lmax, HasModes, HasSpin, true, long>::run(args, stream);
-    } else {
-      L<Channels, Lmax, HasModes, HasSpin, true, std::uint32_t>::run(args,
+      L<Channels, Lmax, HasModes, HasSpin, Bridged, true, long>::run(args,
                                                                      stream);
+    } else {
+      L<Channels, Lmax, HasModes, HasSpin, Bridged, true, std::uint32_t>::run(
+          args, stream);
     }
   } else {
     if (wide) {
-      L<Channels, Lmax, HasModes, HasSpin, false, long>::run(args, stream);
-    } else {
-      L<Channels, Lmax, HasModes, HasSpin, false, std::uint32_t>::run(args,
+      L<Channels, Lmax, HasModes, HasSpin, Bridged, false, long>::run(args,
                                                                       stream);
+    } else {
+      L<Channels, Lmax, HasModes, HasSpin, Bridged, false, std::uint32_t>::run(
+          args, stream);
     }
+  }
+}
+
+// Zone bridging is a compile-time specialization for the same reason as the
+// native spin: a plain descriptor must not carry the switch arithmetic of the
+// edge envelope, nor the accumulator and the branch of the analytical pair
+// potential, of a bridged one.
+template <int Channels,
+          int Lmax,
+          bool HasModes,
+          bool HasSpin,
+          template <int, int, bool, bool, bool, bool, typename> class L>
+void dispatch_bridging(const Arguments& args, cudaStream_t stream) {
+  if (args.bridged) {
+    dispatch_topology<Channels, Lmax, HasModes, HasSpin, true, L>(args, stream);
+  } else {
+    dispatch_topology<Channels, Lmax, HasModes, HasSpin, false, L>(args,
+                                                                   stream);
   }
 }
 
@@ -2071,12 +2149,12 @@ void dispatch_topology(const Arguments& args, cudaStream_t stream) {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          template <int, int, bool, bool, bool, typename> class L>
+          template <int, int, bool, bool, bool, bool, typename> class L>
 void dispatch_spin(const Arguments& args, cudaStream_t stream) {
   if (args.has_spin) {
-    dispatch_topology<Channels, Lmax, HasModes, true, L>(args, stream);
+    dispatch_bridging<Channels, Lmax, HasModes, true, L>(args, stream);
   } else {
-    dispatch_topology<Channels, Lmax, HasModes, false, L>(args, stream);
+    dispatch_bridging<Channels, Lmax, HasModes, false, L>(args, stream);
   }
 }
 
@@ -2085,7 +2163,7 @@ void dispatch_spin(const Arguments& args, cudaStream_t stream) {
 // vector temporaries and the shared profile cache of one that has them.
 template <int Channels,
           int Lmax,
-          template <int, int, bool, bool, bool, typename> class L>
+          template <int, int, bool, bool, bool, bool, typename> class L>
 void dispatch_modes(const Arguments& args, cudaStream_t stream) {
   if (args.radial_modes > 0) {
     dispatch_spin<Channels, Lmax, true, L>(args, stream);
@@ -2102,7 +2180,8 @@ void dispatch_modes(const Arguments& args, cudaStream_t stream) {
 // dispatch. The unreachable default is still checked rather than folded into
 // the highest degree, so that a degree outside the compiled set can only ever
 // fail loudly instead of running a kernel for a different model.
-template <int Channels, template <int, int, bool, bool, bool, typename> class L>
+template <int Channels,
+          template <int, int, bool, bool, bool, bool, typename> class L>
 void dispatch_degree(const Arguments& args, cudaStream_t stream) {
   switch (args.lmax) {
     case 2:

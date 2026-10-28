@@ -833,6 +833,20 @@ class EnergyStdLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return configured energy, force, virial and Hessian metrics."""
+        prefix = "rmse" if self.loss_func == "mse" else "mae"
+        names = () if self.inference else ("rmse",)
+        names += tuple(
+            f"{prefix}_{term}"
+            for term in ("e", "f", "v", "ae", "pf")
+            if getattr(self, f"has_{term}")
+        )
+        return names + tuple(
+            f"rmse_{term}" for term in ("gf", "h") if getattr(self, f"has_{term}")
+        )
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []

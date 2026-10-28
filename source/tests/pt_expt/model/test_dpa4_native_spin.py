@@ -300,6 +300,19 @@ def _jittered_wrapper(seed: int = 11) -> NativeSpinEnergyModel:
 class TestNativeSpinEnergyModelPtExpt:
     """Public ``forward()`` contract of the pt_expt ``NativeSpinEnergyModel``."""
 
+    def test_adam_route_patterns_match_parameters(self) -> None:
+        """The DPA4 backbone and its native-spin model declare the same routed tensors."""
+        expected = [
+            "atomic_model.descriptor.env_seed_embedding.rbf_proj_layer1.",
+            "atomic_model.descriptor.radial_embedding.net.0.",
+        ]
+        for model in (_build_jittered_backbone(), _jittered_wrapper()):
+            patterns = sorted(model.adam_route_patterns())
+            assert patterns == expected
+            names = [name for name, _ in model.named_parameters()]
+            for pattern in patterns:
+                assert any(pattern in name for name in names), pattern
+
     def setup_method(self) -> None:
         self.device = _env.DEVICE
         self.model = _jittered_wrapper(seed=11)
@@ -1200,8 +1213,8 @@ class TestDPA4DescriptorVersionPersistence:
         target = self._descriptor()
         target.load_state_dict(state)
         assert torch.all(target.env_seed_embedding.spin_scale == 4.0)
-        assert target.version == 1.2
-        assert float(target.version_tensor.item()) == 1.2
+        assert target.version == 1.3
+        assert float(target.version_tensor.item()) == 1.3
 
     def test_legacy_spin_free_state_zeros_dormant_routes(self) -> None:
         state = self._descriptor([False, False]).state_dict()
@@ -1225,7 +1238,7 @@ class TestDPA4DescriptorVersionPersistence:
         for key in dormant_keys:
             assert torch.all(migrated[key] == 0.0)
         assert torch.all(migrated["spin_embedding.mag_layer1.w"] == 5.0)
-        assert target.version == 1.2
+        assert target.version == 1.3
 
     def test_state_without_a_version_is_read_as_the_last_untagged_one(self) -> None:
         """Checkpoints predating the buffer were written under version 1.1."""
@@ -1237,7 +1250,7 @@ class TestDPA4DescriptorVersionPersistence:
         target = self._descriptor()
         target.load_state_dict(state)
         assert torch.all(target.env_seed_embedding.spin_scale == 9.0)
-        assert target.version == 1.2
+        assert target.version == 1.3
 
 
 class TestNativeSpinConfigFormsPtExpt:

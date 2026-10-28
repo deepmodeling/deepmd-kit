@@ -2,6 +2,9 @@
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+)
 from unittest.mock import (
     Mock,
 )
@@ -211,6 +214,8 @@ def test_update_mode_recomputes_partial_output_group(tmp_path: Path) -> None:
             "bias_atom_property",
             "std_atom_energy",
             "std_atom_property",
+            "preset_bias_energy",
+            "preset_bias_property",
         }
         assert not np.all(file["bias_atom_energy"][:] == 100.0)
 
@@ -234,7 +239,11 @@ def test_update_mode_replaces_orphaned_output_pair(tmp_path: Path) -> None:
     assert set(bias) == {"energy"}
     assert set(std) == {"energy"}
     with h5py.File(target, "r") as file:
-        assert set(file) == {"bias_atom_energy", "std_atom_energy"}
+        assert set(file) == {
+            "bias_atom_energy",
+            "std_atom_energy",
+            "preset_bias_energy",
+        }
     original = target.read_bytes()
 
     sampler.reset_mock(side_effect=True)
@@ -290,6 +299,42 @@ def test_interrupted_pair_replacement_requires_recovery(tmp_path: Path) -> None:
             np.testing.assert_array_equal(file[name][:], value)
 
 
+def test_interrupted_preset_write_requires_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = str(tmp_path / "stat.hdf5")
+    sampled = energy_stat_sample()
+    preset = {"energy": [None, [1.0]]}
+    create_dataset = h5py.Group.create_dataset
+
+    def interrupted_write(group: h5py.Group, name: str, **kwargs: Any) -> h5py.Dataset:
+        if name.endswith("preset_bias_energy"):
+            raise OSError("preset write interrupted")
+        return create_dataset(group, name, **kwargs)
+
+    with open_stat_file(StatFileSpec(target)) as path:
+        with monkeypatch.context() as patch:
+            patch.setattr(h5py.Group, "create_dataset", interrupted_write)
+            with pytest.raises(OSError, match="preset write interrupted"):
+                compute_output_stats(sampled, 2, ["energy"], path, preset_bias=preset)
+    with open_stat_file(StatFileSpec(target, "read")) as path:
+        with pytest.raises(FileNotFoundError, match=r"incomplete.*transaction"):
+            compute_output_stats(
+                lambda: pytest.fail("An incomplete read-only cache must not sample"),
+                2,
+                ["energy"],
+                path,
+                preset_bias=preset,
+            )
+    with open_stat_file(StatFileSpec(target)) as path:
+        sampler = Mock(return_value=sampled)
+        actual = compute_output_stats(sampler, 2, ["energy"], path, preset_bias=preset)
+        sampler.assert_called_once_with()
+        expected = compute_output_stats(sampled, 2, ["energy"], preset_bias=preset)
+        for reference, result in zip(expected, actual, strict=True):
+            np.testing.assert_array_equal(result["energy"], reference["energy"])
+
+
 def test_read_mode_rejects_entirely_missing_output_pair(tmp_path: Path) -> None:
     target = tmp_path / "stat.hdf5"
     with h5py.File(target, "w") as file:
@@ -310,11 +355,12 @@ def test_read_mode_rejects_entirely_missing_output_pair(tmp_path: Path) -> None:
     sampler.assert_not_called()
 
 
-def test_update_mode_preserves_absent_legacy_output_pair(tmp_path: Path) -> None:
+def test_update_mode_preserves_absent_output_pair(tmp_path: Path) -> None:
     target = tmp_path / "stat.hdf5"
     with h5py.File(target, "w") as file:
         file.create_dataset("bias_atom_energy", data=np.zeros((2, 1)))
         file.create_dataset("std_atom_energy", data=np.ones((2, 1)))
+        file.create_dataset("preset_bias_energy", data=np.empty(0))
     original = target.read_bytes()
 
     sampler = Mock()
@@ -331,6 +377,75 @@ def test_update_mode_preserves_absent_legacy_output_pair(tmp_path: Path) -> None
     assert set(bias) == {"energy"}
     assert set(std) == {"energy"}
     assert target.read_bytes() == original
+
+
+@pytest.mark.parametrize("suffix", [".hdf5", ""])  # HDF5 vs directory cache
+def test_output_stats_presets_respect_output_and_read_mode(
+    tmp_path: Path, suffix: str
+) -> None:
+    target = str(tmp_path / f"stat{suffix}")
+    sampled = energy_stat_sample()
+    sampled[0]["property"] = np.array([[1.0], [3.0]], dtype=np.float64)
+    sampled[0]["find_property"] = np.float32(1.0)
+    preset = {"energy": [None, [1.0]], "property": [[2.0], None]}
+    with open_stat_file(StatFileSpec(target)) as path:
+        expected, _ = compute_output_stats(
+            sampled, 2, ["energy", "property"], path, preset_bias=preset
+        )
+    changed = {**preset, "energy": [None, [2.0]]}
+    no_sampling = Mock(side_effect=AssertionError("A cache hit must not sample data"))
+    with open_stat_file(StatFileSpec(target, "read")) as path:
+        actual, _ = compute_output_stats(
+            no_sampling, 2, ["property"], path, preset_bias=changed
+        )
+        np.testing.assert_array_equal(actual["property"], expected["property"])
+        with pytest.raises(ValueError, match=r"different preset.*energy"):
+            compute_output_stats(no_sampling, 2, ["energy"], path, preset_bias=changed)
+    no_sampling.assert_not_called()
+
+    with open_stat_file(StatFileSpec(target)) as path:
+        sampler = Mock(return_value=sampled)
+        actual, _ = compute_output_stats(
+            sampler, 2, ["energy"], path, preset_bias=changed
+        )
+        sampler.assert_called_once_with()
+        fresh, _ = compute_output_stats(sampled, 2, ["energy"], preset_bias=changed)
+        np.testing.assert_allclose(actual["energy"], fresh["energy"])
+    with open_stat_file(StatFileSpec(target, "read")) as path:
+        actual, _ = compute_output_stats(
+            no_sampling, 2, ["property"], path, preset_bias=preset
+        )
+        np.testing.assert_array_equal(actual["property"], expected["property"])
+        restored, _ = compute_output_stats(
+            no_sampling, 2, ["energy"], path, preset_bias={"energy": [None, 2.0]}
+        )
+        np.testing.assert_array_equal(restored["energy"], fresh["energy"])
+
+
+@pytest.mark.parametrize("suffix", [".hdf5", ""])  # HDF5 vs directory cache
+def test_output_stats_without_preset_record_require_recomputation(
+    tmp_path: Path, suffix: str
+) -> None:
+    target = str(tmp_path / f"stat{suffix}")
+    with open_stat_file(StatFileSpec(target)) as path:
+        (path / "bias_atom_energy").save_numpy(np.full((2, 1), 100.0))
+        (path / "std_atom_energy").save_numpy(np.ones((2, 1)))
+    with open_stat_file(StatFileSpec(target, "read")) as path:
+        with pytest.raises(FileNotFoundError, match="preset_bias_energy"):
+            compute_output_stats(
+                lambda: pytest.fail("A read-only cache miss must not sample data"),
+                2,
+                ["energy"],
+                path,
+            )
+    sampled = energy_stat_sample()
+    expected = compute_output_stats(sampled, 2, ["energy"])
+    with open_stat_file(StatFileSpec(target)) as path:
+        sampler = Mock(return_value=sampled)
+        actual = compute_output_stats(sampler, 2, ["energy"], path)
+        sampler.assert_called_once_with()
+        for reference, result in zip(expected, actual, strict=True):
+            np.testing.assert_array_equal(result["energy"], reference["energy"])
 
 
 def test_update_mode_recomputes_partial_descriptor_group(tmp_path: Path) -> None:

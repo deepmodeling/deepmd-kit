@@ -66,8 +66,10 @@ class PairDPA4Spin : public Pair {
   PairDPA4Spin(class LAMMPS*);
   ~PairDPA4Spin() override;
 
-  // Load the artifact named by ``pair_style dpa4spin <model> [charge_spin
-  // <v1> ... <vN>]`` and fix the charge state the keyword names.
+  // Load the artifact named by ``pair_style dpa4spin <model>
+  // [charge_spin <v1> ... <vN>] [magnetic_force precession|cartesian]`` and
+  // fix the optional charge state and magnetic-force convention the keywords
+  // name. ``magnetic_force`` defaults to precession.
   void settings(int, char**) override;
   // Resolve the LAMMPS atom types onto the element list of the model.
   void coeff(int, char**) override;
@@ -98,6 +100,10 @@ class PairDPA4Spin : public Pair {
   std::vector<int> type_idx_map;
   // LAMMPS unit system relative to the eV / Angstrom system of the model.
   double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
+  // Convention in atom->fm: 0 = precession (|m|/hbar scaling), 1 = Cartesian
+  // (-dE/dS, including at zero moment). An int for the scalar Pair::extract
+  // API.
+  int fm_cartesian_force;
 
  private:
   CommBrickDPA4Spin* commdata_;

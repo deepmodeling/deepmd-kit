@@ -42,7 +42,7 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
+#include <torch/library.h>
 
 #include <algorithm>
 #include <tuple>
@@ -80,6 +80,13 @@ namespace {
 
 constexpr int kWideChannelLanes = 384;
 
+// Working dtypes this build compiles, as named in the input errors.
+constexpr const char* kWorkingDtypes =
+    DEEPMD_ENABLE_DPA4_FP64
+        ? "float32, bfloat16 or float64"
+        : "float32 or bfloat16 (float64 requires a build with "
+          "DEEPMD_ENABLE_DPA4_FP64=ON)";
+
 #define DPA4_SC_CHECK_LAUNCH(what)                                        \
   do {                                                                    \
     cudaError_t err = cudaGetLastError();                                 \
@@ -99,6 +106,10 @@ void check_value_inputs(const at::Tensor& x,
                         const char* who) {
   TORCH_CHECK(x.is_cuda() && x.dim() == 3 && x.stride(2) == 1, who,
               ": x must be (N, D, C_wide) with unit channel stride");
+  const at::ScalarType dtype = x.scalar_type();
+  TORCH_CHECK(dtype == at::kFloat || dtype == at::kBFloat16 ||
+                  (DEEPMD_ENABLE_DPA4_FP64 && dtype == at::kDouble),
+              who, ": x must be ", kWorkingDtypes, ", got ", dtype);
   TORCH_CHECK(1 <= lmax && lmax <= 6, who, ": unsupported lmax");
   TORCH_CHECK(0 <= rank && rank <= 4, who, ": unsupported rank");
   TORCH_CHECK(1 <= n_focus && n_focus <= kMaxFocus, who,
@@ -162,10 +173,10 @@ __global__ void competition_fwd_kernel(
     int n_focus,
     int cf,
     int row_w,
-    float inv_tau,
-    float label_smoothing,
+    typename acc_type<scalar_t>::type inv_tau,
+    typename acc_type<scalar_t>::type label_smoothing,
     bool has_bias,
-    float norm_eps) {
+    typename acc_type<scalar_t>::type norm_eps) {
   using acc_t = typename acc_type<scalar_t>::type;
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
@@ -197,12 +208,12 @@ __global__ void competition_fwd_kernel(
     }
     if (lane == 0) {
       if (norm_scale != nullptr) {
-        logit /= sqrt(sq / (acc_t)cf + (acc_t)norm_eps);
+        logit /= sqrt(sq / (acc_t)cf + norm_eps);
       }
       if (has_bias) {
         logit += (acc_t)bias[focus];
       }
-      logits[focus] = logit * (acc_t)inv_tau;
+      logits[focus] = logit * inv_tau;
     }
   }
   __syncthreads();
@@ -218,8 +229,8 @@ __global__ void competition_fwd_kernel(
       weights[f] = exp((acc_t)(logits[f] - maximum));
       denominator += weights[f];
     }
-    const acc_t smooth = (acc_t)label_smoothing / (acc_t)n_focus;
-    const acc_t scale = (acc_t)1 - (acc_t)label_smoothing;
+    const acc_t smooth = label_smoothing / (acc_t)n_focus;
+    const acc_t scale = (acc_t)1 - label_smoothing;
     for (int f = 0; f < n_focus; ++f) {
       alpha[edge * (long)n_focus + f] =
           weights[f] / denominator * scale + smooth;
@@ -434,17 +445,16 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
       alpha_t = at::empty({n_edge, n_focus}, alpha_opts);
       auto stream = at::cuda::getCurrentCUDAStream();
       const int threads = 32 * (int)n_focus;
-      AT_DISPATCH_FLOATING_TYPES_AND2(
-          at::kBFloat16, at::kHalf, x.scalar_type(), "competition_fwd", [&] {
-            using acc_t = typename acc_type<scalar_t>::type;
-            competition_fwd_kernel<scalar_t><<<n_edge, threads, 0, stream>>>(
-                u0.data_ptr<scalar_t>(), w_fc_t.data_ptr<scalar_t>(),
-                fc_bias_t.data_ptr<scalar_t>(),
-                has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
-                alpha_t.data_ptr<acc_t>(), n_edge, (int)n_focus, cf,
-                (int)u0.size(2), (float)(1.0 / softmax_tau),
-                (float)label_smoothing, has_bias, (float)norm_eps);
-          });
+      DPA4_SEZM_DISPATCH_TYPES(x.scalar_type(), "competition_fwd", [&] {
+        using acc_t = typename acc_type<scalar_t>::type;
+        competition_fwd_kernel<scalar_t><<<n_edge, threads, 0, stream>>>(
+            u0.data_ptr<scalar_t>(), w_fc_t.data_ptr<scalar_t>(),
+            fc_bias_t.data_ptr<scalar_t>(),
+            has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
+            alpha_t.data_ptr<acc_t>(), n_edge, (int)n_focus, cf,
+            (int)u0.size(2), (acc_t)(1.0 / softmax_tau), (acc_t)label_smoothing,
+            has_bias, (acc_t)norm_eps);
+      });
       DPA4_SC_CHECK_LAUNCH("sezm_so2_value_fwd competition");
     } else {
       alpha_t = at::ones({n_edge, n_focus}, alpha_opts);
@@ -464,25 +474,29 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
   auto stream = at::cuda::getCurrentCUDAStream();
   const size_t smem_bytes = (size_t)te * per_edge;
   const long n_blocks = (n_edge + te - 1) / te;
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::kBFloat16, at::kHalf, x.scalar_type(), "so2_value_fwd", [&] {
-        dispatch_l_sc(lmax, [&](auto lc) {
-          using acc_t = typename acc_type<scalar_t>::type;
-          launch_so2_value_fwd<scalar_t, decltype(lc)::value>(
-              x.data_ptr<scalar_t>(), src.data_ptr<long>(),
-              runs.data_ptr<scalar_t>(), kc.data_ptr<scalar_t>(),
-              cb.data_ptr<scalar_t>(), w_fc_t.data_ptr<scalar_t>(),
-              fc_bias_t.data_ptr<scalar_t>(),
-              has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
-              w0_all.data_ptr<scalar_t>(), w1_all.data_ptr<scalar_t>(),
-              gw_all.data_ptr<scalar_t>(), x_out.data_ptr<scalar_t>(),
-              z_all.data_ptr<scalar_t>(), u_final.data_ptr<scalar_t>(),
-              alpha.data_ptr<acc_t>(), n_edge, x.stride(0), x.stride(1), cf,
-              (int)n_focus, (int)n_gated, apply_alpha, has_bias,
-              (float)(1.0 / softmax_tau), (float)label_smoothing,
-              (float)norm_eps, (int)rank, te, n_blocks, smem_bytes, stream);
-        });
-      });
+  cudaError_t status = cudaSuccess;
+  DPA4_SEZM_DISPATCH_TYPES(x.scalar_type(), "so2_value_fwd", [&] {
+    dispatch_l_sc(lmax, [&](auto lc) {
+      using acc_t = typename acc_type<scalar_t>::type;
+      status = launch_so2_value_fwd<scalar_t, decltype(lc)::value>(
+          x.data_ptr<scalar_t>(), src.data_ptr<long>(),
+          runs.data_ptr<scalar_t>(), kc.data_ptr<scalar_t>(),
+          cb.data_ptr<scalar_t>(), w_fc_t.data_ptr<scalar_t>(),
+          fc_bias_t.data_ptr<scalar_t>(),
+          has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
+          w0_all.data_ptr<scalar_t>(), w1_all.data_ptr<scalar_t>(),
+          gw_all.data_ptr<scalar_t>(), x_out.data_ptr<scalar_t>(),
+          z_all.data_ptr<scalar_t>(), u_final.data_ptr<scalar_t>(),
+          alpha.data_ptr<acc_t>(), n_edge, x.stride(0), x.stride(1), cf,
+          (int)n_focus, (int)n_gated, apply_alpha, has_bias,
+          (acc_t)(1.0 / softmax_tau), (acc_t)label_smoothing, (acc_t)norm_eps,
+          (int)rank, te, n_blocks, smem_bytes, stream);
+    });
+  });
+  TORCH_CHECK(
+      status == cudaSuccess,
+      "sezm_so2_value_fwd: configuring the resident kernel with ", smem_bytes,
+      " bytes of dynamic shared memory failed: ", cudaGetErrorString(status));
   DPA4_SC_CHECK_LAUNCH("sezm_so2_value_fwd");
   return {x_out, z_all, u_final, alpha};
 }
@@ -610,19 +624,18 @@ value_bwd(const at::Tensor& grad_x_local,
         threads <<= 1;
       }
       auto stream = at::cuda::getCurrentCUDAStream();
-      AT_DISPATCH_FLOATING_TYPES_AND2(
-          at::kBFloat16, at::kHalf, x.scalar_type(), "competition_bwd", [&] {
-            using acc_t = typename acc_type<scalar_t>::type;
-            competition_bwd_kernel<scalar_t><<<n_edge, threads, 0, stream>>>(
-                grad_u0.data_ptr<scalar_t>(), u0.data_ptr<scalar_t>(),
-                w_fc_t.data_ptr<scalar_t>(),
-                has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
-                alpha.data_ptr<acc_t>(), grad_alpha_mix.data_ptr<acc_t>(),
-                h_alpha.has_value() ? h_alpha_t.data_ptr<acc_t>() : nullptr,
-                with_weights ? grad_logit.data_ptr<double>() : nullptr, n_edge,
-                (int)n_focus, cf, (int)grad_u0.size(2), 1.0 / softmax_tau,
-                label_smoothing, norm_eps);
-          });
+      DPA4_SEZM_DISPATCH_TYPES(x.scalar_type(), "competition_bwd", [&] {
+        using acc_t = typename acc_type<scalar_t>::type;
+        competition_bwd_kernel<scalar_t><<<n_edge, threads, 0, stream>>>(
+            grad_u0.data_ptr<scalar_t>(), u0.data_ptr<scalar_t>(),
+            w_fc_t.data_ptr<scalar_t>(),
+            has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
+            alpha.data_ptr<acc_t>(), grad_alpha_mix.data_ptr<acc_t>(),
+            h_alpha.has_value() ? h_alpha_t.data_ptr<acc_t>() : nullptr,
+            with_weights ? grad_logit.data_ptr<double>() : nullptr, n_edge,
+            (int)n_focus, cf, (int)grad_u0.size(2), 1.0 / softmax_tau,
+            label_smoothing, norm_eps);
+      });
       DPA4_SC_CHECK_LAUNCH("sezm_so2_value_bwd competition");
     }
     if (with_weights) {
@@ -963,6 +976,9 @@ value_bwd2(const at::Tensor& h_gx,
           guf2};
 }
 
+// Reports whether this build compiled the float64 validation kernels.
+bool value_supports_float64() { return DEEPMD_ENABLE_DPA4_FP64 != 0; }
+
 }  // namespace
 
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
@@ -1007,6 +1023,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
       "Tensor gcb2, Tensor gwfc2, Tensor gbias2, Tensor gscale2, "
       "Tensor gw02, Tensor gw12, "
       "Tensor ggw2, Tensor gxl2, Tensor galpha2, Tensor gz2, Tensor guf2)");
+  m.def("sezm_so2_value_supports_float64() -> bool", &value_supports_float64);
 }
 
 TORCH_LIBRARY_IMPL(deepmd, CUDA, m) {
