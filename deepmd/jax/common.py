@@ -28,6 +28,7 @@ from deepmd.dpmodel.common import (
 )
 from deepmd.jax.env import (
     flax_version,
+    jax,
     jnp,
     nnx,
 )
@@ -209,6 +210,16 @@ def dpmodel_setattr(obj: nnx.Module, name: str, value: Any) -> tuple[bool, Any]:
     """Common ``__setattr__`` conversion for Flax wrappers around dpmodel objects."""
     if name in getattr(obj, "_jax_skip_auto_convert_attrs", ()):
         return False, value
+
+    current = vars(obj).get(name)
+    if isinstance(current, nnx.Variable) and isinstance(value, (np.ndarray, jax.Array)):
+        if isinstance(value, np.ndarray):
+            value = to_jax_array(value)
+        if Version(flax_version) >= _FLAX_0_12:
+            current.set_value(value)
+        else:
+            current.value = value
+        return True, current
 
     if (
         isinstance(value, list)

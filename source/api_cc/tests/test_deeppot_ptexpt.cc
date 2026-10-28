@@ -124,6 +124,45 @@ TEST(TestPtExptMetadata, default_chg_spin_length_mismatch_throws) {
   EXPECT_THROW(deepmd::ptexpt::read_default_chg_spin(metadata, 2),
                deepmd::deepmd_exception);
 }
+
+// A compressed archive reports width zero at load and names its width only
+// once the charge-state fold is read, so the ranges are read twice. The first
+// read must yield nothing rather than judge the count it cannot yet know.
+TEST(TestPtExptMetadata, chg_spin_table_ranges_await_a_known_width) {
+  auto metadata = deepmd::ptexpt::parse_json(
+      R"({"chg_spin_table_ranges": [[-100, 100], [0, 100]]})");
+  EXPECT_TRUE(deepmd::ptexpt::read_chg_spin_table_ranges(metadata, 0).empty());
+}
+
+TEST(TestPtExptMetadata, chg_spin_table_ranges_are_read_per_value) {
+  auto metadata = deepmd::ptexpt::parse_json(
+      R"({"chg_spin_table_ranges": [[-100, 100], [0, 100]]})");
+  auto ranges = deepmd::ptexpt::read_chg_spin_table_ranges(metadata, 2);
+  ASSERT_EQ(ranges.size(), 2);
+  EXPECT_DOUBLE_EQ(ranges[0].first, -100.0);
+  EXPECT_DOUBLE_EQ(ranges[0].second, 100.0);
+  EXPECT_DOUBLE_EQ(ranges[1].first, 0.0);
+  EXPECT_DOUBLE_EQ(ranges[1].second, 100.0);
+}
+
+TEST(TestPtExptMetadata, chg_spin_table_ranges_are_optional) {
+  auto metadata = deepmd::ptexpt::parse_json("{}");
+  EXPECT_TRUE(deepmd::ptexpt::read_chg_spin_table_ranges(metadata, 2).empty());
+}
+
+// One range per value is the only count that lines the domain check up with
+// the values it guards.
+TEST(TestPtExptMetadata, chg_spin_table_ranges_count_mismatch_throws) {
+  auto too_few =
+      deepmd::ptexpt::parse_json(R"({"chg_spin_table_ranges": [[-100, 100]]})");
+  EXPECT_THROW(deepmd::ptexpt::read_chg_spin_table_ranges(too_few, 2),
+               deepmd::deepmd_exception);
+
+  auto too_many = deepmd::ptexpt::parse_json(
+      R"({"chg_spin_table_ranges": [[-100, 100], [0, 100], [0, 4]]})");
+  EXPECT_THROW(deepmd::ptexpt::read_chg_spin_table_ranges(too_many, 2),
+               deepmd::deepmd_exception);
+}
 #endif
 
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist) {

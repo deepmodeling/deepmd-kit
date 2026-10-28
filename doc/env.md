@@ -57,9 +57,17 @@ Control high (double) or low (float) precision of training.
 
 :::{envvar} DP_INFER_BATCH_SIZE
 
-**Default**: `1024` on CPUs and as maximum as possible until out-of-memory on GPUs
+**Default**: `1024` on CPUs; automatically sized on GPUs
 
 Inference batch size, calculated by multiplying the number of frames with the number of atoms.
+Setting this variable disables automatic growth; out-of-memory errors can still
+reduce the batch size.
+
+With the native PyTorch CUDA allocator, automatic multi-frame evaluation starts
+with one calibration frame and limits growth using the observed workspace and
+available device memory, leaving a 10% margin. This policy applies to both
+`dp test` and full validation in the PyTorch and PyTorch Exportable backends.
+Other GPU allocators and backends grow batches until an out-of-memory error.
 :::
 
 :::{envvar} DP_BACKEND
@@ -75,6 +83,28 @@ Default backend.
 
 {{ pytorch_icon }} Number of subprocesses to use for data loading in the PyTorch backend.
 See [PyTorch documentation](https://pytorch.org/docs/stable/data.html) for details.
+:::
+
+:::{envvar} DP_LMDB_NUM_WORKERS
+
+**Type**: non-negative integer
+
+**Default**: automatically selected from the process CPU affinity and the
+number of local training ranks, with limits of 32 workers per rank and
+approximately 64 workers per node
+
+Number of worker processes used to read, decode, and assemble one LMDB batch
+in the PyTorch and PyTorch Exportable backends. Each process owns an
+independent read-only LMDB transaction. The next batch is prefetched while the
+current batch is consumed, and at most one batch is prefetched. Batches with
+fewer frames than workers are decoded synchronously because process startup
+and IPC cost more than their small decode workload.
+
+Set this variable to `0` or `1` to use synchronous decoding. For multi-GPU
+training, this value applies to each rank. Independent jobs do not share their
+worker pools, so reduce it when the aggregate reader count across concurrent
+jobs would overload the storage service. The LMDB dataset must remain immutable
+while any job is reading it because readers intentionally disable LMDB locking.
 :::
 
 ## C++ interface only

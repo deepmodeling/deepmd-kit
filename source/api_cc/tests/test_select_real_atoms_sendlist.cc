@@ -149,3 +149,20 @@ TEST_F(TestRemapCommSendlist, all_virtual_in_swap) {
   EXPECT_EQ(new_recvnum[0], 0);
   EXPECT_EQ(new_recvnum[1], 0);
 }
+
+// Paddle passes sendlist as an int64 tensor of pointer addresses. Its length
+// is the swap count, while sendnum controls how many atom indices each pointer
+// references. This fixture has sum(sendnum)=7 and nswap=2 to catch accidental
+// shaping by the total atom count.
+TEST_F(TestRemapCommSendlist, pointer_array_is_shaped_by_swap_count) {
+  const std::vector<std::intptr_t> pointer_addresses =
+      deepmd::pack_comm_sendlist_pointers(lmp_list.sendlist, lmp_list.nswap);
+
+  ASSERT_EQ(pointer_addresses.size(), 2U);
+  EXPECT_EQ(pointer_addresses[0],
+            reinterpret_cast<std::intptr_t>(sendlist_ptrs[0]));
+  EXPECT_EQ(pointer_addresses[1],
+            reinterpret_cast<std::intptr_t>(sendlist_ptrs[1]));
+  EXPECT_NE(pointer_addresses.size(),
+            static_cast<size_t>(sendnum_arr[0] + sendnum_arr[1]));
+}

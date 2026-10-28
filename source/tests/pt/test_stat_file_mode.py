@@ -6,6 +6,10 @@ from pathlib import (
 from typing import (
     Any,
 )
+from unittest.mock import (
+    Mock,
+    patch,
+)
 
 import h5py
 import numpy as np
@@ -16,10 +20,13 @@ from dargs.dargs import (
 )
 
 from deepmd.pt.entrypoints.main import (
-    _prepare_stat_file_path,
+    get_trainer,
 )
 from deepmd.pt.model.model import (
     get_model,
+)
+from deepmd.pt.train.training import (
+    Trainer,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
@@ -30,18 +37,16 @@ from deepmd.pt.utils.stat import (
 from deepmd.utils.argcheck import (
     normalize,
 )
-from deepmd.utils.path import (
-    DPH5Path,
-    DPPath,
+from deepmd.utils.out_stat import (
+    ReduScanResult,
+    ReduStatAccumulator,
+    ReduStatScanner,
 )
-
-
-def _close_stat_path(stat_path: DPPath) -> None:
-    """Close a test HDF5 path and reset its process-local caches."""
-    assert isinstance(stat_path, DPH5Path)
-    stat_path.root.close()
-    DPH5Path._load_h5py.cache_clear()
-    DPH5Path._file_keys.cache_clear()
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    load_output_stat_full_scan,
+    open_stat_file,
+)
 
 
 def _load_dpa4_example() -> dict[str, Any]:
@@ -55,6 +60,18 @@ def _load_dpa4_example() -> dict[str, Any]:
     )
     with example_path.open(encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def _load_pt_training_example() -> dict[str, Any]:
+    """Load a minimal PT training configuration with absolute data paths."""
+    test_root = Path(__file__).resolve().parent
+    with (test_root / "water" / "se_atten.json").open(encoding="utf-8") as stream:
+        config = json.load(stream)
+    systems = [str(test_root / "water" / "data" / "single")]
+    config["training"]["training_data"]["systems"] = systems
+    config["training"]["validation_data"]["systems"] = systems
+    config["training"]["numb_steps"] = 0
+    return config
 
 
 def _energy_model_params() -> dict[str, Any]:
@@ -111,16 +128,108 @@ def _energy_stat_sample() -> list[dict[str, Any]]:
     ]
 
 
+def _energy_scan_sampler(bias: float) -> Mock:
+    """A stat sampler carrying a full-data scanner that fits a constant bias."""
+    sampler = Mock(return_value=_energy_stat_sample())
+    natoms = np.array([[2, 0], [0, 2]], dtype=np.float64)
+
+    def scan(ntypes: int, keys: tuple, intensive: bool) -> ReduScanResult:
+        accumulator = ReduStatAccumulator(ntypes, 1, [1], intensive=intensive)
+        accumulator.add(natoms.sum(axis=1, keepdims=True) * bias, natoms)
+        return ReduScanResult(
+            stats={"energy": accumulator},
+            natoms_total=natoms.sum(axis=0).astype(np.int64),
+            nframes=natoms.shape[0],
+        )
+
+    sampler.redu_stat_scanner = ReduStatScanner(scan)
+    return sampler
+
+
+def test_full_scan_replaces_a_sampled_cache(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    sampled = _compute_energy_stats(stat_file, Mock(return_value=_energy_stat_sample()))
+    # Sampled statistics carry no full-scan claim.
+    assert not _full_scan_claim(stat_file)
+    with h5py.File(stat_file, "r") as file:
+        assert set(file) == {
+            "bias_atom_energy",
+            "std_atom_energy",
+            "preset_bias_energy",
+        }
+
+    # those values were estimated from batches, which is what the flag exists
+    # to replace, so the scan must win over the cache
+    scanned = _compute_energy_stats(stat_file, _energy_scan_sampler(7.0))
+    assert _full_scan_claim(stat_file)
+    np.testing.assert_allclose(scanned, 7.0)
+    assert not np.allclose(sampled, 7.0)
+
+    # a second full-scan run is a cache hit and must neither sample nor rescan
+    rescanner = _energy_scan_sampler(9.0)
+    np.testing.assert_allclose(_compute_energy_stats(stat_file, rescanner), 7.0)
+    rescanner.assert_not_called()
+
+
+def _full_scan_claim(stat_file: Path) -> bool:
+    with open_stat_file(StatFileSpec(str(stat_file), "read")) as stat_path:
+        return load_output_stat_full_scan(stat_path)
+
+
+def _compute_energy_stats(stat_file: Path, sampler: Mock) -> np.ndarray:
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
+        bias, _ = compute_output_stats(
+            sampler,
+            ntypes=2,
+            keys=["energy"],
+            stat_file_path=stat_path,
+        )
+    return bias["energy"].cpu().numpy()
+
+
+def test_sampled_recompute_withdraws_the_full_scan_claim(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    _compute_energy_stats(stat_file, _energy_scan_sampler(7.0))
+    assert _full_scan_claim(stat_file)
+
+    # an incomplete pair forces a recomputation, here from sampled batches
+    with h5py.File(stat_file, "a") as file:
+        del file["std_atom_energy"]
+    sampled = _compute_energy_stats(stat_file, Mock(return_value=_energy_stat_sample()))
+
+    assert not _full_scan_claim(stat_file)
+    assert not np.allclose(sampled, 7.0)
+
+
+def test_interrupted_replacement_drops_the_full_scan_claim(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    _compute_energy_stats(stat_file, _energy_scan_sampler(7.0))
+    assert _full_scan_claim(stat_file)
+
+    with h5py.File(stat_file, "a") as file:
+        del file["std_atom_energy"]
+    with (
+        patch(
+            "deepmd.pt.utils.stat.save_output_stats",
+            side_effect=RuntimeError("interrupted"),
+        ),
+        pytest.raises(RuntimeError, match="interrupted"),
+    ):
+        _compute_energy_stats(stat_file, Mock(return_value=_energy_stat_sample()))
+
+    # the claim describes values that were about to be overwritten, so it must
+    # not outlive them: a lost claim only costs a rescan, a stale one is wrong
+    assert not _full_scan_claim(stat_file)
+
+
 def test_default_stat_file_mode_remains_writable(tmp_path: Path) -> None:
     stat_file = tmp_path / "stat.hdf5"
-    stat_path = _prepare_stat_file_path(str(stat_file))
-    assert isinstance(stat_path, DPH5Path)
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
         assert stat_path.mode == "a"
         (stat_path / "value").save_numpy(np.array([1.0]))
         assert (stat_path / "value").load_numpy().tolist() == [1.0]
-    finally:
-        _close_stat_path(stat_path)
 
 
 def test_read_stat_file_mode_reads_existing_cache(tmp_path: Path) -> None:
@@ -128,25 +237,41 @@ def test_read_stat_file_mode_reads_existing_cache(tmp_path: Path) -> None:
     with h5py.File(stat_file, "w") as file:
         file.create_dataset("value", data=[1.0])
 
-    stat_path = _prepare_stat_file_path(str(stat_file), "read")
-    assert isinstance(stat_path, DPH5Path)
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file), "read")) as stat_path:
+        assert stat_path is not None
         assert stat_path.mode == "r"
-        assert stat_path.root.mode == "r"
         assert (stat_path / "value").load_numpy().tolist() == [1.0]
-    finally:
-        _close_stat_path(stat_path)
 
 
 def test_read_stat_file_mode_requires_existing_cache(tmp_path: Path) -> None:
     stat_file = tmp_path / "missing.hdf5"
     with pytest.raises(FileNotFoundError, match="does not exist in read mode"):
-        _prepare_stat_file_path(str(stat_file), "read")
+        with open_stat_file(StatFileSpec(str(stat_file), "read")):
+            pass
 
 
 def test_read_stat_file_mode_requires_cache_path() -> None:
     with pytest.raises(ValueError, match="requires `stat_file`"):
-        _prepare_stat_file_path(None, "read")
+        StatFileSpec(None, "read")
+
+
+def test_frozen_initialization_does_not_open_read_cache(tmp_path: Path) -> None:
+    config = _load_pt_training_example()
+    missing_cache = tmp_path / "missing.hdf5"
+    config["training"]["stat_file"] = str(missing_cache)
+    config["training"]["stat_file_mode"] = "read"
+    frozen_model = Mock()
+    frozen_model.state_dict.return_value = {}
+
+    with patch(
+        "deepmd.pt.train.training.torch.jit.load",
+        return_value=frozen_model,
+    ) as load_frozen:
+        trainer = get_trainer(config, init_frz_model="model.pth")
+
+    load_frozen.assert_called_once()
+    assert trainer.model is not None
+    assert not missing_cache.exists()
 
 
 def test_read_stat_file_mode_rejects_incomplete_statistics_cache(
@@ -156,8 +281,8 @@ def test_read_stat_file_mode_rejects_incomplete_statistics_cache(
     with h5py.File(stat_file, "w") as file:
         file.create_dataset("bias_atom_energy", data=np.zeros((1, 1)))
 
-    stat_path = _prepare_stat_file_path(str(stat_file), "read")
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file), "read")) as stat_path:
+        assert stat_path is not None
         with pytest.raises(FileNotFoundError, match="std_atom_energy"):
             compute_output_stats(
                 lambda: pytest.fail("read-only statistics must not sample data"),
@@ -165,8 +290,6 @@ def test_read_stat_file_mode_rejects_incomplete_statistics_cache(
                 keys=["energy"],
                 stat_file_path=stat_path,
             )
-    finally:
-        _close_stat_path(stat_path)
 
 
 def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
@@ -176,13 +299,12 @@ def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
     with h5py.File(stat_file, "w") as file:
         file.create_dataset("bias_atom_energy", data=np.zeros((1, 1)))
         file.create_dataset("std_atom_energy", data=np.ones((1, 1)))
+        file.create_dataset("preset_bias_energy", data=np.empty(0))
 
-    reader_one = _prepare_stat_file_path(str(stat_file), "read")
-    DPH5Path._load_h5py.cache_clear()
-    reader_two = _prepare_stat_file_path(str(stat_file), "read")
-    assert isinstance(reader_one, DPH5Path)
-    assert isinstance(reader_two, DPH5Path)
-    try:
+    spec = StatFileSpec(str(stat_file), "read")
+    with open_stat_file(spec) as reader_one, open_stat_file(spec) as reader_two:
+        assert reader_one is not None
+        assert reader_two is not None
         for reader in (reader_one, reader_two):
             bias, std = compute_output_stats(
                 lambda: pytest.fail("complete read-only cache must not sample data"),
@@ -192,38 +314,160 @@ def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
             )
             assert bias["energy"].shape == (1, 1)
             assert std["energy"].shape == (1, 1)
-    finally:
-        reader_one.root.close()
-        reader_two.root.close()
-        DPH5Path._load_h5py.cache_clear()
-        DPH5Path._file_keys.cache_clear()
+
+
+def test_distributed_statistics_failure_reaches_peer_rank() -> None:
+    trainer = Trainer.__new__(Trainer)
+    trainer.is_distributed = True
+    trainer.rank = 1
+    action = Mock()
+
+    def report_chief_failure(holder: list[bool], **_: Any) -> None:
+        holder[0] = True
+
+    with (
+        patch(
+            "deepmd.pt.train.training.dist.broadcast_object_list",
+            side_effect=report_chief_failure,
+        ),
+        pytest.raises(RuntimeError, match="Rank 0 failed during statistics"),
+    ):
+        trainer._run_stat_on_chief(action, operation="statistics initialization")
+
+    action.assert_not_called()
+
+
+def test_update_mode_recomputes_partial_multi_output_cache(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    sampled = _energy_stat_sample()
+    sampled[0]["property"] = torch.tensor(
+        [[1.0], [3.0]],
+        dtype=torch.float64,
+        device=DEVICE,
+    )
+    sampled[0]["find_property"] = np.float32(1.0)
+    sample_count = 0
+
+    def sample() -> list[dict[str, Any]]:
+        nonlocal sample_count
+        sample_count += 1
+        return sampled
+
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
+        (stat_path / "bias_atom_energy").save_numpy(np.full((2, 1), 100.0))
+        (stat_path / "bias_atom_property").save_numpy(np.full((2, 1), 100.0))
+        (stat_path / "std_atom_energy").save_numpy(np.full((2, 1), 100.0))
+        bias, std = compute_output_stats(
+            sample,
+            ntypes=2,
+            keys=["energy", "property"],
+            stat_file_path=stat_path,
+        )
+
+        assert sample_count == 1
+        assert set(bias) == {"energy", "property"}
+        assert set(std) == {"energy", "property"}
+
+    with h5py.File(stat_file, "r") as file:
+        assert set(file) == {
+            "bias_atom_energy",
+            "bias_atom_property",
+            "std_atom_energy",
+            "std_atom_property",
+            "preset_bias_energy",
+            "preset_bias_property",
+        }
+        assert not np.all(file["bias_atom_energy"][:] == 100.0)
+
+
+def test_update_mode_replaces_orphaned_output_pair(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    with h5py.File(stat_file, "w") as file:
+        file.create_dataset("bias_atom_property", data=np.zeros((2, 1)))
+
+    sampler = Mock(return_value=_energy_stat_sample())
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
+        bias, std = compute_output_stats(
+            sampler,
+            ntypes=2,
+            keys=["energy", "property"],
+            stat_file_path=stat_path,
+        )
+
+    sampler.assert_called_once_with()
+    assert set(bias) == {"energy"}
+    assert set(std) == {"energy"}
+    with h5py.File(stat_file, "r") as file:
+        assert set(file) == {
+            "bias_atom_energy",
+            "std_atom_energy",
+            "preset_bias_energy",
+        }
+    original = stat_file.read_bytes()
+
+    sampler.reset_mock(side_effect=True)
+    sampler.side_effect = AssertionError(
+        "A complete update cache must not sample data."
+    )
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
+        bias, std = compute_output_stats(
+            sampler,
+            ntypes=2,
+            keys=["energy", "property"],
+            stat_file_path=stat_path,
+        )
+
+    sampler.assert_not_called()
+    assert set(bias) == {"energy"}
+    assert set(std) == {"energy"}
+    assert stat_file.read_bytes() == original
 
 
 def test_energy_model_reloads_update_cache_in_read_mode(tmp_path: Path) -> None:
     sampled = _energy_stat_sample()
     stat_file = tmp_path / "stat.hdf5"
 
-    update_path = _prepare_stat_file_path(str(stat_file), "update")
-    assert isinstance(update_path, DPH5Path)
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file))) as update_path:
+        assert update_path is not None
         update_model = get_model(_energy_model_params()).to(DEVICE)
         update_model.compute_or_load_stat(lambda: sampled, update_path)
         stat_root = update_path / "O H"
         assert (stat_root / "bias_atom_energy").is_file()
         assert not (stat_root / "bias_atom_mask").is_file()
-    finally:
-        _close_stat_path(update_path)
+    original = stat_file.read_bytes()
 
-    read_path = _prepare_stat_file_path(str(stat_file), "read")
-    assert isinstance(read_path, DPH5Path)
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file), "read")) as read_path:
+        assert read_path is not None
         read_model = get_model(_energy_model_params()).to(DEVICE)
         read_model.compute_or_load_stat(
             lambda: pytest.fail("complete read-only cache must not sample data"),
             read_path,
         )
-    finally:
-        _close_stat_path(read_path)
+    assert stat_file.read_bytes() == original
+
+
+def test_energy_model_reuses_update_cache_without_modifying_hdf5(
+    tmp_path: Path,
+) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
+        model = get_model(_energy_model_params()).to(DEVICE)
+        model.compute_or_load_stat(_energy_stat_sample, stat_path)
+    original = stat_file.read_bytes()
+
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
+        model = get_model(_energy_model_params()).to(DEVICE)
+        model.compute_or_load_stat(
+            lambda: pytest.fail("complete update cache must not sample data"),
+            stat_path,
+        )
+
+    assert stat_file.read_bytes() == original
 
 
 def test_read_mode_rejects_missing_descriptor_stats_before_sampling(
@@ -233,17 +477,14 @@ def test_read_mode_rejects_missing_descriptor_stats_before_sampling(
     with h5py.File(stat_file, "w") as file:
         file.create_group("O H")
 
-    read_path = _prepare_stat_file_path(str(stat_file), "read")
-    assert isinstance(read_path, DPH5Path)
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file), "read")) as read_path:
+        assert read_path is not None
         model = get_model(_energy_model_params()).to(DEVICE)
         with pytest.raises(FileNotFoundError, match="environment statistics"):
             model.compute_or_load_stat(
                 lambda: pytest.fail("read-only cache miss must not sample data"),
                 read_path,
             )
-    finally:
-        _close_stat_path(read_path)
 
     with h5py.File(stat_file, "r") as file:
         assert list(file.keys()) == ["O H"]
@@ -254,13 +495,10 @@ def test_read_mode_rejects_partial_descriptor_stats_before_sampling(
     tmp_path: Path,
 ) -> None:
     stat_file = tmp_path / "stat.hdf5"
-    update_path = _prepare_stat_file_path(str(stat_file), "update")
-    assert isinstance(update_path, DPH5Path)
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file))) as update_path:
+        assert update_path is not None
         model = get_model(_energy_model_params()).to(DEVICE)
         model.compute_or_load_stat(_energy_stat_sample, update_path)
-    finally:
-        _close_stat_path(update_path)
 
     with h5py.File(stat_file, "r+") as file:
         type_map_group = file["O H"]
@@ -270,17 +508,14 @@ def test_read_mode_rejects_partial_descriptor_stats_before_sampling(
         assert len(descriptor_groups) == 1
         del descriptor_groups[0]["r_0"]
 
-    read_path = _prepare_stat_file_path(str(stat_file), "read")
-    assert isinstance(read_path, DPH5Path)
-    try:
+    with open_stat_file(StatFileSpec(str(stat_file), "read")) as read_path:
+        assert read_path is not None
         model = get_model(_energy_model_params()).to(DEVICE)
         with pytest.raises(FileNotFoundError, match="'r_0'"):
             model.compute_or_load_stat(
                 lambda: pytest.fail("partial read-only cache must not sample data"),
                 read_path,
             )
-    finally:
-        _close_stat_path(read_path)
 
 
 def test_stat_file_mode_configuration_validation() -> None:

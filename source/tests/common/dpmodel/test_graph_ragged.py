@@ -81,6 +81,66 @@ def test_forward_common_atomic_graph_ragged():
     assert np.all(np.isfinite(out["energy"]))
 
 
+def test_compact_nodes_recounts_frames_and_renumbers_edges():
+    """A padded graph compacts onto its real nodes, frame blocks intact.
+
+    Two frames padded to a width of four: frame 0 holds three real atoms and
+    frame 1 holds two, so the flat axis carries phantoms at 3, 6 and 7.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+        compact_nodes,
+        expand_node_values,
+    )
+
+    node_mask = np.array([1, 1, 1, 0, 1, 1, 0, 0], dtype=bool)
+    graph = NeighborGraph(
+        n_node=np.array([4, 4], dtype=np.int64),
+        edge_index=np.array([[0, 1, 4], [1, 2, 5]], dtype=np.int64),
+        edge_vec=np.arange(9, dtype=np.float64).reshape(3, 3),
+        edge_mask=np.ones(3, dtype=bool),
+    )
+    compacted, keep_index = compact_nodes(graph, node_mask)
+
+    np.testing.assert_array_equal(compacted.n_node, [3, 2])
+    np.testing.assert_array_equal(keep_index, [0, 1, 2, 4, 5])
+    # Frame 1's nodes 4 and 5 sit at 3 and 4 once frame 0's phantom is gone.
+    np.testing.assert_array_equal(compacted.edge_index, [[0, 1, 3], [1, 2, 4]])
+    np.testing.assert_array_equal(
+        frame_id_from_n_node(compacted.n_node), [0, 0, 0, 1, 1]
+    )
+    # The edge payload is untouched: no edge is dropped, only renumbered.
+    np.testing.assert_array_equal(compacted.edge_vec, graph.edge_vec)
+    np.testing.assert_array_equal(compacted.edge_mask, graph.edge_mask)
+
+    # Gathering onto the compact axis and expanding back is the identity on
+    # the real nodes and zero on the phantoms.
+    values = np.arange(8, dtype=np.float64)[:, None]
+    restored = expand_node_values(values[keep_index], keep_index, 8)
+    np.testing.assert_array_equal(
+        restored.ravel(), [0.0, 1.0, 2.0, 0.0, 4.0, 5.0, 0.0, 0.0]
+    )
+
+
+def test_compact_nodes_refuses_to_drop_a_node_that_carries_an_edge():
+    """Renumbering a node with an edge would silently redirect that edge."""
+    import pytest
+
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+        compact_nodes,
+    )
+
+    graph = NeighborGraph(
+        n_node=np.array([3], dtype=np.int64),
+        edge_index=np.array([[0], [1]], dtype=np.int64),
+        edge_vec=np.zeros((1, 3), dtype=np.float64),
+        edge_mask=np.ones(1, dtype=bool),
+    )
+    with pytest.raises(ValueError, match="still carries an edge"):
+        compact_nodes(graph, np.array([1, 0, 1], dtype=bool))
+
+
 def test_frame_id_rectangular():
     fid = frame_id_from_n_node(np.array([4, 4], dtype=np.int64))
     np.testing.assert_array_equal(

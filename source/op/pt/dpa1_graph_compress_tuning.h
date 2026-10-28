@@ -5,7 +5,6 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <torch/torch.h>
 
 #include <algorithm>
 #include <array>
@@ -31,10 +30,16 @@ struct LaunchConfig {
   int threads;
 };
 
+struct DeviceProperties {
+  int major;
+  int multiprocessor_count;
+};
+
 struct TuningKey {
   int device;
   int direction;
   int width;
+  int basis_dim;
   int axis;
   int canonical;
   int index_bytes;
@@ -46,8 +51,9 @@ struct TuningKey {
 
   bool operator==(const TuningKey& other) const {
     return device == other.device && direction == other.direction &&
-           width == other.width && axis == other.axis &&
-           canonical == other.canonical && index_bytes == other.index_bytes &&
+           width == other.width && basis_dim == other.basis_dim &&
+           axis == other.axis && canonical == other.canonical &&
+           index_bytes == other.index_bytes &&
            model_flags == other.model_flags &&
            model_stride == other.model_stride &&
            type_class == other.type_class && size_class == other.size_class &&
@@ -58,10 +64,10 @@ struct TuningKey {
 struct TuningKeyHash {
   std::size_t operator()(const TuningKey& key) const {
     std::size_t value = 0;
-    const std::array<int, 11> fields = {
-        key.device,     key.direction,   key.width,       key.axis,
-        key.canonical,  key.index_bytes, key.model_flags, key.model_stride,
-        key.type_class, key.size_class,  key.degree_class};
+    const std::array<int, 12> fields = {
+        key.device,       key.direction,  key.width,       key.basis_dim,
+        key.axis,         key.canonical,  key.index_bytes, key.model_flags,
+        key.model_stride, key.type_class, key.size_class,  key.degree_class};
     for (const int field : fields) {
       value ^=
           std::hash<int>{}(field) + 0x9e3779b9 + (value << 6) + (value >> 2);
@@ -81,23 +87,9 @@ tuning_cache() {
   return cache;
 }
 
-inline const cudaDeviceProp& device_properties(int device) {
-  constexpr int kMaximumCachedDevices = 64;
-  TORCH_CHECK(device >= 0 && device < kMaximumCachedDevices,
-              "dpa1_graph_compress: unsupported CUDA device index ", device);
-  static std::array<std::once_flag, kMaximumCachedDevices> initialized;
-  static std::array<cudaDeviceProp, kMaximumCachedDevices> properties;
-  std::call_once(initialized[device], [device] {
-    TORCH_CHECK(
-        cudaGetDeviceProperties(&properties[device], device) == cudaSuccess,
-        "dpa1_graph_compress: cannot query CUDA device properties");
-  });
-  return properties[device];
-}
-
-inline LaunchConfig architecture_fallback(const cudaDeviceProp& properties) {
+inline LaunchConfig architecture_fallback(const DeviceProperties& properties) {
   if (properties.major >= 9) {
-    if (properties.multiProcessorCount <= 80) {
+    if (properties.multiprocessor_count <= 80) {
       return {ResourcePolicy::kOccupancy, 256};
     }
     return {ResourcePolicy::kBalanced, 256};
@@ -145,7 +137,7 @@ inline int type_count_class(int type_count) {
 
 template <typename LaunchFunction>
 LaunchConfig select_launch_config(const TuningKey& key,
-                                  const cudaDeviceProp& properties,
+                                  const DeviceProperties& properties,
                                   long node_count,
                                   cudaStream_t stream,
                                   const LaunchFunction& launch) {
@@ -172,7 +164,7 @@ LaunchConfig select_launch_config(const TuningKey& key,
 
   const long sample_node_count = std::min(
       node_count,
-      std::max(4096L, static_cast<long>(properties.multiProcessorCount) * 64));
+      std::max(4096L, static_cast<long>(properties.multiprocessor_count) * 64));
   constexpr std::array<LaunchConfig, 4> kCandidates = {{
       {ResourcePolicy::kBalanced, 128},
       {ResourcePolicy::kBalanced, 256},

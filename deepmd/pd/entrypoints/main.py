@@ -43,6 +43,7 @@ from deepmd.pd.train.wrapper import (
 )
 from deepmd.pd.utils.dataloader import (
     DpLoaderSet,
+    create_dataset,
 )
 from deepmd.pd.utils.env import (
     DEVICE,
@@ -66,9 +67,17 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.compat import (
     update_deepmd_input,
 )
+from deepmd.utils.data_group import (
+    GroupedDataset,
+)
+from deepmd.utils.data_path import (
+    process_systems,
+)
 from deepmd.utils.data_system import (
     get_data,
-    process_systems,
+)
+from deepmd.utils.model_preset import (
+    expand_model_preset,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -101,19 +110,11 @@ def get_trainer(
         data_dict_single: dict[str, Any],
         rank: int = 0,
         seed: int | None = None,
-    ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
+    ) -> tuple[
+        DpLoaderSet | GroupedDataset, DpLoaderSet | GroupedDataset | None, DPPath | None
+    ]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data")
-        validation_systems = (
-            validation_dataset_params["systems"] if validation_dataset_params else None
-        )
-        training_systems = training_dataset_params["systems"]
-        trn_patterns = training_dataset_params.get("rglob_patterns", None)
-        training_systems = process_systems(training_systems, patterns=trn_patterns)
-        if validation_systems is not None:
-            val_patterns = validation_dataset_params.get("rglob_patterns", None)
-            validation_systems = process_systems(validation_systems, val_patterns)
-
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file")
         if rank != 0:
@@ -131,18 +132,16 @@ def get_trainer(
         # avoid the same batch sequence among devices
         rank_seed = [rank, seed % (2**32)] if seed is not None else None
         validation_data_single = (
-            DpLoaderSet(
-                validation_systems,
-                validation_dataset_params["batch_size"],
+            create_dataset(
+                validation_dataset_params,
                 model_params_single["type_map"],
                 seed=rank_seed,
             )
-            if validation_systems
+            if validation_dataset_params is not None
             else None
         )
-        train_data_single = DpLoaderSet(
-            training_systems,
-            training_dataset_params["batch_size"],
+        train_data_single = create_dataset(
+            training_dataset_params,
             model_params_single["type_map"],
             seed=rank_seed,
         )
@@ -255,6 +254,7 @@ def train(
     if LOCAL_RANK == 0:
         SummaryPrinter()()
     config = j_loader(input_file)
+    config["model"] = expand_model_preset(config["model"])
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pd"):
         init_model += ".pd"
@@ -548,7 +548,10 @@ def change_bias(
             nbatches,
         )
         updated_model = training.model_change_out_bias(
-            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+            model_to_change,
+            sampled_data,
+            _bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias={},
         )
 
     if not multi_task:

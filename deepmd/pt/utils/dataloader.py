@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
+from collections.abc import (
+    Iterator,
+)
+from functools import (
+    cached_property,
+)
 from multiprocessing.dummy import (
     Pool,
 )
@@ -35,16 +41,38 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
+from deepmd.pt.utils.env import (
+    DEVICE,
+)
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbBatchDataLoader,
+    LmdbDataset,
+)
 from deepmd.pt.utils.utils import (
     mix_entropy,
+    to_numpy_array,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.data_config import (
+    DataConfig,
+    data_group_configs,
+    resolve_data_groups,
+    resolve_data_sources,
+)
+from deepmd.utils.data_group import (
+    GroupedDataset,
+    GroupedTrainingDataLoader,
+    TrainingDataLoader,
+)
+from deepmd.utils.data_sampling import (
+    data_child_seeds,
+    global_batch_counts,
+    system_probabilities,
+)
 from deepmd.utils.data_system import (
     print_summary,
-    prob_sys_size_ext,
-    process_sys_probs,
 )
 
 log = logging.getLogger(__name__)
@@ -188,18 +216,25 @@ class DpLoaderSet(Dataset):
             for item in self.dataloaders:
                 self.iters.append(iter(item))
 
-    def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
-        # noise_settings['noise'] # float, default 1.0
-        # noise_settings['noise_mode'] # "prob", "fix_num"
-        # noise_settings['mask_num'] # if "fix_num", int
-        # noise_settings['mask_prob'] # if "prob", float
-        # noise_settings['same_mask'] # coord and type same mask?
-        for system in self.systems:
-            system.set_noise(noise_settings)
-
     def __len__(self) -> int:
         return len(self.dataloaders)
+
+    @cached_property
+    def mean_batch_nframes(self) -> np.ndarray:
+        """Count frames per native batch, including tails and distributed padding."""
+        return np.asarray(
+            [len(loader.sampler) / len(loader) for loader in self.dataloaders],
+            dtype=np.float64,
+        )
+
+    @cached_property
+    def uniform_sampling_mass(self) -> float:
+        """Return the summed systems-per-frame weights of the native streams."""
+        return float(np.reciprocal(self.mean_batch_nframes).sum())
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        return self.uniform_sampling_mass
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         # log.warning(str(torch.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
@@ -263,21 +298,33 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+class DpDataLoader(DataLoader):
+    """Own native CPU loading and persistent per-system reader cursors."""
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        with torch.device("cpu"):
+            return super().__iter__()
+
+    def close(self) -> None:
+        """Release the persistent worker pool owned by this loader."""
+        if self._iterator is not None:
+            self._iterator._shutdown_workers()
+            self._iterator = None
+
+
 def get_weighted_sampler(
-    training_data: Any, prob_style: str, sys_prob: bool = False
+    training_data: Any, prob_style: str | list[float], sys_prob: bool = False
 ) -> WeightedRandomSampler:
-    if sys_prob is False:
-        if prob_style == "prob_uniform":
-            prob_v = 1.0 / float(training_data.__len__())
-            probs = [prob_v for ii in range(training_data.__len__())]
-        else:  # prob_sys_size;A:B:p1;C:D:p2 or prob_sys_size = prob_sys_size;0:nsys:1.0
-            if prob_style == "prob_sys_size":
-                style = f"prob_sys_size;0:{len(training_data)}:1.0"
-            else:
-                style = prob_style
-            probs = prob_sys_size_ext(style, len(training_data), training_data.index)
-    else:
-        probs = process_sys_probs(prob_style, training_data.index)
+    probs = system_probabilities(
+        training_data.index,
+        sys_probs=prob_style if sys_prob else None,
+        auto_prob="prob_sys_size" if sys_prob else prob_style,
+        batch_nframes=(
+            training_data.mean_batch_nframes
+            if not sys_prob and prob_style == "prob_uniform"
+            else None
+        ),
+    )
     log.debug("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iterators
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
@@ -304,3 +351,131 @@ def get_sampler_from_params(_data: Any, _params: dict[str, Any]) -> Any:
     else:
         _sampler = get_weighted_sampler(_data, "prob_sys_size")
     return _sampler
+
+
+def create_dataset(
+    config: DataConfig,
+    type_map: list[str],
+    *,
+    seed: int | list[int] | None = None,
+    modifier: BaseModifier | None = None,
+) -> DpLoaderSet | LmdbDataset | GroupedDataset:
+    """Construct native readers from the shared recursive group configuration."""
+    groups = resolve_data_groups(config)
+    configs = data_group_configs(config)
+    datasets = []
+    for group, params in zip(groups, configs, strict=True):
+        sources = resolve_data_sources(group)
+        has_lmdb = any(source.format == "lmdb" for source in sources)
+        children = []
+        child_configs = []
+        for source in sources:
+            if source.format == "deepmd":
+                child = DpLoaderSet(
+                    list(source.systems),
+                    source.batch_size,
+                    type_map,
+                    seed=seed,
+                    modifier=modifier,
+                )
+            else:
+                child = LmdbDataset(
+                    source.systems[0],
+                    type_map,
+                    source.batch_size,
+                    auto_prob_style=group.auto_prob,
+                )
+            children.append(child)
+            child_configs.append(
+                {**params, "sys_probs": group.sys_probs if not has_lmdb else None}
+            )
+        datasets.append(
+            children[0]
+            if len(children) == 1
+            else GroupedDataset(
+                children,
+                child_configs,
+                [None] * len(children),
+                uniform=group.auto_prob == "prob_uniform",
+            )
+        )
+    return (
+        datasets[0]
+        if len(datasets) == 1
+        else GroupedDataset(datasets, configs, [group.prob for group in groups])
+    )
+
+
+def create_dataloader(
+    data: DpLoaderSet | LmdbDataset | GroupedDataset,
+    config: DataConfig,
+    *,
+    seed: int | None = None,
+    rank: int = 0,
+    world_size: int = 1,
+) -> TrainingDataLoader | GroupedTrainingDataLoader:
+    """Bind the native batch pipelines and their local sampling metadata."""
+    if isinstance(data, GroupedDataset):
+        seeds = data_child_seeds(
+            0 if seed is None and world_size > 1 else seed, len(data.children) + 1
+        )
+        children = [
+            create_dataloader(
+                child, params, seed=child_seed, rank=rank, world_size=world_size
+            )
+            for child, params, child_seed in zip(
+                data.children, data.configs, seeds[1:], strict=True
+            )
+        ]
+        return GroupedTrainingDataLoader(data, children, seeds[0])
+    if isinstance(data, LmdbDataset):
+        from deepmd.dpmodel.utils.lmdb_data import (
+            DistributedLmdbBatchSampler,
+            LmdbBatchSampler,
+        )
+
+        options = {"shuffle": True, "seed": seed, "block_targets": data._block_targets}
+        sampler = (
+            DistributedLmdbBatchSampler(
+                data._reader, rank=rank, world_size=world_size, **options
+            )
+            if world_size > 1
+            else LmdbBatchSampler(data._reader, **options)
+        )
+        loader = LmdbBatchDataLoader(data, sampler, pin_memory=DEVICE.type != "cpu")
+        return TrainingDataLoader(
+            data,
+            loader,
+            np.ones(1, dtype=np.float64),
+            lambda: [len(loader)],
+            sampling_sizes=lambda: [sampler.total_batches],
+            uniform_sampling=loader._batch_iterator,
+        )
+    params = config[0] if isinstance(config, list) else config
+    sampler = get_sampler_from_params(data, params)
+    num_workers = env.NUM_WORKERS if dist.is_available() else 0
+    loader = DpDataLoader(
+        data,
+        sampler=sampler,
+        batch_size=None,
+        num_workers=num_workers,
+        persistent_workers=(
+            num_workers > 0
+            and params.get("auto_prob") == "prob_uniform"
+            and params.get("sys_probs") is None
+        ),
+        drop_last=False,
+        collate_fn=lambda batch: batch,
+        pin_memory=DEVICE.type != "cpu",
+    )
+
+    return TrainingDataLoader(
+        data,
+        loader,
+        to_numpy_array(sampler.weights),
+        lambda: data.index,
+        sampling_sizes=lambda: global_batch_counts(
+            [len(system) for system in data.systems], data.batch_sizes
+        ),
+        uniform_sampling=data,
+    )

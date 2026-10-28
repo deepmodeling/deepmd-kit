@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <array>
 #include <iostream>
 #include <vector>
 
@@ -651,6 +652,45 @@ TEST_F(TestTabulateSeR, tabulate_fusion_se_r_grad_gpu) {
 
   for (int jj = 0; jj < dy_dem.size(); ++jj) {
     EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]), 1e-5);
+  }
+}
+
+TEST_F(TestTabulateSeR, grad_gpu_partial_neighbor_tiles) {
+  constexpr int test_nloc = 1;
+  const std::array<int, 3> neighbor_counts = {1, 3, 5};
+
+  for (const int test_nnei : neighbor_counts) {
+    std::vector<double> test_em(test_nnei);
+    for (int ii = 0; ii < test_nnei; ++ii) {
+      test_em[ii] = 0.01 * (ii + 1);
+    }
+    std::vector<double> test_dy(test_nnei * last_layer_size, 1.0);
+    std::vector<double> expected_dy_dem(test_nnei);
+    deepmd::tabulate_fusion_se_r_grad_cpu<double>(
+        expected_dy_dem.data(), table.data(), info.data(), test_em.data(),
+        test_dy.data(), test_nloc, test_nnei, last_layer_size);
+
+    std::vector<double> actual_dy_dem(test_nnei);
+    double *dy_dem_dev = nullptr, *table_dev = nullptr, *em_dev = nullptr,
+           *dy_dev = nullptr;
+    deepmd::malloc_device_memory_sync(dy_dem_dev, actual_dy_dem);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_dev, test_em);
+    deepmd::malloc_device_memory_sync(dy_dev, test_dy);
+
+    deepmd::tabulate_fusion_se_r_grad_gpu<double>(
+        dy_dem_dev, table_dev, info.data(), em_dev, dy_dev, test_nloc,
+        test_nnei, last_layer_size);
+    deepmd::memcpy_device_to_host(dy_dem_dev, actual_dy_dem);
+
+    for (int ii = 0; ii < test_nnei; ++ii) {
+      EXPECT_NEAR(actual_dy_dem[ii], expected_dy_dem[ii], 1e-10);
+    }
+
+    deepmd::delete_device_memory(dy_dem_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(dy_dev);
   }
 }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

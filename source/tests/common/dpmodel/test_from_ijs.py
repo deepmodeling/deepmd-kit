@@ -18,7 +18,7 @@ class TestFromIjs(unittest.TestCase):
         j = np.array([1, 0])  # neighbor
         S = np.array([[0, 0, 0], [0, 0, 0]], dtype=np.int64)
         ng = neighbor_graph_from_ijs(
-            i, j, S, coord, box, nframe_id=np.zeros(2, np.int64), nloc=3
+            i, j, S, coord, box, nframe_id=np.zeros(2, np.int64), n_node=np.array([3])
         )
         np.testing.assert_array_equal(ng.edge_index[0][ng.edge_mask], j)  # src
         np.testing.assert_array_equal(ng.edge_index[1][ng.edge_mask], i)  # dst
@@ -34,7 +34,7 @@ class TestFromIjs(unittest.TestCase):
         j = np.array([1])
         S = np.array([[-1, 0, 0]], dtype=np.int64)
         ng = neighbor_graph_from_ijs(
-            i, j, S, coord, box, nframe_id=np.zeros(1, np.int64), nloc=2
+            i, j, S, coord, box, nframe_id=np.zeros(1, np.int64), n_node=np.array([2])
         )
         # coord[1] + (-1,0,0)@box - coord[0] = 5.5 - 6 - 0.5 = -1.0
         np.testing.assert_allclose(

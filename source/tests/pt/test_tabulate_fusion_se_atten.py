@@ -1644,6 +1644,276 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
             (self.em_x_tensor, self.em_tensor, self.two_embed_tensor),
         )
 
+    def test_extended_component_basis(self) -> None:
+        for basis_dim in (9, 16, 25):
+            with self.subTest(basis_dim=basis_dim):
+                base_basis = self.em_tensor.detach()
+                base_output = self.expected_descriptor_tensor
+                extra_basis = []
+                extra_output = []
+                for row in range(basis_dim - 4):
+                    first = row % 4
+                    second = (row + 1) % 4
+                    scale = 0.25 * (row + 1)
+                    extra_basis.append(
+                        scale * base_basis[..., first] - base_basis[..., second]
+                    )
+                    extra_output.append(
+                        scale * base_output[:, first] - base_output[:, second]
+                    )
+                basis = torch.cat(
+                    (base_basis, torch.stack(extra_basis, dim=-1)),
+                    dim=-1,
+                ).requires_grad_(True)
+                expected_output = torch.cat(
+                    (base_output, torch.stack(extra_output, dim=1)),
+                    dim=1,
+                )
+
+                output = torch.ops.deepmd.tabulate_fusion_se_atten(
+                    self.table_tensor,
+                    self.table_info_tensor,
+                    self.em_x_tensor,
+                    basis,
+                    self.two_embed_tensor,
+                    self.last_layer_size,
+                    self.is_sorted,
+                )[0]
+                unsorted_output = torch.ops.deepmd.tabulate_fusion_se_atten(
+                    self.table_tensor,
+                    self.table_info_tensor,
+                    self.em_x_tensor,
+                    basis,
+                    self.two_embed_tensor,
+                    self.last_layer_size,
+                    False,
+                )[0]
+                torch.testing.assert_close(
+                    output,
+                    expected_output,
+                    atol=self.prec,
+                    rtol=self.prec,
+                )
+                torch.testing.assert_close(
+                    unsorted_output,
+                    expected_output,
+                    atol=self.prec,
+                    rtol=self.prec,
+                )
+
+                (basis_grad,) = torch.autograd.grad(
+                    output.sum(),
+                    basis,
+                    retain_graph=True,
+                )
+                expected_grad = self.expected_dy_dem[..., :1].expand_as(basis)
+                torch.testing.assert_close(
+                    basis_grad,
+                    expected_grad,
+                    atol=self.prec,
+                    rtol=self.prec,
+                )
+                assert_second_order_backward_matches_finite_difference(
+                    output,
+                    (self.em_x_tensor, basis, self.two_embed_tensor),
+                )
+
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA is not available")
+    def test_wide_lmax_four_backward_launch(self) -> None:
+        """Exercise backward above the default CUDA shared-memory limit."""
+        (dtype,) = self.param
+        width = 256 if dtype == torch.float64 else 512
+        generator = torch.Generator(device=env.DEVICE).manual_seed(17)
+        table = torch.randn(
+            20,
+            width * 6,
+            dtype=dtype,
+            device=env.DEVICE,
+            generator=generator,
+        )
+        table_info = torch.tensor(
+            [0.0, 1.0, 2.0, 0.1, 0.2],
+            dtype=dtype,
+            device="cpu",
+        )
+        em_x = torch.full(
+            (1, 2),
+            0.05,
+            dtype=dtype,
+            device=env.DEVICE,
+            requires_grad=True,
+        )
+        basis = torch.randn(
+            1,
+            2,
+            25,
+            dtype=dtype,
+            device=env.DEVICE,
+            generator=generator,
+            requires_grad=True,
+        )
+        two_embed = torch.randn(
+            2,
+            width,
+            dtype=dtype,
+            device=env.DEVICE,
+            generator=generator,
+            requires_grad=True,
+        )
+        output = torch.ops.deepmd.tabulate_fusion_se_atten(
+            table,
+            table_info,
+            em_x,
+            basis,
+            two_embed,
+            width,
+            False,
+        )[0]
+        first_gradients = torch.autograd.grad(
+            output.sum(),
+            (em_x, basis, two_embed),
+            create_graph=True,
+        )
+        second_gradients = torch.autograd.grad(
+            sum(gradient.sum() for gradient in first_gradients),
+            (em_x, basis, two_embed),
+            allow_unused=True,
+        )
+        for gradient in (*first_gradients, *second_gradients):
+            if gradient is not None:
+                self.assertTrue(torch.isfinite(gradient).all())
+
+
+@parameterized((torch.float64, torch.float32))
+@unittest.skipIf(not ENABLE_CUSTOMIZED_OP, "PyTorch customized OPs are not built")
+class TestTabulateFusionSeAttenUnsortedOp(unittest.TestCase):
+    """Verify that an unsorted attention neighbor row is not folded as padding."""
+
+    def setUp(self) -> None:
+        (self.dtype,) = self.param
+        self.last_layer_size = 8
+        coefficients = torch.arange(
+            1,
+            self.last_layer_size + 1,
+            dtype=self.dtype,
+            device=env.DEVICE,
+        )
+        table = torch.zeros(
+            (2, self.last_layer_size, 6),
+            dtype=self.dtype,
+            device=env.DEVICE,
+        )
+        table[0, :, 0] = coefficients
+        table[0, :, 1] = coefficients
+        table[1, :, 0] = 2.0 * coefficients
+        table[1, :, 1] = 2.0 * coefficients
+        self.table_tensor = table.reshape(self.last_layer_size, -1)
+        self.table_info_tensor = torch.tensor(
+            [0.0, 1.0, 2.0, 1.0, 1.0, -1.0],
+            dtype=self.dtype,
+            device="cpu",
+        )
+        # The first row looks like sorted padding because its scalar input
+        # matches the final row and its directional components are zero. The
+        # middle row is nevertheless a real neighbor and must still contribute
+        # when ``is_sorted`` is false.
+        self.em_x_tensor = torch.tensor(
+            [[0.5, 1.5, 0.5]],
+            dtype=self.dtype,
+            device=env.DEVICE,
+            requires_grad=True,
+        )
+        self.em_tensor = torch.tensor(
+            [[[0.2, 0.0, 0.0, 0.0], [0.3, 0.1, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0]]],
+            dtype=self.dtype,
+            device=env.DEVICE,
+            requires_grad=True,
+        )
+        self.two_embed_tensor = torch.tensor(
+            [
+                [0.0] * self.last_layer_size,
+                [0.5] * self.last_layer_size,
+                [-0.25] * self.last_layer_size,
+            ],
+            dtype=self.dtype,
+            device=env.DEVICE,
+            requires_grad=True,
+        )
+
+    def _forward(self, is_sorted: bool) -> torch.Tensor:
+        return torch.ops.deepmd.tabulate_fusion_se_atten(
+            self.table_tensor,
+            self.table_info_tensor,
+            self.em_x_tensor,
+            self.em_tensor,
+            self.two_embed_tensor,
+            self.last_layer_size,
+            is_sorted,
+        )[0]
+
+    def test_forward_uses_is_sorted(self) -> None:
+        coefficients = torch.arange(
+            1,
+            self.last_layer_size + 1,
+            dtype=self.dtype,
+            device=env.DEVICE,
+        )
+        expected_unsorted = torch.zeros(
+            (1, 4, self.last_layer_size),
+            dtype=self.dtype,
+            device=env.DEVICE,
+        )
+        expected_unsorted[0, 0] = 2.1 * coefficients
+        expected_unsorted[0, 1] = 0.45 * coefficients
+        expected_sorted = torch.zeros_like(expected_unsorted)
+        expected_sorted[0, 0] = 0.9 * coefficients
+
+        torch.testing.assert_close(self._forward(False), expected_unsorted)
+        torch.testing.assert_close(self._forward(True), expected_sorted)
+
+    def test_backward_uses_is_sorted(self) -> None:
+        unsorted_grads = torch.autograd.grad(
+            self._forward(False).sum(),
+            (self.em_x_tensor, self.em_tensor, self.two_embed_tensor),
+            retain_graph=True,
+        )
+        sorted_dem = torch.autograd.grad(
+            self._forward(True).sum(),
+            self.em_tensor,
+        )[0]
+
+        coefficients = torch.arange(
+            1,
+            self.last_layer_size + 1,
+            dtype=self.dtype,
+            device=env.DEVICE,
+        )
+        expected_dem = torch.tensor(
+            [[[54.0] * 4, [162.0] * 4, [40.5] * 4]],
+            dtype=self.dtype,
+            device=env.DEVICE,
+        )
+        expected_dtwo = torch.stack(
+            (0.3 * coefficients, 1.2 * coefficients, 0.6 * coefficients)
+        )
+        expected_dem_x = torch.tensor(
+            [[7.2, 43.2, 10.8]],
+            dtype=self.dtype,
+            device=env.DEVICE,
+        )
+
+        torch.testing.assert_close(unsorted_grads[0], expected_dem_x)
+        torch.testing.assert_close(unsorted_grads[1], expected_dem)
+        torch.testing.assert_close(unsorted_grads[2], expected_dtwo)
+        self.assertFalse(torch.equal(unsorted_grads[1], sorted_dem))
+
+    def test_second_order_backward_uses_is_sorted(self) -> None:
+        descriptor_tensor = self._forward(False)
+        assert_second_order_backward_matches_finite_difference(
+            descriptor_tensor,
+            (self.em_x_tensor, self.em_tensor, self.two_embed_tensor),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

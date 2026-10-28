@@ -7,6 +7,10 @@ from collections.abc import (
 
 import numpy as np
 
+from deepmd.loggers import (
+    is_node_main_process,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -78,11 +82,12 @@ def resolve_model_prob(
     model_keys : list[str]
         List of model keys.
     model_prob_config : dict[str, float] | None
-        User-specified model probabilities. If None, use data size.
+        User-specified model probabilities. If omitted or empty, use native
+        data size: NumPy/HDF5 system counts or retained LMDB frame counts.
     model_training_data : dict[str, object]
         Training data for each model.
     rank : int, optional
-        Process rank for distributed training, by default 0.
+        Global rank used for reporting when the launcher supplies no local rank.
 
     Returns
     -------
@@ -105,13 +110,15 @@ def resolve_model_prob(
             if model_key in model_prob_config:
                 model_prob[ii] = float(model_prob_config[model_key])
     else:
-        if rank == 0:
+        if is_node_main_process(rank):
             log.info(
                 "training.model_prob is not set or empty; defaulting to the "
-                "number of systems per task."
+                "native data size per task (NumPy/HDF5 systems or LMDB frames)."
             )
         for ii, model_key in enumerate(model_keys):
-            model_prob[ii] = float(_training_data_size(model_training_data[model_key]))
+            model_prob[ii] = float(
+                get_training_data_size(model_training_data[model_key])
+            )
     if not np.all(np.isfinite(model_prob)):
         raise ValueError("Model prob must be finite.")
     if np.any(model_prob < 0.0):
@@ -122,7 +129,16 @@ def resolve_model_prob(
     return model_prob / sum_prob
 
 
-def _training_data_size(training_data: object) -> int:
+def get_training_data_size(training_data: object) -> int:
+    """Return native data size for default multi-task weights.
+
+    A data adapter may expose a size distinct from its batch/statistics system
+    count. This preserves the PyTorch convention of counting NumPy/HDF5
+    systems and retained LMDB frames, including within composed datasets.
+    """
+    get_size = getattr(training_data, "get_model_sampling_size", None)
+    if get_size is not None:
+        return int(get_size())
     if hasattr(training_data, "get_nsystems"):
         return int(training_data.get_nsystems())
     if not isinstance(training_data, Sized):

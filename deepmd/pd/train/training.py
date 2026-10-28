@@ -24,15 +24,11 @@ from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
 from paddle.framework import (
     core,
 )
-from paddle.io import (
-    DataLoader,
-)
 
 from deepmd.common import (
     symlink_prefix_files,
 )
 from deepmd.dpmodel.utils import (
-    compute_total_numb_batch,
     resolve_model_prob,
     resolve_model_prob_from_epochs,
 )
@@ -59,7 +55,7 @@ from deepmd.pd.utils import (
 )
 from deepmd.pd.utils.dataloader import (
     BufferedIterator,
-    get_sampler_from_params,
+    create_dataloader,
 )
 from deepmd.pd.utils.env import (
     CINN,
@@ -67,12 +63,12 @@ from deepmd.pd.utils.env import (
     DEFAULT_PRECISION,
     DEVICE,
     JIT,
-    NUM_WORKERS,
     SAMPLER_RECORD,
     enable_prim,
 )
 from deepmd.pd.utils.stat import (
     make_stat_input,
+    scan_redu_stats,
 )
 from deepmd.pd.utils.utils import (
     nvprof_context,
@@ -83,6 +79,9 @@ from deepmd.utils.data import (
 )
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
+)
+from deepmd.utils.out_stat import (
+    ReduStatScanner,
 )
 from deepmd.utils.path import (
     DPH5Path,
@@ -181,23 +180,10 @@ class Trainer:
             def get_dataloader_and_buffer(
                 _data: Any, _params: dict[str, Any]
             ) -> tuple[Any, Any]:
-                _sampler = get_sampler_from_params(_data, _params)
-                if _sampler is None:
-                    log.warning(
-                        "Sampler not specified!"
-                    )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
-                _dataloader = DataLoader(
-                    _data,
-                    batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler,
-                        drop_last=False,
-                    ),
-                    num_workers=NUM_WORKERS
-                    if dist.is_available()
-                    else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                    collate_fn=lambda batch: batch[0],  # prevent extra conversion
+                _dataloader = create_dataloader(
+                    _data, _params, seed=_training_params.get("seed")
                 )
-                _data_buffered = BufferedIterator(iter(_dataloader))
+                _data_buffered = BufferedIterator(_dataloader)
                 return _dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
@@ -233,6 +219,7 @@ class Trainer:
             _validation_data: Any | None,
             _stat_file_path: str | Path | None,
             _data_requirement: list[DataRequirementItem],
+            _data_stat_full: bool = False,
             finetune_has_new_type: bool = False,
         ) -> Any:
             _data_requirement += get_additional_data_requirement(_model)
@@ -248,6 +235,15 @@ class Trainer:
                     _data_stat_nbatch,
                 )
                 return sampled
+
+            if _data_stat_full:
+                # sampling a few batches per system can miss rare elements
+                # entirely; scan every frame for the output statistics instead
+                get_sample.redu_stat_scanner = ReduStatScanner(
+                    lambda ntypes, keys, intensive: scan_redu_stats(
+                        _training_data.dataloaders, ntypes, keys, intensive=intensive
+                    )
+                )
 
             if (not resuming or finetune_has_new_type) and self.rank == 0:
                 _model.compute_or_load_stat(
@@ -310,6 +306,7 @@ class Trainer:
                 validation_data,
                 stat_file_path,
                 self.loss.label_requirement,
+                _data_stat_full=model_params.get("data_stat_full", False),
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
@@ -321,17 +318,9 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training",
-                to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
-            )
+            self.training_dataloader.print_summary("training")
             if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(
-                        self.validation_dataloader.batch_sampler.sampler.weights
-                    ),
-                )
+                self.validation_dataloader.print_summary("validation")
         else:
             (
                 self.training_dataloader,
@@ -349,6 +338,9 @@ class Trainer:
                     validation_data[model_key],
                     stat_file_path[model_key],
                     self.loss[model_key].label_requirement,
+                    _data_stat_full=model_params["model_dict"][model_key].get(
+                        "data_stat_full", False
+                    ),
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()
@@ -367,25 +359,15 @@ class Trainer:
                     training_params["data_dict"][model_key],
                 )
 
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    ),
+                self.training_dataloader[model_key].print_summary(
+                    f"training in {model_key}"
                 )
                 if (
                     validation_data is not None
                     and validation_data[model_key] is not None
                 ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[
-                                model_key
-                            ].batch_sampler.sampler.weights
-                        ),
+                    self.validation_dataloader[model_key].print_summary(
+                        f"validation in {model_key}"
                     )
 
         per_task_total = []
@@ -397,13 +379,7 @@ class Trainer:
                     )
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
-                sampler_weights = to_numpy_array(
-                    self.training_dataloader.batch_sampler.sampler.weights
-                )
-                total_numb_batch = compute_total_numb_batch(
-                    training_data.index,
-                    sampler_weights,
-                )
+                total_numb_batch = self.training_dataloader.epoch_length
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
@@ -423,16 +399,8 @@ class Trainer:
                         "are mutually exclusive."
                     )
                 for model_key in self.model_keys:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    )
                     per_task_total.append(
-                        compute_total_numb_batch(
-                            training_data[model_key].index,
-                            sampler_weights,
-                        )
+                        self.training_dataloader[model_key].epoch_length
                     )
                 (
                     self.model_prob,
@@ -780,6 +748,25 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self) -> None:
+        """Train while releasing native readers and producer threads on exit."""
+        try:
+            self._run_training()
+        finally:
+            pipelines = (
+                self.training_data,
+                self.validation_data,
+                self.training_dataloader,
+                self.validation_dataloader,
+            )
+            for pipeline in pipelines:
+                sources = (
+                    pipeline.values() if isinstance(pipeline, dict) else (pipeline,)
+                )
+                for source in sources:
+                    if source is not None:
+                        source.close()
+
+    def _run_training(self) -> None:
         fout = (
             open(
                 self.disp_file,
@@ -1166,9 +1153,7 @@ class Trainer:
                     batch_data = next(iter(self.training_data))
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
-                    self.training_data = BufferedIterator(
-                        iter(self.training_dataloader)
-                    )
+                    self.training_data = BufferedIterator(self.training_dataloader)
                     batch_data = next(iter(self.training_data))
             else:
                 if self.validation_data is None:
@@ -1176,9 +1161,7 @@ class Trainer:
                 try:
                     batch_data = next(iter(self.validation_data))
                 except StopIteration:
-                    self.validation_data = BufferedIterator(
-                        iter(self.validation_dataloader)
-                    )
+                    self.validation_data = BufferedIterator(self.validation_dataloader)
                     batch_data = next(iter(self.validation_data))
         else:
             if is_train:
@@ -1187,7 +1170,7 @@ class Trainer:
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
                     self.training_data[task_key] = BufferedIterator(
-                        iter(self.training_dataloader[task_key])
+                        self.training_dataloader[task_key]
                     )
                     batch_data = next(iter(self.training_data[task_key]))
             else:
@@ -1197,7 +1180,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
                 except StopIteration:
                     self.validation_data[task_key] = BufferedIterator(
-                        iter(self.validation_dataloader[task_key])
+                        self.validation_dataloader[task_key]
                     )
                     batch_data = next(iter(self.validation_data[task_key]))
 
@@ -1330,19 +1313,15 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         ]
         additional_data_requirement += aparam_requirement_items
-    has_spin = getattr(_model, "has_spin", False)
-    if callable(has_spin):
-        has_spin = has_spin()
-    if has_spin:
+    if _model.has_spin():
         spin_requirement_items = [
             DataRequirementItem("spin", ndof=3, atomic=True, must=True)
         ]
         additional_data_requirement += spin_requirement_items
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
-        cs_default = (
-            _model.get_default_chg_spin().cpu().numpy() if has_default_cs else 0.0
-        )
+        default_cs = _model.get_default_chg_spin()
+        has_default_cs = default_cs is not None
+        cs_default = default_cs.cpu().numpy() if has_default_cs else 0.0
         additional_data_requirement.append(
             DataRequirementItem(
                 "charge_spin",
@@ -1356,8 +1335,12 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
 
 
 def whether_hessian(loss_params: dict[str, Any]) -> bool:
+    """Return whether either Hessian schedule endpoint enables supervision."""
     loss_type = loss_params.get("type", "ener")
-    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
+    return loss_type in {"ener", "ener_hess"} and (
+        loss_params.get("start_pref_h", 0.0) != 0.0
+        or loss_params.get("limit_pref_h", 0.0) != 0.0
+    )
 
 
 def get_loss(
@@ -1437,11 +1420,16 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Any,
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> None:
     old_bias = deepcopy(_model.get_out_bias())
+    preset_kwargs = (
+        {"preset_out_bias": preset_out_bias} if preset_out_bias is not None else {}
+    )
     _model.change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
+        **preset_kwargs,
     )
     new_bias = deepcopy(_model.get_out_bias())
 
