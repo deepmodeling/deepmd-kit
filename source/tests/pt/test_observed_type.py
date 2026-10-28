@@ -17,11 +17,15 @@ from unittest.mock import (
 import numpy as np
 import torch
 
+from deepmd.pt.utils.dataloader import (
+    collate_batch,
+)
 from deepmd.pt.utils.stat import (
     _append_missing_type_frames,
     _restore_observed_type_from_file,
     _save_observed_type_to_file,
     collect_observed_types,
+    make_stat_input,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -142,6 +146,37 @@ class _FakeMixedDataset:
 
 class TestStatSamplingCoverage(unittest.TestCase):
     """Mixed-type statistics samples should cover all dataset types."""
+
+    def test_make_stat_input_covers_later_valid_rare_type(self) -> None:
+        """The public caller supplements its bounded sample after filtering."""
+        dataset = _FakeMixedDataset((1.0, 0.1, 0.8))
+        with torch.device("cpu"):
+            # The one-batch budget initially observes only type 0. Type 1's
+            # first representative is rejected; its later frame must survive
+            # supplementation, concatenation, and final device conversion.
+            dataloader = [collate_batch([dataset[index]]) for index in range(3)]
+            for options in (
+                {"min_pair_dist": 0.5},
+                {"filter_enabled_by_system": [True]},
+            ):
+                with self.subTest(options=options):
+                    sampled = make_stat_input(
+                        [dataset], [dataloader], nbatches=1, **options
+                    )
+                    self.assertEqual(len(sampled), 1)
+                    result = sampled[0]
+                    torch.testing.assert_close(
+                        result["atype"].cpu(),
+                        torch.tensor([[0, -1], [1, -1]], dtype=torch.int32),
+                    )
+                    torch.testing.assert_close(
+                        result["coord"].cpu(),
+                        torch.stack([torch.zeros(6), torch.full((6,), 2.0)]),
+                    )
+                    self.assertTrue(torch.all(result["pair_margin"] >= 1.0))
+                    self.assertTrue(
+                        torch.all(result["real_natoms_vec"][:, 2:].sum(dim=0) > 0)
+                    )
 
     def test_append_missing_mixed_type_frame(self) -> None:
         """Append a representative frame under an explicit CPU device."""
