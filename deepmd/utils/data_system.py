@@ -976,9 +976,7 @@ class LmdbDataSystem:
         any_pbc = False
         for group_idx, (nloc, indices) in enumerate(groups):
             group_label = f"{self.lmdb_path}#group={group_idx}:nloc={nloc}"
-            original_indices = np.asarray(
-                self._reader.original_keys(indices), dtype=np.int64
-            )
+            original_indices = self._reader.original_keys_array(indices)
             frame = self._reader.peek_frame(int(indices[0]))
             group_pbc = bool(float(frame.get("find_box", 0.0)) > 0.5)
             any_pbc = any_pbc or group_pbc
@@ -992,9 +990,7 @@ class LmdbDataSystem:
                 chunk = sampled_indices[start : start + chunk_size]
                 set_name = f"{group_label}:chunk={chunk_idx}"
                 self._nloc_set_indices[set_name] = np.asarray(chunk, dtype=np.int64)
-                stat_groups[set_name] = np.asarray(
-                    self._reader.original_keys(chunk), dtype=np.int64
-                )
+                stat_groups[set_name] = self._reader.original_keys_array(chunk)
 
             data_systems.append(
                 LmdbTestDataNlocView(

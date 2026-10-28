@@ -2624,6 +2624,20 @@ class LmdbDataReader:
             keys.append(int(self._retained_keys[index]))
         return keys
 
+    def original_keys_array(self, indices: Sequence[int]) -> np.ndarray:
+        """Translate a one-dimensional index group without boxing each key.
+
+        Unlike the small-batch list API, this gather keeps whole-dataset
+        groups in compact NumPy storage, including gaps left by ``filter:N``.
+        The returned int64 array is independent of the reader's mapping.
+        """
+        indices = np.asarray(indices, dtype=np.int64)
+        if indices.ndim != 1:
+            raise ValueError("dataset indices must be one-dimensional")
+        if indices.size and (indices.min() < 0 or indices.max() >= self.nframes):
+            raise IndexError(f"dataset indices out of range [0, {self.nframes})")
+        return self._retained_keys[indices]
+
     def batch_pad_nloc(self, indices: Sequence[int]) -> int:
         """Return the atom count every frame of one batch is padded to.
 
@@ -2855,11 +2869,16 @@ class LmdbDataReader:
             raise RuntimeError(
                 "LMDB data requirements must be registered before reading any frame"
             )
+        previous_keys = _availability_requirement_keys(self._data_requirements)
         for item in data_requirement:
             self._data_requirements[item["key"]] = item
         self._data_requirements_revision += 1
-        self._uniform_availability = None
-        self._availability_index = None
+        # Availability depends only on optional tracked field names. Reuse
+        # the exact PBC partition when unrelated contracts change; otherwise
+        # legacy per-key registration would scan the entire dataset each time.
+        if previous_keys != _availability_requirement_keys(self._data_requirements):
+            self._uniform_availability = None
+            self._availability_index = None
         self._per_atom_strides = None
 
     def availability_groups(self, indices: np.ndarray) -> list[np.ndarray]:
@@ -4456,10 +4475,14 @@ class LmdbTestData:
             dtype=dtype,
             source_policy=source_policy,
         )
+        previous_keys = _availability_requirement_keys(self._requirements)
         self._requirements[key] = requirement.dict
-        self._uniform_availability = None
-        self._availability_indices.clear()
-        self._full_availability_index = None
+        # Validation partitions have the same availability-only dependency
+        # as training partitions, even when decoding dtypes/defaults change.
+        if previous_keys != _availability_requirement_keys(self._requirements):
+            self._uniform_availability = None
+            self._availability_indices.clear()
+            self._full_availability_index = None
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Register expected keys from ``DataRequirementItem`` objects.

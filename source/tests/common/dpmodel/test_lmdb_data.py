@@ -1018,6 +1018,65 @@ class TestLmdbDataReader(unittest.TestCase):
             [indices.tolist() for indices in second_groups],
         )
 
+    def test_availability_cache_depends_only_on_tracked_keys(self):
+        """Repeated contracts reuse PBC scans; new optional labels repartition."""
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/availability_cache.lmdb", nframes=4, natoms=6
+        )
+        with lmdb.open(path) as env, env.begin(write=True) as txn:
+            for index, field in ((1, "cells"), (2, "forces")):
+                key = f"{index:012d}".encode()
+                frame = msgpack.unpackb(txn.get(key), raw=False)
+                frame.pop(field)
+                txn.put(key, msgpack.packb(frame, use_bin_type=True))
+        indices = np.arange(4, dtype=np.int64)
+        for cls in (LmdbDataReader, LmdbTestData):
+            with self.subTest(reader=cls.__name__):
+                reader = cls(path, type_map=self._type_map)
+                try:
+                    box = DataRequirementItem("box", 9, atomic=False, must=False)
+                    reader.add_data_requirement([box])
+                    with mock.patch.object(
+                        lmdb_data_module,
+                        "_scan_availability_index",
+                        wraps=lmdb_data_module._scan_availability_index,
+                    ) as scan:
+                        groups = reader.availability_groups(indices)
+                        self.assertEqual(sorted(map(len, groups)), [1, 3])
+                        self.assertEqual(scan.call_count, 1)
+                        for _ in range(2):
+                            reader.add_data_requirement(
+                                [
+                                    DataRequirementItem("energy", 1, must=True),
+                                    box,
+                                    DataRequirementItem(
+                                        "fparam", 1, source_policy="default"
+                                    ),
+                                ]
+                            )
+                            groups = reader.availability_groups(indices)
+                            self.assertEqual(sorted(map(len, groups)), [1, 3])
+                            self.assertEqual(scan.call_count, 1)
+                        reader.add_data_requirement(
+                            [DataRequirementItem("force", 3, atomic=True, must=False)]
+                        )
+                        groups = reader.availability_groups(indices)
+                        self.assertEqual(sorted(map(len, groups)), [1, 1, 2])
+                        self.assertEqual(scan.call_count, 2)
+                        # A policy change on an existing key must invalidate too.
+                        reader.add_data_requirement(
+                            [
+                                DataRequirementItem(
+                                    "force", 3, atomic=True, source_policy="default"
+                                )
+                            ]
+                        )
+                        groups = reader.availability_groups(indices)
+                        self.assertEqual(sorted(map(len, groups)), [1, 3])
+                        self.assertEqual(scan.call_count, 3)
+                finally:
+                    reader.close()
+
     def test_failed_exact_scan_restores_random_read_environment(self):
         """A failed sequential scan leaves the reader usable for training I/O."""
         path = _create_lmdb(
@@ -2593,6 +2652,23 @@ class TestMaxFilterBatchSize(unittest.TestCase):
             reader[len(reader)]
         with self.assertRaises(IndexError):
             reader[-1]
+
+    def test_vectorized_original_keys_preserve_filtered_gaps(self):
+        """Bulk gathers preserve key order, duplicates and a gap in the file."""
+        path = _create_mixed_sid_nloc_lmdb(
+            f"{self._tmpdir.name}/key_gaps.lmdb", [(2, 6), (2, 20), (2, 6)]
+        )
+        reader = LmdbDataReader(path, self._type_map, batch_size="filter:10")
+        self.addCleanup(reader.close)
+        keys = reader.original_keys_array([3, 0, 2, 3])
+        np.testing.assert_array_equal(keys, [5, 0, 4, 5])
+        self.assertEqual(keys.dtype, np.int64)
+        keys[:] = -1
+        self.assertEqual(reader.original_keys([3, 0, 2, 3]), [5, 0, 4, 5])
+        self.assertEqual(reader.original_keys_array([]).size, 0)
+        for invalid in ([-1], [len(reader)]):
+            with self.assertRaises(IndexError):
+                reader.original_keys_array(invalid)
 
     def test_sampler_with_filter(self):
         """LmdbBatchSampler only emits retained, same-nloc frames."""
