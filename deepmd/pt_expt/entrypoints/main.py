@@ -14,6 +14,9 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotentialAtomicModel,
+)
 from deepmd.dpmodel.train import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
@@ -22,8 +25,8 @@ from deepmd.dpmodel.train import (
     make_task_maps,
     print_data_summaries,
 )
-from deepmd.dpmodel.utils.lmdb_data import (
-    is_lmdb,
+from deepmd.loggers import (
+    is_node_main_process,
 )
 from deepmd.pt_expt.train import (
     training,
@@ -31,10 +34,20 @@ from deepmd.pt_expt.train import (
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
+from deepmd.utils import random as dp_random
+from deepmd.utils.data import (
+    min_pair_dist_requirement,
+)
+from deepmd.utils.data_config import (
+    DataConfig,
+)
+from deepmd.utils.data_path import (
+    process_systems,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
     get_data,
-    process_systems,
+    get_neighbor_stat_data,
 )
 from deepmd.utils.stat_file import (
     StatFileSpec,
@@ -84,81 +97,32 @@ def _update_changed_model_tensors(
             target_state_dict[key] = source_value
 
 
-def _detect_lmdb_path(systems_raw: Any) -> str | None:
-    """Return the LMDB path when ``systems_raw`` is a scalar LMDB string.
-
-    Returns ``None`` for non-LMDB inputs. Raises ``ValueError`` if
-    ``systems_raw`` is a list containing any LMDB path, so both
-    ``_get_neighbor_stat_data`` and ``_build_data_system`` fail with the
-    same clear message instead of the opaque error from
-    :func:`process_systems` / :class:`DeepmdData`.
-    """
-    if isinstance(systems_raw, str) and is_lmdb(systems_raw):
-        return systems_raw
-    if isinstance(systems_raw, list) and any(
-        isinstance(s, str) and is_lmdb(s) for s in systems_raw
-    ):
-        raise ValueError(
-            "LMDB datasets must be passed as a scalar 'systems' string "
-            "(e.g. 'systems': '/path/to/data.lmdb'); list-form systems "
-            "with LMDB paths are not supported."
-        )
-    return None
-
-
-def _get_neighbor_stat_data(
-    dataset_params: dict[str, Any],
-    type_map: list[str] | None,
-) -> Any:
-    """Return a data proxy suitable for ``BaseModel.update_sel`` (neighbor stat).
-
-    Routes a scalar LMDB ``systems`` path through dpmodel's
-    ``make_neighbor_stat_data``; falls back to the legacy ``get_data`` for
-    npy/HDF5 directories.
-    """
-    lmdb_path = _detect_lmdb_path(dataset_params.get("systems"))
-    if lmdb_path is not None:
-        from deepmd.dpmodel.utils.lmdb_data import (
-            make_neighbor_stat_data,
-        )
-
-        return make_neighbor_stat_data(lmdb_path, type_map)
-    return get_data(dataset_params, 0, type_map, None)
-
-
 def _build_data_system(
-    dataset_params: dict[str, Any],
+    dataset_params: DataConfig,
     type_map: list[str],
     seed: int | None = None,
-) -> DeepmdDataSystem | LmdbDataSystem:
-    """Build a data system from dataset config, routing LMDB paths to LmdbDataSystem.
+    rank: int = 0,
+    world_size: int = 1,
+) -> Any:
+    """Bind native LMDB batching to the common grouped-data factory."""
+    if seed is None and world_size > 1:
+        seed = 0
 
-    A scalar ``systems`` value pointing at an LMDB directory triggers the
-    LMDB adapter; otherwise we fall through to the legacy
-    :class:`DeepmdDataSystem` path with system expansion.
-    """
-    systems_raw = dataset_params["systems"]
-    lmdb_path = _detect_lmdb_path(systems_raw)
-    if lmdb_path is not None:
+    def build_lmdb(
+        path: str, batch_size: int | str, auto_prob: str | None
+    ) -> LmdbDataSystem:
         return LmdbDataSystem(
-            lmdb_path=lmdb_path,
+            lmdb_path=path,
             type_map=type_map,
-            batch_size=dataset_params["batch_size"],
-            auto_prob_style=dataset_params.get("auto_prob"),
+            batch_size=batch_size,
+            auto_prob_style=auto_prob,
             seed=seed,
+            rank=rank,
+            world_size=world_size,
         )
-    systems = process_systems(
-        systems_raw,
-        patterns=dataset_params.get("rglob_patterns"),
-    )
-    return DeepmdDataSystem(
-        systems=systems,
-        batch_size=dataset_params["batch_size"],
-        test_size=1,
-        type_map=type_map,
-        trn_all_set=True,
-        sys_probs=dataset_params.get("sys_probs"),
-        auto_prob_style=dataset_params.get("auto_prob", "prob_sys_size"),
+
+    return get_data(
+        dataset_params, 0, type_map, None, lmdb_factory=build_lmdb, seed=seed
     )
 
 
@@ -171,17 +135,29 @@ def get_trainer(
     shared_links: dict | None = None,
 ) -> training.Trainer:
     """Build a :class:`training.Trainer` from a normalised config."""
+    import torch.distributed as dist
+
     training_params = config["training"]
     multi_task = "model_dict" in config["model"]
 
     data_seed = training_params.get("seed", None)
+    is_distributed = dist.is_available() and dist.is_initialized()
+    rank = dist.get_rank() if is_distributed else 0
+    world_size = dist.get_world_size() if is_distributed else 1
+    if data_seed is not None:
+        seed32 = data_seed % (2**32)
+        dp_random.seed([rank, seed32] if is_distributed else seed32)
 
     def factory(
         task_config: TrainingTaskConfig,
     ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, StatFileSpec]:
         type_map = list(task_config.model_params["type_map"])
         train_data = _build_data_system(
-            dict(task_config.training_data_params), type_map, seed=data_seed
+            task_config.training_data_params,
+            type_map,
+            seed=data_seed,
+            rank=rank,
+            world_size=world_size,
         )
         validation_data = None
         if task_config.validation_data_params is not None:
@@ -342,7 +318,7 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
         options: TrainEntrypointOptions,
         *,
         multi_task: bool,
-    ) -> tuple[dict[str, Any], None]:
+    ) -> tuple[dict[str, Any], float | dict[str, float | None] | None]:
         """Update pt_expt descriptor selections from neighbor statistics."""
         log.info(
             "Calculate neighbor statistics... "
@@ -352,23 +328,28 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             BaseModel,
         )
 
+        min_nbor_dist: dict[str, float | None] = {}
         for task_config in iter_training_task_configs(config):
             type_map = task_config.model_params.get("type_map")
-            train_data = _get_neighbor_stat_data(
-                dict(task_config.training_data_params), type_map
+            train_data = get_neighbor_stat_data(
+                task_config.training_data_params, type_map
             )
-            updated_model_params, _ = BaseModel.update_sel(
+            updated_model_params, task_min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, dict(task_config.model_params)
             )
+            min_nbor_dist[task_config.key] = task_min_nbor_dist
             if multi_task:
                 config["model"]["model_dict"][task_config.key] = updated_model_params
             else:
                 config["model"] = updated_model_params
-        return config, None
+        if multi_task:
+            return config, min_nbor_dist
+        return config, next(iter(min_nbor_dist.values()), None)
 
     def print_summary(self) -> None:
         """Print pt_expt backend summary."""
-        SummaryPrinter()()
+        if is_node_main_process():
+            SummaryPrinter()()
 
     def setup_run(
         self,
@@ -414,6 +395,13 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             finetune_links=self.finetune_links,
             shared_links=self.shared_links,
         )
+        # Persist the neighbor statistic on the model so that `dp compress`
+        # reads it from the checkpoint instead of rescanning the training data.
+        if isinstance(neighbor_stat, dict):
+            for task_key, task_min_nbor_dist in neighbor_stat.items():
+                trainer.model[task_key].min_nbor_dist = task_min_nbor_dist
+        elif neighbor_stat is not None:
+            trainer.model.min_nbor_dist = neighbor_stat
         trainer.run()
 
 
@@ -492,6 +480,9 @@ def freeze(
     output: str = "frozen_model",
     head: str | None = None,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
+    compress: bool = False,
 ) -> None:
     """Freeze a pt_expt checkpoint into a .pte/.pt2 exported model.
 
@@ -522,6 +513,14 @@ def freeze(
         graph lower, so ``lower_kind`` is resolved to ``"graph"`` for it
         regardless of the requested value -- before the export ABI and the
         default output suffix are selected.
+    with_comm : bool, optional
+        Include a communication artifact for models with cross-rank message
+        passing, by default True. Disable for single-process inference.
+    compress : bool, optional
+        Compress the loaded model before export, by default False. Uses the
+        default settings of ``dp compress`` and selects the accelerated graph
+        schema for eligible ``.pt2`` models without compiling an intermediate
+        artifact.
     """
     import torch
 
@@ -632,12 +631,26 @@ def freeze(
             )
         do_atomic_virial = True
 
+    if compress:
+        from deepmd.pt_expt.entrypoints.compress import (
+            compress_model,
+        )
+
+        compress_model(
+            m,
+            output,
+            model_def_script=single_model_params,
+            with_comm=with_comm,
+        )
+        return
+
     model_dict_serialized = m.serialize()
     deserialize_to_file(
         output,
         {"model": model_dict_serialized, "model_def_script": single_model_params},
         do_atomic_virial=do_atomic_virial,
         lower_kind=lower_kind,
+        with_comm=with_comm,
     )
     log.info("Saved frozen model to %s (lower_kind=%s)", output, lower_kind)
 
@@ -787,15 +800,39 @@ def change_bias(
         mock_loss = get_loss({"inference": True}, 1.0, len(type_map), model_to_change)
         data.add_data_requirements(mock_loss.label_requirement)
         data.add_data_requirements(get_additional_data_requirement(model_to_change))
+        # A bridged model draws its statistics under the frame filter of its
+        # window, as training does. The filter is read from the training
+        # configuration; an archive that carries none cannot be filtered and
+        # is refused rather than read unfiltered.
+        if model_params is None:
+            children = getattr(model_to_change.atomic_model, "models", ())
+            if any(isinstance(child, InnerPotentialAtomicModel) for child in children):
+                raise ValueError(
+                    f"'{input_file}' carries no training configuration, so the "
+                    "frame filter of its bridging window cannot be derived; run "
+                    "change-bias on the checkpoint (.pt) instead."
+                )
+            pair_filter = None
+        else:
+            pair_filter = min_pair_dist_requirement(model_params, 0.0)
+        if pair_filter is not None:
+            data.add_data_requirements([pair_filter])
         if numb_batch != 0:
             nbatches = numb_batch
         else:
             # Cap at the minimum across systems so no system wraps and
             # overweights short systems (matching PT behavior).
             nbatches = min(data.get_nbatches())
-        sampled_data = make_stat_input(data, nbatches)
+        sampled_data = make_stat_input(
+            data,
+            nbatches,
+            0.0 if pair_filter is None else float(pair_filter.default),
+        )
         model_to_change = model_change_out_bias(
-            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+            model_to_change,
+            sampled_data,
+            _bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias={},
         )
 
     if input_file.endswith(".pt"):
@@ -885,6 +922,7 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             output=FLAGS.output,
             head=FLAGS.head,
             lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
+            compress=getattr(FLAGS, "compress", False),
         )
     elif FLAGS.command == "change-bias":
         change_bias(

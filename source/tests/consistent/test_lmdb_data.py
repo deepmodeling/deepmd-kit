@@ -14,6 +14,8 @@ import numpy as np
 
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
+    collate_lmdb_frames,
+    resolve_per_atom_keys,
 )
 
 try:
@@ -178,7 +180,7 @@ class TestLmdbDataConsistency(unittest.TestCase):
         self.assertEqual(self._reader.batch_sizes, self._ds.batch_sizes)
         self.assertEqual(self._reader.nframes, self._ds.nframes)
         self.assertEqual(self._reader.mixed_type, self._ds.mixed_type)
-        self.assertEqual(self._reader.mixed_batch, self._ds.mixed_batch)
+        self.assertEqual(self._reader.mixed_nloc, self._ds.mixed_nloc)
 
     def test_data_requirement(self):
         req = [
@@ -219,8 +221,30 @@ class TestLmdbDataConsistency(unittest.TestCase):
             ds = LmdbDataset(path, self._type_map, batch_size=2)
             self.assertEqual(reader.nframes, ds.nframes)
             self.assertEqual(reader.batch_sizes, ds.batch_sizes)
-            self.assertEqual(reader.mixed_batch, ds.mixed_batch)
-            self.assertFalse(reader.mixed_batch)
+            self.assertEqual(reader.mixed_nloc, ds.mixed_nloc)
+            self.assertFalse(reader.mixed_nloc)
+
+    def test_mix_batch_size_same_padded_batch(self):
+        """Both decode paths pad a mixed-nloc batch to the same arrays."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
+            reader = LmdbDataReader(path, self._type_map, batch_size="mix:24")
+            self.assertTrue(reader.mixed_nloc)
+            # _create_mixed_nloc_lmdb interleaves 6-, 9- and 12-atom frames.
+            indices = [0, 4, 8]
+            per_atom_keys = resolve_per_atom_keys(
+                reader[indices[0]], reader.decode_config
+            )
+            expected = collate_lmdb_frames(
+                [reader[index] for index in indices], per_atom_keys
+            )
+            actual = reader.decode_batch(indices)
+            self.assertEqual(tuple(actual), tuple(expected))
+            for key, expected_value in expected.items():
+                if isinstance(expected_value, np.ndarray):
+                    np.testing.assert_array_equal(actual[key], expected_value)
+                else:
+                    self.assertEqual(actual[key], expected_value)
 
 
 if __name__ == "__main__":

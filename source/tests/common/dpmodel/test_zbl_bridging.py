@@ -2,7 +2,7 @@
 """dpmodel ZBL bridging as COMPOSITION (review 3638077323, redesigned).
 
 ``bridging_method: ZBL`` builds a
-``LinearEnergyModel(LinearEnergyAtomicModel([dp, InterPotentialAtomicModel],
+``LinearEnergyModel(LinearEnergyAtomicModel([dp, InnerPotentialAtomicModel],
 weights="sum"))`` -- the analytical term is its own atomic model summed
 with the learned one, not a flag on it.
 """
@@ -12,8 +12,8 @@ import copy
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.atomic_model.inter_potential import (
-    InterPotentialAtomicModel,
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotentialAtomicModel,
 )
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     LinearEnergyAtomicModel,
@@ -67,13 +67,69 @@ def test_builder_composes_linear_model():
     assert am.weights == "sum"
     kinds = [type(c).__name__ for c in am.models]
     assert (
-        kinds == ["EnergyAtomicModel", "InterPotentialAtomicModel"]
-        or kinds[1] == "InterPotentialAtomicModel"
+        kinds == ["EnergyAtomicModel", "InnerPotentialAtomicModel"]
+        or kinds[1] == "InnerPotentialAtomicModel"
     )
-    # radii wired to the LEARNED child's descriptor InnerClamp
+    # radii wired to the LEARNED child's descriptor: the switch spans the
+    # window and the clamp freezes two fifths into it
     dp_child = am.models[0]
-    assert dp_child.descriptor.inner_clamp is not None
-    assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
+    assert float(dp_child.descriptor.bridging_switch.f_inner) == 0.8
+    assert float(dp_child.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
+    assert dp_child.descriptor.bridging_scale == "absolute"
+
+
+def test_bridged_preset_belongs_to_output_statistics() -> None:
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["preset_out_bias"] = {"energy": {"Ni": 2.0, "O": 1.0}}
+    model = get_model(cfg)
+    am = model.atomic_model
+    assert am.preset_out_bias == {"energy": [[2.0], [1.0]]}
+    coord, atype, box = _close_pair_inputs()
+    before = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    sampled = [
+        {
+            "coord": coord,
+            "atype": atype,
+            "box": box,
+            "natoms": np.array([[6, 6, 3, 3]]),
+            "energy": np.array([[9.0]]),
+            "find_energy": 1.0,
+        }
+    ]
+    am.change_out_bias(sampled, bias_adjust_mode="set-by-statistic")
+    np.testing.assert_allclose(np.asarray(am.out_bias).reshape(-1), [2.0, 1.0])
+    after = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    np.testing.assert_allclose(after - before, 9.0, atol=1e-10)
+    loaded = BaseModel.deserialize(model.serialize())
+    assert loaded.atomic_model.preset_out_bias == am.preset_out_bias
+    np.testing.assert_allclose(loaded.atomic_model.out_bias, am.out_bias)
+
+
+def test_third_child_without_common_route_raises():
+    """[learned, inner_potential, pairtab] has no common execution route
+    (pairtab is dense-only, the bridged pair is graph-only): the builder
+    must reject it at construction like the pt backend does.
+    """
+    cfg = {
+        "type": "linear_ener",
+        "weights": "sum",
+        "type_map": ["Ni", "O"],
+        "models": [
+            {
+                "type": "dpa4",
+                "descriptor": copy.deepcopy(ZBL_CONFIG["descriptor"]),
+                "fitting_net": copy.deepcopy(ZBL_CONFIG["fitting_net"]),
+            },
+            {"type": "inner_potential", "mode": "ZBL"},
+            {"type": "pairtab", "tab_file": "unused.txt", "rcut": 4.0, "sel": 8},
+        ],
+    }
+    with pytest.raises(ValueError, match="exactly one learned"):
+        get_model(cfg)
 
 
 def test_zbl_child_equals_composition_minus_learned():
@@ -147,14 +203,14 @@ def test_zbl_serialize_roundtrip_energy_identical():
 
 
 def test_zbl_atomic_dense_route_raises():
-    zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+    zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
     with pytest.raises(NotImplementedError, match="NeighborGraph route only"):
         zbl.forward_atomic(None, None, None)
 
 
-def test_inter_potential_supports_graph_lower():
+def test_inner_potential_supports_graph_lower():
     """The analytical ZBL term is graph-capable (rides the NeighborGraph)."""
-    zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+    zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
     assert zbl.uses_graph_lower() is True
 
 
@@ -168,10 +224,10 @@ def test_linear_graph_lower_requires_all_children():
     child, which does not implement it.
     """
 
-    class _GraphChild(InterPotentialAtomicModel):
+    class _GraphChild(InnerPotentialAtomicModel):
         pass  # inherits uses_graph_lower() -> True
 
-    class _DenseOnlyChild(InterPotentialAtomicModel):
+    class _DenseOnlyChild(InnerPotentialAtomicModel):
         def uses_graph_lower(self) -> bool:
             return False
 
@@ -202,7 +258,7 @@ def test_zbl_atomic_graph_values():
     )
 
     r = 0.8
-    zbl = InterPotentialAtomicModel(type_map=["O"], rcut=4.0, sel=[8])
+    zbl = InnerPotentialAtomicModel(type_map=["O"], rcut=4.0, sel=[8])
     graph = NeighborGraph(
         n_node=np.array([2], dtype=np.int64),
         edge_index=np.array([[0, 1], [1, 0]], dtype=np.int64),
@@ -239,35 +295,40 @@ def _pair_energy(model, natoms=2, r=1.0):
     return float(np.sum(out["energy"]))
 
 
-class TestInterPotentialChangeTypeMap:
-    """``change_type_map`` must rebuild the ZBL element lookup.
+class TestInnerPotentialChangeTypeMap:
+    """``change_type_map`` must rebuild the ZBL coefficient tables.
 
     The generic ``BaseAtomicModel.change_type_map`` only rewrites the public
-    map and the stat/exclusion state; the nuclear-charge table belongs to
-    ``InterPotential`` and is rebuilt there (review 3649295675).  Without it
-    the lookup keeps the ORIGINAL elements while ``atype`` values already mean
+    map and the stat/exclusion state; the per-pair coefficients belong to
+    ``InnerPotential`` and are rebuilt there (review 3649295675).  Without it
+    the tables keep the ORIGINAL elements while ``atype`` values already mean
     the new ones -- silently wrong energies, or ``IndexError`` for a longer
     map.
     """
 
     def test_reorder_matches_a_freshly_built_model(self) -> None:
-        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
         e_hh = _pair_energy(model)
         model.change_type_map(["O", "H"])
-        fresh = InterPotentialAtomicModel(type_map=["O", "H"], rcut=4.0, sel=[8])
+        fresh = InnerPotentialAtomicModel(type_map=["O", "H"], rcut=4.0, sel=[8])
         e_fresh = _pair_energy(fresh)
         # anti-vacuity: the two element pairs must be far apart, or a stale
-        # lookup would be indistinguishable from a rebuilt one
+        # table would be indistinguishable from a rebuilt one
         assert abs(e_fresh - e_hh) > 1.0
         np.testing.assert_allclose(_pair_energy(model), e_fresh, rtol=1e-12)
-        assert list(model.potential.atomic_numbers) == [8.0, 1.0]
+        np.testing.assert_allclose(
+            np.asarray(model.potential.series_table),
+            np.asarray(fresh.potential.series_table),
+            rtol=1e-12,
+        )
         assert model.potential.type_map == ["O", "H"]
 
     def test_added_element_extends_the_lookup(self) -> None:
-        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
         model.change_type_map(["H", "O", "Ni"])
-        assert model.potential.ntypes_real == 3
-        assert list(model.potential.atomic_numbers) == [1.0, 8.0, 28.0]
+        assert model.potential.ntypes == 3
+        # one row per ordered pair of the three types plus the padding type
+        assert model.potential.series_table.shape == (16, 8)
         # the new type is now addressable -- a stale (length-2) table raises
         # IndexError here
         graph_atype = np.full(2, 2, dtype=np.int64)
@@ -284,14 +345,20 @@ class TestInterPotentialChangeTypeMap:
         e_nini = float(
             np.sum(model.forward_common_atomic_graph(graph, graph_atype)["energy"])
         )
-        fresh = InterPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
+        fresh = InnerPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
         np.testing.assert_allclose(e_nini, _pair_energy(fresh), rtol=1e-12)
 
     def test_dropped_element_shrinks_the_lookup(self) -> None:
-        model = InterPotentialAtomicModel(type_map=["H", "O", "Ni"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O", "Ni"], rcut=4.0, sel=[8])
         model.change_type_map(["Ni"])
-        assert model.potential.ntypes_real == 1
-        assert list(model.potential.atomic_numbers) == [28.0]
+        assert model.potential.ntypes == 1
+        fresh = InnerPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
+        np.testing.assert_allclose(
+            np.asarray(model.potential.series_table),
+            np.asarray(fresh.potential.series_table),
+            rtol=1e-12,
+        )
+        np.testing.assert_allclose(_pair_energy(model), _pair_energy(fresh), rtol=1e-12)
 
     def test_serialize_roundtrip_after_change_type_map(self) -> None:
         """Checkpoint continuity: the restored model must predict the same.
@@ -304,7 +371,7 @@ class TestInterPotentialChangeTypeMap:
             BaseAtomicModel,
         )
 
-        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
         model.change_type_map(["O", "H"])
         data = model.serialize()
         restored = BaseAtomicModel.get_class_by_type(data["type"]).deserialize(data)
@@ -324,7 +391,7 @@ class TestNativeSpinCapabilityOnAtomicModel:
     """
 
     def test_analytical_term_is_not_spin_capable(self) -> None:
-        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         # inherits the concrete base default -- no descriptor, no spin input
         assert zbl.supports_native_spin() is False
 
@@ -338,14 +405,14 @@ class TestNativeSpinCapabilityOnAtomicModel:
         ).atomic_model
         assert learned.supports_native_spin() is True
         kinds = [type(c).__name__ for c in learned.models]
-        assert kinds[1] == "InterPotentialAtomicModel", kinds
+        assert kinds[1] == "InnerPotentialAtomicModel", kinds
         # ... and the spin-free analytical child alone is not capable
         assert learned.models[1].supports_native_spin() is False
 
     def test_composition_without_a_spin_consumer_is_not_capable(self) -> None:
         """No consumer => the magnetic force would be identically zero."""
-        zbl_a = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
-        zbl_b = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_a = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_b = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         composed = LinearEnergyAtomicModel(
             [zbl_a, zbl_b], type_map=["Ni", "O"], weights="sum"
         )
@@ -383,7 +450,7 @@ class TestCompositionForwardsConditioningCapabilities:
         assert bridged.has_chg_spin_ebd() is True
         # ... and the composition really is a composition
         assert [type(c).__name__ for c in bridged.atomic_model.models][1] == (
-            "InterPotentialAtomicModel"
+            "InnerPotentialAtomicModel"
         )
 
     def test_no_charge_spin_stays_zero(self) -> None:
@@ -396,7 +463,7 @@ class TestCompositionForwardsConditioningCapabilities:
         """``has_default_*`` must not fall through to the base either."""
         bridged = self._model(bridging=True)
         plain = self._model(bridging=False)
-        assert bridged.has_default_chg_spin() == plain.has_default_chg_spin()
+        assert bridged.get_default_chg_spin() == plain.get_default_chg_spin()
         assert bridged.has_default_fparam() == plain.has_default_fparam()
         assert bridged.get_default_fparam() == plain.get_default_fparam()
 
@@ -434,7 +501,7 @@ class TestCompositionCarriesPairExclusion:
         # ... and the bridged one really is the composition, so the value is
         # read off the wrapper rather than accidentally off a lone child.
         assert [type(c).__name__ for c in bridged.atomic_model.models][1] == (
-            "InterPotentialAtomicModel"
+            "InnerPotentialAtomicModel"
         )
 
     def test_pair_exclusion_survives_native_spin_plus_bridging(self) -> None:
@@ -558,7 +625,7 @@ class TestCompositionDefaultsRequireAgreement:
         The analytical child consumes neither fparam nor aparam, so it is
         not a consumer and must not constrain either.
         """
-        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         # anti-vacuity: the analytical child really is a non-consumer
         assert zbl.get_dim_fparam() == 0
         assert zbl.get_dim_aparam() == 0
@@ -578,7 +645,7 @@ class TestCompositionDefaultsRequireAgreement:
 
     def test_dimension_zero_child_is_ignored(self) -> None:
         """Learned + ZBL must still inherit the learned default."""
-        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         assert zbl.get_dim_fparam() == 0  # anti-vacuity: really a non-consumer
         m = self._compose([self._Fake(1, [0.5]), zbl])
         assert m.has_default_fparam() is True
@@ -605,8 +672,8 @@ class TestCompositionForwardsStatCapabilities:
         composition is not physically meaningful, so it should never exist
         rather than exist and answer a plausible-looking default.
         """
-        zbl_a = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
-        zbl_b = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_a = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_b = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         # anti-vacuity: matching children compose fine and report their value
         assert zbl_a.get_intensive() is False
         assert (
@@ -629,3 +696,355 @@ class TestCompositionForwardsStatCapabilities:
         assert bridged.atomic_model.get_compute_stats_distinguish_types() == any(
             c.get_compute_stats_distinguish_types() for c in children
         )
+
+
+def test_set_by_statistic_fits_raw_labels_by_definition():
+    """Semantic pin (issue #5927): ``set-by-statistic`` is E_model-blind.
+
+    ``E = E_model + E_bias``; the set mode defines ``E_bias`` as the
+    per-type statistic of the raw labels, independent of ``E_model`` --
+    the composition-level fit ignores the learned child and equally
+    ignores the analytical ZBL child. Children compute no output
+    statistics of their own (the composition is the one owner). Use
+    ``change-by-statistic`` for a calibration that compensates
+    ``E_model``.
+    """
+    model = get_model(copy.deepcopy(ZBL_CONFIG))
+    rng = np.random.default_rng(5)
+    coord = rng.uniform(1.0, 2.5, size=(1, 4, 3))
+    box = (np.eye(3) * 8.0).reshape(1, 9)
+    samples, labels, counts_rows = [], [], []
+    for types in ([[0, 0, 1, 1]], [[0, 1, 1, 1]]):
+        counts = np.bincount(np.asarray(types[0]), minlength=2)
+        label = float(rng.normal())
+        samples.append(
+            {
+                "coord": coord,
+                "atype": np.array(types),
+                "box": box,
+                "energy": np.array([[label]]),
+                "find_energy": np.float32(1.0),
+                "natoms": np.array([[4, 4, *counts]]),
+            }
+        )
+        labels.append(label)
+        counts_rows.append(counts)
+    # Seed a nonzero bias: `set` must DISCARD it (an accidental additive
+    # implementation would shift the result by the seed). The dpmodel bias
+    # storage is separate from pt's, so the pin is mirrored here.
+    model.atomic_model.out_bias = np.ones_like(model.atomic_model.out_bias)
+    model.atomic_model.compute_or_load_out_stat(samples)
+    bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
+    raw_fit = np.linalg.solve(np.array(counts_rows, dtype=np.float64), np.array(labels))
+    np.testing.assert_allclose(bias, raw_fit, atol=1.0e-8)
+    # Idempotence: repeating the call from the fitted state must land on
+    # the same raw-label fit again.
+    model.atomic_model.compute_or_load_out_stat(samples)
+    repeated_bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
+    np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
+
+
+def _canonical_config() -> dict:
+    """``ZBL_CONFIG`` spelled canonically (issue #5948): an explicit
+    ``linear_ener`` composition with an ``inner_potential`` sub-model.
+    """
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["fitting_net"]["seed"] = 7
+    return {
+        "type": "linear_ener",
+        "weights": "sum",
+        "type_map": cfg["type_map"],
+        "models": [
+            {
+                "type": "standard",
+                "descriptor": cfg["descriptor"],
+                "fitting_net": cfg["fitting_net"],
+            },
+            {
+                "type": "inner_potential",
+                "mode": "ZBL",
+                "r_inner": 0.8,
+                "r_outer": 1.2,
+            },
+        ],
+    }
+
+
+class TestCanonicalComposition:
+    """The canonical ``linear_ener`` + ``inner_potential`` spelling."""
+
+    def test_canonical_config_composes(self) -> None:
+        model = get_model(_canonical_config())
+        assert type(model) is LinearEnergyModel
+        am = model.atomic_model
+        assert isinstance(am, LinearEnergyAtomicModel)
+        assert am.weights == "sum"
+        assert isinstance(am.models[1], InnerPotentialAtomicModel)
+        # the composition derives the learned sibling's clamp window from
+        # the inner_potential child: one source of truth for the radii
+        dp_child = am.models[0]
+        assert float(dp_child.descriptor.bridging_switch.f_inner) == 0.8
+        assert float(dp_child.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
+        assert dp_child.descriptor.bridging_scale == "absolute"
+        assert dp_child.descriptor.bridging_switch is not None
+
+    def test_canonical_matches_sugar_energy(self) -> None:
+        """Same seeds, both spellings: bit-identical construction, so the
+        energies must be exactly equal.
+        """
+        sugar = copy.deepcopy(ZBL_CONFIG)
+        sugar["fitting_net"]["seed"] = 7
+        m_sugar = get_model(sugar)
+        m_canon = get_model(_canonical_config())
+        coord, atype, box = _close_pair_inputs()
+        e_sugar = m_sugar.call_common(
+            coord, atype, box=box, neighbor_graph_method="dense"
+        )["energy_redu"]
+        e_canon = m_canon.call_common(
+            coord, atype, box=box, neighbor_graph_method="dense"
+        )["energy_redu"]
+        np.testing.assert_array_equal(e_canon, e_sugar)
+
+    def test_canonical_serialize_matches_sugar(self) -> None:
+        """Both spellings serialize to the same wire dict: the flag is
+        sugar, not a different model.
+        """
+        sugar = copy.deepcopy(ZBL_CONFIG)
+        sugar["fitting_net"]["seed"] = 7
+        d_sugar = get_model(sugar).serialize()
+        d_canon = get_model(_canonical_config()).serialize()
+
+        def _strip_arrays(obj):
+            if isinstance(obj, dict):
+                return {k: _strip_arrays(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_strip_arrays(v) for v in obj]
+            if isinstance(obj, np.ndarray):
+                return ("ndarray", obj.shape)
+            return obj
+
+        assert _strip_arrays(d_canon) == _strip_arrays(d_sugar)
+
+    def test_two_inner_children_raise(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"].append(dict(cfg["models"][1]))
+        with pytest.raises(ValueError, match="at most one"):
+            get_model(cfg)
+
+    def test_inner_without_learned_sibling_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"] = [cfg["models"][1]]
+        with pytest.raises(ValueError, match="exactly one learned"):
+            get_model(cfg)
+
+    def test_standard_builder_rejects_the_flag(self) -> None:
+        """Direct standard construction with the flag fails fast instead of
+        silently dropping the analytical term.
+        """
+        from deepmd.dpmodel.model.model import (
+            get_standard_model,
+        )
+
+        with pytest.raises(ValueError, match="bridging_method"):
+            get_standard_model(copy.deepcopy(ZBL_CONFIG))
+
+
+class TestCanonicalCompositionGuards:
+    """Fail-fast guards of the shared linear builder."""
+
+    def test_mean_weights_with_inner_child_raise(self) -> None:
+        """`weights: "mean"` would silently halve both energy terms."""
+        cfg = _canonical_config()
+        cfg["weights"] = "mean"
+        with pytest.raises(ValueError, match="sum"):
+            get_model(cfg)
+
+    def test_nested_bridging_flag_on_child_raises(self) -> None:
+        """A `bridging_method` flag on a linear child must not be dropped."""
+        cfg = _canonical_config()
+        cfg["models"] = [cfg["models"][0]]
+        cfg["models"][0]["bridging_method"] = "ZBL"
+        with pytest.raises(ValueError, match="sub-model"):
+            get_model(cfg)
+
+    def test_inner_child_with_descriptor_raises_cleanly(self) -> None:
+        """A child carrying both `type: inner_potential` and a descriptor is
+        a configuration error, not a KeyError.
+        """
+        cfg = _canonical_config()
+        cfg["models"][1]["descriptor"] = {"type": "dpa4"}
+        with pytest.raises(ValueError, match="must not carry"):
+            get_model(cfg)
+
+    def test_canonical_rejects_mismatched_learned_type_map(self) -> None:
+        """A remapped learned-child type_map builds a model the graph
+        route rejects on every forward; fail at construction instead.
+        """
+        cfg = _canonical_config()
+        cfg["models"][0]["type_map"] = list(reversed(cfg["type_map"]))
+        with pytest.raises(ValueError, match="type_map"):
+            get_model(cfg)
+
+    def test_canonical_conflicting_top_level_option_raises(self) -> None:
+        """A learned-owned option set differently at both levels must
+        fail loudly instead of one value silently winning.
+        """
+        cfg = _canonical_config()
+        cfg["data_stat_protect"] = 0.123
+        cfg["models"][0]["data_stat_protect"] = 0.456
+        with pytest.raises(ValueError, match="data_stat_protect"):
+            get_model(cfg)
+
+    def test_update_sel_dispatches_and_skips_inner_child(self, monkeypatch) -> None:
+        """``BaseModel.update_sel`` dispatches ``linear_ener`` to a
+        composite implementation that updates the learned child and
+        skips the analytical one (the default neighbor-stat phase would
+        otherwise crash with ``KeyError: 'descriptor'``).
+        """
+        from deepmd.dpmodel.model.dp_model import (
+            DPModelCommon,
+        )
+        from deepmd.utils.argcheck import (
+            model_args,
+        )
+
+        seen = []
+
+        def _fake_update_sel(train_data, type_map, sub):
+            seen.append(copy.deepcopy(sub))
+            return sub, 0.9
+
+        monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+        cfg = model_args().normalize_value(_canonical_config(), trim_pattern="_*")
+        updated, min_dist = BaseModel.update_sel(None, cfg["type_map"], cfg)
+        assert min_dist == 0.9
+        assert len(seen) == 1  # only the learned child
+        assert "descriptor" in seen[0]
+        assert updated["models"][1]["type"] == "inner_potential"
+
+
+class TestConsumeOrRejectGuards:
+    """Every key this route accepts is either consumed or loudly rejected;
+    the pt backend's consumers (trainer `lora`, linear `shared_dict`) do
+    not exist here, so silence would build a different model than asked.
+    """
+
+    def test_top_level_lora_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(cfg)
+
+    def test_expanded_sugar_with_lora_raises(self) -> None:
+        """The sugar expansion keeps trainer-owned `lora` at the top level;
+        dpmodel has no trainer to consume it.
+        """
+        from deepmd.utils.bridging import (
+            expand_bridging_method,
+        )
+
+        cfg = copy.deepcopy(ZBL_CONFIG)
+        cfg["type"] = "dpa4"
+        cfg["bridging_method"] = "ZBL"
+        cfg["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(expand_bridging_method(cfg))
+
+    def test_nonempty_shared_dict_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["shared_dict"] = {"my_descriptor": "descriptor"}
+        with pytest.raises(NotImplementedError, match="shared_dict"):
+            get_model(cfg)
+
+    def test_empty_shared_dict_is_fine(self) -> None:
+        """Strict normalization always inserts `shared_dict: {}`; the
+        default CLI path must keep building.
+        """
+        cfg = _canonical_config()
+        cfg["shared_dict"] = {}
+        get_model(cfg)
+
+    def test_child_level_lora_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"][0]["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(cfg)
+
+    def test_non_dpa4_learned_sibling_raises_cleanly(self) -> None:
+        """Same family restriction as the pt builder: without it the clamp
+        injection dies on an obscure unknown-kwarg TypeError.
+        """
+        cfg = _canonical_config()
+        cfg["models"][0]["descriptor"] = {
+            "type": "se_e2_a",
+            "rcut_smth": 3.5,
+            "rcut": 4.0,
+            "sel": [8, 8],
+        }
+        with pytest.raises(NotImplementedError, match="DPA4/SeZM"):
+            get_model(cfg)
+
+
+# ---------------------------------------------------------------------------
+# The same composition in NLH mode
+# ---------------------------------------------------------------------------
+def _nlh_config():
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["bridging_method"] = "nlh"
+    return cfg
+
+
+def test_nlh_bridging_builds_and_carries_the_mode():
+    model = get_model(_nlh_config())
+    assert isinstance(model, LinearEnergyModel)
+    potential = model.atomic_model.models[1].potential
+    assert potential.mode == "NLH"
+
+
+def test_nlh_bridging_serialize_roundtrip_energy_identical():
+    """The mode survives the wire and the restored model predicts the same."""
+    model = get_model(_nlh_config())
+    coord, atype, box = _close_pair_inputs()
+    data = model.serialize()
+    assert data["models"][1]["mode"] == "NLH"
+    restored = BaseModel.deserialize(data)
+    assert restored.atomic_model.models[1].potential.mode == "NLH"
+    e1 = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    e2 = restored.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    np.testing.assert_allclose(e1, e2, rtol=1e-12)
+
+
+def test_nlh_and_zbl_bridging_predict_differently():
+    """The mode reaches the energy; it is not silently dropped to the default."""
+    coord, atype, box = _close_pair_inputs()
+    energies = []
+    for cfg in (copy.deepcopy(ZBL_CONFIG), _nlh_config()):
+        model = get_model(cfg)
+        energies.append(
+            float(
+                model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+                    "energy_redu"
+                ].sum()
+            )
+        )
+    assert abs(energies[0] - energies[1]) > 1e-6
+
+
+def test_nlh_atomic_model_roundtrips_the_mode():
+    """The child atomic model carries the mode across serialize/deserialize."""
+    child = InnerPotentialAtomicModel(
+        type_map=["Ni", "O"], mode="nlh", rcut=4.0, sel=[8]
+    )
+    data = child.serialize()
+    assert data["mode"] == "NLH"
+    restored = InnerPotentialAtomicModel.deserialize(data)
+    assert restored.potential.mode == "NLH"
+    np.testing.assert_allclose(
+        np.asarray(restored.potential.series_table),
+        np.asarray(child.potential.series_table),
+        rtol=1e-12,
+    )

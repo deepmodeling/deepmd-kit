@@ -28,6 +28,22 @@ if sys.platform != "win32":
 else:
     log.debug("Skipping fork start method on Windows (not supported).")
 
+# Mixed-size training batches drift the allocation pattern from step to
+# step; the default block allocator then fragments its reserved pool until a
+# large request fails in spite of ample cached memory, and every such
+# failure triggers a full cache flush with a device synchronization -- a
+# multi-second stall that any rank can impose on a synchronous distributed
+# step. Expandable segments serve variable-size requests from growable
+# mappings, removing the stalls and most of the reserved-memory overshoot.
+# The setting is read by the CUDA caching allocator on its first allocation,
+# after this module is imported; an explicit user configuration under either
+# spelling takes precedence.
+if (
+    "PYTORCH_ALLOC_CONF" not in os.environ
+    and "PYTORCH_CUDA_ALLOC_CONF" not in os.environ
+):
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
 DP_DTYPE_PROMOTION_STRICT = os.environ.get("DP_DTYPE_PROMOTION_STRICT", "0") == "1"
 try:

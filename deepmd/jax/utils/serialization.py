@@ -335,6 +335,7 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
         data["@variables"]["stablehlo_atomic_virial_no_ghost"] = np.void(
             serialized_atomic_virial_no_ghost
         )
+        is_property_model = model.get_var_name() is not None
         data["constants"] = {
             "type_map": model.get_type_map(),
             "rcut": model.get_rcut(),
@@ -352,15 +353,9 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
             # property models: the output name/dimension/intensiveness cannot be
             # recovered from the StableHLO alone, so persist them for the
             # evaluator (None for non-property models).
-            "var_name": model.get_var_name()
-            if hasattr(model, "get_var_name")
-            else None,
-            "task_dim": model.get_task_dim()
-            if hasattr(model, "get_task_dim")
-            else None,
-            "intensive": model.get_intensive()
-            if hasattr(model, "get_intensive")
-            else False,
+            "var_name": model.get_var_name(),
+            "task_dim": model.get_task_dim() if is_property_model else None,
+            "intensive": model.get_intensive() if is_property_model else False,
         }
         save_dp_model(filename=model_file, model_dict=data)
     elif model_file.endswith(".savedmodel"):
@@ -432,6 +427,7 @@ def serialize_from_file(model_file: str) -> dict:
             "jax_version": jax.__version__,
             "model": model_dict,
             "model_def_script": model_def_script,
+            "lower_input_kind": "nlist",
             "@variables": {},
         }
         if min_nbor_dist is not None:
@@ -441,6 +437,7 @@ def serialize_from_file(model_file: str) -> dict:
         data = load_dp_model(model_file)
         data.pop("constants")
         data["@variables"].pop("stablehlo")
+        data["lower_input_kind"] = "nlist"
         return data
     elif model_file.endswith(".savedmodel"):
         raise ValueError(

@@ -13,6 +13,7 @@ from deepmd.dpmodel.train import (
     LearningCurveWriter,
     RankContext,
     TrainerConfig,
+    TrainingMetricAccumulator,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
@@ -43,15 +44,25 @@ class DummyTrainer(AbstractTrainer):
         trainer_config: TrainerConfig,
         *,
         rank_context: RankContext | None = None,
+        metric_accumulator: TrainingMetricAccumulator | None = None,
     ) -> None:
-        super().__init__(trainer_config, rank_context=rank_context)
+        super().__init__(
+            trainer_config,
+            rank_context=rank_context,
+            metric_accumulator=metric_accumulator,
+        )
         self.steps: list[tuple[str, int, float]] = []
         self.checkpoints: list[int] = []
 
     def train_step(self, task: TrainingTask, step: int) -> TrainStepResult:
         batch = task.training_data.get_batch()
         self.steps.append((task.key, step, batch["value"]))
-        return TrainStepResult(task_key=task.key, step=step, payload=batch)
+        return TrainStepResult(
+            task_key=task.key,
+            step=step,
+            payload=batch,
+            train_results={"rmse": batch["value"]},
+        )
 
     def evaluate_training(
         self,
@@ -143,6 +154,47 @@ def test_learning_curve_row_uses_training_metric_order() -> None:
     assert row.split() == ["1", "nan", "1.00e+00", "3.00e+00", "2.00e+00", "1.0e-01"]
 
 
+def test_single_task_averages_only_training_steps(tmp_path: Path) -> None:
+    train_data = DummyData([1.0, 3.0, 9.0])
+    valid_data = DummyData([20.0, 30.0])
+    path = tmp_path / "averages.out"
+    trainer = DummyTrainer(
+        TrainerConfig(num_steps=3, disp_freq=3, disp_file=str(path)),
+        metric_accumulator=TrainingMetricAccumulator({"Default": ("rmse",)}),
+    )
+    trainer.run(TrainingTaskCollection.single(train_data, valid_data))
+    rows = [
+        line.split()
+        for line in path.read_text().splitlines()
+        if not line.startswith("#")
+    ]
+    assert [float(row[2]) for row in rows] == [1.0, 6.0]
+    assert [float(row[1]) for row in rows] == [20.0, 30.0]
+    assert train_data.index == 3
+    assert valid_data.index == 2
+
+
+def test_averaged_display_keeps_real_nan_guard(tmp_path: Path) -> None:
+    trainer = DummyTrainer(
+        TrainerConfig(num_steps=1, disp_file=str(tmp_path / "nan.out")),
+        metric_accumulator=TrainingMetricAccumulator({"Default": ("rmse",)}),
+    )
+    with pytest.raises(RuntimeError, match="NaN detected"):
+        trainer.run(TrainingTaskCollection.single(DummyData([float("nan")])))
+
+
+def test_nonchief_resets_metric_windows(tmp_path: Path) -> None:
+    accumulator = TrainingMetricAccumulator({"Default": ("rmse",)})
+    trainer = DummyTrainer(
+        TrainerConfig(num_steps=2, disp_freq=2, disp_file=str(tmp_path / "rank.out")),
+        rank_context=RankContext(rank=1, world_size=2),
+        metric_accumulator=accumulator,
+    )
+    trainer.run(TrainingTaskCollection.single(DummyData([1.0, 3.0])))
+    assert accumulator.count("Default") == 0
+    assert not (tmp_path / "rank.out").exists()
+
+
 def test_abstract_trainer_drives_single_task_loop(tmp_path: Path) -> None:
     lcurve = tmp_path / "lcurve.out"
     trainer = DummyTrainer(
@@ -172,6 +224,38 @@ def test_abstract_trainer_drives_single_task_loop(tmp_path: Path) -> None:
     assert "rmse_val" in lcurve.read_text()
 
 
+def test_progress_is_logged_after_the_losses(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Each display reports the losses first and closes with the wall time.
+
+    The order matches the other backends, so a single log parser serves them
+    all, and the run ends with the average step time.
+    """
+    trainer = DummyTrainer(
+        TrainerConfig(
+            num_steps=4,
+            disp_file=str(tmp_path / "lcurve.out"),
+            disp_freq=2,
+            save_freq=4,
+        )
+    )
+    tasks = TrainingTaskCollection.single(DummyData([1.0]), DummyData([2.0]))
+
+    with caplog.at_level("INFO", logger="deepmd.dpmodel.train.trainer"):
+        trainer.run(tasks)
+
+    messages = [record.message for record in caplog.records]
+    display = [message for message in messages if message.startswith("Batch       2:")]
+    assert [segment.split(":")[1].strip().split(" ")[0] for segment in display] == [
+        "trn",
+        "val",
+        "total",
+    ]
+    assert any(message.startswith("average training time:") for message in messages)
+
+
 def test_non_chief_rank_skips_user_visible_outputs(tmp_path: Path) -> None:
     lcurve = tmp_path / "lcurve.out"
     trainer = DummyTrainer(
@@ -197,6 +281,32 @@ def test_non_chief_rank_skips_user_visible_outputs(tmp_path: Path) -> None:
         ("Default", 2, 3.0),
     ]
     assert trainer.checkpoints == []
+    assert not lcurve.exists()
+
+
+def test_collective_checkpointing_reaches_every_rank(tmp_path: Path) -> None:
+    class CollectiveTrainer(DummyTrainer):
+        @property
+        def checkpoint_is_collective(self) -> bool:
+            return True
+
+    lcurve = tmp_path / "lcurve.out"
+    trainer = CollectiveTrainer(
+        TrainerConfig(
+            num_steps=2,
+            disp_file=str(lcurve),
+            disp_freq=1,
+            save_freq=1,
+            timing_in_training=False,
+        ),
+        rank_context=RankContext(rank=1, world_size=2),
+    )
+
+    trainer.run(TrainingTaskCollection.single(DummyData([1.0, 2.0]), DummyData([10.0])))
+
+    # Assembling a checkpoint from shards is collective, so a non-chief rank
+    # takes part in it while still writing none of the chief's own output.
+    assert trainer.checkpoints == [1, 2]
     assert not lcurve.exists()
 
 

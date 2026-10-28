@@ -126,6 +126,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         self.weights = weights
 
+    def adam_route_patterns(self) -> list[str]:
+        """Collect child AdamW patterns under their indexed parameter paths."""
+        return [
+            f"models.{index}.{pattern}"
+            for index, model in enumerate(self.models)
+            for pattern in model.adam_route_patterns()
+        ]
+
     def _rebuild_mapping_state(self) -> None:
         """Rebuild ``mapping_list`` and everything derived from it.
 
@@ -182,6 +190,31 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return any(model.has_message_passing() for model in self.models)
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """ANY child needing the exchange makes the composition need it."""
+        return any(m.has_message_passing_across_ranks() for m in self.models)
+
+    def supports_edge_parallel(self) -> bool:
+        """EVERY child must tolerate decomposition; one veto vetoes all."""
+        return all(m.supports_edge_parallel() for m in self.models)
+
+    def dense_lower_supports_comm(self) -> bool:
+        """The shared dense lower is only comm-capable if every child's is."""
+        return all(m.dense_lower_supports_comm() for m in self.models)
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """The export guard fires if ANY child emits compact pairs."""
+        return any(m.uses_compact_edge_pairs() for m in self.models)
+
+    def graph_edge_dtype(self) -> str:
+        """One shared edge tensor: float32 only if EVERY child accepts it."""
+        dtypes = {m.graph_edge_dtype() for m in self.models}
+        return "float32" if dtypes == {"float32"} else "float64"
+
+    def supports_graph_export(self) -> bool:
+        """All children trace into one artifact; each must be exportable."""
+        return all(m.supports_graph_export() for m in self.models)
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
         return True
@@ -193,6 +226,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of every sub-model into its bias."""
+        for model in self.models:
+            model.fold_vacuum_reference()
 
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat: Any | None = None
@@ -278,6 +316,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 check_frequency,
             )
 
+    def compression_needs_min_nbor_dist(self) -> bool:
+        """Required as soon as ANY child consumes it.
+
+        The statistic is measured once and handed to every child, so a single
+        child that tabulates from the shortest observed distance keeps the
+        neighbor-statistics pass for the whole composition.
+        """
+        return any(m.compression_needs_min_nbor_dist() for m in self.models)
+
     def uses_graph_lower(self) -> bool:
         """Graph-capable iff EVERY child supports the graph lower.
 
@@ -288,6 +335,48 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         graph route.
         """
         return all(m.uses_graph_lower() for m in self.models)
+
+    def fused_decomposition(self) -> "tuple[Any, Any] | None":
+        """Merge the children's parts when the composition is their plain sum.
+
+        A fused pipeline evaluates one learned model plus at most one pair
+        potential on the parent's node axis, under the parent's masks and
+        output bias. That describes this composition only with ``"sum"``
+        weights, shared type maps, and children that carry no exclusion of
+        their own; a bridged ``[learned, inner_potential]`` pair qualifies.
+        The analytical child contributes no output bias to the pipeline,
+        because its output statistics are never computed and remain zero.
+        """
+        if self.weights != "sum" or not self._graph_mapping_is_identity:
+            return None
+        parts = [model.fused_decomposition() for model in self.models]
+        if any(part is None for part in parts) or any(
+            model.atom_excl is not None or model.pair_excl is not None
+            for model in self.models
+        ):
+            return None
+        learned = [part[0] for part in parts if part[0] is not None]
+        potentials = [part[1] for part in parts if part[1] is not None]
+        if len(learned) != 1 or len(potentials) > 1:
+            return None
+        return learned[0], potentials[0] if potentials else None
+
+    def compute_fitting_input_stats(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> None:
+        """Recompute the input statistics of every learned sub-model's fitting net.
+
+        Analytical and tabulated sub-models carry no fitting net and are left
+        alone.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        """
+        for model in self.models:
+            if isinstance(model, DPAtomicModel):
+                model.fitting_net.compute_input_stats(sampled_func)
 
     def supports_native_spin(self) -> bool:
         """Spin-capable when ANY child consumes the spin input.
@@ -698,19 +787,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Children that actually consume ``fparam``."""
         return [m for m in self.models if m.get_dim_fparam() > 0]
 
-    def has_default_chg_spin(self) -> bool:
-        """Whether every active child shares one default charge/spin."""
-        return self._agreed_default(
-            self._chg_spin_consumers(),
-            lambda m: m.has_default_chg_spin(),
-            lambda m: m.get_default_chg_spin(),
-        )[0]
-
     def get_default_chg_spin(self) -> "Array | None":
         """The shared default charge/spin conditions, if the children agree."""
         return self._agreed_default(
             self._chg_spin_consumers(),
-            lambda m: m.has_default_chg_spin(),
+            lambda m: m.get_default_chg_spin() is not None,
             lambda m: m.get_default_chg_spin(),
         )[1]
 

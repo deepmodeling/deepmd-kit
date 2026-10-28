@@ -164,9 +164,10 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         )
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
+        default_chg_spin = _model.get_default_chg_spin()
+        has_default_cs = default_chg_spin is not None
         default_cs = (
-            np.asarray(to_tf_tensor(_model.get_default_chg_spin()).numpy())
+            np.asarray(to_tf_tensor(default_chg_spin).numpy())
             if has_default_cs
             else 0.0
         )
@@ -882,6 +883,8 @@ class Trainer(AbstractTrainer):
                 aparam=to_tensorflow_array(aparam),
                 charge_spin=to_tensorflow_array(charge_spin),
             )
+            # Guard atomic_model for test doubles.
+            am = getattr(model, "atomic_model", None)
             return prepare_lower_inputs(
                 rcut=model.get_rcut(),
                 sel=model.get_sel(),
@@ -895,10 +898,8 @@ class Trainer(AbstractTrainer):
                 # Model-level pair exclusion is a nlist-BUILD transform
                 # (decision #18/A4): the compiled lower consumes a pre-excluded
                 # nlist, so fold exclusion in here at the compiled-training
-                # prepare seam. Guard atomic_model for test doubles.
-                pair_excl=getattr(
-                    getattr(model, "atomic_model", None), "pair_excl", None
-                ),
+                # prepare seam.
+                pair_excl=am.pair_excl if am is not None else None,
             )
 
         return compiled_prepare_lower_batch
@@ -959,6 +960,7 @@ class Trainer(AbstractTrainer):
                     extended_coord_corr,
                     label_dict=label_dict,
                     do_virial=do_virial,
+                    training=True,
                 )
                 loss, more_loss = self.losses[task_key](
                     learning_rate=cur_lr,
@@ -1025,6 +1027,7 @@ class Trainer(AbstractTrainer):
                     input_dict,
                     label_dict=label_dict,
                     do_virial=do_virial,
+                    training=True,
                 )
                 loss, more_loss = self.losses[task_key](
                     learning_rate=cur_lr,
@@ -1154,6 +1157,7 @@ class Trainer(AbstractTrainer):
                 input_dict,
                 label_dict=label_dict,
                 do_virial=do_virial,
+                training=False,
             )
             _, more_loss = self.losses[task_key](
                 learning_rate=cur_lr,
@@ -1323,8 +1327,10 @@ class Trainer(AbstractTrainer):
         *,
         label_dict: dict[str, Any] | None = None,
         do_virial: bool = True,
+        training: bool,
     ) -> dict[str, Any]:
         model = self.models[task_key]
+        self._set_model_training_mode(model, training)
         call_common = getattr(model, "call_common", None)
         if callable(call_common):
             model_ret = call_common(
@@ -1366,8 +1372,10 @@ class Trainer(AbstractTrainer):
         *,
         label_dict: dict[str, Any] | None = None,
         do_virial: bool = True,
+        training: bool,
     ) -> dict[str, Any]:
         model = self.models[task_key]
+        self._set_model_training_mode(model, training)
         call_lower_formatted = getattr(model, "_call_common_lower_formatted", None)
         if callable(call_lower_formatted):
             model_ret_lower = wrap_value(
@@ -1412,6 +1420,22 @@ class Trainer(AbstractTrainer):
             label_dict=label_dict,
             do_virial=do_virial,
         )
+
+    @staticmethod
+    def _set_model_training_mode(model: Any, training: bool) -> None:
+        """Set descriptor train/eval state before TensorFlow traces a graph.
+
+        TF2 models are ``tf.Module`` objects rather than Keras layers, so there
+        is no implicit ``training`` argument.  The compiled train and validation
+        functions are traced separately; setting this Python flag at their call
+        seam lets DPA4 include graph-safe random-gamma augmentation only in the
+        training graph while keeping validation and exported inference stable.
+        """
+        atomic_model = getattr(model, "atomic_model", None)
+        descriptor = getattr(atomic_model, "descriptor", None)
+        setter = getattr(descriptor, "set_training_mode", None)
+        if callable(setter):
+            setter(training)
 
     def _translate_model_ret_to_loss_dict(
         self,

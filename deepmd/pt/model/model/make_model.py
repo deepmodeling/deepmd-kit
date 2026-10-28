@@ -83,6 +83,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
             self.global_pt_ener_float_precision = GLOBAL_PT_ENER_FLOAT_PRECISION
 
+        def adam_route_patterns(self) -> list[str]:
+            """Prefix the atomic model's AdamW patterns with its parameter path."""
+            return [
+                f"atomic_model.{p}" for p in self.atomic_model.adam_route_patterns()
+            ]
+
         def model_output_def(self) -> ModelOutputDef:
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
@@ -304,12 +310,37 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def set_out_bias(self, out_bias: torch.Tensor) -> None:
             self.atomic_model.set_out_bias(out_bias)
 
+        def predict_atomic_outputs_for_stat(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Return atomic outputs through the standard atomic-model path."""
+            return self.atomic_model._get_forward_wrapper_func()(
+                coord,
+                atype,
+                box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+            )
+
         def change_out_bias(
             self,
             merged: Any,
             bias_adjust_mode: str = "change-by-statistic",
+            preset_out_bias: dict | None = None,
         ) -> None:
             """Change the output bias of atomic model according to the input data and the pretrained model.
+
+            The residual fit of 'change-by-statistic' evaluates the complete model
+            prediction through ``predict_atomic_outputs_for_stat``.
 
             Parameters
             ----------
@@ -325,10 +356,17 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 'change-by-statistic' : perform predictions on labels of target dataset,
                         and do least square on the errors to obtain the target shift as bias.
                 'set-by-statistic' : directly use the statistic output bias in the target dataset.
+            preset_out_bias : dict, optional
+                Per-call preset override. Omit to use the configured preset;
+                pass an empty dict to fit without fixing preset outputs.
+                Non-finite stored cells covered by the checkpoint preset are
+                recovered before residual fitting; finite values are retained.
             """
             self.atomic_model.change_out_bias(
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
+                preset_out_bias=preset_out_bias,
+                model_forward=self.predict_atomic_outputs_for_stat,
             )
 
         def forward_common_lower(
@@ -726,6 +764,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()
+
+        def fold_vacuum_reference(self) -> None:
+            """Fold the vacuum reference of the atomic model into its fitting bias."""
+            self.atomic_model.fold_vacuum_reference()
 
         def compute_or_load_stat(
             self,

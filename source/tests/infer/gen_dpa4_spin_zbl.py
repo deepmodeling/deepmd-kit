@@ -4,7 +4,7 @@
 
 One archive, ``deeppot_dpa4_spin_zbl_graph.pt2``: a native-spin
 (``scheme="native"``) DPA4 that is ALSO bridged (``bridging_method: "ZBL"``),
-i.e. a ``LinearEnergyModel`` over ``[learned DPA4, InterPotentialAtomicModel]``
+i.e. a ``LinearEnergyModel`` over ``[learned DPA4, InnerPotentialAtomicModel]``
 with ``weights="sum"`` wrapped by the native-spin model class.
 
 Why this fixture exists
@@ -21,18 +21,20 @@ child consumes it, the analytical child accepts and ignores it), and the
 freeze must carry ``is_spin`` metadata for a model whose top-level class is
 the linear composition -- neither single-feature fixture exercises that.
 
-Single-rank only, and this fixture PINS that limitation
+Multi-rank capable, and this fixture PINS that contract
 -------------------------------------------------------
-Bridging enables the descriptor's Source Freeze Propagation Gate, whose
-per-node ``eta_j = prod_{e: src_e = j} w_e`` folds a node's FULL outgoing-edge
-set.  Edges exist only for owned centres, so eta is incomplete on every rank
-and no with-comm artifact may be exported.  ``_check_metadata`` asserts BOTH
-``has_comm_artifact is False`` AND that the nested
-``model/extra/forward_lower_with_comm.pt2`` entry is absent (mirroring
-``gen_dpa4_zbl.py``) -- an artifact appearing there would silently promise a
-multi-rank capability the model cannot honour.  Note this is the opposite of
-the UNbridged native-spin fixture (``gen_dpa4_spin.py``), which does carry
-the with-comm twin: bridging is what removes it.
+Bridging enables the descriptor's Source Freeze Propagation Gate, which folds
+into the envelope of an edge the amplitudes ``w`` of every pair of that edge's
+source OTHER than its own, and hands the full per-node product
+``eta_j = prod_{e: src_e = j} w_e`` to the model as the readout gate.
+Edges exist only for owned centres, so the per-node partials are
+rank-incomplete; the with-comm artifact completes them with one
+reverse-accumulate + forward-broadcast border exchange before the gate is
+applied (issue #5906).  ``_check_metadata`` asserts BOTH
+``has_comm_artifact is True`` AND that the nested
+``model/extra/forward_lower_with_comm.pt2`` entry is present (mirroring
+``gen_dpa4_zbl.py``) -- the same contract as the UNbridged native-spin
+fixture (``gen_dpa4_spin.py``).
 
 Generation mirrors ``gen_dpa4_spin_chgspin.py`` (the closest precedent): the
 dpmodel is built in-process from ``NATIVE_SPIN_CONFIG`` imported from
@@ -92,7 +94,8 @@ from gen_dpa4_spin import (
 
 # Bridging radii, identical to gen_dpa4_zbl.py's: they feed the descriptor's
 # InnerClamp AND BridgingSwitch (built together from the same radii) on the
-# LEARNED child, and are what makes the composition single-rank only.
+# LEARNED child, and are what makes the composition need the SFPG cross-rank
+# completion (hence the with-comm artifact) under domain decomposition.
 _BRIDGING_R_INNER = 0.8
 _BRIDGING_R_OUTER = 1.2
 
@@ -144,7 +147,7 @@ _SPINS = np.array(
 ).reshape(1, _NATOMS, 3)
 
 # ZBL screening parameters, repeated here as an INDEPENDENT reference (they
-# mirror deepmd/dpmodel/atomic_model/inter_potential.py, deliberately not
+# mirror deepmd/dpmodel/atomic_model/inner_potential.py, deliberately not
 # imported from it: a reference that shares its constants with the code under
 # test cannot catch a wrong constant).
 _ZBL_A_COEFF = (0.18175, 0.50986, 0.28022, 0.028171)
@@ -205,9 +208,9 @@ def _build_model_dict() -> dict:
     model = get_model(copy.deepcopy(SPIN_ZBL_CONFIG))
     assert model.has_spin() is True
     kinds = [type(child).__name__ for child in model.atomic_model.models]
-    assert kinds[1] == "InterPotentialAtomicModel", (
+    assert kinds[1] == "InnerPotentialAtomicModel", (
         f"expected the bridged composition's second child to be the "
-        f"analytical InterPotentialAtomicModel, got {kinds!r}; without it "
+        f"analytical InnerPotentialAtomicModel, got {kinds!r}; without it "
         f"this fixture is just the plain native-spin model again."
     )
     model_dict = model.serialize()
@@ -313,7 +316,7 @@ def _assert_zbl_term_is_active(model_dict: dict) -> float:
 
 
 def _check_metadata(pt2_path: str) -> None:
-    """Assert the frozen archive's metadata and the with-comm ABSENCE.
+    """Assert the frozen archive's metadata and the with-comm PRESENCE.
 
     Parameters
     ----------
@@ -354,24 +357,20 @@ def _check_metadata(pt2_path: str) -> None:
         f"the composition dropped the spin flag on the way to the freeze."
     )
     assert md["use_spin"] == [True, False]
-    # Single-rank only -- see the module docstring (the bridging gate's eta is
-    # incomplete per rank).  BOTH halves matter: the flag is what the C++
-    # dispatch reads, the archive entry is what it would load.
-    assert md["has_comm_artifact"] is False, (
+    # Multi-rank capable (issue #5906): the SFPG per-node partials are
+    # completed across ranks, so the with-comm artifact is embedded.  BOTH
+    # halves matter: the flag is what the C++ dispatch reads, the archive
+    # entry is what it loads.
+    assert md["has_comm_artifact"] is True, (
         f"{pt2_path}: metadata has_comm_artifact = "
-        f"{md.get('has_comm_artifact')!r}, expected False; a bridged model "
-        f"cannot support multi-rank message passing (its Source Freeze "
-        f"Propagation Gate folds each node's full outgoing-edge set, which no "
-        f"rank owns), so advertising one would promise a capability the model "
-        f"cannot honour."
+        f"{md.get('has_comm_artifact')!r}, expected True; the SFPG cross-rank "
+        f"completion (issue #5906) makes bridged native-spin models "
+        f"multi-rank capable."
     )
-    assert "model/extra/forward_lower_with_comm.pt2" not in names, (
-        f"{pt2_path}: a nested forward_lower_with_comm.pt2 was exported for a "
-        f"bridged model; see above -- the archive must not carry one."
+    assert "model/extra/forward_lower_with_comm.pt2" in names, (
+        f"{pt2_path}: the nested forward_lower_with_comm.pt2 is missing from "
+        f"a bridged native-spin archive; multi-rank dispatch would fail."
     )
-    # The descriptor still message-passes WITHIN a rank; it is only the
-    # cross-rank exchange that bridging forbids.  This is the flag that makes
-    # the C++ side fail fast under mpirun instead of answering wrongly.
     assert md["has_message_passing"] is True
     for key in ("atom_energy", "energy", "force", "force_mag", "virial"):
         assert key in md["output_keys"]

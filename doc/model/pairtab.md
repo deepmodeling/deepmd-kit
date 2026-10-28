@@ -1,7 +1,12 @@
-# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
+# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+> **Short-range interpolation backends**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ jax_icon }}, DP {{ dpmodel_icon }}
+>
+> **Linear-combination backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript and
+> PyTorch-Exportable {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 ## Theory
 
@@ -44,7 +49,8 @@ In the range $[r_a, r_b]$, the DP model smoothly switched off and the pairwise p
 where the scale $\alpha_s$ is a tunable scale of the interatomic distance $r_{ij}$.
 The pairwise potential $u^{\textrm{pair}}(r)$ is defined by a user-defined table that provides the value of $u^{\textrm{pair}}$ on an evenly discretized grid from 0 to the cutoff distance.[^1]
 
-DeePMD-kit also supports combination with a pairwise potential {{ tensorflow_icon }}:
+DeePMD-kit also supports combination with a pairwise potential
+{{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}:
 
 ```math
   E_i = E_i^{\mathrm{DP}} + E_i^{\mathrm{pair}},
@@ -54,6 +60,10 @@ DeePMD-kit also supports combination with a pairwise potential {{ tensorflow_ico
 
 The table file should be a text file that can be read by {py:meth}`numpy.loadtxt`.
 The first column is the distance between two atoms, where upper range should be larger than the cutoff radius.
+It must be strictly increasing and evenly spaced: every distance has to sit within one percent of a grid step of `rmin + i * hh`,
+where `rmin` is the first distance and `hh` is the constant step inferred from the first and last distances.
+A table that violates this raises a `ValueError` when the model is constructed, because the spline coefficients and both
+evaluators index the table by that constant step and cannot represent a non-uniform grid.
 Other columns are two-body interaction energies for pairs of certain types,
 in the order of Type_0-Type_0, Type_0-Type_1, ..., Type_0-Type_N, Type_1-Type_1, ..., Type_1-Type_N, ..., and Type_N-Type_N.
 
@@ -76,7 +86,7 @@ The interaction should be smooth at the cut-off distance.
 
 {ref}`sw_rmin <model/sw_rmin>` and {ref}`sw_rmax <model/sw_rmax>` must be smaller than the cutoff radius of the DP model.
 
-## Combination with a pairwise potential {{ tensorflow_icon }}
+## Combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 To combine with a pairwise potential, use the [linear model](./linear.md):
 

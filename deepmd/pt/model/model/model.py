@@ -26,6 +26,17 @@ class BaseModel(torch.nn.Module, make_base_model()):
             "min_nbor_dist", torch.tensor(-1.0, dtype=torch.float64, device=env.DEVICE)
         )
 
+    def export_lower_input_kind(self) -> str:
+        """Return the lower-input ABI that preserves this model's semantics.
+
+        Returns
+        -------
+        str
+            ``"nlist"`` for the standard PyTorch model contract. Models with
+            a graph-native deployment ABI override this method.
+        """
+        return "nlist"
+
     def compute_or_load_stat(
         self,
         sampled_func: Any,
@@ -46,6 +57,48 @@ class BaseModel(torch.nn.Module, make_base_model()):
             The sampled data frames from different data systems.
         stat_file_path
             The path to the statistics files.
+        """
+        raise NotImplementedError
+
+    def predict_atomic_outputs_for_stat(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Return complete atomic outputs used by residual output statistics.
+
+        Final model classes own this prediction contract because only they know
+        the complete physical forward, including model-level preprocessing and
+        analytical contributions. Implementations must not compute derivatives
+        or mutate compile caches.
+
+        Parameters
+        ----------
+        coord
+            Local coordinates with shape (nf, nloc, 3).
+        atype
+            Local atom types with shape (nf, nloc).
+        box
+            Simulation cells with shape (nf, 9), or ``None``.
+        fparam
+            Optional frame parameters.
+        aparam
+            Optional atomic parameters.
+        charge_spin
+            Optional frame-level charge and spin conditions.
+        spin
+            Optional native per-atom spin vectors.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Complete atomic outputs for output-statistics regression.
         """
         raise NotImplementedError
 

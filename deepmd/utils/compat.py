@@ -18,6 +18,12 @@ import numpy as np
 from deepmd.common import (
     j_deprecated,
 )
+from deepmd.utils.model_preset import (
+    expand_model_preset,
+)
+from deepmd.utils.preset_out_bias import (
+    resolve_preset_out_bias_tables,
+)
 
 
 def convert_input_v0_v1(
@@ -458,6 +464,7 @@ def update_deepmd_input(
 
     jdata = migrate_training_warmup(jdata, warning=warning)
     jdata = convert_optimizer_v31_to_v32(jdata, warning=warning)
+    jdata["model"] = resolve_preset_out_bias_tables(expand_model_preset(jdata["model"]))
     return jdata
 
 

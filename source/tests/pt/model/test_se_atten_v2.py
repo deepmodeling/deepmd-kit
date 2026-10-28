@@ -33,6 +33,48 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
+    def test_lmax_two_serialization(self) -> None:
+        descriptor = DescrptSeAttenV2(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            lmax=2,
+            attn_layer=0,
+            precision="float64",
+            seed=GLOBAL_SEED,
+        ).to(env.DEVICE)
+        coord = torch.tensor(self.coord_ext, dtype=torch.float64, device=env.DEVICE)
+        atype = torch.tensor(self.atype_ext, dtype=torch.long, device=env.DEVICE)
+        nlist = torch.tensor(self.nlist, dtype=torch.long, device=env.DEVICE)
+
+        result = descriptor(coord, atype, nlist)[0]
+        restored = DescrptSeAttenV2.deserialize(descriptor.serialize()).to(env.DEVICE)
+        restored_result = restored(coord, atype, nlist)[0]
+
+        self.assertEqual(restored.se_atten.lmax, 2)
+        torch.testing.assert_close(restored_result, result)
+
+    def test_lmax_four_degree_gain_serialization(self) -> None:
+        descriptor = DescrptSeAttenV2(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            lmax=4,
+            attn_layer=0,
+            precision="float64",
+            seed=GLOBAL_SEED,
+        ).to(env.DEVICE)
+        restored = DescrptSeAttenV2.deserialize(descriptor.serialize()).to(env.DEVICE)
+        self.assertEqual(restored.se_atten.lmax, 4)
+        assert descriptor.se_atten.adam_degree_gain_raw is not None
+        assert restored.se_atten.adam_degree_gain_raw is not None
+        torch.testing.assert_close(
+            restored.se_atten.adam_degree_gain_raw,
+            descriptor.se_atten.adam_degree_gain_raw,
+        )
+
     def test_consistency(
         self,
     ) -> None:

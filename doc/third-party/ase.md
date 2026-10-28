@@ -24,7 +24,7 @@ print(water.get_forces())
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```python
 from ase import Atoms
@@ -59,6 +59,81 @@ print(water.get_forces())
 :::
 
 ::::
+
+Neighbor construction can be configured independently of checkpoint freezing:
+
+```python
+calculator = DP(
+    model="model.pt",
+    neighbor_graph_method="auto",
+    neighbor_skin=1.0,
+)
+```
+
+For PT-expt graph models, `neighbor_graph_method` accepts `auto`, `dense`, `ase`,
+`cell`, `vesin`, and `nv`. On a GPU, `auto` prefers Vesin for the single frame
+evaluated by ASE; batched `DeepPot` inference prefers NV when available. CPU
+graph inference retains the native `cell` search. PT SeZM/DPA4 checkpoints and
+their edge-vector exports support `auto`, `vesin`, and `nv`. Their `auto` policy
+prefers Vesin for a single frame and NV for multiple frames on both CPU and CUDA;
+explicit `nv` also supports both devices. Models with the traditional
+extended-coordinate input use `nlist_backend` with the same inference policy.
+
+The default `neighbor_skin=1.0`, in angstrom, enables candidate reuse for Vesin
+searches across all these input formats and requires Vesin and its torch
+bindings at version 0.6 or later (PyTorch 2.3 or later).
+Older PyTorch targets and macOS Intel installations retain native neighbor
+construction without requiring these bindings.
+If neither optional search library is available, edge-vector models use the
+native dense carry-all graph search. This slower fallback preserves every
+cutoff neighbor, including periodic images, independently of `sel`. A runtime
+warning reports its O(N²) cost and installation alternatives; large training or
+inference systems should use a cell-list backend to avoid excessive memory use.
+Candidates extend to the model cutoff plus the skin and are rebuilt when an
+atom moves more than half the skin, or when the cell or atom count changes.
+Each evaluation still updates geometry and selects neighbors at the model's
+exact cutoff. Set `neighbor_skin=0.0` to disable candidate reuse. Other search
+backends retain their own rebuild behavior. Element-to-model type mappings
+are reused until atomic numbers, atom order, or the supplied `type_dict` changes.
+
+For PT DPA4/SeZM checkpoints and graph-eligible PT-expt checkpoints, enable
+automatic freezing for production inference:
+
+```python
+from deepmd.calculator import DP
+
+calculator = DP(model="model.pt", freeze=True)
+```
+
+Each calculator construction with `freeze=True` rebuilds the artifact using
+the selected checkpoint head and the backend's normal freeze policy. The
+calculator loads a private artifact retained for its evaluator's lifetime and
+atomically publishes a separate copy as `model-ase_single.pt2` beside the
+checkpoint. Concurrent processes retain their own selected heads; the last
+publication replaces the shared copy. This requires one extra artifact copy
+per live evaluator. Concurrent exports must use separate processes because
+the backend compiler configuration is not thread-safe.
+
+The export omits the multi-rank communication artifact
+because ASE inference runs in one process. For CUDA targets, DPA4 defaults to
+`DP_CUDA_INFER=1` and `DP_TRITON_INFER=2`, with explicit environment settings
+taking precedence; DPA4C keeps its required CUDA level of 2.
+
+DPA4C checkpoints also enable compression through the same export path as
+`dp --pt-expt freeze --compress`. Supported models use the dedicated CPU or
+CUDA compression kernels. If the configuration cannot be compressed, such as
+a `float64` descriptor or one with type exclusions, ASE logs the reason and
+continues with an ordinary frozen model. Other model families keep their
+uncompressed freeze behavior. Explicit `freeze --compress` reports an error
+for an unsupported compression configuration.
+
+The default `freeze=False` loads checkpoints directly and logs a warning for
+these models: inference can be **substantially slower**. This mode is intended
+for debugging and short runs that avoid compilation overhead. To reuse an
+export without compiling again, pass the `.pt2` file directly after concurrent
+exports have finished. Already frozen models, other PT models, and PT-expt
+models without graph eligibility ignore `freeze` and keep their normal loading
+path.
 
 Optimization is also available:
 

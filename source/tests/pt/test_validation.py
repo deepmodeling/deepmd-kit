@@ -9,6 +9,7 @@ from pathlib import (
     Path,
 )
 from unittest.mock import (
+    MagicMock,
     patch,
 )
 
@@ -23,26 +24,29 @@ from dargs.dargs import (
 from deepmd.pt.model.model import (
     get_model,
 )
-from deepmd.pt.train.validation import (
-    BEST_METRIC_NAME_INFO_KEY,
-    TOPK_RECORDS_INFO_KEY,
-    FullValidator,
-    resolve_full_validation_start_step,
-)
 from deepmd.pt.utils.env import (
     DEVICE,
 )
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
 )
+from deepmd.pt_expt.train.validation import (
+    BEST_METRIC_NAME_INFO_KEY,
+    TOPK_RECORDS_INFO_KEY,
+    FullValidator,
+    resolve_full_validation_start_step,
+)
 from deepmd.utils.argcheck import (
+    is_valid_full_validation_metric,
     normalize,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
 )
 from deepmd.utils.eval_metrics import (
+    FULL_VALIDATION_PROFILES,
     SPIN_FULL_VALIDATION_PROFILE,
+    compute_full_validation_energy_metrics,
     compute_full_validation_spin_metrics,
 )
 
@@ -264,11 +268,92 @@ def _make_spin_task_config() -> dict:
 
 
 class TestValidationHelpers(unittest.TestCase):
+    @staticmethod
+    def _run_best_candidate(
+        validator: FullValidator,
+        *,
+        display_step: int,
+        selected_metric_value: float,
+        directory_checkpoint: bool = False,
+    ) -> str:
+        """Exercise selection, writing and reconciliation through the public flow."""
+
+        def save_checkpoint(path: Path, **kwargs) -> None:
+            if directory_checkpoint:
+                path.mkdir()
+            else:
+                path.touch()
+
+        with patch.object(
+            validator,
+            "evaluate_all_systems",
+            return_value={validator.metric_key: selected_metric_value},
+        ):
+            result = validator.run(
+                step_id=display_step,
+                display_step=display_step,
+                lr=1e-3,
+                save_checkpoint=save_checkpoint,
+            )
+        return result.saved_best_path
+
     def test_resolve_full_validation_start_step(self) -> None:
         self.assertEqual(resolve_full_validation_start_step(0, 2000000), 0)
         self.assertEqual(resolve_full_validation_start_step(0.1, 2000000), 200000)
         self.assertEqual(resolve_full_validation_start_step(5000, 2000000), 5000)
         self.assertIsNone(resolve_full_validation_start_step(1, 2000000))
+
+    def test_full_validator_releases_workspace_after_restoring_model(self) -> None:
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as tmpdir:
+                model = _DummyModel()
+                eval_context = MagicMock()
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "full_val_start": 0.0,
+                        "save_best": False,
+                        "full_val_file": str(Path(tmpdir) / "val.log"),
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=model,
+                    state_store={},
+                    num_steps=10,
+                    rank=0,
+                    restart_training=False,
+                    checkpoint_dir=Path(tmpdir),
+                    model_eval_context=lambda: eval_context,
+                )
+
+                def evaluate() -> dict[str, float]:
+                    self.assertFalse(model.training)
+                    if fail:
+                        raise RuntimeError("validation failure")
+                    return {validator.metric_key: 1.0}
+
+                def release() -> None:
+                    self.assertTrue(model.training)
+                    eval_context.__exit__.assert_called_once()
+
+                with (
+                    patch.object(
+                        validator, "evaluate_all_systems", side_effect=evaluate
+                    ),
+                    patch("torch.cuda.is_available", return_value=True),
+                    patch("torch.cuda.empty_cache", side_effect=release) as empty_cache,
+                ):
+                    if fail:
+                        with self.assertRaisesRegex(RuntimeError, "validation failure"):
+                            validator.run(
+                                step_id=1, display_step=1, lr=1e-3, save_checkpoint=None
+                            )
+                    else:
+                        result = validator.run(
+                            step_id=1, display_step=1, lr=1e-3, save_checkpoint=None
+                        )
+                        self.assertEqual(result.metrics[validator.metric_key], 1.0)
+                empty_cache.assert_called_once()
 
     def test_full_validator_rotates_best_checkpoint(self) -> None:
         train_infos = {}
@@ -291,29 +376,25 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 
@@ -361,7 +442,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=True,
                 )
             finally:
@@ -394,13 +474,13 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                     checkpoint_dir=best_dir,
                 )
                 # The directory is created recursively at construction time.
                 self.assertTrue(best_dir.is_dir())
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
@@ -430,30 +510,29 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                     best_checkpoint_suffix=".jax",
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 
@@ -486,7 +565,6 @@ class TestValidationHelpers(unittest.TestCase):
                 state_store={},
                 num_steps=10,
                 rank=0,
-                zero_stage=0,
                 restart_training=False,
             )
             observed_natoms = []
@@ -547,7 +625,6 @@ class TestValidationHelpers(unittest.TestCase):
                 state_store={},
                 num_steps=10,
                 rank=0,
-                zero_stage=0,
                 restart_training=False,
             )
             observed_flags = []
@@ -620,7 +697,6 @@ class TestValidationHelpers(unittest.TestCase):
                 state_store={},
                 num_steps=10,
                 rank=0,
-                zero_stage=0,
                 restart_training=False,
             )
             observed_groups = []
@@ -660,7 +736,6 @@ class TestValidationHelpers(unittest.TestCase):
             state_store={},
             num_steps=10,
             rank=0,
-            zero_stage=0,
             restart_training=False,
         )
 
@@ -777,6 +852,94 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
         self.assertAlmostEqual(metrics["rmse_fm"][0], np.sqrt(250.0))
         self.assertEqual(metrics["mae_fm"][1], 6.0)
 
+    def test_profile_tables_derive_consistently_from_families(self) -> None:
+        for profile in FULL_VALIDATION_PROFILES.values():
+            with self.subTest(profile=profile.name):
+                self.assertEqual(
+                    set(profile.metric_key_map), set(profile.prefactor_by_metric)
+                )
+                self.assertEqual(
+                    set(profile.metric_family_by_key.values()),
+                    set(profile.unit_by_family),
+                )
+                for metric, key in profile.metric_key_map.items():
+                    self.assertEqual(
+                        profile.metric_family_by_key[key], metric.split(":")[0]
+                    )
+
+    def test_second_rank_column_follows_the_selected_metric(self) -> None:
+        for profile in FULL_VALIDATION_PROFILES.values():
+            with self.subTest(profile=profile.name):
+                default = [label for label, _ in profile.columns("e:mae")]
+                self.assertIn("S_MAE", default)
+                self.assertNotIn("V_MAE", default)
+                selected = [label for label, _ in profile.columns("v:rmse")]
+                self.assertIn("V_RMSE", selected)
+                self.assertNotIn("S_RMSE", selected)
+                # Every selectable metric stays reachable by the
+                # best-checkpoint selector, and one trained quantity never
+                # occupies two columns.
+                quantities = {family.prefactors for family in profile.families}
+                for metric, key in profile.metric_key_map.items():
+                    columns = profile.columns(metric)
+                    self.assertIn(key, [column_key for _, column_key in columns])
+                    self.assertEqual(len(columns), 2 * len(quantities))
+
+    def test_virial_metric_selectors_remain_accepted(self) -> None:
+        for metric in ("V:MAE", "V:RMSE", "v:mae", "v:rmse"):
+            self.assertTrue(is_valid_full_validation_metric(metric))
+
+    def test_energy_profile_reports_stress_and_per_atom_virial(self) -> None:
+        # A 2 Angstrom cubic cell has volume 8, so a unit virial error becomes
+        # 1/8 in stress and 1/natoms in per-atom virial.
+        prediction = {
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.ones((1, 9)),
+        }
+        test_data = {
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_virial": 1.0,
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.zeros((1, 9)),
+            "box": np.tile((np.eye(3) * 2.0).reshape(9), (1, 1)),
+        }
+        metrics = compute_full_validation_energy_metrics(
+            prediction, test_data, natoms=4, has_pbc=True
+        )
+        self.assertAlmostEqual(metrics["mae_v_per_atom"][0], 0.25)
+        self.assertAlmostEqual(metrics["rmse_v_per_atom"][0], 0.25)
+        self.assertAlmostEqual(metrics["mae_s"][0], 0.125)
+        self.assertAlmostEqual(metrics["rmse_s"][0], 0.125)
+        # The two presentations carry the same virial error under different
+        # normalizations.
+        self.assertAlmostEqual(
+            metrics["mae_s"][0] * 8.0, metrics["mae_v_per_atom"][0] * 4.0
+        )
+
+    def test_singular_cell_drops_stress_but_keeps_virial(self) -> None:
+        prediction = {
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.ones((1, 9)),
+        }
+        test_data = {
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_virial": 1.0,
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.zeros((1, 9)),
+            "box": np.zeros((1, 9)),
+        }
+        metrics = compute_full_validation_energy_metrics(
+            prediction, test_data, natoms=4, has_pbc=True
+        )
+        self.assertIn("mae_v_per_atom", metrics)
+        self.assertNotIn("mae_s", metrics)
+
     def test_spin_profile_omits_magnetic_force_when_unavailable(self) -> None:
         prediction = {
             "energy": np.array([[3.0]]),
@@ -825,7 +988,6 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
                     state_store={},
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                 )
                 self.assertIs(validator.profile, SPIN_FULL_VALIDATION_PROFILE)

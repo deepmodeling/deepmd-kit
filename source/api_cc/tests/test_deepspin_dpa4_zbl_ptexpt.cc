@@ -6,7 +6,7 @@
 // test_deepspin_dpa4_graph_ptexpt.cc (native spin) and
 // test_deeppot_dpa4_zbl_ptexpt.cc (bridging): here ``spin`` must reach a
 // COMPOSITION -- LinearEnergyModel over [learned DPA4,
-// InterPotentialAtomicModel] -- whose learned child consumes it and whose
+// InnerPotentialAtomicModel] -- whose learned child consumes it and whose
 // analytical child accepts and ignores it, and the archive must still declare
 // ``is_spin`` so this DeepSpin path (not DeepPot) is the one that runs.
 // Before this test the combination had NO coverage below the pt_expt Python
