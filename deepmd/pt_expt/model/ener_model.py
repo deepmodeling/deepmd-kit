@@ -23,6 +23,13 @@ from deepmd.dpmodel.utils.neighbor_list import (
     NeighborList,
 )
 
+# Importing the module also registers the freeze-time measurement of the
+# fitting-route tables, which runs before an export traces the compact
+# canonical lower.
+from deepmd.pt_expt.kernels.fitting_routes import (
+    fitting_routes,
+)
+
 from .make_model import (
     _translate_energy_keys,
     fused_atom_bias,
@@ -221,7 +228,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     source_order=source_order.new_zeros(2),
                 )
             # The fused operator derives the ownership mask from the frame
-            # counts itself, so nothing runs on the node axis around it.
+            # counts itself, so nothing runs on the node axis around it. The
+            # fitting-route table measured for the network on the backend
+            # device, if any, becomes a literal of the traced program.
             energy, atom_energy, force, virial, atom_virial, force_mag, mask = (
                 dpa4c_canonical_compress_energy_force(
                     descriptor,
@@ -231,6 +240,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     atom_bias,
                     spin,
                     None if pair_potential is None else pair_potential.pair_table,
+                    fitting_routes(fitting),
                 )
             )
         else:
