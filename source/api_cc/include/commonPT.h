@@ -2,6 +2,7 @@
 #pragma once
 
 #ifdef BUILD_PYTORCH
+#include <c10/core/impl/VirtualGuardImpl.h>
 #include <torch/torch.h>
 #include <torch/version.h>
 
@@ -59,6 +60,15 @@ inline void preselect_torch_device(const int& gpu_rank,
 #else
   int gpu_num = torch::cuda::device_count();
   gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
+#if DEEPMD_TORCH_HAS_GPU
+  if (gpu_num > 0) {
+    // LibTorch can provide CUDA/HIP even when DeePMD's toolkit is disabled.
+    // Dispatch through its device registry to avoid toolkit headers and keep
+    // the selected device current after returning (unlike an RAII guard).
+    c10::impl::VirtualGuardImpl(c10::DeviceType::CUDA)
+        .setDevice(c10::Device(c10::DeviceType::CUDA, gpu_id));
+  }
+#endif
 #endif  // DeePMD toolkit and LibTorch GPU support
   gpu_enabled = torch::cuda::is_available();
 }

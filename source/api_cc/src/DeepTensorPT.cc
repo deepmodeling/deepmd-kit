@@ -15,24 +15,6 @@
 
 using namespace deepmd;
 
-static torch::Tensor createNlistTensor(
-    const std::vector<std::vector<int>>& data) {
-  size_t total_size = 0;
-  for (const auto& row : data) {
-    total_size += row.size();
-  }
-  std::vector<int> flat_data;
-  flat_data.reserve(total_size);
-  for (const auto& row : data) {
-    flat_data.insert(flat_data.end(), row.begin(), row.end());
-  }
-
-  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
-  int nloc = data.size();
-  int nnei = nloc > 0 ? total_size / nloc : 0;
-  return flat_tensor.view({1, nloc, nnei});
-}
-
 void DeepTensorPT::translate_error(std::function<void()> f) {
   try {
     f();
