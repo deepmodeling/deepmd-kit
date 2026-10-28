@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import io
 import json
 import logging
-from collections.abc import (
-    Callable,
-)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -98,6 +98,10 @@ from deepmd.utils.pt_checkpoint import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+
     from ase.neighborlist import (
         NewPrimitiveNeighborList,
     )
@@ -158,7 +162,7 @@ class DeepEval(DeepEvalBackend):
         output_def: ModelOutputDef,
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
-        neighbor_list: Optional["NewPrimitiveNeighborList"] = None,
+        neighbor_list: NewPrimitiveNeighborList | None = None,
         head: str | int | None = None,
         no_jit: bool = False,
         nlist_backend: str = "auto",
@@ -430,7 +434,7 @@ class DeepEval(DeepEvalBackend):
             raise NotImplementedError
 
     @property
-    def model_type(self) -> type["DeepEvalWrapper"]:
+    def model_type(self) -> type[DeepEvalWrapper]:
         """The the evaluator of the model type."""
         model_output_type = self.dp.model["Default"].model_output_type()
         if "energy" in model_output_type:
@@ -1045,7 +1049,7 @@ class DeepEval(DeepEvalBackend):
             "observed_type": sort_element_type(observed_type_list),
         }
 
-    def get_model(self) -> "BaseModel":
+    def get_model(self) -> BaseModel:
         """Get the PyTorch model.
 
         Returns
