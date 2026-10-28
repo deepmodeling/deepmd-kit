@@ -26,6 +26,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
 )
 from deepmd.entrypoints.test import test as run_model_test
 from deepmd.utils import (
+    data_conversion,
     data_system,
 )
 from deepmd.utils.data import (
@@ -229,14 +230,14 @@ class TestDpdataFormatConversion(unittest.TestCase):
         _FakeMultiSystems.write_count = 0
         _FakeMultiSystems.load_calls = []
         _FakeMultiSystems.to_calls = []
-        data_system._DPDATA_CONVERSION_CACHE.clear()
+        data_conversion._DPDATA_CONVERSION_CACHE.clear()
         self.fake_dpdata = types.SimpleNamespace(
             MultiSystems=_FakeMultiSystems,
             LabeledSystem=_FakeLabeledSystem,
         )
 
     def tearDown(self) -> None:
-        data_system._DPDATA_CONVERSION_CACHE.clear()
+        data_conversion._DPDATA_CONVERSION_CACHE.clear()
 
     def test_process_systems_defaults_to_deepmd_lmdb_and_reuses_cache(self) -> None:
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
@@ -317,7 +318,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
         original_stat = self.source.stat()
         self.source.write_text(extxyz.replace("energy=0.0", "energy=42.0"))
         os.utime(self.source, (original_stat.st_atime, original_stat.st_mtime - 86400))
-        data_system._DPDATA_CONVERSION_CACHE.clear()
+        data_conversion._DPDATA_CONVERSION_CACHE.clear()
         systems_again = process_systems(str(self.source), fmt="extxyz")
 
         self.assertEqual(len(systems), 1)
@@ -343,7 +344,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
         link.parent.mkdir()
         link.symlink_to(target, target_is_directory=True)
 
-        data_system._remove_path(link)
+        data_conversion._remove_path(link)
 
         self.assertFalse(link.exists())
         self.assertTrue(target.is_dir())
@@ -629,9 +630,9 @@ class TestDpdataFormatConversion(unittest.TestCase):
         lock_path.write_text(
             json.dumps(
                 {
-                    "hostname": data_system.socket.gethostname(),
+                    "hostname": data_conversion.socket.gethostname(),
                     "pid": os.getpid(),
-                    "process_start": data_system._process_start_time(os.getpid()),
+                    "process_start": data_conversion._process_start_time(os.getpid()),
                 }
             )
         )
@@ -645,14 +646,16 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
         with (
             patch.object(
-                data_system.time, "sleep", release_after_long_valid_conversion
+                data_conversion.time, "sleep", release_after_long_valid_conversion
             ),
             patch.object(
-                data_system, "_is_conversion_current", return_value=True
+                data_conversion,
+                "_is_conversion_current",
+                return_value=True,
             ) as is_current,
         ):
             self.assertTrue(
-                data_system._wait_for_conversion(self.source, output, lock_path)
+                data_conversion._wait_for_conversion(self.source, output, lock_path)
             )
 
         self.assertEqual(waits, 301)
@@ -663,14 +666,14 @@ class TestDpdataFormatConversion(unittest.TestCase):
         lock_path.write_text(
             json.dumps(
                 {
-                    "hostname": data_system.socket.gethostname(),
+                    "hostname": data_conversion.socket.gethostname(),
                     "pid": 2147483647,
                     "process_start": "missing",
                 }
             )
         )
 
-        self.assertTrue(data_system._recover_stale_conversion_lock(lock_path))
+        self.assertTrue(data_conversion._recover_stale_conversion_lock(lock_path))
         self.assertFalse(lock_path.exists())
 
     def test_directory_publication_rolls_back_on_failure(self) -> None:
@@ -690,9 +693,9 @@ class TestDpdataFormatConversion(unittest.TestCase):
                 raise OSError("publish failed")
             real_replace(source, target)
 
-        with patch.object(data_system.os, "replace", fail_publication):
+        with patch.object(data_conversion.os, "replace", fail_publication):
             with self.assertRaisesRegex(OSError, "publish failed"):
-                data_system._publish_conversion_output(staged, output)
+                data_conversion._publish_conversion_output(staged, output)
 
         self.assertEqual((output / "old.txt").read_text(), "old")
         self.assertFalse((output / "new.txt").exists())
@@ -724,12 +727,14 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
     def test_cache_path_changes_with_dpdata_version(self) -> None:
         with patch.object(
-            data_system.importlib.metadata, "version", side_effect=["1.1.0", "1.2.0"]
+            data_conversion.importlib.metadata,
+            "version",
+            side_effect=["1.1.0", "1.2.0"],
         ):
-            first = data_system._conversion_cache_path(
+            first = data_conversion._conversion_cache_path(
                 self.source, "extxyz", "deepmd/lmdb"
             )
-            second = data_system._conversion_cache_path(
+            second = data_conversion._conversion_cache_path(
                 self.source, "extxyz", "deepmd/lmdb"
             )
 
@@ -764,7 +769,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
                             )
                             os.utime(source_file, ns=(stat.st_atime_ns, mtime))
                             if fresh_process:
-                                data_system._DPDATA_CONVERSION_CACHE.clear()
+                                data_conversion._DPDATA_CONVERSION_CACHE.clear()
                             self.assertEqual(
                                 process_systems(str(source), fmt="extxyz"), systems
                             )
@@ -775,15 +780,15 @@ class TestDpdataFormatConversion(unittest.TestCase):
     def test_source_signature_tracks_tree_membership_and_excludes_cache(self) -> None:
         """Publishing within the source directory cannot invalidate itself."""
         output = self.root / ".deepmd_dpdata_cache" / "cached.lmdb"
-        first = data_system._source_signature(self.root, output)
+        first = data_conversion._source_signature(self.root, output)
         output.mkdir(parents=True)
         (output / "data.mdb").write_text("cache data")
-        self.assertEqual(first, data_system._source_signature(self.root, output))
+        self.assertEqual(first, data_conversion._source_signature(self.root, output))
         child = self.root / "new.extxyz"
         child.write_text("new input")
-        self.assertNotEqual(first, data_system._source_signature(self.root, output))
+        self.assertNotEqual(first, data_conversion._source_signature(self.root, output))
         child.unlink()
-        self.assertEqual(first, data_system._source_signature(self.root, output))
+        self.assertEqual(first, data_conversion._source_signature(self.root, output))
 
     def test_directory_conversion_tracks_dangling_symlinks(self) -> None:
         """Unrelated broken links do not block conversion or hide later changes."""
@@ -851,7 +856,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
     def test_source_signature_rejects_disappearing_regular_file(self) -> None:
         """Only dangling links may be fingerprinted after followed stat fails."""
-        output = self.root / data_system._DPDATA_CACHE_DIR / "output.lmdb"
+        output = self.root / data_conversion._DPDATA_CACHE_DIR / "output.lmdb"
         original_stat = Path.stat
 
         def stat_after_removal(path: Path, **kwargs: object) -> os.stat_result:
@@ -861,7 +866,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
         with patch.object(Path, "stat", stat_after_removal):
             with self.assertRaisesRegex(FileNotFoundError, "source disappeared"):
-                data_system._source_signature(self.root, output)
+                data_conversion._source_signature(self.root, output)
 
     def test_source_change_during_conversion_does_not_publish_manifest(self) -> None:
         """A concurrent edit cannot mark a possibly mixed snapshot fresh."""
@@ -870,23 +875,23 @@ class TestDpdataFormatConversion(unittest.TestCase):
             _write_minimal_lmdb(str(output))
             source.write_text("changed while converting")
 
-        with patch.object(data_system, "_write_dpdata_conversion", changing_writer):
+        with patch.object(data_conversion, "_write_dpdata_conversion", changing_writer):
             with self.assertRaisesRegex(
                 RuntimeError, "input changed during conversion"
             ):
                 process_systems(str(self.source), fmt="extxyz")
-        output = data_system._conversion_cache_path(
+        output = data_conversion._conversion_cache_path(
             self.source, "extxyz", "deepmd/lmdb"
         )
-        self.assertFalse(data_system._is_conversion_current(self.source, output))
-        self.assertFalse(data_system._conversion_manifest_path(output).exists())
+        self.assertFalse(data_conversion._is_conversion_current(self.source, output))
+        self.assertFalse(data_conversion._conversion_manifest_path(output).exists())
         self.assertFalse(output.with_suffix(".lmdb.lock").exists())
 
     def test_missing_or_invalid_manifest_rebuilds_cache(self) -> None:
         """Legacy and interrupted conversions cannot validate via output mtime."""
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
             systems = process_systems(str(self.source), fmt="extxyz")
-            manifest = data_system._conversion_manifest_path(Path(systems[0]))
+            manifest = data_conversion._conversion_manifest_path(Path(systems[0]))
             for invalid in (None, "bad json", "null", "{}"):
                 if invalid is None:
                     manifest.unlink()
@@ -907,22 +912,24 @@ class TestDpdataFormatConversion(unittest.TestCase):
         ):
             xyz.write_bytes(header)
             self.assertEqual(
-                data_system._normalize_dpdata_format("auto", xyz), expected
+                data_conversion._normalize_dpdata_format("auto", xyz), expected
             )
         with patch.object(Path, "open", side_effect=OSError("unreadable")):
-            self.assertEqual(data_system._normalize_dpdata_format("auto", xyz), "xyz")
+            self.assertEqual(
+                data_conversion._normalize_dpdata_format("auto", xyz), "xyz"
+            )
         xyz.unlink()
-        self.assertEqual(data_system._normalize_dpdata_format("auto", xyz), "xyz")
+        self.assertEqual(data_conversion._normalize_dpdata_format("auto", xyz), "xyz")
         for name, expected in (
             ("frame.traj", "ase/traj"),
             ("frame.extxyz", "extxyz"),
             ("frame", "auto"),
         ):
             self.assertEqual(
-                data_system._normalize_dpdata_format("auto", Path(name)), expected
+                data_conversion._normalize_dpdata_format("auto", Path(name)), expected
             )
         self.assertEqual(
-            data_system._normalize_dpdata_format("ase", xyz), "ase/structure"
+            data_conversion._normalize_dpdata_format("ase", xyz), "ase/structure"
         )
 
     def test_lmdb_modifier_fails_before_conversion(self) -> None:
@@ -955,27 +962,31 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
     def test_lock_owner_liveness_branches(self) -> None:
         """Only same-host process evidence can establish owner liveness."""
-        hostname = data_system.socket.gethostname()
-        self.assertIsNone(data_system._lock_owner_is_alive({"hostname": "other-host"}))
+        hostname = data_conversion.socket.gethostname()
+        self.assertIsNone(
+            data_conversion._lock_owner_is_alive({"hostname": "other-host"})
+        )
         for payload in ({}, {"pid": None}, {"pid": "invalid"}, {"pid": 0}, {"pid": -1}):
             self.assertIsNone(
-                data_system._lock_owner_is_alive({"hostname": hostname, **payload})
+                data_conversion._lock_owner_is_alive({"hostname": hostname, **payload})
             )
         payload = {"hostname": hostname, "pid": os.getpid(), "process_start": "123"}
-        with patch.object(data_system, "_process_start_time", return_value="123"):
-            self.assertTrue(data_system._lock_owner_is_alive(payload))
-        with patch.object(data_system, "_process_start_time", return_value="456"):
-            self.assertFalse(data_system._lock_owner_is_alive(payload))
+        with patch.object(data_conversion, "_process_start_time", return_value="123"):
+            self.assertTrue(data_conversion._lock_owner_is_alive(payload))
+        with patch.object(data_conversion, "_process_start_time", return_value="456"):
+            self.assertFalse(data_conversion._lock_owner_is_alive(payload))
         for error, expected in (
             (None, True),
             (PermissionError(), True),
             (ProcessLookupError(), False),
         ):
             with (
-                patch.object(data_system, "_process_start_time", return_value=None),
-                patch.object(data_system.os, "kill", side_effect=error),
+                patch.object(data_conversion, "_process_start_time", return_value=None),
+                patch.object(data_conversion.os, "kill", side_effect=error),
             ):
-                self.assertEqual(data_system._lock_owner_is_alive(payload), expected)
+                self.assertEqual(
+                    data_conversion._lock_owner_is_alive(payload), expected
+                )
 
     def test_stale_lock_recovery_preserves_live_owners_and_successors(self) -> None:
         """An old heartbeat alone cannot evict a known live local owner."""
@@ -987,36 +998,40 @@ class TestDpdataFormatConversion(unittest.TestCase):
             (False, False, True),
         ):
             path.write_text("{}")
-            stamp = data_system.time.time() - (
-                data_system._CONVERSION_LOCK_STALE_SECONDS + 1 if expired else 0
+            stamp = data_conversion.time.time() - (
+                data_conversion._CONVERSION_LOCK_STALE_SECONDS + 1 if expired else 0
             )
             os.utime(path, (stamp, stamp))
-            with patch.object(data_system, "_lock_owner_is_alive", return_value=alive):
+            with patch.object(
+                data_conversion, "_lock_owner_is_alive", return_value=alive
+            ):
                 self.assertEqual(
-                    data_system._recover_stale_conversion_lock(path), expected
+                    data_conversion._recover_stale_conversion_lock(path), expected
                 )
             self.assertEqual(path.exists(), not expected)
         path.write_text("{}")
         with (
-            patch.object(data_system, "_lock_owner_is_alive", return_value=False),
-            patch.object(data_system, "_same_lock_file", return_value=False),
+            patch.object(data_conversion, "_lock_owner_is_alive", return_value=False),
+            patch.object(data_conversion, "_same_lock_file", return_value=False),
         ):
-            self.assertFalse(data_system._recover_stale_conversion_lock(path))
+            self.assertFalse(data_conversion._recover_stale_conversion_lock(path))
         self.assertTrue(path.exists())
 
     def test_remote_lock_is_never_evicted_on_stale_heartbeat(self) -> None:
         """A remote heartbeat cached by NFS is not proof that its writer died."""
         path = self.root / "remote.lock"
         path.write_text(json.dumps({"hostname": "other-host", "pid": 123}))
-        thirty_seconds_ago = data_system.time.time() - 31
+        thirty_seconds_ago = data_conversion.time.time() - 31
         os.utime(path, (thirty_seconds_ago, thirty_seconds_ago))
-        self.assertFalse(data_system._recover_stale_conversion_lock(path))
+        self.assertFalse(data_conversion._recover_stale_conversion_lock(path))
         expired = (
-            data_system.time.time() - data_system._CONVERSION_LOCK_STALE_SECONDS - 1
+            data_conversion.time.time()
+            - data_conversion._CONVERSION_LOCK_STALE_SECONDS
+            - 1
         )
         os.utime(path, (expired, expired))
         with self.assertRaisesRegex(RuntimeError, "Cannot verify the remote owner"):
-            data_system._recover_stale_conversion_lock(path)
+            data_conversion._recover_stale_conversion_lock(path)
         self.assertTrue(path.exists())
 
     def test_lock_initialization_failure_closes_file_and_removes_lock(self) -> None:
@@ -1024,11 +1039,12 @@ class TestDpdataFormatConversion(unittest.TestCase):
         for target in ("os.fstat", "json.dump", "threading.Thread.start"):
             path = self.root / "init.lock"
             with patch(
-                f"deepmd.utils.data_system.{target}", side_effect=OSError("init failed")
+                f"deepmd.utils.data_conversion.{target}",
+                side_effect=OSError("init failed"),
             ):
                 with path.open("x") as lock_file:
                     with self.assertRaisesRegex(OSError, "init failed"):
-                        data_system._ConversionLock(path, lock_file)
+                        data_conversion._ConversionLock(path, lock_file)
                 self.assertTrue(lock_file.closed)
                 self.assertFalse(path.exists())
 

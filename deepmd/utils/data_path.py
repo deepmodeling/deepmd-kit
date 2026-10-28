@@ -8,6 +8,12 @@ from typing import (
     Literal,
 )
 
+from deepmd.utils.data_conversion import (
+    _convert_system_by_dpdata,
+    _is_deepmd_data_format,
+    _iter_conversion_inputs,
+    conversion_will_write_lmdb,
+)
 from deepmd.utils.path import (
     DPOSPath,
     DPPath,
@@ -116,25 +122,23 @@ def process_systems(
             str((Path(root_dir) / file_name).resolve()) + separator + group
             for file_name, separator, group in (path.partition("#") for path in paths)
         ]
-    if fmt is not None:
-        # Keep conversion lazy: native discovery is also imported while the
-        # data-system module initializes. Validate backend support before any
-        # converter can create cache files.
-        from deepmd.utils.data_system import (
-            _is_deepmd_data_format,
-        )
-        from deepmd.utils.data_system import process_systems as convert_systems
-        from deepmd.utils.data_system import (
-            validate_backend_data_config,
-        )
-
-        if not _is_deepmd_data_format(fmt.lower()):
-            validate_backend_data_config(
-                {"format": fmt, "out_format": out_fmt},
-                backend_name="Selected",
-                lmdb_supported="lmdb" in formats,
+    if fmt is not None and not _is_deepmd_data_format(fmt.lower()):
+        # Reject unsupported output before conversion can create cache files.
+        if "lmdb" not in formats and conversion_will_write_lmdb(
+            {"format": fmt, "out_format": out_fmt}
+        ):
+            raise NotImplementedError(
+                "Selected backend does not support LMDB data yet. "
+                "Choose out_format='deepmd/hdf5' for automatic conversion."
             )
-            return convert_systems(paths, patterns, fmt=fmt, out_fmt=out_fmt)
+        return [
+            system
+            for path in paths
+            for input_path in _iter_conversion_inputs(path, patterns)
+            for system in _convert_system_by_dpdata(
+                input_path, fmt, out_fmt, expand_systems=expand_sys_str
+            )
+        ]
     return [
         system
         for path in paths

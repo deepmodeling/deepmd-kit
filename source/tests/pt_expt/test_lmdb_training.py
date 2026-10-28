@@ -99,7 +99,7 @@ class TestConvertedLmdbValidation(unittest.TestCase):
         }
         for factory in (get_neighbor_stat_data, _build_data_system):
             with patch(
-                "deepmd.utils.data_system._convert_system_by_dpdata",
+                "deepmd.utils.data_path._convert_system_by_dpdata",
                 side_effect=[[], RuntimeError("second source reached")],
             ) as convert:
                 with self.assertRaisesRegex(RuntimeError, "second source reached"):
