@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Utilities for the array API."""
 
+import math
 from typing import (
     Any,
 )
@@ -9,6 +10,10 @@ import array_api_compat
 import numpy as np
 from packaging.version import (
     Version,
+)
+
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 
 # Type alias for array_api compatible arrays
@@ -27,22 +32,36 @@ def xp_asarray_nodetach(
     ``torch.asarray`` detaches its input from the autograd graph, so calling
     ``xp.asarray`` on a weight attribute that is already a backend tensor
     (e.g. a ``torch.nn.Parameter`` registered by the pt_expt backend)
-    silently breaks gradient flow to that weight.  This helper converts
-    genuine non-backend data (numpy arrays, python scalars/lists) via
-    ``xp.asarray``; backend tensors are returned as-is, with an optional
-    differentiable dtype cast via ``xp.astype``.
+    silently breaks gradient flow to that weight. Backend tensors already in
+    ``xp`` are therefore returned as-is, with an optional differentiable dtype
+    cast via ``xp.astype``.
 
-    The ``device`` argument only applies to the conversion path: backend
-    tensors are assumed to already live on the working device (they are
-    created together with the inputs).
+    An array from another namespace cannot retain its autograd graph. It is
+    converted through NumPy before entering ``xp``; this also performs the
+    required device-to-host copy when a CUDA-backed model constant is consumed
+    by a NumPy statistics path.
+
+    An array already in ``xp`` normally needs no move, since model buffers and
+    inputs travel together. Tracing breaks that: a CPU export of a
+    CUDA-resident model runs CPU inputs through a module whose buffers stayed
+    on the device, and the mismatch surfaces far downstream as a fake-tensor
+    device error. A requested ``device`` that differs is therefore honoured
+    here, which costs a comparison on the hot path and a copy only in the
+    tracing case.
     """
-    if isinstance(obj, np.ndarray) or not array_api_compat.is_array_api_obj(obj):
-        if dtype is None:
-            return xp.asarray(obj, device=device)
-        return xp.asarray(obj, dtype=dtype, device=device)
-    if dtype is not None and obj.dtype != dtype:
-        obj = xp.astype(obj, dtype)
-    return obj
+    if array_api_compat.is_array_api_obj(obj):
+        if array_api_compat.array_namespace(obj) is xp:
+            if dtype is not None and obj.dtype != dtype:
+                obj = xp.astype(obj, dtype)
+            if device is not None and array_api_compat.device(obj) != device:
+                # ``xp.asarray`` would detach, which is what this helper exists
+                # to avoid; ``to_device`` is the array-API move that does not.
+                obj = array_api_compat.to_device(obj, device)
+            return obj
+        obj = to_numpy_array(obj)
+    if dtype is None:
+        return xp.asarray(obj, device=device)
+    return xp.asarray(obj, dtype=dtype, device=device)
 
 
 # array api adds take_along_axis in https://github.com/data-apis/array-api/pull/816
@@ -99,6 +118,142 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     out = xp.take(arr, indices)
     out = xp.reshape(out, shape)
     return xp_swapaxes(out, axis, -1)
+
+
+def xp_einsum(subscripts: str, *operands: Array) -> Array:
+    """Contract *operands* according to the Einstein summation *subscripts*.
+
+    The array API standard has no ``einsum``, so an array-API-only module has
+    to express a contraction as a chain of ``permute_dims`` / ``reshape`` /
+    ``matmul``. That chain fixes one particular execution order, which is
+    rarely the best one and is opaque to a compiler: a batched contraction
+    written this way reaches PyTorch as ``bmm`` plus transposing copies, where
+    the same expression given to ``torch.einsum`` is free to become a single
+    ``mm`` on a reshaped operand or to fuse into a neighbouring kernel. On the
+    production DPA4 shapes the difference is measurable -- the array-API chain
+    put roughly 150 more contractions per training step on ``bmm`` instead of
+    ``mm``, for about 5% of the step and an extra gigabyte of peak memory.
+
+    Writing the chain by hand is also a correctness-adjacent hazard, because
+    the orders differ by more than a constant. The broadcast spelling
+    ``matmul(x[..., None, :], weight[None, ...])`` makes the node count the
+    matmul batch, so the weight is expanded across it and autograd reduces
+    that whole expansion back to the parameter shape: at production sizes a
+    165 K-element weight became 191 M elements, and its reduce was the single
+    costliest kernel of a training step (a 15x penalty on the affected
+    contraction). Stating the contraction leaves that choice to the backend.
+
+    Every backend this project targets (NumPy, PyTorch, JAX) ships an
+    ``einsum``, so it is dispatched directly where available. The array-API
+    fallback below serves the remaining namespaces (``array_api_strict``, used
+    by the conformance tests) and is restricted to what those need.
+
+    Parameters
+    ----------
+    subscripts : str
+        Subscript specification in explicit form, e.g. ``"bfi,ifo->bfo"``.
+        The implicit form (no ``->``) is rejected: it is ambiguous to the
+        fallback and unused here.
+    *operands : Array
+        Arrays to contract, all from one namespace.
+
+    Returns
+    -------
+    Array
+        The contraction result.
+
+    Raises
+    ------
+    ValueError
+        If *subscripts* is in implicit form, or if the fallback is reached
+        with a specification it does not implement.
+    """
+    if "->" not in subscripts:
+        raise ValueError(f"xp_einsum requires an explicit output: {subscripts!r}")
+    if array_api_compat.is_torch_array(operands[0]):
+        import torch
+
+        return torch.einsum(subscripts, *operands)
+    if array_api_compat.is_numpy_array(operands[0]):
+        return np.einsum(subscripts, *operands)
+    if array_api_compat.is_jax_array(operands[0]):
+        import jax.numpy as jnp
+
+        return jnp.einsum(subscripts, *operands)
+    return _xp_einsum_fallback(subscripts, *operands)
+
+
+def _xp_einsum_fallback(subscripts: str, *operands: Array) -> Array:
+    """Array-API-only ``einsum`` for a two-operand contraction.
+
+    Serves the namespaces without a native ``einsum``. The contraction is
+    reduced to the canonical batched matmul: labels shared by both operands
+    and the output are the batch, labels shared by the operands but absent
+    from the output are contracted, and the rest are free on one side each.
+    Each operand is permuted into ``(batch, free, contracted)`` order,
+    flattened to three axes, multiplied, and restored to the requested output
+    order.
+
+    Correctness rather than throughput is the aim here: the flattening
+    materializes a copy of each operand whenever the permutation is not a
+    view, which a native ``einsum`` would avoid. That trade is deliberate --
+    every backend used for production has an ``einsum``, and this path exists
+    for the conformance namespaces.
+
+    Only a diagonal (a label repeated within one operand) and an implicit
+    output are rejected; both are absent from this codebase.
+    """
+    xp = array_api_compat.array_namespace(*operands)
+    inputs, output = subscripts.split("->")
+    terms = inputs.split(",")
+    if len(terms) != 2:
+        raise ValueError(f"the array-API einsum fallback is binary: {subscripts!r}")
+    left, right = terms
+    lhs, rhs = operands
+    for term, operand in ((left, lhs), (right, rhs)):
+        if len(set(term)) != len(term):
+            raise ValueError(f"a repeated label needs a diagonal: {subscripts!r}")
+        if len(term) != operand.ndim:
+            raise ValueError(f"{subscripts!r} does not match the operand ranks")
+    if set(output) - (set(left) | set(right)):
+        raise ValueError(f"the output carries an unknown label: {subscripts!r}")
+
+    # Classify every label by where it appears. Order follows the output for
+    # the batch and free groups, so the final permutation is a short one.
+    batch = [label for label in output if label in left and label in right]
+    contracted = [label for label in left if label in right and label not in output]
+    left_free = [label for label in output if label in left and label not in right]
+    right_free = [label for label in output if label in right and label not in left]
+    if set(left) - set(batch) - set(contracted) - set(left_free):
+        raise ValueError(f"a label of the left operand vanishes: {subscripts!r}")
+    if set(right) - set(batch) - set(contracted) - set(right_free):
+        raise ValueError(f"a label of the right operand vanishes: {subscripts!r}")
+
+    def prepare(term: str, operand: Array, free: list[str], last: list[str]) -> Array:
+        """Permute to ``(batch, free, last)`` and flatten to three axes."""
+        order = batch + free + last
+        operand = xp.permute_dims(operand, tuple(term.index(l) for l in order))
+        shape = operand.shape
+        split = (len(batch), len(batch) + len(free))
+        return xp.reshape(
+            operand,
+            (
+                math.prod(shape[: split[0]]),
+                math.prod(shape[split[0] : split[1]]),
+                math.prod(shape[split[1] :]),
+            ),
+        )
+
+    sizes = dict(zip(left, lhs.shape, strict=True)) | dict(
+        zip(right, rhs.shape, strict=True)
+    )
+    out = xp.matmul(
+        prepare(left, lhs, left_free, contracted),
+        prepare(right, rhs, contracted, right_free),
+    )
+    order = batch + left_free + right_free
+    out = xp.reshape(out, tuple(sizes[label] for label in order))
+    return xp.permute_dims(out, tuple(order.index(label) for label in output))
 
 
 def xp_take_first_n(arr: Array, dim: int, n: int) -> Array:
@@ -201,6 +356,22 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         import torch
 
         return torch.index_add(x, 0, indices, values)
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1,))
+        values_tensor = values.unwrap()
+        # unsorted_segment_sum rather than scatter_nd: both accumulate repeated
+        # indices, but scatter_nd rejects a destination with no elements even
+        # when the updates are empty too, which a descriptor call with zero
+        # edges legitimately produces.
+        updates = tf.math.unsorted_segment_sum(
+            values_tensor,
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        return xp.asarray(x_tensor + updates)
     else:
         # Fallback for array_api_strict: use basic indexing only
         # may need a more efficient way to do this
@@ -270,6 +441,52 @@ def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
         return torch.scatter_reduce(
             x, 0, index, values, reduce="amax", include_self=True
         )
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1,))
+        values_tensor = values.unwrap()
+        reduced = tf.math.unsorted_segment_max(
+            values_tensor,
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        if values_tensor.dtype.is_floating:
+            # TensorFlow uses the lowest finite value as the identity of
+            # unsorted_segment_max. Restore the true maximum-at identity when
+            # every update for a touched segment element is negative infinity.
+            all_negative_infinity = (
+                tf.math.unsorted_segment_min(
+                    tf.cast(
+                        tf.math.is_inf(values_tensor) & (values_tensor < 0),
+                        tf.int32,
+                    ),
+                    indices_tensor,
+                    tf.shape(x_tensor, out_type=tf.int64)[0],
+                )
+                > 0
+            )
+            reduced = tf.where(
+                all_negative_infinity,
+                tf.cast(float("-inf"), values_tensor.dtype),
+                reduced,
+            )
+        segment_counts = tf.math.unsorted_segment_sum(
+            tf.ones_like(indices_tensor, dtype=tf.int32),
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        touched = segment_counts > 0
+        touched_shape = tf.concat(
+            [
+                tf.reshape(tf.shape(x_tensor, out_type=tf.int64)[0], (1,)),
+                tf.ones(tf.rank(x_tensor) - 1, dtype=tf.int64),
+            ],
+            axis=0,
+        )
+        touched = tf.reshape(touched, touched_shape)
+        return xp.asarray(tf.where(touched, tf.maximum(x_tensor, reduced), x_tensor))
     else:
         # Fallback for array_api_strict: basic indexing only.
         n = indices.shape[0]
@@ -297,6 +514,50 @@ def xp_sigmoid(x: Array) -> Array:
         return torch.sigmoid(x)
     xp = array_api_compat.array_namespace(x)
     return 1 / (1 + xp.exp(-x))
+
+
+def xp_erf(x: Array) -> Array:
+    """Compute the error function.
+
+    Used by the exact (non-approximated) GELU. The array API has no ``erf``, so
+    each backend's own implementation is used; NumPy goes through SciPy, which
+    is already a core dependency.
+    """
+    if array_api_compat.is_jax_array(x):
+        from deepmd.jax.env import (
+            jax,
+        )
+
+        return jax.scipy.special.erf(x)
+    elif array_api_compat.is_torch_array(x):
+        import torch
+
+        return torch.special.erf(x)
+
+    xp = array_api_compat.array_namespace(x)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        # The NumPy round-trip below cannot serve TensorFlow. Under
+        # ``tf.function`` the conversion is refused outright, and in eager mode
+        # it detaches the erf factor from the tape, which leaves the exact GELU
+        # differentiating to Phi(x) alone -- silently, and for every backend
+        # user of ``gelu_erf`` rather than only Uni-Mol.
+        #
+        # Imported directly rather than through ``deepmd.tf2.env`` for symmetry
+        # with the JAX branch above: that module raises at import time unless
+        # eager execution is on, and this branch has to work inside
+        # ``tf.function``, where it is not.
+        return xp.asarray(tf.math.erf(x.unwrap()))
+
+    from scipy.special import (
+        erf,
+    )
+
+    if array_api_compat.is_numpy_array(x):
+        return erf(x)
+    # array-api-strict and friends: round-trip through NumPy.
+    return xp.asarray(erf(np.asarray(x)), dtype=x.dtype)
 
 
 def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
@@ -337,12 +598,12 @@ def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
 def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> Array:
     """Draw ``size`` uniform samples in ``[low, high)`` on ``like``'s device.
 
-    Each backend uses its own generator: torch draws with ``torch.rand`` (as
-    pt does, so ``setup_seed`` replays it, with no host copy -- and a host
-    draw would freeze to a constant under tracing); other backends use
-    :mod:`deepmd.utils.random`, which ``setup_seed`` also seeds. Draws are
-    therefore not comparable across backends -- use only for a per-forward
-    random stream, never where a parity test looks.
+    Each backend uses its own generator: TensorFlow draws with
+    ``tf.random.uniform`` so traced graphs advance the runtime RNG, torch draws
+    with ``torch.rand`` (so ``setup_seed`` replays it without a host copy), and
+    other backends use :mod:`deepmd.utils.random`. Draws are therefore not
+    comparable across backends -- use only for a per-forward random stream,
+    never where a parity test looks.
 
     Parameters
     ----------
@@ -360,6 +621,18 @@ def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> A
     Array
         Samples of shape ``(size,)`` matching ``like``.
     """
+    xp = array_api_compat.array_namespace(like)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        sample_shape = tf.reshape(tf.cast(size, tf.int32), (1,))
+        samples = tf.random.uniform(
+            sample_shape,
+            minval=low,
+            maxval=high,
+            dtype=like.dtype,
+        )
+        return xp.asarray(samples)
     if array_api_compat.is_torch_array(like):
         import torch
 
@@ -368,7 +641,6 @@ def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> A
         )
     from deepmd.utils import random as dp_random
 
-    xp = array_api_compat.array_namespace(like)
     drawn = np.asarray(dp_random.random(size)) * (high - low) + low
     return xp.astype(
         xp_asarray_nodetach(xp, drawn, device=array_api_compat.device(like)),

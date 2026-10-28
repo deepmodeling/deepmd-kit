@@ -125,7 +125,7 @@ def _build_model_dict() -> dict:
         f"expected the combined native-spin DPA4 to expose dim_chg_spin == 2, "
         f"got {model.get_dim_chg_spin()}"
     )
-    assert model.has_default_chg_spin()
+    assert model.get_default_chg_spin() is not None
     model_dict = model.serialize()
     model_dict = jitter_zero_arrays(model_dict, np.random.default_rng(_JITTER_SEED))
     return model_dict

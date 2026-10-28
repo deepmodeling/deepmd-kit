@@ -3,6 +3,9 @@
 composition (twin of ``deepmd.pt_expt.model.dp_linear_model``).
 """
 
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -21,6 +24,9 @@ from deepmd.dpmodel.model.dp_model import (
 )
 from deepmd.dpmodel.model.make_model import (
     make_model,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
@@ -45,3 +51,54 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     ) -> None:
         DPModelCommon.__init__(self)
         DPLinearModel_.__init__(self, *args, **kwargs)
+
+    def compute_fitting_input_stats(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> None:
+        """Recompute the input statistics of every learned sub-model's fitting net."""
+        self.atomic_model.compute_fitting_input_stats(sampled_func)
+
+    @classmethod
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: list[str] | None,
+        local_jdata: dict,
+    ) -> tuple[dict, float | None]:
+        """Update the selection and perform neighbor statistics.
+
+        Updates each learned child in place, skipping analytical
+        (``inner_potential``) and pair-table children, and aggregates the
+        minimum neighbor distance (twin of the pt_expt implementation).
+
+        Parameters
+        ----------
+        train_data : DeepmdDataSystem
+            data used to do neighbor statistics
+        type_map : list[str], optional
+            The name of each type of atoms
+        local_jdata : dict
+            The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
+        """
+        local_jdata_cpy = local_jdata.copy()
+        type_map = local_jdata_cpy["type_map"]
+        min_nbor_dist = None
+        for idx, sub_model in enumerate(local_jdata_cpy["models"]):
+            if sub_model.get("type") == "inner_potential":
+                # analytical child: no descriptor, no selection to update
+                continue
+            if "tab_file" not in sub_model:
+                sub_model, temp_min = DPModelCommon.update_sel(
+                    train_data, type_map, local_jdata_cpy["models"][idx]
+                )
+                local_jdata_cpy["models"][idx] = sub_model
+                if min_nbor_dist is None or temp_min <= min_nbor_dist:
+                    min_nbor_dist = temp_min
+        return local_jdata_cpy, min_nbor_dist

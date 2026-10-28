@@ -30,6 +30,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_einsum,
 )
 from deepmd.dpmodel.utils.lebedev import (
     LEBEDEV_PRECISION_TO_NPOINTS,
@@ -117,8 +118,10 @@ class BaseGridProjector(NativeOP):
             xp, self.to_grid_mat[...], device=array_api_compat.device(embedding)
         )
         to_grid_mat = xp.astype(to_grid_mat, embedding.dtype)
-        # einsum "gj,njc->ngc" as a broadcast batched matmul
-        return xp.matmul(to_grid_mat[None, ...], embedding)
+        # Broadcasting the projector to a per-node batch would turn one GEMM
+        # into N of them; stating the contraction lets the backend fold the
+        # node axis into the GEMM instead.
+        return xp_einsum("gj,njc->ngc", to_grid_mat, embedding)
 
     def from_grid(self, grid: Any) -> Any:
         """Project grid fields ``(N, G, C)`` back to flattened coefficients ``(N, J, C)``."""
@@ -127,8 +130,7 @@ class BaseGridProjector(NativeOP):
             xp, self.from_grid_mat[...], device=array_api_compat.device(grid)
         )
         from_grid_mat = xp.astype(from_grid_mat, grid.dtype)
-        # einsum "jg,ngc->njc" as a broadcast batched matmul
-        return xp.matmul(from_grid_mat[None, ...], grid)
+        return xp_einsum("jg,ngc->njc", from_grid_mat, grid)
 
     def _build_coefficient_index(self) -> np.ndarray:
         """Build the coefficient subset consumed by the projector matrices."""

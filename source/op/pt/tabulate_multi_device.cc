@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <torch/torch.h>
 
+#include <initializer_list>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "tabulate.h"
@@ -18,6 +20,40 @@ void GetTensorDevice(const torch::Tensor& t, std::string& str) {
   }
 }
 
+using NamedTensor = std::pair<const char*, torch::Tensor>;
+
+/**
+ * @brief Validate the tabulation ops' compute-device contract.
+ *
+ * The native tabulation kernels receive raw pointers and choose their CPU/GPU
+ * implementation from the table tensor.  Except for the host-read table_info,
+ * a mixed-device pointer list is not recoverable inside those kernels, so
+ * reject it before any `data_ptr()` call.
+ */
+void CheckTabulateDevices(const torch::Tensor& table_tensor,
+                          const torch::Tensor& table_info_tensor,
+                          std::initializer_list<NamedTensor> tensors) {
+  // GPU wrappers read these interpolation bounds on the host before launching
+  // a kernel, so table_info intentionally remains a CPU-only exception.
+  TORCH_CHECK(table_info_tensor.device().is_cpu(),
+              "table_info must be on the CPU");
+  for (const auto& [name, tensor] : tensors) {
+    if (!tensor.defined()) {
+      continue;
+    }
+    TORCH_CHECK(tensor.device() == table_tensor.device(), name,
+                " must be on the same device as table; table is on ",
+                table_tensor.device(), " but ", name, " is on ",
+                tensor.device());
+  }
+}
+
+void CheckTabulateFusionSeABasisDimension(const int64_t ndescrpt) {
+  TORCH_CHECK(deepmd::is_supported_se_a_basis_dimension(ndescrpt),
+              "The environment basis dimension must be 4, 9, 16, or 25, got ",
+              ndescrpt);
+}
+
 template <typename FPTYPE>
 void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& table_info_tensor,
@@ -27,6 +63,11 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
                               int64_t last_layer_size,
                               bool is_sorted,
                               torch::Tensor& descriptor_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"two_embed", two_embed_tensor},
+                        {"descriptor", descriptor_tensor}});
   // check input shape
   if (table_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of table should be 2");
@@ -57,12 +98,14 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
 
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
+  const int64_t ndescrpt = em_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
                                      two_embed, nloc, nnei, last_layer_size,
-                                     is_sorted);
+                                     is_sorted, ndescrpt);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
@@ -71,7 +114,7 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
                                      two_embed, nloc, nnei, last_layer_size,
-                                     is_sorted);
+                                     is_sorted, ndescrpt);
   }
 }
 
@@ -87,6 +130,15 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
                                   torch::Tensor& dy_dem_x_tensor,
                                   torch::Tensor& dy_dem_tensor,
                                   torch::Tensor& dy_dtwo_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"two_embed", two_embed_tensor},
+                        {"dy", dy_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dy_dem_x", dy_dem_x_tensor},
+                        {"dy_dem", dy_dem_tensor},
+                        {"dy_dtwo", dy_dtwo_tensor}});
   // check input shape
   if (dy_tensor.dim() != 3) {
     throw std::invalid_argument("Dim of dy_tensor should be 3");
@@ -111,13 +163,15 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
+  const int64_t ndescrpt = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_grad_gpu(
         dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
-        nloc, nnei, last_layer_size, is_sorted);
+        nloc, nnei, last_layer_size, is_sorted, ndescrpt);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
@@ -126,7 +180,7 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_grad_cpu(
         dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
-        nloc, nnei, last_layer_size, is_sorted);
+        nloc, nnei, last_layer_size, is_sorted, ndescrpt);
   }
 }
 
@@ -142,6 +196,15 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
                                       const torch::Tensor& descriptor_tensor,
                                       bool is_sorted,
                                       torch::Tensor& dz_dy_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"two_embed", two_embed_tensor},
+                        {"dz_dy_dem_x", dz_dy_dem_x_tensor},
+                        {"dz_dy_dem", dz_dy_dem_tensor},
+                        {"dz_dy_dtwo", dz_dy_dtwo_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dz_dy", dz_dy_tensor}});
   // Check input shape
   if (dz_dy_dem_x_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of dz_dy_dem_x should be 2");
@@ -171,13 +234,15 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
           : dz_dy_dtwo_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
+  const int64_t ndescrpt = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_grad_grad_gpu(
         dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
-        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
+        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted, ndescrpt);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
@@ -189,7 +254,7 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_grad_grad_cpu(
         dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
-        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
+        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted, ndescrpt);
   }
 }
 
@@ -200,6 +265,10 @@ void TabulateFusionSeTForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& em_tensor,
                               int64_t last_layer_size,
                               torch::Tensor& descriptor_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"descriptor", descriptor_tensor}});
   // check input shape
   if (table_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of table should be 2");
@@ -248,6 +317,13 @@ void TabulateFusionSeTGradForward(const torch::Tensor& table_tensor,
                                   const torch::Tensor& descriptor_tensor,
                                   torch::Tensor& dy_dem_x_tensor,
                                   torch::Tensor& dy_dem_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"dy", dy_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dy_dem_x", dy_dem_x_tensor},
+                        {"dy_dem", dy_dem_tensor}});
   // check input shape
   if (dy_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of dy_tensor should be 2");
@@ -295,6 +371,13 @@ void TabulateFusionSeTGradGradForward(const torch::Tensor& table_tensor,
                                       const torch::Tensor& dz_dy_dem_tensor,
                                       const torch::Tensor& descriptor_tensor,
                                       torch::Tensor& dz_dy_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"dz_dy_dem_x", dz_dy_dem_x_tensor},
+                        {"dz_dy_dem", dz_dy_dem_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dz_dy", dz_dy_tensor}});
   // Check input shape
   if (dz_dy_dem_x_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of dz_dy_dem_x should be 2");
@@ -326,7 +409,8 @@ void TabulateFusionSeTGradGradForward(const torch::Tensor& table_tensor,
                                                nnei_i, nnei_j, last_layer_size);
 #else
     throw std::runtime_error(
-        "The input tensor is on the GPU, but the GPU support for the "
+        "The input tensor is on the GPU, but the GPU support for "
+        "the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TORCH_CHECK(last_layer_size <= 1024,
@@ -346,6 +430,10 @@ void TabulateFusionSeTTebdForward(const torch::Tensor& table_tensor,
                                   const torch::Tensor& em_tensor,
                                   int64_t last_layer_size,
                                   torch::Tensor& descriptor_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"descriptor", descriptor_tensor}});
   // check input shape
   if (table_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of table should be 2");
@@ -378,7 +466,8 @@ void TabulateFusionSeTTebdForward(const torch::Tensor& table_tensor,
                                           last_layer_size);
 #else
     throw std::runtime_error(
-        "The input tensor is on the GPU, but the GPU support for the "
+        "The input tensor is on the GPU, but the GPU support for "
+        "the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
@@ -396,6 +485,12 @@ void TabulateFusionSeTTebdGradForward(const torch::Tensor& table_tensor,
                                       const torch::Tensor& dy_tensor,
                                       const torch::Tensor& descriptor_tensor,
                                       torch::Tensor& dy_dem_x_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"dy", dy_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dy_dem_x", dy_dem_x_tensor}});
   // check input shape
   if (dy_tensor.dim() != 4) {
     throw std::invalid_argument("Dim of dy_tensor should be 4");
@@ -424,7 +519,8 @@ void TabulateFusionSeTTebdGradForward(const torch::Tensor& table_tensor,
                                                nnei_j, last_layer_size);
 #else
     throw std::runtime_error(
-        "The input tensor is on the GPU, but the GPU support for the "
+        "The input tensor is on the GPU, but the GPU support "
+        "for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
@@ -443,6 +539,12 @@ void TabulateFusionSeTTebdGradGradForward(
     const torch::Tensor& dz_dy_dem_x_tensor,
     const torch::Tensor& descriptor_tensor,
     torch::Tensor& dz_dy_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em_x", em_x_tensor},
+                        {"em", em_tensor},
+                        {"dz_dy_dem_x", dz_dy_dem_x_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dz_dy", dz_dy_tensor}});
   // Check input shape
   if (dz_dy_dem_x_tensor.dim() != 3) {
     throw std::invalid_argument("Dim of dz_dy_dem_x should be 3");
@@ -470,12 +572,15 @@ void TabulateFusionSeTTebdGradGradForward(
         last_layer_size);
 #else
     throw std::runtime_error(
-        "The input tensor is on the GPU, but the GPU support for the "
+        "The input tensor is on the GPU, but the GPU support "
+        "for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TORCH_CHECK(last_layer_size <= 1024,
-                "In the process of model compression, the size of the "
-                "last layer of embedding net must be less than 1024!");
+                "In the process of model compression, the "
+                "size of the "
+                "last layer of embedding net must be less "
+                "than 1024!");
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_t_tebd_grad_grad_cpu(
         dz_dy, table, table_info, em_x, em, dz_dy_dem_x, nloc, nnei_i, nnei_j,
@@ -489,6 +594,8 @@ void TabulateFusionSeRForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& em_tensor,
                               int64_t last_layer_size,
                               torch::Tensor& descriptor_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em", em_tensor}, {"descriptor", descriptor_tensor}});
   // check input shape
   if (table_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of table should be 2");
@@ -514,7 +621,8 @@ void TabulateFusionSeRForward(const torch::Tensor& table_tensor,
                                      nnei, last_layer_size);
 #else
     throw std::runtime_error(
-        "The input tensor is on the GPU, but the GPU support for the "
+        "The input tensor is on the GPU, but the GPU "
+        "support for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
@@ -530,6 +638,11 @@ void TabulateFusionSeRGradForward(const torch::Tensor& table_tensor,
                                   const torch::Tensor& dy_tensor,
                                   const torch::Tensor& descriptor_tensor,
                                   torch::Tensor& dy_dem_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em", em_tensor},
+                        {"dy", dy_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dy_dem", dy_dem_tensor}});
   // check input shape
   if (dy_tensor.dim() != 3) {
     throw std::invalid_argument("Dim of dy_tensor should be 3");
@@ -554,7 +667,8 @@ void TabulateFusionSeRGradForward(const torch::Tensor& table_tensor,
                                           nloc, nnei, last_layer_size);
 #else
     throw std::runtime_error(
-        "The input tensor is on the GPU, but the GPU support for the "
+        "The input tensor is on the GPU, but the GPU "
+        "support for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
@@ -570,6 +684,11 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
                                       const torch::Tensor& dz_dy_dem_tensor,
                                       const torch::Tensor& descriptor_tensor,
                                       torch::Tensor& dz_dy_tensor) {
+  CheckTabulateDevices(table_tensor, table_info_tensor,
+                       {{"em", em_tensor},
+                        {"dz_dy_dem", dz_dy_dem_tensor},
+                        {"descriptor", descriptor_tensor},
+                        {"dz_dy", dz_dy_tensor}});
   // Check input shape
   if (dz_dy_dem_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of dz_dy_dem should be 2");
@@ -594,12 +713,15 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
         dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
 #else
     throw std::runtime_error(
-        "The input tensor is on the GPU, but the GPU support for the "
+        "The input tensor is on the GPU, but the GPU "
+        "support for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TORCH_CHECK(last_layer_size <= 1024,
-                "In the process of model compression, the size of the "
-                "last layer of embedding net must be less than 1024!");
+                "In the process of model compression, "
+                "the size of the "
+                "last layer of embedding net must be "
+                "less than 1024!");
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_r_grad_grad_cpu(
         dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
@@ -788,8 +910,8 @@ class TabulateFusionSeAOp
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
                        .device(table_tensor.device());
-    torch::Tensor descriptor_tensor =
-        torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
+    torch::Tensor descriptor_tensor = torch::empty(
+        {em_tensor.size(0), em_tensor.size(2), last_layer_size}, options);
     // compute
     // Keep the sorted fold enabled: exclusions are uniform within each se_a
     // type-pair invocation, and compressed forward_lower sorts its nlist first.
@@ -976,8 +1098,8 @@ class TabulateFusionSeAttenOp
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
                        .device(table_tensor.device());
-    torch::Tensor descriptor_tensor =
-        torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
+    torch::Tensor descriptor_tensor = torch::empty(
+        {em_tensor.size(0), em_tensor.size(2), last_layer_size}, options);
     // compute
     TabulateFusionSeAForward<FPTYPE>(
         table_tensor, table_info_tensor, em_x_tensor, em_tensor,

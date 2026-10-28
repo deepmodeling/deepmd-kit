@@ -36,6 +36,22 @@ class TestDescrptSeAttenV2(TestCaseSingleFrameWithNlist):
         TestCaseSingleFrameWithNlist.setUp(self)
         self.device = env.DEVICE
 
+    def test_frozen_degree_gain_remains_frozen_after_deserialization(self) -> None:
+        descriptor = DescrptSeAttenV2(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            lmax=4,
+            attn_layer=0,
+            trainable=False,
+            precision="float64",
+            seed=GLOBAL_SEED,
+        )
+        restored = DescrptSeAttenV2.deserialize(descriptor.serialize())
+        assert restored.se_atten.trainable is False
+        assert not any(parameter.requires_grad for parameter in restored.parameters())
+
     @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
     @pytest.mark.parametrize("to", [False, True])  # type_one_side
     @pytest.mark.parametrize("prec", ["float64"])  # precision

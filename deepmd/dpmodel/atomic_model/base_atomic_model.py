@@ -41,8 +41,18 @@ from deepmd.utils.finetune import (
     map_atom_exclude_types,
     map_pair_exclude_types,
 )
+from deepmd.utils.out_stat import (
+    get_redu_stat_scanner,
+)
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.preset_out_bias import (
+    check_preset_out_bias,
+    normalize_preset_out_bias,
+    preset_out_bias_rows,
+    recover_nonfinite_preset_bias,
+    remap_preset_out_bias,
 )
 
 from .make_base_atomic_model import (
@@ -68,7 +78,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: float | None = None,
-        preset_out_bias: dict[str, Array] | None = None,
+        preset_out_bias: dict | None = None,
         data_stat_protect: float = 1e-2,
     ) -> None:
         super().__init__()
@@ -76,7 +86,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
-        self.preset_out_bias = preset_out_bias
+        self.preset_out_bias = normalize_preset_out_bias(preset_out_bias, type_map)
         self.data_stat_protect = data_stat_protect
         self._observed_type: list[str] | None = None
 
@@ -106,6 +116,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             _restore_observed_type_from_file,
             _save_observed_type_to_file,
             collect_observed_types,
+            observed_types_from_counts,
         )
 
         if preset_observed_type is not None:
@@ -113,8 +124,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         else:
             observed = _restore_observed_type_from_file(stat_file_path)
             if observed is None:
-                sampled = sampled_func()
-                observed = collect_observed_types(sampled, self.type_map)
+                scanner = get_redu_stat_scanner(sampled_func)
+                if scanner is not None:
+                    observed = observed_types_from_counts(
+                        scanner.natoms_total(len(self.type_map)), self.type_map
+                    )
+                else:
+                    observed = collect_observed_types(sampled_func(), self.type_map)
                 _save_observed_type_to_file(stat_file_path, observed)
             self._observed_type = observed
 
@@ -122,6 +138,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
         self.bias_keys: list[str] = list(self.fitting_output_def().keys())
+        check_preset_out_bias(self.preset_out_bias, self.bias_keys)
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
@@ -163,6 +180,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Get the type map."""
         return self.type_map
 
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference into the fitting bias; nothing to fold without a fitting network."""
+        return
+
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return False
@@ -179,6 +200,28 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return False
 
+    def fused_decomposition(self) -> "tuple[Any, Any] | None":
+        """Returns the parts a fused energy-force pipeline evaluates, if any.
+
+        Such a pipeline computes one descriptor-fitting atomic model and,
+        inside the same edge scan, one analytical pair potential. A model that
+        is exactly their plain sum answers with ``(learned, pair_potential)``,
+        either entry ``None`` when absent; every other model answers ``None``
+        (the concrete default) and keeps the autograd lower.
+
+        Generic capability in the sense of :meth:`uses_graph_lower`: the model
+        layer asks instead of reaching into the atomic model for a descriptor,
+        so the answer stays correct for compositions.
+
+        Returns
+        -------
+        tuple[Any, Any] or None
+            The learned descriptor-fitting atomic model and the analytical
+            pair potential, either ``None`` when absent, or ``None`` for a
+            model that is not such a sum.
+        """
+        return None
+
     def supports_native_spin(self) -> bool:
         """Returns whether this atomic model consumes a per-atom spin input.
 
@@ -189,6 +232,54 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         terms) and for compositions.
         """
         return False
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Whether multi-rank inference needs a cross-rank ghost exchange.
+
+        Generic capability (concrete default ``False``): the export layer
+        consults it instead of reaching for a descriptor, so the answer
+        stays correct for descriptor-less models and compositions.
+        """
+        return False
+
+    def supports_edge_parallel(self) -> bool:
+        """Whether this atomic model can run under MPI domain decomposition.
+
+        Default ``True``; a model folding state no single rank observes
+        (e.g. SFPG bridging before its exchange lands) overrides to False.
+        """
+        return True
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Whether the DENSE (nlist) lower implements comm_dict exchange.
+
+        Default ``True`` — dense comm is the production multi-rank path for
+        dpa2/dpa3; DPA4's dense adapter raises on comm_dict and overrides
+        via its descriptor.
+        """
+        return True
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Whether the graph lower emits compact ``center_edge_pairs``
+        (drives the torch>=2.6 unbacked-SymInt export guard).
+        """
+        return False
+
+    def graph_edge_dtype(self) -> str:
+        """Edge-geometry dtype the graph deployment artifact accepts.
+
+        ``"float64"`` is the model-agnostic ABI; geometrically compressed
+        float32 descriptors override to ``"float32"``.
+        """
+        return "float64"
+
+    def supports_graph_export(self) -> bool:
+        """Whether an exportable graph-lower implementation exists.
+
+        A compressed descriptor without its fused opaque operator cannot be
+        traced through the reference tabulation kernel.
+        """
+        return True
 
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
@@ -201,10 +292,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def get_dim_chg_spin(self) -> int:
         """Get the dimension of charge_spin input."""
         return 0
-
-    def has_default_chg_spin(self) -> bool:
-        """Check if the model has default charge_spin values."""
-        return False
 
     def get_default_chg_spin(self) -> list[float] | None:
         """Get the default charge_spin values."""
@@ -260,6 +347,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_pair_exclude(
             map_pair_exclude_types(self.pair_exclude_types, remap_index)
         )
+        self.preset_out_bias = remap_preset_out_bias(self.preset_out_bias, remap_index)
         if has_new_type:
             xp = array_api_compat.array_namespace(self.out_bias)
             extend_shape = [
@@ -672,6 +760,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             merged,
             stat_file_path=stat_file_path,
             bias_adjust_mode="set-by-statistic",
+            observed_type=self.observed_type,
         )
 
     def _make_wrapped_sampler(
@@ -723,6 +812,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                             sample["find_fparam"] = np.bool_(True)
             return sampled
 
+        # the full-data scanner, when the trainer attached one, is part of the
+        # sampler contract and must survive wrapping
+        wrapped_sampler.redu_stat_scanner = get_redu_stat_scanner(sampled_func)
         return wrapped_sampler
 
     def change_out_bias(
@@ -730,6 +822,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         sample_merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
+        observed_type: list[str] | None = None,
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -747,67 +841,131 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
+            An output assigned in `preset_out_bias` is fixed by the preset in both modes:
+            every element in the data must be assigned, the assigned types take the
+            preset value, and the types absent from the data keep zero
+            ('set-by-statistic') or their stored bias ('change-by-statistic'); no
+            statistics are computed, read or written for such an output, whose
+            output std keeps its stored value.
+        preset_out_bias : dict, optional
+            An explicit downstream preset. Assigned outputs use this bias and
+            skip fitting; other outputs fit residuals against the stored bias.
+            The model preset is used when omitted, preserving training and
+            fine-tuning behavior. Pass an empty dict to fit from the data
+            without reapplying the model's stored preset.
+            Before residual fitting, non-finite stored cells covered by the
+            checkpoint preset are recovered; finite adjusted cells are retained.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
+        observed_type : list[str], optional
+            The elements that occur in the data; derived from the sample when
+            not given.
         """
         from deepmd.dpmodel.utils.stat import (
+            collect_observed_types,
             compute_output_stats,
         )
 
-        if bias_adjust_mode == "change-by-statistic":
-            delta_bias, out_std = compute_output_stats(
-                sample_merged,
-                self.get_ntypes(),
-                keys=self.bias_keys,
-                stat_file_path=stat_file_path,
-                model_forward=self._get_forward_wrapper_func(),
-                rcond=self.rcond,
-                preset_bias=self.preset_out_bias,
-                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
-                intensive=self.get_intensive(),
-            )
-            self._store_out_stat(delta_bias, out_std, add=True)
-        elif bias_adjust_mode == "set-by-statistic":
-            bias_out, std_out = compute_output_stats(
-                sample_merged,
-                self.get_ntypes(),
-                keys=self.bias_keys,
-                stat_file_path=stat_file_path,
-                rcond=self.rcond,
-                preset_bias=self.preset_out_bias,
-                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
-                intensive=self.get_intensive(),
-            )
-            self._store_out_stat(bias_out, std_out)
-        else:
+        if bias_adjust_mode not in ("change-by-statistic", "set-by-statistic"):
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+        change = bias_adjust_mode == "change-by-statistic"
+        preset = (
+            normalize_preset_out_bias(preset_out_bias, self.type_map)
+            if preset_out_bias is not None
+            else self.preset_out_bias
+        )
+        distinguish_types = self.get_compute_stats_distinguish_types()
+        check_preset_out_bias(preset, self.bias_keys, distinguish_types)
+        sampled = sample_merged
+        # A per-call override must not propagate a corrupt checkpoint baseline.
+        if change and preset_out_bias is not None and self.preset_out_bias:
+            recovered = recover_nonfinite_preset_bias(
+                self.preset_out_bias,
+                self.type_map,
+                to_numpy_array(self.out_bias),
+                self.bias_keys,
+                [self.atomic_output_def()[kk].size for kk in self.bias_keys],
+            )
+            self._store_out_stat(recovered)
+        # === Step 1. Outputs fixed by the preset ===
+        fitted_keys = self.bias_keys
+        if preset:
+            if observed_type is None:
+                sampled = sample_merged() if callable(sample_merged) else sample_merged
+                observed_type = collect_observed_types(sampled, self.type_map)
+            rows = preset_out_bias_rows(
+                preset,
+                self.type_map,
+                observed_type,
+                to_numpy_array(self.out_bias),
+                self.bias_keys,
+                [self.atomic_output_def()[kk].size for kk in self.bias_keys],
+                keep_unassigned=change,
+                excluded_types=self.atom_exclude_types,
+            )
+            self._store_out_stat(rows)
+            fitted_keys = [kk for kk in self.bias_keys if kk not in rows]
+        if not fitted_keys:
+            return
+        # === Step 2. Outputs fitted from the data ===
+        # The fitted statistics are absolute biases in 'set-by-statistic' mode and
+        # shifts of the stored bias in 'change-by-statistic' mode.
+        forward = self._get_forward_wrapper_func() if change else None
+        out_bias, out_std = compute_output_stats(
+            sampled,
+            self.get_ntypes(),
+            keys=fitted_keys,
+            stat_file_path=stat_file_path,
+            model_forward=forward,
+            rcond=self.rcond,
+            stats_distinguish_types=distinguish_types,
+            intensive=self.get_intensive(),
+        )
+        self._store_out_stat(out_bias, out_std, add=change)
 
     def _store_out_stat(
         self,
         out_bias: dict[str, np.ndarray],
-        out_std: dict[str, np.ndarray],
+        out_std: dict[str, np.ndarray] | None = None,
         add: bool = False,
     ) -> None:
-        """Store output bias and std into the model."""
+        """Store the output bias, and the output std when given, into the model."""
         ntypes = self.get_ntypes()
         out_bias_data = np.array(to_numpy_array(self.out_bias))
         out_std_data = np.array(to_numpy_array(self.out_std))
         for kk in out_bias.keys():
-            assert kk in out_std.keys()
             idx = self._get_bias_index(kk)
             size = self._varsize(self.atomic_output_def()[kk].shape)
             if not add:
                 out_bias_data[idx, :, :size] = out_bias[kk].reshape(ntypes, size)
             else:
                 out_bias_data[idx, :, :size] += out_bias[kk].reshape(ntypes, size)
-            out_std_data[idx, :, :size] = out_std[kk].reshape(ntypes, size)
+            if out_std is not None:
+                out_std_data[idx, :, :size] = out_std[kk].reshape(ntypes, size)
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
     def _get_forward_wrapper_func(self) -> Callable[..., dict[str, np.ndarray]]:
-        """Get a forward wrapper of the atomic model for output bias calculation."""
+        """Get a forward wrapper of the atomic model for output bias calculation.
+
+        The wrapper starts from raw coordinates and therefore has to construct
+        the neighbor representation itself. It builds the one this model
+        declares through :meth:`uses_graph_lower`: a carry-all
+        ``NeighborGraph`` for graph-native models, whose neighbor count follows
+        the geometry, or the fixed-capacity neighbor list sized by
+        :meth:`get_sel` otherwise. Sizing a dense list from ``get_sel`` is not
+        merely wasteful for a graph-native model -- such a model reports no
+        finite capacity, so the allocation is unbounded.
+
+        A native-spin model conditions on a per-atom magnetic moment, which the
+        wrapper forwards on the graph route alone: that scheme implements only
+        the graph lower, so the dense route never carries a moment.
+        """
         import array_api_compat
 
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
         from deepmd.dpmodel.utils.nlist import (
             extend_input_and_build_neighbor_list,
         )
@@ -819,6 +977,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam: np.ndarray | None = None,
             aparam: np.ndarray | None = None,
             charge_spin: np.ndarray | None = None,
+            spin: np.ndarray | None = None,
         ) -> dict[str, np.ndarray]:
             # Get reference array to determine the target array type and device
             # Use out_bias as reference since it's always present
@@ -840,32 +999,73 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 aparam = xp.asarray(aparam, device=device)
             if charge_spin is not None:
                 charge_spin = xp.asarray(charge_spin, device=device)
+            if spin is not None:
+                spin = xp.asarray(spin, device=device)
 
-            (
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-            ) = extend_input_and_build_neighbor_list(
-                coord,
-                atype,
-                self.get_rcut(),
-                self.get_sel(),
-                mixed_types=self.mixed_types(),
-                box=box,
-                # exclusion is a nlist-BUILD transform (decision #18/A4);
-                # forward_common_atomic consumes a pre-excluded nlist.
-                pair_excl=self.pair_excl,
-            )
-            atomic_ret = self.forward_common_atomic(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping=mapping,
-                fparam=fparam,
-                aparam=aparam,
-                charge_spin=charge_spin,
-            )
+            if self.uses_graph_lower():
+                nframes, nloc = atype.shape
+                # Pair exclusion is a neighbor-BUILD transform (decision
+                # #18/A4) on both routes; the graph builder folds it into
+                # ``edge_mask``.
+                graph = build_neighbor_graph(
+                    coord,
+                    atype,
+                    box,
+                    self.get_rcut(),
+                    pair_excl=self.pair_excl,
+                )
+                atomic_ret = self.forward_common_atomic_graph(
+                    graph,
+                    xp.reshape(atype, (-1,)),
+                    fparam=fparam,
+                    aparam=(
+                        xp.reshape(
+                            aparam,
+                            (nframes * nloc, self.get_dim_aparam()),
+                        )
+                        if aparam is not None
+                        else None
+                    ),
+                    charge_spin=charge_spin,
+                    spin=None if spin is None else xp.reshape(spin, (-1, 3)),
+                )
+                # The graph route works on a flat node axis; restore the
+                # per-frame layout the dense route returns.
+                atomic_ret = {
+                    kk: xp.reshape(vv, (nframes, nloc, *vv.shape[1:]))
+                    for kk, vv in atomic_ret.items()
+                }
+            else:
+                if spin is not None:
+                    raise NotImplementedError(
+                        "native-spin output-bias calibration requires the "
+                        "NeighborGraph lower"
+                    )
+                (
+                    extended_coord,
+                    extended_atype,
+                    mapping,
+                    nlist,
+                ) = extend_input_and_build_neighbor_list(
+                    coord,
+                    atype,
+                    self.get_rcut(),
+                    self.get_sel(),
+                    mixed_types=self.mixed_types(),
+                    box=box,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4);
+                    # forward_common_atomic consumes a pre-excluded nlist.
+                    pair_excl=self.pair_excl,
+                )
+                atomic_ret = self.forward_common_atomic(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                )
             # Convert outputs back to numpy arrays
             return {kk: to_numpy_array(vv) for kk, vv in atomic_ret.items()}
 

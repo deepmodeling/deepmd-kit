@@ -159,7 +159,7 @@ class DOSLoss(Loss):
             )
             diff3d = local_pred - local_label  # [nf, natoms, numb_dos]
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
                 l2_local_loss_dos = masked_atom_mean(
                     xp.square(diff3d), maskf, self.numb_dos
@@ -184,7 +184,7 @@ class DOSLoss(Loss):
             )
             diff3d = local_pred_cdf - local_label_cdf  # [nf, natoms, numb_dos]
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
                 l2_local_loss_cdf = masked_atom_mean(
                     xp.square(diff3d), maskf, self.numb_dos
@@ -230,6 +230,21 @@ class DOSLoss(Loss):
 
         more_loss["rmse"] = xp.sqrt(loss)
         return loss, more_loss
+
+    @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return configured global and atomic DOS/CDF metrics."""
+        names = tuple(
+            name
+            for name, enabled in (
+                ("rmse_global_dos", self.has_dos),
+                ("rmse_global_cdf", self.has_cdf),
+                ("rmse_local_dos", self.has_ados),
+                ("rmse_local_cdf", self.has_acdf),
+            )
+            if enabled
+        )
+        return ("rmse", *names)
 
     @property
     def label_requirement(self) -> list[DataRequirementItem]:

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Import to register converters. ``dpa4_nn`` registers the dpmodel -> pt_expt
-# converters for the DPA4 interaction block (activation checkpointing) and the
-# SO(2) modules / radial MLP (opt-in Triton kernels, trainable-weight promotion),
-# so the auto-wrapped descriptor tree picks up those subclasses.
+# converters for the DPA4 interaction block, initial embedding, grid nets,
+# SO(2) modules and radial MLP (activation checkpointing, accelerated inference
+# kernels and trainable-weight promotion), so the auto-wrapped descriptor tree
+# picks up those subclasses.
 from . import (  # noqa: F401
     dpa4_nn,
     repflows,
@@ -24,6 +25,9 @@ from .dpa3 import (
 from .dpa4 import (
     DescrptDPA4,
 )
+from .dpa4c import (
+    DescrptDPA4C,
+)
 from .hybrid import (
     DescrptHybrid,
 )
@@ -42,6 +46,9 @@ from .se_t import (
 from .se_t_tebd import (
     DescrptSeTTebd,
 )
+from .unimol import (
+    DescrptUniMol,
+)
 
 __all__ = [
     "BaseDescriptor",
@@ -49,10 +56,12 @@ __all__ = [
     "DescrptDPA2",
     "DescrptDPA3",
     "DescrptDPA4",
+    "DescrptDPA4C",
     "DescrptHybrid",
     "DescrptSeA",
     "DescrptSeAttenV2",
     "DescrptSeR",
     "DescrptSeT",
     "DescrptSeTTebd",
+    "DescrptUniMol",
 ]

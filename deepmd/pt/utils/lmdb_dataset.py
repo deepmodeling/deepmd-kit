@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """PyTorch LMDB dataset — thin wrapper around framework-agnostic LmdbDataReader."""
 
+import functools
 import logging
+import warnings
 from collections.abc import (
     Iterator,
 )
@@ -18,12 +20,15 @@ from torch.utils.data import (
 
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbBatchIterator,
+    LmdbBatchSampler,
     LmdbDataReader,
+    LmdbDecodeConfig,
     LmdbTestData,
-    SameNlocBatchSampler,
     collate_lmdb_frames,
+    collect_lmdb_sampling_groups,
     compute_block_targets,
     is_lmdb,
+    resolve_per_atom_keys,
 )
 from deepmd.env import (
     get_lmdb_num_workers,
@@ -44,7 +49,10 @@ __all__ = [
 ]
 
 
-def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
+def _collate_lmdb_batch(
+    batch: list[dict[str, Any]],
+    config: LmdbDecodeConfig,
+) -> dict[str, Any]:
     """Collate a list of frame dicts into a torch batch dict.
 
     Pre-converts per-frame numpy arrays to CPU torch tensors (zero-copy when
@@ -53,19 +61,24 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     collate yields a torch dict (``sid`` becomes a torch tensor automatically
     via ``array_api_compat``).
 
-    All frames in the batch must have the same nloc (enforced by
-    SameNlocBatchSampler when mixed_batch=False). For mixed_batch=True,
-    raises NotImplementedError.
-    """
-    if len(batch) > 1:
-        atypes = [d.get("atype") for d in batch if d.get("atype") is not None]
-        if atypes and any(len(a) != len(atypes[0]) for a in atypes):
-            raise NotImplementedError(
-                "mixed_batch collation (frames with different atom counts "
-                "in the same batch) is not yet supported. "
-                "Padding + mask in collate_fn needed."
-            )
+    Frames of different atom counts are padded to the batch maximum; the
+    padded slots carry the phantom atom type. Frames need not agree on label
+    availability: a label only some of them carry is reported unavailable
+    for the whole batch.
 
+    Parameters
+    ----------
+    batch : list[dict[str, Any]]
+        Decoded frames to collate.
+    config : LmdbDecodeConfig
+        Decoder state whose data requirements identify the per-atom fields.
+
+    Returns
+    -------
+    dict[str, Any]
+        One collated batch of CPU tensors.
+    """
+    per_atom_keys = resolve_per_atom_keys(batch[0], config)
     with torch.device("cpu"):
         torch_frames: list[dict[str, Any]] = []
         for f in batch:
@@ -78,7 +91,7 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                 else:
                     tf[key] = torch.as_tensor(val)
             torch_frames.append(tf)
-        return collate_lmdb_frames(torch_frames)
+        return collate_lmdb_frames(torch_frames, per_atom_keys)
 
 
 def _lmdb_batch_to_torch(
@@ -100,15 +113,15 @@ def _lmdb_batch_to_torch(
     return converted
 
 
-class _SameNlocBatchSamplerTorch(Sampler):
-    """Torch Sampler adapter around the framework-agnostic SameNlocBatchSampler.
+class _LmdbBatchSamplerTorch(Sampler):
+    """Torch Sampler adapter around the framework-agnostic LmdbBatchSampler.
 
     PyTorch DataLoader with batch_sampler expects a Sampler that yields
-    lists of indices. This wraps SameNlocBatchSampler (or
-    DistributedSameNlocBatchSampler) to satisfy that.
+    lists of indices. This wraps LmdbBatchSampler (or
+    DistributedLmdbBatchSampler) to satisfy that.
     """
 
-    def __init__(self, inner: SameNlocBatchSampler) -> None:
+    def __init__(self, inner: LmdbBatchSampler) -> None:
         self._inner = inner
 
     def __iter__(self) -> Iterator[list[int]]:
@@ -140,7 +153,7 @@ class LmdbBatchDataLoader:
         num_workers: int | None = None,
     ) -> None:
         self.dataset = dataset
-        self.batch_sampler = _SameNlocBatchSamplerTorch(sampler)
+        self.batch_sampler = _LmdbBatchSamplerTorch(sampler)
         self.sampler = sampler
         self._pin_memory = pin_memory
         self._batch_iterator = LmdbBatchIterator(
@@ -188,9 +201,11 @@ class LmdbDataset(Dataset):
         - ``"max:N"``: ``max(1, floor(N / nloc))`` per nloc group.
         - ``"filter:N"``: same per-nloc formula as ``"max:N"`` and drops
           every frame whose ``nloc > N`` from the dataset.
-    mixed_batch : bool
-        If True, allow different nloc in the same batch (future).
-        If False (default), use SameNlocBatchSampler.
+        - ``"mix:N"``: mixed-nloc batching to a padded-slot budget of ``N``;
+          frames of different atom counts share a batch and the shorter ones
+          are padded with phantom atoms.
+    auto_prob_style : str, optional
+        ``auto_prob`` string used to reweight the original systems.
     """
 
     def __init__(
@@ -198,21 +213,16 @@ class LmdbDataset(Dataset):
         lmdb_path: str,
         type_map: list[str],
         batch_size: int | str = "auto",
-        mixed_batch: bool = False,
         auto_prob_style: str | None = None,
     ) -> None:
-        self._reader = LmdbDataReader(
-            lmdb_path, type_map, batch_size, mixed_batch=mixed_batch
+        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
+        self._collate = functools.partial(
+            _collate_lmdb_batch, config=self._reader.decode_config
         )
 
-        if mixed_batch:
-            # Future: DataLoader with padding collate_fn
-            raise NotImplementedError(
-                "mixed_batch=True is not yet supported. "
-                "Requires padding + mask in collate_fn."
-            )
-
-        # Compute block_targets from auto_prob_style if provided
+        # Compute block_targets from auto_prob_style if provided. An empty
+        # result means the configured probabilities need no reweighting, which
+        # is the common case and worth no log line of its own.
         self._block_targets = None
         if auto_prob_style is not None and self._reader.frame_system_ids is not None:
             self._block_targets = compute_block_targets(
@@ -220,59 +230,52 @@ class LmdbDataset(Dataset):
                 self._reader.nsystems,
                 self._reader.system_nframes,
             )
-            if self._block_targets is not None:
+            if self._block_targets:
                 log.info(
                     f"LMDB auto_prob: {len(self._block_targets)} blocks, "
                     f"nsystems={self._reader.nsystems}"
                 )
 
-        # Same-nloc batching: use SameNlocBatchSampler
-        sampler = SameNlocBatchSampler(
+        sampler = LmdbBatchSampler(
             self._reader,
             shuffle=True,
             block_targets=self._block_targets,
         )
-        self._batch_sampler = _SameNlocBatchSamplerTorch(sampler)
+        self._batch_sampler = _LmdbBatchSamplerTorch(sampler)
 
         with torch.device("cpu"):
             self._inner_dataloader = DataLoader(
                 self,
                 batch_sampler=self._batch_sampler,
                 num_workers=0,
-                collate_fn=_collate_lmdb_batch,
+                collate_fn=self._collate,
             )
 
-        # Per-nloc and label-availability dataloaders for make_stat_input.
-        # These are rebuilt after requirements are registered so statistics
-        # never collate real labels with default-filled placeholders.
+        # Homogeneous dataloaders for make_stat_input, built on first use and
+        # discarded whenever new requirements change how frames decode.
         self._nloc_dataloaders: list[DataLoader] | None = None
 
-    def _rebuild_nloc_dataloaders(self) -> None:
-        """Build homogeneous loaders used by model-stat collection."""
+    def _build_nloc_dataloaders(self) -> None:
+        """Build the homogeneous loaders used by model-stat collection."""
         dataloaders: list[DataLoader] = []
-        for nloc in sorted(self._reader.nloc_groups.keys()):
-            signature_groups = self._reader.group_indices_by_find_signature(
-                self._reader.nloc_groups[nloc]
-            )
-            for signature in sorted(signature_groups):
-                subset = torch.utils.data.Subset(self, signature_groups[signature])
-                bs = self._reader.get_batch_size_for_nloc(nloc)
-                with torch.device("cpu"):
-                    dl = DataLoader(
-                        subset,
-                        batch_size=bs,
-                        shuffle=False,
-                        num_workers=0,
-                        drop_last=False,
-                        collate_fn=_collate_lmdb_batch,
-                    )
-                dataloaders.append(dl)
+        for nloc, indices in collect_lmdb_sampling_groups(self._reader):
+            subset = torch.utils.data.Subset(self, indices)
+            with torch.device("cpu"):
+                dl = DataLoader(
+                    subset,
+                    batch_size=self._reader.get_batch_size_for_nloc(nloc),
+                    shuffle=False,
+                    num_workers=0,
+                    drop_last=False,
+                    collate_fn=self._collate,
+                )
+            dataloaders.append(dl)
         self._nloc_dataloaders = dataloaders
 
     def _get_nloc_dataloaders(self) -> list[DataLoader]:
         """Materialize statistics loaders lazily when none are registered."""
         if self._nloc_dataloaders is None:
-            self._rebuild_nloc_dataloaders()
+            self._build_nloc_dataloaders()
         dataloaders = self._nloc_dataloaders
         if dataloaders is None:
             raise RuntimeError("Failed to initialize LMDB statistics dataloaders")
@@ -295,8 +298,9 @@ class LmdbDataset(Dataset):
         return self._reader.nframes
 
     @property
-    def mixed_batch(self) -> bool:
-        return self._reader.mixed_batch
+    def mixed_nloc(self) -> bool:
+        """Whether one batch may span several atom counts."""
+        return self._reader.mixed_nloc
 
     @property
     def mixed_type(self) -> bool:
@@ -317,7 +321,10 @@ class LmdbDataset(Dataset):
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         self._reader.add_data_requirement(data_requirement)
-        self._rebuild_nloc_dataloaders()
+        # Loaders decode through the registered requirements, so any already
+        # built are stale. They are rebuilt on demand, which spares a run
+        # whose statistics come from a stat file the work entirely.
+        self._nloc_dataloaders = None
 
     def close(self) -> None:
         """Release parent-process LMDB resources."""
@@ -338,14 +345,12 @@ class LmdbDataset(Dataset):
             reader = self._reader
             # Per-block summary: original vs target frames
             block_lines = []
-            total_original = 0
+            total_original = len(reader)
             total_target = 0
-            # Pre-compute block_total_actual for proportional scaling
-            block_total_actual: list[int] = []
+            assigned_systems: set[int] = set()
             for sys_ids, target in self._block_targets:
                 actual = sum(reader.system_nframes[s] for s in sys_ids)
-                block_total_actual.append(actual)
-                total_original += actual
+                assigned_systems.update(sys_ids)
                 total_target += target
                 # Compact range notation: sys[0-146] instead of sys[0,1,2,...,146]
                 if len(sys_ids) > 3:
@@ -358,61 +363,40 @@ class LmdbDataset(Dataset):
                     f"{actual}->{target} (x{ratio:.2f})"
                 )
 
-            # Build sys_id -> block_idx mapping
-            sys_to_block: dict[int, int] = {}
-            for blk_idx, (sys_ids, _) in enumerate(self._block_targets):
-                for sid in sys_ids:
-                    sys_to_block[sid] = blk_idx
-
-            # Compute expanded nloc counts analytically (no actual expansion)
-            expanded_nloc_info = {}
-            for nloc, indices in sorted(reader.nloc_groups.items()):
-                if reader.frame_system_ids is None:
-                    expanded_nloc_info[nloc] = len(indices)
-                    continue
-                # Count indices per block in this nloc group
-                blk_counts: dict[int, int] = {}
-                unassigned = 0
-                for idx in indices:
-                    sid = reader.frame_system_ids[idx]
-                    blk = sys_to_block.get(sid)
-                    if blk is not None:
-                        blk_counts[blk] = blk_counts.get(blk, 0) + 1
-                    else:
-                        unassigned += 1
-                expanded = unassigned
-                for blk_idx, (_, blk_target) in enumerate(self._block_targets):
-                    n_actual = blk_counts.get(blk_idx, 0)
-                    if n_actual == 0:
-                        continue
-                    bta = block_total_actual[blk_idx]
-                    if bta > 0:
-                        t = max(round(blk_target * n_actual / bta), n_actual)
-                    else:
-                        t = n_actual
-                    expanded += t
-                expanded_nloc_info[nloc] = expanded
-
-            total_expanded = sum(expanded_nloc_info.values())
+            # Systems outside explicit blocks retain their original frames.
+            total_target += sum(
+                count
+                for sid, count in enumerate(reader.system_nframes)
+                if sid not in assigned_systems
+            )
             n_groups = len(reader.nloc_groups)
-            ratio_all = total_expanded / total_original if total_original > 0 else 0
+            ratio_all = total_target / total_original if total_original > 0 else 0
 
             log.info(
                 f"LMDB {name} auto_prob: "
-                f"{total_original}->{total_expanded} frames (x{ratio_all:.2f}), "
+                f"{total_original}->{total_target} frames (x{ratio_all:.2f}), "
                 f"{n_groups} nloc groups, {len(self._block_targets)} blocks:"
             )
             for bl in block_lines:
                 log.info(f"  {bl}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        self._reader.set_noise(noise_settings)
+        """Deprecated no-op kept for backward compatibility.
+
+        Mirrors :meth:`LmdbDataReader.set_noise`; see there. It will be
+        removed in a future release.
+        """
+        warnings.warn(
+            "LmdbDataset.set_noise() is deprecated and does nothing. "
+            "The denoising data pipeline it belonged to has been removed; "
+            "drop the call. This shim will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     @property
     def index(self) -> list[int]:
         """Number of batches per logical LMDB dataset."""
-        if not self._block_targets:
-            return self._reader.index
         return [self.total_batch]
 
     @property
@@ -434,8 +418,8 @@ class LmdbDataset(Dataset):
     def dataloaders(self) -> list:
         """Homogeneous dataloaders for make_stat_input.
 
-        Each loader has one nloc and one availability signature, so stat
-        collection sees consistent shapes and scalar ``find_*`` flags.
+        Each loader draws from one atom count and one label availability, so
+        stat collection sees consistent shapes and scalar ``find_*`` flags.
         """
         return self._get_nloc_dataloaders()
 

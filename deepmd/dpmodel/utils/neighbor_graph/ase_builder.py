@@ -169,7 +169,7 @@ def build_neighbor_graph_ase(
         coord,
         box,
         nframe_all,
-        nloc,
+        np.full(nf, nloc, dtype=np.int64),
         layout=layout,
     )
     if pair_excl is not None:

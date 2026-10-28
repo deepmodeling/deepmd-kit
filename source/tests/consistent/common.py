@@ -62,11 +62,16 @@ INSTALLED_PT_EXPT = _PT_EXPT_BACKEND is not None and _PT_EXPT_BACKEND().is_avail
 INSTALLED_JAX = Backend.get_backend("jax")().is_available()
 INSTALLED_PD = Backend.get_backend("paddle")().is_available()
 INSTALLED_ARRAY_API_STRICT = find_spec("array_api_strict") is not None
+# CUDA CI may explicitly omit Paddle while its external artifacts are
+# unavailable, without disabling the remaining cross-backend checks.
+CI_ALLOW_MISSING_PADDLE = os.environ.get("DP_CI_ALLOW_MISSING_PADDLE") == "1"
 
 if (
     os.environ.get("CI")
     and not RUN_TF2_BACKEND_TESTS
-    and not (INSTALLED_TF and INSTALLED_PT and INSTALLED_PD)
+    and not (
+        INSTALLED_TF and INSTALLED_PT and (INSTALLED_PD or CI_ALLOW_MISSING_PADDLE)
+    )
 ):
     raise ImportError("TensorFlow, PyTorch or Paddle should be tested in the CI")
 

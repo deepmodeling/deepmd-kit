@@ -80,6 +80,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 formatted_descript_list.append(BaseDescriptor(**ii))
             else:
                 raise NotImplementedError
+        # A bridged child fades its fitting output through a readout gate,
+        # which a concatenated descriptor has no fitting output to apply to.
+        if any(
+            getattr(descrpt, "bridging_switch", None) is not None
+            for descrpt in formatted_descript_list
+        ):
+            raise NotImplementedError(
+                "A hybrid descriptor cannot carry a bridged child; bridge the "
+                "model with a single descriptor."
+            )
         self.descrpt_list = formatted_descript_list
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):
@@ -129,33 +139,30 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
         )
 
-    def has_default_chg_spin(self) -> bool:
-        """Returns whether the descriptor has a default charge_spin value."""
+    def has_chg_spin_ebd(self) -> bool:
+        """Returns whether any sub-descriptor carries a charge/spin condition."""
+        return any(descrpt.has_chg_spin_ebd() for descrpt in self.descrpt_list)
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Returns the default charge_spin value, or None.
+
+        ``None`` unless every sub-descriptor that supports charge_spin
+        (``get_dim_chg_spin() > 0``) agrees on the same default value.
+        """
         default_chg_spin = None
         found_chg_spin = False
         for descrpt in self.descrpt_list:
             if descrpt.get_dim_chg_spin() == 0:
                 continue
             found_chg_spin = True
-            if not descrpt.has_default_chg_spin():
-                return False
             child_default_chg_spin = descrpt.get_default_chg_spin()
             if child_default_chg_spin is None:
-                return False
+                return None
             if default_chg_spin is None:
                 default_chg_spin = child_default_chg_spin
             elif child_default_chg_spin != default_chg_spin:
-                return False
-        return found_chg_spin
-
-    def get_default_chg_spin(self) -> list[float] | None:
-        """Returns the default charge_spin value, or None."""
-        if not self.has_default_chg_spin():
-            return None
-        for descrpt in self.descrpt_list:
-            if descrpt.get_dim_chg_spin() > 0:
-                return descrpt.get_default_chg_spin()
-        return None
+                return None
+        return default_chg_spin if found_chg_spin else None
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
@@ -184,6 +191,14 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Get the name to each type of atoms."""
         return self.descrpt_list[0].get_type_map()
 
+    def adam_route_patterns(self) -> list[str]:
+        """Collect child AdamW patterns under their indexed parameter paths."""
+        return [
+            f"descrpt_list.{index}.{pattern}"
+            for index, descriptor in enumerate(self.descrpt_list)
+            for pattern in descriptor.adam_route_patterns()
+        ]
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return np.sum([descrpt.get_dim_out() for descrpt in self.descrpt_list]).item()
@@ -211,6 +226,24 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         return any(
             descrpt.has_message_passing_across_ranks() for descrpt in self.descrpt_list
         )
+
+    def supports_edge_parallel(self) -> bool:
+        """Returns whether the hybrid can run under domain decomposition.
+
+        A veto by any child vetoes the whole concatenation: the hybrid
+        output contains that child's block, so the composite is only as
+        parallel-capable as its least capable member.
+        """
+        return all(descrpt.supports_edge_parallel() for descrpt in self.descrpt_list)
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Returns whether every child's DENSE lower implements comm_dict.
+
+        ALL rather than ANY: the dense with-comm trace passes ``comm_dict``
+        to every child, so one child whose dense adapter raises on it (DPA4)
+        makes the whole hybrid's dense comm path non-viable.
+        """
+        return all(descrpt.dense_lower_supports_comm() for descrpt in self.descrpt_list)
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
@@ -386,7 +419,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 fparam=fparam,
                 comm_dict=comm_dict,
                 charge_spin=charge_spin,
-            )
+            )[:5]
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)

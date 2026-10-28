@@ -328,7 +328,8 @@ def _eval_with_jax_md_neighbor(
     # re-applies it. The JAX-MD neighbor list is built without exclusion, so
     # fold it in at this ingestion seam -- otherwise excluded pairs would be
     # silently included (fail-open).
-    pair_excl = getattr(getattr(model, "atomic_model", None), "pair_excl", None)
+    am = getattr(model, "atomic_model", None)
+    pair_excl = am.pair_excl if am is not None else None
     if pair_excl is not None:
         from deepmd.dpmodel.utils.nlist import (
             apply_pair_exclusion_nlist,
