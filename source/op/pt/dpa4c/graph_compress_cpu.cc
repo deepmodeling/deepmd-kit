@@ -11,6 +11,7 @@
 #include <torch/torch.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -216,29 +217,33 @@ Kernels resolve_kernels(int lmax, bool has_modes, bool bridged) {
 
 /// Process-local cache of the re-laid-out tables.
 ///
-/// The artifacts are immutable buffers of a compressed snapshot, so one
-/// entry serves every step of a molecular-dynamics run. The entry holds a
-/// strong reference to the source storage, which both keeps the identifying
-/// pointer from being recycled under a new tensor and makes the lifetime
-/// explicit.
+/// One entry serves every step of a molecular-dynamics run. An entry is
+/// identified by the storage of the radial table, the ordered pair FiLM table
+/// and the mode-mixing table, so a charge-state rebuild that binds new ordered
+/// pair tables beside the same radial table prepares its tables anew. The
+/// entry holds strong references to the source storage, which both keep the
+/// identifying pointers from being recycled under new tensors and make the
+/// lifetime explicit. A call shares ownership of the prepared tables it reads,
+/// so that an entry evicted by a concurrent call stays valid until it ends.
 class TableCache {
  public:
-  const PreparedTables& get(const torch::Tensor& table,
-                            const torch::Tensor& pair_film,
-                            const torch::Tensor& pair_mixing,
-                            const Layout& layout) {
-    const void* key = table.const_data_ptr();
+  std::shared_ptr<const PreparedTables> get(const torch::Tensor& table,
+                                            const torch::Tensor& pair_film,
+                                            const torch::Tensor& pair_mixing,
+                                            const Layout& layout) {
+    const Key key = {table.const_data_ptr(), pair_film.const_data_ptr(),
+                     pair_mixing.const_data_ptr()};
     std::lock_guard<std::mutex> guard(mutex_);
     for (const Entry& entry : entries_) {
       if (entry.key == key && entry.block == layout.block) {
-        return *entry.tables;
+        return entry.tables;
       }
     }
     Entry entry;
     entry.key = key;
     entry.block = layout.block;
     entry.retained = {table, pair_film, pair_mixing};
-    entry.tables = std::make_shared<PreparedTables>(prepare_tables(
+    entry.tables = std::make_shared<const PreparedTables>(prepare_tables(
         table.const_data_ptr<float>(), pair_film.const_data_ptr<float>(),
         layout.modes > 0 ? pair_mixing.const_data_ptr<float>() : nullptr,
         layout));
@@ -249,17 +254,19 @@ class TableCache {
       entries_.erase(entries_.begin());
     }
     entries_.push_back(std::move(entry));
-    return *entries_.back().tables;
+    return entries_.back().tables;
   }
 
  private:
   static constexpr size_t kCapacity = 8;
 
+  using Key = std::array<const void*, 3>;
+
   struct Entry {
-    const void* key;
+    Key key;
     int block;
     std::vector<torch::Tensor> retained;
-    std::shared_ptr<PreparedTables> tables;
+    std::shared_ptr<const PreparedTables> tables;
   };
 
   std::mutex mutex_;
@@ -280,7 +287,7 @@ struct Inputs {
   torch::Tensor row_ptr;
   torch::Tensor atype;
   Layout layout;
-  const PreparedTables* tables;
+  std::shared_ptr<const PreparedTables> tables;
 };
 
 /// Validate and normalize the graph-form inputs.
@@ -319,8 +326,8 @@ Inputs build_inputs(const torch::Tensor& edge_vec,
     inputs.destination_order = destination_order.to(torch::kLong).contiguous();
     inputs.edge_mask = edge_mask.to(torch::kBool).contiguous();
   }
-  inputs.tables = &table_cache().get(table.contiguous(), pair_film.contiguous(),
-                                     pair_mixing.contiguous(), inputs.layout);
+  inputs.tables = table_cache().get(table.contiguous(), pair_film.contiguous(),
+                                    pair_mixing.contiguous(), inputs.layout);
   return inputs;
 }
 
@@ -353,7 +360,7 @@ Arguments build_arguments(const Inputs& inputs,
                             : nullptr;
   arguments.row_ptr = inputs.row_ptr.const_data_ptr<int64_t>();
   arguments.atype = inputs.atype.const_data_ptr<int64_t>();
-  arguments.tables = inputs.tables;
+  arguments.tables = inputs.tables.get();
   arguments.type_embedding = type_embedding.const_data_ptr<float>();
   arguments.readout = readout_matrices.const_data_ptr<float>();
   arguments.coupling_meta = coupling_meta.numel() == 0
