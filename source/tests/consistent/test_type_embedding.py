@@ -242,3 +242,53 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             return 1e-1
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+
+@unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+class TestDpmodelElectronicConfigurationBackend(unittest.TestCase):
+    """Exercise dpmodel with backend weights but portable NumPy constants."""
+
+    def test_econf_input_follows_torch_weights(self) -> None:
+        type_embedding = TypeEmbedNetDP(
+            ntypes=2,
+            neuron=[4, 4],
+            precision="float64",
+            use_econf_tebd=True,
+            type_map=["O", "H"],
+            seed=20260717,
+        )
+        self.assertIsInstance(type_embedding.econf_tebd, np.ndarray)
+        numpy_reference = TypeEmbedNetDP.deserialize(type_embedding.serialize())
+        expected = numpy_reference()
+
+        # Model converters can replace the trainable arrays without touching
+        # portable constants. This reproduces that mixed-backend boundary
+        # directly, without relying on a wrapper that eagerly converts both.
+        for layer in type_embedding.embedding_net.layers:
+            for name in ("w", "b", "idt"):
+                value = getattr(layer, name)
+                if isinstance(value, np.ndarray):
+                    setattr(layer, name, torch.as_tensor(value))
+
+        sample_weight = type_embedding.embedding_net[0]["w"]
+        result = type_embedding()
+
+        self.assertIsInstance(result, torch.Tensor)
+        self.assertEqual(result.dtype, sample_weight.dtype)
+        self.assertEqual(result.device, sample_weight.device)
+        np.testing.assert_allclose(result.detach().cpu().numpy(), expected)
+
+        # change_type_map intentionally regenerates the portable NumPy table;
+        # call-time conversion must continue to follow the existing weights.
+        new_type_map = ["C", "H", "O"]
+        numpy_reference.change_type_map(new_type_map)
+        type_embedding.change_type_map(new_type_map)
+        remapped_result = type_embedding()
+
+        self.assertIsInstance(type_embedding.econf_tebd, np.ndarray)
+        self.assertIsInstance(remapped_result, torch.Tensor)
+        self.assertEqual(remapped_result.dtype, sample_weight.dtype)
+        self.assertEqual(remapped_result.device, sample_weight.device)
+        np.testing.assert_allclose(
+            remapped_result.detach().cpu().numpy(), numpy_reference()
+        )

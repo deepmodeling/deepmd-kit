@@ -11,6 +11,9 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
@@ -21,11 +24,13 @@ from types import (
     SimpleNamespace,
 )
 from unittest.mock import (
+    Mock,
     patch,
 )
 
 import numpy as np
 import optax
+import pytest
 
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
@@ -70,6 +75,9 @@ from deepmd.jax.utils.serialization import (
 )
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -198,6 +206,74 @@ def _minimal_jax_multitask_config(model_params: dict) -> dict:
             "task_b": {},
         },
     }
+
+
+class _RequirementModel:
+    """Minimal model double for trainer requirement-driven output tests."""
+
+    def __init__(self) -> None:
+        self.hessian_enable_calls = 0
+
+    def enable_hessian(self) -> None:
+        self.hessian_enable_calls += 1
+
+    def get_dim_fparam(self) -> int:
+        return 0
+
+
+@patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
+@patch("deepmd.jax.train.trainer.get_model")
+def test_jax_hessian_mode_follows_loss_data_requirement(
+    get_model,
+    build_losses,
+) -> None:
+    """The trainer consumes the loss requirement instead of its prefactors."""
+    model = _RequirementModel()
+    get_model.return_value = model
+    build_losses.return_value = {
+        "Default": SimpleNamespace(
+            label_requirement=[DataRequirementItem("hessian", ndof=1)]
+        )
+    }
+    model_params = {"type_map": ["O"], "descriptor": {}}
+
+    trainer = DPTrainer(_minimal_jax_config(model_params))
+
+    assert model.hessian_enable_calls == 1
+    assert trainer.model_def_script["hessian_mode"] is True
+
+
+@patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
+@patch("deepmd.jax.train.trainer.get_model")
+def test_jax_multitask_hessian_only_enables_requesting_branch(
+    get_model,
+    build_losses,
+) -> None:
+    """Each multi-task branch follows its own loss data requirements."""
+    model_a = _RequirementModel()
+    model_b = _RequirementModel()
+    get_model.side_effect = [model_a, model_b]
+    build_losses.return_value = {
+        "task_a": SimpleNamespace(
+            label_requirement=[DataRequirementItem("hessian", ndof=1)]
+        ),
+        "task_b": SimpleNamespace(
+            label_requirement=[DataRequirementItem("energy", ndof=1)]
+        ),
+    }
+    model_params = {
+        "model_dict": {
+            "task_a": {"type_map": ["O"], "descriptor": {}},
+            "task_b": {"type_map": ["O"], "descriptor": {}},
+        }
+    }
+
+    trainer = DPTrainer(_minimal_jax_multitask_config(model_params))
+
+    assert model_a.hessian_enable_calls == 1
+    assert model_b.hessian_enable_calls == 0
+    assert trainer.model_def_script["model_dict"]["task_a"]["hessian_mode"] is True
+    assert "hessian_mode" not in trainer.model_def_script["model_dict"]["task_b"]
 
 
 def _shared_jax_model_config(*, share_fitting: bool = True) -> dict:
@@ -420,10 +496,26 @@ class _FakeEnvMatStatSe:
 
 
 class _DescriptorWithStats:
+    # stat-behavior flags merge_env_stat reads directly on any
+    # Descriptor/DescriptorBlock (class defaults on the real bases)
+    set_davg_zero = False
+    set_stddev_constant = False
+
     def __init__(self, stats: dict[str, StatItem]) -> None:
         self.stats = stats
         self.davg = np.asarray([0.0], dtype=np.float64)
         self.dstd = np.asarray([1.0], dtype=np.float64)
+
+    def set_stat_mean_and_stddev(
+        self,
+        mean: np.ndarray,
+        stddev: np.ndarray,
+    ) -> None:
+        self.davg = mean
+        self.dstd = stddev
+
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+        return self.davg, self.dstd
 
 
 def test_jax_shared_descriptor_stats_merge_weighted_values() -> None:
@@ -446,6 +538,44 @@ def test_jax_shared_descriptor_stats_merge_weighted_values() -> None:
     np.testing.assert_allclose(base.se_atten.dstd, [np.sqrt(4.5)])
     assert base.stats["env"].number == 4
     assert base.se_atten.stats["env"].number == 4
+
+
+def test_jax_shared_descriptor_stats_preserve_real_nnx_state() -> None:
+    """Shared statistics merge keeps real JAX descriptor arrays registered."""
+    trainer = DPTrainer(
+        _minimal_jax_multitask_config(_shared_jax_model_config()),
+    )
+    sampled = [
+        {
+            "coord": jnp.asarray(
+                [
+                    [
+                        [0.0, 0.0, 0.0],
+                        [0.8, 0.0, 0.0],
+                        [0.0, 0.8, 0.0],
+                    ]
+                ]
+            ),
+            "atype": jnp.asarray([[0, 1, 2]], dtype=jnp.int32),
+            "box": jnp.asarray([np.eye(3) * 8.0]),
+        }
+    ]
+    descriptors = [
+        trainer.models[model_key].get_descriptor() for model_key in ("task_a", "task_b")
+    ]
+    for descriptor in descriptors:
+        descriptor.compute_input_stats(sampled)
+        assert isinstance(descriptor.davg, nnx.Variable)
+        assert isinstance(descriptor.dstd, nnx.Variable)
+
+    base_count = descriptors[0].stats["r_0"].number
+    link_count = descriptors[1].stats["r_0"].number
+    trainer._share_model_params(resume=False)
+
+    shared_descriptor = trainer.models["task_a"].get_descriptor()
+    assert isinstance(shared_descriptor.davg, nnx.Variable)
+    assert isinstance(shared_descriptor.dstd, nnx.Variable)
+    assert shared_descriptor.stats["r_0"].number == base_count + link_count
 
 
 class _FittingWithStats:
@@ -677,6 +807,49 @@ def test_jax_change_bias_after_training_uses_broadcast_on_peer_rank() -> None:
         np.asarray(trainer.models[DEFAULT_TASK_KEY].bias.value),
         [5.0],
     )
+
+
+def test_jax_statistics_failure_reaches_peer_rank() -> None:
+    """Peer ranks fail before model-state synchronization when rank 0 fails."""
+    trainer = _bias_sync_trainer(rank=1)
+    action = Mock()
+
+    with (
+        patch(
+            "jax.experimental.multihost_utils.broadcast_one_to_all",
+            return_value=np.asarray(True),
+        ),
+        pytest.raises(RuntimeError, match="Rank 0 failed during statistics"),
+    ):
+        trainer._run_on_chief(action, operation="statistics initialization")
+
+    action.assert_not_called()
+
+
+def test_jax_shared_statistics_merge_precedes_broadcast_and_binding() -> None:
+    """The chief broadcasts merged statistics before shared parameters bind."""
+    trainer = DPTrainer.__new__(DPTrainer)
+    trainer.multi_task = True
+    trainer.shared_links = {"shared_fitting": object()}
+    events: list[str] = []
+
+    def run_on_chief(action: Callable[[], None], *, operation: str) -> None:
+        assert operation == "shared statistics merge"
+        action()
+
+    def share_model_params(*, resume: bool = False) -> None:
+        events.append("bind" if resume else "merge")
+
+    trainer._run_on_chief = run_on_chief
+    trainer._share_model_params = share_model_params
+    trainer._broadcast_model_states = lambda: events.append("broadcast")
+
+    trainer._synchronize_initial_model_state(
+        state_changed=True,
+        merge_shared_statistics=True,
+    )
+
+    assert events == ["merge", "broadcast", "bind"]
 
 
 class TestJAXTraining(unittest.TestCase):

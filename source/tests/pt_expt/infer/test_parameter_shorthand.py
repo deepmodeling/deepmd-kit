@@ -62,6 +62,10 @@ def _new_backend() -> DeepEval:
         DeepEval.__abstractmethods__ = abstract_methods
     backend.get_dim_fparam = lambda: 2
     backend.get_dim_aparam = lambda: 1
+    # Introspection now distinguishes the archive's folded condition from the
+    # deserialized model's explicit input; this fixture has neither condition.
+    backend._charge_state_fold = None
+    backend.get_dim_chg_spin = lambda: 0
     backend._require_dpmodel = lambda name: None
     backend._is_spin_model = lambda: False
     return backend

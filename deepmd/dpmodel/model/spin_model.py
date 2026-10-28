@@ -14,6 +14,7 @@ import array_api_compat
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_asarray_nodetach,
 )
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
@@ -30,9 +31,67 @@ from deepmd.dpmodel.model.make_model import (
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
 )
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+    remap_preset_out_bias,
+)
 from deepmd.utils.spin import (
     Spin,
 )
+
+_NATOMS_VEC_KEYS = ("natoms", "real_natoms_vec")
+_SPIN_STAT_RESERVED_KEYS = frozenset(
+    {"coord", "atype", "spin", "natoms", "real_natoms_vec", "aparam"}
+)
+
+
+def _expand_natoms_vec_for_virtual_spin(natoms: Array) -> Array:
+    """Expand a DeePMD natoms vector for the virtual-atom spin layout.
+
+    The leading two entries count local and extended atoms; they are doubled
+    to reflect real/virtual atom pairs. Per-type counts are duplicated so that
+    virtual spin slots inherit the population of their real counterparts.
+
+    Parameters
+    ----------
+    natoms : Array
+        Natoms vector with shape ``(nframes, ntypes_real + 2)``.
+
+    Returns
+    -------
+    Array
+        Expanded vector with shape ``(nframes, 2 * ntypes_real + 2)``.
+    """
+    xp = array_api_compat.array_namespace(natoms)
+    return xp.concat(
+        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]],
+        axis=-1,
+    )
+
+
+def _pack_spin_stat_sample(
+    spin_model: "SpinModel",
+    sample: dict[str, Any],
+) -> dict[str, Any]:
+    """Transform one statistics sample into the virtual-atom spin layout."""
+    coord_updated, atype_updated, _ = spin_model.process_spin_input(
+        sample["coord"], sample["atype"], sample["spin"]
+    )
+    packed: dict[str, Any] = {
+        "coord": coord_updated,
+        "atype": atype_updated,
+    }
+    if "aparam" in sample:
+        packed["aparam"] = spin_model.expand_aparam(
+            sample["aparam"], atype_updated.shape[1]
+        )
+    for key in _NATOMS_VEC_KEYS:
+        if key in sample:
+            packed[key] = _expand_natoms_vec_for_virtual_spin(sample[key])
+    for key, value in sample.items():
+        if key not in _SPIN_STAT_RESERVED_KEYS:
+            packed[key] = value
+    return packed
 
 
 class SpinModel(NativeOP):
@@ -55,6 +114,8 @@ class SpinModel(NativeOP):
         \boldsymbol{\tau}_i = \mathbf{F}_i^{\mathrm{virtual}} \times \boldsymbol{\sigma}_i.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask", "virtual_scale_mask")
+
     def __init__(
         self,
         backbone_model: DPAtomicModel,
@@ -71,15 +132,37 @@ class SpinModel(NativeOP):
         dp_atomic_model = self.backbone_model.get_dp_atomic_model()
         if dp_atomic_model is not None:
             descriptor = getattr(dp_atomic_model, "descriptor", None)
-            if descriptor is not None and hasattr(descriptor, "disable_graph_lower"):
+            if descriptor is not None:
+                # No-op on descriptors without a graph lower (BaseDescriptor
+                # concrete default).
                 descriptor.disable_graph_lower()
         self.ntypes_real = self.spin.ntypes_real
+        # Both per-type tables follow from ``use_spin`` and ``virtual_scale``,
+        # so they are rebuilt here rather than adopted from a checkpoint.
         self.virtual_scale_mask = self.spin.get_virtual_scale_mask()
         self.spin_mask = self.spin.get_spin_mask()
 
     def _to_xp(self, arr: Any, xp: Any, ref_arr: Any) -> Any:
-        """Convert a numpy array to the same namespace as ref_arr."""
-        return xp.asarray(arr, device=array_api_compat.device(ref_arr))
+        """Convert an array to the namespace and device of ``ref_arr``."""
+        return xp_asarray_nodetach(
+            xp,
+            arr,
+            device=array_api_compat.device(ref_arr),
+        )
+
+    def _lookup_type_values(self, values: Any, atype: Array, ref_arr: Array) -> Array:
+        """Gather per-type values while mapping virtual atom types to zero.
+
+        Negative atom types are padding placeholders, not Python-style indices
+        from the end of the type table. Their spin scale and mask must remain
+        zero until the backbone model applies its normal virtual-atom mask.
+        """
+        xp = array_api_compat.array_namespace(ref_arr)
+        values = self._to_xp(values, xp, ref_arr)
+        real_atom = atype >= 0
+        safe_atype = xp.where(real_atom, atype, xp.zeros_like(atype))
+        gathered = values[safe_atype]
+        return xp.where(real_atom, gathered, xp.zeros_like(gathered))
 
     def process_spin_input(
         self, coord: Array, atype: Array, spin: Array
@@ -97,9 +180,12 @@ class SpinModel(NativeOP):
         """
         xp = array_api_compat.array_namespace(coord)
         nframes, nloc = coord.shape[:-1]
-        atype_spin = xp.concat([atype, atype + self.ntypes_real], axis=-1)
-        vsm = self._to_xp(self.virtual_scale_mask, xp, coord)
-        spin_dist = spin * xp.reshape(vsm[atype], (nframes, nloc, 1))
+        virtual_atype = xp.where(atype >= 0, atype + self.ntypes_real, atype)
+        atype_spin = xp.concat([atype, virtual_atype], axis=-1)
+        spin_dist = spin * xp.reshape(
+            self._lookup_type_values(self.virtual_scale_mask, atype, coord),
+            (nframes, nloc, 1),
+        )
         virtual_coord = coord + spin_dist
         coord_spin = xp.concat([coord, virtual_coord], axis=-2)
         # for spin virial correction
@@ -151,12 +237,18 @@ class SpinModel(NativeOP):
         xp = array_api_compat.array_namespace(extended_coord)
         nframes, nall = extended_coord.shape[:2]
         nloc = nlist.shape[1]
-        vsm = self._to_xp(self.virtual_scale_mask, xp, extended_coord)
         extended_spin_dist = extended_spin * xp.reshape(
-            vsm[extended_atype], (nframes, nall, 1)
+            self._lookup_type_values(
+                self.virtual_scale_mask, extended_atype, extended_coord
+            ),
+            (nframes, nall, 1),
         )
         virtual_extended_coord = extended_coord + extended_spin_dist
-        virtual_extended_atype = extended_atype + self.ntypes_real
+        virtual_extended_atype = xp.where(
+            extended_atype >= 0,
+            extended_atype + self.ntypes_real,
+            extended_atype,
+        )
         extended_coord_updated = self.concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
         )
@@ -185,12 +277,16 @@ class SpinModel(NativeOP):
         # pair exclusion in here (decision #18/A4 — the lower consumes a
         # pre-excluded nlist and never re-applies it). No-op when the backbone
         # has no pair_exclude_types.
-        pair_excl = getattr(
-            self.backbone_model.atomic_model
+        # ``backbone_model`` is either a full ``make_model``-wrapped model
+        # (exposes ``.atomic_model``) or, per the ``__init__`` annotation,
+        # a bare ``DPAtomicModel`` -- which always carries ``pair_excl``
+        # (set unconditionally by ``BaseAtomicModel.__init__`` via
+        # ``reinit_pair_exclude``, ``None`` when no exclusion is
+        # configured). Direct access, not a defensive ``getattr`` probe.
+        pair_excl = (
+            self.backbone_model.atomic_model.pair_excl
             if hasattr(self.backbone_model, "atomic_model")
-            else self.backbone_model,
-            "pair_excl",
-            None,
+            else self.backbone_model.pair_excl
         )
         if pair_excl is not None:
             from deepmd.dpmodel.utils.nlist import (
@@ -222,9 +318,18 @@ class SpinModel(NativeOP):
         if virtual_scale:
             mask = self._to_xp(self.virtual_scale_mask, xp, out_tensor)
         else:
-            mask = self._to_xp(self.spin_mask, xp, out_tensor)
-        atomic_mask = xp.reshape(mask[atype], (nframes, nloc, 1))
-        out_real, out_mag = out_tensor[:, :nloc], out_tensor[:, nloc:]
+            # spin_mask is integral; it multiplies out_mag below, and the array
+            # API does not promote across kinds.
+            mask = xp.astype(
+                self._to_xp(self.spin_mask, xp, out_tensor), out_tensor.dtype
+            )
+        atomic_mask = xp.reshape(
+            self._lookup_type_values(mask, atype, out_tensor),
+            (nframes, nloc, 1),
+        )
+        # Trailing ellipsis: the array API does not specify numpy's implicit
+        # expansion of a partial multi-axis index.
+        out_real, out_mag = out_tensor[:, :nloc, ...], out_tensor[:, nloc:, ...]
         if add_mag:
             out_real = out_real + out_mag
         out_mag = xp.reshape(
@@ -248,19 +353,27 @@ class SpinModel(NativeOP):
         if virtual_scale:
             mask = self._to_xp(self.virtual_scale_mask, xp, extended_out_tensor)
         else:
-            mask = self._to_xp(self.spin_mask, xp, extended_out_tensor)
-        atomic_mask = xp.reshape(mask[extended_atype], (nframes, nall, 1))
+            # spin_mask is integral; it multiplies extended_out_mag below, and
+            # the array API does not promote across kinds.
+            mask = xp.astype(
+                self._to_xp(self.spin_mask, xp, extended_out_tensor),
+                extended_out_tensor.dtype,
+            )
+        atomic_mask = xp.reshape(
+            self._lookup_type_values(mask, extended_atype, extended_out_tensor),
+            (nframes, nall, 1),
+        )
         extended_out_real = xp.concat(
             [
-                extended_out_tensor[:, :nloc],
-                extended_out_tensor[:, nloc + nloc : nloc + nall],
+                extended_out_tensor[:, :nloc, ...],
+                extended_out_tensor[:, nloc + nloc : nloc + nall, ...],
             ],
             axis=1,
         )
         extended_out_mag = xp.concat(
             [
-                extended_out_tensor[:, nloc : nloc + nloc],
-                extended_out_tensor[:, nloc + nall :],
+                extended_out_tensor[:, nloc : nloc + nloc, ...],
+                extended_out_tensor[:, nloc + nall :, ...],
             ],
             axis=1,
         )
@@ -372,43 +485,19 @@ class SpinModel(NativeOP):
 
         @functools.lru_cache
         def spin_sampled_func() -> list[dict[str, Any]]:
-            sampled = sampled_func()
-            spin_sampled = []
-            for sys in sampled:
-                coord_updated, atype_updated, _ = self.process_spin_input(
-                    sys["coord"], sys["atype"], sys["spin"]
-                )
-                tmp_dict = {
-                    "coord": coord_updated,
-                    "atype": atype_updated,
-                }
-                if "aparam" in sys:
-                    tmp_dict["aparam"] = self.expand_aparam(
-                        sys["aparam"], atype_updated.shape[1]
-                    )
-                if "natoms" in sys:
-                    natoms = sys["natoms"]
-                    xp = array_api_compat.array_namespace(natoms)
-                    tmp_dict["natoms"] = xp.concat(
-                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], axis=-1
-                    )
-                for item_key in sys:
-                    if item_key not in [
-                        "coord",
-                        "atype",
-                        "spin",
-                        "natoms",
-                        "aparam",
-                    ]:
-                        tmp_dict[item_key] = sys[item_key]
-                spin_sampled.append(tmp_dict)
-            return spin_sampled
+            return [_pack_spin_stat_sample(self, sample) for sample in sampled_func()]
 
         self.backbone_model.compute_or_load_stat(
             spin_sampled_func,
             stat_file_path,
             preset_observed_type=preset_observed_type,
         )
+
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the backbone's AdamW patterns with its parameter path."""
+        return [
+            f"backbone_model.{p}" for p in self.backbone_model.adam_route_patterns()
+        ]
 
     def get_type_map(self) -> list[str]:
         """Get the type map."""
@@ -419,6 +508,10 @@ class SpinModel(NativeOP):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the backbone fitting into its bias."""
+        self.backbone_model.fold_vacuum_reference()
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -506,27 +599,7 @@ class SpinModel(NativeOP):
 
         @functools.lru_cache
         def spin_sampled_func() -> list[dict]:
-            sampled = sampled_func()
-            spin_sampled = []
-            for sys in sampled:
-                coord_updated, atype_updated, _ = self.process_spin_input(
-                    sys["coord"], sys["atype"], sys["spin"]
-                )
-                tmp_dict = {
-                    "coord": coord_updated,
-                    "atype": atype_updated,
-                }
-                if "natoms" in sys:
-                    natoms = sys["natoms"]
-                    xp = array_api_compat.array_namespace(natoms)
-                    tmp_dict["natoms"] = xp.concat(
-                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], axis=-1
-                    )
-                for item_key in sys.keys():
-                    if item_key not in ["coord", "atype", "spin", "natoms"]:
-                        tmp_dict[item_key] = sys[item_key]
-                spin_sampled.append(tmp_dict)
-            return spin_sampled
+            return [_pack_spin_stat_sample(self, sample) for sample in sampled_func()]
 
         return self.backbone_model.atomic_model._make_wrapped_sampler(spin_sampled_func)
 
@@ -534,6 +607,7 @@ class SpinModel(NativeOP):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         bias_adjust_mode: str = "change-by-statistic",
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -551,13 +625,24 @@ class SpinModel(NativeOP):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        preset_out_bias : dict, optional
+            Preset on the public real-atom type map. It is normalized and
+            extended with unassigned virtual types before forwarding. Omit
+            to retain the model preset; an empty dict fits without fixing
+            preset outputs. Non-finite stored cells covered by a checkpoint
+            preset are recovered before residual fitting.
         """
+        preset_out_bias = remap_preset_out_bias(
+            normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
+            list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),
+        )
         spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         self.backbone_model.change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(
@@ -632,6 +717,8 @@ class SpinModel(NativeOP):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             If calculate the atomic virial.
+        charge_spin
+            Frame-level charge and spin conditioning.
 
         Returns
         -------
@@ -670,6 +757,8 @@ class SpinModel(NativeOP):
             model_output_type.pop(model_output_type.index("mask"))
         var_name = model_output_type[0]
         model_ret[f"{var_name}"] = model_ret[f"{var_name}"][:, :nloc]
+        if "mask" in model_ret:
+            model_ret["mask"] = model_ret["mask"][:, :nloc]
         if (
             self.backbone_model.do_grad_r(var_name)
             and model_ret.get(f"{var_name}_derv_r") is not None
@@ -698,8 +787,10 @@ class SpinModel(NativeOP):
         if "mask_mag" not in model_ret:
             xp = array_api_compat.array_namespace(atype)
             nframes_m, nloc_m = atype.shape[:2]
-            vsm = self._to_xp(self.virtual_scale_mask, xp, atype)
-            atomic_mask = xp.reshape(vsm[atype], (nframes_m, nloc_m, 1))
+            atomic_mask = xp.reshape(
+                self._lookup_type_values(self.virtual_scale_mask, atype, atype),
+                (nframes_m, nloc_m, 1),
+            )
             model_ret["mask_mag"] = atomic_mask > 0.0
         return model_ret
 
@@ -734,6 +825,8 @@ class SpinModel(NativeOP):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             If calculate the atomic virial.
+        charge_spin
+            Frame-level charge and spin conditioning.
 
         Returns
         -------
@@ -761,6 +854,8 @@ class SpinModel(NativeOP):
         model_predict[var_name] = model_ret[f"{var_name}_redu"]
         if "mask_mag" in model_ret:
             model_predict["mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if (
             self.backbone_model.do_grad_r(var_name)
             and model_ret.get(f"{var_name}_derv_r") is not None
@@ -814,6 +909,10 @@ class SpinModel(NativeOP):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             whether calculate atomic virial
+        comm_dict
+            Optional MPI communication metadata for parallel inference.
+        charge_spin
+            Frame-level charge and spin conditioning.
 
         Returns
         -------
@@ -850,6 +949,8 @@ class SpinModel(NativeOP):
             model_output_type.pop(model_output_type.index("mask"))
         var_name = model_output_type[0]
         model_ret[f"{var_name}"] = model_ret[f"{var_name}"][:, :nloc]
+        if "mask" in model_ret:
+            model_ret["mask"] = model_ret["mask"][:, :nloc]
         if (
             self.backbone_model.do_grad_r(var_name)
             and model_ret.get(f"{var_name}_derv_r") is not None
@@ -881,8 +982,12 @@ class SpinModel(NativeOP):
         if "mask_mag" not in model_ret:
             xp = array_api_compat.array_namespace(extended_atype)
             nall = extended_atype.shape[1]
-            vsm = self._to_xp(self.virtual_scale_mask, xp, extended_atype)
-            atomic_mask = xp.reshape(vsm[extended_atype], (nframes, nall, 1))
+            atomic_mask = xp.reshape(
+                self._lookup_type_values(
+                    self.virtual_scale_mask, extended_atype, extended_atype
+                ),
+                (nframes, nall, 1),
+            )
             model_ret["mask_mag"] = atomic_mask > 0.0
         return model_ret
 
@@ -918,6 +1023,8 @@ class SpinModel(NativeOP):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             whether calculate atomic virial
+        charge_spin
+            Frame-level charge and spin conditioning.
 
         Returns
         -------
@@ -946,6 +1053,8 @@ class SpinModel(NativeOP):
         model_predict[var_name] = model_ret[f"{var_name}_redu"]
         if "mask_mag" in model_ret:
             model_predict["extended_mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if (
             self.backbone_model.do_grad_r(var_name)
             and model_ret.get(f"{var_name}_derv_r") is not None
@@ -994,4 +1103,6 @@ class SpinModel(NativeOP):
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = deepcopy(out_def_data[f"{var_name}_derv_c"])
             output_def["atom_virial"].squeeze(-2)
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
         return output_def

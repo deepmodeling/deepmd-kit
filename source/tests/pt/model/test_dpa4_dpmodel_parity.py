@@ -397,8 +397,8 @@ class TestRadialParity:
         np.testing.assert_array_equal(np.asarray(res)[r[:, 0] >= self.rcut], 0.0)
 
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
-    @pytest.mark.parametrize("exponent", [5, 7])  # envelope exponent
-    def test_radial_basis(self, basis_type, exponent) -> None:
+    @pytest.mark.parametrize("exponent", [0, 5, 7])
+    def test_radial_basis(self, basis_type: str, exponent: int) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             RadialBasis as DPRadialBasis,
         )
@@ -423,11 +423,100 @@ class TestRadialParity:
         # pt state_dict key contract: only the trainable frequencies
         assert list(serialized["@variables"]) == ["adam_freqs"]
         dp_mod = DPRadialBasis.deserialize(serialized)
+        assert dp_mod.exponent == exponent
+        assert (dp_mod.envelope is None) is (exponent == 0)
         r = self._r_grid()
         assert_parity(dp_mod.call(r), pt_mod(to_pt(r)))
 
+    @pytest.mark.parametrize("trainable", [True, False])
+    @pytest.mark.parametrize("exponent", [0, 7])
+    def test_radial_basis_roundtrip_preserves_trainable(
+        self, trainable: bool, exponent: int
+    ) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        radial_basis = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=8,
+            dtype=torch.float64,
+            trainable=trainable,
+            exponent=exponent,
+        )
+        restored = PTRadialBasis.deserialize(radial_basis.serialize())
+
+        assert restored.trainable is trainable
+        assert restored.adam_freqs.requires_grad is trainable
+        assert restored.exponent == exponent
+        assert (restored.envelope is None) is (exponent == 0)
+
+    def test_radial_basis_deserializes_version_one_without_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        radial_basis = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=8,
+            dtype=torch.float64,
+        )
+        data = radial_basis.serialize()
+        data["@version"] = 1
+        data["config"].pop("trainable")
+        restored = PTRadialBasis.deserialize(data)
+
+        assert restored.trainable is True
+        assert restored.adam_freqs.requires_grad is True
+        assert restored.exponent == 7
+        assert restored.envelope is not None
+
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
+    @pytest.mark.parametrize("apply_envelope", [None, True, False])
+    def test_radial_basis_version_one_envelope(
+        self, basis_type: str, apply_envelope: bool | None
+    ) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        exponent = 0 if apply_envelope is False else 5
+        reference = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=4,
+            basis_type=basis_type,
+            exponent=exponent,
+            dtype=torch.float64,
+        )
+        with torch.no_grad():
+            reference.adam_freqs.add_(0.01)
+        data = reference.serialize()
+        data["@version"] = 1
+        data["config"]["exponent"] = 5
+        if apply_envelope is not None:
+            data["config"]["apply_envelope"] = apply_envelope
+        r = self._r_grid()
+        expected = reference(to_pt(r))
+        dp_restored = DPRadialBasis.deserialize(data)
+        pt_restored = PTRadialBasis.deserialize(data)
+        assert_parity(dp_restored.call(r), expected)
+        torch.testing.assert_close(
+            pt_restored(to_pt(r)), expected, rtol=PT_RTOL, atol=PT_ATOL
+        )
+        for restored in (dp_restored, pt_restored):
+            assert restored.exponent == exponent
+            assert (restored.envelope is None) is (exponent == 0)
+            serialized = restored.serialize()
+            assert serialized["@version"] == 2
+            assert "apply_envelope" not in serialized["config"]
+        assert data["config"]["exponent"] == 5
+
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
-    def test_radial_basis_roundtrip(self, basis_type) -> None:
+    @pytest.mark.parametrize("exponent", [0, 7])
+    def test_radial_basis_roundtrip(self, basis_type: str, exponent: int) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             RadialBasis as DPRadialBasis,
         )
@@ -437,13 +526,45 @@ class TestRadialParity:
             basis_type=basis_type,
             n_radial=12,
             precision="float64",
-            exponent=7,
+            exponent=exponent,
         )
         dp_mod2 = DPRadialBasis.deserialize(dp_mod.serialize())
+        assert dp_mod2.exponent == exponent
+        assert (dp_mod2.envelope is None) is (exponent == 0)
         r = self._r_grid()
         np.testing.assert_array_equal(
             np.asarray(dp_mod.call(r)), np.asarray(dp_mod2.call(r))
         )
+
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
+    def test_radial_basis_envelope_modes(self, basis_type) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+
+        def make(exponent: int) -> DPRadialBasis:
+            return DPRadialBasis(
+                rcut=self.rcut,
+                basis_type=basis_type,
+                n_radial=12,
+                precision="float64",
+                exponent=exponent,
+            )
+
+        enveloped, raw = make(7), make(0)
+        assert raw.envelope is None
+        r = self._r_grid()
+        enveloped_value = np.asarray(enveloped.call(r))
+        raw_value = np.asarray(raw.call(r))
+        # the two modes differ by exactly one envelope factor
+        np.testing.assert_array_equal(
+            enveloped_value, raw_value * np.asarray(enveloped.envelope(r))
+        )
+        # only the enveloped mode is truncated; consumers of the raw mode owe
+        # the basis one cutoff factor of their own
+        outside = r[:, 0] > self.rcut
+        np.testing.assert_array_equal(enveloped_value[outside], 0.0)
+        assert np.any(raw_value[outside] != 0.0)
 
     @pytest.mark.parametrize(
         "mlp_layers",
@@ -1917,6 +2038,8 @@ def _build_so2_edge_data(
     a parity failure. ``edge_env`` is the exception: the production
     ``build_edge_cache`` multiplies the envelope by the slot mask, so it is
     exactly zero on invalid slots, and this fixture mirrors that contract.
+    ``with_gate`` multiplies a random source gate into the envelope, as the
+    production builder does for a bridged model.
 
     ``n_radial``: when not None, ``edge_rbf`` is filled with random values of
     width ``n_radial`` (garbage in masked slots too); otherwise it stays the
@@ -1973,9 +2096,11 @@ def _build_so2_edge_data(
     # baseline aggregation (n_atten_head=0) relies on this; the attention path
     # masks independently, so both stay parity-correct.
     edge_env = rng.uniform(0.2, 1.0, size=(n_edge, 1)) * mask[:, None]
+    if with_gate:
+        # A bridged cache folds the source gate into the envelope.
+        edge_env = edge_env * rng.uniform(0.1, 1.0, size=(n_edge, 1))
     deg = ((edge_env[:, 0] ** 2) * mask).reshape(nloc, nnei).sum(axis=1)
     inv_sqrt_deg = (1.0 / np.sqrt(deg + 1.0)).reshape(nloc, 1, 1)
-    edge_src_gate = rng.uniform(0.1, 1.0, size=(n_edge, 1)) if with_gate else None
     radial = rng.normal(size=(n_edge, lmax + 1, channels))
     x = rng.normal(size=(nloc, dim_full, channels))
 
@@ -1991,7 +2116,6 @@ def _build_so2_edge_data(
         inv_sqrt_deg=t(inv_sqrt_deg),
         D_full=t(D_full[valid]),
         Dt_full=t(Dt_full[valid]),
-        edge_src_gate=None if edge_src_gate is None else t(edge_src_gate[valid]),
     )
     dp_cache = EdgeCache(
         src=src,
@@ -2004,7 +2128,6 @@ def _build_so2_edge_data(
         inv_sqrt_deg=inv_sqrt_deg,
         D_full=D_full,
         Dt_full=Dt_full,
-        edge_src_gate=edge_src_gate,
         edge_mask=mask,
     )
     return pt_cache, dp_cache, radial, radial[valid], x, valid
@@ -2197,8 +2320,8 @@ class TestSO2Parity:
     @pytest.mark.parametrize(
         "masked", ["none", "slots", "node"]
     )  # padded-slot patterns (node = one all-masked destination)
-    @pytest.mark.parametrize("use_src_weight", [False, True])  # SFPG gate branch
-    def test_segment_envelope_gated_softmax(self, masked, use_src_weight) -> None:
+    @pytest.mark.parametrize("with_gate", [False, True])  # folded SFPG gate
+    def test_segment_envelope_gated_softmax(self, masked, with_gate) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
             segment_envelope_gated_softmax as dp_softmax,
         )
@@ -2215,7 +2338,7 @@ class TestSO2Parity:
             lmax=2,
             channels=4,
             masked=masked,
-            with_gate=use_src_weight,
+            with_gate=with_gate,
         )
         n_edge = nloc * nnei
         logits = rng.normal(size=(n_edge, n_focus, n_head))
@@ -2228,7 +2351,6 @@ class TestSO2Parity:
             n_nodes=nloc,
             z_bias_raw=z_bias_raw,
             eps=1e-7,
-            src_weight=dp_cache.edge_src_gate,
             edge_mask=dp_cache.edge_mask,
         )
         alpha_pt = pt_softmax(
@@ -2238,7 +2360,6 @@ class TestSO2Parity:
             n_nodes=nloc,
             z_bias_raw=to_pt(z_bias_raw),
             eps=1e-7,
-            src_weight=pt_cache.edge_src_gate,
         )
         alpha_dp = np.asarray(alpha_dp)
         np.testing.assert_allclose(
@@ -2297,6 +2418,48 @@ class TestSO2Parity:
             zero[0, 0, 0], expected_stable, rtol=1.0e-12, atol=0.0
         )
         assert zero[1, 0, 0] == 0.0
+
+    def test_tiny_envelope_hessian(self) -> None:
+        """Both softmax paths keep the physical Hessian at a tiny envelope.
+
+        The envelope enters the softmax through its logarithm, and in bridging
+        mode it carries the source gate, so the second derivative with respect
+        to it, which the force loss differentiates, must match the direct
+        physical form even where the envelope is far below one.
+        """
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float64, device=PT_DEVICE
+        )
+        dst = torch.zeros(2, dtype=torch.int64, device=PT_DEVICE)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float64, device=PT_DEVICE
+        )
+        eps = 1.0e-7
+        null_mass = torch.nn.functional.softplus(z_bias_raw[0, 0]) + eps
+
+        def physical_sum(edge_env: torch.Tensor) -> torch.Tensor:
+            edge_mass = edge_env**2 * torch.exp(logits[:, 0, 0])
+            return (edge_mass / (null_mass + edge_mass.sum())).sum()
+
+        def dp_sum(edge_env: torch.Tensor) -> torch.Tensor:
+            return dp_softmax(logits, edge_env[:, None], dst, 1, z_bias_raw, eps).sum()
+
+        def pt_sum(edge_env: torch.Tensor) -> torch.Tensor:
+            return pt_softmax(logits, edge_env[:, None], dst, 1, z_bias_raw, eps).sum()
+
+        edge_env = torch.tensor([1.0, 1.0e-15], dtype=torch.float64, device=PT_DEVICE)
+        reference = torch.autograd.functional.hessian(physical_sum, edge_env)
+        for attention_sum in (dp_sum, pt_sum):
+            hessian = torch.autograd.functional.hessian(attention_sum, edge_env)
+            assert bool(torch.isfinite(hessian).all())
+            torch.testing.assert_close(hessian, reference, rtol=1.0e-9, atol=0.0)
 
     def test_envelope_nextafter_cutoff_attention(self) -> None:
         """Adjacent float32 distances must remain stable in both implementations."""
@@ -2359,69 +2522,6 @@ class TestSO2Parity:
                 atol=float(np.finfo(np.float32).tiny),
             )
             assert 0.0 <= alpha_dp[1, 0, 0] < 1.0e-30
-
-    def test_tiny_source_weight_hessian(self) -> None:
-        """The dpmodel and pt paths must preserve the physical Hessian."""
-        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
-            segment_envelope_gated_softmax as dp_softmax,
-        )
-        from deepmd.pt.model.descriptor.sezm_nn.attention import (
-            segment_envelope_gated_softmax as pt_softmax,
-        )
-
-        logits = torch.tensor(
-            [[[0.0]], [[20.0]]], dtype=torch.float32, device=PT_DEVICE
-        )
-        edge_env = torch.ones((2, 1), dtype=torch.float32, device=PT_DEVICE)
-        dst = torch.zeros(2, dtype=torch.int64, device=PT_DEVICE)
-        z_bias_raw = torch.tensor(
-            [[math.log(math.expm1(1.0))]], dtype=torch.float32, device=PT_DEVICE
-        )
-        eps = 1.0e-7
-
-        def dp_attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
-            return dp_softmax(
-                logits,
-                edge_env,
-                dst,
-                1,
-                z_bias_raw,
-                eps,
-                source_weight[:, None],
-            ).sum()
-
-        def pt_attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
-            return pt_softmax(
-                logits,
-                edge_env,
-                dst,
-                1,
-                z_bias_raw,
-                eps,
-                source_weight[:, None],
-            ).sum()
-
-        null_mass = torch.nn.functional.softplus(z_bias_raw[0, 0]) + eps
-
-        def physical_sum(source_weight: torch.Tensor) -> torch.Tensor:
-            edge_mass = source_weight * torch.exp(logits[:, 0, 0])
-            return (edge_mass / (null_mass + edge_mass.sum())).sum()
-
-        source_weight = torch.tensor(
-            [1.0, 1.0e-30], dtype=torch.float32, device=PT_DEVICE
-        )
-        hessian_dp = torch.autograd.functional.hessian(dp_attention_sum, source_weight)
-        hessian_pt = torch.autograd.functional.hessian(pt_attention_sum, source_weight)
-        reference = torch.autograd.functional.hessian(physical_sum, source_weight)
-        assert bool(torch.isfinite(hessian_dp).all())
-        torch.testing.assert_close(
-            hessian_dp[0, 0],
-            reference[0, 0],
-            rtol=1.0e-5,
-            atol=1.0e-6,
-        )
-        torch.testing.assert_close(hessian_dp, hessian_pt, rtol=1.0e-5, atol=32.0)
-        torch.testing.assert_close(hessian_dp, reference, rtol=1.0e-5, atol=32.0)
 
     def test_segment_softmax_arbitrary_degree(self) -> None:
         # The destination scatter is layout-agnostic: E need not be a multiple
@@ -2551,8 +2651,8 @@ class TestSO2Parity:
         pt_mod, dp_mod, kwargs = self._build_conv_pair(mlp_bias=True)
         self._assert_conv_parity(pt_mod, dp_mod, kwargs)
 
-    @pytest.mark.parametrize("n_atten_head", [0, 1])  # gate enters both paths
-    def test_so2_convolution_src_gate(self, n_atten_head) -> None:
+    @pytest.mark.parametrize("n_atten_head", [0, 1])  # gated envelope on both paths
+    def test_so2_convolution_gated_envelope(self, n_atten_head) -> None:
         pt_mod, dp_mod, kwargs = self._build_conv_pair(n_atten_head=n_atten_head)
         self._assert_conv_parity(pt_mod, dp_mod, kwargs, with_gate=True)
 
@@ -2604,6 +2704,32 @@ class TestSO2Parity:
         # the D_to_m projections are cached in the EdgeCache dicts; reuse is exact
         out2 = np.asarray(dp_mod2.call(x, dp_cache, radial))
         np.testing.assert_array_equal(out1, out2)
+
+    def test_so2_convolution_roundtrip_preserves_configured_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution as PTSO2Conv
+
+        module = PTSO2Conv(
+            **self._conv_kwargs(node_wise_grid_branch=1, node_wise_s2=True),
+            dtype=torch.float64,
+            seed=17,
+            trainable=True,
+        )
+        data = module.serialize()
+        restored = PTSO2Conv.deserialize(data)
+        routers = [
+            submodule.router
+            for submodule in restored.modules()
+            if isinstance(submodule, GridBranch)
+        ]
+
+        assert data["config"]["trainable"] is True
+        assert restored.trainable is True
+        assert routers
+        assert all(not router.weight.requires_grad for router in routers)
+        assert any(parameter.requires_grad for parameter in restored.parameters())
 
     def test_so2_convolution_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
@@ -2745,7 +2871,7 @@ class TestEmbeddingParity:
         "zonal_provided", [False, True]
     )  # zonal_coupling: None (gather from Dt_full) vs provided-zonal input
     #    path with D_node == D_cache only
-    @pytest.mark.parametrize("with_gate", [False, True])  # SFPG gate branch
+    @pytest.mark.parametrize("with_gate", [False, True])  # folded SFPG gate
     def test_gie(self, masked, zonal_provided, with_gate) -> None:
         lmax, channels = 2, 4
         pt_mod, dp_mod = self._build_gie_pair(lmax, channels)
@@ -2893,7 +3019,7 @@ class TestEmbeddingParity:
         pt_mod, dp_mod = self._build_env_pair(mlp_bias=mlp_bias)
         self._assert_env_parity(pt_mod, dp_mod, masked=masked)
 
-    def test_env_embedding_src_gate(self) -> None:
+    def test_env_embedding_gated_envelope(self) -> None:
         pt_mod, dp_mod = self._build_env_pair()
         self._assert_env_parity(pt_mod, dp_mod, with_gate=True)
 
@@ -3010,6 +3136,77 @@ def _build_real_edge_inputs(
     }
 
 
+def _dp_cache_from_padded(
+    *,
+    type_ebed,
+    coord,
+    nlist,
+    mapping,
+    pair_keep_mask,
+    eps,
+    deg_norm_floor,
+    edge_envelope,
+    radial_basis,
+    random_gamma,
+    wigner_calc,
+    gamma=None,
+):
+    """Build the dp ``EdgeCache`` from a padded quartet via the surviving seam.
+
+    The retired padded dense builder (``build_edge_cache``) is gone; the
+    padded-quartet contract it pinned now lives in
+    ``DescrptDPA4._graph_from_padded_nlist`` (``src_ok`` sanitization) +
+    ``graph_from_dense_quartet`` (row-major shape-static conversion) +
+    ``_edge_cache_from_arrays`` (the one edge-native cache core). This
+    helper chains them exactly as the production dense adapter does, so the
+    padded parity tests keep pinning the same contract against the surviving
+    architecture.
+
+    The fixture's ``pair_keep_mask`` (which the dense builder folded into its
+    validity mask) is ANDed into the graph's ``edge_mask`` before the core --
+    mirroring what the canonical ``apply_pair_exclusion`` transform does,
+    matching the production graph route's single-exclusion-site contract
+    (the core itself has no exclusion parameter and never re-applies it).
+    ``_edge_cache_from_arrays`` folds masking into the per-edge weights and
+    leaves ``edge_mask`` unset; the padded tests assert on the validity
+    mask, so it is attached to the returned cache.
+    """
+    import dataclasses
+
+    from deepmd.dpmodel.descriptor.dpa4 import (
+        _graph_from_padded_nlist,
+    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+        _edge_cache_from_arrays,
+    )
+
+    nf, nloc, _ = nlist.shape
+    nall = coord.shape[1]
+    # atype_ext only feeds the converter's (unused here) flat-local-atype
+    # output; pair exclusion enters via the fixture's pair_keep_mask below.
+    atype_ext_dummy = np.zeros((nf, nall), dtype=np.int64)
+    graph, _ = _graph_from_padded_nlist(coord, atype_ext_dummy, nlist, mapping)
+    edge_mask = np.asarray(graph.edge_mask) & pair_keep_mask.reshape(-1)
+    cache = _edge_cache_from_arrays(
+        type_ebed=type_ebed,
+        edge_index=graph.edge_index,
+        edge_vec=graph.edge_vec,
+        edge_mask=edge_mask,
+        compute_dtype=np.float64,
+        eps=eps,
+        deg_norm_floor=deg_norm_floor,
+        bridging_clamp=None,
+        bridging_switch=None,
+        edge_contact=None,
+        edge_envelope=edge_envelope,
+        radial_basis=radial_basis,
+        random_gamma=random_gamma,
+        wigner_calc=wigner_calc,
+        gamma=gamma,
+    )
+    return dataclasses.replace(cache, edge_mask=edge_mask)
+
+
 def _build_real_edge_caches(
     inputs,
     *,
@@ -3022,15 +3219,12 @@ def _build_real_edge_caches(
     gamma=None,
     seed=2090,
 ):
-    """Run the REAL pt and dp ``build_edge_cache`` on identical inputs.
+    """Run the REAL pt builder and the surviving dp seam on identical inputs.
 
     The pt ``RadialBasis`` frequencies are perturbed and weight-copied into
     the dp side via ``deserialize`` so parity exercises copied weights.
     Returns ``(pt_cache, dp_cache)``.
     """
-    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-        build_edge_cache as dp_build_edge_cache,
-    )
     from deepmd.dpmodel.descriptor.dpa4_nn.radial import C3CutoffEnvelope as DPEnvelope
     from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialBasis as DPRadialBasis
     from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import WignerDCalculator as DPWigner
@@ -3063,13 +3257,12 @@ def _build_real_edge_caches(
         deg_norm_floor=deg_norm_floor,
         edge_envelope=pt_env,
         radial_basis=pt_rb,
-        n_radial=n_radial,
         random_gamma=random_gamma,
         wigner_calc=pt_wig,
     )
-    dp_cache = dp_build_edge_cache(
+    dp_cache = _dp_cache_from_padded(
         type_ebed=inputs["type_ebed"],
-        extended_coord=inputs["coord"],
+        coord=inputs["coord"],
         nlist=inputs["nlist"],
         mapping=mapping,
         pair_keep_mask=inputs["pair_keep_mask"],
@@ -3077,7 +3270,6 @@ def _build_real_edge_caches(
         deg_norm_floor=deg_norm_floor,
         edge_envelope=dp_env,
         radial_basis=dp_rb,
-        n_radial=n_radial,
         random_gamma=random_gamma,
         wigner_calc=dp_wig,
         gamma=gamma,
@@ -3163,18 +3355,13 @@ class TestEdgeCacheParity:
             "inv_sqrt_deg",
         ):
             assert np.isfinite(np.asarray(getattr(dp_cache, name))).all(), name
-        # standard path carries no source gate
-        assert dp_cache.edge_src_gate is None
         assert dp_cache.D_to_m_cache == {}
         assert dp_cache.Dt_from_m_cache == {}
 
     def test_out_of_range_local_index_masked(self) -> None:
         # a local nlist entry >= nloc with mapping=None must be masked out
-        # and must not break the coordinate gather (nlist_safe is re-zeroed
-        # after the final src_ok mask update)
-        from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-            build_edge_cache as dp_build_edge_cache,
-        )
+        # and must not break the coordinate gather (the src_ok sanitization
+        # rewrites the slot to -1 before conversion)
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             C3CutoffEnvelope as DPEnvelope,
         )
@@ -3189,9 +3376,9 @@ class TestEdgeCacheParity:
         nlist = inputs["nlist"].copy()
         nlist[0, 0, 0] = self.nloc  # out of [0, nloc), would gather OOB
         n_radial = 8
-        cache = dp_build_edge_cache(
+        cache = _dp_cache_from_padded(
             type_ebed=inputs["type_ebed"],
-            extended_coord=inputs["coord"],
+            coord=inputs["coord"],
             nlist=nlist,
             mapping=None,
             pair_keep_mask=inputs["pair_keep_mask"],
@@ -3201,7 +3388,6 @@ class TestEdgeCacheParity:
             radial_basis=DPRadialBasis(
                 rcut=6.0, n_radial=n_radial, precision="float64"
             ),
-            n_radial=n_radial,
             random_gamma=False,
             wigner_calc=DPWigner(self.lmax, precision="float64"),
         )
@@ -3603,6 +3789,34 @@ class TestBlockParity:
         out2 = np.asarray(dp_mod2.call(x, dp_cache, radial)[0])
         np.testing.assert_array_equal(out1, out2)
 
+    def test_block_roundtrip_preserves_configured_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.block import (
+            SeZMInteractionBlock as PTBlock,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+
+        module = PTBlock(
+            **self._block_kwargs(ffn_grid_branch=1),
+            dtype=torch.float64,
+            seed=31,
+            trainable=True,
+        )
+        data = module.serialize()
+        restored = PTBlock.deserialize(data)
+        routers = [
+            submodule.router
+            for submodule in restored.modules()
+            if isinstance(submodule, GridBranch)
+        ]
+
+        assert data["config"]["trainable"] is True
+        assert restored.trainable is True
+        assert routers
+        assert all(not router.weight.requires_grad for router in routers)
+        assert any(parameter.requires_grad for parameter in restored.parameters())
+
     def test_block_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.block import (
             SeZMInteractionBlock as DPBlock,
@@ -3735,8 +3949,10 @@ class TestDescriptorParity:
         assert out_dp[0].shape == tuple(out_pt[0].shape)
         # descriptor-level tolerance: rtol 1e-10 / atol 1e-12
         assert_parity(out_dp[0], out_pt[0], rtol=1e-10, atol=1e-12)
-        # unused returns are None on the dp side (pt returns empty tensors)
-        assert out_dp[1:] == (None, None, None, None)
+        # unused returns are None on the dp side (pt returns empty tensors);
+        # the trailing element is the source gate of a bridging window, absent
+        # from this unbridged fixture
+        assert out_dp[1:] == (None, None, None, None, None)
 
     @pytest.mark.parametrize("use_env_seed", [False, True])  # env FiLM + GIE seeding
     @pytest.mark.parametrize("n_blocks", [1, 2])  # interaction block stack depth
@@ -3746,20 +3962,73 @@ class TestDescriptorParity:
         )
         self._assert_descr_parity(pt_mod, dp_mod)
 
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
+    @pytest.mark.parametrize("env_exp", [5, [0, 5], [7, 5]])
+    def test_descriptor_env_exp(
+        self, basis_type: str, env_exp: int | list[int]
+    ) -> None:
+        pt_mod, dp_mod, _ = self._build_descr_pair(
+            basis_type=basis_type, env_exp=env_exp
+        )
+        for module in (pt_mod, dp_mod):
+            assert module.env_exp == env_exp
+            exponent = env_exp[0] if isinstance(env_exp, list) else 0
+            assert module.radial_basis.exponent == exponent
+            assert (module.radial_basis.envelope is None) is (exponent == 0)
+            assert module.edge_envelope.p == 5
+        self._assert_descr_parity(pt_mod, dp_mod)
+        pt_restored = type(pt_mod).deserialize(pt_mod.serialize())
+        dp_restored = type(dp_mod).deserialize(dp_mod.serialize())
+        assert pt_restored.env_exp == dp_restored.env_exp == env_exp
+        self._assert_descr_parity(pt_restored, dp_restored)
+
     @pytest.mark.parametrize(
-        "edge_norm", [False, True]
-    )  # cutoff-vanishing normalization modes
+        "edge_norm", [False, True, [False, True, False]]
+    )  # cutoff-vanishing normalization modes: all off, all on, per-site
     def test_descriptor_edge_norm(self, edge_norm) -> None:
         # edge_norm=False drops the radial MLP RMSNorm, turns the FiLM scale/shift
         # norms into identity pass-throughs, drops the focus-compete norm, and
-        # selects unit-floor post-SO(2) residual scaling in both backends.
+        # selects unit-floor post-SO(2) residual scaling in both backends. A
+        # three-bool list [radial, film, focus] switches the sites individually,
+        # with the post-SO(2) scaling bound to the radial entry.
         pt_mod, dp_mod, _ = self._build_descr_pair(
             edge_norm=edge_norm, use_env_seed=True, n_focus=2
         )
-        assert dp_mod.edge_norm == edge_norm
-        expected_eps = 1.0e-5 if edge_norm else 1.0
+        radial_on = edge_norm if isinstance(edge_norm, bool) else edge_norm[0]
+        assert dp_mod.radial_norm == radial_on
+        expected_eps = 1.0e-5 if radial_on else 1.0
         assert pt_mod.blocks[0].post_so2_norm.eps == expected_eps
         assert dp_mod.blocks[0].post_so2_norm.eps == expected_eps
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize(
+        "stored_edge_norm", [None, True, False]
+    )  # legacy serialized data: no key (pre-option checkpoints) or a plain bool
+    def test_descriptor_edge_norm_legacy_serialized(self, stored_edge_norm) -> None:
+        # Checkpoints that predate the edge_norm option carry no such config
+        # key (their norms were always built, matching the default True), and
+        # intermediate checkpoints store a plain bool. Both forms must
+        # deserialize into the matching module structure and keep parity.
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+
+        build_edge_norm = True if stored_edge_norm is None else stored_edge_norm
+        pt_mod, _, _ = self._build_descr_pair(
+            edge_norm=build_edge_norm, use_env_seed=True, n_focus=2
+        )
+        data = pt_mod.serialize()
+        if stored_edge_norm is None:
+            data["config"].pop("edge_norm")
+        else:
+            data["config"]["edge_norm"] = stored_edge_norm
+        dp_mod = DescrptDPA4.deserialize(data)
+        expected = bool(build_edge_norm)
+        assert (dp_mod.radial_norm, dp_mod.film_norm, dp_mod.focus_norm) == (
+            expected,
+            expected,
+            expected,
+        )
         self._assert_descr_parity(pt_mod, dp_mod)
 
     @pytest.mark.parametrize(
@@ -3769,11 +4038,68 @@ class TestDescriptorParity:
         pt_mod, dp_mod, _ = self._build_descr_pair(exclude_types=exclude_types)
         self._assert_descr_parity(pt_mod, dp_mod)
 
+    def test_descriptor_without_edges(self) -> None:
+        pt_mod, dp_mod, _ = self._build_descr_pair()
+        inp = self._inputs()
+        nlist = np.full_like(inp["nlist"], -1)
+        out_dp = dp_mod.call(
+            inp["coord"].reshape(self.nf, -1), inp["atype_ext"], nlist, mapping=None
+        )
+        out_pt = pt_mod(to_pt(inp["coord"]), to_pt(inp["atype_ext"]), to_pt(nlist))
+        assert_parity(out_dp[0], out_pt[0], rtol=1e-10, atol=1e-12)
+
     def test_descriptor_no_mapping(self) -> None:
         # pt forward accepts mapping=None when neighbor indices are local;
         # mapping is NOT required by either backend
         pt_mod, dp_mod, _ = self._build_descr_pair()
         self._assert_descr_parity(pt_mod, dp_mod, mapping=False)
+
+    def test_descriptor_covalent_bridging_window(self) -> None:
+        """A covalent window sizes every pair by the elements at its ends.
+
+        Both backends size the window from their own copy of the radius table,
+        so a multi-element ``type_map`` is what makes the per-pair radii differ
+        and the comparison meaningful. The window reaches the descriptor only
+        on the sparse-edge route, so the two are run on one shared ghost-free
+        graph. The unwindowed descriptor pins that the window actually moves
+        this fixture's output, so parity cannot hold vacuously.
+        """
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            _graph_from_padded_nlist,
+        )
+
+        window = {
+            "type_map": ["O", "H", "N"],
+            "inner_clamp_f_inner": 1.0,
+            "inner_clamp_f_outer": 1.5,
+            "inner_clamp_scale": "covalent",
+        }
+        pt_mod, dp_mod, _ = self._build_descr_pair(**window)
+        np.testing.assert_array_equal(
+            dp_mod.contact_radius, pt_mod.contact_radius.cpu().numpy()
+        )
+        _, plain_mod, _ = self._build_descr_pair()
+
+        inp = self._inputs()
+        graph, atype_local = _graph_from_padded_nlist(
+            inp["coord"], inp["atype_ext"], inp["nlist"], inp["mapping"]
+        )
+        out_dp, _, _ = dp_mod.call_graph(graph, atype_local)
+        out_pt, _, _, _ = pt_mod.forward_with_edges(
+            extended_coord=to_pt(inp["coord"][:, : self.nloc]),
+            extended_atype=to_pt(atype_local.reshape(self.nf, self.nloc)),
+            edge_index=to_pt(graph.edge_index),
+            edge_vec=to_pt(graph.edge_vec),
+            edge_mask=to_pt(graph.edge_mask),
+        )
+        assert_parity(
+            np.reshape(out_dp, (self.nf, self.nloc, -1)),
+            out_pt,
+            rtol=1e-10,
+            atol=1e-12,
+        )
+        out_plain, _, _ = plain_mod.call_graph(graph, atype_local)
+        assert np.max(np.abs(np.asarray(out_dp) - np.asarray(out_plain))) > 1e-8
 
     def test_descriptor_extra_node_l(self) -> None:
         # node degrees above message-passing degrees (GIE zonal wigner path)
@@ -3950,7 +4276,7 @@ class TestDescriptorParity:
         out_dp_s, out_pt_s = _call(spin)
         assert out_dp_s[0].shape == tuple(out_pt_s[0].shape)
         assert_parity(out_dp_s[0], out_pt_s[0], rtol=1e-10, atol=1e-12)
-        assert out_dp_s[1:] == (None, None, None, None)
+        assert out_dp_s[1:] == (None, None, None, None, None)
 
         # spin=None path: pt vs dp parity
         out_dp_n, out_pt_n = _call(None)
@@ -4265,8 +4591,7 @@ class TestModelDefCompat:
             "type",
             "atomic_model",
             "bridging_method",
-            "bridging_r_inner",
-            "bridging_r_outer",
+            "bridging_window",
             "lora",
         }
     )

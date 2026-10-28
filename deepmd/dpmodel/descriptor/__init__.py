@@ -11,6 +11,9 @@ from .dpa3 import (
 from .dpa4 import (
     DescrptDPA4,
 )
+from .dpa4c import (
+    DescrptDPA4C,
+)
 from .hybrid import (
     DescrptHybrid,
 )
@@ -32,17 +35,22 @@ from .se_t import (
 from .se_t_tebd import (
     DescrptSeTTebd,
 )
+from .unimol import (
+    DescrptUniMol,
+)
 
 __all__ = [
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptDPA3",
     "DescrptDPA4",
+    "DescrptDPA4C",
     "DescrptHybrid",
     "DescrptSeA",
     "DescrptSeAttenV2",
     "DescrptSeR",
     "DescrptSeT",
     "DescrptSeTTebd",
+    "DescrptUniMol",
     "make_base_descriptor",
 ]

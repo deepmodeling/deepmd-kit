@@ -178,6 +178,19 @@ void remap_comm_sendlist(std::vector<std::vector<int>>& new_sendlist,
                          const std::vector<int>& fwd_map);
 
 /**
+ * @brief Pack one communication send-list pointer address per MPI swap.
+ *
+ * The corresponding send counts describe the number of atom indices behind
+ * each pointer; they do not change the length of the pointer-address array.
+ *
+ * @param[in] sendlist Array of send-list pointers indexed by swap.
+ * @param[in] nswap Number of communication swaps.
+ * @return Integer pointer addresses with exactly nswap entries.
+ */
+std::vector<std::intptr_t> pack_comm_sendlist_pointers(int* const* sendlist,
+                                                       int nswap);
+
+/**
  * @brief Get the number of threads from the environment variable.
  * @details A warning will be thrown if environment variables are not set.
  * @param[out] num_intra_nthreads The number of intra threads. Read from

@@ -376,6 +376,7 @@ class TestDeepPot(unittest.TestCase, IOTest):
             "model": model.serialize(),
             "backend": "test",
             "model_def_script": model_def_script,
+            "lower_input_kind": "nlist",
         }
 
     def tearDown(self) -> None:
@@ -420,6 +421,7 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
             "model": model.serialize(),
             "backend": "test",
             "model_def_script": model_def_script,
+            "lower_input_kind": "nlist",
         }
 
     def tearDown(self) -> None:
@@ -476,6 +478,7 @@ class TestDeepPotPairExclude(unittest.TestCase, IOTest):
             "model": model.serialize(),
             "backend": "test",
             "model_def_script": model_def_script,
+            "lower_input_kind": "nlist",
         }
 
     def tearDown(self) -> None:
@@ -523,6 +526,7 @@ class TestDeepProperty(unittest.TestCase, IOTest):
             "model": model.serialize(),
             "backend": "test",
             "model_def_script": model_def_script,
+            "lower_input_kind": "nlist",
         }
 
     def tearDown(self) -> None:

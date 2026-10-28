@@ -5,7 +5,8 @@ This module provides the core infrastructure for automatically wrapping dpmodel
 classes (array_api_compat-based) as PyTorch modules. The key insight is to
 detect attributes by their **value type** rather than by hard-coded names:
 
-- numpy arrays → torch buffers (persistent state like statistics, masks)
+- numpy arrays → torch buffers (persistent, unless the owning class lists the
+  array in ``CONFIG_DERIVED_ARRAYS``)
 - dpmodel objects → pt_expt torch.nn.Module wrappers (via registry lookup)
 - None values → clear existing buffers
 
@@ -16,6 +17,8 @@ new attributes.
 
 from collections.abc import (
     Callable,
+    Iterable,
+    Iterator,
 )
 from functools import (
     wraps,
@@ -135,12 +138,41 @@ def try_convert_module(value: Any) -> torch.nn.Module | None:
 _AUTO_WRAPPED_CLASSES: dict[type, type] = {}
 
 
-def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
-    """Auto-wrap any NativeOP as a torch.nn.Module via ``torch_module``.
+def auto_wrapped_class(cls: type) -> type:
+    """Return the cached ``torch_module`` auto-wrap of a dpmodel class.
 
     Creates a subclass with a generic ``forward`` that delegates to ``call``,
     then applies ``torch_module`` to get full ``__setattr__`` / post-init
     list conversion.  The wrapped class is cached per dpmodel type.
+
+    Invariant: construct this wrapped class directly whenever live,
+    constructor-supplied components must retain non-serialized runtime
+    state. Converting a populated raw dpmodel instance instead goes
+    through the ``serialize()``/``deserialize()`` round-trip of
+    ``_auto_wrap_native_op``, which preserves only the portable record.
+
+    Parameters
+    ----------
+    cls : type
+        The dpmodel NativeOP class to wrap.
+
+    Returns
+    -------
+    type
+        The ``torch_module``-wrapped subclass.
+    """
+    if cls not in _AUTO_WRAPPED_CLASSES:
+        wrapped = type(
+            cls.__name__,
+            (cls,),
+            {"forward": lambda self, *args, **kwargs: self.call(*args, **kwargs)},
+        )
+        _AUTO_WRAPPED_CLASSES[cls] = torch_module(wrapped)
+    return _AUTO_WRAPPED_CLASSES[cls]
+
+
+def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
+    """Auto-wrap any NativeOP as a torch.nn.Module via ``torch_module``.
 
     Parameters
     ----------
@@ -153,14 +185,7 @@ def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
         The wrapped pt_expt module, deserialized from value's serialized state.
     """
     cls = type(value)
-    if cls not in _AUTO_WRAPPED_CLASSES:
-        wrapped = type(
-            cls.__name__,
-            (cls,),
-            {"forward": lambda self, *args, **kwargs: self.call(*args, **kwargs)},
-        )
-        _AUTO_WRAPPED_CLASSES[cls] = torch_module(wrapped)
-    wrapped_cls = _AUTO_WRAPPED_CLASSES[cls]
+    wrapped_cls = auto_wrapped_class(cls)
     if not (hasattr(value, "serialize") and hasattr(wrapped_cls, "deserialize")):
         raise TypeError(
             f"Cannot auto-wrap {cls.__name__}: "
@@ -170,8 +195,37 @@ def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
     return wrapped_cls.deserialize(value.serialize())
 
 
+class BufferList(torch.nn.Module):
+    """Hold tensors as persistent buffers behind the interface of a list.
+
+    An index table moves with its module and enters the ``state_dict``, but no
+    optimizer updates it, which makes it a buffer rather than a parameter. The
+    entries are registered under their positions, the keys a
+    ``torch.nn.ParameterList`` uses.
+
+    Parameters
+    ----------
+    tensors : Iterable[torch.Tensor]
+        The entries, in order.
+    """
+
+    def __init__(self, tensors: Iterable[torch.Tensor]) -> None:
+        super().__init__()
+        for index, tensor in enumerate(tensors):
+            self.register_buffer(str(index), tensor)
+
+    def __len__(self) -> int:
+        return len(self._buffers)
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        return self._buffers[str(range(len(self))[index])]
+
+    def __iter__(self) -> Iterator[torch.Tensor]:
+        return iter(self._buffers.values())
+
+
 def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
-    """Try to convert a plain list to ModuleList or ParameterList.
+    """Try to convert a plain list to ModuleList, ParameterList or BufferList.
 
     Returns the converted container, or None if no conversion is needed
     (e.g., empty list, list of scalars/strings).
@@ -199,20 +253,46 @@ def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
                 )
             converted.append(c)
         return torch.nn.ModuleList(converted)
-    # List of numpy arrays → ParameterList
+    # List of numpy arrays → ParameterList, or BufferList when every array is
+    # an index table: a module's parameters are what an optimizer receives, and
+    # sharded optimizers require them to share one floating-point type.
     if all(isinstance(v, np.ndarray) for v in value):
         from deepmd.pt_expt.utils import env  # deferred - avoids circular import
 
-        params = []
-        for v in value:
-            t = torch.as_tensor(v, device=env.DEVICE)
-            params.append(
+        tensors = [torch.as_tensor(v, device=env.DEVICE) for v in value]
+        if not any(t.is_floating_point() or t.is_complex() for t in tensors):
+            return BufferList(tensors)
+        return torch.nn.ParameterList(
+            [
                 torch.nn.Parameter(
                     t, requires_grad=t.is_floating_point() or t.is_complex()
                 )
-            )
-        return torch.nn.ParameterList(params)
+                for t in tensors
+            ]
+        )
     return None
+
+
+def _module_buffer_device(obj: torch.nn.Module, name: str) -> torch.device:
+    """Device for a numpy array assigned as a buffer on ``obj``.
+
+    Prefer the existing buffer of the same name when it already holds a
+    tensor, then any parameter or non-None buffer on the module, then
+    ``env.DEVICE``. Assignments after ``Module.to`` therefore keep residency
+    with the module rather than jumping back to the process default device.
+    """
+    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
+
+    if "_buffers" in obj.__dict__:
+        existing = obj._buffers.get(name)
+        if existing is not None:
+            return existing.device
+    for tensor in obj.parameters():
+        return tensor.device
+    for tensor in obj.buffers():
+        if tensor is not None:
+            return tensor.device
+    return env.DEVICE
 
 
 def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, Any]:
@@ -222,8 +302,12 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     the need to hard-code attribute names in each wrapper's __setattr__ method. It
     handles three cases:
 
-    1. **numpy arrays → torch buffers**: Persistent state like statistics (davg, dstd)
-       or masks that should be saved in state_dict and moved with .to(device).
+    1. **numpy arrays → torch buffers**: State such as statistics (davg, dstd) that
+       is saved in state_dict and moved with .to(device). An array the owning
+       class lists in ``CONFIG_DERIVED_ARRAYS`` becomes a NON-persistent buffer
+       instead: it is either rebuilt by ``__init__`` from the configuration or
+       resolved at export time, so adopting a stored copy would let a
+       checkpoint override the value the model builds for itself.
     2. **None values → clear buffers**: Setting an existing buffer to None.
     3. **dpmodel objects → pt_expt modules**: Nested dpmodel objects like
        AtomExcludeMaskDP or NetworkCollectionDP are converted to their pt_expt
@@ -257,6 +341,10 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     - In dpmodel, all persistent arrays use `self.xxx = np.array(...)`. Scalars
       use `.item()`, lists use `.tolist()`. So `isinstance(value, np.ndarray)`
       reliably identifies buffer-worthy attributes.
+    - A numpy array becomes a buffer on the module's current device (see
+      :func:`_module_buffer_device`), not unconditionally on ``env.DEVICE``, so
+      a later assignment after ``Module.to`` does not pull tensors back to the
+      process default device.
     - torch.Tensor values assigned to existing buffers fall through to
       torch.nn.Module.__setattr__, which correctly updates them.
     - dpmodel objects are identified by registry lookup (exact type match), so
@@ -266,10 +354,10 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
 
     **Circular import resolution:**
 
-    The function uses a deferred import `from deepmd.pt_expt.utils import env`
-    inside the function body. This breaks the circular dependency chain:
-    common.py → utils/__init__.py → exclude_mask.py → common.py. The import is
-    cached by Python after the first call, so there's no performance penalty.
+    Device resolution and related helpers defer
+    ``from deepmd.pt_expt.utils import env`` so this module does not import
+    ``utils`` at load time (common.py → utils/__init__.py → exclude_mask.py →
+    common.py). The import is cached after the first call.
 
     **Usage pattern:**
 
@@ -292,11 +380,9 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     >>> # Case 3: dpmodel object → pt_expt module
     >>> obj.emask = AtomExcludeMaskDP(...)  # becomes AtomExcludeMask module
     """
-    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
-
     # numpy array → torch buffer
     if isinstance(value, np.ndarray) and "_buffers" in obj.__dict__:
-        tensor = torch.as_tensor(value, device=env.DEVICE)
+        tensor = torch.as_tensor(value, device=_module_buffer_device(obj, name))
         if name in obj._buffers:
             obj._buffers[name] = tensor
             return True, tensor
@@ -305,7 +391,11 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
         # deserialize), remove it first so register_buffer doesn't conflict.
         if hasattr(obj, name) and name not in obj._buffers:
             delattr(obj, name)
-        obj.register_buffer(name, tensor)
+        obj.register_buffer(
+            name,
+            tensor,
+            persistent=name not in getattr(type(obj), "CONFIG_DERIVED_ARRAYS", ()),
+        )
         return True, tensor
 
     # clear an existing buffer to None
@@ -313,7 +403,8 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
         obj._buffers[name] = None
         return True, None
 
-    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList
+    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList /
+    # BufferList
     if isinstance(value, list) and "_modules" in obj.__dict__:
         converted_list = _try_convert_list(name, value)
         if converted_list is not None:
@@ -327,6 +418,35 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
                 return False, converted
 
     return False, value
+
+
+def register_buffer_replacing_slot(
+    obj: torch.nn.Module, name: str, tensor: torch.Tensor
+) -> None:
+    """Register a buffer, replacing a same-named plain attribute if present.
+
+    Some dpmodel base ``__init__``s declare a capability slot such as
+    ``self.type_embd_data = None`` so its presence is a class property
+    rather than a runtime accident (issue #5897). A torch-native
+    compression path may later want to store the real value as a
+    persistent buffer via ``torch.nn.Module.register_buffer`` directly
+    (bypassing ``__setattr__``/``dpmodel_setattr``, e.g. because the
+    value is already a computed ``torch.Tensor`` rather than a
+    ``np.ndarray``). ``register_buffer`` raises ``KeyError`` if the name
+    already exists as a plain (non-buffer) attribute, so remove it first.
+
+    Parameters
+    ----------
+    obj : torch.nn.Module
+        The pt_expt wrapper object to register the buffer on.
+    name : str
+        The buffer name.
+    tensor : torch.Tensor
+        The tensor value to store as a buffer.
+    """
+    if hasattr(obj, name) and name not in obj._buffers:
+        delattr(obj, name)
+    torch.nn.Module.register_buffer(obj, name, tensor)
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +567,19 @@ def torch_module(
             handled, value = dpmodel_setattr(self, name, value)
             if not handled:
                 super().__setattr__(name, value)
+
+        def _load_from_state_dict(
+            self, state_dict: dict, prefix: str, *args: Any, **kwargs: Any
+        ) -> None:
+            # A non-persistent buffer is configuration-derived: ``__init__``
+            # already rebuilt it, so any archived copy is discarded rather than
+            # reported as an unexpected key. This keeps checkpoints written
+            # while the buffer was still persistent loadable, and keeps a
+            # checkpoint from a differently configured model (e.g. a spin-free
+            # pretraining, whose spin gate is all zero) from overriding it.
+            for name in self._non_persistent_buffers_set:
+                state_dict.pop(prefix + name, None)
+            super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     # Auto-generate forward -> call redirect if not explicitly defined
     if hasattr(module, "call") and "forward" not in module.__dict__:

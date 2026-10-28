@@ -124,7 +124,7 @@ class TestDPA4RuntimeFeatures(TestCaseSingleFrameWithNlist):
         assert so2._rotate_to_local_fn is not None
         assert so2._rotate_back_fn is not None
         mixers = [x for x in m.modules() if isinstance(x, DynamicRadialDegreeMixer)]
-        assert mixers and all(x.use_triton_infer for x in mixers)
+        assert mixers and all(x.triton_infer_level >= 1 for x in mixers)
 
         coord, atype, nlist = self._inputs()
         out = m(coord, atype, nlist)[0]

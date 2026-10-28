@@ -10,10 +10,20 @@ outputs) are read from the correct advancing index.
 """
 
 import unittest
+from types import (
+    SimpleNamespace,
+)
 
 import numpy as np
 
-from deepmd.entrypoints.test import (
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
+from deepmd.infer.model_test import (
+    build_tester,
+)
+from deepmd.infer.model_test.ener import (
+    SpinEnerTester,
     _split_optional_ener_outputs,
 )
 
@@ -78,6 +88,17 @@ class TestSplitOptionalEnerOutputs(unittest.TestCase):
         self.assertEqual(out.atom_energy[0, 0], AE)
         self.assertEqual(out.force_mag[0, 0], FM)
         self.assertIsNone(out.hessian)
+
+
+def test_legacy_spin_model_dispatch() -> None:
+    """Legacy TF spin metadata selects the spin-aware energy tester."""
+    dp = object.__new__(DeepPot)
+    dp.deep_eval = SimpleNamespace(
+        get_has_spin=lambda: False,
+        get_ntypes_spin=lambda: 1,
+    )
+
+    assert isinstance(build_tester(dp, atomic=False), SpinEnerTester)
 
 
 if __name__ == "__main__":

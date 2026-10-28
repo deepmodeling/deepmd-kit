@@ -11,6 +11,9 @@ from .exclude_mask import (
     AtomExcludeMask,
     PairExcludeMask,
 )
+from .inner_potential import (
+    InnerPotential,
+)
 from .network import (
     NetworkCollection,
 )
@@ -35,6 +38,7 @@ register_dpmodel_mapping(EnvMat, lambda v: v)
 
 __all__ = [
     "AtomExcludeMask",
+    "InnerPotential",
     "NetworkCollection",
     "PairExcludeMask",
     "TypeEmbedNet",

@@ -20,6 +20,7 @@ __all__ = [
     "LRU_CACHE_SIZE",
     "SHARED_LIB_DIR",
     "SHARED_LIB_MODULE",
+    "get_lmdb_num_workers",
     "global_float_prec",
 ]
 
@@ -141,6 +142,58 @@ def get_default_nthreads() -> tuple[int, int]:
             os.environ.get("TF_INTER_OP_PARALLELISM_THREADS", "0"),
         )
     )
+
+
+def get_lmdb_num_workers() -> int:
+    """Return the per-rank LMDB decoder process count.
+
+    ``DP_LMDB_NUM_WORKERS`` provides an explicit override. The automatic policy
+    limits one rank to 32 workers and approximately 64 workers per node, then
+    respects the process CPU affinity. Values zero and one select synchronous
+    decoding.
+
+    Returns
+    -------
+    int
+        Number of LMDB decoder processes.
+
+    Raises
+    ------
+    ValueError
+        If ``DP_LMDB_NUM_WORKERS`` is not a non-negative integer.
+    """
+    configured = os.environ.get("DP_LMDB_NUM_WORKERS")
+    if configured is not None:
+        try:
+            workers = int(configured)
+        except ValueError:
+            raise ValueError(
+                "DP_LMDB_NUM_WORKERS must be a non-negative integer, "
+                f"got {configured!r}"
+            ) from None
+        if workers < 0:
+            raise ValueError(
+                f"DP_LMDB_NUM_WORKERS must be non-negative, got {configured!r}"
+            )
+        return workers
+
+    try:
+        available_cpus = len(os.sched_getaffinity(0))
+    except AttributeError:
+        available_cpus = os.cpu_count() or 1
+    try:
+        local_world_size = int(os.environ.get("LOCAL_WORLD_SIZE", "1"))
+    except ValueError:
+        raise ValueError(
+            "LOCAL_WORLD_SIZE must be a positive integer, "
+            f"got {os.environ['LOCAL_WORLD_SIZE']!r}"
+        ) from None
+    if local_world_size <= 0:
+        raise ValueError(f"LOCAL_WORLD_SIZE must be positive, got {local_world_size}")
+
+    cpu_share = max(1, available_cpus // local_world_size)
+    node_share = max(1, 64 // local_world_size)
+    return min(32, cpu_share, node_share)
 
 
 def _get_package_constants(

@@ -140,6 +140,10 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
 
 #ifdef BUILD_PYTORCH
 TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
+#if TORCH_VERSION_MAJOR < 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR < 3)
+  GTEST_SKIP() << "uint32 tensors require PyTorch 2.3 or later";
+#endif
   GraphTensorPack graph;
   graph.atype = torch::tensor({0}, torch::kInt64);
   graph.n_node = torch::tensor({1}, torch::kInt64);
@@ -154,12 +158,13 @@ TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
   graph.source_row_ptr = torch::tensor({0, 1}, torch::kInt64);
 
   const auto compact = compactCanonicalGraph(graph);
-  EXPECT_EQ(compact.source.scalar_type(), torch::kInt64);
+  EXPECT_EQ(compact.source.scalar_type(), deepmd::canonicalGraphIndexType());
   EXPECT_EQ(compact.source.numel(), 2);
   EXPECT_EQ(compact.edge_vec.scalar_type(), torch::kFloat32);
   EXPECT_EQ(compact.edge_vec.size(0), 2);
   EXPECT_TRUE(
-      torch::equal(compact.source_order, torch::tensor({0, 1}, torch::kInt64)));
+      torch::equal(compact.source_order,
+                   torch::tensor({0, 1}, deepmd::canonicalGraphIndexType())));
   EXPECT_EQ(compact.destination_row_ptr.select(0, 1).item<std::int64_t>(), 1);
   EXPECT_EQ(compact.source_row_ptr.select(0, 1).item<std::int64_t>(), 1);
 }
@@ -267,6 +272,31 @@ TEST(TestEdgeTensorPack, CanonicalizeGraphPayloadIsStableWithinDestination) {
                            torch::tensor({1, 0, 2, 0}, torch::kInt64)));
   EXPECT_TRUE(torch::equal(graph.destination_order,
                            torch::tensor({0, 1, 2, 3}, torch::kInt64)));
+}
+
+TEST(TestEdgeTensorPack, CanonicalizeGraphPayloadPreservesCudaDevice) {
+  if (!torch::cuda::is_available()) {
+    GTEST_SKIP() << "CUDA is unavailable";
+  }
+  const auto options = torch::TensorOptions().device(torch::kCUDA);
+  GraphTensorPack graph;
+  graph.edge_index =
+      torch::tensor({{2, 1, 0, 0}, {1, 0, 0, 0}}, options.dtype(torch::kInt64));
+  graph.edge_vec =
+      torch::arange(12, options.dtype(torch::kFloat64)).reshape({4, 3});
+  graph.edge_mask =
+      torch::tensor({true, true, true, false}, options.dtype(torch::kBool));
+
+  canonicalizeGraphPayload(graph, 3);
+
+  EXPECT_TRUE(graph.destination_order.device().is_cuda());
+  EXPECT_TRUE(graph.destination_row_ptr.device().is_cuda());
+  EXPECT_TRUE(graph.source_order.device().is_cuda());
+  EXPECT_TRUE(graph.source_row_ptr.device().is_cuda());
+  EXPECT_TRUE(
+      torch::equal(graph.edge_index.select(0, 0).cpu(),
+                   torch::tensor({1, 0, 2, 0},
+                                 torch::TensorOptions().dtype(torch::kInt64))));
 }
 
 #endif

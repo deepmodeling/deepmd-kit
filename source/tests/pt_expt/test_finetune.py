@@ -771,6 +771,103 @@ class TestFinetuneCLI(unittest.TestCase):
             os.chdir(old_cwd)
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def _finetune_across_bridging(
+        self,
+        source_bridged: bool,
+        model_branch: str = "",
+    ) -> None:
+        """Fine-tune between a plain DPA4C model and its ZBL-bridged composition.
+
+        The composition holds the learned descriptor and fitting net as its
+        first sub-model, so the weights of that part come from the checkpoint
+        although their path differs; a RANDOM fitting takes the descriptor
+        alone and computes the output statistics of the new fitting.
+        """
+        plain = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 8,
+                "seed": 1,
+            },
+            "fitting_net": {"neuron": [16, 16], "seed": 1},
+            "data_stat_nbatch": 1,
+        }
+        bridged = {
+            **deepcopy(plain),
+            "bridging_method": "zbl",
+            "bridging_r_inner": 0.5,
+            "bridging_r_outer": 0.8,
+        }
+        source, target = (bridged, plain) if source_bridged else (plain, bridged)
+        source_path, target_path = (
+            (".atomic_model.models.0.", ".atomic_model.")
+            if source_bridged
+            else (".atomic_model.", ".atomic_model.models.0.")
+        )
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_bridged_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = normalize(
+                update_deepmd_input(
+                    _make_config(self.data_dir, source, numb_steps=1), warning=False
+                )
+            )
+            ckpt_path = self._train_pretrained(config, tmpdir)
+
+            ft_config = normalize(
+                update_deepmd_input(
+                    _make_config(self.data_dir, target, numb_steps=1), warning=False
+                )
+            )
+            ft_config["model"], finetune_links = get_finetune_rules(
+                ckpt_path, ft_config["model"], model_branch=model_branch
+            )
+            trainer_ft = get_trainer(
+                ft_config,
+                finetune_model=ckpt_path,
+                finetune_links=finetune_links,
+            )
+
+            pretrained_state = torch.load(
+                ckpt_path, map_location=DEVICE, weights_only=True
+            )["model"]
+            ft_state = trainer_ft.wrapper.state_dict()
+            parts = ["descriptor."]
+            if model_branch != "RANDOM":
+                parts.append("fitting_net.")
+            learned = [
+                key
+                for key in ft_state
+                if any(f"{target_path}{part}" in key for part in parts)
+            ]
+            self.assertTrue(learned)
+            for key in learned:
+                torch.testing.assert_close(
+                    ft_state[key],
+                    pretrained_state[key.replace(target_path, source_path)],
+                    msg=f"{key} should come from the checkpoint",
+                )
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_finetune_plain_into_bridged(self) -> None:
+        """A plain DPA4C checkpoint fine-tunes into its ZBL-bridged composition."""
+        self._finetune_across_bridging(source_bridged=False)
+
+    def test_finetune_bridged_into_plain(self) -> None:
+        """A ZBL-bridged DPA4C checkpoint fine-tunes into the plain model."""
+        self._finetune_across_bridging(source_bridged=True)
+
+    def test_finetune_random_fitting_into_bridged(self) -> None:
+        """A RANDOM fitting of a bridged target takes the plain descriptor."""
+        self._finetune_across_bridging(source_bridged=False, model_branch="RANDOM")
+
     def test_finetune_from_pte(self) -> None:
         """Train -> freeze to .pte -> finetune from .pte -> verify checkpoint."""
         from deepmd.pt_expt.entrypoints.main import (
@@ -1002,6 +1099,119 @@ class TestFinetuneCLI(unittest.TestCase):
         finally:
             os.chdir(old_cwd)
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# Native-spin descriptors, paired with the fitting types they require. Each
+# descriptor entry is deliberately tiny: these tests inspect the parameter tree
+# of a freshly built model, not its predictions.
+_NATIVE_SPIN_DESCRIPTORS = {
+    "dpa4": (
+        {
+            "type": "dpa4",
+            "rcut": 4.0,
+            "sel": 8,
+            "channels": 8,
+            "n_radial": 4,
+            "lmax": 1,
+            "mmax": 1,
+            "n_blocks": 1,
+            "precision": "float64",
+            "seed": 17,
+        },
+        "dpa4_ener",
+    ),
+    "dpa4c": (
+        {
+            "type": "dpa4c",
+            "rcut": 3.0,
+            "channels": 8,
+            "lmax": 2,
+            "n_radial": 8,
+            "precision": "float64",
+            "seed": 17,
+        },
+        "ener",
+    ),
+}
+
+
+def _native_spin_config(descriptor_key: str, use_spin: list[bool]) -> dict:
+    """Build a native-spin model config over the type map ``["Fe", "C"]``."""
+    descriptor, fitting_type = _NATIVE_SPIN_DESCRIPTORS[descriptor_key]
+    config = {
+        "type_map": ["Fe", "C"],
+        "descriptor": deepcopy(descriptor),
+        "fitting_net": {
+            "type": fitting_type,
+            "neuron": [8],
+            "precision": "float64",
+            "seed": 19,
+        },
+        "spin": {"use_spin": use_spin, "scheme": "native"},
+    }
+    if descriptor_key == "dpa4":
+        config["type"] = "dpa4"
+    return config
+
+
+class TestNativeSpinGateNotInherited(unittest.TestCase):
+    """The per-type spin gate is rebuilt from the configuration, never inherited.
+
+    A native-spin model is commonly pretrained on a corpus that declares no
+    magnetic species and then fine-tuned on a magnetic one. Both models are
+    native-spin, so their parameter trees agree and transfer wholesale, but the
+    gate that ``use_spin`` produces is not model state: adopting the pretraining
+    copy leaves it all zero, which silences the spin channel and pins the
+    magnetic force at exactly zero for the whole fine-tuning run.
+    """
+
+    @staticmethod
+    def _gates(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+        """Return every per-type spin gate of *model*, keyed by buffer name."""
+        return {
+            name: buffer
+            for name, buffer in model.named_buffers()
+            if name.endswith("spin_mask")
+        }
+
+    def test_gate_is_rebuilt_not_inherited(self) -> None:
+        for descriptor_key in _NATIVE_SPIN_DESCRIPTORS:
+            with self.subTest(descriptor=descriptor_key):
+                pretrained = get_model(
+                    _native_spin_config(descriptor_key, [False, False])
+                )
+                finetuned = get_model(
+                    _native_spin_config(descriptor_key, [True, False])
+                )
+
+                # Being configuration-derived, the gate is not part of the state.
+                self.assertEqual(
+                    [
+                        key
+                        for key in finetuned.state_dict()
+                        if key.endswith("spin_mask")
+                    ],
+                    [],
+                )
+                expected = {
+                    name: gate.clone() for name, gate in self._gates(finetuned).items()
+                }
+                self.assertTrue(expected, "the model declares no per-type spin gate")
+                for name, gate in expected.items():
+                    self.assertTrue(
+                        bool((gate != 0).any()), f"{name} is all zero as built"
+                    )
+
+                # A checkpoint that still archives the gate -- written before it
+                # became non-persistent -- must neither fail a strict load nor
+                # override the built value.
+                archived = dict(pretrained.state_dict())
+                archived.update(
+                    {name: torch.zeros_like(gate) for name, gate in expected.items()}
+                )
+                finetuned.load_state_dict(archived)
+                for name, gate in self._gates(finetuned).items():
+                    torch.testing.assert_close(gate, expected[name], rtol=0, atol=0)
 
 
 if __name__ == "__main__":

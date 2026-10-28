@@ -66,7 +66,7 @@ if TYPE_CHECKING:
     )
 
     from .edge_cache import (
-        EdgeFeatureCache,
+        EdgeCache,
     )
 
 
@@ -644,7 +644,7 @@ class SeZMInteractionBlock(NativeOP):
     def call(
         self,
         x: Array,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
@@ -709,7 +709,7 @@ class SeZMInteractionBlock(NativeOP):
     def _run_so2_unit(
         self,
         x: Array,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: Array,
         comm_dict: dict[str, Array] | None = None,
     ) -> Array:
@@ -742,7 +742,7 @@ class SeZMInteractionBlock(NativeOP):
     def _run_so2_unit_impl(
         self,
         x: Array,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: Array,
     ) -> Array:
         """Run the SO(2) unit implementation."""
@@ -804,7 +804,7 @@ class SeZMInteractionBlock(NativeOP):
     def _forward_with_residual_shortcuts(
         self,
         x: Array,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
@@ -851,7 +851,7 @@ class SeZMInteractionBlock(NativeOP):
     def _forward_with_full_attn_res(
         self,
         x: Array,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
@@ -915,7 +915,7 @@ class SeZMInteractionBlock(NativeOP):
     def _forward_with_block_attn_res(
         self,
         x: Array,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
