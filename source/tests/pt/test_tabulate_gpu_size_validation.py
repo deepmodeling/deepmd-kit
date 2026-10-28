@@ -33,7 +33,9 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
 
     def _table_info(self) -> torch.Tensor:
         # table_info stays on the CPU for every backend.
-        return torch.tensor([0.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=self.dtype)
+        return torch.tensor(
+            [0.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=self.dtype, device="cpu"
+        )
 
     def _forward_calls(self, last_layer_size: int) -> dict[str, Callable[[], object]]:
         table = self._table(last_layer_size)

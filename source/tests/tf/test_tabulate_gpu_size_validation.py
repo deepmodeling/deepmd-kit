@@ -135,6 +135,10 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
             ops = self._build_ops(last_layer_size)
 
         config = tf.ConfigProto(allow_soft_placement=False)
+        # Constant folding can execute an all-constant custom op on the CPU
+        # before placement, bypassing the GPU-only launch validation.
+        config.graph_options.optimizer_options.opt_level = -1
+        config.graph_options.rewrite_options.disable_meta_optimizer = True
         config.gpu_options.allow_growth = True
         with tf.Session(graph=graph, config=config) as sess:
             for name in names:
