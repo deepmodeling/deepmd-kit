@@ -142,9 +142,9 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
-# External inventories are optional cross-reference metadata. A stalled host
-# must not consume the entire Read the Docs build budget; Sphinx can continue
-# with its other inventories after reporting the failed request.
+# External inventories are optional cross-reference metadata. Limit connection
+# and read-inactivity waits so Sphinx can warn and continue if a host stalls.
+# This is not a deadline for the full download or documentation build.
 intersphinx_timeout = 30
 intersphinx_mapping = {
     "numpy": ("https://docs.scipy.org/doc/numpy/", None),
