@@ -89,6 +89,10 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
                 "the LAMMPS plugin"
             )
         cmake_args.append("-DDEEPMD_LAMMPS_KOKKOS:BOOL=TRUE")
+    else:
+        # Wheel builds reuse their CMake directory, so explicitly clear an
+        # option enabled by a previous invocation in that same cache.
+        cmake_args.append("-DDEEPMD_LAMMPS_KOKKOS:BOOL=FALSE")
     if dp_ipi == "1":
         cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
         extra_scripts["dp_ipi"] = "deepmd.entrypoints.ipi:dp_ipi"
