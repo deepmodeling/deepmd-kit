@@ -250,7 +250,7 @@ void fitting_energy_gradient_range(cudaStream_t stream,
 // Source-attributed per-node virial of a canonical graph from stored edge
 // cotangents, atom_virial[node] = sum(src=node) -g_e (x) edge_vec_e. The edge
 // tensors are contiguous fp32 of shape (S, 3), the source CSR holds
-// ``node_count + 1`` int64 row pointers and S uint32 positions, and every
+// ``node_count + 1`` int64 row pointers and S int64 positions, and every
 // tensor resides on the current CUDA device. Returns (node_count, 3, 3) in
 // fp32.
 torch::Tensor canonical_source_virial(const torch::Tensor& edge_gradient,
