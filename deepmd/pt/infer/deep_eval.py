@@ -98,7 +98,9 @@ from deepmd.utils.pt_checkpoint import (
 )
 
 if TYPE_CHECKING:
-    import ase.neighborlist
+    from ase.neighborlist import (
+        NewPrimitiveNeighborList,
+    )
 
     from deepmd.pt.model.model.model import (
         BaseModel,
@@ -156,7 +158,7 @@ class DeepEval(DeepEvalBackend):
         output_def: ModelOutputDef,
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
-        neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        neighbor_list: Optional["NewPrimitiveNeighborList"] = None,
         head: str | int | None = None,
         no_jit: bool = False,
         nlist_backend: str = "auto",
