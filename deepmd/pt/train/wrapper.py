@@ -186,8 +186,11 @@ class ModelWrapper(torch.nn.Module):
             "do_atomic_virial": do_atomic_virial,
             "fparam": fparam,
             "aparam": aparam,
-            "charge_spin": charge_spin,
         }
+        # Keep older scripted model signatures usable when this optional
+        # input is absent; explicitly supplied values must still be forwarded.
+        if charge_spin is not None:
+            input_dict["charge_spin"] = charge_spin
         has_spin = getattr(self.model[task_key], "has_spin", False)
         if callable(has_spin):
             has_spin = has_spin()
