@@ -165,6 +165,10 @@ def _fold_output(
         width = 9
     else:
         return value.reshape(shape)
+    if value.size == 0:
+        # No atoms: the component count cannot be inferred, nor is there
+        # anything to reorder.
+        return value.reshape(shape)
     value = value.reshape(nframes, natoms, -1, width)
     return np.swapaxes(value, 1, 2).reshape(shape)
 

@@ -20,6 +20,10 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.output_def import (
+    OutputVariableCategory,
+    OutputVariableDef,
+)
 from deepmd.entrypoints.test import test as dp_test
 from deepmd.infer import (
     DeepEval,
@@ -32,6 +36,9 @@ from deepmd.infer.deep_polar import (
 )
 from deepmd.pt_expt.entrypoints.main import (
     freeze,
+)
+from deepmd.pt_expt.infer.deep_eval import (
+    _fold_output,
 )
 from deepmd.pt_expt.model.get_model import (
     get_model,
@@ -377,3 +384,17 @@ def test_dense_property_named_polar_keeps_its_key() -> None:
         )
     finally:
         shutil.rmtree(tmpdir)
+
+
+@pytest.mark.parametrize("category", ["derv_r", "derv_c"])
+def test_fold_output_without_atoms(category: str) -> None:
+    """An empty frame folds to the API shape instead of failing to reshape."""
+    width, cat = (
+        (3, OutputVariableCategory.DERV_R)
+        if category == "derv_r"
+        else (9, OutputVariableCategory.DERV_C)
+    )
+    odef = OutputVariableDef("dipole_derv", [3, width], category=cat.value)
+    shape = [2, 3, 0, width]
+    out = _fold_output(np.empty((2, 0, 3, width)), odef, shape, 2, 0)
+    assert out.shape == tuple(shape)
