@@ -181,7 +181,7 @@ def _append_missing_type_frames(
 
     Energy/output bias statistics regress one bias per atom type from the sampled
     frame compositions.  Mixed-type systems can contain types that do not appear
-    in the small random statistics sample.  When that happens, append the first
+    in the small random statistics sample.  When that happens, append the first acceptable
     frame containing each missing type so the regression is constrained for every
     type that exists in the underlying system.  Standard (non-mixed) systems have
     fixed composition and do not need augmentation.
@@ -193,12 +193,11 @@ def _append_missing_type_frames(
         dataset_counts, candidate_frames = _mixed_system_coverage(data)
     else:
         data_system = data.data_systems[sys_idx]
-        dataset_counts, first_frame_for_type = _mixed_type_coverage(data_system)
-        if dataset_counts is None or first_frame_for_type is None:
+        dataset_counts, frames_for_type = _mixed_type_coverage(data_system)
+        if dataset_counts is None or frames_for_type is None:
             return
         candidate_frames = [
-            [] if frame_idx < 0 else [(sys_idx, int(frame_idx))]
-            for frame_idx in first_frame_for_type
+            [(sys_idx, frame_idx) for frame_idx in frames] for frames in frames_for_type
         ]
     if dataset_counts is None or candidate_frames is None:
         return
@@ -317,26 +316,36 @@ def _mixed_system_coverage(
     counts = np.zeros(ntypes, dtype=np.int64)
     candidate_frames: list[list[tuple[int, int]]] = [[] for _ in range(ntypes)]
     for system_idx, data_system in enumerate(data.data_systems):
-        system_counts, first_frame_for_type = _mixed_type_coverage(data_system)
-        if system_counts is None or first_frame_for_type is None:
+        system_counts, frames_for_type = _mixed_type_coverage(data_system)
+        if system_counts is None or frames_for_type is None:
             system_counts = np.asarray(data.natoms_vec[system_idx][2:], dtype=np.int64)
-            first_frame_for_type = np.where(system_counts > 0, 0, -1)
+            # Fixed composition does not imply identical geometry: a later
+            # frame may pass the pair-margin filter when the first one fails.
+            nframes = getattr(data_system, "prefix_sum", [1])[-1]
+            frames_for_type = [
+                list(range(nframes)) if count > 0 else [] for count in system_counts
+            ]
         counts[: len(system_counts)] += system_counts
-        for type_i, frame_idx in enumerate(first_frame_for_type):
-            if frame_idx >= 0:
-                candidate_frames[type_i].append((system_idx, int(frame_idx)))
+        for type_i, frames in enumerate(frames_for_type):
+            candidate_frames[type_i].extend(
+                (system_idx, frame_idx) for frame_idx in frames
+            )
     return counts, candidate_frames
 
 
 def _mixed_type_coverage(
     data_system: Any,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """Return full mixed-type counts and a representative frame per type."""
+) -> tuple[np.ndarray | None, list[list[int]] | None]:
+    """Return type counts and all candidates, in on-disk order.
+
+    A representative can be rejected by the geometry filter or batch schema;
+    retaining later frames lets statistics cover each type that has valid data.
+    """
     if not getattr(data_system, "mixed_type", False):
         return None, None
     ntypes = data_system.get_ntypes()
     counts = np.zeros(ntypes, dtype=np.int64)
-    first_frame_for_type = np.full(ntypes, -1, dtype=np.int64)
+    frames_for_type: list[list[int]] = [[] for _ in range(ntypes)]
     frame_offset = 0
     for set_dir, frame_end in zip(
         data_system.dirs, data_system.prefix_sum, strict=True
@@ -351,10 +360,9 @@ def _mixed_type_coverage(
         for type_i in range(ntypes):
             frame_hits = np.flatnonzero((real_type == type_i).any(axis=1))
             counts[type_i] += int((real_type == type_i).sum())
-            if first_frame_for_type[type_i] < 0 and len(frame_hits) > 0:
-                first_frame_for_type[type_i] = frame_offset + int(frame_hits[0])
+            frames_for_type[type_i].extend((frame_hits + frame_offset).tolist())
         frame_offset = frame_end
-    return counts, first_frame_for_type
+    return counts, frames_for_type
 
 
 def make_stat_input(

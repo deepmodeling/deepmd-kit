@@ -96,6 +96,39 @@ class _FakeMixedData:
         }
 
 
+class _FilteredMixedDataSystem(_FakeMixedDataSystem):
+    """Two rare-type frames, of which only the later frame is valid."""
+
+    def __init__(self) -> None:
+        self.dirs = [_FakeSetDir(np.array([[0, -1], [1, -1], [1, -1]]))]
+        self.prefix_sum = [3]
+        self.read_frames = []
+
+    def get_single_frame(self, index: int, num_worker: int = 1) -> dict:
+        self.read_frames.append(index)
+        frame = super().get_single_frame(1, num_worker)
+        frame["pair_margin"] = np.array([0.2 if index == 1 else 2.0])
+        frame["find_pair_margin"] = np.float32(1.0)
+        return frame
+
+
+class _FilteredMixedData(_FakeMixedData):
+    """Keep the initial type-zero sample valid while filtering candidates."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.data_systems = [_FilteredMixedDataSystem()]
+
+    def get_nbatches(self) -> list[int]:
+        return [3]
+
+    def get_batch(self, sys_idx: int | None = None) -> dict:
+        batch = super().get_batch(sys_idx)
+        batch["pair_margin"] = np.array([[2.0]])
+        batch["find_pair_margin"] = np.float32(1.0)
+        return batch
+
+
 class _FakeFixedDataSystem:
     """One-frame fixed-composition system used by mixed-batch tests."""
 
@@ -194,6 +227,18 @@ class TestModelStatSamplingCoverage(unittest.TestCase):
         self.assertEqual(sampled[0]["atype"].shape, (2, 2))
         self.assertEqual(sampled[0]["energy"].shape[0], 2)
         self.assertNotIn("fid", sampled[0])
+
+    def test_filtered_statistics_try_later_rare_type_frames(self) -> None:
+        """A rejected first representative must not hide a valid rare type."""
+        for threshold, expected_reads in [(0.0, [1]), (0.5, [1, 2])]:
+            with self.subTest(min_pair_dist=threshold):
+                data = _FilteredMixedData()
+                sampled = make_stat_input(data, nbatches=1, min_pair_dist=threshold)
+                counts = sampled[0]["real_natoms_vec"][:, 2:].sum(axis=0)
+                np.testing.assert_array_equal(counts, [1, 1])
+                self.assertEqual(data.data_systems[0].read_frames, expected_reads)
+                if threshold:
+                    self.assertTrue(np.all(sampled[0]["pair_margin"] >= 1.0))
 
     def test_make_stat_input_covers_rare_type_in_mixed_systems(self) -> None:
         """Cover a low-probability system in ``batch_size: mixed`` sampling."""
