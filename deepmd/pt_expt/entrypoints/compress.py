@@ -181,10 +181,10 @@ def compress_model(
     # ``model.json`` so ``deserialize()`` restores the compression state for the
     # Python inference path.
     from deepmd.pt_expt.model.graph_lower import (
-        model_uses_graph_lower,
+        model_exports_graph_lower,
     )
 
-    if output.endswith(".pt2") and model_uses_graph_lower(model):
+    if output.endswith(".pt2") and model_exports_graph_lower(model):
         log.info("Re-exporting compressed graph...")
         deserialize_to_file(
             output,
