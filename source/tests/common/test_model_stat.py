@@ -42,9 +42,11 @@ class _FakeMixedDataSystem:
     dirs: list[_FakeSetDir]
     prefix_sum: list[int]
 
-    def __init__(self) -> None:
-        self.dirs = [_FakeSetDir(np.array([[0, -1], [1, -1]], dtype=np.int32))]
-        self.prefix_sum = [2]
+    def __init__(self, real_types: np.ndarray | None = None) -> None:
+        if real_types is None:
+            real_types = np.array([[0, -1], [1, -1]], dtype=np.int32)
+        self.dirs = [_FakeSetDir(real_types)]
+        self.prefix_sum = [len(real_types)]
 
     def get_ntypes(self) -> int:
         """Return the number of real atom types."""
@@ -72,8 +74,8 @@ class _FakeMixedData:
     natoms_vec: list[np.ndarray]
     default_mesh: list[np.ndarray]
 
-    def __init__(self) -> None:
-        self.data_systems = [_FakeMixedDataSystem()]
+    def __init__(self, system: _FakeMixedDataSystem | None = None) -> None:
+        self.data_systems = [_FakeMixedDataSystem() if system is None else system]
         self.natoms_vec = [np.array([2, 2, 1, 0], dtype=np.int32)]
         self.default_mesh = [np.array([], dtype=np.int32)]
 
@@ -100,8 +102,7 @@ class _FilteredMixedDataSystem(_FakeMixedDataSystem):
     """Two rare-type frames, of which only the later frame is valid."""
 
     def __init__(self) -> None:
-        self.dirs = [_FakeSetDir(np.array([[0, -1], [1, -1], [1, -1]]))]
-        self.prefix_sum = [3]
+        super().__init__(np.array([[0, -1], [1, -1], [1, -1]], dtype=np.int32))
         self.read_frames = []
 
     def get_single_frame(self, index: int, num_worker: int = 1) -> dict:
@@ -116,8 +117,7 @@ class _FilteredMixedData(_FakeMixedData):
     """Keep the initial type-zero sample valid while filtering candidates."""
 
     def __init__(self) -> None:
-        super().__init__()
-        self.data_systems = [_FilteredMixedDataSystem()]
+        super().__init__(_FilteredMixedDataSystem())
 
     def get_nbatches(self) -> list[int]:
         return [3]
