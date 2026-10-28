@@ -40,6 +40,7 @@ from deepmd.infer.deep_dos import (
 from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
+    _standardize_fparam_aparam,
 )
 from deepmd.infer.deep_polar import (
     DeepPolar,
@@ -239,6 +240,14 @@ class DeepEval(DeepEvalBackend):
             cells = np.array(cells)
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
+        )
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            numb_test,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
         )
         # The public evaluator accepts a superset of backend/model inputs (for
         # example ``efield`` is TensorFlow-only). Forward only the dpmodel

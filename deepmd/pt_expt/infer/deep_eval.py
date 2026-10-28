@@ -42,6 +42,7 @@ from deepmd.infer.deep_dos import (
 from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
+    _standardize_fparam_aparam,
 )
 from deepmd.infer.deep_polar import (
     DeepPolar,
@@ -1312,10 +1313,15 @@ class DeepEval(DeepEvalBackend):
             Calculate the atomic energy and virial
         fparam
             The frame parameter.
-            The array should be of size nframes x dim_fparam.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
         aparam
-            The atomic parameter.
-            The array should be of size nframes x natoms x dim_aparam.
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
         charge_spin
             The charge and spin values for each frame.
             The array should be reshape-compatible with nframes x 2, where the first
@@ -1338,6 +1344,14 @@ class DeepEval(DeepEvalBackend):
             cells = np.array(cells)
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
+        )
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            numb_test,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
         )
         request_defs = self._get_request_defs(atomic)
         spins = kwargs.get("spin")
@@ -2662,6 +2676,19 @@ class DeepEval(DeepEvalBackend):
                 "eval_descriptor is not supported for this model type "
                 f"({type(self._dpmodel).__name__})."
             )
+        nframes = coords.shape[0]
+        natoms = len(atom_types) if len(atom_types.shape) == 1 else atom_types.shape[1]
+        # Canonicalize shared parameter shorthands before _prepare_nlist_inputs
+        # reshapes them; otherwise a shared per-atom array can be mistaken for
+        # a batch of frames.
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
+        )
         (
             ext_coord_t,
             ext_atype_t,
@@ -2739,6 +2766,19 @@ class DeepEval(DeepEvalBackend):
                 "eval_fitting_last_layer is not supported for this model type "
                 f"({type(self._dpmodel).__name__})."
             )
+        nframes = coords.shape[0]
+        natoms = len(atom_types) if len(atom_types.shape) == 1 else atom_types.shape[1]
+        # Canonicalize shared parameter shorthands before _prepare_nlist_inputs
+        # reshapes them; otherwise a shared per-atom array can be mistaken for
+        # a batch of frames.
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
+        )
         (
             ext_coord_t,
             ext_atype_t,
