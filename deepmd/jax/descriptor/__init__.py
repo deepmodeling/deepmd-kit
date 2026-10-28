@@ -8,6 +8,9 @@ from deepmd.jax.descriptor.dpa2 import (
 from deepmd.jax.descriptor.dpa3 import (
     DescrptDPA3,
 )
+from deepmd.jax.descriptor.dpa4 import (
+    DescrptDPA4,
+)
 from deepmd.jax.descriptor.hybrid import (
     DescrptHybrid,
 )
@@ -31,6 +34,7 @@ __all__ = [
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptDPA3",
+    "DescrptDPA4",
     "DescrptHybrid",
     "DescrptSeA",
     "DescrptSeAttenV2",

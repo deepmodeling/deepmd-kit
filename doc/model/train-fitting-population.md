@@ -1,12 +1,13 @@
 # Fit atomic charge population {{ pytorch_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}
 
 Here we present an API to DeepPopulation model, which can be used to fit the atomic charge population.
 
-See the [preprint on arXiv](https://arxiv.org/abs/2606.01763) for details and an example of how the DeepPopulation model was used to study small polaron transport.
+See the {ref}`DeepPopulation paper <cite-deeppopulation>` in the canonical
+citation guide for details and an example of how the model was used to study
+small-polaron transport.
 
 In this example, we will show you how to train a model to fit the atomic charge population for a titanium dioxide system. A complete training input script of the examples can be found in
 
@@ -90,7 +91,7 @@ The training command is the same as `ener` mode, i.e.
 
 ::::{tab-set}
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt train input_torch.json

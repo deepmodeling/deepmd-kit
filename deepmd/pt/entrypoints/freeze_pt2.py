@@ -23,6 +23,7 @@ from __future__ import (
     annotations,
 )
 
+import contextlib
 import ctypes
 import json
 import logging
@@ -33,11 +34,17 @@ from copy import (
     deepcopy,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import numpy as np
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Iterator,
+    )
 
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
@@ -46,8 +53,8 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
-from deepmd.kernels.utils import (
-    triton_infer_level,
+from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+    GeometricInitialEmbedding,
 )
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
     SO2Convolution,
@@ -61,12 +68,19 @@ from deepmd.pt.train.wrapper import (
 )
 from deepmd.pt.utils.compile_compat import (
     build_inductor_compile_options,
+    traced_output_keys,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
 )
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
+)
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
+)
+from deepmd.utils.bridging import (
+    is_bridged_sezm_config,
 )
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
@@ -159,12 +173,21 @@ def is_sezm_checkpoint(ckpt_path: str) -> bool:
         _, params = _extract_state_and_params(raw)
     except ValueError:
         return False
+
+    def _is_sezm_params(branch_params: dict[str, Any]) -> bool:
+        # the flag spelling and the canonical bridged linear spelling both
+        # realize a SeZMModel in the pt backend
+        return str(branch_params.get("type", "")).lower() in (
+            "sezm",
+            "dpa4",
+        ) or is_bridged_sezm_config(branch_params)
+
     if "model_dict" in params:
         return any(
-            str(branch_params.get("type", "")).lower() in ("sezm", "dpa4")
+            _is_sezm_params(branch_params)
             for branch_params in params["model_dict"].values()
         )
-    return str(params.get("type", "")).lower() in ("sezm", "dpa4")
+    return _is_sezm_params(params)
 
 
 def _select_model_head(
@@ -303,7 +326,7 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
     """Tune the shape-keyed Triton launch tables for this checkpoint's shapes.
 
     At ``DP_TRITON_INFER >= 2`` the traced graph bakes launch configurations
-    resolved from the tables in ``deepmd.kernels.triton.sezm.tile_configs``.  Shape keys
+    resolved from the tables in ``deepmd.pt_expt.kernels.triton.sezm.tile_configs``.  Shape keys
     absent from the built-in tables (an untuned GPU model, or an untuned
     width/degree) are swept here on the local GPU -- the exact hardware the
     ``.pt2`` will run on, since AOTInductor artifacts are not portable across
@@ -318,19 +341,16 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
         return
     if target_device.type != "cuda" or not torch.cuda.is_available():
         return
-    from deepmd.kernels.triton.sezm.so2_value_path import (
+    from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
         SO2_VALUE_PATH_TRITON_AVAILABLE,
         make_triton_value_path,
     )
 
     if not SO2_VALUE_PATH_TRITON_AVAILABLE:
         return
-    from deepmd.kernels.triton.sezm.sweep_tile_configs import (
+    from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
         collect_model_shape_keys,
         tune_missing_configs,
-    )
-    from deepmd.kernels.triton.sezm.tile_configs import (
-        _builtin_tables,
     )
 
     # The built-in tables and the sweep both resolve against the current
@@ -338,7 +358,6 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
     # tunes and looks up the right hardware (mixed-model hosts).
     if target_device.index is not None:
         torch.cuda.set_device(target_device)
-        _builtin_tables.cache_clear()
 
     shape_keys = collect_model_shape_keys(model)
     registered = tune_missing_configs(
@@ -512,6 +531,7 @@ def _make_sample_inputs(
         mapping_t,
     )
     if has_spin:
+        # Local spins have a frame stride independent of ghost storage.
         return (
             edge_schema.coord,
             edge_schema.atype,
@@ -519,7 +539,7 @@ def _make_sample_inputs(
             edge_schema.edge_vec,
             edge_schema.edge_scatter_index,
             edge_schema.edge_mask,
-            ext_spin[:, :nloc],
+            ext_spin[:, :nloc].contiguous(),
             fparam,
             aparam,
             charge_spin,
@@ -824,6 +844,73 @@ def _export_with_comm_artifact(
             return fh.read()
 
 
+# Kernel levels the archive is built against when the caller expresses no
+# preference. Both are baked into the exported graph, so the default is the
+# combination that is fastest without trading accuracy for it.
+#
+# ``DP_CUDA_INFER=1`` rather than 2: level 1 holds the operators whose profit is
+# memory traffic and is faster on every part and every checkpoint measured,
+# while level 2 also replaces the mixing stack with float32 SIMT arithmetic.
+# That substitution wins on narrow checkpoints and on parts with a large
+# float32 peak, and loses as the arithmetic per edge grows -- measured from
+# 1.8x down to 0.7x across the model zoo on one part -- so it is left to an
+# explicit choice.
+#
+# ``DP_TRITON_INFER=2`` rather than 3: level 3 adds fp16x3 split-compensated
+# GEMMs to the mixing stack. For DPA4 that is their only site, so they matter
+# exactly while the mixing stack is still Triton's -- that is, below
+# ``DP_CUDA_INFER=2``, which the default above is. Where they do run they
+# perturb the forces by up to 4e-1 eV/Å on the wider checkpoints against the
+# float32 reference, and a frozen archive is what runs molecular dynamics, so
+# it defaults to exact float32.
+_FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "1"}
+_FREEZE_DISABLED_LEVELS = {"DP_CUTILE_INFER": "0", "DP_CUTE_INFER": "0"}
+_INFER_KERNEL_LEVELS = tuple(_FREEZE_KERNEL_LEVELS | _FREEZE_DISABLED_LEVELS)
+
+
+def _apply_kernel_level_defaults(target_device: torch.device) -> None:
+    """Pin the inference kernel levels this archive is compiled against.
+
+    The levels are read once at model construction time and baked into the
+    exported graph, so they are fixed here, before the checkpoint is loaded. A
+    CPU target disables accelerator-only paths; for a CUDA target an explicit
+    Triton or CUDA setting in the environment always wins. cuTile and CuTe are
+    Python-only eager backends and are disabled for every frozen archive.
+    """
+    if target_device.type != "cuda":
+        for name in _INFER_KERNEL_LEVELS:
+            os.environ[name] = "0"
+        log.info("Freezing for CPU with accelerator-only DPA4 paths disabled.")
+        return
+    os.environ.update(_FREEZE_DISABLED_LEVELS)
+    chosen = {}
+    for name, default in _FREEZE_KERNEL_LEVELS.items():
+        explicit = os.environ.get(name)
+        if explicit is None:
+            os.environ[name] = default
+        chosen[name] = (explicit, "environment") if explicit else (default, "default")
+    log.info(
+        "Freezing against %s; set them before freezing to override, since the "
+        "selected kernels are baked into the .pt2 archive.",
+        ", ".join(f"{k}={v} ({how})" for k, (v, how) in chosen.items()),
+    )
+
+
+@contextlib.contextmanager
+def _kernel_level_defaults(target_device: torch.device) -> Iterator[None]:
+    """Apply freeze-time kernel levels without changing the caller's environment."""
+    saved = {name: os.environ.get(name) for name in _INFER_KERNEL_LEVELS}
+    try:
+        _apply_kernel_level_defaults(target_device)
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 def freeze_sezm_to_pt2(
     ckpt_path: str,
     out_path: str,
@@ -831,6 +918,7 @@ def freeze_sezm_to_pt2(
     device: torch.device | None = None,
     head: str | None = None,
     atomic_virial: bool = True,
+    with_comm: bool = True,
 ) -> None:
     """Freeze a SeZM checkpoint into an AOTInductor ``.pt2`` archive.
 
@@ -852,20 +940,51 @@ def freeze_sezm_to_pt2(
         default: the edge-force scatter assembles the per-atom virial as a
         free by-product of the single backward, so exporting it carries no
         compute cost.
+    with_comm
+        Whether to include a communication artifact when the model supports
+        cross-rank message passing. Disable for single-process inference.
+
+    Notes
+    -----
+    The accelerated kernel levels are baked into the archive. A CPU archive
+    disables accelerator-only paths. For a CUDA archive without an explicit
+    ``DP_TRITON_INFER`` or ``DP_CUDA_INFER`` in the environment, the defaults
+    are ``DP_TRITON_INFER=2`` and ``DP_CUDA_INFER=1``, which is the fastest
+    combination that keeps every operator in exact float32.
     """
+    target_device = device if device is not None else DEVICE
+    with _kernel_level_defaults(target_device):
+        _freeze_sezm_to_pt2(
+            ckpt_path,
+            out_path,
+            target_device=target_device,
+            head=head,
+            atomic_virial=atomic_virial,
+            with_comm=with_comm,
+        )
+
+
+def _freeze_sezm_to_pt2(
+    ckpt_path: str,
+    out_path: str,
+    *,
+    target_device: torch.device,
+    head: str | None,
+    atomic_virial: bool,
+    with_comm: bool,
+) -> None:
+    """Build one AOTInductor archive under an established kernel policy."""
     from torch._inductor import (
         aoti_compile_and_package,
     )
     from torch._inductor import config as inductor_config
-
-    target_device = device if device is not None else DEVICE
 
     raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     state_dict, params = _extract_state_and_params(raw)
     state_dict, params = _select_model_head(state_dict, params, head)
 
     model_type = str(params.get("type", "")).lower()
-    if model_type not in ("sezm", "dpa4"):
+    if model_type not in ("sezm", "dpa4") and not is_bridged_sezm_config(params):
         raise ValueError(
             f"freeze_sezm_to_pt2 expects a SeZM/DPA4 checkpoint, got type={params.get('type')!r}."
         )
@@ -873,23 +992,48 @@ def freeze_sezm_to_pt2(
     model = get_model(params)
     is_spin = _model_has_spin(model)
     ModelWrapper(model).load_state_dict(state_dict)
+    if model.get_active_mode() == "dens":
+        raise ValueError(
+            "SeZM freeze supports only the `ener` mode: the DeNS head serves "
+            "training alone and is not exported."
+        )
     model.eval()
+    # The vacuum reference is resolved on the target device, folded into the
+    # fitting bias or stored as a per-type table, so the exported graph
+    # carries no reference atoms.
+    model.to(target_device)
+    model.fold_vacuum_reference()
     model.to("cpu")
 
-    # The SO(2) linear mixer selects its block-diagonal vs dense matmul from a
-    # Python device branch that make_fx resolves at trace time. Since tracing
-    # always runs on CPU, pin the choice to the AOTI target device: non-CPU
-    # targets bake the block-diagonal contraction (which skips the structural
-    # off-|m| zeros); CPU targets keep the dense einsum that dodges the Inductor
-    # AVX2 codegen bug.
+    # Device-dependent Python branches resolve on the CPU tracing inputs, so
+    # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
+    # contraction, while CUDA targets also bake the fused GIE scatter.
     force_block_diag = target_device.type != "cpu"
+    force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
         if isinstance(module, SO2Linear):
             module._force_block_diag_matmul = force_block_diag
+        if isinstance(module, GeometricInitialEmbedding):
+            module._force_fused_scatter = force_fused_scatter
 
     # Sweep any Triton launch-table keys this checkpoint needs that are not
     # covered for the local GPU, so the traced graph bakes tuned launches.
     _tune_triton_configs(model, target_device)
+
+    has_triton_value_path = any(
+        getattr(module, "_triton_value_path", None) is not None
+        for module in model.modules()
+    )
+    if has_triton_value_path:
+        # Pack fixed SO(2) weight layouts after checkpoint loading. The
+        # registered buffers enter the CPU trace as constants and move with the
+        # exported graph to the AOTI target, eliminating parameter-only layout
+        # kernels at runtime.
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            prepare_triton_value_path_weights,
+        )
+
+        prepare_triton_value_path_weights(model)
 
     _, sample_inputs_cpu = _resolve_nframes(
         model,
@@ -904,12 +1048,10 @@ def freeze_sezm_to_pt2(
     log.info("Tracing the lower graph on CPU (make_fx)...")
     traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
 
-    # Output key order is taken from a concrete run; Python dict order
-    # is stable and matches what DeepPotPTExpt::extract_outputs zips
-    # against AOTIModelPackageLoader::run's output vector.
-    with torch.no_grad():
-        sample_out = traced(*sample_inputs_cpu)
-    output_keys = list(sample_out.keys())
+    # Output key order is read from the static FX output node. A CUDA-target
+    # trace may already contain CUDA-only custom operators and therefore must
+    # not be replayed on the CPU tracing inputs.
+    output_keys = traced_output_keys(traced)
 
     log.info("Exporting the traced graph (torch.export)...")
     exported = torch.export.export(
@@ -946,14 +1088,18 @@ def freeze_sezm_to_pt2(
     # Second artifact: the LAMMPS multi-rank with-comm graph. It threads the
     # eight border_op communication tensors so cross-rank ghost features are
     # exchanged between interaction blocks. Gated on the edge_vec lower contract
-    # (energy and native spin), so virtual spin (nlist interface) is excluded;
-    # bridging models report supports_edge_parallel()=False (Source Freeze
-    # Propagation is not rank-decomposable). Both fall back to single-rank.
-    with_comm = (
-        model.export_lower_input_kind() == "edge_vec" and model.supports_edge_parallel()
+    # (energy and native spin), so virtual spin (nlist interface) is excluded
+    # and falls back to single-rank. Bridging models DO take this path: they
+    # report supports_edge_parallel()=True since the Source Freeze Propagation
+    # gate's per-node partials are completed across ranks by
+    # DescrptSeZM._gate_partial_exchange (issue #5906).
+    has_comm_artifact = (
+        with_comm
+        and model.export_lower_input_kind() == "edge_vec"
+        and model.supports_edge_parallel()
     )
     with_comm_bytes: bytes | None = None
-    if with_comm:
+    if has_comm_artifact:
         log.info(
             "Compiling the parallel with-comm artifact (second AOTInductor "
             "compilation)..."
@@ -969,7 +1115,7 @@ def freeze_sezm_to_pt2(
         output_keys=output_keys,
         is_spin=is_spin,
         do_atomic_virial=atomic_virial,
-        has_comm_artifact=with_comm,
+        has_comm_artifact=has_comm_artifact,
     )
     with zipfile.ZipFile(out_path_str, "a") as zf:
         zf.writestr("model/extra/metadata.json", json.dumps(metadata))

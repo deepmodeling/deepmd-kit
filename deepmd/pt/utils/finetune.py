@@ -21,6 +21,33 @@ from deepmd.utils.finetune import (
 __all__ = ["get_finetune_rule_single", "get_finetune_rules"]
 
 
+def _learned_part_path(model: torch.nn.Module) -> str | None:
+    """Return the state-dict path of the learned descriptor-fitting part of a model.
+
+    A plain model holds that part as its atomic model and a composition with
+    one learned sub-model, such as a zone-bridging one, as that sub-model, so
+    fine-tuning between the two transfers the part across the paths. A model
+    without a single learned part returns ``None``.
+    """
+    atomic_model = model.atomic_model
+    if getattr(atomic_model, "descriptor", None) is not None:
+        return "atomic_model."
+    learned = [
+        index
+        for index, child in enumerate(getattr(atomic_model, "models", ()))
+        if getattr(child, "descriptor", None) is not None
+    ]
+    return f"atomic_model.models.{learned[0]}." if len(learned) == 1 else None
+
+
+def _move_learned_key(key: str, path: str, source_path: str) -> str:
+    """Move a descriptor or fitting-net key between learned atomic-model paths."""
+    for part in ("descriptor.", "fitting_net."):
+        if f".{path}{part}" in key:
+            return key.replace(f".{path}{part}", f".{source_path}{part}", 1)
+    return key
+
+
 def get_finetune_rules(
     finetune_model: str,
     model_config: dict[str, Any],

@@ -1650,7 +1650,11 @@ def take(x: Array, indices: Array, /, *, axis: int | None = None) -> Array:
         axis = 0
     axis = _normalize_axis(axis, tensor.shape.rank)
     indices_ = tf.cast(_unwrap(indices), tf.int64)
-    dim = tensor.shape[axis]
+    # ``TensorShape.__getitem__`` returns either ``None`` or
+    # ``Dimension(None)`` depending on TensorFlow's global v2-shape setting.
+    # ``as_list`` normalizes both representations, which keeps dynamic-axis
+    # indexing valid when another test or caller enables legacy TensorShape.
+    dim = tensor.shape.as_list()[axis]
     dim = (
         tf.shape(tensor, out_type=tf.int64)[axis]
         if dim is None
@@ -1664,7 +1668,7 @@ def take_along_axis(x: Array, indices: Array, /, *, axis: int = -1) -> Array:
     tensor = _unwrap(x)
     indices_ = tf.cast(_unwrap(indices), tf.int64)
     axis = _normalize_axis(axis, tensor.shape.rank)
-    dim = tensor.shape[axis]
+    dim = tensor.shape.as_list()[axis]
     dim = (
         tf.shape(tensor, out_type=tf.int64)[axis]
         if dim is None

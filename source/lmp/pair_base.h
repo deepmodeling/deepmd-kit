@@ -61,6 +61,11 @@ class PairDeepBaseModel : public Pair {
   deepmd_compat::DeepBaseModel& deep_base;
   deepmd_compat::DeepBaseModelDevi& deep_base_model_devi;
   virtual void allocate();
+  // The model-deviation gather arrays are owned by this pair style.  Keep
+  // their allocation in one place so repeated LAMMPS initialization cannot
+  // overwrite a live pointer and leak the previous allocation.
+  void ensure_model_deviation_buffers();
+  void destroy_model_deviation_buffers();
   double** scale;
   unsigned numb_models;
   double cutoff;
@@ -102,6 +107,13 @@ class PairDeepBaseModel : public Pair {
   void make_aparam_from_compute(std::vector<double>& aparam);
   bool do_compute_aparam;
   std::string compute_aparam_id;
+
+  void parse_spin_vector_option(std::vector<double>& values,
+                                const std::string& option,
+                                int& iarg,
+                                int narg,
+                                char** arg,
+                                bool (*is_key)(const std::string&));
 
   void make_ttm_fparam(std::vector<double>& fparam);
 

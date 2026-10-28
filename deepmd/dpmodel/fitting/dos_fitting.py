@@ -32,6 +32,12 @@ from deepmd.utils.version import (
 
 @InvarFitting.register("dos")
 class DOSFittingNet(InvarFitting):
+    # Compose rather than replace the base documentation so AutoAPI/numpydoc
+    # retains the fitting equations and complete Parameters section.
+    __doc__ = r"""Fit DOS vectors :math:`\mathbf D_i=F_\theta(\mathcal D_i)`.
+
+        """ + (InvarFitting.__doc__ or "")
+
     def __init__(
         self,
         ntypes: int,
@@ -49,6 +55,7 @@ class DOSFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
+        vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         default_fparam: list | None = None,
@@ -74,6 +81,7 @@ class DOSFittingNet(InvarFitting):
             precision=precision,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            vacuum_ref=vacuum_ref,
             type_map=type_map,
             seed=seed,
             default_fparam=default_fparam,
@@ -96,7 +104,7 @@ class DOSFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         data["numb_dos"] = data.pop("dim_out")
         data.pop("tot_ener_zero", None)
         data.pop("var_name", None)

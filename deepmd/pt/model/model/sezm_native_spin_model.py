@@ -84,6 +84,15 @@ class SeZMNativeSpinModel(SeZMModel):
     # Forward Methods
     # =========================================================================
 
+    def _make_mask_mag(self, atype: torch.Tensor) -> torch.Tensor:
+        """Return the magnetic-type mask without indexing phantom sentinels."""
+        safe_atype, real_atom = self._sanitize_atom_types(atype)
+        spin_active = self.spin_mask.index_select(
+            0,
+            safe_atype.reshape(-1),
+        ).reshape(*atype.shape, 1)
+        return (spin_active > 0.0) & real_atom.unsqueeze(-1)
+
     def forward(
         self,
         coord: torch.Tensor,
@@ -100,8 +109,9 @@ class SeZMNativeSpinModel(SeZMModel):
         ``mask_mag`` is built from the per-type spin gate on the local
         ``atype``; non-magnetic atoms already carry a zero magnetic force (the
         descriptor gates the spin embedding by type), so the force itself needs
-        no re-masking. This is the runtime counterpart of the static schema in
-        :meth:`translated_output_def`.
+        no re-masking. Phantom padding uses a lookup-safe type but is intersected
+        with the physical-atom mask, so it always reports ``False``. This is the
+        runtime counterpart of the static schema in :meth:`translated_output_def`.
         """
         model_ret = self.forward_common(
             coord,
@@ -113,14 +123,10 @@ class SeZMNativeSpinModel(SeZMModel):
             charge_spin=charge_spin,
             spin=spin,
         )
-        nf, nloc = atype.shape[:2]
         model_predict: dict[str, torch.Tensor] = {
             "atom_energy": model_ret["energy"],
             "energy": model_ret["energy_redu"],
-            "mask_mag": self.spin_mask.index_select(0, atype.reshape(-1)).reshape(
-                nf, nloc, 1
-            )
-            > 0.0,
+            "mask_mag": self._make_mask_mag(atype),
         }
         if self.do_grad_r("energy"):
             model_predict["force"] = rearrange(
@@ -397,8 +403,9 @@ class SeZMNativeSpinModel(SeZMModel):
             Internal SeZM lower outputs; ``energy_derv_r_mag`` has the
             per-local-atom shape ``(nf, nloc, 1, 3)``.
         atype
-            Local atom types with shape ``(nf, nloc)``, used to build
-            ``mask_mag`` with shape ``(nf, nloc, 1)``.
+            Atom types aligned with the magnetic-force rows before optional
+            ghost padding, used to build ``mask_mag`` with a trailing singleton
+            axis. Negative phantom sentinels are allowed.
         nall
             Extended atom count the magnetic force is padded to.
 
@@ -423,12 +430,7 @@ class SeZMNativeSpinModel(SeZMModel):
         nf, nloc = derv_r_mag.shape[:2]
         ghost_pad = derv_r_mag.new_zeros(nf, nall - nloc, *derv_r_mag.shape[2:])
         model_ret["energy_derv_r_mag"] = torch.cat([derv_r_mag, ghost_pad], dim=1)
-        model_ret["mask_mag"] = (
-            self.spin_mask.index_select(0, atype.reshape(-1)).reshape(
-                atype.shape[0], atype.shape[1], 1
-            )
-            > 0.0
-        )
+        model_ret["mask_mag"] = self._make_mask_mag(atype)
         return model_ret
 
     # =========================================================================

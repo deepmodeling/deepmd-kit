@@ -15,12 +15,14 @@
 #include <torch/torch.h>
 
 #include "DeepPot.h"
+#include "graph_assembly.h"
 
-// Forward-declare to keep TempFile out of public header. Defined in
+// Forward-declare to keep these out of the public header. Defined in
 // commonPTExpt.h.
 namespace deepmd::ptexpt {
 class TempFile;
-}
+class ChargeStateFold;
+}  // namespace deepmd::ptexpt
 
 namespace torch::inductor {
 class AOTIModelPackageLoader;
@@ -117,10 +119,37 @@ class DeepPotPTExpt : public DeepPotBackend {
     assert(inited);
     return daparam;
   };
+  /**
+   * @brief The width of a charge/spin condition this model accepts.
+   *
+   * This is the width a caller names a condition with, which is not in
+   * general the width of the conditioning input of the compiled forward:
+   * compression folds the condition into frozen tables and so removes it from
+   * the argument list, leaving a model that still serves a condition through
+   * the fold shipped beside the inference lower.
+   **/
   int dim_chg_spin() const override {
     assert(inited);
-    return dchgspin;
+    return settable_chgspin;
   };
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   *
+   * The condition reaches the model by one of two routes, and this sets both
+   * so that the caller does not depend on how the model was frozen.  It
+   * becomes the condition of every later forward pass that is not given one
+   * explicitly.  A compressed descriptor additionally carries the condition
+   * inside frozen tables that the compiled lower holds as constants; when the
+   * archive ships the fold that rebuilds them, it runs here and the resulting
+   * tables are written over those constants.
+   *
+   * Intended to be called once, before inference, since overwriting the
+   * constants of a loaded module is not safe to interleave with a forward
+   * pass.
+   *
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) override;
   void get_type_map(std::string& type_map);
   bool is_aparam_nall() const {
     assert(inited);
@@ -348,11 +377,11 @@ class DeepPotPTExpt : public DeepPotBackend {
                                    double* d_force,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::int64_t* d_source,
+                                   const std::uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::int64_t* d_source_order,
+                                   const std::uint32_t* d_source_order,
                                    const int nloc,
                                    const int nall_nodes,
                                    const std::int64_t edge_storage) override;
@@ -405,23 +434,34 @@ class DeepPotPTExpt : public DeepPotBackend {
       double* d_force,
       double* d_atom_virial,
       const std::int64_t* d_atype,
-      const std::int64_t* d_source,
+      const std::uint32_t* d_source,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
       const std::int64_t* d_source_row_ptr,
-      const std::int64_t* d_source_order,
+      const std::uint32_t* d_source_order,
       const int nloc,
       const int nall_nodes,
       const std::int64_t edge_storage);
   bool inited;
-  int ntypes;
-  int dfparam;
-  int daparam;
-  int dchgspin;
+  // Every width below is a property of the loaded archive.  They read as zero
+  // until ``init`` has run, so that a query on an uninitialised backend
+  // answers "none" rather than whatever the allocation happened to hold.
+  int ntypes = 0;
+  int dfparam = 0;
+  int daparam = 0;
+  // Conditioning width of the compiled forward's argument list.  Zero for a
+  // model that carries no condition, and also for a compressed one, whose
+  // condition lives in frozen tables rather than in an input.  Every gate that
+  // decides whether to hand the forward a condition tensor reads this.
+  int dchgspin = 0;
+  // Width of a charge state this model can be given; see ``dim_chg_spin()``.
+  int settable_chgspin = 0;
   bool aparam_nall;
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
   std::vector<double> default_chg_spin_;
+  /** Half-open row range of each charge-state value, from the archive. */
+  std::vector<std::pair<double, double> > chg_spin_table_ranges_;
   double rcut;
   int gpu_id;
   bool gpu_enabled;
@@ -451,6 +491,16 @@ class DeepPotPTExpt : public DeepPotBackend {
   // ``has_message_passing`` metadata field; archives without it default to
   // non-message-passing.
   bool has_message_passing_ = false;
+  // Whether the collective empty-rank preflight (allreduce of the minimum
+  // owned+ghost node count over the LAMMPS communicator, graph with-comm
+  // route) has PASSED for the current neighbor topology.  The preflight
+  // re-runs whenever the with-comm graph branch is entered with
+  // ``ago == 0`` (every topology rebuild) or before its first success:
+  // the node count shares the lifetime of the cached nlist/mapping/edge
+  // topology, so re-running the collective on cache-hit (``ago > 0``)
+  // force calls added a global synchronization per MD step without any
+  // added protection.
+  bool graph_comm_preflight_done_ = false;
   // Device-resident (ntypes+1)^2 model-level pair-type keep table, uploaded
   // ONCE in ``init`` from the ``pair_exclude_types`` metadata field (see
   // ``deepmd::buildPairExcludeTable``).  An UNDEFINED tensor => no model-level
@@ -461,8 +511,25 @@ class DeepPotPTExpt : public DeepPotBackend {
   // (``applyPairExclusion`` graph / ``applyPairExclusionNlist`` dense); the
   // exported .pt2 lowers consume pre-excluded inputs and never re-apply it.
   torch::Tensor pair_exclude_table_;
+  // Host copy of the same table. The graph route folds the exclusion into the
+  // per-edge assembly predicate, so an excluded edge is never allocated; that
+  // predicate runs on the host, before the payload reaches the model device.
+  std::vector<int> pair_exclude_host_;
+  // Destination-grouped skin topology, rebuilt only when the host rebuilds its
+  // neighbor list, and the row-pointer scratch the per-step assembly reuses.
+  deepmd::SkinTopology skin_topology_;
+  deepmd::GraphAssemblyScratch graph_scratch_;
+  // Whether the compiled graph lower reads the source-major permutation.
+  // Recorded by the artifact (``graph_source_csr``); absent metadata means the
+  // permutation is built, which is always correct.
+  bool graph_reads_source_csr_ = true;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
+  // The charge/spin condition a compressed descriptor folded into the
+  // constants of its lower, re-runnable so that a condition chosen at runtime
+  // can be served.  Null for an uncompressed model, which reads its condition
+  // as an ordinary input and needs no rebuild.
+  std::unique_ptr<deepmd::ptexpt::ChargeStateFold> charge_state_fold_;
 
   /**
    * @brief Multi-frame loop for standalone compute (no nlist).
@@ -613,6 +680,58 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& edge_vec,
       const torch::Tensor& edge_scatter_index,
       const torch::Tensor& edge_mask,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
+      const std::vector<at::Tensor>& comm_tensors);
+
+  /**
+   * @brief Run the with-comm NeighborGraph (message-passing, e.g. DPA2/DPA3)
+   *        ``.pt2`` artifact with comm tensors appended.
+   *
+   * Positional AOTI input order mirrors ``run_model_graph``: ``(atype,
+   * n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
+   * destination_row_ptr, source_order, source_row_ptr, [fparam], [aparam],
+   * [charge_spin], comm_tensors...)``.  The graph is built on the
+   * EXTENDED region (``fold_to_local=false``): ghost nodes are distinct and
+   * their embeddings are filled in-place by ``border_op`` inside the
+   * exported artifact, exactly as the with-comm dense/edge artifacts do.
+   *
+   * @param[in] atype Per-node extended-region types, shape ``(N,)`` int64,
+   *            N == nall_real (owned prefix first, then ghost).
+   * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
+   * @param[in] edge_index Extended-region edge graph ``(2, E)`` int64
+   *            [src, dst]; ghost-node indices retained (NOT folded to
+   *            owners -- ``fold_to_local=false``).
+   * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
+   * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
+   * @param[in] aparam Atomic parameters on the flat EXTENDED node axis,
+   *            shape ``(N, dim_aparam)`` (owned prefix filled, ghost rows
+   *            zero-padded -- ghost fitting outputs are masked inside the
+   *            artifact), or an empty tensor when ``dim_aparam == 0``.
+   * @param[in] comm_tensors 8 comm tensors in canonical positional order:
+   *            send_list, send_proc, recv_proc, send_num, recv_num,
+   *            communicator, nlocal, nghost.  All 8 stay on CPU (host
+   *            control metadata for the opaque ``border_op``, symmetric
+   *            with the dense with-comm artifact).
+   * @param[in] n_local (1,) int64 owned-node count consumed IN-GRAPH by the
+   *            owned-node energy mask; moved to the model device here (its
+   *            consumer is a device kernel after ``move_to_device_pass``).
+   *            Same value as the ``nlocal`` comm tensor -- the two inputs
+   *            separate the device-compute role from the host-MPI-control
+   *            role, so ``border_op`` never pulls device scalars.
+   */
+  std::vector<torch::Tensor> run_model_graph_with_comm(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& destination_order,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_order,
+      const torch::Tensor& source_row_ptr,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin,

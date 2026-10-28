@@ -9,10 +9,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <sstream>
 #include <type_traits>
+#include <unordered_map>
 
 #include "SimulationRegion.h"
 #include "common.h"
@@ -22,13 +24,19 @@
 #include "errors.h"
 #include "neighbor_list.h"
 
+using deepmd::ptexpt::check_call_charge_spin;
+using deepmd::ptexpt::check_charge_spin_domain;
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_chg_spin_table_ranges;
 using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
 using namespace deepmd;
 
 namespace {
+// ``extend_graph_aparam`` and ``check_graph_aparam_flat`` moved to
+// commonPT.h (deepmd namespace) so DeepSpinPTExpt.cc can share them for its
+// native-spin graph route.
 
 void synchronize_current_accelerator_stream() {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
@@ -186,6 +194,10 @@ void DeepPotPTExpt::init(const std::string& model,
   dchgspin = metadata.obj_val.count("dim_chg_spin")
                  ? metadata["dim_chg_spin"].as_int()
                  : 0;
+  // A model whose lower reads the condition as an input accepts exactly that
+  // condition; the charge-state fold, loaded below, widens this for a
+  // compressed model, whose lower has no conditioning input at all.
+  settable_chgspin = dchgspin;
   aparam_nall = false;  // pt_expt models use nloc for aparam
   if (metadata.obj_val.count("has_default_fparam")) {
     has_default_fparam_ = metadata["has_default_fparam"].as_bool();
@@ -212,6 +224,8 @@ void DeepPotPTExpt::init(const std::string& model,
     }
   }
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata, dchgspin);
+  check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
     do_atomic_virial = metadata["do_atomic_virial"].as_bool();
@@ -235,11 +249,19 @@ void DeepPotPTExpt::init(const std::string& model,
         metadata["lower_input_kind"].as_string();
     lower_input_is_edge_ = lower_input_kind == "edge_vec";
     lower_input_is_graph_ = lower_input_kind == "graph";
-    lower_input_is_canonical_ = lower_input_kind == "dpa1_canonical";
+    lower_input_is_canonical_ = lower_input_kind == "dpa1_canonical" ||
+                                lower_input_kind == "dpa4c_canonical";
   } else {
     lower_input_is_edge_ = false;
     lower_input_is_graph_ = false;
     lower_input_is_canonical_ = false;
+  }
+  if (lower_input_is_edge_) {
+    std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
+                 "schema (pt-backend SeZM/DPA4 freeze). Support will be "
+                 "removed in a future release; refreeze the checkpoint with "
+                 "the pt_expt backend (graph schema)."
+              << std::endl;
   }
   graph_edge_fp32_ = false;
   if (metadata.obj_val.count("graph_edge_dtype")) {
@@ -255,6 +277,12 @@ void DeepPotPTExpt::init(const std::string& model,
     if (!graph_edge_fp32_) {
       throw deepmd::deepmd_exception(
           "compact canonical graph artifacts require float32 edge vectors.");
+    }
+    if (!metadata.obj_val.count("canonical_index_dtype") ||
+        metadata["canonical_index_dtype"].as_string() != "uint32") {
+      throw deepmd::deepmd_exception(
+          "compact canonical graph artifacts require uint32 topology; "
+          "re-freeze the model with the current DeePMD-kit version.");
     }
   }
 
@@ -320,7 +348,12 @@ void DeepPotPTExpt::init(const std::string& model,
                            torch::TensorOptions().dtype(torch::kInt32))
               .clone()
               .to(device);
+      pair_exclude_host_ = std::move(tbl);
     }
+  }
+
+  if (metadata.obj_val.count("graph_source_csr")) {
+    graph_reads_source_csr_ = metadata["graph_source_csr"].as_bool();
   }
   if (has_comm_artifact_) {
     try {
@@ -346,6 +379,34 @@ void DeepPotPTExpt::init(const std::string& model,
     }
   }
 
+  // Charge-state fold.  Unlike the with-comm artifact, a failure here is not
+  // a degraded mode to defer: the metadata field is the archive's claim that
+  // the fold ships with it, so an archive that declares the constants but
+  // cannot supply the fold is malformed.
+  charge_state_fold_ = deepmd::ptexpt::ChargeStateFold::load(
+      model, metadata, gpu_enabled, gpu_id);
+  if (charge_state_fold_) {
+    // The condition of a compressed model reaches the compiled lower only
+    // through the constants the fold rebuilds, so the argument list carries
+    // none and ``dchgspin`` is zero.  What the model accepts is the state the
+    // snapshot was frozen against, which is also the layout the fold consumes.
+    settable_chgspin =
+        metadata.obj_val.count("default_chg_spin")
+            ? static_cast<int>(metadata["default_chg_spin"].as_array().size())
+            : 0;
+    if (settable_chgspin == 0) {
+      throw deepmd::deepmd_exception(
+          "the archive ships a charge-state fold but names no "
+          "default_chg_spin, so the width of a charge state is unknown");
+    }
+    // The constants were frozen against the archive's own charge state, so
+    // that is the state in force until ``set_charge_spin`` installs another.
+    default_chg_spin_ = read_default_chg_spin(metadata, settable_chgspin);
+    chg_spin_table_ranges_ =
+        read_chg_spin_table_ranges(metadata, settable_chgspin);
+    check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
+  }
+
   int num_intra_nthreads, num_inter_nthreads;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   if (num_inter_nthreads) {
@@ -365,6 +426,32 @@ void DeepPotPTExpt::init(const std::string& model,
 }
 
 DeepPotPTExpt::~DeepPotPTExpt() {}
+
+void DeepPotPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
+  assert(inited);
+  if (settable_chgspin == 0) {
+    throw deepmd::deepmd_exception(
+        "this model was not frozen with a charge/spin condition");
+  }
+  if (static_cast<int>(charge_spin.size()) != settable_chgspin) {
+    throw deepmd::deepmd_exception("the charge/spin condition carries " +
+                                   std::to_string(charge_spin.size()) +
+                                   " values but the model expects " +
+                                   std::to_string(settable_chgspin));
+  }
+  check_charge_spin_domain(charge_spin, chg_spin_table_ranges_);
+  // All allocation completes before the compiled constants change. The final
+  // vector swap is non-throwing, so the visible default follows the installed
+  // constants without opening a second failure point.
+  std::vector<double> next_charge_spin(charge_spin);
+  if (charge_state_fold_) {
+    charge_state_fold_->apply(charge_spin,
+                              gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
+                                          : torch::Device(torch::kCPU),
+                              *loader);
+  }
+  default_chg_spin_.swap(next_charge_spin);
+}
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model(
     const torch::Tensor& coord,
@@ -428,6 +515,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
     const torch::Tensor& aparam,
     const torch::Tensor& charge_spin) {
   // Graph-input ABI: original edge payload plus destination/source CSR views.
+  check_graph_aparam_flat(aparam, daparam, "run_model_graph");
   std::vector<torch::Tensor> inputs = {
       atype,        n_node,        n_local,           edge_index,
       edge_vec,     edge_mask,     destination_order, destination_row_ptr,
@@ -538,6 +626,76 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_edges_with_comm(
   return with_comm_loader->run(inputs);
 }
 
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph_with_comm(
+    const torch::Tensor& atype,
+    const torch::Tensor& n_node,
+    const torch::Tensor& n_local,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& destination_order,
+    const torch::Tensor& destination_row_ptr,
+    const torch::Tensor& source_order,
+    const torch::Tensor& source_row_ptr,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm called but the with-comm artifact is not "
+        "available. Either the .pt2 file has no with-comm artifact compiled "
+        "(programming error: the caller should check has_comm_artifact_ "
+        "before invoking this path), or the artifact was present in the "
+        ".pt2 metadata but failed to load at init time (see earlier stderr "
+        "log). Multi-rank LAMMPS requires a working with-comm artifact.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm: comm_tensors must contain exactly 8 "
+        "tensors (send_list, send_proc, recv_proc, send_num, recv_num, "
+        "communicator, nlocal, nghost). Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  check_graph_aparam_flat(aparam, daparam, "run_model_graph_with_comm");
+  // NeighborGraph ABI: the 13-input base of run_model_graph (atype, n_node,
+  // n_local, edge_index, edge_vec, edge_mask, destination_order,
+  // destination_row_ptr, source_order, source_row_ptr, [fparam], [aparam],
+  // [charge_spin]) with the 8 comm tensors appended, like
+  // run_model_with_comm / run_model_edges_with_comm.
+  //
+  // Device placement: the base tensors (n_local included) live on the model
+  // device -- n_local feeds the in-graph owned-node mask, a device kernel
+  // after ``move_to_device_pass`` (a CPU tensor fed there is read as a
+  // device pointer -- CUDA illegal memory access, first observed live in
+  // the dpa2 graph LAMMPS MP test).  The 8 comm tensors stay ON CPU,
+  // symmetric with the dense with-comm route: they are consumed only by the
+  // opaque ``deepmd_export::border_op`` whose HOST code dereferences their
+  // ``data_ptr`` directly (``send_list`` even carries raw host pointers)
+  // and reads ``nlocal``/``nghost`` via cheap host ``.item()`` calls --
+  // splitting the compute role (device n_local) from the host-MPI-control
+  // role removes the per-layer synchronizing D2H scalar reads a
+  // device-placed nlocal forced inside border_op (2 per layer forward + 2
+  // per layer backward).
+  std::vector<torch::Tensor> inputs = {
+      atype,        n_node,        n_local,           edge_index,
+      edge_vec,     edge_mask,     destination_order, destination_row_ptr,
+      source_order, source_row_ptr};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
+  }
+  for (const auto& ct : comm_tensors) {
+    inputs.push_back(ct);
+  }
+  return with_comm_loader->run(inputs);
+}
+
 void DeepPotPTExpt::extract_outputs(
     std::map<std::string, torch::Tensor>& output_map,
     const std::vector<torch::Tensor>& flat_outputs) {
@@ -578,6 +736,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         "and is off by default for .pt2. To enable it, regenerate with: "
         "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
   }
+  // A single-frame call names at most one charge state, and only one this
+  // model can serve.
+  check_call_charge_spin(charge_spin, /*nframes=*/1, settable_chgspin,
+                         dchgspin > 0, default_chg_spin_,
+                         chg_spin_table_ranges_);
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -636,16 +799,42 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // Whether the edge topology folds ghost neighbours onto their local owners,
+  // which reads an owner for every extended atom out of ``mapping_``.  The
+  // edge lower folds unless the with-comm artifact carries ghost features
+  // across ranks; the graph and canonical lowers fold on a single rank and
+  // keep the extended node set under domain decomposition, where ghost forces
+  // reverse-communicate to their owners instead.  The dense lower builds no
+  // edge topology and therefore never folds.
+  const bool fold_to_local =
+      lower_input_is_edge_
+          ? !use_with_comm
+          : ((lower_input_is_graph_ || lower_input_is_canonical_) &&
+             !multi_rank);
+  // NeighborGraph multi-rank dispatch:
+  //   - NON-message-passing (dpa1, se_e2_a, ...): the SAME single-rank graph
+  //     .pt2 runs on the EXTENDED region (fold_to_local=false; ghosts are
+  //     distinct nodes whose features come from their real ghost types).  No
+  //     with-comm artifact / no border_op is needed; ghost reaction forces are
+  //     folded to their owners by LAMMPS reverse-comm.  Handled below.
+  //   - message-passing graph (DPA2/DPA3): multi-rank requires a with-comm
+  //     graph artifact for cross-rank ghost-feature exchange
+  //     (``run_model_graph_with_comm``, below).  Fail fast before building any
+  //     tensors when that artifact is missing, so callers get a clear message
+  //     instead of a wrong answer or the loader's own runtime error.
   if (lower_input_is_graph_ && multi_rank && has_message_passing_) {
-    throw deepmd::deepmd_exception(
-        "Multi-rank message-passing graph-input inference requires an "
-        "edge-input model with its with-comm artifact.");
+    if (!has_comm_artifact_ || !with_comm_loader) {
+      throw deepmd::deepmd_exception(
+          "Multi-rank message-passing graph .pt2 inference requires a "
+          "with-comm artifact; re-freeze the model with a deepmd-kit that "
+          "exports it (this .pt2 predates multi-rank graph support).");
+    }
   }
   // Dispatch guards for message-passing models:
   //   non-message-passing, or nghost == 0: the regular path is always safe.
   //   message-passing, multi-rank:  requires the with-comm artifact.
   //   message-passing, single-rank: requires the atom map (mapping tensor).
-  if (has_message_passing_ && nghost > 0) {
+  if (!lower_input_is_canonical_ && has_message_passing_ && nghost > 0) {
     if (multi_rank && !has_comm_artifact_) {
       throw deepmd::deepmd_exception(
           "Multi-rank LAMMPS .pt2 inference requires the model to be "
@@ -662,6 +851,21 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           "safe way to resolve ghost indices to local owners.  C++ API "
           "callers must set inlist.mapping explicitly before compute().");
     }
+  }
+  // Folding resolves every real extended atom to a local owner, so it needs
+  // the atom map for the same reason the ghost-feature gather above does, and
+  // for every lower that builds an edge topology rather than only for a
+  // message-passing one.  Without the map the owner table below degrades to
+  // the identity, whose ghost entries are not local atoms; establishing the
+  // precondition here reports it once, ahead of any tensor, instead of
+  // leaving it to the per-edge lookup inside the topology build.
+  if (fold_to_local && nghost_real > 0 && !atom_map_present) {
+    throw deepmd::deepmd_exception(
+        "This .pt2 lower folds ghost neighbours onto their local owners, "
+        "which needs an owner for each of the " +
+        std::to_string(nghost_real) +
+        " ghost atoms: add `atom_modify map yes` to the LAMMPS input, or, as "
+        "a C++ API caller, set inlist.mapping before compute().");
   }
 
   // LAMMPS sets ago=0 on every nlist rebuild (neighbor rebuild, re-partition,
@@ -688,11 +892,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     } else {
-      // Identity fallback.  The fail-fast above guarantees we only
+      // Identity fallback.  The fail-fasts above guarantee we only
       // reach this branch when one of these is true:
-      //   - The model is non-message-passing (mapping is unused).
-      //   - ``nghost == 0`` (no ghosts to gather, identity is trivially
-      //     correct).
+      //   - No real ghost exists, so the identity is the owner table.
+      //   - The topology keeps the extended node set (``!fold_to_local``)
+      //     and the model is non-message-passing, leaving this tensor
+      //     unread.
       //   - ``use_with_comm`` is true (the with-comm graph fills ghost
       //     features via border_op and ignores this tensor for ghost
       //     gather — see deepmd/pt_expt/descriptor/
@@ -720,19 +925,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       const auto edge_tensors = createEdgeTensors(
           nlist_data.jlist, dcoord, mapping_, nloc, nall_real, device,
           /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
-          /*fold_to_local=*/!use_with_comm);
+          fold_to_local);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else if (lower_input_is_graph_ || lower_input_is_canonical_) {
-      // Cache the skin topology. Single-rank folds ghosts onto local owners;
-      // non-message-passing multi-rank keeps the extended region so ghost
-      // forces reverse-comm to their owners.
-      const auto edge_tensors = createEdgeTensors(
-          nlist_data.jlist, dcoord, mapping_, nloc, nall_real, device,
-          /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
-          /*fold_to_local=*/!multi_rank);
-      edge_index_tensor = edge_tensors.edge_index;
-      edge_index_ext_tensor = edge_tensors.edge_index_ext;
+      // Cache the skin topology destination-grouped. Single-rank folds ghosts
+      // onto local owners; non-message-passing multi-rank keeps the extended
+      // region so ghost forces reverse-comm to their owners.
+      skin_topology_ = deepmd::buildSkinTopology(
+          nlist_data.jlist, mapping_, nloc, nall_real,
+          /*node_count=*/multi_rank ? nall_real : nloc,
+          /*row_centers=*/&nlist_data.ilist, fold_to_local);
     } else {
       nlist_data.padding();
       firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei)
@@ -770,37 +973,23 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
 
   at::Tensor aparam_tensor = make_aparam_tensor(aparam_, nloc, daparam, device);
 
-  // Build charge_spin tensor: use runtime value when provided, fall back to
-  // default_chg_spin_ stored in the .pt2 metadata.
+  // Build charge_spin tensor: the condition supplied with the call when there
+  // is one, otherwise the state in force.
   at::Tensor charge_spin_tensor;
   if (dchgspin > 0) {
-    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
-    if (!charge_spin.empty()) {
-      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
-      if (static_cast<int>(charge_spin.size()) != dchgspin) {
-        throw deepmd::deepmd_exception(
-            "charge_spin has " + std::to_string(charge_spin.size()) +
-            " values but the model expects dim_chg_spin=" +
-            std::to_string(dchgspin) + ".");
-      }
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(charge_spin.data()),
-                           {1, static_cast<std::int64_t>(charge_spin.size())},
-                           dbl_options)
-              .clone()
-              .to(device);
-    } else if (!default_chg_spin_.empty()) {
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
-                           {1, dchgspin}, dbl_options)
-              .clone()
-              .to(device);
-    } else {
+    const std::vector<double>& condition =
+        charge_spin.empty() ? default_chg_spin_ : charge_spin;
+    if (condition.empty()) {
       throw deepmd::deepmd_exception(
           "charge_spin is empty and no default_chg_spin is available in the "
           ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
           "model with a default charge/spin value.");
     }
+    charge_spin_tensor =
+        torch::from_blob(const_cast<double*>(condition.data()), {1, dchgspin},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
+            .to(device);
   }
 
   // ``use_with_comm`` was computed earlier alongside the fail-fast
@@ -918,6 +1107,93 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             edge_tensors.edge_index_ext, edge_tensors.edge_mask, fparam_tensor,
             aparam_tensor, charge_spin_tensor, comm_tensors);
       }
+    } else if (lower_input_is_graph_) {
+      // Message-passing NeighborGraph route (DPA2/DPA3), multi-rank, with-comm
+      // artifact.  Reachable only when the artifact-presence guard earlier in
+      // ``compute_impl`` passed (``has_comm_artifact_ && with_comm_loader``),
+      // which the export pipeline only sets for message-passing models, so
+      // ``use_with_comm`` implies ``has_message_passing_`` here -- non-MP
+      // graph models (dpa1) never carry a comm artifact and take the plain
+      // extended-region branch below instead.
+      //
+      // Topology construction mirrors the non-comm multi-rank graph branch
+      // below exactly (extended region, N == nall_real, node types from the
+      // on-device extended ``atype_Tensor`` slice): ghost nodes are distinct
+      // and their embeddings are filled in-place by ``border_op`` inside the
+      // with-comm artifact instead of being read directly from local ghost
+      // types, so no geometry/mask changes are needed -- only the model
+      // entry point (and the appended comm tensors) differ.
+      // Collective preflight: a rank with zero owned+ghost atoms cannot run
+      // the graph artifact, and a rank-LOCAL failure would leave the
+      // non-empty peers blocked forever in the per-layer border_op
+      // collectives.  All-reduce the minimum node count over the LAMMPS
+      // communicator (comm_tensors[5]) so EVERY rank agrees to run -- or
+      // every rank throws promptly with the same error.  The op is an
+      // identity when the communicator handle is null or MPI is not
+      // compiled in.
+      //
+      // Cached across ``ago > 0`` force calls: the owned+ghost node count
+      // shares the lifetime of the cached nlist/mapping/edge topology
+      // (both only change on an ``ago == 0`` rebuild, which is globally
+      // synchronized by LAMMPS), so re-running the collective on every
+      // cache-hit MD step added a global synchronization to the hot path
+      // with no added protection.
+      if (ago == 0 || !graph_comm_preflight_done_) {
+        graph_comm_preflight_done_ = false;
+        const auto allreduce_min =
+            c10::Dispatcher::singleton()
+                .findSchemaOrThrow("deepmd_export::allreduce_min_int", "")
+                .typed<at::Tensor(const at::Tensor&, const at::Tensor&)>();
+        at::Tensor local_n_node =
+            torch::full({1}, static_cast<std::int64_t>(nall_real), int_option);
+        const std::int64_t global_min_n_node =
+            allreduce_min.call(local_n_node, comm_tensors[5].to(torch::kCPU))
+                .item<std::int64_t>();
+        if (global_min_n_node == 0) {
+          throw deepmd::deepmd_exception(
+              "Multi-rank message-passing graph inference does not yet "
+              "support a rank with zero owned+ghost atoms (the exported "
+              "graph artifact requires at least one node, and skipping the "
+              "run would desync the per-layer MPI ghost exchange; this rank "
+              "has " +
+              std::to_string(nall_real) +
+              " owned+ghost atoms). Use a domain decomposition that keeps "
+              "every rank non-empty, or a dense .pt2.");
+        }
+        graph_comm_preflight_done_ = true;
+      }
+      const std::int64_t n_node_count = nall_real;
+      at::Tensor n_node_tensor =
+          torch::full({1}, n_node_count, int_option).to(device);
+      // Device owned-count input for the in-graph owned-node mask; the CPU
+      // nlocal comm tensor stays host-side for border_op.
+      at::Tensor n_local_tensor =
+          torch::full({1}, static_cast<std::int64_t>(nloc), int_option)
+              .to(device);
+      at::Tensor node_atype =
+          atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported graph lower consumes a pre-excluded payload and
+      // never re-applies it -- same seam as the non-comm graph route, folded
+      // into the assembly predicate so an excluded edge is never allocated.
+      const at::Tensor host_atype =
+          node_atype.to(torch::kCPU).to(torch::kInt64).contiguous();
+      GraphTensorPack graph_pack = deepmd::assembleGraph(
+          skin_topology_, dcoord.data(),
+          host_atype.const_data_ptr<std::int64_t>(),
+          pair_exclude_host_.empty() ? nullptr : pair_exclude_host_.data(),
+          ntypes, static_cast<double>(rcut), graph_edge_fp32_,
+          /*with_source_csr=*/true, device, graph_scratch_);
+      graph_pack.atype = node_atype;
+      graph_pack.n_node = n_node_tensor;
+      graph_pack.n_local = n_local_tensor;
+      flat_outputs = run_model_graph_with_comm(
+          node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
+          graph_pack.edge_vec, graph_pack.edge_mask,
+          graph_pack.destination_order, graph_pack.destination_row_ptr,
+          graph_pack.source_order, graph_pack.source_row_ptr, fparam_tensor,
+          extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam),
+          charge_spin_tensor, comm_tensors);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
       // #18/A4): the exported dense lower consumes a pre-excluded nlist and
@@ -965,38 +1241,33 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         }
         return;
       }
-      // Compact the cached skin topology to the current model cutoff.
-      // Single-rank folds ghosts onto local owners (N == nloc);
+      // Assemble the graph for the current geometry from the cached skin
+      // topology. Single-rank folds ghosts onto local owners (N == nloc);
       // non-message-passing multi-rank keeps the extended region
       // (N == nall_real) so reverse communication folds ghost forces back.
-      const auto edge_tensors =
-          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
-                             coord_Tensor, static_cast<double>(rcut));
       const std::int64_t n_node_count = multi_rank ? nall_real : nloc;
       at::Tensor n_node_tensor =
           torch::full({1}, n_node_count, int_option).to(device);
       at::Tensor n_local_tensor = torch::full({1}, nloc, int_option).to(device);
       at::Tensor node_atype =
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
-      at::Tensor graph_aparam = aparam_tensor;
-      if (daparam > 0 && n_node_count > nloc) {
-        graph_aparam = torch::cat(
-            {aparam_tensor, torch::zeros({1, n_node_count - nloc, daparam},
-                                         aparam_tensor.options())},
-            1);
-      }
-      GraphTensorPack graph_pack;
+      // Flat (N, daparam) graph ABI: validate the width, zero-pad ghost
+      // rows, and synthesize a zero tensor on a ghost-only rank (see
+      // extend_graph_aparam).
+      at::Tensor graph_aparam =
+          extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam);
+      const at::Tensor host_atype =
+          node_atype.to(torch::kCPU).to(torch::kInt64).contiguous();
+      GraphTensorPack graph_pack = deepmd::assembleGraph(
+          skin_topology_, dcoord.data(),
+          host_atype.const_data_ptr<std::int64_t>(),
+          pair_exclude_host_.empty() ? nullptr : pair_exclude_host_.data(),
+          ntypes, static_cast<double>(rcut), graph_edge_fp32_,
+          graph_reads_source_csr_ || lower_input_is_canonical_, device,
+          graph_scratch_);
       graph_pack.atype = node_atype;
       graph_pack.n_node = n_node_tensor;
       graph_pack.n_local = n_local_tensor;
-      graph_pack.edge_index = edge_tensors.edge_index;
-      graph_pack.edge_vec = graph_edge_fp32_
-                                ? edge_tensors.edge_vec.to(torch::kFloat32)
-                                : edge_tensors.edge_vec;
-      graph_pack.edge_mask = deepmd::applyPairExclusion(
-          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
-          pair_exclude_table_, ntypes);
-      canonicalizeGraphPayload(graph_pack, n_node_count);
       if (lower_input_is_canonical_) {
         const auto compact = compactCanonicalGraph(graph_pack);
         flat_outputs = run_model_canonical_graph(
@@ -1032,10 +1303,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     // The graph forward emits flat-N PUBLIC keys (atom_energy/energy/force/
     // virial/atom_virial); rewrite them into the dense internal-key layout the
     // downstream extraction/fold-back expects.
+    if (lower_input_is_canonical_) {
+      deepmd::flatten_canonical_atom_virial(output_map);
+    }
     if (multi_rank) {
       // Extended region (N == nall_real): force is already per-extended-atom,
       // owned energy = sum over local atom energies, no zero-padding.  Ghost
-      // forces fold back via LAMMPS reverse-comm (no with-comm artifact).
+      // forces fold back via LAMMPS reverse-comm (both the plain and with-comm
+      // graph routes).
       deepmd::remap_graph_outputs_to_dense_keys_extended(output_map, nloc,
                                                          nall_real, atomic);
     } else {
@@ -1193,6 +1468,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                     coord, atype, box, fparam, aparam, charge_spin, atomic);
     return;
   }
+  // A single-frame call names at most one charge state, and only one this
+  // model can serve.
+  check_call_charge_spin(charge_spin, /*nframes=*/1, settable_chgspin,
+                         dchgspin > 0, default_chg_spin_,
+                         chg_spin_table_ranges_);
   // The .pt2 model only contains forward_common_lower, which requires
   // nlist as input. We must build the nlist in C++ and fold back the
   // extended-region outputs to local atoms.
@@ -1333,37 +1613,23 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   at::Tensor aparam_tensor =
       make_aparam_tensor(aparam, natoms, daparam, device);
 
-  // Build charge_spin tensor: use runtime value when provided, fall back to
-  // default_chg_spin_ stored in the .pt2 metadata.
+  // Build charge_spin tensor: the condition supplied with the call when there
+  // is one, otherwise the state in force.
   at::Tensor charge_spin_tensor;
   if (dchgspin > 0) {
-    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
-    if (!charge_spin.empty()) {
-      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
-      if (static_cast<int>(charge_spin.size()) != dchgspin) {
-        throw deepmd::deepmd_exception(
-            "charge_spin has " + std::to_string(charge_spin.size()) +
-            " values but the model expects dim_chg_spin=" +
-            std::to_string(dchgspin) + ".");
-      }
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(charge_spin.data()),
-                           {1, static_cast<std::int64_t>(charge_spin.size())},
-                           dbl_options)
-              .clone()
-              .to(device);
-    } else if (!default_chg_spin_.empty()) {
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
-                           {1, dchgspin}, dbl_options)
-              .clone()
-              .to(device);
-    } else {
+    const std::vector<double>& condition =
+        charge_spin.empty() ? default_chg_spin_ : charge_spin;
+    if (condition.empty()) {
       throw deepmd::deepmd_exception(
           "charge_spin is empty and no default_chg_spin is available in the "
           ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
           "model with a default charge/spin value.");
     }
+    charge_spin_tensor =
+        torch::from_blob(const_cast<double*>(condition.data()), {1, dchgspin},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
+            .to(device);
   }
 
   // 5. Run the .pt2 model
@@ -1394,7 +1660,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           graph_tensors.edge_index, graph_tensors.edge_vec,
           graph_tensors.edge_mask, graph_tensors.destination_order,
           graph_tensors.destination_row_ptr, graph_tensors.source_order,
-          graph_tensors.source_row_ptr, fparam_tensor, aparam_tensor,
+          graph_tensors.source_row_ptr, fparam_tensor,
+          // standalone path is single-rank (every node owned): this only
+          // normalizes the rectangular runtime aparam to the flat
+          // (N, daparam) node axis of the graph ABI.
+          extend_graph_aparam(aparam_tensor, natoms, natoms, daparam),
           charge_spin_tensor);
     }
   } else {
@@ -1420,6 +1690,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     // fold-back is a no-op on ghosts.
     // single_rank=true: the standalone (build_nlist) path is always
     // single-rank; there is no comm_dict / cross-rank ghost exchange here.
+    if (lower_input_is_canonical_) {
+      deepmd::flatten_canonical_atom_virial(output_map);
+    }
     deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic,
                                               /*single_rank=*/true);
   }
@@ -1494,21 +1767,11 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
       static_cast<std::size_t>(natoms) * daparam, false);
   const FrameParameterLayout fparam_layout = resolve_frame_parameter_layout(
       "fparam", fparam.size(), nframes, dfparam, true);
-  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
-  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
-  // anything else up-front to avoid out-of-range slicing in the loop.
-  if (!charge_spin.empty()) {
-    size_t s_dcsp = static_cast<size_t>(dchgspin);
-    if (charge_spin.size() != s_dcsp &&
-        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
-      throw deepmd::deepmd_exception(
-          "charge_spin has " + std::to_string(charge_spin.size()) +
-          " values but the model expects dim_chg_spin=" +
-          std::to_string(dchgspin) + " (per frame) or " +
-          std::to_string(dchgspin * nframes) + " (for " +
-          std::to_string(nframes) + " frames).");
-    }
-  }
+  // charge_spin may be empty (the state in force), one charge state
+  // (broadcast to every frame), or one per frame. Reject anything else up
+  // front to avoid out-of-range slicing in the loop.
+  check_call_charge_spin(charge_spin, nframes, settable_chgspin, dchgspin > 0,
+                         default_chg_spin_, chg_spin_table_ranges_);
   ener.clear();
   force.clear();
   virial.clear();
@@ -1542,9 +1805,9 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
     }
     std::vector<double> frame_chg_spin;
     if (!charge_spin.empty()) {
-      size_t s_dcsp = static_cast<size_t>(dchgspin);
+      size_t s_dcsp = static_cast<size_t>(settable_chgspin);
       if (charge_spin.size() == s_dcsp) {
-        // single charge/spin vector broadcast to every frame
+        // one charge state broadcast to every frame
         frame_chg_spin = charge_spin;
       } else {
         frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
@@ -1708,21 +1971,11 @@ void DeepPotPTExpt::compute_mixed_type_impl(
       static_cast<std::size_t>(natoms) * daparam, false);
   const FrameParameterLayout fparam_layout = resolve_frame_parameter_layout(
       "fparam", fparam.size(), nframes, dfparam, true);
-  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
-  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
-  // anything else up-front to avoid out-of-range slicing in the loop.
-  if (!charge_spin.empty()) {
-    size_t s_dcsp = static_cast<size_t>(dchgspin);
-    if (charge_spin.size() != s_dcsp &&
-        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
-      throw deepmd::deepmd_exception(
-          "charge_spin has " + std::to_string(charge_spin.size()) +
-          " values but the model expects dim_chg_spin=" +
-          std::to_string(dchgspin) + " (per frame) or " +
-          std::to_string(dchgspin * nframes) + " (for " +
-          std::to_string(nframes) + " frames).");
-    }
-  }
+  // charge_spin may be empty (the state in force), one charge state
+  // (broadcast to every frame), or one per frame. Reject anything else up
+  // front to avoid out-of-range slicing in the loop.
+  check_call_charge_spin(charge_spin, nframes, settable_chgspin, dchgspin > 0,
+                         default_chg_spin_, chg_spin_table_ranges_);
   ener.clear();
   force.clear();
   virial.clear();
@@ -1758,9 +2011,9 @@ void DeepPotPTExpt::compute_mixed_type_impl(
     }
     std::vector<double> frame_chg_spin;
     if (!charge_spin.empty()) {
-      size_t s_dcsp = static_cast<size_t>(dchgspin);
+      size_t s_dcsp = static_cast<size_t>(settable_chgspin);
       if (charge_spin.size() == s_dcsp) {
-        // single charge/spin vector broadcast to every frame
+        // one charge state broadcast to every frame
         frame_chg_spin = charge_spin;
       } else {
         frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
@@ -2154,12 +2407,14 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
           torch::full({1}, static_cast<std::int64_t>(nnode), opt_i64);
       const at::Tensor n_local =
           torch::full({1}, static_cast<std::int64_t>(nloc), opt_i64);
-      at::Tensor graph_aparam = aparam_tensor;
-      if (daparam > 0 && nnode > nloc) {
-        graph_aparam = torch::cat(
-            {aparam_tensor, torch::zeros({1, nnode - nloc, daparam}, opt_f64)},
-            1);
-      }
+      // Flat (N, daparam) graph ABI: validate the width, zero-pad ghost
+      // rows, and synthesize a zero tensor on a ghost-only subdomain --
+      // the rank-3 (1, nnode, daparam) pad this branch used before is
+      // rejected by the artifact (GeneralFitting.call_graph requires
+      // rank-2 aparam), so device-edge graph inference with
+      // numb_aparam > 0 failed at the artifact boundary.
+      at::Tensor graph_aparam =
+          extend_graph_aparam(aparam_tensor, nnode, nloc, daparam);
       GraphTensorPack graph_pack;
       graph_pack.atype = atype_t.reshape({nnode});
       graph_pack.n_node = n_node;
@@ -2282,11 +2537,11 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     double* d_force,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::int64_t* d_source,
+    const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::int64_t* d_source_order,
+    const std::uint32_t* d_source_order,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage) {
@@ -2298,7 +2553,9 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a CUDA device.");
   }
-  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2) {
+  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2 ||
+      static_cast<std::uint64_t>(edge_storage) >
+          std::numeric_limits<std::uint32_t>::max()) {
     throw deepmd::deepmd_exception(
         "invalid compact canonical graph dimensions.");
   }
@@ -2310,10 +2567,13 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         torch::TensorOptions().dtype(torch::kFloat32).device(device);
     const auto opt_i64 =
         torch::TensorOptions().dtype(torch::kInt64).device(device);
+    const auto opt_u32 = torch::TensorOptions()
+                             .dtype(deepmd::canonicalGraphIndexType())
+                             .device(device);
     auto atype = torch::from_blob(const_cast<std::int64_t*>(d_atype),
                                   {nall_nodes}, opt_i64);
-    auto source = torch::from_blob(const_cast<std::int64_t*>(d_source),
-                                   {edge_storage}, opt_i64);
+    auto source = torch::from_blob(const_cast<std::uint32_t*>(d_source),
+                                   {edge_storage}, opt_u32);
     auto edge_vec = torch::from_blob(const_cast<float*>(d_edge_vec),
                                      {edge_storage, 3}, opt_f32);
     auto destination_row_ptr =
@@ -2322,7 +2582,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     auto source_row_ptr = torch::from_blob(
         const_cast<std::int64_t*>(d_source_row_ptr), {nall_nodes + 1}, opt_i64);
     auto source_order = torch::from_blob(
-        const_cast<std::int64_t*>(d_source_order), {edge_storage}, opt_i64);
+        const_cast<std::uint32_t*>(d_source_order), {edge_storage}, opt_u32);
     auto n_node = torch::full({1}, nall_nodes, opt_i64);
     auto n_local = torch::full({1}, nloc, opt_i64);
 
@@ -2412,11 +2672,11 @@ void DeepPotPTExpt::compute_canonical_graph_gpu(
     double* d_force,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::int64_t* d_source,
+    const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::int64_t* d_source_order,
+    const std::uint32_t* d_source_order,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage) {

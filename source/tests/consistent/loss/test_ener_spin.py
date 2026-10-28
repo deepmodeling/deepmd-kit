@@ -229,6 +229,58 @@ class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
         return 1e-10
 
 
+class TestEnerSpinEmptyMagneticMaskConsistency(unittest.TestCase):
+    """Keep PT display metrics aligned with dpmodel for empty spin masks."""
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_empty_mask_metrics_are_finite_zero(self) -> None:
+        nframes, natoms = 2, 4
+        predict = {
+            # The dpmodel loss uses energy to resolve the active array
+            # namespace even when the energy term is disabled.
+            "energy": np.zeros(nframes, dtype=np.float64),
+            "force_mag": np.ones((nframes, natoms, 3), dtype=np.float64),
+            "mask_mag": np.zeros((nframes, natoms, 1), dtype=bool),
+        }
+        label = {
+            "force_mag": np.zeros((nframes, natoms, 3), dtype=np.float64),
+            "find_force_mag": 1.0,
+        }
+
+        for loss_func, mae in (("mse", False), ("mse", True), ("mae", False)):
+            with self.subTest(loss_func=loss_func, mae=mae):
+                kwargs = {
+                    "starter_learning_rate": 1e-3,
+                    "start_pref_fm": 1.0,
+                    "limit_pref_fm": 1.0,
+                    "loss_func": loss_func,
+                }
+                dp_loss = EnerSpinLossDP(**kwargs)
+                pt_loss = EnerSpinLossPT(**kwargs)
+
+                dp_value, dp_more = dp_loss(1e-3, natoms, predict, label, mae=mae)
+                pt_predict = {
+                    key: numpy_to_torch(value) for key, value in predict.items()
+                }
+                pt_label = {
+                    key: numpy_to_torch(value)
+                    if isinstance(value, np.ndarray)
+                    else value
+                    for key, value in label.items()
+                }
+                _, pt_value, pt_more = pt_loss(
+                    {}, lambda: pt_predict, pt_label, natoms, 1e-3, mae=mae
+                )
+
+                np.testing.assert_allclose(torch_to_numpy(pt_value), dp_value)
+                expected_keys = {"rmse_fm"} if loss_func == "mse" else {"mae_fm"}
+                if mae:
+                    expected_keys.add("mae_fm")
+                for key in expected_keys:
+                    self.assertEqual(float(np.asarray(dp_more[key])), 0.0)
+                    self.assertEqual(float(torch_to_numpy(pt_more[key])), 0.0)
+
+
 class TestEnerSpinIntensiveScaling(unittest.TestCase):
     """Regression test for natoms-scaling behavior with intensive normalization.
 

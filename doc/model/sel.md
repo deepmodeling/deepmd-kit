@@ -15,7 +15,7 @@ dp --tf neighbor-stat -s data -r 6.0 -t O H
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```sh
 dp --pt neighbor-stat -s data -r 6.0 -t O H

@@ -35,6 +35,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     get_generator,
 )
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -205,6 +208,24 @@ class GeometricInitialEmbedding(nn.Module):
             persistent=False,
         )
 
+        # === Fused message-and-scatter operator ===
+        # The reference composition materializes the per-edge message, an
+        # (E, D-1, C) tensor that dominates the cost of this module. The fused
+        # operator keeps it in registers and reduces through the destination CSR.
+        self._cuda_scatter = False
+        # ``None`` keeps the runtime ``zonal_coupling.is_cuda`` dispatch; the
+        # freeze pins it to the AOTI target because tracing always runs on CPU.
+        self._force_fused_scatter: bool | None = None
+        if cuda_infer_level() >= 1 and self.dtype is torch.float32:
+            from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
+                op_available,
+                supported,
+            )
+
+            self._cuda_scatter = op_available() and supported(
+                self.lmax, self.ebed_dim - 1, self.channels
+            )
+
     def forward(
         self,
         *,
@@ -230,8 +251,8 @@ class GeometricInitialEmbedding(nn.Module):
             Optional per-edge neighbor-spin l=1 message with shape (E, 3, C) for
             the native spin scheme (built by ``SpinEmbedding.edge_l1``). It is
             added to the l=1 rows of the per-edge message, so it shares this
-            module's source gate, scatter and degree normalization with the
-            geometric message.
+            module's scatter and degree normalization with the geometric
+            message.
 
         Returns
         -------
@@ -260,6 +281,17 @@ class GeometricInitialEmbedding(nn.Module):
 
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
+        # The fused operator spans this broadcast and the scatter of Step 4, so
+        # it takes over whenever nothing else joins the message in between.
+        if (
+            self._can_fuse_scatter(zonal_coupling)
+            and spin_l1_message is None
+            and edge_cache.csr_cache is not None
+        ):
+            return self.forward_fused_scatter(
+                n_nodes, edge_cache, radial_feat, zonal_coupling
+            )
+
         radial_value_for_row = radial_feat.index_select(
             1, self.radial_slot_index_for_row
         )  # (E, D-1, C)
@@ -270,23 +302,13 @@ class GeometricInitialEmbedding(nn.Module):
         # === Step 3b. Fold in the neighbor-spin l=1 message (native spin) ===
         # The l=1 coefficients occupy the first three packed non-scalar rows, so
         # the neighbor-spin message joins the geometric message there and then
-        # shares the source gate, scatter and degree normalization below.
+        # shares the scatter and degree normalization below.
         if spin_l1_message is not None:
             non_scalar_message = non_scalar_message.index_add(
                 1, self.l1_local_index, spin_l1_message
             )
 
-        # === Step 4. Source Freeze Propagation Gate (optional) ===
-        # Mute messages emitted by nodes whose local neighborhood enters
-        # the frozen zone. ``edge_src_gate`` is ``None`` outside bridging
-        # mode so this is a no-op in normal training.
-        src_gate = edge_cache.edge_src_gate
-        if src_gate is not None:
-            non_scalar_message = non_scalar_message * src_gate.to(
-                dtype=non_scalar_message.dtype
-            ).unsqueeze(-1)
-
-        # === Step 5. Scatter to nodes and normalize ===
+        # === Step 4. Scatter to nodes and normalize ===
         # Avoid advanced-index writeback (out[:, non_scalar_row_index, :]) which produces a copy.
         non_scalar_out = out.new_zeros(
             n_nodes, self.non_scalar_row_index.numel(), self.channels
@@ -295,6 +317,69 @@ class GeometricInitialEmbedding(nn.Module):
         out[:, self.non_scalar_row_index, :] = non_scalar_out
         out.mul_(edge_cache.inv_sqrt_deg)
         return out
+
+    def _can_fuse_scatter(self, zonal_coupling: torch.Tensor) -> bool:
+        """Return whether the fused scatter serves the runtime or trace target."""
+        target_is_cuda = (
+            zonal_coupling.is_cuda
+            if self._force_fused_scatter is None
+            else self._force_fused_scatter
+        )
+        return self._cuda_scatter and not self.training and target_is_cuda
+
+    def forward_fused_scatter(
+        self,
+        n_nodes: int | torch.SymInt,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+        zonal_coupling: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Build and reduce the geometric message with the fused CUDA operator.
+
+        Parameters
+        ----------
+        n_nodes : int or torch.SymInt
+            Number of nodes (nf * nloc).
+        edge_cache : EdgeFeatureCache
+            Per-edge cache supplying the destination endpoint, its CSR view and
+            the smooth degree normalization.
+        radial_feat : torch.Tensor
+            Per-edge radial features with shape (E, lmax, C) for degrees
+            1 to lmax.
+        zonal_coupling : torch.Tensor
+            Zonal coupling with shape (E, D-1).
+
+        Returns
+        -------
+        torch.Tensor
+            Initial features to add with shape (N, D, C), with l=0 zero.
+        """
+        from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
+            zonal_scatter,
+        )
+
+        from .edge_cache import (
+            cached_edge_csr,
+        )
+
+        # === Step 1. Destination CSR, shared with every other edge consumer ===
+        order, row_ptr = cached_edge_csr(edge_cache, "dst", n_nodes)
+
+        # === Step 2. Fused message build, reduction, padding and normalization ===
+        # The operator emits the packed node layout already normalized, so the
+        # scalar row and the degree scaling cost no extra pass. The scaling is
+        # differentiated: the smooth degree is a sum over the cutoff envelope
+        # and carries a gradient back to the geometry.
+        return zonal_scatter(
+            zonal_coupling.contiguous(),
+            radial_feat.contiguous(),
+            edge_cache.dst,
+            order,
+            row_ptr,
+            edge_cache.inv_sqrt_deg.reshape(-1),
+            n_nodes,
+        )  # (N, D, C)
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -422,7 +507,10 @@ class EnvironmentInitialEmbedding(nn.Module):
         # plus, for the native spin scheme, the 3 envelope-gated neighbor-spin
         # components, so the inner product ``D = M^T M`` yields the neighbor
         # spin-spin invariants alongside the geometric ones.
-        self.coord_dim = 4 + (3 if self.spin_flags is not None else 0)
+        self.geometry_coord_dim = 4
+        self.coord_dim = self.geometry_coord_dim + (
+            3 if self.spin_flags is not None else 0
+        )
         self.register_buffer(
             "eps_sq_tensor",
             torch.tensor(self.eps * self.eps, dtype=self.dtype, device=self.device),
@@ -496,13 +584,13 @@ class EnvironmentInitialEmbedding(nn.Module):
             seed=seed_out,
         )
 
-        # === Native spin: per-type mask and isotropic channel scale ===
+        # === Native spin: per-type mask and post-quadratic activation gate ===
         # The mask gates the neighbor-spin channel by source type, so a
         # non-magnetic neighbor contributes zero and (critically) carries zero
-        # magnetic force ``-dE/ds``. The single scalar scale (shared across
-        # x/y/z) keeps the spin coordinates transforming with the geometry, so
-        # the env-matrix invariant stays SO(3)-invariant; ``output_proj`` is
-        # zero-initialized, so the spin contribution starts neutral regardless.
+        # magnetic force ``-dE/ds``. ``spin_scale`` multiplies the spin-only
+        # contribution after the environment quadratic form. This preserves
+        # SO(3) invariance and provides a linear, learnable gate that can start
+        # from exactly zero during spin-free fine-tuning.
         if self.spin_flags is not None:
             spin_mask = torch.tensor(
                 [1.0 if flag else 0.0 for flag in self.spin_flags],
@@ -511,7 +599,7 @@ class EnvironmentInitialEmbedding(nn.Module):
             )
             self.register_buffer("spin_mask", spin_mask, persistent=False)
             self.spin_scale = nn.Parameter(
-                torch.ones(1, dtype=self.dtype, device=self.device),
+                torch.zeros(1, dtype=self.dtype, device=self.device),
                 requires_grad=trainable,
             )
 
@@ -575,7 +663,7 @@ class EnvironmentInitialEmbedding(nn.Module):
                 mask = self.spin_mask.index_select(
                     0, atype_flat.index_select(0, src)
                 ).unsqueeze(-1)  # (E, 1)
-                spin_chan = edge_env * self.spin_scale * spin_src * mask  # (E, 3)
+                spin_chan = edge_env * spin_src * mask  # (E, 3)
             else:
                 spin_chan = r_tilde.new_zeros(r_tilde.shape[0], 3)
             r_tilde = torch.cat([r_tilde, spin_chan], dim=-1)  # (E, coord_dim)
@@ -600,11 +688,6 @@ class EnvironmentInitialEmbedding(nn.Module):
         # outer = r_tilde[:, :, None] * g[:, None, :]  # (E, coord_dim, embed_dim)
         outer = torch.einsum("ei,ej->eij", r_tilde, g)  # (E, coord_dim, embed_dim)
         outer_flat = outer.reshape(-1, self.coord_dim * self.embed_dim)
-        # Source Freeze Propagation Gate: mute the outer-product contribution
-        # of any edge whose source node has a neighbor in the frozen zone.
-        src_gate = edge_cache.edge_src_gate
-        if src_gate is not None:
-            outer_flat = outer_flat * src_gate.to(dtype=outer_flat.dtype)
         env_agg = outer_flat.new_zeros(n_nodes, self.coord_dim * self.embed_dim)
         env_agg.index_add_(0, dst, outer_flat)
         env_agg = env_agg.reshape(n_nodes, self.coord_dim, self.embed_dim)
@@ -618,9 +701,22 @@ class EnvironmentInitialEmbedding(nn.Module):
         # Summing over the coordinate axis makes D invariant to a joint rotation
         # of the geometry and the spin channels; with the spin channels present,
         # D additionally carries the neighbor spin-spin invariants.
-        env_agg_t = env_agg.permute(0, 2, 1)  # (N, embed_dim, coord_dim)
-        env_agg_axis = env_agg[:, :, : self.axis_dim]  # (N, coord_dim, axis_dim)
-        D = torch.bmm(env_agg_t, env_agg_axis)  # (N, embed_dim, axis_dim)
+        if self.spin_flags is None:
+            env_agg_t = env_agg.permute(0, 2, 1)  # (N, embed_dim, coord_dim)
+            env_agg_axis = env_agg[:, :, : self.axis_dim]
+            D = torch.bmm(env_agg_t, env_agg_axis)
+        else:
+            geometry_agg = env_agg[:, : self.geometry_coord_dim, :]
+            spin_agg = env_agg[:, self.geometry_coord_dim :, :]
+            D_geometry = torch.bmm(
+                geometry_agg.permute(0, 2, 1),
+                geometry_agg[:, :, : self.axis_dim],
+            )
+            D_spin = torch.bmm(
+                spin_agg.permute(0, 2, 1),
+                spin_agg[:, :, : self.axis_dim],
+            )
+            D = D_geometry + self.spin_scale * D_spin
 
         # === Step 6. Output projection for FiLM logits ===
         D_flat = D.reshape(
@@ -865,6 +961,7 @@ class SpinEmbedding(nn.Module):
             self.channels,
             bias=False,
             activation_function=None,
+            init="final",
             precision=self.precision,
             seed=child_seed(seed_scalar, 1),
             trainable=trainable,
@@ -874,31 +971,18 @@ class SpinEmbedding(nn.Module):
         # ``adam_`` prefix routes the table to Adam in HybridMuon, matching the
         # type-embedding treatment for per-type lookup parameters.
         self.adam_spin_vec_weight = nn.Parameter(
-            torch.empty(
+            torch.zeros(
                 self.ntypes, self.channels, device=self.device, dtype=self.dtype
             )
-        )
-        init_std = 1.0 / math.sqrt(float(self.ntypes + self.channels))
-        nn.init.normal_(
-            self.adam_spin_vec_weight,
-            mean=0.0,
-            std=init_std,
-            generator=get_generator(child_seed(seed, 1)),
         )
 
         # === l=1 per-source-type per-channel weight for neighbor aggregation ===
         # Separate from the on-site weight: this scales the neighbor's spin
         # direction before it is aggregated into the center node's l=1 seed.
         self.adam_spin_nbr_weight = nn.Parameter(
-            torch.empty(
+            torch.zeros(
                 self.ntypes, self.channels, device=self.device, dtype=self.dtype
             )
-        )
-        nn.init.normal_(
-            self.adam_spin_nbr_weight,
-            mean=0.0,
-            std=init_std,
-            generator=get_generator(child_seed(seed, 2)),
         )
 
         for p in self.parameters():
@@ -954,9 +1038,9 @@ class SpinEmbedding(nn.Module):
         (neighbor) spin, scaled by a per-source-type per-channel weight and
         gated by the C^3 envelope. The message is returned per edge; the
         geometric initial embedding folds it into the l=1 rows and applies the
-        shared source gate, scatter and degree normalization, so a neighbor's
-        spin direction enters an atom's l=1 backbone before any interaction
-        block (the spin analogue of the geometric initial embedding).
+        shared scatter and degree normalization, so a neighbor's spin direction
+        enters an atom's l=1 backbone before any interaction block (the spin
+        analogue of the geometric initial embedding).
 
         Parameters
         ----------

@@ -31,6 +31,14 @@ DPPropertyModel_ = make_model(DPPropertyAtomicModel, T_Bases=(NativeOP, BaseMode
 
 @BaseModel.register("property")
 class PropertyModel(DPModelCommon, DPPropertyModel_):
+    r"""Property model with type-dependent system reduction.
+
+    Extensive properties use
+    :math:`p=\sum_i p_i`.  Intensive properties use the configured intensive
+    reduction (for example a normalized mean), as indicated by the output
+    definition, rather than always summing atomic values.
+    """
+
     def __init__(
         self,
         *args: Any,

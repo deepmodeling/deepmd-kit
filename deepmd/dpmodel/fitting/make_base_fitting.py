@@ -39,6 +39,17 @@ def make_base_fitting(
     class BF(ABC, PluginVariant, make_plugin_registry("fitting")):
         """Base fitting provides the interfaces of fitting net."""
 
+        vacuum_ref: bool = False
+        """Whether every atom is referenced to the isolated atom of its type.
+
+        A fitting that sets it takes the vacuum descriptor of every type in
+        its forward; the default holds for fittings without the option.
+        """
+
+        def needs_vacuum_descriptor(self) -> bool:
+            """Whether the forward takes the vacuum descriptor of every type from the descriptor."""
+            return False
+
         def __new__(cls: type, *args: Any, **kwargs: Any) -> Any:
             if cls is BF:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
@@ -66,6 +77,30 @@ def make_base_fitting(
         def compute_output_stats(self, merged: Any) -> NoReturn:
             """Update the output bias for fitting net."""
             raise NotImplementedError
+
+        def reinit_exclude(self, exclude_types: list[int] = []) -> None:
+            """Reinitialize the per-type output exclusion list.
+
+            Concrete default for fittings without exclusion support: an
+            empty list is a no-op; a non-empty list raises, because
+            silently ignoring a requested exclusion would degrade the
+            model without any signal.
+
+            Parameters
+            ----------
+            exclude_types
+                Atom types whose fitting output is excluded.
+
+            Raises
+            ------
+            NotImplementedError
+                If ``exclude_types`` is non-empty and this fitting does
+                not support atom-type exclusion.
+            """
+            if exclude_types:
+                raise NotImplementedError(
+                    "this fitting does not support atom-type exclusion"
+                )
 
         @abstractmethod
         def get_type_map(self) -> list[str]:

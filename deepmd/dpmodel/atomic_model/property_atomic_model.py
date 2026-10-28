@@ -16,6 +16,11 @@ from .dp_atomic_model import (
 
 
 class DPPropertyAtomicModel(DPAtomicModel):
+    r"""Generic atomic property map :math:`p_i=F_\theta(\mathcal D_i)`.
+
+    Extensive frame properties use :math:`p=\sum_i p_i`.
+    """
+
     def __init__(
         self, descriptor: Any, fitting: Any, type_map: list[str], **kwargs: Any
     ) -> None:

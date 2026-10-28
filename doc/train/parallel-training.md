@@ -1,8 +1,7 @@
 # Parallel training {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
 
@@ -93,15 +92,18 @@ optional arguments:
                         master)
 ```
 
-## PyTorch Implementation {{ pytorch_icon }}
+## PyTorch implementations {{ pytorch_icon }}
 
-Currently, parallel training in pytorch version is implemented in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
+Parallel training in the PyTorch and PyTorch Exportable backends uses PyTorch
+distributed primitives. Stages 0 and 1 use
+[Distributed Data Parallelism (DDP)](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html),
+while stages 2 and 3 use FSDP2.
 DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
 
 ### Optional ZeRO memory optimization
 
-In PyTorch backend, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer) stages
-to reduce per-GPU memory usage during distributed training.
+In both PyTorch backends, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer)
+stages to reduce per-GPU memory usage during distributed training.
 
 | `zero_stage` | Strategy                      | Communication | Memory saving                                 |
 | ------------ | ----------------------------- | ------------- | --------------------------------------------- |
@@ -138,11 +140,16 @@ Enable it in input config:
 
 Constraints:
 
-- Works only in PyTorch backend.
+- Works in the PyTorch-TorchScript and PyTorch Exportable backends.
 - Requires distributed launch with `torchrun`.
 - Currently single-task only.
 - Not supported with `LKF` optimizer.
-- `change_bias_after_training` must be `false`.
+- `training.change_bias_after_training` must be `false`.
+- Stages 2 and 3 require PyTorch 2.6 or later and are incompatible with
+  `training.enable_ema`, `validating.full_validation`, and
+  `validating.ema_full_validation`.
+- In the PyTorch Exportable backend, stages 2 and 3 are additionally
+  incompatible with `training.enable_compile`.
 
 ### Dataloader and Dataset
 
@@ -238,6 +245,28 @@ torchrun --rdzv_endpoint=node0:12321 --nnodes=2 --nproc_per_node=4 --node_rank=1
 
 > To check forward, backward, and communication time, please set env var `TORCH_CPP_LOG_LEVEL=INFO TORCH_DISTRIBUTED_DEBUG=DETAIL`. More details can be found [here](https://pytorch.org/docs/stable/distributed.html#logging).
 
+## PyTorch-Exportable Implementation {{ pytorch_icon }}
+
+The PyTorch-Exportable backend also trains in parallel with PyTorch
+Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
+It initializes the process group automatically when launched with
+[`torchrun`](https://pytorch.org/docs/stable/elastic/run.html#usage) (which
+exports the `LOCAL_RANK` environment variable), and wraps both single-task and
+multi-task models in `DistributedDataParallel`.
+
+### How to use
+
+Launch a DDP training session with `torchrun`, the same as for the
+PyTorch-TorchScript backend:
+
+```bash
+torchrun --nproc_per_node=4 --no-python dp --pt-expt train input.json
+```
+
+Unlike the PyTorch-TorchScript backend, the ZeRO/FSDP2 memory-optimization
+options described above are not available here; PyTorch-Exportable uses
+standard DDP only.
+
 ## Paddle Implementation {{ paddle_icon }}
 
 ### How to use
@@ -282,8 +311,7 @@ Then, run the script on the first node with:
 mpirun run_pp.sh
 ```
 
-:::{note}
-
-If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;
-if it is too small, it may slow down data reading. You can try adjusting it to an appropriate size.
-:::
+> [!NOTE]
+>
+> If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;
+> if it is too small, it may slow down data reading. You can try adjusting it to an appropriate size.

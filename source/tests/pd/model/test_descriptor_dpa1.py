@@ -241,6 +241,31 @@ class TestDPA1(unittest.TestCase):
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa1.pd"
         self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pd"
 
+    def test_nonperiodic_input_stats_accept_missing_box(self) -> None:
+        """A missing box key and an explicit None denote the same open boundary."""
+        descriptor = DescrptDPA1(
+            rcut=6.0,
+            rcut_smth=0.5,
+            sel=30,
+            ntypes=2,
+            attn_layer=0,
+        ).to(env.DEVICE)
+        sample = {"coord": self.coord, "atype": self.atype}
+
+        descriptor.compute_input_stats([sample])
+        missing_box_mean, missing_box_stddev = (
+            value.numpy().copy() for value in descriptor.get_stat_mean_and_stddev()
+        )
+
+        sample["box"] = None
+        descriptor.compute_input_stats([sample])
+        explicit_none_mean, explicit_none_stddev = (
+            value.numpy() for value in descriptor.get_stat_mean_and_stddev()
+        )
+
+        np.testing.assert_array_equal(missing_box_mean, explicit_none_mean)
+        np.testing.assert_array_equal(missing_box_stddev, explicit_none_stddev)
+
     def test_descriptor_block(self) -> None:
         # paddle.seed(0)
         model_dpa1 = self.model_json

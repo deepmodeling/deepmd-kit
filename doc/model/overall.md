@@ -1,5 +1,8 @@
 # Overall
 
+The original Deep Potential formulation is listed in the
+{ref}`canonical citation guide <cite-deep-potential>`.
+
 ## Theory
 
 A Deep Potential (DP) model, denoted by $\mathcal{M}$, can be generally represented as
@@ -44,6 +47,8 @@ The two subsections, {ref}`descriptor <model[standard]/descriptor>` and {ref}`fi
 
 The {ref}`type_map <model/type_map>` is optional, which provides the element names (but not necessarily same as the actual name of the element) of the corresponding atom types. A water model, as in this example, has two kinds of atoms. The atom types are internally recorded as integers, e.g., `0` for oxygen and `1` for hydrogen here. A mapping from the atom type to their names is provided by {ref}`type_map <model/type_map>`.
 
+Some model families ship named presets of their released architectures. Setting `preset` in the {ref}`model <model>` section fills in `type`, `type_map`, `descriptor` and `fitting_net` from the named architecture, and entries written next to it take precedence. See [DPA4](dpa4.md#presets) and [DPA4C](dpa4c.md#presets) for the available presets and the merge rules.
+
 DeePMD-kit implements the following descriptors:
 
 1. [`se_e2_a`](train-se-e2-a.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
@@ -57,9 +62,11 @@ The fitting of the following physical properties is supported
 
 1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions), the virial (derivative with the box tensor) and the hessian (second-order derivative with atom positions) can also be trained.
 
-:::{warning}
-Due to the restrictions of torch jit script, the models trained with hessian are not jitable so that the frozen models cannot output hessians.
-:::
+> [!WARNING]
+> The PyTorch-TorchScript freeze route cannot output Hessians, and
+> PyTorch-Exportable cannot construct a Hessian model for freezing or
+> inference. The JAX backend can retain Hessian output in a frozen model with
+> `dp --jax freeze --hessian`; see [Freeze a model](../freeze/freeze.md).
 
 2. [`dipole`](train-fitting-tensor.md): The dipole moment.
 1. [`polar`](train-fitting-tensor.md): The polarizability.

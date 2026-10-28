@@ -25,6 +25,15 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    make_preset_out_bias,
+    override_assigned_bias,
+)
+from deepmd.utils.stat_file import (
+    load_output_stats,
+    load_required_items,
+    save_output_stats,
+)
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +52,8 @@ def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str
     Returns
     -------
     list[str]
-        Sorted list of observed element symbols.
+        Sorted list of observed element symbols. Negative virtual atom types
+        and indices outside ``type_map`` are ignored.
     """
     from deepmd.utils.econf_embd import (
         sort_element_type,
@@ -54,23 +64,47 @@ def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str
         atype = to_numpy_array(system["atype"])  # shape: [nframes, natoms]
         observed_indices.update(np.unique(atype).tolist())
     observed_types = [
-        type_map[i] for i in sorted(observed_indices) if i < len(type_map)
+        type_map[i] for i in sorted(observed_indices) if 0 <= i < len(type_map)
     ]
     return sort_element_type(observed_types)
+
+
+def observed_types_from_counts(
+    natoms_total: np.ndarray, type_map: list[str]
+) -> list[str]:
+    """Collect observed element types from per-type atom counts.
+
+    Parameters
+    ----------
+    natoms_total : np.ndarray
+        Total occurrences of each type, shape ``[ntypes]``.
+    type_map : list[str]
+        Mapping from type index to element symbol.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of observed element symbols.
+    """
+    from deepmd.utils.econf_embd import (
+        sort_element_type,
+    )
+
+    return sort_element_type(
+        [type_map[i] for i in np.flatnonzero(np.asarray(natoms_total) > 0)]
+    )
 
 
 def _restore_observed_type_from_file(
     stat_file_path: DPPath | None,
 ) -> list[str] | None:
     """Try to load observed_type from stat file."""
-    if stat_file_path is None:
+    items = load_required_items(stat_file_path, ["observed_type"])
+    if items is None:
         return None
-    fp = stat_file_path / "observed_type"
-    if fp.is_file():
-        arr = fp.load_numpy()
-        # Decode bytes back to str if stored as bytes (for h5py compatibility)
-        return [x.decode() if isinstance(x, bytes) else x for x in arr.tolist()]
-    return None
+    arr = items["observed_type"]
+    # HDF5 string datasets may return bytes instead of str.
+    return [x.decode() if isinstance(x, bytes) else x for x in arr.tolist()]
 
 
 def _save_observed_type_to_file(
@@ -83,49 +117,6 @@ def _save_observed_type_to_file(
     fp = stat_file_path / "observed_type"
     # Use bytes dtype for h5py compatibility (h5py cannot store Unicode strings)
     fp.save_numpy(np.array(observed_type, dtype="S"))
-
-
-def _restore_from_file(
-    stat_file_path: DPPath,
-    keys: list[str],
-) -> tuple[dict | None, dict | None]:
-    """Restore bias and std from stat file."""
-    if stat_file_path is None:
-        return None, None
-    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-    stat_files = [stat_file_path / f"std_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-
-    ret_bias = {}
-    ret_std = {}
-    for kk in keys:
-        fp = stat_file_path / f"bias_atom_{kk}"
-        if fp.is_file():
-            ret_bias[kk] = fp.load_numpy()
-    for kk in keys:
-        fp = stat_file_path / f"std_atom_{kk}"
-        if fp.is_file():
-            ret_std[kk] = fp.load_numpy()
-    return ret_bias, ret_std
-
-
-def _save_to_file(
-    stat_file_path: DPPath,
-    bias_out: dict,
-    std_out: dict,
-) -> None:
-    """Save bias and std to stat file."""
-    assert stat_file_path is not None
-    stat_file_path.mkdir(exist_ok=True, parents=True)
-    for kk, vv in bias_out.items():
-        fp = stat_file_path / f"bias_atom_{kk}"
-        fp.save_numpy(vv)
-    for kk, vv in std_out.items():
-        fp = stat_file_path / f"std_atom_{kk}"
-        fp.save_numpy(vv)
 
 
 def _post_process_stat(
@@ -148,31 +139,6 @@ def _post_process_stat(
             reps = [ntypes] + [1] * (vv.ndim - 1)
             new_std[kk] = np.tile(out_std[kk], reps)
     return out_bias, new_std
-
-
-def _make_preset_out_bias(
-    ntypes: int,
-    ibias: list[np.ndarray | None],
-) -> np.ndarray | None:
-    """Make preset out bias.
-
-    output:
-        a np array of shape [ntypes, *(odim0, odim1, ...)] is any item is not None
-        None if all items are None.
-    """
-    if len(ibias) != ntypes:
-        raise ValueError("the length of preset bias list should be ntypes")
-    if all(ii is None for ii in ibias):
-        return None
-    for refb in ibias:
-        if refb is not None:
-            break
-    refb = np.array(refb)
-    nbias = [
-        np.full_like(refb, np.nan, dtype=np.float64) if ii is None else ii
-        for ii in ibias
-    ]
-    return np.array(nbias)
 
 
 def _fill_stat_with_global(
@@ -216,9 +182,20 @@ def _compute_model_predict(
         fparam = to_numpy_array(system.get("fparam", None))
         aparam = to_numpy_array(system.get("aparam", None))
         charge_spin = to_numpy_array(system.get("charge_spin", None))
+        # A native-spin model conditions on the per-atom moment, so the bias it
+        # predicts here is only the bias it will predict during training if the
+        # moment travels with the sample. The virtual-atom scheme never reaches
+        # this key: it expands the moment into virtual atoms before sampling.
+        spin = to_numpy_array(system.get("spin", None))
 
         sample_predict = model_forward(
-            coord, atype, box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            coord,
+            atype,
+            box,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            spin=spin,
         )
         for kk in keys:
             model_predict[kk].append(
@@ -259,9 +236,12 @@ def compute_output_stats(
     rcond : float, optional
         The condition number for the regression of atomic energy.
     preset_bias : dict[str, list[Optional[np.ndarray]]], optional
-        Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
+        Assigned values of the returned bias, given by key:value pairs.
+        The value is a list with one element per type: None leaves the type to the
+        statistics, an np.ndarray of output shape assigns the type.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The values live in the frame of the returned bias: absolute biases without
+        `model_forward`, shifts of the model's stored bias with `model_forward`.
         The `set_davg_zero` key in the descriptor should be set.
     model_forward : Callable, optional
         The wrapped forward function of atomic model.
@@ -276,9 +256,23 @@ def compute_output_stats(
     # normalize keys to list
     keys = [keys] if isinstance(keys, str) else keys
     assert isinstance(keys, list)
+    requested_keys = list(keys)
+
+    # Per-type constraints participate in both cache validation and regression.
+    assigned_bias = {
+        kk: make_preset_out_bias(ntypes, preset_bias[kk])
+        if preset_bias is not None and kk in preset_bias
+        else None
+        for kk in keys
+    }
+
+    # Model residuals depend on parameters not recorded in the statistics cache.
+    # Neither reuse nor persist them as absolute output statistics.
+    if model_forward is not None:
+        stat_file_path = None
 
     # try to restore the bias from stat file
-    bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    bias_atom_e, std_atom_e = load_output_stats(stat_file_path, keys, assigned_bias)
 
     # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
@@ -356,7 +350,7 @@ def compute_output_stats(
             ntypes,
             keys,
             rcond,
-            preset_bias,
+            assigned_bias,
             global_sampled_idx,
             stats_distinguish_types,
             intensive,
@@ -368,6 +362,7 @@ def compute_output_stats(
             keys,
             atomic_sampled_idx,
             model_pred_a,
+            assigned_bias,
         )
 
         # merge global/atomic bias
@@ -390,7 +385,13 @@ def compute_output_stats(
                 raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
-            _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
+            save_output_stats(
+                stat_file_path,
+                requested_keys,
+                bias_atom_e,
+                std_atom_e,
+                assigned_bias,
+            )
 
     return bias_atom_e, std_atom_e
 
@@ -400,7 +401,7 @@ def _compute_output_stats_global(
     ntypes: int,
     keys: list[str],
     rcond: float | None = None,
-    preset_bias: dict[str, list[np.ndarray | None]] | None = None,
+    assigned_bias: dict[str, np.ndarray | None] | None = None,
     global_sampled_idx: dict | None = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
@@ -447,15 +448,8 @@ def _compute_output_stats_global(
     }
     nf = {kk: merged_natoms[kk].shape[0] for kk in keys if kk in merged_natoms}
 
-    if preset_bias is not None:
-        assigned_atom_ener = {
-            kk: _make_preset_out_bias(ntypes, preset_bias[kk])
-            if kk in preset_bias.keys()
-            else None
-            for kk in keys
-        }
-    else:
-        assigned_atom_ener = dict.fromkeys(keys)
+    if assigned_bias is None:
+        assigned_bias = dict.fromkeys(keys)
 
     if model_pred is None:
         stats_input = merged_output
@@ -476,7 +470,6 @@ def _compute_output_stats_global(
                     compute_stats_do_not_distinguish_types(
                         stats_input[kk],
                         merged_natoms[kk],
-                        assigned_bias=assigned_atom_ener[kk],
                         intensive=intensive,
                     )
                 )
@@ -484,7 +477,7 @@ def _compute_output_stats_global(
                 bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                     stats_input[kk],
                     merged_natoms[kk],
-                    assigned_bias=assigned_atom_ener[kk],
+                    assigned_bias=assigned_bias[kk],
                     rcond=rcond,
                     intensive=intensive,
                 )
@@ -526,6 +519,7 @@ def _compute_output_stats_atomic(
     keys: list[str],
     atomic_sampled_idx: dict | None = None,
     model_pred: dict[str, np.ndarray] | None = None,
+    assigned_bias: dict[str, np.ndarray | None] | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Compute output statistics from atomic labels."""
     # return directly if no atomic samples
@@ -533,6 +527,8 @@ def _compute_output_stats_atomic(
         len(v) == 0 for v in atomic_sampled_idx.values()
     ):
         return {}, {}
+    if assigned_bias is None:
+        assigned_bias = dict.fromkeys(keys)
 
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {
@@ -605,6 +601,9 @@ def _compute_output_stats_atomic(
                 nan_padding.fill(np.nan)
                 bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
                 std_atom_e[kk] = np.concatenate([std_atom_e[kk], nan_padding], axis=0)
+            # the per-type means are independent, so an assigned type is
+            # overridden exactly
+            bias_atom_e[kk] = override_assigned_bias(bias_atom_e[kk], assigned_bias[kk])
         else:
             # this key does not have atomic labels, skip it.
             continue

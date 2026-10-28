@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <string>
+#include <vector>
 
 #include "DataModifier.h"
 #include "DeepBaseModel.h"
@@ -7,6 +8,16 @@
 #include "DeepSpin.h"
 #include "DeepTensor.h"
 #include "neighbor_list.h"
+
+namespace deepmd {
+namespace c_api_internal {
+
+std::vector<double> copy_charge_spin(const double* charge_spin,
+                                     int numb_chg_spin,
+                                     int dim_chg_spin);
+
+}  // namespace c_api_internal
+}  // namespace deepmd
 
 // catch deepmd::deepmd_exception and store it in dp->exception
 // return nothing

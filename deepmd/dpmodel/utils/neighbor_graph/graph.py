@@ -12,6 +12,7 @@ from __future__ import (
     annotations,
 )
 
+import dataclasses
 from dataclasses import (
     dataclass,
     field,
@@ -235,6 +236,54 @@ def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     return xp.minimum(frame_id, xp.astype(last_frame, xp.int64))
 
 
+def append_isolated_frames(
+    graph: NeighborGraph, n_total: int, count: int
+) -> NeighborGraph:
+    """Append ``count`` single-node frames without edges after the node axis.
+
+    The new nodes take the positions ``[n_total, n_total + count)`` of the
+    flat node axis, each as a frame of one owned node and no neighbors, so
+    every edge-indexed field of the graph stays valid unchanged. A padding
+    suffix of the compact-prefix layout, ``[sum(n_node), n_total)``, becomes
+    one frame of its own without owned nodes, so that the frame bookkeeping
+    keeps assigning every position of the extended axis to its frame. The
+    compressed-sparse-row offsets, when present, gain empty rows.
+
+    Parameters
+    ----------
+    graph
+        Neighbor graph of the real frames.
+    n_total
+        Size of the flat node axis of ``graph``, padding included.
+    count
+        Number of isolated nodes to append.
+
+    Returns
+    -------
+    NeighborGraph
+        A ``dataclasses.replace`` copy with the extended frame bookkeeping.
+    """
+    xp = array_api_compat.array_namespace(graph.n_node)
+    device = array_api_compat.device(graph.n_node)
+    n_node = graph.n_node
+    padding = xp.reshape(n_total - xp.sum(n_node), (1,))
+    ones = xp.ones((count,), dtype=n_node.dtype, device=device)
+    fields = {"n_node": xp.concat([n_node, xp.astype(padding, n_node.dtype), ones])}
+    if graph.n_local is not None:
+        fields["n_local"] = xp.concat(
+            [
+                graph.n_local,
+                xp.zeros((1,), dtype=graph.n_local.dtype, device=device),
+                xp.ones((count,), dtype=graph.n_local.dtype, device=device),
+            ]
+        )
+    for name in ("destination_row_ptr", "source_row_ptr"):
+        row_ptr = getattr(graph, name)
+        if row_ptr is not None:
+            fields[name] = xp.concat([row_ptr, xp.broadcast_to(row_ptr[-1:], (count,))])
+    return dataclasses.replace(graph, **fields)
+
+
 def node_ownership_mask(n_node: Array, n_local: Array, n_total: int) -> Array:
     """Return the owned-node mask for a local-plus-halo graph.
 
@@ -394,6 +443,132 @@ def apply_pair_exclusion(
             fields["angle_mask"] = xp.take(out.angle_mask, angle_keep_idx, axis=0)
         out = dataclasses.replace(out, **fields)
     return out
+
+
+def compact_nodes(
+    graph: NeighborGraph, node_mask: Array
+) -> tuple[NeighborGraph, Array]:
+    """Renumber a graph onto the subset of its nodes selected by a mask.
+
+    A batch whose frames hold unequal atom counts reaches the model as a
+    rectangular tensor padded with phantom atoms, and the graph builders lay
+    their node axis out over that padded shape. Every builder already refuses
+    an edge touching a phantom, so the phantoms survive as isolated nodes
+    whose only effect is to make the network evaluate them. Dropping them here
+    leaves each frame occupying exactly as many nodes as it has real atoms,
+    which is the layout ``n_node`` was always able to express.
+
+    Node order is preserved, so each frame keeps one contiguous block and the
+    frame-major invariant every per-frame reduction relies on still holds.
+
+    Parameters
+    ----------
+    graph : NeighborGraph
+        Graph whose node axis is to be compacted. It must carry no edge
+        incident on a masked-out node, and no multi-rank halo split.
+    node_mask : Array
+        Boolean mask over the flat node axis with shape ``(N,)``, ``True`` for
+        the nodes to retain.
+
+    Returns
+    -------
+    NeighborGraph
+        The graph over the retained nodes, with ``n_node`` recounted and
+        ``edge_index`` renumbered. CSR views, when present, are rebuilt.
+    Array
+        Positions of the retained nodes on the original axis, shape
+        ``(n_kept,)``. Gathering a per-node tensor with it moves that tensor
+        onto the compacted axis; :func:`expand_node_values` inverts it.
+
+    Raises
+    ------
+    ValueError
+        If the graph carries a halo split, or if some edge is incident on a
+        node the mask drops.
+    """
+    import dataclasses
+
+    from deepmd.dpmodel.utils.neighbor_graph.segment import (
+        segment_sum,
+    )
+
+    if graph.n_local is not None:
+        raise ValueError("cannot compact the node axis of a local-plus-halo graph")
+    xp = array_api_compat.array_namespace(graph.n_node, node_mask)
+    device = array_api_compat.device(graph.n_node)
+    n_total = node_mask.shape[0]
+
+    keep_index = xp.reshape(xp.nonzero(node_mask)[0], (-1,))
+    # Position of each retained node on the compacted axis, and -1 for the
+    # nodes that go away. Renumbering by a prefix sum keeps the frame blocks
+    # contiguous and in order.
+    renumber = xp.cumulative_sum(xp.astype(node_mask, xp.int64)) - 1
+    # ``full_like`` keeps the sentinel a kernel argument; materializing it as a
+    # 0-dim array with ``asarray`` would copy it from the host, which
+    # synchronizes once per call on the graph-construction hot path.
+    renumber = xp.where(node_mask, renumber, xp.full_like(renumber, -1))
+
+    frame_id = frame_id_from_n_node(graph.n_node, n_total=n_total)
+    n_node = xp.astype(
+        segment_sum(xp.astype(node_mask, xp.int64), frame_id, graph.n_node.shape[0]),
+        graph.n_node.dtype,
+    )
+
+    edge_index = xp.take(renumber, xp.reshape(graph.edge_index, (-1,)), axis=0)
+    edge_index = xp.reshape(edge_index, graph.edge_index.shape)
+    # A dropped node with an edge would leave -1 behind on a real edge, which
+    # would silently address the last node of the compacted axis downstream.
+    if bool(xp.any(xp.logical_and(edge_index < 0, graph.edge_mask[None, :]))):
+        raise ValueError("cannot compact a node that still carries an edge")
+    edge_index = xp.astype(
+        xp.maximum(edge_index, xp.full_like(edge_index, 0)), graph.edge_index.dtype
+    )
+
+    compacted = dataclasses.replace(
+        graph,
+        n_node=n_node,
+        edge_index=edge_index,
+        destination_order=None,
+        destination_row_ptr=None,
+        source_order=None,
+        source_row_ptr=None,
+        destination_sorted=False,
+    )
+    if graph.destination_row_ptr is not None:
+        from deepmd.dpmodel.utils.neighbor_graph.csr import (
+            attach_edge_csr,
+        )
+
+        compacted = attach_edge_csr(compacted, int(keep_index.shape[0]))
+    return compacted, keep_index
+
+
+def expand_node_values(values: Array, keep_index: Array, n_total: int) -> Array:
+    """Scatter a compacted per-node tensor back onto a padded node axis.
+
+    Inverse of the gather that :func:`compact_nodes` describes. Positions the
+    compaction dropped read as zero, which is what the dropped nodes
+    contributed to every physical quantity in the first place.
+
+    Parameters
+    ----------
+    values : Array
+        Per-node tensor on the compacted axis with shape ``(n_kept, ...)``.
+    keep_index : Array
+        Positions of the retained nodes, as returned by :func:`compact_nodes`.
+    n_total : int
+        Size of the padded node axis to scatter onto.
+
+    Returns
+    -------
+    Array
+        Tensor of shape ``(n_total, ...)``.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph.segment import (
+        segment_sum,
+    )
+
+    return segment_sum(values, keep_index, n_total)
 
 
 def node_validity_mask(n_node: Array, n_total: int) -> Array:

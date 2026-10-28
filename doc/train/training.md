@@ -3,7 +3,7 @@
 Several examples of training can be found in the `examples` directory:
 
 ```bash
-$ cd $deepmd_source_dir/examples/water/se_e2_a/
+cd $deepmd_source_dir/examples/water/se_e2_a/
 ```
 
 After switching to that directory, the training can be invoked by
@@ -13,30 +13,55 @@ After switching to that directory, the training can be invoked by
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```bash
-$ dp --tf train input.json
+dp --tf train input.json
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} TensorFlow 2 {{ tensorflow_icon }}
 
 ```bash
-$ dp --pt train input.json
+dp --tf2 train input.json
+```
+:::
+
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
+
+```bash
+dp --pt train input.json
+```
+:::
+
+:::{tab-item} PyTorch-Exportable {{ pytorch_icon }}
+
+```bash
+dp --pt-expt train input.json
 ```
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
 
 ```bash
-# training model
-$ dp --pd train input.json
+# Training model
+dp --pd train input.json
 
 # [experimental] training models with the CINN compiler (~40%+ speedup)
 # see: https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/guides/paddle_v3_features/cinn_cn.html
-## If the shape(s) of batch input data are dynamic during training(default).
-$ CINN=1 dp --pd train input.json
-## If the shape(s) of batch input data are fixed during training, e.g., examples/water.
-$ CINN=1 CINN_ALLOW_DYNAMIC_SHAPE=0 dp --pd train input.json
+# If the batch input shapes are dynamic during training (the default).
+CINN=1 dp --pd train input.json
+# If the batch input shapes are fixed during training, e.g. examples/water.
+CINN=1 CINN_ALLOW_DYNAMIC_SHAPE=0 dp --pd train input.json
 ```
+:::
+
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+dp --jax train input.json
+```
+
+JAX training, introduced in DeePMD-kit v3.2.0, writes checkpoints with the
+`.jax` extension. It supports fine-tuning and multi-task configurations, but
+does not currently support `--init-frz-model`.
 :::
 
 ::::
@@ -94,6 +119,5 @@ plt.show()
 
 Checkpoints will be written to files with the prefix {ref}`save_ckpt <training/save_ckpt>` every {ref}`save_freq <training/save_freq>` training steps.
 
-:::{warning}
-It is warned that the example water data (in folder `examples/water/data`) is of very limited amount, is provided only for testing purposes, and should not be used to train a production model.
-:::
+> [!WARNING]
+> It is warned that the example water data (in folder `examples/water/data`) is of very limited amount, is provided only for testing purposes, and should not be used to train a production model.

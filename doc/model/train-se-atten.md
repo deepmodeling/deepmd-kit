@@ -1,8 +1,10 @@
 # Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable
+> {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP
+> {{ dpmodel_icon }}
 
 ![ALT](../images/model_se_atten.png "model_se_atten")
 
@@ -20,6 +22,16 @@ Attention-based descriptor $\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}$, whic
 
 where $\hat{\mathcal{G}}^i$ represents the embedding matrix $\mathcal{G}^i$ after additional self-attention mechanism and $\mathcal{R}^i$ is defined by the full case in the [`se_e2_a`](./train-se-e2-a.md).
 Note that we obtain $\mathcal{G}^i$ using the type embedding method by default in this descriptor. By default, we concat $s(r_{ij})$ and the type embeddings of central and neighboring atoms $\mathcal{A}^i$ and $\mathcal{A}^j$ as input of the embedding network $\mathcal{N}_{e,2}$:
+
+The PyTorch and DP model implementations optionally extend $\mathcal{R}^i$ with
+norm-normalized real spherical harmonics through degree four. Setting
+{ref}`lmax <model[standard]/descriptor[se_atten]/lmax>` to `2`, `3`, or `4`
+changes the moment dimension from four to nine, sixteen, or twenty-five while
+preserving the neighbor-linear reduction. Rows of degree two and above use the
+zero-mean radial factor $s(r_{ij})/\sigma_s$ and therefore do not introduce an
+explicit neighbor-pair or angle axis. Each added degree has a trainable,
+non-negative Gram weight initialized near zero, so the descriptor begins close
+to its lower-degree form and can enable useful angular orders during training.
 
 ```math
    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad(\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\})
@@ -103,6 +115,7 @@ An example of the DPA-1 descriptor is provided as follows
 - **{ref}`sel <model[standard]/descriptor[se_atten]/sel>`** gives the maximum possible number of neighbors in the cut-off radius. It is an int. Note that this number highly affects the efficiency of training, which we usually use less than 200. (We use 120 for training 56 elements in [OC2M dataset](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md))
 - The {ref}`neuron <model[standard]/descriptor[se_atten]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
 - The {ref}`axis_neuron <model[standard]/descriptor[se_atten]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
+- {ref}`lmax <model[standard]/descriptor[se_atten]/lmax>` selects the maximum angular degree of the moment basis from `1` through `4`. Higher values add quadrupole, octupole, and hexadecapole components with trainable degree weights. These options are currently supported by the PyTorch and DP model implementations.
 - If the option {ref}`resnet_dt <model[standard]/descriptor[se_atten]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
 - {ref}`seed <model[standard]/descriptor[se_atten]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 - {ref}`attn <model[standard]/descriptor[se_atten]/attn>` sets the length of a hidden vector during scale-dot attention computation.
@@ -132,9 +145,8 @@ You can use descriptor `"se_atten_v2"` and is not allowed to set `tebd_input_mod
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
 
-:::{note}
-Model compression support differs across backends. See [Model compression](#model-compression) for backend-specific requirements.
-:::
+> [!NOTE]
+> Model compression support differs across backends. See [Model compression](#model-compression) for backend-specific requirements.
 
 ## Type embedding
 
@@ -192,9 +204,38 @@ DPA-1 supports both the [standard data format](../data/system.md) and the [mixed
 
 Model compression is supported only when the descriptor attention depth {ref}`attn_layer <model[standard]/descriptor[se_atten]/attn_layer>` is 0 and {ref}`tebd_input_mode <model[standard]/descriptor[se_atten]/tebd_input_mode>` is `"strip"`. Attention layers higher than 0 cannot be compressed in the TensorFlow implementation because the geometric part is tabulated from the static computation graph.
 
-### PyTorch {{ pytorch_icon }}
+### PyTorch-TorchScript {{ pytorch_icon }}
 
 Model compression is supported for any {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` value when {ref}`tebd_input_mode <model[standard]/descriptor[se_atten_v2]/tebd_input_mode>` is `"strip"`. When `attn_layer` is 0, both the type embedding and geometric parts are compressed. When `attn_layer` is not 0, only the type embedding is compressed while the geometric part keeps the neural network implementation (a warning is emitted during compression).
+
+In the pt_expt CUDA graph lower, automatic fused routing is limited to `lmax`
+1 for both compressed and uncompressed descriptors. The `lmax` 2, 3, and 4
+CUDA specializations are retained for experimental builds enabled with
+`DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON`; the production eligibility gate continues
+to route those descriptors through the portable reference path.
+
+### PyTorch-Exportable {{ pytorch_icon }}
+
+Executable compression is limited to graph-lowered DPA-1 models with
+{ref}`attn_layer <model[standard]/descriptor[se_atten]/attn_layer>` set to `0`
+and {ref}`tebd_input_mode <model[standard]/descriptor[se_atten]/tebd_input_mode>`
+set to `"strip"`. The fused CUDA table operator also requires no excluded type
+pairs, float32 descriptor statistics and tables, `neuron[-1] <= 256`, and
+`axis_neuron <= min(16, neuron[-1])`. A matching `.pt2` export embeds the
+tabulated operator.
+
+For other models, `dp --pt-expt compress` records compressed state in
+`model.json` but leaves the executable inference graph unchanged, so the
+resulting `.pte` or `.pt2` file is not a deployment compression artifact. The
+export-specific entrypoint uses the same table strides and
+minimum-neighbor-distance fallback as the native-model compression helpers.
+
+### JAX {{ jax_icon }}
+
+Use `.jax` for the general lossless compressed serialization path. A compressed
+DPA-1 model can be exported to StableHLO `.hlo` only when
+{ref}`type_one_side <model[standard]/descriptor[se_atten]/type_one_side>` is
+`true`.
 
 ## Training example
 

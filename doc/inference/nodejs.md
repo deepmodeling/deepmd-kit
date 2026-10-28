@@ -1,8 +1,7 @@
 # Node.js interface
 
-:::{note}
-See [Environment variables](../env.md) for the runtime environment variables.
-:::
+> [!NOTE]
+> See [Environment variables](../env.md) for the runtime environment variables.
 
 If [Node.js interface is installed](../install/install-nodejs.md), one can use the Node.js interface for model inference, which is a wrapper of [the header-only C++ API](./cxx.md).
 

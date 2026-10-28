@@ -1,12 +1,10 @@
 # Running MD with GROMACS
 
-::::{important}
-
-:::{deprecated} v3.2.0
-The official in-tree GROMACS patch was removed from DeePMD-kit in v3.2.0 and is no longer maintained.
-:::
-
-::::
+> [!IMPORTANT]
+>
+> :::{deprecated} v3.2.0
+> The official in-tree GROMACS patch was removed from DeePMD-kit in v3.2.0 and is no longer maintained.
+> :::
 
 DeePMD-kit may still be used with GROMACS through third-party integrations maintained outside this repository.
 

@@ -26,6 +26,8 @@ from deepmd.utils.plugin import (
 
 
 class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
+    r"""Base learning-rate schedule :math:`\eta=\eta(t)`."""
+
     def __new__(cls: type, *args: Any, **kwargs: Any) -> Any:
         if cls is BaseLR:
             cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
@@ -692,3 +694,33 @@ class LearningRateCosine(BaseLR):
         # Clip to min_lr for steps beyond decay_num_steps
         step_lr = xp.where(step >= self.decay_num_steps, min_lr, step_lr)
         return step_lr
+
+
+def make_learning_rate_schedule(
+    lr_params: dict[str, Any],
+    num_steps: int,
+) -> BaseLR:
+    """Build a registered learning-rate schedule for a training run.
+
+    The input schema selects schedules through ``learning_rate.type``.  Keep
+    backend trainers on the shared :class:`BaseLR` registry so every backend
+    accepts the same registered variants without mutating its input config.
+
+    Parameters
+    ----------
+    lr_params : dict[str, Any]
+        Learning-rate configuration, including the optional ``type`` key.
+    num_steps : int
+        Total number of training steps used to parameterize the schedule.
+
+    Returns
+    -------
+    BaseLR
+        The schedule selected by ``lr_params["type"]`` (``exp`` by default).
+    """
+    params = dict(lr_params)
+    # ``type`` is optional in the public schema.  Supply the documented
+    # exponential default before dispatching through the strict registry.
+    params.setdefault("type", "exp")
+    params["num_steps"] = num_steps
+    return BaseLR(**params)

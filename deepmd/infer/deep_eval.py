@@ -61,6 +61,7 @@ class DeepEvalBackend(ABC):
         "energy_derv_c": "atom_virial",
         "energy_derv_c_mag": "atom_virial_mag",
         "energy_derv_c_redu": "virial",
+        "energy_derv_c_mag_redu": "virial_mag",
         "polar": "polar",
         "polar_redu": "global_polar",
         "polar_derv_r": "force",
@@ -389,10 +390,11 @@ class DeepEvalBackend(ABC):
         """Return the property variable name of ``model``, or ``None``.
 
         Used by every backend's ``model_type`` to detect a property model.
-        ``get_var_name`` may be absent (dpmodel/pt live models expose it only on
-        property models) or present-but-unimplemented (jax/tf2 artifacts always
-        define it and raise ``NotImplementedError`` otherwise), so probe
-        defensively.
+        Live dpmodel-family models always expose ``get_var_name`` (the base
+        class's concrete default returns ``None`` for non-property models);
+        ``get_var_name`` is only absent on frozen pt legacy models, and only
+        present-but-unimplemented -- raising ``NotImplementedError`` -- on
+        jax/tf2 artifacts, so probe defensively.
         """
         if not hasattr(model, "get_var_name"):
             return None
@@ -440,6 +442,7 @@ class DeepEvalBackend(ABC):
     def get_var_name(self) -> str:
         """Get the name of the fitting property (property models only)."""
         model = self.get_model()
+        # artifact boundary: get_model() may return a loaded SavedModel
         if hasattr(model, "get_var_name"):
             return model.get_var_name()
         raise NotImplementedError
@@ -447,6 +450,7 @@ class DeepEvalBackend(ABC):
     def get_task_dim(self) -> int:
         """Get the output dimension of the property (property models only)."""
         model = self.get_model()
+        # artifact boundary: get_model() may return a loaded SavedModel
         if hasattr(model, "get_task_dim"):
             return model.get_task_dim()
         raise NotImplementedError
@@ -454,6 +458,7 @@ class DeepEvalBackend(ABC):
     def get_intensive(self) -> bool:
         """Whether the property is intensive (property models only)."""
         model = self.get_model()
+        # artifact boundary: get_model() may return a loaded SavedModel
         if hasattr(model, "get_intensive"):
             return model.get_intensive()
         raise NotImplementedError

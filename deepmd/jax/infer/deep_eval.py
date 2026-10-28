@@ -524,18 +524,17 @@ class DeepEval(DeepEvalBackend):
 
     def has_chg_spin_ebd(self) -> bool:
         """Check if the model has charge spin embedding."""
-        if hasattr(self.dp, "has_chg_spin_ebd"):
-            return self.dp.has_chg_spin_ebd()
-        return False
+        return self.dp.has_chg_spin_ebd()
 
     def get_dim_chg_spin(self) -> int:
         """Get the dimension of charge_spin input."""
-        if hasattr(self.dp, "get_dim_chg_spin"):
-            return self.dp.get_dim_chg_spin()
-        return 0
+        return self.dp.get_dim_chg_spin()
 
     def has_default_chg_spin(self) -> bool:
-        """Check if the model has default charge_spin values."""
-        if hasattr(self.dp, "has_default_chg_spin"):
-            return self.dp.has_default_chg_spin()
-        return False
+        """Check if the model has default charge_spin values.
+
+        ``has_default_chg_spin`` was merged into ``get_default_chg_spin`` on
+        the live-model interfaces; this wrapper method is kept for API
+        stability and computes the predicate directly.
+        """
+        return self.dp.get_default_chg_spin() is not None

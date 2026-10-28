@@ -21,6 +21,12 @@ from deepmd.utils.plugin import (
 
 
 class Loss(NativeOP, ABC, make_plugin_registry("loss")):
+    r"""Base interface for objectives :math:`L(\hat y,y)`.
+
+    Concrete losses map model outputs and labels to a scalar objective and
+    return diagnostic metrics alongside it.
+    """
+
     @abstractmethod
     def call(
         self,
@@ -41,9 +47,47 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         """
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Display columns for the default training call, excluding l2 terms.
+
+        The names depend on the loss configuration, not on whether a task or
+        label has been sampled. Averaged logging uses them without a forward.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must define training_metric_names for disp_avg."
+        )
+
+    @property
     @abstractmethod
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
+
+    def frame_transform(self, type_map: list[str], stream: str = "default"):  # noqa: ANN201
+        """Return a per-frame data transform this objective needs, or None.
+
+        Self-supervised objectives build their own labels by corrupting the
+        input, which has to happen while the data is read rather than inside
+        the loss. A trainer installs whatever this returns on the datasets of
+        the corresponding task. Supervised losses need nothing and return None.
+
+        Parameters
+        ----------
+        type_map : list[str]
+            Element names of the model, which a transform needs in order to map
+            elements onto types.
+        stream : str
+            Which dataset the transform is for. An objective whose randomness
+            must not be shared between datasets derives its draw sequence from
+            this, so the caller passes something stable and distinct per
+            dataset; the trainer uses ``<task>/training`` and
+            ``<task>/validation``.
+        """
+        return None
+
+    @property
+    def supports_ragged_batches(self) -> bool:
+        """Whether this objective accepts a flat per-node batch axis."""
+        return False
 
     @staticmethod
     def display_if_exist(loss: Array, find_property: float) -> Array:
@@ -63,10 +107,14 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         """
         xp = array_api_compat.array_namespace(loss)
         dev = array_api_compat.device(loss)
+        # ``full_like`` passes NaN as a scalar kernel argument, where
+        # ``asarray(xp.nan, device=dev)`` would copy it from the host: a
+        # synchronizing transfer, once per reported quantity per step, on a
+        # value that never changes.
         return xp.where(
             xp.asarray(find_property, dtype=xp.bool, device=dev),
             loss,
-            xp.asarray(xp.nan, device=dev),
+            xp.full_like(loss, xp.nan),
         )
 
     @classmethod

@@ -1,1 +1,3 @@
-To run the HTML documentation build, doxygen have to be installed.
+Building the documentation requires Python 3.11 or newer because the `docs`
+extra uses MyST-Parser 5.1 and Sphinx 8. Doxygen must also be installed to build
+the HTML documentation.

@@ -26,6 +26,25 @@ from deepmd.utils.version import (
 class DOSLoss(Loss):
     r"""Loss on DOS (density of states) for both local and global predictions.
 
+    For DOS bin :math:`k`, define its discrete cumulative distribution by
+
+    .. math::
+
+       C_k=\sum_{q=0}^{k}D_q.
+
+    The optimized objective combines global and atomic DOS and CDF errors,
+
+    .. math::
+
+       L=p_D\langle(D-\hat D)^2\rangle
+       +p_C\langle(C-\hat C)^2\rangle
+       +p_{D_i}\langle(D_i-\hat D_i)^2\rangle
+       +p_{C_i}\langle(C_i-\hat C_i)^2\rangle.
+
+    Padded atoms are excluded from the atomic averages.  Each prefactor uses
+    :math:`p=p_{\mathrm{limit}}+(p_{\mathrm{start}}-p_{\mathrm{limit}})
+    \eta/\eta_0`.
+
     Parameters
     ----------
     starter_learning_rate : float
@@ -105,7 +124,11 @@ class DOSLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Evaluate the weighted DOS and cumulative-DOS objective.
+
+        The cumulative terms use :math:`C_k=\sum_{q\le k}D_q`; local terms
+        are averaged only over real atoms when a mask is present.
+        """
         # Get array namespace from any available tensor
         first_key = next(iter(model_dict))
         xp = array_api_compat.array_namespace(model_dict[first_key])
@@ -136,7 +159,7 @@ class DOSLoss(Loss):
             )
             diff3d = local_pred - local_label  # [nf, natoms, numb_dos]
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
                 l2_local_loss_dos = masked_atom_mean(
                     xp.square(diff3d), maskf, self.numb_dos
@@ -161,7 +184,7 @@ class DOSLoss(Loss):
             )
             diff3d = local_pred_cdf - local_label_cdf  # [nf, natoms, numb_dos]
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
                 l2_local_loss_cdf = masked_atom_mean(
                     xp.square(diff3d), maskf, self.numb_dos
@@ -207,6 +230,21 @@ class DOSLoss(Loss):
 
         more_loss["rmse"] = xp.sqrt(loss)
         return loss, more_loss
+
+    @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return configured global and atomic DOS/CDF metrics."""
+        names = tuple(
+            name
+            for name, enabled in (
+                ("rmse_global_dos", self.has_dos),
+                ("rmse_global_cdf", self.has_cdf),
+                ("rmse_local_dos", self.has_ados),
+                ("rmse_local_cdf", self.has_acdf),
+            )
+            if enabled
+        )
+        return ("rmse", *names)
 
     @property
     def label_requirement(self) -> list[DataRequirementItem]:

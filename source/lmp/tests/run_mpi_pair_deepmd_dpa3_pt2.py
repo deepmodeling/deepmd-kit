@@ -109,6 +109,15 @@ parser.add_argument(
     "gains another simultaneously).",
 )
 parser.add_argument(
+    "--pair-extra",
+    type=str,
+    default="",
+    help="Extra tokens appended to the pair_style line after the model "
+    "file, e.g. 'aparam 0.25' for a numb_aparam=1 model whose uniform "
+    "per-atom parameter comes from the pair_style arguments. Used by the "
+    "empty-subdomain aparam regression.",
+)
+parser.add_argument(
     "--real-temp",
     type=float,
     default=None,
@@ -178,7 +187,10 @@ if args.null_vx is not None:
     else:
         lammps.velocity(f"nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
 
-lammps.pair_style(f"deepmd {args.PB_FILE}")
+pair_style_line = f"deepmd {args.PB_FILE}"
+if args.pair_extra:
+    pair_style_line += f" {args.pair_extra}"
+lammps.pair_style(pair_style_line)
 lammps.pair_coeff(args.pair_coeff)
 # Per-atom virial from the pair contribution. ``centroid/stress/atom``
 # is parallel-safe (rank-local data, gathered below). LAMMPS computes

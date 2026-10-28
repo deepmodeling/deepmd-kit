@@ -18,7 +18,7 @@ class TestFromIjs(unittest.TestCase):
         j = np.array([1, 0])  # neighbor
         S = np.array([[0, 0, 0], [0, 0, 0]], dtype=np.int64)
         ng = neighbor_graph_from_ijs(
-            i, j, S, coord, box, nframe_id=np.zeros(2, np.int64), nloc=3
+            i, j, S, coord, box, nframe_id=np.zeros(2, np.int64), n_node=np.array([3])
         )
         np.testing.assert_array_equal(ng.edge_index[0][ng.edge_mask], j)  # src
         np.testing.assert_array_equal(ng.edge_index[1][ng.edge_mask], i)  # dst
@@ -34,7 +34,7 @@ class TestFromIjs(unittest.TestCase):
         j = np.array([1])
         S = np.array([[-1, 0, 0]], dtype=np.int64)
         ng = neighbor_graph_from_ijs(
-            i, j, S, coord, box, nframe_id=np.zeros(1, np.int64), nloc=2
+            i, j, S, coord, box, nframe_id=np.zeros(1, np.int64), n_node=np.array([2])
         )
         # coord[1] + (-1,0,0)@box - coord[0] = 5.5 - 6 - 0.5 = -1.0
         np.testing.assert_allclose(
@@ -85,10 +85,6 @@ class TestAseCarryAll(unittest.TestCase):
         ng_ref = build_neighbor_graph(coord, atype, None, rcut=4.0)
         self.assertEqual(self._sets(ng_ase, 6), self._sets(ng_ref, 6))
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_ase_excludes_virtual_atoms_like_dense(self) -> None:
         """Virtual atoms (atype < 0) excluded as center AND neighbor.
 
@@ -113,3 +109,7 @@ if __name__ == "__main__":
         ei = ng_ase.edge_index[:, ng_ase.edge_mask]
         flat_atype = atype.reshape(-1)
         assert np.all(flat_atype[ei[0]] >= 0) and np.all(flat_atype[ei[1]] >= 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

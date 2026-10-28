@@ -72,6 +72,10 @@ class TestDeepDOSJAX(unittest.TestCase):
     def test_numb_dos_survives_export(self) -> None:
         self.assertEqual(self.dp.get_numb_dos(), 2)
 
+    def test_neighbor_count_survives_export(self) -> None:
+        """Load the exported HLO and expose its serialized selection width."""
+        self.assertEqual(self.dp.deep_eval.dp.get_nnei(), 40)
+
     def test_global_dos_only(self) -> None:
         (dos,) = self.dp.eval(self.coords, self.cells, self.atypes, atomic=False)
         self.assertEqual(dos.shape, (1, 2))

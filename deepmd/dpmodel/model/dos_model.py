@@ -28,6 +28,8 @@ DPDOSModel_ = make_model(DPDOSAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 @BaseModel.register("dos")
 class DOSModel(DPModelCommon, DPDOSModel_):
+    r"""DOS model with global spectrum :math:`D_k=\sum_iD_{ik}`."""
+
     def __init__(
         self,
         *args: Any,

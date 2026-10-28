@@ -5,22 +5,30 @@
 using namespace deepmd;
 using namespace tensorflow;
 
-DeepTensorTF::DeepTensorTF() : inited(false), graph_def(new GraphDef()) {}
+DeepTensorTF::DeepTensorTF()
+    : session(nullptr), graph_def(new GraphDef()), inited(false) {}
 
 DeepTensorTF::DeepTensorTF(const std::string& model,
                            const int& gpu_rank,
                            const std::string& name_scope_)
-    : inited(false), name_scope(name_scope_), graph_def(new GraphDef()) {
+    : session(nullptr),
+      name_scope(name_scope_),
+      graph_def(new GraphDef()),
+      inited(false) {
   try {
     init(model, gpu_rank, name_scope_);
   } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
+    deepmd::close_and_delete_session(session);
     delete graph_def;
     throw;
   }
 }
 
-DeepTensorTF::~DeepTensorTF() { delete graph_def; }
+DeepTensorTF::~DeepTensorTF() {
+  deepmd::close_and_delete_session(session);
+  delete graph_def;
+}
 
 void DeepTensorTF::init(const std::string& model,
                         const int& gpu_rank,
@@ -31,6 +39,7 @@ void DeepTensorTF::init(const std::string& model,
               << std::endl;
     return;
   }
+  deepmd::SessionCleanupGuard session_guard(session);
   name_scope = name_scope_;
   SessionOptions options;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
@@ -82,6 +91,7 @@ void DeepTensorTF::init(const std::string& model,
   get_vector<int>(sel_type, "model_attr/sel_type");
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   inited = true;
+  session_guard.release();
 }
 
 template <class VT>

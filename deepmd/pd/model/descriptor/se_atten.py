@@ -502,12 +502,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
         assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
+        atype_for_env = paddle.where(atype >= 0, atype, paddle.zeros_like(atype))
         nb = nframes
         nall = extended_coord.reshape([nb, -1, 3]).shape[1]
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
-            atype,
+            atype_for_env,
             self.mean,
             self.stddev,
             self.rcut,
@@ -582,6 +583,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nei_type = paddle.take_along_axis(
                 extended_atype, indices=nlist_index, axis=1, broadcast=False
             )
+            # Padded embedding tables reserve their final row for virtual
+            # atoms; remap explicitly before pair-index arithmetic.
+            nei_type = paddle.where(
+                nei_type >= 0,
+                nei_type,
+                paddle.full_like(nei_type, ntypes_with_padding - 1),
+            )
             # (nf x nl x nnei) x ng
             nei_type_index = nei_type.reshape([-1, 1]).expand([-1, ng]).to(paddle.int64)
             if self.type_one_side:
@@ -591,8 +599,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     tt_full, indices=nei_type_index, axis=0, broadcast=False
                 )
             else:
+                center_type = paddle.where(
+                    atype >= 0,
+                    atype,
+                    paddle.full_like(atype, ntypes_with_padding - 1),
+                )
                 idx_i = paddle.tile(
-                    atype.reshape([-1, 1]) * ntypes_with_padding, [1, nnei]
+                    center_type.reshape([-1, 1]) * ntypes_with_padding, [1, nnei]
                 ).reshape([-1])
                 idx_j = nei_type.reshape([-1])
                 # (nf x nl x nnei) x ng

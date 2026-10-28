@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <ostream>
 #include <stdexcept>
@@ -439,10 +440,38 @@ inline std::vector<std::string> get_vector_string(
 template <typename T>
 inline TF_Tensor* create_tensor(const std::vector<T>& data,
                                 const std::vector<int64_t>& shape) {
+  size_t element_count = 1;
+  for (const int64_t dim : shape) {
+    if (dim < 0) {
+      throw deepmd::deepmd_exception(
+          "Cannot create a tensor with a negative dimension.");
+    }
+    const size_t size_dim = static_cast<size_t>(dim);
+    if (size_dim != 0 &&
+        element_count > std::numeric_limits<size_t>::max() / size_dim) {
+      throw deepmd::deepmd_exception("Tensor element count overflows size_t.");
+    }
+    element_count *= size_dim;
+  }
+  if (element_count != data.size()) {
+    throw deepmd::deepmd_exception(
+        "Tensor shape requires " + std::to_string(element_count) +
+        " values, but " + std::to_string(data.size()) + " were provided.");
+  }
+  if (element_count > std::numeric_limits<size_t>::max() / sizeof(T)) {
+    throw deepmd::deepmd_exception("Tensor byte size overflows size_t.");
+  }
+  const size_t byte_size = element_count * sizeof(T);
   TF_Tensor* tensor =
-      TF_AllocateTensor(get_data_tensor_type(data), shape.data(), shape.size(),
-                        data.size() * sizeof(T));
-  memcpy(TF_TensorData(tensor), data.data(), TF_TensorByteSize(tensor));
+      TF_AllocateTensor(get_data_tensor_type(data), shape.data(),
+                        static_cast<int>(shape.size()), byte_size);
+  if (tensor == nullptr) {
+    throw deepmd::deepmd_exception(
+        "TensorFlow failed to allocate an input tensor.");
+  }
+  if (byte_size != 0) {
+    memcpy(TF_TensorData(tensor), data.data(), byte_size);
+  }
   return tensor;
 }
 
@@ -509,6 +538,60 @@ inline std::vector<double> make_charge_spin_input(
       std::to_string(nframes) + " frames).");
 }
 
+inline std::vector<double> make_fparam_input(
+    const std::vector<double>& fparam,
+    const int dfparam,
+    const int nframes,
+    const bool has_default_fparam,
+    const std::vector<double>& default_fparam) {
+  if (dfparam == 0) {
+    if (!fparam.empty()) {
+      std::cerr << "WARNING: fparam was provided, but this model has "
+                   "dim_fparam=0. The provided fparam will be ignored."
+                << std::endl;
+    }
+    return {};
+  }
+
+  const std::vector<double>* source = nullptr;
+  if (!fparam.empty()) {
+    source = &fparam;
+  } else if (!default_fparam.empty()) {
+    source = &default_fparam;
+  } else if (has_default_fparam) {
+    throw deepmd::deepmd_exception(
+        "fparam was omitted, but the model's default_fparam values are not "
+        "available. Regenerate the JAX SavedModel with an updated version of "
+        "deepmd-kit or provide fparam explicitly.");
+  } else {
+    throw deepmd::deepmd_exception(
+        "fparam is required for this model but was not provided, and no "
+        "default_fparam is stored in the model.");
+  }
+
+  const size_t dim = static_cast<size_t>(dfparam);
+  if (static_cast<size_t>(nframes) > std::numeric_limits<size_t>::max() / dim) {
+    throw deepmd::deepmd_exception("fparam element count overflows size_t.");
+  }
+  const size_t expected = static_cast<size_t>(nframes) * dim;
+  if (source->size() == expected) {
+    return *source;
+  }
+  if (source->size() == dim) {
+    std::vector<double> result(expected);
+    for (int ff = 0; ff < nframes; ++ff) {
+      std::copy(source->begin(), source->end(),
+                result.begin() + static_cast<size_t>(ff) * dim);
+    }
+    return result;
+  }
+  throw deepmd::deepmd_exception(
+      "fparam has " + std::to_string(source->size()) +
+      " values but the model expects dim_fparam=" + std::to_string(dfparam) +
+      " (per frame) or " + std::to_string(expected) + " (for " +
+      std::to_string(nframes) + " frames).");
+}
+
 template <typename T>
 inline void tensor_to_vector(std::vector<T>& result,
                              TFE_TensorHandle* retval,
@@ -542,169 +625,220 @@ void deepmd::DeepPotJAX::init(const std::string& model,
     return;
   }
 
-  const char* saved_model_dir = model.c_str();
-  graph = TF_NewGraph();
-  status = TF_NewStatus();
+  try {
+    const char* saved_model_dir = model.c_str();
+    graph = TF_NewGraph();
+    status = TF_NewStatus();
 
-  sessionopts = TF_NewSessionOptions();
-  int num_intra_nthreads, num_inter_nthreads;
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
-  // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
-  // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L364-L379
-  // The following is an equivalent of setting this in Python:
-  // config = tf.ConfigProto( allow_soft_placement = True )
-  // config.gpu_options.allow_growth = True
-  // config.gpu_options.per_process_gpu_memory_fraction = percentage
-  // Create a byte-array for the serialized ProtoConfig, set the mandatory bytes
-  // (first three and last four)
-  std::array<std::uint8_t, 19> config = {
-      {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
-       static_cast<std::uint8_t>(num_inter_nthreads), 0x32, 0xb, 0x9, 0xFF,
-       0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
+    sessionopts = TF_NewSessionOptions();
+    int num_intra_nthreads, num_inter_nthreads;
+    get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+    // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
+    // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L364-L379
+    // The following is an equivalent of setting this in Python:
+    // config = tf.ConfigProto( allow_soft_placement = True )
+    // config.gpu_options.allow_growth = True
+    // config.gpu_options.per_process_gpu_memory_fraction = percentage
+    // Create a byte-array for the serialized ProtoConfig, set the mandatory
+    // bytes (first three and last four)
+    std::array<std::uint8_t, 19> config = {
+        {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
+         static_cast<std::uint8_t>(num_inter_nthreads), 0x32, 0xb, 0x9, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
 
-  // Convert the desired percentage into a byte-array.
-  double gpu_memory_fraction = 0.9;
-  auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
+    // Convert the desired percentage into a byte-array.
+    double gpu_memory_fraction = 0.9;
+    auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
 
-  // Put it to the config byte-array, from 7 to 14:
-  for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
-    config[i + 7] = bytes[i];
-  }
+    // Put it to the config byte-array, from 7 to 14:
+    for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
+      config[i + 7] = bytes[i];
+    }
 
-  TF_SetConfig(sessionopts, config.data(), config.size(), status);
-  check_status(status);
+    TF_SetConfig(sessionopts, config.data(), config.size(), status);
+    check_status(status);
 
-  TF_Buffer* runopts = NULL;
+    TF_Buffer* runopts = NULL;
 
-  const char* tags = "serve";
-  int ntags = 1;
+    const char* tags = "serve";
+    int ntags = 1;
 
-  session = TF_LoadSessionFromSavedModel(sessionopts, runopts, saved_model_dir,
-                                         &tags, ntags, graph, NULL, status);
-  check_status(status);
+    session =
+        TF_LoadSessionFromSavedModel(sessionopts, runopts, saved_model_dir,
+                                     &tags, ntags, graph, NULL, status);
+    check_status(status);
 
-  int nfuncs = TF_GraphNumFunctions(graph);
-  // allocate memory for the TF_Function* array
-  func_vector.resize(nfuncs);
-  TF_Function** funcs = func_vector.data();
-  TF_GraphGetFunctions(graph, funcs, nfuncs, status);
-  check_status(status);
-  uses_xla_compilation_ = uses_xla_compilation(graph, func_vector, status);
+    int nfuncs = TF_GraphNumFunctions(graph);
+    // allocate memory for the TF_Function* array
+    func_vector.resize(nfuncs);
+    TF_Function** funcs = func_vector.data();
+    TF_GraphGetFunctions(graph, funcs, nfuncs, status);
+    check_status(status);
+    uses_xla_compilation_ = uses_xla_compilation(graph, func_vector, status);
 
-  ctx_opts = TFE_NewContextOptions();
-  TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
-  check_status(status);
-  ctx = TFE_NewContext(ctx_opts, status);
-  check_status(status);
+    ctx_opts = TFE_NewContextOptions();
+    TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
+    check_status(status);
+    ctx = TFE_NewContext(ctx_opts, status);
+    check_status(status);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-  int gpu_num;
-  DPGetDeviceCount(gpu_num);  // check current device environment
-  if (gpu_num > 0 && gpu_rank >= 0) {
-    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
-    device = "/gpu:" + std::to_string(gpu_rank % gpu_num);
-  } else {
-    device = "/cpu:0";
-  }
+    int gpu_num;
+    DPGetDeviceCount(gpu_num);  // check current device environment
+    if (gpu_num > 0 && gpu_rank >= 0) {
+      DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
+      device = "/gpu:" + std::to_string(gpu_rank % gpu_num);
+    } else {
+      device = "/cpu:0";
+    }
 #else
-  device = "/cpu:0";
+    device = "/cpu:0";
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-  // add all functions, otherwise the function will not be found
-  // even for tf.cond
-  for (size_t i = 0; i < func_vector.size(); i++) {
-    TF_Function* func = func_vector[i];
-    TFE_ContextAddFunction(ctx, func, status);
-    check_status(status);
-  }
+    // add all functions, otherwise the function will not be found
+    // even for tf.cond
+    for (size_t i = 0; i < func_vector.size(); i++) {
+      TF_Function* func = func_vector[i];
+      TFE_ContextAddFunction(ctx, func, status);
+      check_status(status);
+    }
 
-  rcut = get_scalar<double>(ctx, "get_rcut", func_vector, device, status);
-  dfparam =
-      get_scalar<int64_t>(ctx, "get_dim_fparam", func_vector, device, status);
-  daparam =
-      get_scalar<int64_t>(ctx, "get_dim_aparam", func_vector, device, status);
-  try {
-    dchgspin = get_scalar<int64_t>(ctx, "get_dim_chg_spin", func_vector, device,
-                                   status);
-  } catch (tf_function_not_found& e) {
-    dchgspin = 0;
-  }
-  try {
-    has_default_chg_spin_ = get_scalar<bool>(ctx, "has_default_chg_spin",
-                                             func_vector, device, status);
-  } catch (tf_function_not_found& e) {
-    has_default_chg_spin_ = false;
-  }
-  if (dchgspin > 0 && has_default_chg_spin_) {
+    rcut = get_scalar<double>(ctx, "get_rcut", func_vector, device, status);
+    dfparam =
+        get_scalar<int64_t>(ctx, "get_dim_fparam", func_vector, device, status);
+    daparam =
+        get_scalar<int64_t>(ctx, "get_dim_aparam", func_vector, device, status);
     try {
-      default_chg_spin_ = get_vector<double>(ctx, "get_default_chg_spin",
-                                             func_vector, device, status);
+      dchgspin = get_scalar<int64_t>(ctx, "get_dim_chg_spin", func_vector,
+                                     device, status);
     } catch (tf_function_not_found& e) {
+      dchgspin = 0;
+    }
+    try {
+      has_default_chg_spin_ = get_scalar<bool>(ctx, "has_default_chg_spin",
+                                               func_vector, device, status);
+    } catch (tf_function_not_found& e) {
+      has_default_chg_spin_ = false;
+    }
+    if (dchgspin > 0 && has_default_chg_spin_) {
+      try {
+        default_chg_spin_ = get_vector<double>(ctx, "get_default_chg_spin",
+                                               func_vector, device, status);
+      } catch (tf_function_not_found& e) {
+        default_chg_spin_.clear();
+      }
+    } else {
       default_chg_spin_.clear();
     }
-  } else {
-    default_chg_spin_.clear();
-  }
-  std::vector<std::string> type_map_ =
-      get_vector_string(ctx, "get_type_map", func_vector, device, status);
-  // deepmd-kit stores type_map as a concatenated string, split by ' '
-  type_map = type_map_[0];
-  for (size_t i = 1; i < type_map_.size(); i++) {
-    type_map += " " + type_map_[i];
-  }
-  ntypes = type_map_.size();
-  sel = get_vector<int64_t>(ctx, "get_sel", func_vector, device, status);
-  nnei = std::accumulate(sel.begin(), sel.end(), decltype(sel)::value_type(0));
-  try {
-    do_message_passing = get_scalar<bool>(ctx, "has_message_passing",
-                                          func_vector, device, status);
-  } catch (tf_function_not_found& e) {
+    std::vector<std::string> type_map_ =
+        get_vector_string(ctx, "get_type_map", func_vector, device, status);
+    // deepmd-kit stores type_map as a concatenated string, split by ' '
+    type_map = type_map_[0];
+    for (size_t i = 1; i < type_map_.size(); i++) {
+      type_map += " " + type_map_[i];
+    }
+    ntypes = type_map_.size();
+    sel = get_vector<int64_t>(ctx, "get_sel", func_vector, device, status);
+    nnei =
+        std::accumulate(sel.begin(), sel.end(), decltype(sel)::value_type(0));
     try {
-      do_message_passing = get_scalar<bool>(ctx, "do_message_passing",
+      do_message_passing = get_scalar<bool>(ctx, "has_message_passing",
                                             func_vector, device, status);
     } catch (tf_function_not_found& e) {
-      // compatible with models generated by v3.0.0rc0
-      do_message_passing = false;
+      try {
+        do_message_passing = get_scalar<bool>(ctx, "do_message_passing",
+                                              func_vector, device, status);
+      } catch (tf_function_not_found& e) {
+        // compatible with models generated by v3.0.0rc0
+        do_message_passing = false;
+      }
     }
-  }
-  try {
-    has_default_fparam_ = get_scalar<bool>(ctx, "has_default_fparam",
-                                           func_vector, device, status);
-  } catch (tf_function_not_found& e) {
-    has_default_fparam_ = false;
-  }
-  try {
-    // Model-level pair_exclude_types, exported flat [ti0, tj0, ti1, tj1, ...].
-    // Fold exclusion into the LAMMPS nlist at ingestion (decision #18/A4); the
-    // exported call_lower_* consumes a pre-excluded nlist. Models exported
-    // before this getter existed baked exclusion into the graph, so a missing
-    // getter (=> empty table => identity here) is correct for them.
-    std::vector<int64_t> pet_flat = get_vector<int64_t>(
-        ctx, "get_pair_exclude_types", func_vector, device, status);
-    std::vector<std::pair<int, int>> pair_exclude_types;
-    for (size_t ii = 0; ii + 1 < pet_flat.size(); ii += 2) {
-      pair_exclude_types.emplace_back(static_cast<int>(pet_flat[ii]),
-                                      static_cast<int>(pet_flat[ii + 1]));
+    try {
+      has_default_fparam_ = get_scalar<bool>(ctx, "has_default_fparam",
+                                             func_vector, device, status);
+    } catch (tf_function_not_found& e) {
+      has_default_fparam_ = false;
     }
-    pair_exclude_table_ = buildPairExcludeTable(ntypes, pair_exclude_types);
-  } catch (tf_function_not_found& e) {
-    pair_exclude_table_.clear();
+    if (dfparam > 0 && has_default_fparam_) {
+      try {
+        default_fparam_ = get_vector<double>(ctx, "get_default_fparam",
+                                             func_vector, device, status);
+        if (static_cast<int>(default_fparam_.size()) != dfparam) {
+          throw deepmd::deepmd_exception(
+              "default_fparam length (" +
+              std::to_string(default_fparam_.size()) +
+              ") does not match dim_fparam (" + std::to_string(dfparam) + ").");
+        }
+      } catch (tf_function_not_found& e) {
+        default_fparam_.clear();
+        std::cerr << "WARNING: Model has has_default_fparam=true but the "
+                     "get_default_fparam function is missing. Empty fparam "
+                     "will not be substituted. Please regenerate the JAX "
+                     "SavedModel with an updated version of deepmd-kit."
+                  << std::endl;
+      }
+    } else {
+      default_fparam_.clear();
+    }
+    try {
+      // Model-level pair_exclude_types, exported flat [ti0, tj0, ti1, tj1,
+      // ...]. Fold exclusion into the LAMMPS nlist at ingestion (decision
+      // #18/A4); the exported call_lower_* consumes a pre-excluded nlist.
+      // Models exported before this getter existed baked exclusion into the
+      // graph, so a missing getter (=> empty table => identity here) is correct
+      // for them.
+      std::vector<int64_t> pet_flat = get_vector<int64_t>(
+          ctx, "get_pair_exclude_types", func_vector, device, status);
+      std::vector<std::pair<int, int>> pair_exclude_types;
+      for (size_t ii = 0; ii + 1 < pet_flat.size(); ii += 2) {
+        pair_exclude_types.emplace_back(static_cast<int>(pet_flat[ii]),
+                                        static_cast<int>(pet_flat[ii + 1]));
+      }
+      pair_exclude_table_ = buildPairExcludeTable(ntypes, pair_exclude_types);
+    } catch (tf_function_not_found& e) {
+      pair_exclude_table_.clear();
+    }
+    inited = true;
+  } catch (...) {
+    clear_tf_resources();
+    throw;
   }
-  inited = true;
 }
 
-deepmd::DeepPotJAX::~DeepPotJAX() {
-  if (inited) {
-    TF_DeleteSession(session, status);
-    TF_DeleteGraph(graph);
-    TF_DeleteSessionOptions(sessionopts);
-    TF_DeleteStatus(status);
+void deepmd::DeepPotJAX::clear_tf_resources() noexcept {
+  if (ctx != nullptr) {
     TFE_DeleteContext(ctx);
+    ctx = nullptr;
+  }
+  if (ctx_opts != nullptr) {
     TFE_DeleteContextOptions(ctx_opts);
-    for (size_t i = 0; i < func_vector.size(); i++) {
-      TF_DeleteFunction(func_vector[i]);
+    ctx_opts = nullptr;
+  }
+  for (TF_Function* function : func_vector) {
+    if (function != nullptr) {
+      TF_DeleteFunction(function);
     }
   }
+  func_vector.clear();
+  if (session != nullptr) {
+    TF_DeleteSession(session, status);
+    session = nullptr;
+  }
+  if (graph != nullptr) {
+    TF_DeleteGraph(graph);
+    graph = nullptr;
+  }
+  if (sessionopts != nullptr) {
+    TF_DeleteSessionOptions(sessionopts);
+    sessionopts = nullptr;
+  }
+  if (status != nullptr) {
+    TF_DeleteStatus(status);
+    status = nullptr;
+  }
+  inited = false;
 }
+
+deepmd::DeepPotJAX::~DeepPotJAX() { clear_tf_resources(); }
 
 template <typename VALUETYPE>
 void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
@@ -749,6 +883,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> coord_double(coord.begin(), coord.end());
   std::vector<double> box_double(box.begin(), box.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
+  fparam_double = make_fparam_input(fparam_double, dfparam, nframes,
+                                    has_default_fparam_, default_fparam_);
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
   std::vector<double> charge_spin_double =
       make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);
@@ -912,6 +1048,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   // float model interface
   std::vector<double> coord_double(coord.begin(), coord.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
+  fparam_double = make_fparam_input(fparam_double, dfparam, nframes,
+                                    has_default_fparam_, default_fparam_);
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
   std::vector<double> charge_spin_double =
       make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);

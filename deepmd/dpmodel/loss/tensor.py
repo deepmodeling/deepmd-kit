@@ -26,6 +26,19 @@ from deepmd.utils.version import (
 class TensorLoss(Loss):
     r"""Loss on local and global tensors (e.g. dipole, polarizability).
 
+    With atomic tensors :math:`T_i`, global tensor :math:`T`, and optional
+    atomic scalar weights :math:`a_i`, the objective is
+
+    .. math::
+
+       L=p_{\mathrm{atom}}\left\langle
+       [a_i(T_i-\hat T_i)]^2\right\rangle
+       +p_{\mathrm{global}}\left\langle(T-\hat T)^2\right\rangle.
+
+    Padded atoms are omitted from the local mean.  Reported global RMSE is
+    divided by the number of real atoms, matching the convention for
+    extensive tensor labels.
+
     Parameters
     ----------
     tensor_name : str
@@ -78,7 +91,11 @@ class TensorLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Evaluate the weighted local and global tensor MSE.
+
+        This applies the objective in :class:`TensorLoss`, including optional
+        per-atom weights and padding masks.
+        """
         del learning_rate, mae
         first_key = next(iter(model_dict))
         xp = array_api_compat.array_namespace(model_dict[first_key])
@@ -107,7 +124,7 @@ class TensorLoss(Loss):
             diff = xp.reshape(local_pred - local_label, (-1, self.tensor_size))
             diff = diff * atomic_weight
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=tensor_size).
                 maskf = xp.astype(model_dict["mask"], diff.dtype)  # [nf, natoms]
                 diff3d = xp.reshape(
                     diff, (local_pred.shape[0], natoms, self.tensor_size)
@@ -148,6 +165,19 @@ class TensorLoss(Loss):
         return loss, more_loss
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return configured local and global tensor metrics."""
+        names = tuple(
+            f"rmse_{scope}_{self.tensor_name}"
+            for scope, enabled in (
+                ("local", self.has_local_weight),
+                ("global", self.has_global_weight),
+            )
+            if enabled
+        )
+        return ("rmse", *names)
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
@@ -180,6 +210,7 @@ class TensorLoss(Loss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                    source_policy="default",
                 )
             )
         return label_requirement

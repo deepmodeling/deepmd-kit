@@ -25,6 +25,7 @@ from deepmd.dpmodel.array_api import (
     Array,
     xp_add_at,
     xp_bincount,
+    xp_erf,
     xp_setitem_at,
     xp_sigmoid,
 )
@@ -57,6 +58,8 @@ def softplus_t(x):  # noqa: ANN001, ANN201
 
 
 class Identity(NativeOP):
+    r"""Identity map :math:`y=x`."""
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -76,7 +79,18 @@ class Identity(NativeOP):
 
 
 class NativeLayer(NativeOP):
-    """Native representation of a layer.
+    r"""Native affine neural-network layer with optional residual connection.
+
+    The activated branch is
+
+    .. math::
+
+       \mathbf z=\boldsymbol\phi(\mathbf x\mathbf W+\mathbf b),
+
+    optionally scaled elementwise by a trainable timestep :math:`\mathbf d`.
+    If ``resnet`` is enabled, the output is :math:`\mathbf z+\mathbf x` for
+    equal widths, or :math:`\mathbf z+[\mathbf x,\mathbf x]` when the output
+    width is twice the input width.
 
     Parameters
     ----------
@@ -266,7 +280,13 @@ class NativeLayer(NativeOP):
         return self.w.shape[1]
 
     def call(self, x):  # noqa: ANN001, ANN201
-        """Forward pass.
+        r"""Evaluate the affine, activation, timestep, and residual operations.
+
+        In compact form, this returns
+        :math:`\mathbf y=\mathbf r(\mathbf x)+
+        \mathbf d\odot\boldsymbol\phi(\mathbf x\mathbf W+\mathbf b)`, where
+        :math:`\mathbf r` is the configured identity/duplicated residual and
+        :math:`\mathbf d=\mathbf 1` when no timestep is used.
 
         Parameters
         ----------
@@ -330,6 +350,15 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
                 * x
                 * (1 + xp.tanh(xp.sqrt(xp.asarray(2 / xp.pi)) * (x + 0.044715 * x**3)))
             )
+
+        return fn
+    elif activation_function == "gelu_erf":
+
+        def fn(x):  # noqa: ANN001, ANN202
+            xp = array_api_compat.array_namespace(x)
+            # Exact GELU, x * Phi(x). deepmd's "gelu"/"gelu_tf" are the tanh
+            # approximation, which differs from this by up to 4.7e-4 per element.
+            return 0.5 * x * (1 + xp_erf(x / xp.sqrt(xp.asarray(2.0, dtype=x.dtype))))
 
         return fn
     elif activation_function == "relu6":
@@ -404,7 +433,17 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
 
 
 class LayerNorm(NativeLayer):
-    """Implementation of Layer Normalization layer.
+    r"""Implementation of layer normalization.
+
+    For features normalized over the final axes, this layer computes
+
+    .. math::
+
+       \mathbf y=\boldsymbol\gamma\odot
+       \frac{\mathbf x-\mu}{\sqrt{\sigma^2+\epsilon}}+\boldsymbol\beta,
+
+    where :math:`\mu` and :math:`\sigma^2` are the mean and variance over
+    those axes.
 
     Parameters
     ----------
@@ -540,7 +579,7 @@ class LayerNorm(NativeLayer):
         return self.w.shape[0]
 
     def call(self, x):  # noqa: ANN001, ANN201
-        """Forward pass.
+        r"""Normalize :math:`\mathbf x` and apply learned scale and shift.
 
         Parameters
         ----------

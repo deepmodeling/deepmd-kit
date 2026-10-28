@@ -21,6 +21,9 @@ from einops import (
     rearrange,
 )
 
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+    parse_basis_type,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -83,8 +86,8 @@ class RadialMLP(nn.Module):
     compile and non-compile paths.
 
     The hidden RMSNorm normalizes each edge's radial features by their own RMS.
-    The input ``edge_rbf`` carries the C^3 cutoff envelope and therefore
-    vanishes at ``rcut``; the RMSNorm divides that envelope out, and its ``eps``
+    When the input ``edge_rbf`` includes the C^3 cutoff envelope, it vanishes
+    at ``rcut``. The RMSNorm divides that envelope out, and its ``eps``
     floor is crossed as the edge approaches ``rcut``. On a sparse neighborhood
     (e.g. a dimer) this floor-crossing produces a sharp kink in the potential
     energy surface just inside the cutoff. Setting ``radial_norm=False`` drops
@@ -139,6 +142,11 @@ class RadialMLP(nn.Module):
                 modules.append(ActivationFn(self.activation_function))
 
         self.net = nn.Sequential(*modules)
+
+        # ``MLPLayer`` accepts ``trainable`` without applying it, so the flag is
+        # enforced here rather than left to a sweep in the owning descriptor.
+        for p in self.parameters():
+            p.requires_grad = self.trainable
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -199,28 +207,20 @@ class C3CutoffEnvelope(torch.nn.Module):
 
     Notes
     -----
-    The envelope function is defined for scaled distance ``x = r / rcut`` as::
+    For scaled distance ``x = r / rcut`` and ``u = 1 - x``, the envelope is
+    evaluated in the cancellation-free form::
 
-        E(x) = 1 + x^p * (a + b*x + c*x^2 + d*x^3),  for x < 1
-        E(x) = 0,                                     for x >= 1
+        E_p(x) = u^4 * sum(comb(k + 3, 3) * x^k, k=0..p-1),  for x < 1
+        E_p(x) = 0,                                             for x >= 1
 
-    where the coefficients are chosen to satisfy::
+    This positive-coefficient factorization satisfies::
 
         E(0) = 1,    E(1) = 0
         E'(1) = 0,   E''(1) = 0,   E'''(1) = 0
 
-    This ensures C^3 continuity at the cutoff boundary. The coefficients are::
+    For the default exponent ``p=5``::
 
-        a = -(p + 1)(p + 2)(p + 3) / 6
-        b = p(p + 2)(p + 3) / 2
-        c = -p(p + 1)(p + 3) / 2
-        d = p(p + 1)(p + 2) / 6
-
-    For the default exponent p=5, the coefficients are a=-56, b=140, c=-120,
-    d=35::
-
-        E(x) = 1 + x^5 * (-56 + 140*x - 120*x^2 + 35*x^3)
-             = 1 - 56*x^5 + 140*x^6 - 120*x^7 + 35*x^8
+        E_5(x) = u^4 * (1 + 4*x + 10*x^2 + 20*x^3 + 35*x^4)
 
     Parameters
     ----------
@@ -235,14 +235,6 @@ class C3CutoffEnvelope(torch.nn.Module):
         Cutoff radius in Å.
     p : float
         Polynomial exponent.
-    a : float
-        Quadratic coefficient for x^p term.
-    b : float
-        Linear coefficient for x^(p+1) term.
-    c : float
-        Quadratic coefficient for x^(p+2) term.
-    d : float
-        Cubic coefficient for x^(p+3) term.
     """
 
     def __init__(
@@ -261,104 +253,110 @@ class C3CutoffEnvelope(torch.nn.Module):
         self.p = int(exponent)
         self.dtype = dtype
         self.device = env.DEVICE
-        coeff_a = -((self.p + 1) * (self.p + 2) * (self.p + 3)) / 6.0
-        coeff_b = (self.p * (self.p + 2) * (self.p + 3)) / 2.0
-        coeff_c = -(self.p * (self.p + 1) * (self.p + 3)) / 2.0
-        coeff_d = (self.p * (self.p + 1) * (self.p + 2)) / 6.0
+        self._series_coefficients = tuple(
+            float(math.comb(k + 3, 3)) for k in range(self.p)
+        )
         self.register_buffer(
             "rcut_tensor",
             torch.tensor(self.rcut, dtype=self.dtype, device=self.device),
             persistent=False,
         )
-        self.register_buffer(
-            "coeff_a",
-            torch.tensor(coeff_a, dtype=self.dtype, device=self.device),
-            persistent=False,
-        )
-        self.register_buffer(
-            "coeff_b",
-            torch.tensor(coeff_b, dtype=self.dtype, device=self.device),
-            persistent=False,
-        )
-        self.register_buffer(
-            "coeff_c",
-            torch.tensor(coeff_c, dtype=self.dtype, device=self.device),
-            persistent=False,
-        )
-        self.register_buffer(
-            "coeff_d",
-            torch.tensor(coeff_d, dtype=self.dtype, device=self.device),
-            persistent=False,
-        )
 
     def forward(self, dst: torch.Tensor) -> torch.Tensor:
         """Compute the envelope value for given distances."""
-        d_scaled = (dst / self.rcut_tensor).clamp(min=0.0, max=1.0)
-        poly = self.coeff_a + d_scaled * (
-            self.coeff_b + d_scaled * (self.coeff_c + d_scaled * self.coeff_d)
-        )
-        env_val = 1 + d_scaled.pow(self.p) * poly
-        return env_val * ((d_scaled < 1.0).to(dst.dtype))
+        u = ((self.rcut_tensor - dst) / self.rcut_tensor).clamp(min=0.0, max=1.0)
+        x = 1.0 - u
+        series = torch.full_like(x, self._series_coefficients[-1])
+        for coefficient in reversed(self._series_coefficients[:-1]):
+            series = coefficient + x * series
+        return u.pow(4) * series
 
 
 class InnerClamp(nn.Module):
     """
-    C3-continuous inner distance clamping for zone bridging.
+    C3-continuous distance clamp of the DPA4 bridging window.
 
-    Applies a septic Hermite polynomial transition that freezes distances
-    below ``r_inner`` to the constant ``r_inner``, then smoothly transitions
-    back to identity at ``r_outer``::
+    The window of a pair is two dimensionless fractions of that pair's own
+    length scale ``s``, the sum of the covalent radii of its two elements, so
+    one window shape serves every element combination. In the reduced distance
+    ``u = r / s`` the clamp freezes everything below the freeze point
+    ``f_z`` at that value and returns to the identity at ``f_outer``::
 
-        r̃(r) = r_inner                                    if r <= r_inner
-        r̃(r) = r_inner + (r_outer - r_inner) * h(t)       if r_inner < r < r_outer
-        r̃(r) = r                                          if r >= r_outer
+        ũ = f_z                                             if u <= f_z
+        ũ = f_z + (f_outer - f_z) * h(t)                    if f_z < u < f_outer
+        ũ = u                                               if u >= f_outer
 
-        h(t) = 20t^4 - 45t^5 + 36t^6 - 10t^7,  t = (r - r_inner) / (r_outer - r_inner)
+        h(t) = 20t^4 - 45t^5 + 36t^6 - 10t^7,  t = (u - f_z) / (f_outer - f_z)
+        f_z = f_inner + 0.4 (f_outer - f_inner)
 
-    Boundary conditions:
-    ``h(0)=0``, ``h(1)=1``, ``h'(0)=0``, ``h'(1)=1``,
-    ``h''(0)=0``, ``h''(1)=0``, ``h'''(0)=0``, ``h'''(1)=0``.
-    This ensures C3 continuity: ``dr̃/dr = 0`` at r_inner (frozen zone) and
-    ``dr̃/dr = 1`` at r_outer (identity zone), with matched second and third
-    derivatives at both boundaries.
+    and the clamped distance is ``r̃ = s * ũ``. Boundary conditions
+    ``h(0)=0``, ``h(1)=1``, ``h'(0)=0``, ``h'(1)=1``, ``h''(0)=h''(1)=0``,
+    ``h'''(0)=h'''(1)=0`` give C3 continuity: ``dr̃/dr = 0`` at the freeze
+    point and ``dr̃/dr = 1`` at the outer radius (identity zone), with
+    matched second and third derivatives at both.
+
+    The freeze point sits two fifths into the window, one tenth of the width
+    below the frame-filter point at the midpoint, where the training data of a
+    bridged model end. The displayed distance therefore still moves at the
+    filter point, with slope ``h'(1/6) = 0.22``, so the network can fit the
+    labels just above it through the pair's own distance; frozen at the filter
+    point itself, the learned pair energy could only follow the switch
+    amplitude, whose slope at the midpoint pins the wall to a stiffness the
+    labels do not have. Below the filter point the displayed distance keeps
+    falling by ``0.6 h(1/6) = 0.62 %`` of the window width (5 mÅ for a C-C
+    pair) before it freezes; that band is the only range of displayed
+    distances no retained frame covers, and its shallowness is what bounds the
+    network's extrapolation there. The switch of the window
+    (:class:`BridgingSwitch`) spans the whole window, so below the freeze point
+    the learned energy of the pair follows the switch amplitude alone.
 
     Parameters
     ----------
-    r_inner : float
-        Freeze radius in Å. Distances below this are clamped to ``r_inner``.
-    r_outer : float
-        Outer boundary of the transition zone in Å. Above this, ``r̃ = r``.
+    f_inner : float
+        Inner radius of the window as a fraction of the pair length scale.
+    f_outer : float
+        Outer radius as a fraction of the pair length scale. At or above it the
+        clamp is the identity.
 
     Raises
     ------
     ValueError
-        If ``r_inner >= r_outer`` or either is non-positive.
+        If ``f_inner >= f_outer`` or either is non-positive.
     """
 
-    def __init__(self, r_inner: float, r_outer: float) -> None:
-        super().__init__()
-        if r_inner <= 0 or r_outer <= 0:
-            raise ValueError("r_inner and r_outer must be positive")
-        if r_inner >= r_outer:
-            raise ValueError(f"r_inner ({r_inner}) must be < r_outer ({r_outer})")
-        self.r_inner = float(r_inner)
-        self.r_outer = float(r_outer)
+    #: Position of the freeze point inside the window, as a fraction of its width.
+    FREEZE_FRACTION = 0.4
 
-    def forward(self, r: torch.Tensor) -> torch.Tensor:
+    def __init__(self, f_inner: float, f_outer: float) -> None:
+        super().__init__()
+        if f_inner <= 0 or f_outer <= 0:
+            raise ValueError("f_inner and f_outer must be positive")
+        if f_inner >= f_outer:
+            raise ValueError(f"f_inner ({f_inner}) must be < f_outer ({f_outer})")
+        self.f_inner = float(f_inner)
+        self.f_outer = float(f_outer)
+        self.f_freeze = self.f_inner + self.FREEZE_FRACTION * (
+            self.f_outer - self.f_inner
+        )
+
+    def forward(self, r: torch.Tensor, contact: torch.Tensor) -> torch.Tensor:
         """
-        Apply inner distance clamping.
+        Apply the distance clamp.
 
         Parameters
         ----------
         r : torch.Tensor
             Pair distances with shape (...) or (..., 1) in Å.
+        contact : torch.Tensor
+            Length scale of each pair in Å, broadcastable against ``r``.
 
         Returns
         -------
         torch.Tensor
-            Clamped distances r̃ with the same shape as input.
+            Clamped distances r̃ with the same shape as ``r``.
         """
-        t = ((r - self.r_inner) / (self.r_outer - self.r_inner)).clamp(0.0, 1.0)
+        u = r / contact
+        t = ((u - self.f_freeze) / (self.f_outer - self.f_freeze)).clamp(0.0, 1.0)
         t2 = t * t
         t4 = t2 * t2
         # h(t) = 20t^4 - 45t^5 + 36t^6 - 10t^7
@@ -368,11 +366,11 @@ class InnerClamp(nn.Module):
         #   h''(0)=0, h''(1)=0
         #   h'''(0)=0, h'''(1)=0
         h = t4 * (20.0 + t * (-45.0 + t * (36.0 - 10.0 * t)))
-        interpolated = self.r_inner + (self.r_outer - self.r_inner) * h
-        # Identity zone: r >= r_outer returns r directly.
-        # Both branches have matching first three derivatives at r_outer,
+        interpolated = contact * (self.f_freeze + (self.f_outer - self.f_freeze) * h)
+        # Identity zone: u >= f_outer returns r directly.
+        # Both branches have matching first three derivatives there,
         # so torch.where preserves C3 continuity here.
-        return torch.where(r >= self.r_outer, r, interpolated)
+        return torch.where(u >= self.f_outer, r, interpolated)
 
 
 class BridgingSwitch(nn.Module):
@@ -383,11 +381,16 @@ class BridgingSwitch(nn.Module):
     that measures how far an edge sits outside the frozen zone. It is
     the elementary piece the Source Freeze Propagation Gate (SFPG)
     aggregates into a per-node "non-frozen confidence" via a product
-    over each source node's outgoing edges::
+    over each source node's outgoing edges.
 
-        w(r) = 0                                             if r <= r_inner  (frozen)
-        w(r) = h((r - r_inner) / (r_outer - r_inner))        if r_inner < r < r_outer  (transition)
-        w(r) = 1                                             if r >= r_outer  (normal)
+    The window of a pair is two dimensionless fractions of that pair's own
+    length scale ``s``, the sum of the covalent radii of its two elements, so
+    one window shape serves every element combination. In the reduced distance
+    ``u = r / s``::
+
+        w = 0                                            if u <= f_inner  (frozen)
+        w = h((u - f_inner) / (f_outer - f_inner))       if f_inner < u < f_outer  (transition)
+        w = 1                                            if u >= f_outer  (normal)
 
         h(t) = 35 t^4 - 84 t^5 + 70 t^6 - 20 t^7
 
@@ -397,38 +400,40 @@ class BridgingSwitch(nn.Module):
         h(1)=1, h'(1)    = h''(1)   = h'''(1)   = 0
 
     The vanishing first three derivatives at both endpoints give
-    ``w \in C^3(\mathbb{R}_{\ge 0})`` with zero slope/curvature at
-    ``r_inner`` and ``r_outer``, so forces (first derivatives) and the
+    ``w \in C^3(\mathbb{R}_{\ge 0})`` with zero slope/curvature at both
+    radii of every pair, so forces (first derivatives) and the
     force derivatives consumed by second-order training stay continuous
     across both zone boundaries.
 
-    The surrounding infrastructure (``compute_edge_src_gate``) owns the
-    per-node product reduction and broadcast; this module only encodes
-    the scalar amplitude shape.
+    The surrounding infrastructure (``compute_source_gates``) owns the
+    per-node product reduction and the per-edge leave-one-out product; this
+    module only encodes the scalar amplitude shape.
 
     Parameters
     ----------
-    r_inner : float
-        Inner radius in Å. At or below this distance ``w = 0``.
-    r_outer : float
-        Outer radius in Å. At or above this distance ``w = 1``.
+    f_inner : float
+        Inner radius as a fraction of the pair length scale. At or below it
+        ``w = 0``.
+    f_outer : float
+        Outer radius as a fraction of the pair length scale. At or above it
+        ``w = 1``.
 
     Raises
     ------
     ValueError
-        If ``r_inner <= 0``, ``r_outer <= 0``, or ``r_inner >= r_outer``.
+        If ``f_inner <= 0``, ``f_outer <= 0``, or ``f_inner >= f_outer``.
     """
 
-    def __init__(self, r_inner: float, r_outer: float) -> None:
+    def __init__(self, f_inner: float, f_outer: float) -> None:
         super().__init__()
-        if r_inner <= 0 or r_outer <= 0:
-            raise ValueError("r_inner and r_outer must be positive")
-        if r_inner >= r_outer:
-            raise ValueError(f"r_inner ({r_inner}) must be < r_outer ({r_outer})")
-        self.r_inner = float(r_inner)
-        self.r_outer = float(r_outer)
+        if f_inner <= 0 or f_outer <= 0:
+            raise ValueError("f_inner and f_outer must be positive")
+        if f_inner >= f_outer:
+            raise ValueError(f"f_inner ({f_inner}) must be < f_outer ({f_outer})")
+        self.f_inner = float(f_inner)
+        self.f_outer = float(f_outer)
 
-    def forward(self, r: torch.Tensor) -> torch.Tensor:
+    def forward(self, r: torch.Tensor, contact: torch.Tensor) -> torch.Tensor:
         """
         Evaluate the C3 switching amplitude.
 
@@ -436,25 +441,29 @@ class BridgingSwitch(nn.Module):
         ----------
         r : torch.Tensor
             Pair distances with shape (...) or (..., 1) in Å.
+        contact : torch.Tensor
+            Length scale of each pair in Å, broadcastable against ``r``.
 
         Returns
         -------
         torch.Tensor
-            Switching amplitudes in ``[0, 1]`` with the same shape as input.
+            Switching amplitudes in ``[0, 1]`` with the same shape as ``r``.
         """
-        t = ((r - self.r_inner) / (self.r_outer - self.r_inner)).clamp(0.0, 1.0)
+        t = ((r / contact - self.f_inner) / (self.f_outer - self.f_inner)).clamp(
+            0.0, 1.0
+        )
         t2 = t * t
         t4 = t2 * t2
         # h(t) = 35 t^4 - 84 t^5 + 70 t^6 - 20 t^7  (Horner form).
         # Degree-7 smootherstep: the unique polynomial of this degree that
-        # hits ``w(r_inner)=0, w(r_outer)=1`` together with C3 flatness at
-        # both radii.
+        # hits ``w = 0`` at the inner radius and ``w = 1`` at the outer one
+        # together with C3 flatness at both.
         return t4 * (35.0 + t * (-84.0 + t * (70.0 - 20.0 * t)))
 
 
 class RadialBasis(nn.Module):
     """
-    Radial basis with C^3 cutoff envelope.
+    Radial basis with an optional C^3 cutoff envelope.
 
     The trainable radial parameters are stored in ``adam_freqs`` so HybridMuon
     routes them to Adam without weight decay.
@@ -478,8 +487,8 @@ class RadialBasis(nn.Module):
 
         w_n = n * π / rcut, for n = 1..n_radial (in 1/Å)
 
-    The C^3 cutoff envelope is multiplied directly into the output to ensure
-    strict smoothness at ``rcut``.
+    A positive ``exponent`` multiplies the C^3 cutoff envelope directly into
+    the output. Zero selects the raw basis without constructing an envelope.
 
     Parameters
     ----------
@@ -488,11 +497,18 @@ class RadialBasis(nn.Module):
     n_radial : int
         Number of basis functions.
     basis_type : str, optional
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
+        Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
+        ``"bessel/fix"`` and ``"gaussian/fix"``. The ``/fix`` forms keep the
+        frequencies or centres at their initial values: an isolated pair or a
+        compressed contact drives no data gradient into the basis, and a
+        trainable basis drifts there under the optimizer's momentum.
     dtype : torch.dtype
         Floating-point dtype for the radial basis frequencies and outputs.
     exponent : int, optional
-        Exponent for the C^3 cutoff envelope polynomial. Default is 7.
+        Exponent for the C^3 cutoff envelope polynomial. Zero disables the
+        envelope. Default is 7.
+    trainable : bool, optional
+        Whether the basis frequencies are trainable. Default is True.
     """
 
     def __init__(
@@ -502,6 +518,7 @@ class RadialBasis(nn.Module):
         n_radial: int = 10,
         dtype: torch.dtype = torch.float32,
         exponent: int = 7,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.rcut = float(rcut)
@@ -511,8 +528,7 @@ class RadialBasis(nn.Module):
         if self.n_radial <= 0:
             raise ValueError("`n_radial` must be positive")
         self.basis_type = str(basis_type).lower()
-        if self.basis_type not in ("bessel", "gaussian"):
-            raise ValueError("`basis_type` must be either 'bessel' or 'gaussian'")
+        self.basis_family, fixed = parse_basis_type(self.basis_type)
         self.dtype = dtype
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[self.dtype]
@@ -525,7 +541,7 @@ class RadialBasis(nn.Module):
 
         # Frequencies: n*π/rcut, n=1..n_radial
         # Shape: (1, n_radial), stored as trainable nn.Parameter.
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             freqs = torch.arange(
                 1,
                 self.n_radial + 1,
@@ -540,8 +556,10 @@ class RadialBasis(nn.Module):
                 device=self.device,
                 dtype=self.dtype,
             )
+        self.trainable = bool(trainable) and not fixed
         self.adam_freqs = nn.Parameter(
-            rearrange(freqs, "n_radial -> 1 n_radial"), requires_grad=True
+            rearrange(freqs, "n_radial -> 1 n_radial"),
+            requires_grad=self.trainable,
         )
         gaussian_width = self.rcut / max(self.n_radial - 1, 1)
         self.register_buffer(
@@ -554,10 +572,14 @@ class RadialBasis(nn.Module):
             persistent=False,
         )
 
-        self.envelope = C3CutoffEnvelope(
-            rcut=self.rcut,
-            exponent=self.exponent,
-            dtype=self.dtype,
+        self.envelope = (
+            C3CutoffEnvelope(
+                rcut=self.rcut,
+                exponent=self.exponent,
+                dtype=self.dtype,
+            )
+            if self.exponent != 0
+            else None
         )
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
@@ -572,12 +594,13 @@ class RadialBasis(nn.Module):
         Returns
         -------
         torch.Tensor
-            Radial basis multiplied by C^3 cutoff envelope with shape (N, n_rbf).
-            The output is smoothly truncated to zero at r = rcut.
+            Radial basis with shape (N, n_radial). When
+            ``exponent > 0``, the output includes the C^3 envelope and
+            vanishes smoothly at ``rcut``; otherwise it is the raw basis.
         """
         # === Step 1. Radial basis ===
         # Shape: (N, 1) * (1, n_radial) -> (N, n_radial)
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             # phi_n(r) = w_n * sinc(w_n * r / π)
             x = r * self.adam_freqs  # (N, n_rbf)
             raw = self.adam_freqs * torch.sinc(x / self.pi_tensor)  # (N, n_rbf)
@@ -585,22 +608,24 @@ class RadialBasis(nn.Module):
             dr = r - self.adam_freqs  # (N, n_rbf)
             raw = torch.exp(dr * dr * self.gaussian_coeff)  # (N, n_rbf)
 
-        # === Step 2. Apply C^3 envelope for smooth cutoff ===
-        envelope = self.envelope(r)  # (N, 1)
-        return raw * envelope
+        # === Step 2. Apply the optional C^3 envelope ===
+        if self.envelope is not None:
+            return raw * self.envelope(r)
+        return raw
 
     def serialize(self) -> dict[str, Any]:
         """Serialize RadialBasis including trainable frequencies."""
         state = self.state_dict()
         return {
             "@class": "RadialBasis",
-            "@version": 1,
+            "@version": 2,
             "config": {
                 "rcut": self.rcut,
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "exponent": self.exponent,
                 "precision": RESERVED_PRECISION_DICT[self.dtype],
+                "trainable": self.trainable,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
         }
@@ -613,7 +638,7 @@ class RadialBasis(nn.Module):
         if data_cls != "RadialBasis":
             raise ValueError(f"Invalid class for RadialBasis: {data_cls}")
         version = int(data.pop("@version"))
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         config = data.pop("config", data)
         variables = data.pop("@variables", None)
         precision = config["precision"]
@@ -622,8 +647,13 @@ class RadialBasis(nn.Module):
             rcut=float(config["rcut"]),
             n_radial=int(config["n_radial"]),
             basis_type=str(config.get("basis_type", "bessel")),
-            exponent=int(config.get("exponent", 7)),
+            exponent=(
+                0
+                if version == 1 and config.get("apply_envelope") is False
+                else int(config.get("exponent", 7))
+            ),
             dtype=dtype,
+            trainable=bool(config.get("trainable", True)),
         )
         if variables is not None:
             template = obj.state_dict()

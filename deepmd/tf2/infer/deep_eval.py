@@ -213,6 +213,15 @@ class DeepEval(DeepEvalBackend):
     ) -> None:
         if not model_file.endswith(".savedmodeltf"):
             raise ValueError("TF2 backend only supports .savedmodeltf files")
+        if neighbor_list is not None:
+            # SavedModel lower calls accept extended tensors, but this wrapper
+            # does not yet connect the existing adapter and output fold-back
+            # helpers to an ASE Python neighbor-list object.
+            raise NotImplementedError(
+                "TF2 SavedModel inference does not support a custom ASE "
+                "neighbor_list; omit neighbor_list to use the SavedModel's "
+                "built-in neighbor-list builder"
+            )
         self.output_def = output_def
         self.model_path = model_file
         self.dp = TF2SavedModelWrapper(model_file)

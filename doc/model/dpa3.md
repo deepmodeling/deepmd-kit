@@ -1,8 +1,9 @@
-# Descriptor DPA3 {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
+# Descriptor DPA3 {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch-TorchScript and
+> PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle
+> {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 DPA3 is an advanced interatomic potential based on message passing.
 As a large atomic model (LAM), it is designed to integrate and jointly train on datasets from different domains,
@@ -11,7 +12,7 @@ Its architecture provides high fitting accuracy and robust generalization both w
 DPA3 also preserves energy conservation and the physical symmetries of the potential energy surface,
 making it a reliable model for a wide range of scientific applications.
 
-Reference: [DPA3 paper](https://arxiv.org/abs/2506.01686).
+Reference: {ref}`DPA3 paper <cite-dpa3>` in the canonical citation guide.
 
 Training example: `examples/water/dpa3/input_torch.json`.
 
@@ -93,7 +94,10 @@ Virials are similarly derived from cell tensor gradients, ensuring the model is 
 
 ### Default Configuration
 
-DPA3 uses LiGS order $K=2$ as the default configuration, which was found effective in prior work ([DPA3 paper](https://arxiv.org/abs/2506.01686)). The model supports scaling through increasing the number of layers $L$ (e.g., DPA3-L3, DPA3-L6, DPA3-L12, DPA3-L24).
+DPA3 uses LiGS order $K=2$ as the default configuration, which was found
+effective in the {ref}`DPA3 paper <cite-dpa3>`. The model supports scaling
+through increasing the number of layers $L$ (e.g., DPA3-L3, DPA3-L6,
+DPA3-L12, DPA3-L24).
 
 ## Hyperparameter tests
 
@@ -123,7 +127,7 @@ Note that all DPA3 models use `float32`, while other models use `float64` by def
 
 ::::{tab-set}
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 To run the DPA3 model on LAMMPS via source code installation
 (users can skip this step if using [easy installation](../install/easy-install.md)),

@@ -17,7 +17,11 @@ from deepmd.dpmodel.descriptor.dpa2 import (
 from deepmd.dpmodel.utils.env_mat_stat import (
     merge_env_stat,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
 from deepmd.pt_expt.common import (
+    register_buffer_replacing_slot,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -32,6 +36,62 @@ from deepmd.pt_expt.utils.update_sel import (
 @torch_module
 class DescrptDPA2(DescrptDPA2DP):
     _update_sel_cls = UpdateSel
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Persisted graph-routing knob (first-class training configuration):
+        # ``disable_graph_lower()`` used to flip only the plain dpmodel bool,
+        # which a Trainer checkpoint restart silently reset (the fresh model
+        # is rebuilt from config before ``load_state_dict``, and neither the
+        # state-dict keys nor ``_extra_state.model_params`` carried the
+        # choice) -- on a binding-sel system that switched the training
+        # equation and gradients without warning.  A persistent buffer rides
+        # every pt_expt state_dict, so save/restart round-trips it.
+        torch.nn.Module.register_buffer(
+            self,
+            "graph_lower_disabled",
+            torch.zeros((), dtype=torch.bool, device="cpu"),
+        )
+
+    def supports_graph_export(self) -> bool:
+        """Compressed DPA2 has no fused graph operator yet."""
+        return not self.geo_compress
+
+    def disable_graph_lower(self) -> None:
+        """Persisted variant of the dpmodel escape hatch (see base class).
+
+        The buffer (and the routing bool) are PER-TASK state: multi-task
+        ``share_params`` shares network submodules, not this buffer, so
+        disabling the graph lower on one task branch does not propagate to
+        branches sharing the same descriptor weights -- each branch owns
+        its routing decision.
+        """
+        super().disable_graph_lower()
+        self.graph_lower_disabled.fill_(True)
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # Back-compat: checkpoints written before the knob was persisted lack
+        # the buffer; default to the fresh module's value (graph enabled)
+        # instead of failing the strict load.
+        key = prefix + "graph_lower_disabled"
+        if key not in state_dict:
+            state_dict[key] = self.graph_lower_disabled.detach().clone()
+        else:
+            # Re-sync the dpmodel-side routing bool from the RESTORED value
+            # here, at load time, where the incoming tensor is real.  The
+            # routing predicate itself must stay a plain python bool:
+            # ``uses_graph_lower()`` runs inside traced forwards (the dense
+            # adapter gate), and reading the buffer there would emit a
+            # data-dependent ``bool(FakeTensor)`` guard that breaks
+            # torch.export (GuardOnDataDependentSymNode Eq(u0, 1)).
+            self._graph_lower_disabled = bool(state_dict[key])
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def share_params(
         self,
@@ -225,7 +285,7 @@ class DescrptDPA2(DescrptDPA2DP):
                     self.repinit.embeddings_strip[0].call(two_side_embd).detach()
                 )
 
-            torch.nn.Module.register_buffer(self, "type_embd_data", embd_tensor)
+            register_buffer_replacing_slot(self, "type_embd_data", embd_tensor)
 
     @cast_precision
     def call(
@@ -376,9 +436,10 @@ class DescrptDPA2(DescrptDPA2DP):
             Repinit output. shape: nf x nloc x (ng x axis_neuron)
         """
         # env_mat: nf x nloc x nnei x 4
+        atype_ext_for_env = atype_ext.clamp_min(0)
         rr, _diff, sw = self.repinit.env_mat.call(
             coord_ext,
-            atype_ext,
+            atype_ext_for_env,
             nlist,
             self.repinit.mean[...],
             self.repinit.stddev[...],
@@ -414,12 +475,13 @@ class DescrptDPA2(DescrptDPA2DP):
         nlist_index = nlist_masked.view(nf, nloc_r * nnei)
         # nf x (nloc x nnei)
         nei_type = torch.gather(atype_ext, dim=1, index=nlist_index)
+        nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
 
         if self.repinit.type_one_side:
             # (nf*nl*nnei,) -> (nf*nl*nnei, ng)
             gg_t = self.type_embd_data[nei_type.view(-1).to(torch.long)]
         else:
-            atype = atype_ext[:, :nloc_r]
+            atype = remap_atype_to_padding(atype_ext[:, :nloc_r], ntypes_with_padding)
             idx_i = torch.tile(
                 atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
             ).view(-1)

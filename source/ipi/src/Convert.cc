@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <stdexcept>
 
 template <typename VALUETYPE>
 Convert<VALUETYPE>::Convert(const std::vector<std::string>& atomname,
@@ -10,7 +11,16 @@ Convert<VALUETYPE>::Convert(const std::vector<std::string>& atomname,
   int natoms = atomname.size();
   atype.resize(natoms);
   for (unsigned ii = 0; ii < atype.size(); ++ii) {
-    atype[ii] = name_type_map[atomname[ii]];
+    const auto type_iter = name_type_map.find(atomname[ii]);
+    if (type_iter == name_type_map.end()) {
+      // Do not use operator[] for this lookup. A missing key would mutate the
+      // map and value-initialize its integer to 0, silently evaluating an
+      // unknown atom as the valid DeePMD type 0.
+      throw std::invalid_argument("Unknown atom name '" + atomname[ii] +
+                                  "' in coordinate file: no matching entry "
+                                  "in atom_type.");
+    }
+    atype[ii] = type_iter->second;
   }
   std::vector<std::pair<int, int> > sorting(natoms);
   for (unsigned ii = 0; ii < sorting.size(); ++ii) {

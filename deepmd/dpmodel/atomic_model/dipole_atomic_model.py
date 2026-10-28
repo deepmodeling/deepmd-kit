@@ -22,6 +22,22 @@ from .dp_atomic_model import (
 
 
 class DPDipoleAtomicModel(DPAtomicModel):
+    r"""Atomic dipole model reconstructed from descriptor rotation matrices.
+
+    The fitting network predicts local coefficients and contracts them with
+    the equivariant descriptor output:
+
+    .. math::
+
+       \mathbf M_i=F_\theta(\mathcal D_i),\qquad
+       \boldsymbol\mu_i=\mathbf M_i\mathbf R_i,
+
+    where :math:`\mathbf R_i\in\mathbb R^{m_1\times3}` is the descriptor
+    rotation matrix.  This contraction produces the lab-frame vector.
+
+    Frame dipoles are additive: :math:`\boldsymbol\mu=\sum_i\boldsymbol\mu_i`.
+    """
+
     def __init__(
         self,
         descriptor: BaseDescriptor,
@@ -34,6 +50,15 @@ class DPDipoleAtomicModel(DPAtomicModel):
                 "fitting must be an instance of DipoleFitting for DPDipoleAtomicModel"
             )
         super().__init__(descriptor, fitting, type_map, **kwargs)
+        if self.preset_out_bias is not None and any(
+            entry is not None
+            for entries in self.preset_out_bias.values()
+            for entry in entries
+        ):
+            raise ValueError(
+                "Dipole models do not apply an output bias and cannot use "
+                "assigned preset_out_bias values."
+            )
 
     def apply_out_stat(
         self,

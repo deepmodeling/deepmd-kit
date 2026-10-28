@@ -88,10 +88,15 @@ class TestObservedTypeStatFile(unittest.TestCase):
         restored = _restore_observed_type_from_file(DPPath(self.tmpdir))
         self.assertEqual(restored, observed)
 
-    def test_restore_missing_file(self) -> None:
-        stat_path = DPPath(self.tmpdir, mode="r")
+    def test_restore_missing_file_in_update_mode(self) -> None:
+        stat_path = DPPath(self.tmpdir, mode="a")
         result = _restore_observed_type_from_file(stat_path)
         self.assertIsNone(result)
+
+    def test_restore_missing_file_in_read_mode(self) -> None:
+        stat_path = DPPath(self.tmpdir, mode="r")
+        with self.assertRaisesRegex(FileNotFoundError, "observed_type"):
+            _restore_observed_type_from_file(stat_path)
 
     def test_restore_none_path(self) -> None:
         result = _restore_observed_type_from_file(None)

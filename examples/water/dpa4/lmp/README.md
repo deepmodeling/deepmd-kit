@@ -6,12 +6,12 @@ same PyTorch implementation; DPA4 is the DPA-series user-facing name.
 
 ## Files
 
-| File            | Description                                                                                                                      |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `input.json`    | Training configuration: tiny DPA4 / SeZM (`channels=16`, two blocks, fp32), 500 Adam steps on `examples/water/data/data_{0..3}`. |
-| `pretrained.pt` | Shipped checkpoint for the LAMMPS smoke test.                                                                                    |
-| `in.lammps`     | 20-step NVT run at 330 K on 192 water molecules.                                                                                 |
-| `water.lmp`     | LAMMPS data file (192-atom liquid water cell).                                                                                   |
+| File            | Description                                                                           |
+| --------------- | ------------------------------------------------------------------------------------- |
+| `input.json`    | Demo DPA4/SeZM trained for 500 HybridMuon steps on `examples/water/data/data_{0..3}`. |
+| `pretrained.pt` | Checkpoint produced from `input.json` for the LAMMPS smoke test.                      |
+| `in.lammps`     | 20-step NVT run at 330 K on 192 water molecules.                                      |
+| `water.lmp`     | LAMMPS data file (192-atom liquid water cell).                                        |
 
 The frozen `.pt2` archive is not included because AOTInductor packages
 are target-specific: they depend on the host's CPU/GPU, GPU compute
@@ -41,16 +41,14 @@ Run the MD:
 lmp -in in.lammps
 ```
 
-Expected LAMMPS output:
+The run should load the `.pt2` archive with a cutoff of 6 Å and two atom types,
+then complete 20 steps with finite thermodynamic values. Exact values depend on
+the trained checkpoint.
 
 ```
 load model from: frozen_model.pt2 to gpu 0
   rcut in model:      6
   ntypes in model:    2
-Step   PotEng       KinEng      TotEng     Temp
-   0   -29941.035    8.147      -29932.89  330.00
-  10   -29940.605    7.771      -29932.83  314.76
-  20   -29940.399    7.564      -29932.83  306.39
 ```
 
 ## Notes

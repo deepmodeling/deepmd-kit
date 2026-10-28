@@ -8,12 +8,11 @@ thin adapter, `DPA4Wrapper`, that exposes a trained DPA-4 / SeZM model to any
 unmodified; the wrapper only translates between the `nvalchemi` graph batch and
 the model's internal interface.
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, for DPA-4 / SeZM energy
-models. `nvalchemi-toolkit` is an optional dependency and must be installed
-separately. A CUDA device is recommended, since `nvalchemi`'s neighbour-list and
-integrator kernels are GPU-accelerated.
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}, for DPA-4 / SeZM energy
+> models. `nvalchemi-toolkit` is an optional dependency and must be installed
+> separately. A CUDA device is recommended, since `nvalchemi`'s neighbour-list and
+> integrator kernels are GPU-accelerated.
 
 ## Installation
 

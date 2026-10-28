@@ -267,3 +267,12 @@ def test_graph_lower_invariant_to_charge_spin() -> None:
             assert with_cs[k] is None
         else:
             np.testing.assert_array_equal(with_cs[k], v)
+
+
+def test_graph_type_embedding_table_matches_type_embedding() -> None:
+    # The seam hook must return exactly the descriptor's full tebd table.
+    dd = _make_model([200]).get_descriptor()
+    np.testing.assert_array_equal(
+        np.asarray(dd.graph_type_embedding_table()),
+        np.asarray(dd.type_embedding.call()),
+    )

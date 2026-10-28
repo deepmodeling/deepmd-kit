@@ -1,5 +1,9 @@
 # Install LAMMPS
 
+An AI agent can build LAMMPS with the DeePMD-kit module and Kokkos. DPA4/SeZM
+uses `pair_style deepmd/kk`; DPA4C uses `pair_style dpa4spin/kk`. See
+[Install with an AI agent](install-with-agent.md).
+
 There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library.
 
 ## Install LAMMPS's DeePMD-kit module (built-in mode)
@@ -135,10 +139,9 @@ If everything works fine, you will end up with an executable `${deepmd_root}/bin
 ${deepmd_root}/bin/lmp -h
 ```
 
-:::{note}
-If `${tensorflow_root}`, `${deepmd_root}`, or the path to TensorFlow Python package if applicable is different from the prefix of LAMMPS, you need to append the library path to [`RUNPATH`](https://man7.org/linux/man-pages/man8/ld.so.8.html) of `liblammps.so`. For example, use patchelf >= 0.13
-
-```sh
-patchelf --add-rpath "${tensorflow_root}/lib" liblammps.so
-```
-:::
+> [!NOTE]
+> If `${tensorflow_root}`, `${deepmd_root}`, or the path to TensorFlow Python package if applicable is different from the prefix of LAMMPS, you need to append the library path to [`RUNPATH`](https://man7.org/linux/man-pages/man8/ld.so.8.html) of `liblammps.so`. For example, use patchelf >= 0.13
+>
+> ```sh
+> patchelf --add-rpath "${tensorflow_root}/lib" liblammps.so
+> ```

@@ -41,3 +41,27 @@ TEST(TestPairwiseMap, pairwise_map) {
   EXPECT_EQ(nall_qm, 3);
   EXPECT_EQ(nall_qmmm, 7);
 }
+
+TEST(TestPairwiseMap, single_fragment_with_placeholders) {
+  // Local atoms 1 and 3 are placeholders, while atoms 4 and 5 are QM ghosts.
+  std::vector<int> idxs = {0, -1, 0, -1, 0, 0};
+  std::vector<std::vector<int>> fragments;
+  deepmd::group_atoms_cpu(fragments, idxs);
+  ASSERT_EQ(fragments.size(), 1);
+
+  std::vector<int> forward_qm_map, backward_qm_map, forward_qmmm_map,
+      backward_qmmm_map;
+  int nloc_qm, nloc_qmmm, nall_qm, nall_qmmm;
+  deepmd::dprc_pairwise_map_cpu(forward_qm_map, backward_qm_map,
+                                forward_qmmm_map, backward_qmmm_map, nloc_qm,
+                                nloc_qmmm, nall_qm, nall_qmmm, fragments, 4, 6);
+
+  ASSERT_THAT(forward_qm_map, testing::ElementsAre(0, 2, 4, 5));
+  ASSERT_THAT(backward_qm_map, testing::ElementsAre(0, -1, 1, -1, 2, 3));
+  EXPECT_TRUE(forward_qmmm_map.empty());
+  EXPECT_TRUE(backward_qmmm_map.empty());
+  EXPECT_EQ(nloc_qm, 2);
+  EXPECT_EQ(nloc_qmmm, 2);
+  EXPECT_EQ(nall_qm, 4);
+  EXPECT_EQ(nall_qmmm, 4);
+}

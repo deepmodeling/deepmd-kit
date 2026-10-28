@@ -14,8 +14,9 @@ from typing import (
     Any,
 )
 
-import h5py
-
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotentialAtomicModel,
+)
 from deepmd.dpmodel.train import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
@@ -24,8 +25,8 @@ from deepmd.dpmodel.train import (
     make_task_maps,
     print_data_summaries,
 )
-from deepmd.dpmodel.utils.lmdb_data import (
-    is_lmdb,
+from deepmd.loggers import (
+    is_node_main_process,
 )
 from deepmd.pt_expt.train import (
     training,
@@ -33,13 +34,23 @@ from deepmd.pt_expt.train import (
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
+from deepmd.utils import random as dp_random
+from deepmd.utils.data import (
+    min_pair_dist_requirement,
+)
+from deepmd.utils.data_config import (
+    DataConfig,
+)
+from deepmd.utils.data_path import (
+    process_systems,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
     get_data,
-    process_systems,
+    get_neighbor_stat_data,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
@@ -86,97 +97,33 @@ def _update_changed_model_tensors(
             target_state_dict[key] = source_value
 
 
-def _detect_lmdb_path(systems_raw: Any) -> str | None:
-    """Return the LMDB path when ``systems_raw`` is a scalar LMDB string.
-
-    Returns ``None`` for non-LMDB inputs. Raises ``ValueError`` if
-    ``systems_raw`` is a list containing any LMDB path, so both
-    ``_get_neighbor_stat_data`` and ``_build_data_system`` fail with the
-    same clear message instead of the opaque error from
-    :func:`process_systems` / :class:`DeepmdData`.
-    """
-    if isinstance(systems_raw, str) and is_lmdb(systems_raw):
-        return systems_raw
-    if isinstance(systems_raw, list) and any(
-        isinstance(s, str) and is_lmdb(s) for s in systems_raw
-    ):
-        raise ValueError(
-            "LMDB datasets must be passed as a scalar 'systems' string "
-            "(e.g. 'systems': '/path/to/data.lmdb'); list-form systems "
-            "with LMDB paths are not supported."
-        )
-    return None
-
-
-def _get_neighbor_stat_data(
-    dataset_params: dict[str, Any],
-    type_map: list[str] | None,
-) -> Any:
-    """Return a data proxy suitable for ``BaseModel.update_sel`` (neighbor stat).
-
-    Routes a scalar LMDB ``systems`` path through dpmodel's
-    ``make_neighbor_stat_data``; falls back to the legacy ``get_data`` for
-    npy/HDF5 directories.
-    """
-    lmdb_path = _detect_lmdb_path(dataset_params.get("systems"))
-    if lmdb_path is not None:
-        from deepmd.dpmodel.utils.lmdb_data import (
-            make_neighbor_stat_data,
-        )
-
-        return make_neighbor_stat_data(lmdb_path, type_map)
-    return get_data(dataset_params, 0, type_map, None)
-
-
 def _build_data_system(
-    dataset_params: dict[str, Any],
+    dataset_params: DataConfig,
     type_map: list[str],
     seed: int | None = None,
-) -> DeepmdDataSystem | LmdbDataSystem:
-    """Build a data system from dataset config, routing LMDB paths to LmdbDataSystem.
+    rank: int = 0,
+    world_size: int = 1,
+) -> Any:
+    """Bind native LMDB batching to the common grouped-data factory."""
+    if seed is None and world_size > 1:
+        seed = 0
 
-    A scalar ``systems`` value pointing at an LMDB directory triggers the
-    LMDB adapter; otherwise we fall through to the legacy
-    :class:`DeepmdDataSystem` path with system expansion.
-    """
-    systems_raw = dataset_params["systems"]
-    lmdb_path = _detect_lmdb_path(systems_raw)
-    if lmdb_path is not None:
+    def build_lmdb(
+        path: str, batch_size: int | str, auto_prob: str | None
+    ) -> LmdbDataSystem:
         return LmdbDataSystem(
-            lmdb_path=lmdb_path,
+            lmdb_path=path,
             type_map=type_map,
-            batch_size=dataset_params["batch_size"],
-            auto_prob_style=dataset_params.get("auto_prob"),
+            batch_size=batch_size,
+            auto_prob_style=auto_prob,
             seed=seed,
+            rank=rank,
+            world_size=world_size,
         )
-    systems = process_systems(
-        systems_raw,
-        patterns=dataset_params.get("rglob_patterns"),
-    )
-    return DeepmdDataSystem(
-        systems=systems,
-        batch_size=dataset_params["batch_size"],
-        test_size=1,
-        type_map=type_map,
-        trn_all_set=True,
-        sys_probs=dataset_params.get("sys_probs"),
-        auto_prob_style=dataset_params.get("auto_prob", "prob_sys_size"),
-    )
 
-
-def _ensure_stat_file_path(stat_file_path: str | None) -> DPPath | None:
-    """Create a stat-file target and return a DPPath wrapper."""
-    if stat_file_path is None:
-        return None
-    path = Path(stat_file_path)
-    if not path.exists():
-        if stat_file_path.endswith((".h5", ".hdf5")):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with h5py.File(path, "w"):
-                pass
-        else:
-            path.mkdir(parents=True, exist_ok=True)
-    return DPPath(stat_file_path, "a")
+    return get_data(
+        dataset_params, 0, type_map, None, lmdb_factory=build_lmdb, seed=seed
+    )
 
 
 def get_trainer(
@@ -188,17 +135,29 @@ def get_trainer(
     shared_links: dict | None = None,
 ) -> training.Trainer:
     """Build a :class:`training.Trainer` from a normalised config."""
+    import torch.distributed as dist
+
     training_params = config["training"]
     multi_task = "model_dict" in config["model"]
 
     data_seed = training_params.get("seed", None)
+    is_distributed = dist.is_available() and dist.is_initialized()
+    rank = dist.get_rank() if is_distributed else 0
+    world_size = dist.get_world_size() if is_distributed else 1
+    if data_seed is not None:
+        seed32 = data_seed % (2**32)
+        dp_random.seed([rank, seed32] if is_distributed else seed32)
 
     def factory(
         task_config: TrainingTaskConfig,
-    ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, DPPath | None]:
+    ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, StatFileSpec]:
         type_map = list(task_config.model_params["type_map"])
         train_data = _build_data_system(
-            dict(task_config.training_data_params), type_map, seed=data_seed
+            task_config.training_data_params,
+            type_map,
+            seed=data_seed,
+            rank=rank,
+            world_size=world_size,
         )
         validation_data = None
         if task_config.validation_data_params is not None:
@@ -208,27 +167,27 @@ def get_trainer(
         return (
             train_data,
             validation_data,
-            _ensure_stat_file_path(task_config.stat_file),
+            task_config.stat_file_spec,
         )
 
-    train_data_map, validation_data_map, stat_file_path_map = make_task_maps(
+    train_data_map, validation_data_map, stat_file_spec_map = make_task_maps(
         config, factory
     )
     print_data_summaries(train_data_map, validation_data_map)
     if multi_task:
         train_data = train_data_map
         validation_data = validation_data_map
-        stat_file_path = stat_file_path_map
+        stat_file_spec = stat_file_spec_map
     else:
         task_key = next(iter(train_data_map))
         train_data = train_data_map[task_key]
         validation_data = validation_data_map[task_key]
-        stat_file_path = stat_file_path_map[task_key]
+        stat_file_spec = stat_file_spec_map[task_key]
 
     trainer = training.Trainer(
         config,
         train_data,
-        stat_file_path=stat_file_path,
+        stat_file_spec=stat_file_spec,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,
@@ -359,7 +318,7 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
         options: TrainEntrypointOptions,
         *,
         multi_task: bool,
-    ) -> tuple[dict[str, Any], None]:
+    ) -> tuple[dict[str, Any], float | dict[str, float | None] | None]:
         """Update pt_expt descriptor selections from neighbor statistics."""
         log.info(
             "Calculate neighbor statistics... "
@@ -369,23 +328,28 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             BaseModel,
         )
 
+        min_nbor_dist: dict[str, float | None] = {}
         for task_config in iter_training_task_configs(config):
             type_map = task_config.model_params.get("type_map")
-            train_data = _get_neighbor_stat_data(
-                dict(task_config.training_data_params), type_map
+            train_data = get_neighbor_stat_data(
+                task_config.training_data_params, type_map
             )
-            updated_model_params, _ = BaseModel.update_sel(
+            updated_model_params, task_min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, dict(task_config.model_params)
             )
+            min_nbor_dist[task_config.key] = task_min_nbor_dist
             if multi_task:
                 config["model"]["model_dict"][task_config.key] = updated_model_params
             else:
                 config["model"] = updated_model_params
-        return config, None
+        if multi_task:
+            return config, min_nbor_dist
+        return config, next(iter(min_nbor_dist.values()), None)
 
     def print_summary(self) -> None:
         """Print pt_expt backend summary."""
-        SummaryPrinter()()
+        if is_node_main_process():
+            SummaryPrinter()()
 
     def setup_run(
         self,
@@ -431,6 +395,13 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             finetune_links=self.finetune_links,
             shared_links=self.shared_links,
         )
+        # Persist the neighbor statistic on the model so that `dp compress`
+        # reads it from the checkpoint instead of rescanning the training data.
+        if isinstance(neighbor_stat, dict):
+            for task_key, task_min_nbor_dist in neighbor_stat.items():
+                trainer.model[task_key].min_nbor_dist = task_min_nbor_dist
+        elif neighbor_stat is not None:
+            trainer.model.min_nbor_dist = neighbor_stat
         trainer.run()
 
 
@@ -479,20 +450,51 @@ def train(
     )
 
 
+def _default_output_path(output: str, lower_kind: str) -> str:
+    """Default a suffixless frozen-model path from the RESOLVED lower kind.
+
+    Parameters
+    ----------
+    output : str
+        Requested output path. An explicit ``.pte`` / ``.pt2`` suffix is
+        preserved; any other (or missing) suffix is replaced.
+    lower_kind : str
+        The resolved lower kind (after ``freeze``'s native-spin
+        resolution): ``"graph"`` selects ``.pt2`` (an AOTI ``.pt2`` archive
+        is what the C++ graph path consumes), anything else ``.pte``.
+
+    Returns
+    -------
+    str
+        The output path with a definite ``.pte`` / ``.pt2`` suffix.
+    """
+    if not output.endswith((".pte", ".pt2")):
+        return str(
+            Path(output).with_suffix(".pt2" if lower_kind == "graph" else ".pte")
+        )
+    return output
+
+
 def freeze(
     model: str,
-    output: str = "frozen_model.pte",
+    output: str = "frozen_model",
     head: str | None = None,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
+    compress: bool = False,
 ) -> None:
-    """Freeze a pt_expt checkpoint into a .pte exported model.
+    """Freeze a pt_expt checkpoint into a .pte/.pt2 exported model.
 
     Parameters
     ----------
     model : str
         Path to the checkpoint file (.pt).
     output : str
-        Path for the output .pte file.
+        Path for the output file. When it carries no ``.pte``/``.pt2``
+        suffix, the suffix is chosen from the RESOLVED lower kind (after the
+        native-spin resolution below): ``.pt2`` for a graph lower, ``.pte``
+        otherwise.
     head : str or None
         Head to freeze in multi-task mode.
     lower_kind : str
@@ -507,6 +509,18 @@ def freeze(
         softmax denominator, so graph-form results are sel-independent and
         differ from the legacy dense lower by up to ~1e-4 (see
         ``DescrptDPA1.call_graph``).
+        A NATIVE-spin model (``NativeSpinEnergyModel``) implements ONLY the
+        graph lower, so ``lower_kind`` is resolved to ``"graph"`` for it
+        regardless of the requested value -- before the export ABI and the
+        default output suffix are selected.
+    with_comm : bool, optional
+        Include a communication artifact for models with cross-rank message
+        passing, by default True. Disable for single-process inference.
+    compress : bool, optional
+        Compress the loaded model before export, by default False. Uses the
+        default settings of ``dp compress`` and selects the accelerated graph
+        schema for eligible ``.pt2`` models without compiling an intermediate
+        artifact.
     """
     import torch
 
@@ -568,6 +582,35 @@ def freeze(
 
     m.eval()
 
+    # A graph-capable model ALWAYS freezes through the NeighborGraph lower.
+    # The dense lower is deprecated here and every DPA model is expected to be
+    # graph-capable, so "can use graph" is deliberately the whole condition --
+    # a separate "graph-required" capability would encode a distinction that
+    # stops existing. It is also load-bearing: for native spin and for an
+    # analytical bridging term no dense lower exists at all, so the public
+    # default would otherwise fail deep inside the dense trace. Resolved HERE,
+    # before the export ABI and the default output suffix are chosen.
+    from deepmd.pt_expt.model.graph_lower import (
+        model_uses_graph_lower,
+    )
+
+    if lower_kind != "graph" and model_uses_graph_lower(m):
+        # WARNING, not info: this overrides what the caller asked for, and
+        # the two lowers are not numerically identical (dpa1's graph and
+        # dense attention semantics differ by ~1e-4), so the override must
+        # be visible in the log rather than inferred from the output suffix.
+        log.warning(
+            "Requested lower_kind=%r is being OVERRIDDEN to 'graph': the "
+            "dense (nlist) lower is deprecated in the pt_expt backend and "
+            "this model is graph-lower capable. The frozen artifact will be "
+            "a graph-kind .pt2, and its outputs may differ slightly from the "
+            "dense lower.",
+            lower_kind,
+        )
+        lower_kind = "graph"
+
+    output = _default_output_path(output, lower_kind)
+
     # The graph lower is opt-in and only valid for graph-eligible models
     # (dpa1 with concat tebd, incl. attention layers and exclude_types
     # -- the carry-all pair enumeration exports via unbacked SymInts). Fail
@@ -588,12 +631,26 @@ def freeze(
             )
         do_atomic_virial = True
 
+    if compress:
+        from deepmd.pt_expt.entrypoints.compress import (
+            compress_model,
+        )
+
+        compress_model(
+            m,
+            output,
+            model_def_script=single_model_params,
+            with_comm=with_comm,
+        )
+        return
+
     model_dict_serialized = m.serialize()
     deserialize_to_file(
         output,
         {"model": model_dict_serialized, "model_def_script": single_model_params},
         do_atomic_virial=do_atomic_virial,
         lower_kind=lower_kind,
+        with_comm=with_comm,
     )
     log.info("Saved frozen model to %s (lower_kind=%s)", output, lower_kind)
 
@@ -743,15 +800,39 @@ def change_bias(
         mock_loss = get_loss({"inference": True}, 1.0, len(type_map), model_to_change)
         data.add_data_requirements(mock_loss.label_requirement)
         data.add_data_requirements(get_additional_data_requirement(model_to_change))
+        # A bridged model draws its statistics under the frame filter of its
+        # window, as training does. The filter is read from the training
+        # configuration; an archive that carries none cannot be filtered and
+        # is refused rather than read unfiltered.
+        if model_params is None:
+            children = getattr(model_to_change.atomic_model, "models", ())
+            if any(isinstance(child, InnerPotentialAtomicModel) for child in children):
+                raise ValueError(
+                    f"'{input_file}' carries no training configuration, so the "
+                    "frame filter of its bridging window cannot be derived; run "
+                    "change-bias on the checkpoint (.pt) instead."
+                )
+            pair_filter = None
+        else:
+            pair_filter = min_pair_dist_requirement(model_params, 0.0)
+        if pair_filter is not None:
+            data.add_data_requirements([pair_filter])
         if numb_batch != 0:
             nbatches = numb_batch
         else:
             # Cap at the minimum across systems so no system wraps and
             # overweights short systems (matching PT behavior).
             nbatches = min(data.get_nbatches())
-        sampled_data = make_stat_input(data, nbatches)
+        sampled_data = make_stat_input(
+            data,
+            nbatches,
+            0.0 if pair_filter is None else float(pair_filter.default),
+        )
         model_to_change = model_change_out_bias(
-            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+            model_to_change,
+            sampled_data,
+            _bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias={},
         )
 
     if input_file.endswith(".pt"):
@@ -833,18 +914,15 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
                     f"Checkpoint path '{model_path}' does not exist."
                 )
             FLAGS.model = str(model_path)
-        _lower_kind = getattr(FLAGS, "lower_kind", "nlist")
-        if not FLAGS.output.endswith((".pte", ".pt2")):
-            # Default suffix: .pt2 for the graph export (an AOTI .pt2 archive is
-            # what the C++ graph path consumes), .pte otherwise. Explicit user
-            # .pte / .pt2 suffixes are preserved for both.
-            _default_suffix = ".pt2" if _lower_kind == "graph" else ".pte"
-            FLAGS.output = str(Path(FLAGS.output).with_suffix(_default_suffix))
+        # Suffix defaulting lives in freeze(): the correct suffix depends on
+        # the RESOLVED lower kind (native-spin models force 'graph'), which
+        # is only known after the checkpoint's model is built there.
         freeze(
             model=FLAGS.model,
             output=FLAGS.output,
             head=FLAGS.head,
-            lower_kind=_lower_kind,
+            lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
+            compress=getattr(FLAGS, "compress", False),
         )
     elif FLAGS.command == "change-bias":
         change_bias(

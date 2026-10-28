@@ -8,6 +8,7 @@ from collections import (
     defaultdict,
 )
 from collections.abc import (
+    Callable,
     Iterator,
 )
 
@@ -137,6 +138,10 @@ class EnvMatStat(ABC):
             The statistics of the environment matrix.
         """
 
+    def get_stat_keys(self) -> list[str]:
+        """Get the dataset names required for a complete statistics cache."""
+        return []
+
     def save_stats(self, path: DPPath) -> None:
         """Save the statistics of the environment matrix.
 
@@ -170,25 +175,52 @@ class EnvMatStat(ABC):
             )
 
     def load_or_compute_stats(
-        self, data: list[dict[str, np.ndarray]], path: DPPath | None = None
+        self,
+        data: (Callable[[], list[dict[str, np.ndarray]]] | list[dict[str, np.ndarray]]),
+        path: DPPath | None = None,
     ) -> None:
         """Load the statistics of the environment matrix if it exists, otherwise compute and save it.
 
         Parameters
         ----------
+        data : Callable or list[dict[str, np.ndarray]]
+            The environment-matrix data or a lazy callable that returns it.
         path : DPPath
             The path to load the statistics of the environment matrix.
-        data : list[dict[str, np.ndarray]]
-            The environment matrix.
+
+        Raises
+        ------
+        FileNotFoundError
+            If a read-only cache is missing its statistics group or any
+            required dataset.
         """
-        if path is not None and path.is_dir():
+        cache_exists = path is not None and path.is_dir()
+        missing = (
+            [key for key in self.get_stat_keys() if not (path / key).is_file()]
+            if cache_exists
+            else []
+        )
+        if cache_exists and not missing:
             self.load_stats(path)
             log.info(f"Load stats from {path}.")
-        else:
-            self.compute_stats(data)
-            if path is not None:
-                self.save_stats(path)
-                log.info(f"Save stats to {path}.")
+            return
+        if path is not None and getattr(path, "mode", None) == "r":
+            if not cache_exists:
+                raise FileNotFoundError(
+                    f"Read-only statistics cache {path} is missing the required "
+                    "environment statistics group."
+                )
+            missing_items = ", ".join(repr(item) for item in missing)
+            raise FileNotFoundError(
+                f"Read-only statistics cache {path} is missing required "
+                f"environment statistics item(s): {missing_items}."
+            )
+
+        sampled = data() if callable(data) else data
+        self.compute_stats(sampled)
+        if path is not None:
+            self.save_stats(path)
+            log.info(f"Save stats to {path}.")
 
     def get_avg(self, default: float = 0) -> dict[str, float]:
         """Get the average of the environment matrix.

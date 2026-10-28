@@ -1,8 +1,9 @@
 # Fit energy {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
 
@@ -105,6 +106,139 @@ The construction of the fitting net is given by section {ref}`fitting_net <model
 - If the option {ref}`resnet_dt <model[standard]/fitting_net[ener]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
 - {ref}`seed <model[standard]/fitting_net[ener]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
+## Isolated-atom energy reference
+
+An atom without neighbors should contribute a known energy, for example the
+isolated-atom energy of the reference calculation, so that the dissociation
+limit of the model is pinned. Two model options provide this together:
+
+- `preset_out_bias` fixes the energy bias of every element to a given value
+  instead of fitting it from the data. The value may name a bundled table of
+  isolated-atom energies, be given as a dictionary keyed by element symbol, be
+  read from a JSON file holding such a dictionary, or be listed per type of
+  the `type_map`. Every element that occurs in the training data must be
+  assigned; elements of a table that are not in the `type_map` are ignored.
+  The elements that occur in the data are collected from the batches sampled
+  for the statistics, or from every frame with `data_stat_full`. An assigned
+  output takes no statistics: elements absent from the data get a zero bias
+  when the model is initialized and keep their bias when it is fine-tuned,
+  and the output std keeps its stored value.
+- `vacuum_ref` in the fitting network references the network output of every
+  atom to the output the same network gives an isolated atom of the same type,
+  under the same frame parameters, atomic parameters and case embedding. With
+  it, the energy of an atom without neighbors is exactly its bias, whatever the
+  network parameters are, so the preset value is the isolated-atom energy. The
+  reference applies to an output whose bias `preset_out_bias` fixes; an output
+  whose bias is fitted from the data keeps the plain network output. It cannot
+  be combined with the fitting option `atom_ener`.
+
+```json
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "preset_out_bias": {
+      "energy": "omat24"
+    },
+    "fitting_net": {
+      "vacuum_ref": true
+    }
+  }
+}
+```
+
+`omat24` is one of the bundled tables of isolated-atom energies in eV:
+
+| Name             | Reference calculation | Elements                                  |
+| ---------------- | --------------------- | ----------------------------------------- |
+| `domain_cluster` | Domain_cluster        | 9: Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, Au     |
+| `openmd`         | OpenMD, ABACUS PBE PW | 83, H to Bi                               |
+| `mptraj`         | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omat24`         | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omol25`         | OMol25, neutral atoms | 83, H to Bi                               |
+| `omc25`          | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
+| `odac25`         | ODAC25                | 94, H to Pu                               |
+
+The `mptraj` table uses the final VASP `free energy TOTEN`, in eV.
+
+The `omat24`, `omol25`, `omc25` and `odac25` tables are the isolated-atom
+reference energies of the UMA training tasks published with fairchem
+(`configs/uma/training_release/element_refs/iso_atom_elem_refs.yaml`, MIT
+license).
+
+The `openmd` table contains the OpenMD ABACUS PBE plane-wave atomic
+reference energies from `ABACUS_PBE_PW_atom_E0.json` (H to Bi), in eV.
+Use `"preset_out_bias": {"energy": "openmd"}` to select it.
+These are ABACUS 3.9.0 `!FINAL_ETOT_IS` values calculated with the OpenMD
+UPF pseudopotentials, a 100 Ry cutoff, a 30 Angstrom cubic cell, Gamma-point
+sampling, `nspin=1`, no SOC, and Gaussian smearing of 0.01 Ry.
+They are finite-smearing, non-spin-polarized references, rather than
+spin-polarized free-atom ground-state energies. The La value
+(-950.8377156904378 eV) is the accepted final-step energy after 120 SCF
+iterations; its final density residual was 1.2043e-7 against a target of
+1e-8. The other 82 elements met that SCF threshold.
+
+The `domain_cluster` table contains the supplied Domain_cluster atomic energy
+reference biases in eV for Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, and Au. Select it
+with `"preset_out_bias": {"energy": "domain_cluster"}`. Elements outside these
+nine entries are unassigned; every element present in the training data must
+have a reference value.
+
+Each table is on the energy scale of its own reference calculation
+(the OMat24 table gives H = -1.117 eV, the OMol25 table H = -13.446 eV), so a
+model takes the table of the calculation that produced its training data. A
+table of another reference calculation is given as a JSON file
+mapping element symbols to energies in eV, for instance `"energy": "e0.json"`
+with the file holding `{"O": -432.0, "H": -13.6}`; the path is relative to the
+working directory. In every form the table is resolved once when the input is
+processed and its values are stored in the model, so a trained model depends
+neither on the file nor on the bundled data.
+
+In multi-task training `preset_out_bias` is given in each branch, so a branch
+trained on another reference calculation names its own table; written once
+next to `model_dict`, it applies to every branch that does not set its own. A
+branch without a table takes its bias from the statistics and keeps the plain
+network output even when it shares a fitting network with `vacuum_ref`: the
+shared network then represents the same binding energy in every branch, the
+branches differ by a constant per element that the case embedding carries, and
+the isolated-atom energies of the branches with a table stay exactly their
+presets.
+`examples/water/dpa4/input_e0.json` and
+`examples/water/dpa4/input_multitask_e0.json` show the single-task and the
+multi-task setup on the water example, whose reference calculation is not one
+of the bundled tables: the first reads the table from `e0.json` next to the
+input, the second gives every branch an explicit dictionary.
+
+The reference atom is the neutral atom in its ground state. With charge/spin
+conditioning (`add_chg_spin_ebd`) the reference carries zero charge and the
+ground-state spin multiplicity of the element, and with
+[native spin](dpa4.md#native-scheme) it carries a spin vector of one Bohr
+magneton per unpaired electron; charged, excited or differently magnetized
+isolated atoms keep the deviation the network learns for them. The type names
+must then be element symbols.
+
+The reference follows the network parameters at every training step. Freezing
+evaluates the vacuum descriptor of every type once and removes the reference
+atoms from the exported model: a fitting without frame or atomic parameters
+folds the reference into its bias and runs at the speed of a model without the
+option, and a fitting with such parameters, whose reference output varies
+between atoms, stores the table and evaluates its references from it. The
+fused inference operators of the pt_expt backend take a per-type reference
+through the bias; a fitting whose reference varies between atoms is served by
+the autograd route instead.
+
+`vacuum_ref` is available for DPA4/SeZM on the PyTorch backend and for the
+graph-native models (DPA1, DPA2, DPA4 and DPA4C) on the pt_expt backend, whose
+flat node axis carries the reference atoms. Fine-tuning keeps the reference
+and applies its configured `preset_out_bias` without fitting assigned outputs.
+Standalone `dp change-bias` also keeps the reference, but fits residuals from
+the stored bias without reapplying checkpoint presets. Non-finite stored bias
+cells covered by a finite checkpoint preset are recovered before residual
+fitting; finite adjusted values are preserved. To set an energy bias explicitly
+without statistics, use `dp change-bias --bias-value ...`.
+
 ## Loss
 
 The loss function $L$ for training energy is given by
@@ -152,9 +286,8 @@ If one does not want to train with virial, then he/she may set the virial prefac
 
 ### Prefactor force loss with default atom preference
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 When using the prefactor force loss (controlled by {ref}`start_pref_pf <loss[ener]/start_pref_pf>` and {ref}`limit_pref_pf <loss[ener]/limit_pref_pf>`), the training data typically requires an `atom_pref.npy` file in each system directory to specify per-atom prefactors $q_k$. If `atom_pref.npy` is not provided, the {ref}`use_default_pf <loss[ener]/use_default_pf>` option can be set to `true` to use a default atom preference of 1.0 for all atoms:
 
@@ -174,6 +307,6 @@ When using the prefactor force loss (controlled by {ref}`start_pref_pf <loss[ene
 
 This allows using the prefactor force loss without requiring `atom_pref.npy` files. When `atom_pref.npy` is provided in the training data, it will be used as-is regardless of the `use_default_pf` setting.
 
-Note that `use_default_pf` is only effective for the PyTorch and DP (NumPy reference) backends. The TensorFlow and Paddle backends raise `NotImplementedError` when `use_default_pf` is set to `true`.
+Note that `use_default_pf` is only effective for the PyTorch-TorchScript and DP (NumPy reference) backends. The TensorFlow and Paddle backends raise `NotImplementedError` when `use_default_pf` is set to `true`.
 
 [^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

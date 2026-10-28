@@ -77,6 +77,26 @@ class TestNeighborStat(unittest.TestCase):
 
 
 class TestNeighborStatOP(unittest.TestCase):
+    def test_periodic_self_images_remain_neighbors(self) -> None:
+        """Exclude the original self pair but retain its two nearby images."""
+        coord = paddle.zeros([1, 6], dtype=paddle.float64).to(DEVICE)
+        atype = paddle.to_tensor([[0, -1]], dtype=paddle.int64, place=DEVICE)
+        cell = paddle.to_tensor(
+            [[1.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
+            dtype=paddle.float64,
+            place=DEVICE,
+        )
+        for mixed_types in (False, True):
+            with self.subTest(mixed_types=mixed_types):
+                min_rr2, max_nnei = NeighborStatOP(
+                    ntypes=2, rcut=1.1, mixed_types=mixed_types
+                )(coord, atype, cell)
+                # Only the real atom's images at x = -1 and +1 contribute.
+                np.testing.assert_allclose(min_rr2.numpy(), [[1.0, np.inf]])
+                np.testing.assert_array_equal(
+                    max_nnei.numpy(), [[2]] if mixed_types else [[2, 0]]
+                )
+
     def test_virtual_atoms_do_not_affect_statistics(self) -> None:
         """Ignore virtual atoms as both statistics centers and neighbors."""
         # Atom 1 is virtual and overlaps atom 0. Without both masks, it either

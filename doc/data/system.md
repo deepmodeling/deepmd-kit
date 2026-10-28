@@ -50,9 +50,8 @@ In general, we always use the following convention of units:
 
 ## Mixed type
 
-:::{note}
-Only the [DPA-1](../model/train-se-atten.md) and [DPA-2](../model/dpa2.md) descriptors support this format.
-:::
+> [!NOTE]
+> Only the [DPA-1](../model/train-se-atten.md) and [DPA-2](../model/dpa2.md) descriptors support this format.
 
 In the standard data format, only those frames with the same fingerprint (i.e. the number of atoms of different elements) can be put together as a unified system.
 This may lead to sparse frame numbers in those rare systems.
@@ -82,5 +81,9 @@ This system contains `Nframes` frames with the same atom number `Natoms`, the to
 With these edited files, one can put together frames with the same `Natoms`, instead of the same formula (like `H2O`).
 
 To put frames with different `Natoms` into the same system, one can pad systems by adding virtual atoms whose type is `-1`. Virtual atoms do not contribute to any fitting property, so the atomic property of virtual atoms (e.g. forces) should be given zero.
+
+:::{note}
+Per-atom loss terms (force, atomic energy, dos, tensor) sum over a batch's real labels and divide by their total count, so a frame counts in proportion to its real atom number. This differs from averaging each frame's own per-label mean only when the frames of one batch pad a *different* number of virtual atoms; where the padding is uniform — including the case of no padding at all — the two are identical. Writing `real_atom_types.npy` with a per-frame varying number of `-1` is therefore the one configuration whose loss values, and hence training trajectory, differ from a per-frame average. This applies to the PyTorch backend; the TensorFlow backend normalizes by the padded width regardless.
+:::
 
 The API to generate or transfer to `mixed_type` format is available on [dpdata](https://github.com/deepmodeling/dpdata) for a more convenient experience.

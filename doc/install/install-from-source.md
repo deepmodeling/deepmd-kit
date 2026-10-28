@@ -1,5 +1,8 @@
 # Install from source code
 
+An AI agent can walk through this source build, including the C++ interface
+and LAMMPS with Kokkos. See [Install with an AI agent](install-with-agent.md).
+
 Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the source code of a specific version or the [development version](https://github.com/deepmodeling/deepmd-kit/tree/master).
 
 Or get the DeePMD-kit source code by `git clone`
@@ -260,11 +263,10 @@ It will print the help information like
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}
 
-:::{warning}
-Horovod has not released a new version for a long time.
-As of December 2025, the latest Horovod release does not support the latest TensorFlow versions.
-You can check the patches required to support the latest TensorFlow at [conda-forge/horovod-feedstock](https://github.com/conda-forge/horovod-feedstock/blob/main/recipe/meta.yaml).
-:::
+> [!WARNING]
+> Horovod has not released a new version for a long time.
+> As of December 2025, the latest Horovod release does not support the latest TensorFlow versions.
+> You can check the patches required to support the latest TensorFlow at [conda-forge/horovod-feedstock](https://github.com/conda-forge/horovod-feedstock/blob/main/recipe/meta.yaml).
 
 [Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) are used for parallel training. For better performance on GPU, please follow the tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 
@@ -567,6 +569,15 @@ There's no need for downloading PyTorch's C++ libraries.
 
 {{ pytorch_icon }} If `TRUE`, bypass PyTorch's CUDA toolkit discovery when CMake cannot find CUDAToolkit/`nvcc` and DeePMD-kit is not building CUDA support.
 This helps CPU-only PyTorch builds use CUDA-enabled PyTorch wheels without requiring a local CUDA compiler.
+:::
+
+:::{cmake:variable} DEEPMD_ENABLE_DPA4_FP64
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ pytorch_icon }} If `TRUE`, also compile the float64 variants of the CUDA kernels that accelerate DPA4 training.
+Training runs these kernels in float32 or bfloat16 only; the float64 variants serve the numerical consistency tests of the fused operators and add substantial build time.
+When installing with `pip`, pass the option through {envvar}`CMAKE_ARGS`, for example `CMAKE_ARGS="-DDEEPMD_ENABLE_DPA4_FP64=ON"`.
 :::
 
 :::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION

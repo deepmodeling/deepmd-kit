@@ -22,6 +22,7 @@ from typing_extensions import (
     Self,
 )
 from wcmatch.glob import (
+    GLOBSTAR,
     globfilter,
 )
 
@@ -364,6 +365,8 @@ class DPH5Path(DPPath):
         arr : np.ndarray
             NumPy array
         """
+        if self.mode == "r":
+            raise ValueError("Cannot save to read-only path")
         if self._name in self._keys:
             del self.root[self._name]
         self.root.create_dataset(self._name, data=arr)
@@ -391,7 +394,7 @@ class DPH5Path(DPPath):
         ]
         return [
             type(self)(f"{self.root_path}#{pp}", mode=self.mode)
-            for pp in globfilter(subpaths, self._connect_path(pattern))
+            for pp in globfilter(subpaths, self._connect_path(pattern), flags=GLOBSTAR)
         ]
 
     def rglob(self, pattern: str) -> list["DPPath"]:
@@ -408,7 +411,7 @@ class DPH5Path(DPPath):
         list[DPPath]
             list of paths
         """
-        return self.glob("**" + pattern)
+        return self.glob("**/" + pattern)
 
     @property
     def _keys(self) -> list[str]:
@@ -480,6 +483,8 @@ class DPH5Path(DPPath):
         exist_ok : bool, optional
             If true, no error will be raised if the target directory already exists.
         """
+        if self.mode == "r":
+            raise ValueError("Cannot mkdir to read-only path")
         if self._name in self._keys:
             if not exist_ok:
                 raise FileExistsError(f"{self} already exists")

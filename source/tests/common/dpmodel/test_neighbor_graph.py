@@ -3,12 +3,34 @@ import unittest
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     NeighborGraph,
     build_edge_csr,
     canonicalize_neighbor_graph,
 )
+
+
+def assert_csr_consistent(graph: NeighborGraph) -> None:
+    """Check both CSR views against masked endpoints, independently of edge order."""
+    n_nodes = int(to_numpy_array(graph.n_node).sum())
+    mask = to_numpy_array(graph.edge_mask)
+    indices = to_numpy_array(graph.edge_index)
+    for axis, order, row_ptr in (
+        (0, graph.source_order, graph.source_row_ptr),
+        (1, graph.destination_order, graph.destination_row_ptr),
+    ):
+        keys = np.where(mask, indices[axis], n_nodes)
+        np.testing.assert_array_equal(
+            to_numpy_array(order), np.argsort(keys, kind="stable")
+        )
+        counts = np.bincount(indices[axis, mask], minlength=n_nodes)
+        np.testing.assert_array_equal(
+            to_numpy_array(row_ptr), np.concatenate(([0], np.cumsum(counts)))
+        )
 
 
 class TestNeighborGraphDataclass(unittest.TestCase):
@@ -225,3 +247,44 @@ class TestPublicExports(unittest.TestCase):
         self.assertTrue(callable(from_dense_quartet))
         self.assertIsNotNone(NeighborGraph)
         self.assertIsNotNone(GraphLayout)
+
+
+def test_segment_max_trailing_dims():
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_max,
+    )
+
+    data = np.array([[1.0, 5.0], [3.0, 2.0], [2.0, 9.0]])
+    ids = np.array([0, 0, 1], dtype=np.int64)
+    out = segment_max(data, ids, 2)
+    np.testing.assert_allclose(out, [[3.0, 5.0], [2.0, 9.0]])
+
+
+def test_segment_softmax_trailing_dims_matches_columnwise():
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_softmax,
+    )
+
+    rng = np.random.default_rng(0)
+    data = rng.normal(size=(6, 3))
+    ids = np.array([0, 0, 1, 1, 1, 2], dtype=np.int64)
+    mask = np.array([True, True, True, False, True, True])
+    out = segment_softmax(data, ids, 3, mask=mask)
+    for c in range(3):
+        col = segment_softmax(data[:, c], ids, 3, mask=mask)
+        np.testing.assert_allclose(out[:, c], col, rtol=1e-15)
+
+
+def test_segment_softmax_trailing_dims_torch():
+    import torch
+
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_softmax,
+    )
+
+    rng = np.random.default_rng(1)
+    data = rng.normal(size=(5, 2))
+    ids = np.array([0, 1, 1, 0, 1], dtype=np.int64)
+    ref = segment_softmax(data, ids, 2)
+    got = segment_softmax(torch.from_numpy(data), torch.from_numpy(ids), 2)
+    np.testing.assert_allclose(got.numpy(), ref, rtol=1e-15)
