@@ -606,6 +606,18 @@ def descrpt_dpa4c_args() -> list[Argument]:
             ),
         ),
         Argument(
+            "output_rot_mat",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "Expose the degree-one moments as the equivariant fitting "
+                "input, so the descriptor can drive the `dipole` and `polar` "
+                "fitting networks. It changes neither the invariant output "
+                "nor any parameter. Compression does not support it."
+            ),
+        ),
+        Argument(
             "seed",
             [int, None],
             optional=True,

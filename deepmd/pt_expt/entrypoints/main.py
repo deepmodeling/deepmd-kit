@@ -591,10 +591,10 @@ def freeze(
     # default would otherwise fail deep inside the dense trace. Resolved HERE,
     # before the export ABI and the default output suffix are chosen.
     from deepmd.pt_expt.model.graph_lower import (
-        model_uses_graph_lower,
+        model_exports_graph_lower,
     )
 
-    if lower_kind != "graph" and model_uses_graph_lower(m):
+    if lower_kind != "graph" and model_exports_graph_lower(m):
         # WARNING, not info: this overrides what the caller asked for, and
         # the two lowers are not numerically identical (dpa1's graph and
         # dense attention semantics differ by ~1e-4), so the override must
@@ -620,10 +620,10 @@ def freeze(
     do_atomic_virial = False
     if lower_kind == "graph":
         from deepmd.pt_expt.model.graph_lower import (
-            model_uses_graph_lower,
+            model_exports_graph_lower,
         )
 
-        if not model_uses_graph_lower(m):
+        if not model_exports_graph_lower(m):
             raise ValueError(
                 "lower_kind='graph' requires a graph-eligible model "
                 "(mixed_types and a descriptor exposing uses_graph_lower()==True, "

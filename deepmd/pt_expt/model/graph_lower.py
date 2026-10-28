@@ -33,6 +33,58 @@ def graph_edge_dtype(model: Any, lower_kind: str) -> str:
     return str(model.atomic_model.graph_edge_dtype())
 
 
+def model_has_energy_output(model: Any) -> bool:
+    """Return whether a model is an energy model.
+
+    A property model names its output freely, so ``property_name="energy"``
+    gives it an ``energy`` output too; it is told apart by its variable name.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing ``atomic_output_def`` and ``get_var_name``.
+
+    Returns
+    -------
+    bool
+        ``True`` when the model fits an energy rather than a property named
+        ``energy``.
+    """
+    if "energy" not in model.atomic_output_def().keys():
+        return False
+    get_var_name = getattr(model, "get_var_name", None)
+    return get_var_name is None or get_var_name() is None
+
+
+def model_requires_graph_lower(model: Any) -> bool:
+    """Return whether a model can only run on the ``NeighborGraph`` lower.
+
+    Unlike :func:`model_uses_graph_lower` this holds for any fitting output:
+    a graph-only descriptor (DPA4C) has no dense lower to fall back on, so a
+    dipole or polarizability model built on it must take the graph route
+    too.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing the atomic-model capability interface.
+
+    Returns
+    -------
+    bool
+        ``True`` when the model is mixed-type and its atomic model has no
+        dense lower.
+    """
+    mixed_types = getattr(model, "mixed_types", None)
+    atomic_model = getattr(model, "atomic_model", None)
+    if mixed_types is None or atomic_model is None:
+        return False
+    try:
+        return bool(mixed_types()) and bool(atomic_model.requires_graph_lower())
+    except (AttributeError, NotImplementedError):
+        return False
+
+
 def model_uses_graph_lower(model: Any) -> bool:
     """Return whether a model's default lower uses ``NeighborGraph``.
 
@@ -62,7 +114,7 @@ def model_uses_graph_lower(model: Any) -> bool:
     # so a non-energy model (property/dos/dipole/polar) on this path raises
     # ``KeyError('energy')`` at its first compiled batch.
     try:
-        if "energy" not in model.atomic_output_def().keys():
+        if not model_has_energy_output(model):
             return False
     except (AttributeError, NotImplementedError):
         return False
@@ -71,3 +123,25 @@ def model_uses_graph_lower(model: Any) -> bool:
     if atomic_model is None:
         return False
     return bool(atomic_model.uses_graph_lower())
+
+
+def model_exports_graph_lower(model: Any) -> bool:
+    """Return whether a model is frozen and evaluated through the graph lower.
+
+    Export and inference are output-agnostic, so besides every model that
+    trains on the graph lower this admits a graph-only model with any
+    fitting output (a DPA4C dipole, polarizability, DOS or property model),
+    which has no dense lower to export. Compiled training keeps the energy-only
+    :func:`model_uses_graph_lower`.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing the atomic-model and descriptor capability interfaces.
+
+    Returns
+    -------
+    bool
+        ``True`` when the model exports the ``NeighborGraph`` lower.
+    """
+    return model_uses_graph_lower(model) or model_requires_graph_lower(model)

@@ -449,5 +449,7 @@ def test_graph_eligibility_guard_is_stated_exactly_once() -> None:
     )
 
     source = Path(serialization.__file__).read_text()
-    assert source.count("graph-lower eligible (model_uses_graph_lower() is False") == 1
-    assert source.count("if not model_uses_graph_lower(model):") == 1
+    assert (
+        source.count("graph-lower eligible (model_exports_graph_lower() is False") == 1
+    )
+    assert source.count("if not model_exports_graph_lower(model):") == 1

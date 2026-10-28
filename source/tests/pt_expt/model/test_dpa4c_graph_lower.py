@@ -11,6 +11,9 @@ import torch
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
+from deepmd.pt_expt.model.make_model import (
+    _fused_energy_force_graph,
+)
 from deepmd.pt_expt.utils import (
     env,
 )
@@ -589,6 +592,31 @@ def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     data = {"model": model.serialize()}
     assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
+
+
+@_GPU
+@pytest.mark.parametrize(
+    "fitting",
+    [
+        {"type": "property", "task_dim": 1, "property_name": "foo"},
+        {"type": "dos", "numb_dos": 1},
+    ],
+)
+def test_auto_lower_kind_keeps_non_energy_off_compact_canonical(
+    fitting: dict,
+) -> None:
+    """A scalar non-energy head passes the fitting check of the canonical ABI.
+
+    Its operators emit energy, force and virial only, so the model must
+    take the generic graph lower, and the eager fused path must stand aside.
+    """
+    config = _compressed_config()
+    config["fitting_net"].update(fitting)
+    model = get_model(config).to("cpu").eval()
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    data = {"model": model.serialize()}
+    assert _resolve_lower_kind("model.pt2", data, "auto") == "graph"
+    assert _fused_energy_force_graph(model, None, None, False) is None
 
 
 def test_the_graph_lower_conditions_each_frame_on_its_own_charge_state() -> None:

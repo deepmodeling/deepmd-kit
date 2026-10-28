@@ -55,6 +55,15 @@ def get_model_components(
     fitting_data["type_map"] = copy.deepcopy(type_map)
     fitting_data["mixed_types"] = descriptor.mixed_types()
     if fitting_type in {"dipole", "polar"}:
+        # Tensorial fittings contract the equivariant ``rot_mat``; a
+        # descriptor that exposes none would only fail at the first forward.
+        if descriptor.get_dim_emb() == 0:
+            raise ValueError(
+                f"The {fitting_type!r} fitting needs the equivariant output "
+                f"of the descriptor, but descriptor {descriptor_type!r} "
+                "exposes none (get_dim_emb() == 0). For DPA4C, set "
+                "`output_rot_mat: true`."
+            )
         fitting_data["embedding_width"] = descriptor.get_dim_emb()
     fitting_data["dim_descrpt"] = descriptor.get_dim_out()
     if "direct" in fitting_type:

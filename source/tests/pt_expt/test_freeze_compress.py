@@ -240,6 +240,51 @@ def test_compressed_freeze_compiles_one_cpu_artifact(tmp_path: Path) -> None:
     assert "compress" in snapshot["model"]["descriptor"]
 
 
+def test_compressed_freeze_keeps_graph_export_for_dpa4c_property(
+    tmp_path: Path,
+) -> None:
+    # A DPA4C property model has no dense lower to fall back on: the compressed
+    # graph is exported, not a dense trace of DPA4C's sel=[999999].
+    config = _config("dpa4c")
+    config["fitting_net"] = {
+        "type": "property",
+        "property_name": "band",
+        "task_dim": 2,
+        "neuron": [8],
+        "precision": "float32",
+    }
+    checkpoint = _write_checkpoint(tmp_path / "model.pt", "dpa4c", config=config)
+    output = tmp_path / "model.pt2"
+    lower_kinds = []
+    export = compression.deserialize_to_file
+
+    def record(*args: object, **kwargs: object) -> None:
+        lower_kinds.append(kwargs.get("lower_kind", "nlist"))
+        assert lower_kinds[-1] != "nlist"
+        export(*args, **kwargs)
+
+    def compile_package(
+        exported: torch.export.ExportedProgram, package_path: str, **kwargs: object
+    ) -> None:
+        with zipfile.ZipFile(package_path, "w") as archive:
+            archive.writestr("model/data.pkl", b"")
+
+    with (
+        mock.patch.object(compression, "deserialize_to_file", side_effect=record),
+        mock.patch(
+            "torch._inductor.aoti_compile_and_package", side_effect=compile_package
+        ),
+    ):
+        entrypoints.freeze(str(checkpoint), str(output), compress=True, with_comm=False)
+    assert lower_kinds == ["auto"]
+    with zipfile.ZipFile(output) as archive:
+        metadata = json.loads(archive.read("model/extra/metadata.json"))
+    assert metadata["lower_input_kind"] == "graph"
+    assert metadata["graph_output_keys"] == "internal"
+    snapshot = serialization.serialize_from_file(str(output))
+    assert "compress" in snapshot["model"]["descriptor"]
+
+
 def test_ase_float64_fallback_exports_and_evaluates(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

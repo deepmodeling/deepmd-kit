@@ -213,6 +213,10 @@ class DPAtomicModel(BaseAtomicModel):
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())
 
+    def requires_graph_lower(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.requires_graph_lower())
+
     def fused_decomposition(self) -> "tuple[DPAtomicModel, None]":
         """A descriptor-fitting model is its own learned part."""
         return self, None

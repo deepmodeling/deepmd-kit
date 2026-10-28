@@ -31,6 +31,7 @@ from deepmd.pt.utils.compile_compat import (
 )
 from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
+    model_has_energy_output,
 )
 from deepmd.utils.charge_state import (
     CHARGE_STATE_TABLE_RANGES,
@@ -1272,6 +1273,14 @@ def _collect_metadata(
     meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
     if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
         meta["canonical_index_dtype"] = "uint32"
+    # Key convention of a graph-form artifact: an energy model emits the
+    # public energy keys, any other output the internal keys of the common
+    # lower. A record without this field predates non-energy graph exports
+    # and is an energy artifact.
+    if lower_kind == "graph":
+        meta["graph_output_keys"] = (
+            "energy" if model_has_energy_output(model) else "internal"
+        )
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
@@ -1579,16 +1588,18 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
         lower.
     """
     from deepmd.pt_expt.model.graph_lower import (
-        model_uses_graph_lower,
+        model_exports_graph_lower,
     )
     from deepmd.pt_expt.model.model import (
         BaseModel,
     )
 
     model = BaseModel.deserialize(data["model"])
-    if not (model_uses_graph_lower(model) and _supports_graph_export(model)):
+    if not (model_exports_graph_lower(model) and _supports_graph_export(model)):
         return None
-    if allow_canonical:
+    # The compact canonical ABIs and their fused operators produce energy,
+    # force and virial; any other output takes the generic graph lower.
+    if allow_canonical and model_has_energy_output(model):
         from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
             canonical_model_eligible as dpa1_canonical_eligible,
         )
@@ -1976,7 +1987,10 @@ def _trace_and_export_impl(
         lower_kind=lower_kind,
     )
 
-    # Graph-form exports use a dynamic edge axis and an energy-model contract.
+    # Graph-form exports use a dynamic edge axis. Energy models translate to
+    # public energy keys; other outputs (a graph-only DPA4C dipole,
+    # polarizability, DOS or property model) keep the internal keys of the
+    # common lower.
     if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         import math
 
@@ -2003,17 +2017,17 @@ def _trace_and_export_impl(
         # silently divergent artifact.  Assert the gate at the innermost
         # layer too.
         from deepmd.pt_expt.model.graph_lower import (
-            model_uses_graph_lower,
+            model_exports_graph_lower,
         )
 
-        if not model_uses_graph_lower(model):
+        if not model_exports_graph_lower(model):
             raise ValueError(
                 f"lower_kind={lower_kind!r} requested but the model is not "
-                "graph-lower eligible (model_uses_graph_lower() is False: "
+                "graph-lower eligible (model_exports_graph_lower() is False: "
                 "check uses_graph_lower() gates such as set_davg_zero, "
                 "compression, use_three_body, disable_graph_lower(), and "
-                "the energy-output requirement); freeze with the default "
-                "lower_kind instead."
+                "the energy-output requirement for descriptors that keep a "
+                "dense lower); freeze with the default lower_kind instead."
             )
         if with_comm_dict and not hasattr(
             model, "forward_lower_graph_exportable_with_comm"
@@ -2024,11 +2038,15 @@ def _trace_and_export_impl(
                 "with-comm .pt2 export requires an energy model"
             )
         canonical = lower_kind in ("dpa1_canonical", "dpa4c_canonical")
-        required_method = (
-            "forward_lower_canonical_graph_exportable"
-            if canonical
-            else "forward_lower_graph_exportable"
-        )
+        if canonical:
+            required_method = "forward_lower_canonical_graph_exportable"
+        elif model_has_energy_output(model):
+            required_method = "forward_lower_graph_exportable"
+        else:
+            # Any other output (dipole, polar, dos, property) exports the
+            # common lower with its internal keys, as the dense tensorial
+            # artifacts do; see the ``graph_output_keys`` metadata.
+            required_method = "forward_common_lower_graph_exportable"
         if not hasattr(model, required_method):
             raise NotImplementedError(
                 f"model {type(model).__name__} has no {required_method}"
@@ -2194,7 +2212,7 @@ def _trace_and_export_impl(
                     _allow_non_fake_inputs=True,
                 )
             else:
-                traced = model.forward_lower_graph_exportable(
+                traced = getattr(model, required_method)(
                     *sample_inputs[:10],
                     fparam=sample_inputs[10],
                     aparam=sample_inputs[11],

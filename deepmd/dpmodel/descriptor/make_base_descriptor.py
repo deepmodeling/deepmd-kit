@@ -221,6 +221,20 @@ def make_base_descriptor(
             """
             return False
 
+        def requires_graph_lower(self) -> bool:
+            """Returns whether the descriptor has no dense (nlist) form at all.
+
+            A descriptor declaring ``True`` must also declare
+            :meth:`uses_graph_lower`. The model layer then routes every
+            forward through the NeighborGraph path, whatever the fitting
+            output, since the dense lower would be unservable rather than
+            merely slower.
+
+            Concrete default ``False``: a graph-capable descriptor normally
+            keeps its dense lower as a fallback.
+            """
+            return False
+
         def disable_graph_lower(self) -> None:
             """Force the legacy dense (nlist) lower for this descriptor.
 

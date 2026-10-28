@@ -336,6 +336,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return all(m.uses_graph_lower() for m in self.models)
 
+    def requires_graph_lower(self) -> bool:
+        """Graph-only as soon as ANY child is: the children share one lower."""
+        return any(m.requires_graph_lower() for m in self.models)
+
     def fused_decomposition(self) -> "tuple[Any, Any] | None":
         """Merge the children's parts when the composition is their plain sum.
 

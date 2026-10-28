@@ -130,6 +130,7 @@ from deepmd.pt_expt.model import (
     get_model,
 )
 from deepmd.pt_expt.model.graph_lower import (
+    model_requires_graph_lower,
     model_uses_graph_lower,
 )
 from deepmd.pt_expt.train.ema import (
@@ -2468,6 +2469,19 @@ class Trainer(AbstractTrainer):
 
         # torch.compile -------------------------------------------------------
         if self.enable_compile:
+            for model_key in self.model_keys:
+                model = self.models[model_key]
+                # The compiled graph trace is energy-specific and a graph-only
+                # model has no dense lower to trace instead.
+                if model_requires_graph_lower(model) and not model_uses_graph_lower(
+                    model
+                ):
+                    raise ValueError(
+                        "training.enable_compile supports a graph-only "
+                        "descriptor (DPA4C) with energy models only; set "
+                        "'enable_compile: false' to train this "
+                        f"{type(model).__name__}."
+                    )
             check_compile_torch_version()
             compile_opts = training_params.get("compile_options", {})
             if compile_opts:
@@ -2632,6 +2646,7 @@ class Trainer(AbstractTrainer):
             self.models[model_key]
             for model_key in self.model_keys
             if model_uses_graph_lower(self.models[model_key])
+            or model_requires_graph_lower(self.models[model_key])
         ]
         if not graph_models:
             if requested != "auto":

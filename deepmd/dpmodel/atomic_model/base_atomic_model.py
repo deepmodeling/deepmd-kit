@@ -200,6 +200,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return False
 
+    def requires_graph_lower(self) -> bool:
+        """Returns whether this atomic model can ONLY run on the NeighborGraph lower.
+
+        Generic capability in the sense of :meth:`uses_graph_lower`
+        (concrete default ``False``). ``True`` means the dense lower is
+        unservable, so the model layer takes the graph route for every
+        output type rather than only for energy models.
+        """
+        return False
+
     def fused_decomposition(self) -> "tuple[Any, Any] | None":
         """Returns the parts a fused energy-force pipeline evaluates, if any.
 
