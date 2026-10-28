@@ -60,7 +60,7 @@ jobs:
         if: matrix.variant == 'rocm'
       - name: Restore LAMMPS source
         id: lammps-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.LAMMPS_SOURCE_DIR }}
           key: lammps-source-${{ env.LAMMPS_VERSION }}-v1
@@ -82,7 +82,7 @@ jobs:
           tar -xJf "$RUNNER_TEMP/$CCACHE_ARCHIVE" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/ccache-${CCACHE_VERSION}-linux-x86_64-musl-static" >> "$GITHUB_PATH"
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-build-cc-${{ matrix.variant }}-v${{ env.CCACHE_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
