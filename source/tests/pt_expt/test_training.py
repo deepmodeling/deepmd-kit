@@ -30,9 +30,6 @@ import numpy as np
 import pytest
 import torch
 
-from deepmd.dpmodel.output_def import (
-    ModelOutputDef,
-)
 from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
 )
@@ -312,6 +309,10 @@ def test_legacy_property_resume_preserves_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resume_kind: str
 ) -> None:
     """Real experimental init/restart and save/reload retain effective metadata."""
+    from deepmd.dpmodel.output_def import (
+        ModelOutputDef,
+    )
+
     monkeypatch.chdir(tmp_path)
     config = _make_config(os.path.join(EXAMPLE_DIR, "data"))
     config["model"]["fitting_net"] = {
