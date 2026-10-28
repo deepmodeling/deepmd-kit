@@ -51,6 +51,7 @@ def neighbor_graph_from_ijs(
     *,
     with_csr: bool = False,
     canonicalize: bool = False,
+    destination_sorted: bool = False,
 ) -> NeighborGraph:
     """Convert a sparse ``(i, j, S)`` edge list into a :class:`NeighborGraph`.
 
@@ -85,6 +86,11 @@ def neighbor_graph_from_ijs(
     canonicalize
         Whether to reorder every edge field into destination-major form. Implies
         ``with_csr=True``.
+    destination_sorted
+        Whether the flattened destination index ``i + frame_offset`` already
+        ascends across the complete edge list, so that destination grouping
+        holds without a sort. Sorting ``i`` independently inside each frame is
+        sufficient only when the frame edge blocks themselves are ordered.
 
     Returns
     -------
@@ -104,16 +110,19 @@ def neighbor_graph_from_ijs(
     j = xp.astype(xp.asarray(j, device=dev), xp.int64)
     nframe_id = xp.astype(xp.asarray(nframe_id, device=dev), xp.int64)
     # Within-frame indices become node indices through the frame offsets.
-    offset = xp.take(xp.cumulative_sum(n_node) - n_node, nframe_id, axis=0)
-    i_flat = i + offset
-    j_flat = j + offset
+    if nf == 1:
+        i_flat, j_flat = i, j
+    else:
+        offset = xp.take(xp.cumulative_sum(n_node) - n_node, nframe_id, axis=0)
+        i_flat = i + offset
+        j_flat = j + offset
     r_i = xp.take(coord_flat, i_flat, axis=0)
     r_j = xp.take(coord_flat, j_flat, axis=0)
     edge_vec = r_j - r_i
     if box is not None:
         box = xp.asarray(box, device=dev)
         box = xp.reshape(box, (nf, 3, 3))
-        box_per_edge = xp.take(box, nframe_id, axis=0)  # (E, 3, 3)
+        box_per_edge = box[0] if nf == 1 else xp.take(box, nframe_id, axis=0)
         S = xp.astype(xp.asarray(S, device=dev), box.dtype)
         # S @ box per edge via broadcast sum (NEVER np.einsum, which breaks on torch):
         # shift[e, b] = sum_a S[e, a] * box[e, a, b]
@@ -144,6 +153,7 @@ def neighbor_graph_from_ijs(
         edge_mask,
         int(coord_flat.shape[0]),
         canonicalize=canonicalize,
+        destination_sorted=destination_sorted,
     )
     return NeighborGraph(
         n_node=n_node,
@@ -154,5 +164,5 @@ def neighbor_graph_from_ijs(
         destination_row_ptr=destination_row_ptr,
         source_order=source_order,
         source_row_ptr=source_row_ptr,
-        destination_sorted=canonicalize,
+        destination_sorted=canonicalize or destination_sorted,
     )

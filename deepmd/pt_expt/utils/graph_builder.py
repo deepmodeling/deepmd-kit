@@ -34,18 +34,18 @@ def resolve_auto_graph_builder(
 ) -> str:
     """Resolve ``neighbor_graph_method="auto"`` to a concrete inference builder.
 
-    Single owner of the inference / DeepEval auto ladder. Training uses
+    Single owner of graph inference / DeepEval auto selection. Training uses
     :func:`resolve_neighbor_graph_method`, which never selects ``vesin``.
 
-    Mirrors :func:`deepmd.pt.model.model.sezm_model._select_neighbor_builder`:
-    ``vesin`` is eligible only for a single-frame batch (``nf == 1``), because
-    its API loops frames in Python (~1 ms/frame). Multi-frame batches stay on
-    ``nv`` (CUDA) or ``dense`` so ``auto_batch_size`` / ``dp test`` do not
-    regress to the per-frame loop.
+    ``vesin`` is preferred for single-frame CUDA inference. Its API loops over
+    frames in Python, so multi-frame CUDA batches prefer ``nv`` and fall back
+    to ``dense`` when Toolkit-Ops is unavailable.
 
     Notes
     -----
-    * CUDA + ``nvalchemiops``: ``nv`` (any ``nf``).
+    * CUDA + ``nf == 1`` + ``vesin.torch``: ``vesin``.
+    * CUDA + ``nvalchemiops``: ``nv``.
+    * CPU + the operator library: ``cell``, whose search is threaded.
     * ``nf == 1`` + ``vesin.torch``: ``vesin``.
     * otherwise: ``dense``.
 
@@ -65,7 +65,7 @@ def resolve_auto_graph_builder(
     Returns
     -------
     str
-        One of ``"nv"``, ``"vesin"``, or ``"dense"``.
+        One of ``"nv"``, ``"cell"``, ``"vesin"``, or ``"dense"``.
 
     Raises
     ------
@@ -76,6 +76,9 @@ def resolve_auto_graph_builder(
 
     from deepmd.pt.utils.nv_nlist import (
         is_nv_available,
+    )
+    from deepmd.pt_expt.utils.cell_graph_builder import (
+        is_cell_search_available,
     )
     from deepmd.pt_expt.utils.vesin_neighbor_list import (
         is_vesin_torch_available,
@@ -88,9 +91,13 @@ def resolve_auto_graph_builder(
         raise ValueError(f"nf must be >= 1, got {nf}")
 
     dev = torch.device(device)
+    if dev.type == "cuda" and nf == 1 and is_vesin_torch_available():
+        return "vesin"
     nv_available = is_nv_available()
     if dev.type == "cuda" and nv_available:
         return "nv"
+    if dev.type == "cpu" and is_cell_search_available():
+        return "cell"
     if nf == 1 and is_vesin_torch_available():
         return "vesin"
     if dev.type == "cuda" and not nv_available:
@@ -232,8 +239,11 @@ def build_ragged_neighbor_graph(
         torch.arange(nf, dtype=n_node.dtype, device=n_node.device), n_node
     )
     offset = torch.cumsum(n_node, 0) - n_node
+    # The node total is the leading axis of the flat coordinates, so it is read
+    # from the shape rather than from ``n_node.sum()``: summing on the device
+    # and reading the result back synchronizes the stream once per step.
     slot = (
-        torch.arange(int(n_node.sum()), dtype=n_node.dtype, device=n_node.device)
+        torch.arange(coord.shape[0], dtype=n_node.dtype, device=n_node.device)
         - offset[frame]
     )
     padded_index = frame * width + slot
@@ -288,6 +298,19 @@ def build_neighbor_graph_for_method(
             with_csr=with_csr,
             pair_excl=pair_excl,
         )
+    if method == "cell":
+        from deepmd.pt_expt.utils.cell_graph_builder import (
+            build_neighbor_graph_cell,
+        )
+
+        return build_neighbor_graph_cell(
+            coord,
+            atype,
+            box,
+            rcut,
+            with_csr=with_csr,
+            pair_excl=pair_excl,
+        )
     if method == "vesin":
         from deepmd.pt_expt.utils.vesin_graph_builder import (
             build_neighbor_graph_vesin,
@@ -316,5 +339,5 @@ def build_neighbor_graph_for_method(
         )
     raise ValueError(
         f"unknown neighbor_graph_method {method!r}; use 'dense', 'ase', "
-        "'vesin', or 'nv'"
+        "'cell', 'vesin', or 'nv'"
     )

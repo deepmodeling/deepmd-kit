@@ -64,6 +64,16 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
                 )
             else:
                 raise NotImplementedError
+        # A bridged child fades its fitting output through a readout gate,
+        # which a concatenated descriptor has no fitting output to apply to.
+        if any(
+            getattr(descrpt, "bridging_switch", None) is not None
+            for descrpt in formatted_descript_list
+        ):
+            raise NotImplementedError(
+                "A hybrid descriptor cannot carry a bridged child; bridge the "
+                "model with a single descriptor."
+            )
         self.descrpt_list = torch.nn.ModuleList(formatted_descript_list)
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):
@@ -169,6 +179,14 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.descrpt_list[0].get_type_map()
+
+    def adam_route_patterns(self) -> list[str]:
+        """Collect child AdamW patterns under their indexed parameter paths."""
+        return [
+            f"descrpt_list.{index}.{pattern}"
+            for index, descriptor in enumerate(self.descrpt_list)
+            for pattern in descriptor.adam_route_patterns()
+        ]
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""

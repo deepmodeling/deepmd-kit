@@ -1,8 +1,23 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """ASE calculator interface module."""
 
+import logging
+import math
+import weakref
+from contextlib import (
+    ExitStack,
+)
+from functools import (
+    partial,
+)
 from pathlib import (
     Path,
+)
+from shutil import (
+    copyfile,
+)
+from tempfile import (
+    TemporaryDirectory,
 )
 from typing import (
     TYPE_CHECKING,
@@ -12,6 +27,7 @@ from typing import (
     Union,
 )
 
+import numpy as np
 from ase.calculators.calculator import (
     Calculator,
     PropertyNotImplementedError,
@@ -23,6 +39,10 @@ from deepmd.infer import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+
     from ase import (
         Atoms,
     )
@@ -30,7 +50,83 @@ if TYPE_CHECKING:
         NeighborList,
     )
 
+    from deepmd.infer.deep_eval import (
+        DeepEvalBackend,
+    )
+
 __all__ = ["DP"]
+
+log = logging.getLogger(__name__)
+
+
+def _compress_dpa4c_for_ase(model: Any) -> bool:
+    """Select supported DPA4C compression without changing other model families."""
+    from deepmd.pt_expt.descriptor.dpa4c import (
+        DescrptDPA4C,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        compression_ineligibility_reason,
+    )
+
+    parts = model.atomic_model.fused_decomposition()
+    if (
+        parts is None
+        or parts[0] is None
+        or not isinstance(parts[0].descriptor, DescrptDPA4C)
+    ):
+        return False
+    reason = compression_ineligibility_reason(parts[0].descriptor)
+    if reason is None:
+        return True
+    log.warning(
+        "DPA4C compression is unavailable: %s Freezing without compression.", reason
+    )
+    return False
+
+
+def _checkpoint_freezer(
+    evaluator: "DeepEvalBackend", head: str | None, *, freeze_requested: bool
+) -> "Callable[..., None] | None":
+    """Select an exporter for the loaded checkpoint's model and head."""
+    from deepmd.pt.infer.deep_eval import DeepEval as PTDeepEval
+    from deepmd.pt.model.model.sezm_model import (
+        SeZMModel,
+    )
+    from deepmd.pt_expt.infer.deep_eval import DeepEval as PTExptDeepEval
+
+    if isinstance(evaluator, PTDeepEval) and isinstance(
+        evaluator.get_model(), SeZMModel
+    ):
+        from deepmd.pt.entrypoints.freeze_pt2 import (
+            freeze_sezm_to_pt2,
+        )
+
+        return partial(
+            freeze_sezm_to_pt2,
+            head=head if evaluator.multi_task else None,
+            with_comm=False,
+        )
+    if (
+        isinstance(evaluator, PTExptDeepEval)
+        and evaluator.metadata["lower_input_kind"] == "graph"
+    ):
+        from deepmd.pt_expt.entrypoints.main import (
+            freeze,
+        )
+
+        # The checkpoint loader selects Default when no head is supplied.
+        return partial(
+            freeze,
+            head="Default" if head is None else head,
+            lower_kind="graph",
+            with_comm=False,
+            compress=(
+                _compress_dpa4c_for_ase(evaluator._dpmodel)
+                if freeze_requested
+                else False
+            ),
+        )
+    return None
 
 
 class DP(Calculator):
@@ -51,6 +147,34 @@ class DP(Calculator):
         The neighbor list object. If None, then build the native neighbor list.
     head : Union[str, None], optional
         a specific model branch choosing from pretrained model, by default None
+    nlist_backend : str, optional
+        Neighbor search for models using the extended-coordinate input schema.
+        The default ``"auto"`` selects an available accelerated search.
+    neighbor_graph_method : str, optional
+        Graph search for PT-expt graph models or PT SeZM/DPA4, by default
+        ``"auto"``. Single-frame CUDA inference prefers Vesin. PT-expt graph
+        models also accept ``"dense"``, ``"ase"``, ``"cell"``, ``"vesin"``,
+        and ``"nv"``; SeZM edge-vector inputs accept ``"vesin"`` and ``"nv"``.
+    neighbor_skin : float, optional
+        Vesin candidate-search skin in angstrom, by default 1.0. Set to zero
+        to rebuild candidates every step. All searches still use the model's
+        exact cutoff for the returned neighbors. Applies to both graph and
+        extended-coordinate inference, independently of checkpoint freezing.
+    freeze : bool, optional
+        Export an eligible ``.pt`` checkpoint to ``.pt2`` for inference,
+        by default False.
+        Supports PT DPA4/SeZM and graph-eligible PT-expt models. Each call
+        retains a private artifact for its evaluator's lifetime and atomically
+        publishes a copy as ``<checkpoint-stem>-ase_single.pt2`` beside the
+        checkpoint. Concurrent processes retain their own selected model heads;
+        the last publication replaces the shared copy. Export uses the
+        backend's freeze-time kernel policy and omits the
+        multi-rank communication artifact. DPA4C models are also compressed
+        when their configuration supports it; otherwise a warning explains
+        why the export remains uncompressed. Other models ignore this option
+        and are loaded directly. Direct checkpoint inference for supported
+        models can be substantially slower; False is intended for debugging
+        without the compilation overhead.
 
     Examples
     --------
@@ -92,21 +216,74 @@ class DP(Calculator):
         neighbor_list: Optional["NeighborList"] = None,
         head: str | None = None,
         nlist_backend: str = "auto",
+        freeze: bool = False,
+        neighbor_graph_method: str = "auto",
+        neighbor_skin: float = 1.0,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
+        if not math.isfinite(neighbor_skin) or neighbor_skin < 0:
+            raise ValueError(
+                f"neighbor_skin must be finite and non-negative, got {neighbor_skin}"
+            )
+        model_path = Path(model).resolve()
         self.dp = DeepPot(
-            str(Path(model).resolve()),
+            str(model_path),
             neighbor_list=neighbor_list,
             head=head,
             nlist_backend=nlist_backend,
+            neighbor_graph_method=neighbor_graph_method,
+            neighbor_skin=neighbor_skin,
         )
+        freezer = (
+            _checkpoint_freezer(self.dp.deep_eval, head, freeze_requested=freeze)
+            if model_path.suffix == ".pt"
+            else None
+        )
+        if freezer is not None and freeze:
+            output = model_path.with_name(f"{model_path.stem}-ase_single.pt2")
+            # Release the eager model before the exporter constructs its model.
+            self.dp.close()
+            del self.dp
+            log.info("Freezing ASE checkpoint %s to %s", model_path, output)
+            with ExitStack() as cleanup:
+                temporary = TemporaryDirectory(
+                    prefix=f".{model_path.stem}-ase-", dir=model_path.parent
+                )
+                cleanup.callback(temporary.cleanup)
+                private = Path(temporary.name) / output.name
+                freezer(str(model_path), str(private))
+                self.dp = DeepPot(
+                    str(private),
+                    neighbor_list=neighbor_list,
+                    nlist_backend=nlist_backend,
+                    neighbor_graph_method=neighbor_graph_method,
+                    neighbor_skin=neighbor_skin,
+                )
+                # A separate inode keeps later writes to the public artifact
+                # from changing the file reopened by evaluator serialization.
+                publication = Path(temporary.name) / "publish.pt2"
+                copyfile(private, publication)
+                publication.replace(output)
+                weakref.finalize(self.dp.deep_eval, temporary.cleanup)
+                cleanup.pop_all()
+        elif freezer is not None:
+            log.warning(
+                "ASE inference directly from a .pt checkpoint can be SUBSTANTIALLY "
+                "slower than a frozen .pt2 model. Use DP(..., freeze=True), or "
+                "freeze the checkpoint manually and load the .pt2 file. "
+                "freeze=False is intended for debugging and similar short runs "
+                "that avoid the upfront compilation overhead."
+            )
         if type_dict:
             self.type_dict = type_dict
         else:
             self.type_dict = dict(
                 zip(self.dp.get_type_map(), range(self.dp.get_ntypes()), strict=True)
             )
+        self._cached_numbers: np.ndarray | None = None
+        self._cached_types: np.ndarray | None = None
+        self._cached_type_dict: dict[str, int] = {}
 
     def calculate(
         self,
@@ -134,8 +311,22 @@ class DP(Calculator):
             cell = self.atoms.get_cell().reshape([1, -1])
         else:
             cell = None
-        symbols = self.atoms.get_chemical_symbols()
-        atype = [self.type_dict[k] for k in symbols]
+        numbers = self.atoms.numbers
+        if (
+            not np.array_equal(numbers, self._cached_numbers)
+            or self.type_dict != self._cached_type_dict
+        ):
+            self._cached_types = np.fromiter(
+                (
+                    self.type_dict[symbol]
+                    for symbol in self.atoms.get_chemical_symbols()
+                ),
+                dtype=np.int32,
+                count=len(numbers),
+            )
+            self._cached_numbers = numbers.copy()
+            self._cached_type_dict = self.type_dict.copy()
+        atype = self._cached_types
 
         fparam = self.atoms.info.get("fparam", None)
         aparam = self.atoms.info.get("aparam", None)
@@ -152,13 +343,17 @@ class DP(Calculator):
         # see https://gitlab.com/ase/ase/-/merge_requests/2485
         self.results["free_energy"] = e[0][0]
         self.results["forces"] = f[0]
-        self.results["virial"] = v[0].reshape(3, 3)
+        virial = v[0].reshape(3, 3)
+        self.results["virial"] = virial
 
         # convert virial into stress for lattice relaxation
         if cell is not None:
             # the usual convention (tensile stress is positive)
             # stress = -virial / volume
-            stress = -0.5 * (v[0].copy() + v[0].copy().T) / atoms.get_volume()
+            # ASE represents Cauchy stress as a symmetric tensor.  Reshape the
+            # flat model output before transposing; ``.T`` on the original
+            # one-dimensional virial array would otherwise be a no-op.
+            stress = -0.5 * (virial + virial.T) / atoms.get_volume()
             # Voigt notation
             self.results["stress"] = stress.flat[[0, 4, 8, 5, 2, 1]]
         elif "stress" in properties:

@@ -259,13 +259,15 @@ both graphs.  The options are:
       cudagraphs capture autograd metadata only once.  Higher-order
       gradients need fresh metadata per call, so cudagraphs would feed
       stale autograd state into the second backward.
-* ``max_fusion_size=8``
+* ``max_fusion_size=DP_FUSION_SIZE`` (default 8)
       Caps kernel fusion complexity so Inductor's scheduler does not
       time out on the large edge-level reductions inside the
       descriptor when nsel is big.  The tighter value keeps both
       training and inference fusions small enough for Triton IR
       generation on GPU backends that are sensitive to large dynamic
-      edge graphs.
+      edge graphs. An explicit environment value permits a wider fusion
+      search on a validated compiler and workload without weakening the
+      portable default.
 * ``triton.persistent_reductions=False``
       Inductor's persistent-reduction scheduler fuses a ``sum`` with
       *all* neighbouring pointwise ops (``tanh_backward``, ``pow``,
@@ -470,6 +472,9 @@ if TYPE_CHECKING:
     from torch import Tensor
     from deepmd.dpmodel.utils.neighbor_list import EdgeNeighborList, NeighborList
 
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotential as InnerPotentialDP,
+)
 from deepmd.pt.model.atomic_model.sezm_atomic_model import (
     SeZMAtomicModel,
 )
@@ -506,16 +511,11 @@ from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach,
     trace_pad_dim,
 )
-from deepmd.pt.utils.nv_nlist import (
-    NvNeighborList,
-    is_nv_available,
+from deepmd.pt_expt.utils.auto_neighbor_list import (
+    AdaptiveNeighborList,
 )
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
-)
-from deepmd.pt_expt.utils.vesin_neighbor_list import (
-    VesinNeighborList,
-    is_vesin_torch_available,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -524,46 +524,6 @@ from deepmd.utils.version import (
 log = logging.getLogger(__name__)
 
 SeZMModel_ = make_model(SeZMAtomicModel)
-
-
-def _select_neighbor_builder(nf: int, device: torch.device) -> NeighborList:
-    """Select the O(N) neighbor builder for the given batch shape and device.
-
-    A single CPU frame uses ``vesin``: its lightweight cell list has no
-    per-frame batching to amortize and avoids the ``nvalchemiops`` (Warp)
-    launch overhead. Every other case -- any CUDA input or any multi-frame
-    batch -- uses ``nvalchemiops``, whose batched kernel amortizes the launch
-    cost across frames. Both builders keep every neighbor within ``rcut``, so
-    the resulting edge set never depends on ``sel``. ``vesin`` also serves as
-    the fallback when ``nvalchemiops`` is absent.
-
-    Parameters
-    ----------
-    nf : int
-        Number of frames in the batch.
-    device : torch.device
-        Device of the input coordinates.
-
-    Returns
-    -------
-    NeighborList
-        A builder instance whose ``build`` method produces the neighbor list.
-
-    Raises
-    ------
-    RuntimeError
-        If neither ``nvalchemiops`` nor ``vesin`` is importable.
-    """
-    if device.type == "cpu" and nf == 1 and is_vesin_torch_available():
-        return VesinNeighborList()
-    if is_nv_available():
-        return NvNeighborList()
-    if is_vesin_torch_available():
-        return VesinNeighborList()
-    raise RuntimeError(
-        "SeZM neighbor-list construction requires either 'nvalchemiops' or "
-        "'vesin', but neither is importable."
-    )
 
 
 # Apply the process-global PyTorch workarounds the compile pipeline relies on
@@ -647,19 +607,21 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         bool(descriptor.random_gamma),
         descriptor.charge_spin_embedding is not None,
         descriptor.spin_embedding is not None,
-        descriptor.inner_clamp is not None,
+        descriptor.bridging_clamp is not None,
         descriptor.bridging_switch is not None,
-        descriptor.inner_clamp_r_inner,
-        descriptor.inner_clamp_r_outer,
+        descriptor.bridging_f_inner,
+        descriptor.bridging_f_outer,
+        descriptor.bridging_scale,
         int(descriptor.get_dim_chg_spin()),
     )
-    fitting_state = (_int_tuple(fitting.exclude_types),)
+    fitting_state = (
+        _int_tuple(fitting.exclude_types),
+        bool(fitting.needs_vacuum_descriptor()),
+    )
     atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
     model_state = (
         str(model.bridging_method),
         model.inter_potential is not None,
-        float(model.bridging_r_inner),
-        float(model.bridging_r_outer),
         tuple(model.get_type_map()),
     )
     return (
@@ -701,8 +663,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         use_compile: bool = False,
         enable_tf32: bool = True,
         bridging_method: str = "none",
-        bridging_r_inner: float = 0.5,
-        bridging_r_outer: float = 0.8,
         lora: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -711,6 +671,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         self.redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
         self.use_compile = bool(use_compile)
         self.enable_tf32 = bool(enable_tf32)
+        self._inference_neighbor_list: NeighborList | None = None
         # LoRA injection happens in Trainer.__init__ after pre-trained state is loaded.
         self.lora_config: dict[str, Any] | None = None if lora is None else dict(lora)
         self._dens_compiled = False
@@ -758,8 +719,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         # === Bridging (optional short-range zone bridging) ===
         self.bridging_method: str = str(bridging_method).upper()
-        self.bridging_r_inner = float(bridging_r_inner)
-        self.bridging_r_outer = float(bridging_r_outer)
         self.inter_potential: InnerPotential | None = (
             InnerPotential(type_map=self.get_type_map(), mode=self.bridging_method)
             if self.bridging_method != "NONE"
@@ -841,56 +800,52 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             noise_mask=noise_mask,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict: dict[str, torch.Tensor] = {}
+        model_predict: dict[str, torch.Tensor] = {}
 
-            # === Step 1. Energy ===
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
+        # === Step 1. Energy ===
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
 
-            # === Step 2. Force (independent branch) ===
-            if self.do_grad_r("energy"):
-                model_predict["force"] = rearrange(
-                    model_ret["energy_derv_r"],
-                    "nf nloc 1 three -> nf nloc three",
-                    three=3,
-                )
-            else:
-                model_predict["force"] = model_ret["dforce"]
-
-            if self.get_active_mode() == "dens":
-                if "energy_norm" in model_ret:
-                    model_predict["energy_norm"] = model_ret["energy_norm"]
-                if "atom_energy_norm" in model_ret:
-                    model_predict["atom_energy_norm"] = model_ret["atom_energy_norm"]
-                if "dforce_norm" in model_ret:
-                    model_predict["force_norm"] = model_ret["dforce_norm"]
-                if "clean_dforce_norm" in model_ret:
-                    model_predict["clean_force_norm"] = model_ret["clean_dforce_norm"]
-                if "denoising_dforce_norm" in model_ret:
-                    model_predict["denoising_force_norm"] = model_ret[
-                        "denoising_dforce_norm"
-                    ]
-
-            # === Step 3. Virial ===
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = rearrange(
-                    model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
-                )
-                if do_atomic_virial:
-                    model_predict["atom_virial"] = rearrange(
-                        model_ret["energy_derv_c"],
-                        "nf nloc 1 nine -> nf nloc nine",
-                        nine=9,
-                    )
-
-            # === Step 4. Mask ===
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-
+        # === Step 2. Force (independent branch) ===
+        if self.do_grad_r("energy"):
+            model_predict["force"] = rearrange(
+                model_ret["energy_derv_r"],
+                "nf nloc 1 three -> nf nloc three",
+                three=3,
+            )
         else:
-            model_predict = model_ret
-            model_predict["updated_coord"] += coord
+            model_predict["force"] = model_ret["dforce"]
+
+        if self.get_active_mode() == "dens":
+            if "energy_norm" in model_ret:
+                model_predict["energy_norm"] = model_ret["energy_norm"]
+            if "atom_energy_norm" in model_ret:
+                model_predict["atom_energy_norm"] = model_ret["atom_energy_norm"]
+            if "dforce_norm" in model_ret:
+                model_predict["force_norm"] = model_ret["dforce_norm"]
+            if "clean_dforce_norm" in model_ret:
+                model_predict["clean_force_norm"] = model_ret["clean_dforce_norm"]
+            if "denoising_dforce_norm" in model_ret:
+                model_predict["denoising_force_norm"] = model_ret[
+                    "denoising_dforce_norm"
+                ]
+
+        # === Step 3. Virial ===
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = rearrange(
+                model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
+            )
+            if do_atomic_virial:
+                model_predict["atom_virial"] = rearrange(
+                    model_ret["energy_derv_c"],
+                    "nf nloc 1 nine -> nf nloc nine",
+                    nine=9,
+                )
+
+        # === Step 4. Mask ===
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
+
         return model_predict
 
     def forward_embedding(
@@ -1249,6 +1204,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         "train" if self.training else "eval",
                         has_coord_corr,
                         time.perf_counter() - self._core_compute_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._core_compute_pending_compile_t0 = None
                     self._core_compute_pending_compile_key = None
@@ -1371,6 +1327,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     log.info(
                         "SeZM: finished compiling dens path in %.2fs",
                         time.perf_counter() - self._dens_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._dens_pending_compile_t0 = None
             else:
@@ -1552,8 +1509,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # either way. ``comm_dict`` (possibly ``None``) and ``nloc`` are
         # forwarded unconditionally -- ``forward_with_edges`` ignores ``nloc``
         # without ``comm_dict``, and ``extended_coord`` only supplies the device.
+        fitting_net = self.atomic_model.fitting_net
         with nvtx_range("SeZM/descriptor"):
-            descriptor, _ = descriptor_model.forward_with_edges(
+            descriptor, _, vacuum, node_gate = descriptor_model.forward_with_edges(
                 extended_coord=coord,
                 extended_atype=descriptor_atype,
                 edge_index=edge_index,
@@ -1563,18 +1521,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 spin=spin,
                 comm_dict=comm_dict,
                 nloc=nloc,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if fitting_net.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 3. Fitting net ===
         # The same fitting forward serves both modes; ``embedding_only`` only asks
         # it to also return the last hidden activation.
         with nvtx_range("SeZM/fitting_net"):
-            fit_ret = self.atomic_model.fitting_net(
+            fit_ret = fitting_net(
                 descriptor,
                 atype,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_atomic_feature=embedding_only,
+                node_gate=node_gate,
             )
 
         # === Embedding short circuit ===
@@ -1614,7 +1577,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 atype_flat=descriptor_atype.reshape(-1),
                 edge_mask=inter_potential_edge_mask,
                 n_node=nf * nloc,
-                real_type_count=self._get_inter_potential_real_type_count(),
             ).view(nf, nloc, 1)
 
         # === Step 5. Apply atom mask to the complete physical output ===
@@ -1658,8 +1620,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             edge_energy_deriv(
                 energy_redu,
                 edge_vec,
-                edge_scatter_index[0],
-                edge_scatter_index[1],
+                edge_scatter_index,
                 edge_mask,
                 nf,
                 nscatter,
@@ -1754,7 +1715,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         # === Step 3. Descriptor forward with force embedding ===
         with nvtx_range("SeZM/descriptor_dens"):
-            descriptor, latent = descriptor_model.forward_with_edges(
+            descriptor, latent, vacuum, node_gate = descriptor_model.forward_with_edges(
                 extended_coord=extended_coord[:, :nloc, :],
                 extended_atype=atype,
                 edge_index=edge_index,
@@ -1762,6 +1723,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_mask=edge_mask,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if dens_fitting.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 4. Dens fitting net ===
@@ -1773,7 +1737,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 noise_mask=noise_mask,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_components=True,
+                node_gate=node_gate,
             )
         return torch.cat(
             [
@@ -1835,8 +1801,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Returns
         -------
         dict[str, torch.Tensor]
-            Lower-interface outputs.
-            When a fitting net is present, this always includes:
+            Lower-interface outputs. Always includes:
             - `atom_energy`: atomic energy on local atoms with shape (nf, nloc, 1)
             - `energy`: reduced energy with shape (nf, 1)
             It additionally includes:
@@ -1846,7 +1811,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             - `virial`: reduced virial with shape (nf, 9) when `self.do_grad_c("energy")` is true
             - `extended_virial`: per-extended-atom virial with shape (nf, nall, 9)
               only when both `self.do_grad_c("energy")` and `do_atomic_virial` are true
-            If no fitting net is present, the raw result of `forward_common_lower()` is returned.
         """
         if self.get_active_mode() == "dens":
             raise NotImplementedError(
@@ -1865,37 +1829,34 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             extended_atype=extended_atype,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict: dict[str, torch.Tensor] = {}
+        model_predict: dict[str, torch.Tensor] = {}
 
-            # === Step 1. Energy ===
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
+        # === Step 1. Energy ===
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
 
-            # === Step 2. Force (independent branch) ===
-            if self.do_grad_r("energy"):
-                model_predict["extended_force"] = rearrange(
-                    model_ret["energy_derv_r"],
-                    "nf nall 1 three -> nf nall three",
-                    three=3,
-                )
-            else:
-                assert model_ret["dforce"] is not None
-                model_predict["dforce"] = model_ret["dforce"]
-
-            # === Step 3. Virial ===
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = rearrange(
-                    model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
-                )
-                if do_atomic_virial:
-                    model_predict["extended_virial"] = rearrange(
-                        model_ret["energy_derv_c"],
-                        "nf nall 1 nine -> nf nall nine",
-                        nine=9,
-                    )
+        # === Step 2. Force (independent branch) ===
+        if self.do_grad_r("energy"):
+            model_predict["extended_force"] = rearrange(
+                model_ret["energy_derv_r"],
+                "nf nall 1 three -> nf nall three",
+                three=3,
+            )
         else:
-            model_predict = model_ret
+            assert model_ret["dforce"] is not None
+            model_predict["dforce"] = model_ret["dforce"]
+
+        # === Step 3. Virial ===
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = rearrange(
+                model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
+            )
+            if do_atomic_virial:
+                model_predict["extended_virial"] = rearrange(
+                    model_ret["energy_derv_c"],
+                    "nf nall 1 nine -> nf nall nine",
+                    nine=9,
+                )
         return model_predict
 
     # =========================================================================
@@ -1950,7 +1911,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 full_cache_key
             ]
             self._task_buf_order_cache[cache_key] = _SEZM_TASK_BUF_ORDER[structure_key]
-            log.info(
+            log.debug(
                 "SeZM: reusing shared compiled graph (mode=%s, coord_corr=%s)",
                 mode,
                 has_coord_corr,
@@ -1961,6 +1922,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             "SeZM: start tracing and compiling (mode=%s, coord_corr=%s)",
             mode,
             has_coord_corr,
+            extra={"rank_scope": "all"},
         )
 
         # Promote the per-task buffers (see ``get_task_buffer_names``) to
@@ -2437,11 +2399,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         check_compile_torch_version()
         from torch._inductor import config as inductor_config
 
-        log.info("SeZM: start compiling dens path")
+        log.info("SeZM: start compiling dens path", extra={"rank_scope": "all"})
         _compile_t0 = time.perf_counter()
 
         inductor_config.max_autotune_report_choices_stats = False
         inductor_config.autotune_num_choices_displayed = 0
+        compile_options = self._inductor_compile_options(inference=not self.training)
 
         object.__setattr__(
             self,
@@ -2450,13 +2413,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 self.core_compute_dens,
                 backend="inductor",
                 dynamic=True,
-                options={
-                    "max_autotune": False,
-                    "epilogue_fusion": False,
-                    "triton.cudagraphs": False,
-                    "shape_padding": True,
-                    "max_fusion_size": 64,
-                },
+                options=compile_options,
             ),
         )
         self._dens_compiled = True
@@ -2760,6 +2717,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         """
         return True
 
+    def set_inference_neighbor_list(self, neighbor_list: NeighborList | None) -> None:
+        """Select inference geometry construction while retaining native forward.
+
+        The strategy is runtime state, independent of model parameters and
+        serialization. Training retains its own batch-aware builder policy.
+        """
+        self._inference_neighbor_list = neighbor_list
+
+    def _get_neighbor_builder(self) -> NeighborList:
+        if not self.training and self._inference_neighbor_list is not None:
+            return self._inference_neighbor_list
+        return AdaptiveNeighborList(method="native")
+
     def build_neighbor_list(
         self,
         coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
@@ -2768,7 +2738,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     ) -> EdgeNeighborList:
         """Build the unified edge-vector schema for the ``forward`` entry."""
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
+        return self._get_neighbor_builder().build(
             coord.view(nf, nloc, 3),
             atype,
             box,
@@ -2795,7 +2765,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         contract order ``(extended_coord, extended_atype, nlist, mapping)``.
         """
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
+        return self._get_neighbor_builder().build(
             coord.view(nf, nloc, 3),
             atype,
             box,
@@ -3224,6 +3194,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Target mode to reset.
         """
         self.atomic_model.reset_head_for_mode(mode)
+        self.drop_compiled_graphs(mode)
+
+    def drop_compiled_graphs(self, mode: str) -> None:
+        """
+        Drop the compiled graphs of one head so the next forward retraces.
+
+        Parameters
+        ----------
+        mode
+            ``"dens"`` for the DeNS head; any other value for the energy head,
+            whose embedding graph reads the same fitting head and is dropped
+            together with it.
+        """
         if mode == "dens":
             self._dens_compiled = False
             self._dens_pending_compile_t0 = None
@@ -3231,12 +3214,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         else:
             self._core_compute_pending_compile_t0 = None
             self._core_compute_pending_compile_key = None
-            # Drop every compile slot so the next forward retraces against the
-            # reinitialised fitting head.  The embedding graph reads the same
-            # fitting head, so it is invalidated together with the energy graph.
             self.compiled_core_compute_cache.clear()
             object.__setattr__(self, "compiled_embedding", None)
             object.__setattr__(self, "_embedding_task_buf_order", None)
+
+    def fold_vacuum_reference(self) -> None:
+        """
+        Fold the vacuum reference into the energy fitting and drop its compiled graphs.
+
+        A traced graph bakes in whether reference nodes trail the real nodes,
+        so the energy head retraces after the fold. The DeNS head serves
+        training alone and is not exported, so it keeps its reference.
+        """
+        self.atomic_model.fold_vacuum_reference()
+        self.drop_compiled_graphs("ener")
 
     # =========================================================================
     # Bridging Helpers
@@ -3250,6 +3241,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         edge_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Build the complete validity mask for analytical pair energies.
+
+        The analytical term receives the pair exclusions of the descriptor and
+        skips every edge that touches a phantom atom. Atom exclusions do not
+        enter: they act on atomic outputs, so the final atom mask drops the
+        half-energy of an excluded atom while its partner keeps its own half,
+        as the composition of the other backends does.
 
         Parameters
         ----------
@@ -3272,7 +3269,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         src = edge_index[0]
         dst = edge_index[1]
-        atype_flat = atype.reshape(-1)
         real_atom_flat = real_atom.reshape(-1)
         keep = (
             edge_mask
@@ -3282,22 +3278,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         descriptor = self.atomic_model.descriptor
         if descriptor.exclude_types:
-            keep = keep & descriptor._edge_type_keep_mask(atype_flat, src, dst)
-
-        atom_excl = self.atomic_model.atom_excl
-        if atom_excl is not None:
-            atom_is_included = atom_excl(atype).to(torch.bool).reshape(-1)
-            keep = (
-                keep
-                & atom_is_included.index_select(0, src)
-                & atom_is_included.index_select(0, dst)
-            )
-
+            keep = keep & descriptor._edge_type_keep_mask(atype.reshape(-1), src, dst)
         return keep
-
-    def _get_inter_potential_real_type_count(self) -> int:
-        """Return the real-type count used to mask analytical pair potentials."""
-        return len(self.get_type_map())
 
     # =========================================================================
     # Type and Output Metadata
@@ -3376,8 +3358,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             "type": self.model_type,
             "atomic_model": self.atomic_model.serialize(),
             "bridging_method": self.bridging_method,
-            "bridging_r_inner": self.bridging_r_inner,
-            "bridging_r_outer": self.bridging_r_outer,
             "lora": self.lora_config,
         }
 
@@ -3460,47 +3440,26 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 # InnerPotential: analytical pair potentials for bridging
 # =============================================================================
 
-# fmt: off
-ELEMENT_TO_Z: dict[str, int] = {
-    "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8,
-    "F": 9, "Ne": 10, "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15,
-    "S": 16, "Cl": 17, "Ar": 18, "K": 19, "Ca": 20, "Sc": 21, "Ti": 22,
-    "V": 23, "Cr": 24, "Mn": 25, "Fe": 26, "Co": 27, "Ni": 28, "Cu": 29,
-    "Zn": 30, "Ga": 31, "Ge": 32, "As": 33, "Se": 34, "Br": 35, "Kr": 36,
-    "Rb": 37, "Sr": 38, "Y": 39, "Zr": 40, "Nb": 41, "Mo": 42, "Tc": 43,
-    "Ru": 44, "Rh": 45, "Pd": 46, "Ag": 47, "Cd": 48, "In": 49, "Sn": 50,
-    "Sb": 51, "Te": 52, "I": 53, "Xe": 54, "Cs": 55, "Ba": 56, "La": 57,
-    "Ce": 58, "Pr": 59, "Nd": 60, "Pm": 61, "Sm": 62, "Eu": 63, "Gd": 64,
-    "Tb": 65, "Dy": 66, "Ho": 67, "Er": 68, "Tm": 69, "Yb": 70, "Lu": 71,
-    "Hf": 72, "Ta": 73, "W": 74, "Re": 75, "Os": 76, "Ir": 77, "Pt": 78,
-    "Au": 79, "Hg": 80, "Tl": 81, "Pb": 82, "Bi": 83, "Po": 84, "At": 85,
-    "Rn": 86, "Fr": 87, "Ra": 88, "Ac": 89, "Th": 90, "Pa": 91, "U": 92,
-    "Np": 93, "Pu": 94, "Am": 95, "Cm": 96, "Bk": 97, "Cf": 98, "Es": 99,
-    "Fm": 100, "Md": 101, "No": 102, "Lr": 103, "Rf": 104, "Db": 105,
-    "Sg": 106, "Bh": 107, "Hs": 108, "Mt": 109, "Ds": 110, "Rg": 111,
-    "Cn": 112, "Nh": 113, "Fl": 114, "Mc": 115, "Lv": 116, "Ts": 117,
-    "Og": 118,
-}
-# fmt: on
-
-# ZBL screening function coefficients
-_ZBL_A_COEFF = (0.18175, 0.50986, 0.28022, 0.028171)
-_ZBL_B_COEFF = (3.1998, 0.94229, 0.4029, 0.20162)
-
-# Physical constants
-_KE_EV_A = 14.3996  # Coulomb constant in eV·Å
-_A_BOHR = 0.5291772109  # Bohr radius in Å
-
 
 class InnerPotential(torch.nn.Module):
-    """
+    r"""
     Analytical pair potential module for Zone bridging.
 
-    Supports the Ziegler-Biersack-Littmark (ZBL) screened nuclear repulsion
-    potential. Designed to be extensible to other analytical forms (LJ, Morse,
-    etc.) through the ``mode`` parameter.
+    Every supported potential is a screened Coulomb series in the pair
+    separation,
 
-    Each pair (i, j) contributes ``V_ZBL(r_ij) / 2`` to both atom i and atom j,
+    .. math::
+
+       V_{ab}(r) = \frac1r \sum_{k=1}^{4} A_{abk} e^{-c_{abk} r},
+
+    so one table of eight constants per ordered type pair describes all of
+    them. ``"ZBL"`` builds that table from the Ziegler-Biersack-Littmark
+    universal screening function, and ``"NLH"`` from the bundled
+    Nordlund-Lehtola-Hobler coefficients; the table itself is built by the
+    backend-agnostic :class:`~deepmd.dpmodel.atomic_model.inner_potential.InnerPotential`,
+    so both backends evaluate the same constants.
+
+    Each pair (i, j) contributes ``V(r_ij) / 2`` to both atom i and atom j,
     avoiding double-counting from the symmetric neighbor list.
 
     Parameters
@@ -3509,7 +3468,7 @@ class InnerPotential(torch.nn.Module):
         Element symbols (e.g. ``["O", "H"]``). Index in this list corresponds
         to the ``atype`` integer values.
     mode : str
-        Potential formula. Currently only ``"zbl"`` is supported.
+        Potential formula, ``"zbl"`` or ``"nlh"``. Case-insensitive.
 
     Raises
     ------
@@ -3521,49 +3480,22 @@ class InnerPotential(torch.nn.Module):
     def __init__(self, type_map: list[str], mode: str = "zbl") -> None:
         super().__init__()
         mode = mode.upper()
-        if mode != "ZBL":
+        if mode not in InnerPotentialDP.SUPPORTED_MODES:
             raise ValueError(f"Unknown InnerPotential mode: {mode}")
         self.mode = mode
-        self.ntypes_real = len(type_map)
+        self.ntypes = len(type_map)
 
-        atomic_numbers = []
-        for elem in type_map:
-            z = ELEMENT_TO_Z.get(elem)
-            if z is None:
-                raise ValueError(f"Unknown element symbol: {elem}")
-            atomic_numbers.append(z)
+        # Derived from ``type_map`` and ``mode``, hence rebuilt on construction
+        # and kept out of the checkpoint.
         self.register_buffer(
-            "atomic_numbers",
-            torch.tensor(atomic_numbers, dtype=torch.float64, device=env.DEVICE),
+            "series_table",
+            torch.tensor(
+                InnerPotentialDP.series_table_from_type_map(type_map, mode=mode),
+                dtype=torch.float64,
+                device=env.DEVICE,
+            ),
+            persistent=False,
         )
-
-    def _zbl_pair_energy(
-        self,
-        r: torch.Tensor,
-        zi: torch.Tensor,
-        zj: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Compute ZBL pair energy for given distances and nuclear charges.
-
-        Parameters
-        ----------
-        r : torch.Tensor
-            Pair distances with shape (...) in Å.
-        zi : torch.Tensor
-            Nuclear charge of atom i with shape (...).
-        zj : torch.Tensor
-            Nuclear charge of atom j with shape (...).
-
-        Returns
-        -------
-        torch.Tensor
-            Pair energies with shape (...) in eV.
-        """
-        a_screen = 0.88534 * _A_BOHR / (zi.pow(0.23) + zj.pow(0.23))
-        x = r / a_screen
-        phi = sum(a * torch.exp(-b * x) for a, b in zip(_ZBL_A_COEFF, _ZBL_B_COEFF))
-        return _KE_EV_A * zi * zj / r * phi
 
     def forward(
         self,
@@ -3572,7 +3504,6 @@ class InnerPotential(torch.nn.Module):
         atype_flat: torch.Tensor,
         edge_mask: torch.Tensor,
         n_node: int,
-        real_type_count: int | None = None,
     ) -> torch.Tensor:
         """
         Compute per-atom pair energy from the sparse edge list.
@@ -3594,42 +3525,25 @@ class InnerPotential(torch.nn.Module):
             Boolean mask with shape (E,). True means valid edge.
         n_node : int
             Number of flattened local nodes.
-        real_type_count
-            Number of real atom types.  Types ``>= real_type_count`` are
-            virtual spin types: edges touching them are masked out.  If
-            ``None``, all configured types are real.
 
         Returns
         -------
         torch.Tensor
             Per-atom pair energy with shape (1, N, 1) in eV.
         """
-        if real_type_count is None:
-            real_type_count = self.ntypes_real
+        stride = self.ntypes + 1
         src = edge_index[0].to(dtype=torch.long)
         dst = edge_index[1].to(dtype=torch.long)
-
-        # Wrap virtual spin types (>= real_type_count) back onto their real
-        # parent type so the Z lookup never indexes out of range; their edges
-        # are masked out below regardless.
-        atype_for_z = atype_flat.clamp(min=0)
-        atype_for_z = torch.where(
-            atype_for_z >= real_type_count,
-            atype_for_z - real_type_count,
-            atype_for_z,
-        )
+        # Padded atoms carry type -1; their edges are masked below, so the
+        # table lookup only needs a valid index for them.
+        atype_row = atype_flat.clamp(min=0)
 
         r = edge_vec.to(dtype=torch.float64).norm(dim=-1).clamp(min=1e-10)  # (E,)
-        z_all = self.atomic_numbers[atype_for_z]  # (N,)
-        zi = z_all[src]  # (E,)
-        zj = z_all[dst]  # (E,)
-
-        pair_e = self._zbl_pair_energy(r, zi, zj)  # (E,)
-        # Drop padded edges and any edge touching a virtual (spin) node.
-        node_is_real = atype_flat < real_type_count  # (N,)
-        edge_is_real = node_is_real[src] & node_is_real[dst]  # (E,)
-        valid = edge_mask & edge_is_real
-        pair_e = pair_e * valid.to(dtype=pair_e.dtype)
+        # Row ``center * (T + 1) + neighbor``, the ordered-pair index the fused
+        # kernels use, with the destination as the center.
+        row = self.series_table[atype_row[dst] * stride + atype_row[src]]  # (E, 8)
+        pair_e = (row[:, :4] * torch.exp(-row[:, 4:] * r[:, None])).sum(-1) / r  # (E,)
+        pair_e = pair_e * edge_mask.to(dtype=pair_e.dtype)
 
         # Half contribution to each destination atom
         atom_energy = torch.zeros(n_node, dtype=pair_e.dtype, device=pair_e.device)

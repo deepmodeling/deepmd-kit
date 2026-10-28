@@ -19,17 +19,26 @@ from deepmd.pt_expt.entrypoints.main import (
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
+from deepmd.pt_expt.train.training import (
+    model_change_out_bias,
+)
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
+from deepmd.pt_expt.utils.stat import (
+    make_stat_input,
+)
 from deepmd.utils.argcheck import (
     normalize,
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 
@@ -184,6 +193,7 @@ class TestChangeBias(unittest.TestCase):
 
         # Build & train 1-step model
         config = _make_config(data_dir)
+        config["model"]["preset_out_bias"] = {"energy": [-10.0, -13.6]}
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
         config["training"]["save_ckpt"] = "model.ckpt"
@@ -193,8 +203,18 @@ class TestChangeBias(unittest.TestCase):
 
         cls.model_path = os.path.join(cls.tmpdir, "model.ckpt.pt")
 
-        # Record original bias
-        cls.original_bias = to_numpy(trainer.wrapper.model["Default"].get_out_bias())
+        # A checkpoint may already carry a downstream-adjusted finite bias.
+        model = trainer.wrapper.model["Default"]
+        old_bias = model.get_out_bias()
+        model.set_out_bias(
+            torch.as_tensor(
+                [7.0, 8.0], dtype=old_bias.dtype, device=old_bias.device
+            ).reshape(old_bias.shape)
+        )
+        checkpoint = torch.load(cls.model_path, map_location=DEVICE, weights_only=True)
+        checkpoint["model"] = trainer.wrapper.state_dict()
+        torch.save(checkpoint, cls.model_path)
+        cls.original_bias = to_numpy(model.get_out_bias()).copy()
 
         # Pre-freeze shared .pte and .pt2 files so individual tests don't
         # each pay the AOTInductor compilation cost (~82s per .pt2).
@@ -231,6 +251,44 @@ class TestChangeBias(unittest.TestCase):
         wrapper.load_state_dict(model_state)
         return model
 
+    def _expected_fitted_bias(self):
+        model = self._load_model_from_ckpt(self.model_path)
+        # Compare against the established no-preset statistics path with the
+        # same network and adjusted bias, rather than starting from the preset.
+        model.atomic_model.preset_out_bias = None
+        data = DeepmdDataSystem(
+            systems=self.data_file,
+            batch_size=1,
+            test_size=1,
+            rcut=model.get_rcut(),
+            type_map=model.get_type_map(),
+        )
+        from deepmd.pt_expt.train.training import (
+            get_loss,
+        )
+
+        loss = get_loss({"inference": True}, 1.0, len(model.get_type_map()), model)
+        data.add_data_requirements(loss.label_requirement)
+        sampled = make_stat_input(data, min(data.get_nbatches()))
+        return to_numpy(model_change_out_bias(model, sampled).get_out_bias())
+
+    def _assert_preset_bias_update(self, model) -> None:
+        np.testing.assert_allclose(
+            to_numpy(model.get_out_bias()), self._expected_fitted_bias(), atol=1e-10
+        )
+        self.assertEqual(
+            model.atomic_model.preset_out_bias, {"energy": [[-10.0], [-13.6]]}
+        )
+
+    def test_default_bias_helper_preserves_preset_behavior(self) -> None:
+        model = self._load_model_from_ckpt(self.model_path)
+        np.testing.assert_allclose(to_numpy(model.get_out_bias()), self.original_bias)
+        sampled = [{"atype": np.array([[0, 1]], dtype=np.int32)}]
+        model_change_out_bias(model, sampled)
+        np.testing.assert_allclose(
+            to_numpy(model.get_out_bias()).reshape(-1), [-10.0, -13.6]
+        )
+
     def test_change_bias_with_data(self) -> None:
         output_path = os.path.join(self.tmpdir, "model_data_bias.pt")
         run_dp(
@@ -239,6 +297,7 @@ class TestChangeBias(unittest.TestCase):
         )
         updated_model = self._load_model_from_ckpt(output_path)
         updated_bias = to_numpy(updated_model.get_out_bias())
+        self._assert_preset_bias_update(updated_model)
         original_bias = np.array(self.original_bias)
         # Bias should have changed from the original
         self.assertFalse(
@@ -333,6 +392,11 @@ class TestChangeBias(unittest.TestCase):
         updated_data = serialize_from_file(output_pte)
         updated_model = BaseModel.deserialize(updated_data["model"])
         updated_bias = to_numpy(updated_model.get_out_bias())
+        self._assert_preset_bias_update(updated_model)
+        self.assertEqual(
+            updated_data["model_def_script"]["preset_out_bias"],
+            self.config["model"]["preset_out_bias"],
+        )
 
         # Bias should have changed
         self.assertFalse(
@@ -362,6 +426,11 @@ class TestChangeBias(unittest.TestCase):
         updated_data = serialize_from_file(output_pt2)
         updated_model = BaseModel.deserialize(updated_data["model"])
         updated_bias = to_numpy(updated_model.get_out_bias())
+        self._assert_preset_bias_update(updated_model)
+        self.assertEqual(
+            updated_data["model_def_script"]["preset_out_bias"],
+            self.config["model"]["preset_out_bias"],
+        )
 
         self.assertFalse(
             np.allclose(original_bias, updated_bias),

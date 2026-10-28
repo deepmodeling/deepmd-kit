@@ -20,6 +20,9 @@ from deepmd.pd.model.descriptor.base_descriptor import (
 from deepmd.pd.model.task.base_fitting import (
     BaseFitting,
 )
+from deepmd.utils.out_stat import (
+    get_redu_stat_scanner,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -146,11 +149,7 @@ class DPAtomicModel(BaseAtomicModel):
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
-        return (
-            self.fitting_net.output_def()
-            if self.fitting_net is not None
-            else self.coord_denoise_net.output_def()
-        )
+        return self.fitting_net.output_def()
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -408,6 +407,10 @@ class DPAtomicModel(BaseAtomicModel):
                 for sample in sampled:
                     sample["atom_exclude_types"] = list(atom_exclude_types)
             return sampled
+
+        # the full-data scanner, when the trainer attached one, is part of the
+        # sampler contract and must survive wrapping
+        wrapped_sampler.redu_stat_scanner = get_redu_stat_scanner(sampled_func)
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)

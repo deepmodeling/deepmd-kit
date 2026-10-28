@@ -1,11 +1,38 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+from collections.abc import (
+    Iterator,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
+
+
+def env_protection_descriptors(
+    descriptor: dict[str, Any], inherited_protection: float | None = None
+) -> Iterator[dict[str, Any]]:
+    """Yield leaf configurations that use environment-matrix protection.
+
+    DPA4-family descriptors regularize their geometry with ``eps`` instead of
+    an environment matrix. Hybrid-level protection is moved to the children
+    that consume it, without forwarding that option to DPA4. A child's own
+    value takes precedence over the value inherited from its parent.
+    """
+    kind = descriptor["type"].lower()
+    if kind == "hybrid":
+        protection = descriptor.pop("env_protection", inherited_protection)
+        for child in descriptor["list"]:
+            yield from env_protection_descriptors(child, protection)
+    elif kind not in {"dpa4", "sezm", "dpa4c"}:
+        if inherited_protection is not None:
+            descriptor.setdefault("env_protection", inherited_protection)
+        yield descriptor
 
 
 def normalize_spin_use_spin(use_spin: list, type_map: list[str]) -> list[bool]:

@@ -12,9 +12,18 @@ from .data import (
     make_task_maps,
     print_data_summaries,
 )
+from .data_progress import (
+    DATA_PROGRESS_CHECKPOINT_KEY,
+    collect_training_data_progress,
+    preserve_training_data_progress,
+    restore_training_data_progress,
+)
 from .entrypoint import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
+)
+from .metrics import (
+    TrainingMetricAccumulator,
 )
 from .schedule import (
     StepSchedule,
@@ -41,6 +50,7 @@ from .trainer import (
 )
 
 __all__ = [
+    "DATA_PROGRESS_CHECKPOINT_KEY",
     "DEFAULT_TASK_KEY",
     "AbstractTrainEntrypoint",
     "AbstractTrainer",
@@ -53,6 +63,7 @@ __all__ = [
     "TrainEntrypointOptions",
     "TrainStepResult",
     "TrainerConfig",
+    "TrainingMetricAccumulator",
     "TrainingTask",
     "TrainingTaskCollection",
     "TrainingTaskConfig",
@@ -60,9 +71,12 @@ __all__ = [
     "build_checkpoint_stores",
     "change_model_out_bias",
     "change_model_out_bias_by_task",
+    "collect_training_data_progress",
     "iter_training_task_configs",
     "make_task_maps",
+    "preserve_training_data_progress",
     "print_data_summaries",
     "resolve_keep_ckpt_count",
     "resolve_step_schedule",
+    "restore_training_data_progress",
 ]

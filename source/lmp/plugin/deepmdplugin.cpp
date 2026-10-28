@@ -7,11 +7,13 @@
 #include "deepmd_version.h"
 #include "fix_dplr.h"
 #include "lammpsplugin.h"
-#include "pair_deepmd.h"
 #ifdef LMP_KOKKOS
 #include "pair_deepmd_kokkos.h"
+#include "pair_dpa4spin_kokkos.h"
 #endif
+#include "pair_deepmd.h"
 #include "pair_deepspin.h"
+#include "pair_dpa4spin.h"
 #include "version.h"
 #if LAMMPS_VERSION_NUMBER >= 20220328
 #include "pppm_dplr.h"
@@ -20,12 +22,25 @@
 using namespace LAMMPS_NS;
 
 static Pair* pairdeepmd(LAMMPS* lmp) { return new PairDeepMD(lmp); }
+static Pair* pairdeepspin(LAMMPS* lmp) { return new PairDeepSpin(lmp); }
+static Pair* pairdpa4spin(LAMMPS* lmp) { return new PairDPA4Spin(lmp); }
+
 #ifdef LMP_KOKKOS
-static Pair* pairdeepmdkokkos(LAMMPS* lmp) {
+// Runtime plugins do not consume the PairStyle declarations used by LAMMPS'
+// built-in package machinery, so register each Kokkos alias explicitly.
+static Pair* pairdeepmdkokkosdevice(LAMMPS* lmp) {
   return new PairDeepMDKokkos<LMPDeviceType>(lmp);
 }
+static Pair* pairdeepmdkokkoshost(LAMMPS* lmp) {
+  return new PairDeepMDKokkos<LMPHostType>(lmp);
+}
+static Pair* pairdpa4spinkokkosdevice(LAMMPS* lmp) {
+  return new PairDPA4SpinKokkos<LMPDeviceType>(lmp);
+}
+static Pair* pairdpa4spinkokkoshost(LAMMPS* lmp) {
+  return new PairDPA4SpinKokkos<LMPHostType>(lmp);
+}
 #endif
-static Pair* pairdeepspin(LAMMPS* lmp) { return new PairDeepSpin(lmp); }
 
 static Compute* computedeepmdtensoratom(LAMMPS* lmp, int narg, char** arg) {
   return new ComputeDeeptensorAtom(lmp, narg, arg);
@@ -61,18 +76,29 @@ extern "C" void lammpsplugin_init(void* lmp, void* handle, void* regfunc) {
   plugin.style = "pair";
   plugin.name = "deepmd/kk";
   plugin.info = "deepmd Kokkos pair style " STR_GIT_SUMM;
-  plugin.author = "DeepModeling";
-  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepmdkokkos;
+  plugin.author = "Tiancheng Li";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepmdkokkosdevice;
   plugin.handle = handle;
   (*register_plugin)(&plugin, lmp);
 
-  plugin.version = LAMMPS_VERSION;
-  plugin.style = "pair";
   plugin.name = "deepmd/kk/device";
-  plugin.info = "deepmd Kokkos device pair style " STR_GIT_SUMM;
-  plugin.author = "DeepModeling";
-  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepmdkokkos;
-  plugin.handle = handle;
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.name = "deepmd/kk/host";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepmdkokkoshost;
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.name = "dpa4spin/kk";
+  plugin.info = "dpa4spin Kokkos pair style " STR_GIT_SUMM;
+  plugin.author = "Tiancheng Li";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdpa4spinkokkosdevice;
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.name = "dpa4spin/kk/device";
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.name = "dpa4spin/kk/host";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdpa4spinkokkoshost;
   (*register_plugin)(&plugin, lmp);
 #endif
 
@@ -82,6 +108,15 @@ extern "C" void lammpsplugin_init(void* lmp, void* handle, void* regfunc) {
   plugin.info = "deepspin pair style " STR_GIT_SUMM;
   plugin.author = "Duo Zhang";
   plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepspin;
+  plugin.handle = handle;
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.version = LAMMPS_VERSION;
+  plugin.style = "pair";
+  plugin.name = "dpa4spin";
+  plugin.info = "dpa4spin pair style " STR_GIT_SUMM;
+  plugin.author = "Tiancheng Li";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdpa4spin;
   plugin.handle = handle;
   (*register_plugin)(&plugin, lmp);
 
