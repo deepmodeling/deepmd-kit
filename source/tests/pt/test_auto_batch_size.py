@@ -207,6 +207,61 @@ class TestCudaAdaptiveBatching(unittest.TestCase):
             self.assertEqual(auto.current_batch_size, 2)
             self.assertEqual(auto._reprobe_interval, next_interval)
 
+    def test_automatic_retry_mode_completes_before_reprobing(self) -> None:
+        auto = AutoBatchSize(4)
+        data = np.arange(82).reshape(41, 2)
+        capacity = 2
+        attempts = []
+
+        def evaluate(batch: np.ndarray) -> np.ndarray:
+            attempts.append((len(batch), int(batch[0, 0])))
+            if len(batch) > capacity:
+                raise torch.cuda.OutOfMemoryError()
+            return batch.copy()
+
+        def evaluate_with_restart() -> tuple[np.ndarray, int]:
+            # Match hook-based feature extraction: retry the entire input and
+            # restore the mode in finally, including on unsuccessful attempts.
+            for attempt in range(3):
+                auto.set_oom_retry_mode(True)
+                try:
+                    return auto.execute_all(evaluate, len(data), 1, data), attempt
+                except RetrySignal:
+                    continue
+                finally:
+                    auto.set_oom_retry_mode(False)
+            self.fail("whole-input retry did not make bounded progress")
+
+        result, retries = evaluate_with_restart()
+        np.testing.assert_array_equal(result, data)
+        self.assertEqual(retries, 1)
+        self.assertEqual(attempts[0], (4, 0))
+        self.assertEqual(attempts[1], (2, 0))
+        # Schedule the next invocation's probe only after this pass completes,
+        # including when its last batch is a short tail.
+        self.assertEqual(auto.current_batch_size, 4)
+        self.assertEqual(auto.minimal_not_working_batch_size, 4)
+        for _ in range(3):
+            result, retries = evaluate_with_restart()
+            np.testing.assert_array_equal(result, data)
+            self.assertEqual(retries, 1)
+        capacity = 8
+        attempts.clear()
+        result, retries = evaluate_with_restart()
+        np.testing.assert_array_equal(result, data)
+        self.assertEqual(retries, 1)  # 16 fails once; restarted 8-frame pass fits.
+        self.assertTrue(any(n == 8 for n, _ in attempts))
+
+    def test_retry_mode_does_not_schedule_probe_when_concatenation_fails(self) -> None:
+        auto = AutoBatchSize(4)
+        auto.execute(mock.Mock(side_effect=torch.cuda.OutOfMemoryError()), 0, 1)
+        auto.set_oom_retry_mode(True)
+        with self.assertRaisesRegex(RuntimeError, "Unexpected result type"):
+            auto.execute_all(lambda batch: object(), 41, 1, np.ones((41, 2)))
+        self.assertEqual(auto.current_batch_size, 2)
+        self.assertEqual(auto.minimal_not_working_batch_size, 4)
+        self.assertEqual(auto._reprobe_interval, 2)
+
     def test_explicit_limit_keeps_oom_recovery_and_retry_mode(self) -> None:
         with mock.patch.dict(os.environ, {"DP_INFER_BATCH_SIZE": "8"}):
             auto = AutoBatchSize()

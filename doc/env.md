@@ -76,6 +76,9 @@ This policy applies to both `dp test` and full validation, without profiling CUD
 allocator state on successful inference. It does not search for an exact maximum
 or guarantee the throughput-optimal batch size. Explicitly setting a positive
 `DP_INFER_BATCH_SIZE` disables growth, including these recovery probes.
+Hook-based feature extraction that retries the whole input defers recovery
+probes until a complete evaluation succeeds, so a known OOM cannot cause an
+endless restart of that input.
 :::
 
 :::{envvar} DP_BACKEND

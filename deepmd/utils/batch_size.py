@@ -171,20 +171,23 @@ class AutoBatchSize(ABC):
         if self._auto_growth and n_tot >= self.minimal_not_working_batch_size:
             self.minimal_not_working_batch_size = 2**31
         if self._auto_growth and n_tot + units_per_frame > self.current_batch_size:
-            # Large mandatory single frames also justify immediate growth.
-            next_batch_size = int(max(self.current_batch_size, n_tot) * self.factor)
             self._successful_batches += 1
-            if (
-                next_batch_size < self.minimal_not_working_batch_size
-                or self._successful_batches >= self._reprobe_interval
-            ):
-                if next_batch_size >= self.minimal_not_working_batch_size:
-                    # Dampen repeated recovery probes, including oscillating
-                    # workloads where one sparse probe succeeds before OOM.
-                    self._reprobe_interval = min(2 * self._reprobe_interval, 8)
-                self._set_batch_size(next_batch_size)
-                self._successful_batches = 0
+            self._grow_batch_size(n_tot, allow_reprobe=not self.oom_retry_mode)
         return n_batch, result
+
+    def _grow_batch_size(self, successful_size: int, *, allow_reprobe: bool) -> None:
+        """Grow below the failed bound, or schedule an allowed recovery probe."""
+        # Large mandatory single frames also justify immediate growth.
+        next_batch_size = int(
+            max(self.current_batch_size, successful_size) * self.factor
+        )
+        if next_batch_size >= self.minimal_not_working_batch_size:
+            if not allow_reprobe or self._successful_batches < self._reprobe_interval:
+                return
+            # Dampen repeated recovery probes, including oscillating workloads.
+            self._reprobe_interval = min(2 * self._reprobe_interval, 8)
+        self._set_batch_size(next_batch_size)
+        self._successful_batches = 0
 
     def _set_batch_size(self, batch_size: int) -> None:
         old_batch_size = self.current_batch_size
@@ -306,6 +309,15 @@ class AutoBatchSize(ABC):
                 r = r[0]
         else:
             r = {kk: concate_result(vv) for kk, vv in results.items()}
+        # Retry-mode callers discard all hook outputs on OOM and restart this
+        # entire input. Probing a known failure mid-pass could restart forever.
+        # Defer that probe until the pass is complete, for the next invocation.
+        if (
+            self._auto_growth
+            and self.oom_retry_mode
+            and self._successful_batches >= self._reprobe_interval
+        ):
+            self._grow_batch_size(0, allow_reprobe=True)
         return r
 
     @abstractmethod
@@ -342,6 +354,10 @@ class AutoBatchSize(ABC):
 
         Callers that want all data to be re-executed must catch
         :class:`RetrySignal` and restart the full evaluation themselves.
+        Recovery probes beyond a known failed size are deferred until
+        :meth:`execute_all` has assembled its complete result, for the next
+        invocation. Direct :meth:`execute` calls have no completion boundary
+        and therefore do not schedule those probes in retry mode.
 
         Parameters
         ----------
