@@ -88,9 +88,8 @@ bool tabulate_required_table_rows(const FPTYPE* table_info,
 
   int64_t lower_count = 0;
   int64_t middle_count = 0;
-  if ((symmetric_range &&
-       !truncate_native_ratio(lower_value - min_value, stride1_value,
-                              lower_count)) ||
+  if ((symmetric_range && !truncate_native_ratio(lower_value - min_value,
+                                                 stride1_value, lower_count)) ||
       !truncate_native_ratio(upper_value - lower_value, stride0_value,
                              middle_count)) {
     return false;
@@ -102,8 +101,7 @@ bool tabulate_required_table_rows(const FPTYPE* table_info,
   }
 
   int64_t max_reachable_index = 0;
-  auto include_region_end = [&](const FPTYPE end,
-                                const FPTYPE start,
+  auto include_region_end = [&](const FPTYPE end, const FPTYPE start,
                                 const FPTYPE stride,
                                 const int64_t base) -> bool {
     if (!(end > start)) {
@@ -127,8 +125,7 @@ bool tabulate_required_table_rows(const FPTYPE* table_info,
        !include_region_end(lower_value, min_value, stride1_value, 0)) ||
       !include_region_end(upper_value, lower_value, stride0_value,
                           lower_count) ||
-      !include_region_end(max_value, upper_value, stride1_value,
-                          first_upper)) {
+      !include_region_end(max_value, upper_value, stride1_value, first_upper)) {
     return false;
   }
 
