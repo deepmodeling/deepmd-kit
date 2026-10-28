@@ -1426,6 +1426,12 @@ class TestTabulateFusionSeTTebdOp(unittest.TestCase):
             dtype=dtype,
             device=env.DEVICE,
         ).reshape(8, 174)  # 1392
+        # The historical fixture has 58 rows, while its +/-105 bounds include
+        # a final partial interval (101..105) that requires row 58. The sampled
+        # inputs exercise only the central region, so append an unused guard
+        # row without changing their reference coefficients.
+        rows = self.table_tensor.reshape(58, 24)
+        self.table_tensor = torch.cat((rows, torch.zeros_like(rows[:1])))
         self.table_info_tensor = torch.tensor(
             [
                 -2.1000000000000000e01,
