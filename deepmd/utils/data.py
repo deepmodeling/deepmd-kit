@@ -4,7 +4,12 @@
 import bisect
 import copy
 import functools
+import hashlib
 import logging
+from collections.abc import (
+    Iterable,
+    Iterator,
+)
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
@@ -14,6 +19,7 @@ from pathlib import (
 )
 from typing import (
     Any,
+    Literal,
 )
 
 import numpy as np
@@ -24,12 +30,19 @@ from deepmd.env import (
     LRU_CACHE_SIZE,
 )
 from deepmd.utils import random as dp_random
+from deepmd.utils.bridging import (
+    expand_bridging_method,
+    resolve_bridging_window,
+    window_midpoint,
+)
 from deepmd.utils.path import (
     DPH5Path,
     DPPath,
 )
 
 log = logging.getLogger(__name__)
+
+DataRequirementSourcePolicy = Literal["tracked", "default", "derived"]
 
 
 class DeepmdData:
@@ -118,6 +131,10 @@ class DeepmdData:
                     self.type_idx_map, np.array([-1], dtype=np.int32)
                 )
             self.type_map = type_map
+        # Element-based derived fields may use the model's names without a
+        # dataset map. Those names do not define the reader's numeric type
+        # domain: legacy spin data also stores unnamed virtual atom types.
+        self._element_type_map = tuple(type_map or self.type_map or ())
         if type_map is None and self.type_map is None and self.mixed_type:
             raise RuntimeError("mixed_type format must have type_map!")
         # make idx map
@@ -132,6 +149,8 @@ class DeepmdData:
         # set counters
         self.set_count = 0
         self.iterator = 0
+        self._batch_set_size = 0
+        self._batch_shuffle_state = None
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
@@ -159,6 +178,8 @@ class DeepmdData:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
+        length_scale: str = "absolute",
     ) -> "DeepmdData":
         """Add a data item that to be loaded.
 
@@ -187,11 +208,20 @@ class DeepmdData:
             the dtype of data, overwrites `high_prec` if provided
         output_natoms_for_type_sel : bool, optional
             if True and type_sel is True, the atomic dimension will be natoms instead of nsel
+        special_shape : str, optional
+            Name of a loader-defined non-standard shape contract. ``"hessian"``
+            stores one full-frame ``(3 * natoms) x (3 * natoms)`` matrix per frame.
+        length_scale : str, optional
+            Per-element length scale a derived geometric item measures its
+            default against: ``"absolute"`` gives every element the unit radius,
+            so the default is a distance in Å, while ``"covalent"`` gives each
+            element its covalent radius, so the default is a fraction of each
+            atom pair's own bond length.
         """
         # normalize key: "atomic_" prefix -> "atom_", same convention as _load_set output
         if key.startswith("atomic_"):
             key = "atom_" + key[7:]
-        self.data_dict[key] = {
+        data_config = {
             "ndof": ndof,
             "atomic": atomic,
             "must": must,
@@ -202,7 +232,14 @@ class DeepmdData:
             "default": default,
             "dtype": dtype,
             "output_natoms_for_type_sel": output_natoms_for_type_sel,
+            "length_scale": length_scale,
         }
+        if special_shape is not None:
+            # Preserve the established dictionary schema for ordinary labels;
+            # only non-standard tensors need this extra shape contract.
+            data_config["special_shape"] = special_shape
+        self.data_dict[key] = data_config
+        self._invalidate_data_cache()
         return self
 
     def reduce(self, key_out: str, key_in: str) -> "DeepmdData":
@@ -231,7 +268,15 @@ class DeepmdData:
             "repeat": 1,
             "reduce": key_in,
         }
+        self._invalidate_data_cache()
         return self
+
+    def _invalidate_data_cache(self) -> None:
+        """Discard arrays whose data requirements are no longer current."""
+        for key in ("batch_set", "_batch_indices", "test_set"):
+            self.__dict__.pop(key, None)
+        if hasattr(self, "_modified_frame_cache"):
+            self._modified_frame_cache.clear()
 
     def get_data_dict(self) -> dict:
         """Get the `data_dict`."""
@@ -289,6 +334,30 @@ class DeepmdData:
         """
         return self.get_single_frame(index, num_worker)
 
+    @functools.cached_property
+    def _sampling_set_nframes(self) -> np.ndarray:
+        """Count frames in each set after its on-disk copy weights are applied."""
+        sizes = []
+        for set_dir, nframes in zip(
+            self.dirs, np.diff([0, *self.prefix_sum]), strict=True
+        ):
+            _, copies = self._load_data(
+                set_dir, "numb_copy", int(nframes), 1, must=False, default=1, dtype=int
+            )
+            sizes.append(int(copies.sum()))
+        return np.asarray(sizes, dtype=np.int64)
+
+    def get_mean_batch_nframes(self, batch_size: int) -> float:
+        """Return the initial pass's mean batch size, including undersized sets.
+
+        A set smaller than one batch is returned whole. Larger sets drop their
+        short tail, as in :meth:`get_batch`. Copy weights are applied before
+        counting batches.
+        """
+        sizes = self._sampling_set_nframes
+        counts = np.maximum(1, sizes // batch_size)
+        return float(np.dot(counts, np.minimum(sizes, batch_size)) / counts.sum())
+
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
 
@@ -297,21 +366,223 @@ class DeepmdData:
         batch_size
             size of the batch
         """
-        if hasattr(self, "batch_set"):
-            set_size = self.batch_set["coord"].shape[0]
-        else:
-            set_size = 0
-        if self.iterator + batch_size > set_size:
+        if self.iterator + batch_size > self._batch_set_size:
             self._load_batch_set(self.dirs[self.set_count % self.get_numb_set()])
             self.set_count += 1
-            set_size = self.batch_set["coord"].shape[0]
+        elif not hasattr(self, "_batch_indices"):
+            # Restore the active order only when it is actually needed. An
+            # exhausted set can advance directly to the next one above.
+            iterator = self.iterator
+            set_size = self._batch_set_size
+            self._load_batch_set(
+                self.dirs[(self.set_count - 1) % self.get_numb_set()],
+                shuffle_state=self._batch_shuffle_state,
+            )
+            if self._batch_set_size != set_size:
+                raise ValueError("The restored data set has a different numb_copy size")
+            self.iterator = iterator
+        set_size = self._batch_set_size
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size:
             iterator_1 = set_size
-        idx = np.arange(self.iterator, iterator_1, dtype=np.int64)
+        idx = self._batch_indices[self.iterator : iterator_1]
         self.iterator += batch_size
         ret = self._get_subdata(self.batch_set, idx)
+        if "pair_margin" in self.data_dict:
+            ret["find_pair_margin"] = np.float32(1.0)
+            ret["pair_margin"] = self._derive_pair_margin_batch(
+                ret["coord"],
+                ret["box"] if self.pbc else None,
+                ret["type"],
+            )
         return ret
+
+    def _progress_identity(self) -> dict[str, Any]:
+        """Describe the source using metadata already read at construction."""
+        return {
+            "sets": [str(path) for path in self.dirs],
+            "prefix_sum": self.prefix_sum,
+            "atom_types": hashlib.sha256(self.atom_type.tobytes()).hexdigest(),
+            "type_map": self.type_map,
+            "sort_atoms": self.sort_atoms,
+            "mixed_type": self.mixed_type,
+            "pbc": self.pbc,
+        }
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return compact batch progress, without frame arrays or permutations.
+
+        The shared :mod:`deepmd.utils.random` state must be checkpointed
+        separately, once for all readers. Only the state before the active
+        set's shuffle is retained here to reconstruct its order lazily.
+        """
+        return copy.deepcopy(
+            {
+                "version": 1,
+                "identity": self._progress_identity(),
+                "set_count": int(self.set_count),
+                "iterator": int(self.iterator),
+                "set_size": int(self._batch_set_size),
+                "shuffle_state": self._batch_shuffle_state,
+            }
+        )
+
+    def _validate_state_dict(self, state: dict[str, Any]) -> None:
+        if state.get("version") != 1:
+            raise ValueError("Unsupported DeepmdData progress version")
+        if state.get("identity") != self._progress_identity():
+            raise ValueError("DeepmdData progress does not match the data source")
+        for key in ("set_count", "iterator", "set_size"):
+            if type(state.get(key)) is not int or state[key] < 0:
+                raise ValueError(f"Invalid DeepmdData progress {key}")
+        shuffle_state = state.get("shuffle_state")
+        if state["set_count"] == 0:
+            if state["iterator"] or state["set_size"] or shuffle_state is not None:
+                raise ValueError("Invalid unstarted DeepmdData progress")
+        elif shuffle_state is None:
+            raise ValueError("Missing DeepmdData shuffle state")
+        if shuffle_state is not None:
+            # Validation uses a private generator, never the shared RNG.
+            try:
+                np.random.RandomState(0).set_state(shuffle_state)
+            except (TypeError, ValueError, IndexError) as error:
+                raise ValueError("Invalid DeepmdData shuffle state") from error
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore logical progress without loading or scanning frame data.
+
+        A same-set canonical cache may be reused when its requirements have
+        not changed. New readers reconstruct arrays only on the next batch.
+        """
+        self._validate_state_dict(state)
+        active_set = (
+            self.dirs[(state["set_count"] - 1) % self.get_numb_set()]
+            if state["set_count"]
+            else None
+        )
+        keep_set = hasattr(self, "batch_set") and self._batch_set_name == active_set
+        keep_order = (
+            keep_set
+            and self._batch_shuffle_state == state["shuffle_state"]
+            and self._batch_set_size == state["set_size"]
+        )
+        if not keep_set:
+            self.__dict__.pop("batch_set", None)
+        if not keep_order:
+            self.__dict__.pop("_batch_indices", None)
+        self.set_count = state["set_count"]
+        self.iterator = state["iterator"]
+        self._batch_set_size = state["set_size"]
+        self._batch_shuffle_state = copy.deepcopy(state["shuffle_state"])
+
+    def _derive_pair_margin(
+        self,
+        coord: np.ndarray,
+        box: np.ndarray | None,
+        atype: np.ndarray,
+    ) -> np.ndarray:
+        """Derive the `pair_margin` requirement of one frame.
+
+        The requirement has no file behind it: the frame and the batch read
+        paths compute it from the frame geometry. The value is the frame's
+        margin against the window each atom pair carries, so the filter keeps
+        a frame whose value reaches one, and the scan stops at the first pair
+        that settles the question.
+
+        Parameters
+        ----------
+        coord
+            Coordinates of one frame with shape (natoms * 3,) in Å.
+        box
+            Cell of one frame with shape (9,) in Å, or None without periodicity.
+        atype
+            Atom types of one frame with shape (natoms,).
+
+        Returns
+        -------
+        np.ndarray
+            Minimum pair margin with shape (1,), dimensionless.
+        """
+        from deepmd.dpmodel.utils.dist_check import (
+            compute_min_pair_margin_single,
+        )
+
+        return np.array(
+            [
+                compute_min_pair_margin_single(
+                    coord,
+                    box,
+                    atype,
+                    self._pair_margin_half_thresholds(),
+                    screened=True,
+                )
+            ],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        )
+
+    def _pair_margin_half_thresholds(self) -> np.ndarray:
+        """Resolve the per-type half-thresholds of the `pair_margin` window.
+
+        Returns
+        -------
+        np.ndarray
+            Half-thresholds in Å with shape (ntypes,), read-only because the
+            table is shared by every reader of the same window and type map.
+        """
+        from deepmd.dpmodel.utils.dist_check import (
+            requirement_half_thresholds,
+        )
+
+        requirement = self.data_dict["pair_margin"]
+        return requirement_half_thresholds(
+            float(requirement.get("default", 0.0)),
+            str(requirement.get("length_scale", "absolute")),
+            self._element_type_map or None,
+            max(self.get_ntypes(), len(self._element_type_map)),
+        )
+
+    def _derive_pair_margin_batch(
+        self,
+        coord: np.ndarray,
+        box: np.ndarray | None,
+        atype: np.ndarray,
+    ) -> np.ndarray:
+        """Derive the `pair_margin` requirement of a whole batch.
+
+        The batch is scanned in one pass, which is what a batch read pays for
+        the requirement instead of one scan per frame. The value settles each
+        frame against the window the requirement declares, as
+        :meth:`_derive_pair_margin` does, and equals the minimum pair
+        margin whenever that margin decides the frame; a frame the window
+        accepts may carry a larger margin that it reaches.
+
+        Parameters
+        ----------
+        coord
+            Coordinates of the batch with shape (nframes, natoms * 3) in Å.
+        box
+            Cells of the batch with shape (nframes, 9) in Å, or None without
+            periodicity.
+        atype
+            Atom types of the batch with shape (nframes, natoms).
+
+        Returns
+        -------
+        np.ndarray
+            Margin of every frame, with shape (nframes, 1), dimensionless.
+        """
+        from deepmd.dpmodel.utils.dist_check import (
+            compute_min_pair_margin_batch,
+        )
+
+        margins = compute_min_pair_margin_batch(
+            coord,
+            box,
+            atype,
+            self._pair_margin_half_thresholds(),
+            screened=True,
+        )
+        return margins.reshape(-1, 1).astype(GLOBAL_NP_FLOAT_PRECISION, copy=False)
 
     def get_test(self, ntests: int = -1) -> dict:
         """Get the test data with `ntests` frames.
@@ -337,6 +608,44 @@ class DeepmdData:
         if self.modifier is not None:
             self.modifier.modify_data(ret, self)
         return ret
+
+    def iter_test(
+        self,
+        *,
+        chunk_atoms: int,
+        numb_test: float = float("inf"),
+    ) -> Iterator[dict]:
+        """Yield the test data in chunks of at most ``chunk_atoms`` atoms.
+
+        The complete test system is materialized first, so chunking here bounds
+        the evaluation batch and its predictions rather than source-data memory.
+
+        Parameters
+        ----------
+        chunk_atoms : int
+            Upper bound on the number of atoms per chunk. A chunk always
+            carries at least one frame, however many atoms it has.
+        numb_test : float, optional
+            Upper bound on the number of frames served. A non-finite bound
+            serves the whole test set.
+
+        Yields
+        ------
+        dict
+            One chunk of test data, keyed as :meth:`get_test`.
+        """
+        if not hasattr(self, "test_set"):
+            self._load_test_set(self.shuffle_test)
+        total = int(self.test_set["type"].shape[0])
+        if np.isfinite(numb_test):
+            total = min(total, int(numb_test))
+        step = max(1, int(chunk_atoms) // max(1, self.natoms))
+        for begin in range(0, total, step):
+            idx = np.arange(begin, min(begin + step, total), dtype=np.int64)
+            chunk = self._get_subdata(self.test_set, idx=idx)
+            if self.modifier is not None:
+                self.modifier.modify_data(chunk, self)
+            yield chunk
 
     def get_ntypes(self) -> int:
         """Number of atom types in the system."""
@@ -502,24 +811,13 @@ class DeepmdData:
 
         frame_data["fid"] = index
 
-        # === Compute min_pair_dist on-the-fly in DataLoader worker ===
-        if "min_pair_dist" in self.data_dict:
-            from deepmd.dpmodel.utils.dist_check import (
-                compute_min_pair_dist_single,
-            )
-
-            frame_data["find_min_pair_dist"] = np.float32(1.0)
-            min_pair_dist = float(self.data_dict["min_pair_dist"].get("default", 0.0))
-            frame_data["min_pair_dist"] = np.array(
-                [
-                    compute_min_pair_dist_single(
-                        frame_data["coord"],
-                        frame_data.get("box"),
-                        frame_data["type"],
-                        stop_below=min_pair_dist,
-                    )
-                ],
-                dtype=GLOBAL_NP_FLOAT_PRECISION,
+        # === Derive the pair margin of the frame in the DataLoader worker ===
+        if "pair_margin" in self.data_dict:
+            frame_data["find_pair_margin"] = np.float32(1.0)
+            frame_data["pair_margin"] = self._derive_pair_margin(
+                frame_data["coord"],
+                frame_data.get("box"),
+                frame_data["type"],
             )
 
         if self.modifier is not None:
@@ -613,12 +911,32 @@ class DeepmdData:
                     new_data[ii] = dd
         return new_data
 
-    def _load_batch_set(self, set_name: DPPath) -> None:
-        if not hasattr(self, "batch_set") or self.get_numb_set() > 1:
-            self.batch_set = self._load_set(set_name)
+    def _load_batch_set(
+        self, set_name: DPPath, *, shuffle_state: tuple | None = None
+    ) -> None:
+        if not hasattr(self, "batch_set") or self._batch_set_name != set_name:
+            batch_set = self._load_set(set_name)
             if self.modifier is not None:
-                self.modifier.modify_data(self.batch_set, self)
-        self.batch_set, _ = self._shuffle_data(self.batch_set)
+                self.modifier.modify_data(batch_set, self)
+            self.batch_set = batch_set
+            self._batch_set_name = set_name
+        # Always index the canonical source order. Shuffling an already
+        # shuffled cache cannot be reconstructed from just the latest RNG
+        # state, and repeatedly expands frames with numb_copy > 1.
+        nframes = self.batch_set["coord"].shape[0]
+        self._batch_indices = np.repeat(
+            np.arange(nframes, dtype=np.int64),
+            self.batch_set["numb_copy"].reshape(nframes),
+        )
+        if shuffle_state is None:
+            self._batch_shuffle_state = dp_random.get_state()
+            dp_random.shuffle(self._batch_indices)
+        else:
+            self._batch_shuffle_state = copy.deepcopy(shuffle_state)
+            rng = np.random.RandomState(0)
+            rng.set_state(shuffle_state)
+            rng.shuffle(self._batch_indices)
+        self._batch_set_size = len(self._batch_indices)
         self.reset_get_batch()
 
     def reset_get_batch(self) -> None:
@@ -735,6 +1053,7 @@ class DeepmdData:
                     output_natoms_for_type_sel=self.data_dict[kk][
                         "output_natoms_for_type_sel"
                     ],
+                    special_shape=self.data_dict[kk].get("special_shape"),
                 )
         for kk in self.data_dict.keys():
             if self.data_dict[kk]["reduce"] is not None:
@@ -811,7 +1130,9 @@ class DeepmdData:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
     ) -> np.ndarray:
+        is_hessian = special_shape == "hessian" or key == "hessian"
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map
@@ -839,7 +1160,19 @@ class DeepmdData:
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
-                if atomic:
+                if is_hessian:
+                    natoms = self.natoms
+                    idx_map = self.idx_map
+                    data = data.reshape(nframes, 3 * natoms, 3 * natoms)
+                    num_chunks, chunk_size = len(idx_map), 3
+                    idx_map_hess = np.arange(num_chunks * chunk_size)  # pylint: disable=no-explicit-dtype
+                    idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
+                    idx_map_hess = idx_map_hess[idx_map].flatten()
+                    data = data[:, idx_map_hess, :]
+                    data = data[:, :, idx_map_hess]
+                    data = data.reshape([nframes, -1])
+                    ndof = 9 * natoms * natoms
+                elif atomic:
                     if type_sel is not None:
                         # check the data shape is nsel or natoms
                         if data.size == nframes * natoms_sel * ndof_:
@@ -871,24 +1204,9 @@ class DeepmdData:
                                 f"({nframes}, {natoms_sel}, {ndof_}) or"
                                 f"({nframes}, {natoms}, {ndof_})"
                             )
-                    if key == "hessian":
-                        data = data.reshape(nframes, 3 * natoms, 3 * natoms)
-                        # get idx_map for hessian
-                        num_chunks, chunk_size = len(idx_map), 3
-                        idx_map_hess = np.arange(num_chunks * chunk_size)  # pylint: disable=no-explicit-dtype
-                        idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
-                        idx_map_hess = idx_map_hess[idx_map]
-                        idx_map_hess = idx_map_hess.flatten()
-                        data = data[:, idx_map_hess, :]
-                        data = data[:, :, idx_map_hess]
-                        data = data.reshape([nframes, -1])
-                        ndof = (
-                            3 * ndof * 3 * ndof
-                        )  # size of hessian is 3Natoms * 3Natoms
-                    else:
-                        data = data.reshape([nframes, natoms, -1])
-                        data = data[:, idx_map, :]
-                        data = data.reshape([nframes, -1])
+                    data = data.reshape([nframes, natoms, -1])
+                    data = data[:, idx_map, :]
+                    data = data.reshape([nframes, -1])
                 data = np.reshape(data, [nframes, ndof])
             except ValueError as err_message:
                 explanation = "This error may occur when your label mismatch its name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
@@ -901,7 +1219,9 @@ class DeepmdData:
         elif must:
             raise RuntimeError(f"{path} not found!")
         else:
-            if atomic and type_sel is not None and not output_natoms_for_type_sel:
+            if is_hessian:
+                ndof = 9 * self.natoms * self.natoms
+            elif atomic and type_sel is not None and not output_natoms_for_type_sel:
                 ndof = ndof_ * natoms_sel
             data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:
@@ -928,8 +1248,12 @@ class DeepmdData:
         """
         vv = self.data_dict[key]
         path = self._get_data_path(set_dir, key)
+        is_hessian = vv.get("special_shape") == "hessian" or key == "hessian"
 
-        if vv["atomic"]:
+        if is_hessian:
+            natoms = self.natoms
+            idx_map = self.idx_map
+        elif vv["atomic"]:
             natoms = self.natoms
             idx_map = self.idx_map
             # if type_sel, then revise natoms and idx_map
@@ -962,7 +1286,9 @@ class DeepmdData:
                 raise RuntimeError(f"{path} not found!")
 
             # Create a default array based on requirements
-            if vv["atomic"]:
+            if is_hessian:
+                data = np.full([9 * natoms * natoms], vv["default"], dtype=dtype)
+            elif vv["atomic"]:
                 if vv["type_sel"] is not None and not vv["output_natoms_for_type_sel"]:
                     natoms = natoms_sel
                 data = np.full([natoms, ndof], vv["default"], dtype=dtype)
@@ -986,7 +1312,17 @@ class DeepmdData:
         data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
-            if vv["atomic"]:
+            if is_hessian:
+                data = data.reshape(3 * natoms, 3 * natoms)
+                num_chunks, chunk_size = len(idx_map), 3
+                idx_map_hess = np.arange(num_chunks * chunk_size, dtype=int).reshape(
+                    num_chunks, chunk_size
+                )
+                idx_map_hess = idx_map_hess[idx_map].flatten()
+                data = data[idx_map_hess, :]
+                data = data[:, idx_map_hess]
+                data = data.reshape(-1)
+            elif vv["atomic"]:
                 # Handle type_sel logic
                 if vv["type_sel"] is not None:
                     if mmap_obj.shape[1] == natoms_sel * ndof:
@@ -1011,23 +1347,9 @@ class DeepmdData:
                             f"The shape of the data {key} in {set_dir} has width {mmap_obj.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
                         )
 
-                # Handle special case for Hessian
-                if key == "hessian":
-                    data = data.reshape(3 * natoms, 3 * natoms)
-                    num_chunks, chunk_size = len(idx_map), 3
-                    idx_map_hess = np.arange(
-                        num_chunks * chunk_size, dtype=int
-                    ).reshape(num_chunks, chunk_size)
-                    idx_map_hess = idx_map_hess[idx_map].flatten()
-                    data = data[idx_map_hess, :]
-                    data = data[:, idx_map_hess]
-                    data = data.reshape(-1)
-                    # size of hessian is 3Natoms * 3Natoms
-                    # ndof = 3 * ndof * 3 * ndof
-                else:
-                    # data should be 2D here: [natoms, ndof]
-                    data = data.reshape([natoms, -1])
-                    data = data[idx_map, :]
+                # data should be 2D here: [natoms, ndof]
+                data = data.reshape([natoms, -1])
+                data = data[idx_map, :]
             else:
                 data = data.reshape([ndof])
 
@@ -1140,6 +1462,22 @@ class DataRequirementItem:
         the dtype of data, overwrites `high_prec` if provided
     output_natoms_for_type_sel : bool, optional
         if True and type_sel is True, the atomic dimension will be natoms instead of nsel
+    special_shape : str, optional
+        Name of a loader-defined non-standard shape contract. ``"hessian"``
+        stores one full-frame ``(3 * natoms) x (3 * natoms)`` matrix per frame.
+    source_policy : {"tracked", "default", "derived"}, optional
+        How source availability affects the consumer. ``"tracked"`` keeps
+        source presence in the ``find_*`` contract. ``"default"`` treats the
+        configured default as valid input and reports the resolved field
+        available. ``"derived"`` computes the value from structural frame
+        data. Only optional tracked fields require availability-homogeneous
+        batching.
+    length_scale : {"absolute", "covalent"}, optional
+        Per-element length scale a derived geometric field measures its
+        default against. ``"absolute"`` gives every element the unit radius,
+        so the default is a distance in Å; ``"covalent"`` gives each element
+        its covalent radius, so the default is a fraction of each atom pair's
+        own bond length.
     """
 
     def __init__(
@@ -1154,7 +1492,20 @@ class DataRequirementItem:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
+        source_policy: DataRequirementSourcePolicy = "tracked",
+        length_scale: str = "absolute",
     ) -> None:
+        if source_policy not in {"tracked", "default", "derived"}:
+            raise ValueError(
+                "source_policy must be 'tracked', 'default', or 'derived', "
+                f"got {source_policy!r}"
+            )
+        if must and source_policy != "tracked":
+            raise ValueError(
+                f"mandatory data requirement {key!r} cannot use "
+                f"source_policy={source_policy!r}"
+            )
         self.key = key
         self.ndof = ndof
         self.atomic = atomic
@@ -1165,10 +1516,13 @@ class DataRequirementItem:
         self.default = default
         self.dtype = dtype
         self.output_natoms_for_type_sel = output_natoms_for_type_sel
+        self.special_shape = special_shape
+        self.source_policy = source_policy
+        self.length_scale = length_scale
         self.dict = self.to_dict()
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "key": self.key,
             "ndof": self.ndof,
             "atomic": self.atomic,
@@ -1179,7 +1533,12 @@ class DataRequirementItem:
             "default": self.default,
             "dtype": self.dtype,
             "output_natoms_for_type_sel": self.output_natoms_for_type_sel,
+            "source_policy": self.source_policy,
+            "length_scale": self.length_scale,
         }
+        if self.special_shape is not None:
+            data["special_shape"] = self.special_shape
+        return data
 
     def __getitem__(self, key: str) -> np.ndarray:
         if key not in self.dict:
@@ -1193,3 +1552,116 @@ class DataRequirementItem:
 
     def __repr__(self) -> str:
         return f"DataRequirementItem({self.dict})"
+
+
+def has_data_requirement(requirements: Iterable[DataRequirementItem], key: str) -> bool:
+    """Return whether a collection requests data identified by ``key``.
+
+    Consumers should use requirement items as the contract with losses instead
+    of reinterpreting loss-specific configuration such as prefactors.
+    """
+    return any(item.key == key for item in requirements)
+
+
+def min_pair_dist_requirement(
+    model_params: dict,
+    min_pair_dist: float,
+) -> DataRequirementItem | None:
+    """
+    Build the frame-filter requirement a model and its dataset config imply.
+
+    A bridged model owns the window. In its lower half the bridging modules
+    throttle the learned energy to less than half of its amplitude, so a label
+    there asks the model for a multiple of the residual it has to express, and
+    a frame holding a pair that close steers the fit inside the window. The
+    filter is therefore the window midpoint, read from the model rather than
+    restated in the dataset section. Any other model has no such radius, and
+    the dataset section may still ask for a plain distance floor.
+
+    Parameters
+    ----------
+    model_params : dict
+        The model section of the training config, in either the concise
+        ``bridging_method`` spelling or the canonical composition form.
+    min_pair_dist : float
+        The ``training_data.min_pair_dist`` value, a distance in Å. Zero or
+        less leaves an unbridged model unfiltered.
+
+    Returns
+    -------
+    DataRequirementItem or None
+        The requirement of the derived ``pair_margin`` field, or None when no
+        filter applies.
+
+    Raises
+    ------
+    ValueError
+        If a bridged model is given an explicit ``min_pair_dist``, which would
+        put a second, silently disagreeing copy of the filter radius in the
+        input.
+    """
+    # A model is bridged exactly when its canonical composition carries an
+    # analytical child, which is the same test the composition builder applies
+    # and covers every learned family it accepts, DPA4C included.
+    canonical = expand_bridging_method(model_params)
+    inner = next(
+        (
+            sub
+            for sub in (canonical.get("models") or [])
+            if isinstance(sub, dict) and sub.get("type") == "inner_potential"
+        ),
+        None,
+    )
+    if inner is not None:
+        if min_pair_dist > 0.0:
+            raise ValueError(
+                "`training_data.min_pair_dist` must not be set on a bridged "
+                "model: the filter is the midpoint of the bridging window and "
+                "is taken from the model. Remove the key."
+            )
+        window = resolve_bridging_window(inner)
+        fraction = window_midpoint(
+            window["inner_clamp_f_inner"], window["inner_clamp_f_outer"]
+        )
+        scale = window["inner_clamp_scale"]
+    else:
+        fraction, scale = min_pair_dist, "absolute"
+    # An unbridged model without a floor registers no requirement, so a zero
+    # radius cannot leave one behind that the reader would then refuse to
+    # derive; a bridged window is positive by construction.
+    if fraction <= 0.0:
+        return None
+    return _pair_margin_requirement(fraction, scale)
+
+
+def _pair_margin_requirement(fraction: float, length_scale: str) -> DataRequirementItem:
+    """Assemble the derived frame-filter requirement.
+
+    The default carries the filter radius and the length scale names the
+    per-element radii it multiplies, which is everything a reader needs to
+    size the per-type thresholds from its own type map. The field holds each
+    frame's margin against those thresholds, a dimensionless ratio the filter
+    compares against one.
+
+    Parameters
+    ----------
+    fraction : float
+        Filter radius, as a fraction of the pair length scale.
+    length_scale : str
+        Either ``"covalent"`` or ``"absolute"``.
+
+    Returns
+    -------
+    DataRequirementItem
+        The requirement for the derived ``pair_margin`` field.
+    """
+    return DataRequirementItem(
+        "pair_margin",
+        1,
+        atomic=False,
+        must=False,
+        high_prec=False,
+        default=fraction,
+        source_policy="derived",
+        length_scale=length_scale,
+    )

@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from collections.abc import (
+    Callable,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -33,8 +39,8 @@ class FakeModel:
     def get_type_map(self):
         return ["O", "H"]
 
-    def get_fitting_net(self):
-        return self.fitting_net
+    def compute_fitting_input_stats(self, sample_func: Callable[[], Any]) -> None:
+        self.fitting_net.compute_input_stats(sample_func)
 
 
 class TestChangeModelOutBias(unittest.TestCase):

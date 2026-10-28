@@ -28,6 +28,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_einsum,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -131,10 +132,12 @@ class FocusLinear(NativeOP):
             xp, self.weight[...], device=array_api_compat.device(x)
         )
         weight = xp.reshape(weight, (self.in_channels, self.n_focus, self.out_channels))
-        # einsum "bfi,ifo->bfo" as a broadcast batched matmul:
-        # (B, F, 1, Cin) @ (1, F, Cin, Cout) -> (B, F, 1, Cout)
-        weight = xp.permute_dims(weight, (1, 0, 2))  # (F, Cin, Cout)
-        out = xp.matmul(x[:, :, None, :], weight[None, ...])[..., 0, :]
+        # F independent (B, Cin) x (Cin, Cout) GEMMs. Expressed as a
+        # contraction rather than as a permute / matmul / permute chain so the
+        # backend picks the execution order: the chain forces a batched matmul
+        # over F with transposing copies, while the contraction can become a
+        # single GEMM on a reshaped operand or fuse into its neighbours.
+        out = xp_einsum("bfi,ifo->bfo", x, weight)  # (B, F, Cout)
         if self.use_bias:
             bias = xp_asarray_nodetach(
                 xp, self.bias[...], device=array_api_compat.device(x)
@@ -439,12 +442,7 @@ class SO3Linear(NativeOP):
         weight_expanded = xp.take(weight, expand_index, axis=0)  # (D, Cin, F, Cout)
 
         # === Step 2. Per-focus, per-degree channel mixing ===
-        # einsum "ndfi,difo->ndfo" as a broadcast batched matmul:
-        # (N, D, F, 1, Cin) @ (1, D, F, Cin, Cout) -> (N, D, F, 1, Cout)
-        weight_expanded = xp.permute_dims(
-            weight_expanded, (0, 2, 1, 3)
-        )  # (D, F, Cin, Cout)
-        out = xp.matmul(x[:, :, :, None, :], weight_expanded[None, ...])[..., 0, :]
+        out = xp_einsum("ndfi,difo->ndfo", x, weight_expanded)  # (N, D, F, Cout)
 
         # === Step 3. Add l=0 bias ===
         if self.mlp_bias:
@@ -456,6 +454,44 @@ class SO3Linear(NativeOP):
                 [out[:, :1, :, :] + bias[None, None, ...], out[:, 1:, :, :]], axis=1
             )
 
+        return out
+
+    def call_scalar(self, x: Any) -> Any:
+        """Project only the ``l=0`` coefficient.
+
+        Parameters
+        ----------
+        x : Array
+            Input features with shape ``(N, D, F, C_in)``.
+
+        Returns
+        -------
+        Array
+            Scalar output with shape ``(N, 1, F, C_out)``.
+
+        Notes
+        -----
+        Degree-wise weights never mix distinct ``(l, m)`` coefficients. A
+        scalar-only consumer can therefore select the input and weight before
+        the contraction instead of computing and discarding all ``l > 0``
+        outputs.
+        """
+        xp = array_api_compat.array_namespace(x)
+        weight = xp.reshape(
+            xp_asarray_nodetach(
+                xp, self.weight[0, ...], device=array_api_compat.device(x)
+            ),
+            (self.in_channels, self.n_focus, self.out_channels),
+        )
+        out = xp_einsum("ndfi,ifo->ndfo", x[:, 0:1, :, :], weight)
+        if self.mlp_bias:
+            bias = xp.reshape(
+                xp_asarray_nodetach(
+                    xp, self.bias[...], device=array_api_compat.device(x)
+                ),
+                (self.n_focus, self.out_channels),
+            )
+            out = out + bias[None, None, ...]
         return out
 
     def serialize(self) -> dict[str, Any]:

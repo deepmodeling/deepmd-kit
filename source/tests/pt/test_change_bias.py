@@ -96,7 +96,6 @@ class TestChangeBias(unittest.TestCase):
         self.model_path_user_bias = Path(current_path) / (
             model_name + "user_bias" + ".pt"
         )
-        self.loss_params = self.config["loss"]
 
     def test_change_bias_with_data(self) -> None:
         run_dp(
@@ -108,7 +107,6 @@ class TestChangeBias(unittest.TestCase):
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(
             model_params,
-            _loss_params=self.loss_params,
         )
         wrapper = ModelWrapper(model_for_wrapper)
         wrapper.load_state_dict(state_dict["model"])
@@ -134,7 +132,6 @@ class TestChangeBias(unittest.TestCase):
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(
             model_params,
-            _loss_params=self.loss_params,
         )
         wrapper = ModelWrapper(model_for_wrapper)
         wrapper.load_state_dict(state_dict["model"])
@@ -147,6 +144,32 @@ class TestChangeBias(unittest.TestCase):
         expected_bias = expected_model.get_out_bias()
         torch.testing.assert_close(updated_bias, expected_bias)
 
+    def test_change_bias_ignores_checkpoint_preset(self) -> None:
+        checkpoint = torch.load(
+            str(self.model_path), map_location=DEVICE, weights_only=True
+        )
+        preset = {"energy": [1.0e6] * len(self.config["model"]["type_map"])}
+        checkpoint["model"]["_extra_state"]["model_params"]["preset_out_bias"] = preset
+        torch.save(checkpoint, self.model_path)
+        run_dp(
+            f"dp --pt change-bias {self.model_path!s} -s {self.data_file[0]} -o {self.model_path_data_bias!s}"
+        )
+        updated = torch.load(
+            str(self.model_path_data_bias), map_location=DEVICE, weights_only=True
+        )
+        model_params = updated["model"]["_extra_state"]["model_params"]
+        self.assertEqual(model_params["preset_out_bias"], preset)
+        wrapper = ModelWrapper(get_model_for_wrapper(model_params))
+        wrapper.load_state_dict(updated["model"])
+        expected_model = model_change_out_bias(
+            self.trainer.wrapper.model["Default"],
+            self.sampled,
+            _bias_adjust_mode="change-by-statistic",
+        )
+        torch.testing.assert_close(
+            wrapper.model["Default"].get_out_bias(), expected_model.get_out_bias()
+        )
+
     def test_change_bias_with_user_defined(self) -> None:
         user_bias = [0.1, 3.2, -0.5]
         run_dp(
@@ -158,7 +181,6 @@ class TestChangeBias(unittest.TestCase):
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(
             model_params,
-            _loss_params=self.loss_params,
         )
         wrapper = ModelWrapper(model_for_wrapper)
         wrapper.load_state_dict(state_dict["model"])

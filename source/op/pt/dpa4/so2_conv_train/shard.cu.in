@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// Generated explicit instantiation shard. The maintained template grid lives
+// in instantiate.cuh; CMake selects one degree and scalar type per source so
+// expensive nvcc template compilation runs in parallel.
+
+#define DPA4_SCT_L @DPA4_SCT_L@
+#define DPA4_SCT_TYPE @DPA4_SCT_TYPE@
+
+#include "@DPA4_SCT_INSTANTIATE_HEADER@"

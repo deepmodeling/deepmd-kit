@@ -147,9 +147,33 @@ class TestDescriptorGradParity:
             ntypes=self.ntypes,
         )
 
-    @pytest.mark.parametrize("use_env_seed", [False, True])  # env FiLM (film_* params)
-    def test_descriptor_grad_parity(self, use_env_seed) -> None:
-        pt_mod, expt_mod = self._build_pair(use_env_seed=use_env_seed)
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param({"use_env_seed": False}, id="no_env_seed"),
+            pytest.param({"use_env_seed": True}, id="env_seed"),  # film_* params
+            # The grid-product branches are off by default, yet the SO(3) ones
+            # carry FrameExpand/FrameContract -- the only descriptor weights
+            # dpmodel stores as bare numpy outside a NativeLayer, and therefore
+            # the ones most exposed to a missing promotion.  The S2 branches
+            # share the rest of the grid-net structure without those two
+            # sub-modules.
+            pytest.param({"message_node_so3": True}, id="message_node_so3"),
+            pytest.param({"node_wise_so3": True}, id="node_wise_so3"),
+            pytest.param({"message_node_s2": True}, id="message_node_s2"),
+            pytest.param({"node_wise_s2": True}, id="node_wise_s2"),
+            # ReducedEquivariantRMSNorm is reachable only through so2_norm and
+            # is the one module that sizes its forward off a stored index array
+            pytest.param({"so2_norm": True}, id="so2_norm"),
+            pytest.param({"env_exp": 5}, id="single_envelope_bessel"),
+            pytest.param(
+                {"env_exp": 5, "basis_type": "gaussian"},
+                id="single_envelope_gaussian",
+            ),
+        ],
+    )
+    def test_descriptor_grad_parity(self, overrides) -> None:
+        pt_mod, expt_mod = self._build_pair(**overrides)
         inp = self._inputs()
         coord = inp["coord"].reshape(self.nf, -1)
         atype_ext, nlist, mapping = inp["atype_ext"], inp["nlist"], inp["mapping"]
@@ -179,6 +203,34 @@ class TestDescriptorGradParity:
         # descriptor-level gate (same as the forward parity gate in
         # test_dpa4_dpmodel_parity.py): grads chain the full descriptor
         # math, where fp64 accumulation-order drift reaches ~3e-11 rel
+        _assert_grad_trees_match(pt_mod, expt_mod, rtol=1e-10, atol=1e-12)
+
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
+    def test_single_envelope_coordinate_gradient_loss(self, basis_type: str) -> None:
+        """Differentiate a coordinate-gradient loss through both raw-basis backends."""
+        pt_mod, expt_mod = self._build_pair(env_exp=5, basis_type=basis_type)
+        inp = self._inputs()
+        outputs, derivatives = [], []
+        for module in (pt_mod, expt_mod):
+            coord = to_pt(inp["coord"]).reshape(self.nf, -1).requires_grad_(True)
+            output = module(
+                coord,
+                to_pt(inp["atype_ext"]),
+                to_pt(inp["nlist"]),
+                mapping=to_pt(inp["mapping"]),
+            )[0]
+            # Mean reductions keep the loss scale independent of the number
+            # of descriptor and coordinate components.
+            energy = output.square().mean()
+            derivative = torch.autograd.grad(energy, coord, create_graph=True)[0]
+            assert derivative.abs().max().item() > 1e-10
+            (energy + derivative.square().mean()).backward()
+            outputs.append(output.detach().cpu().numpy())
+            derivatives.append(derivative.detach().cpu().numpy())
+        np.testing.assert_allclose(outputs[0], outputs[1], rtol=1e-10, atol=1e-12)
+        np.testing.assert_allclose(
+            derivatives[0], derivatives[1], rtol=1e-10, atol=1e-12
+        )
         _assert_grad_trees_match(pt_mod, expt_mod, rtol=1e-10, atol=1e-12)
 
     def test_descriptor_grad_parity_native_spin(self) -> None:

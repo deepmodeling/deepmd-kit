@@ -10,6 +10,9 @@ import os
 import tempfile
 import unittest
 import zipfile
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import torch
@@ -22,6 +25,14 @@ from deepmd.pt_expt.descriptor.se_e2_a import (
 )
 from deepmd.pt_expt.fitting import (
     EnergyFittingNet,
+)
+from deepmd.pt_expt.infer.charge_state import (
+    charge_states,
+    charge_states_per_frame,
+    single_charge_state,
+)
+from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+    op_available as dpa4c_op_available,
 )
 from deepmd.pt_expt.model import (
     EnergyModel,
@@ -53,6 +64,63 @@ def _assert_repeatable(a, b) -> None:
         np.testing.assert_array_equal(a, b)
     else:
         np.testing.assert_allclose(a, b, rtol=1e-10, atol=1e-10)
+
+
+class TestChargeStateBoundary(unittest.TestCase):
+    """The host boundary must reject a state no embedding row answers.
+
+    Every charge-conditioned descriptor gathers one charge row and one
+    multiplicity row, and neither the gather nor the compiled kernel
+    bounds-checks the index, so a fractional or out-of-range request has to
+    fail here rather than be truncated onto a neighbouring row or read past
+    the table.
+    """
+
+    WIDTH = 2
+
+    #: Requests that address no table row, with the value each one violates.
+    UNADDRESSABLE_STATES = (
+        ([0.5, 1.0], "charge must be an integer"),
+        ([1.0, 2.5], "multiplicity must be an integer"),
+        ([float("nan"), 1.0], "charge must be an integer"),
+        ([1.0, float("inf")], "multiplicity must be an integer"),
+        ([-101.0, 1.0], r"charge must lie in \[-100, 100\)"),
+        ([100.0, 1.0], r"charge must lie in \[-100, 100\)"),
+        ([0.0, -1.0], r"multiplicity must lie in \[0, 100\)"),
+        ([0.0, 100.0], r"multiplicity must lie in \[0, 100\)"),
+    )
+
+    def test_folded_path_rejects_unaddressable_states(self) -> None:
+        for state, message in self.UNADDRESSABLE_STATES:
+            with self.subTest(state=state):
+                with self.assertRaisesRegex(ValueError, message):
+                    single_charge_state(state, self.WIDTH)
+
+    def test_input_tensor_path_rejects_unaddressable_states(self) -> None:
+        for state, message in self.UNADDRESSABLE_STATES:
+            with self.subTest(state=state):
+                with self.assertRaisesRegex(ValueError, message):
+                    charge_states_per_frame(state, 1, self.WIDTH)
+
+    def test_an_unaddressable_state_is_rejected_in_any_frame(self) -> None:
+        # The check covers every frame, not just the first.
+        with self.assertRaisesRegex(ValueError, "charge must be an integer"):
+            charge_states_per_frame([[1.0, 2.0], [0.5, 2.0]], 2, self.WIDTH)
+
+    def test_addressable_states_pass_through_unchanged(self) -> None:
+        np.testing.assert_array_equal(
+            charge_states_per_frame([[-3, 4], [0, 1]], 2, self.WIDTH),
+            [[-3.0, 4.0], [0.0, 1.0]],
+        )
+        self.assertEqual(single_charge_state([[2, 1], [2, 1]], self.WIDTH), (2.0, 1.0))
+
+    def test_shape_contracts_are_kept(self) -> None:
+        with self.assertRaisesRegex(ValueError, "whole number of 2-wide"):
+            charge_states([1.0], self.WIDTH)
+        with self.assertRaisesRegex(ValueError, "one charge state per frame"):
+            charge_states_per_frame([[1, 2]], 2, self.WIDTH)
+        with self.assertRaisesRegex(ValueError, "not all equal"):
+            single_charge_state([[1, 2], [3, 4]], self.WIDTH)
 
 
 class TestDeepEvalEner(unittest.TestCase):
@@ -163,6 +231,23 @@ class TestDeepEvalEner(unittest.TestCase):
         # dict equality would try to coerce elementwise array comparisons to a
         # single bool and fail with an ambiguous truth-value error.
         np.testing.assert_equal(data, serialize_from_file(self.tmpfile.name)["model"])
+
+    def test_pte_load_is_independent_of_default_device(self) -> None:
+        """Archive loading and inference retain the recorded tensor devices."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coords = rng.random((1, 5, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        expected = self.dp.eval(coords, cells, atom_types, atomic=True)
+        for default_device in ("meta", "cuda:9999999"):
+            with self.subTest(default_device=default_device):
+                with torch.device(default_device):
+                    dp = DeepPot(self.tmpfile.name)
+                    data = serialize_from_file(self.tmpfile.name)
+                    actual = dp.eval(coords, cells, atom_types, atomic=True)
+                np.testing.assert_equal(data["model"], self.model_data["model"])
+                for value, reference in zip(actual, expected, strict=True):
+                    np.testing.assert_allclose(value, reference, rtol=1e-10, atol=1e-10)
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
@@ -2277,22 +2362,53 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
         return is_vesin_torch_available()
 
     def test_default_is_auto(self) -> None:
-        dp = DeepPot(self.tmpfile.name)
-        self.assertEqual(dp.deep_eval._use_vesin, self._vesin_available())
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        for vesin_available, nv_available, expected in (
+            (False, False, False),
+            (True, False, True),
+            (False, True, True),
+            (True, True, True),
+        ):
+            with (
+                self.subTest(vesin=vesin_available, nv=nv_available),
+                mock.patch.object(
+                    auto_neighbor_list,
+                    "is_vesin_torch_available",
+                    return_value=vesin_available,
+                ),
+                mock.patch.object(
+                    auto_neighbor_list, "is_nv_available", return_value=nv_available
+                ),
+            ):
+                dp = DeepPot(self.tmpfile.name)
+                self.assertEqual(dp.deep_eval._nlist_builder is not None, expected)
 
     def test_native_disables_vesin(self) -> None:
         dp = DeepPot(self.tmpfile.name, nlist_backend="native")
-        self.assertFalse(dp.deep_eval._use_vesin)
+        self.assertIsNone(dp.deep_eval._nlist_builder)
 
     def test_invalid_raises(self) -> None:
         with self.assertRaises(ValueError):
             DeepPot(self.tmpfile.name, nlist_backend="bogus")
 
-    def test_vesin_requested_but_unavailable_raises(self) -> None:
-        if self._vesin_available():
-            self.skipTest("vesin.torch is installed; cannot test the missing path")
-        with self.assertRaises(ImportError):
-            DeepPot(self.tmpfile.name, nlist_backend="vesin")
+    def test_requested_backend_unavailable_raises(self) -> None:
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        for method, probe, message in (
+            ("vesin", "is_vesin_torch_available", r"vesin\[torch\]"),
+            ("nv", "is_nv_available", "nvalchemi-toolkit-ops"),
+        ):
+            with (
+                self.subTest(method=method),
+                mock.patch.object(auto_neighbor_list, probe, return_value=False),
+                self.assertRaisesRegex(ImportError, message),
+            ):
+                DeepPot(self.tmpfile.name, nlist_backend=method)
 
     def test_vesin_matches_native(self) -> None:
         if not self._vesin_available():
@@ -2310,6 +2426,25 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
                 np.testing.assert_allclose(
                     a, b, rtol=1e-10, atol=1e-10, err_msg=f"vesin vs native: {name}"
                 )
+
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA is required")
+    def test_nv_matches_native_multiframe(self) -> None:
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+
+        if not is_nv_available():
+            self.skipTest("nvalchemi-toolkit-ops is required")
+        rng = np.random.default_rng(GLOBAL_SEED + 21)
+        coords = rng.random((3, 6, 3)) * 8.0
+        atom_types = np.arange(6, dtype=np.int32) % self.nt
+        cells = np.tile(np.eye(3).reshape(1, 9) * 10.0, (3, 1))
+        native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        accelerated = DeepPot(self.tmpfile.name, nlist_backend="nv")
+        expected = native.eval(coords, cells, atom_types, atomic=True)
+        actual = accelerated.eval(coords, cells, atom_types, atomic=True)
+        for value, reference in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, reference, rtol=1e-9, atol=1e-9)
 
     def test_eval_descriptor_vesin_matches_native(self) -> None:
         """eval_descriptor bypasses forward_common_lower's format_nlist, so the
@@ -2341,7 +2476,7 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
         from deepmd.dpmodel.model.model import get_model as dp_get_model
 
         cls.nt = 2
-        cls.default_chg_spin = [0.5, 0.8]
+        cls.default_chg_spin = [-1.0, 2.0]
 
         config = {
             "type_map": ["O", "H"],
@@ -2424,6 +2559,24 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
             "Changing charge_spin did not change output — charge_spin may be ignored"
         )
 
+    def test_unaddressable_states_are_rejected(self) -> None:
+        """DPA3 gathers table rows, so it serves integers in range only."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        for state, message in (
+            ([[0.5, 1.0]], "charge must be an integer"),
+            ([[0.0, 1.5]], "multiplicity must be an integer"),
+            ([[100.0, 1.0]], r"charge must lie in \[-100, 100\)"),
+            ([[0.0, 100.0]], r"multiplicity must lie in \[0, 100\)"),
+        ):
+            with self.subTest(charge_spin=state):
+                with self.assertRaisesRegex(ValueError, message):
+                    self.dp.eval(coords, cells, atom_types, charge_spin=np.array(state))
+
     def test_default_matches_explicit_default(self) -> None:
         """Eval without charge_spin should use stored default and match explicit."""
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -2443,6 +2596,202 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
         np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
         np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
         np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+
+
+@unittest.skipUnless(
+    torch.cuda.is_available() and dpa4c_op_available(),
+    "CUDA and the compiled DPA4C operator are required",
+)
+class TestCompressedChargeStateRoutes(unittest.TestCase):
+    """A compressed archive must serve one charge state to all of its routes.
+
+    Compression folds the condition into frozen tables that only the fused
+    kernel behind the compiled lower reads, while ``eval_descriptor`` and
+    ``eval_fitting_last_layer`` evaluate the model deserialized beside that
+    lower, which reads the condition as an argument. Both routes have to
+    answer for the state the caller asked for.
+    """
+
+    lower_kind = "graph"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import copy
+
+        from deepmd.pt_expt.model import get_model as pt_expt_get_model
+
+        cls.nt = 2
+        config = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 4,
+                "precision": "float32",
+                "add_chg_spin_ebd": True,
+                "default_chg_spin": [0.0, 1.0],
+                "seed": GLOBAL_SEED,
+            },
+            "fitting_net": {
+                "neuron": [8, 8],
+                "precision": "float32",
+                "resnet_dt": cls.lower_kind == "graph",
+                "seed": 1,
+            },
+        }
+        model = pt_expt_get_model(copy.deepcopy(config)).to("cuda")
+
+        # The conditioning projection is zero initialized so that an untrained
+        # descriptor is unconditioned; give it weight to make the state
+        # observable at all.
+        generator = torch.Generator(device="cuda").manual_seed(GLOBAL_SEED)
+        for (
+            _,
+            param,
+        ) in model.atomic_model.descriptor.charge_spin_embedding.named_parameters():
+            with torch.no_grad():
+                param.copy_(
+                    torch.randn(
+                        param.shape,
+                        generator=generator,
+                        device="cuda",
+                        dtype=param.dtype,
+                    )
+                    * 0.3
+                )
+        cls.reference = copy.deepcopy(model).eval()
+        model.atomic_model.descriptor.enable_compression(0.5)
+
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.tmpfile.close()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(
+                cls.tmpfile.name,
+                {"model": model.serialize()},
+                lower_kind="auto",
+                with_comm=False,
+            )
+            # The nested rebuild is loaded as an archive of its own, which
+            # reads the default device.
+            cls.dp = DeepPot(cls.tmpfile.name)
+            assert cls.dp.deep_eval.metadata["lower_input_kind"] == cls.lower_kind
+        finally:
+            torch.set_default_device("cuda:9999999")
+
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        cls.coords = rng.random((1, natoms, 3)) * 6.0
+        cls.cells = np.eye(3).reshape(1, 9) * 12.0
+        cls.atom_types = np.array([i % cls.nt for i in range(natoms)], dtype=np.int32)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.unlink(cls.tmpfile.name)
+
+    def _routes(self, charge_spin: list[float]) -> tuple[float, float, float]:
+        state = np.array([charge_spin])
+        energy = self.dp.eval(
+            self.coords, self.cells, self.atom_types, charge_spin=state
+        )[0]
+        descriptor = self.dp.deep_eval.eval_descriptor(
+            self.coords, self.cells, self.atom_types, charge_spin=state
+        )
+        fitting = self.dp.deep_eval.eval_fitting_last_layer(
+            self.coords, self.cells, self.atom_types, charge_spin=state
+        )
+        return float(energy.sum()), float(descriptor.sum()), float(fitting.sum())
+
+    def test_the_archive_carries_a_rebuild(self) -> None:
+        """Without the fold no route could serve a state other than the default."""
+        self.assertIsNotNone(self.dp.deep_eval._charge_state_fold)
+
+    def test_every_route_follows_the_requested_state(self) -> None:
+        default_state = self._routes([0.0, 1.0])
+        other_state = self._routes([2.0, 3.0])
+        for name, before, after in zip(
+            ("energy", "descriptor", "fitting last layer"),
+            default_state,
+            other_state,
+            strict=True,
+        ):
+            with self.subTest(route=name):
+                self.assertNotAlmostEqual(
+                    before,
+                    after,
+                    places=6,
+                    msg=f"the {name} route ignored the requested charge state",
+                )
+
+    def test_a_state_is_not_left_behind(self) -> None:
+        """Serving one state must not shift what a later call answers for.
+
+        Returning to a state rebuilds the tables rather than restoring them,
+        so the tolerance admits float32 rounding while staying far below the
+        separation between the two states.
+        """
+        first = self._routes([0.0, 1.0])
+        self._routes([2.0, 3.0])
+        np.testing.assert_allclose(self._routes([0.0, 1.0]), first, rtol=1e-6)
+
+
+class TestCanonicalChargeStateRoutes(TestCompressedChargeStateRoutes):
+    """Canonical archives retain charge folding and both graph input paths."""
+
+    lower_kind = "dpa4c_canonical"
+
+    def test_canonical_inputs_match_eager(self) -> None:
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+        from deepmd.pt_expt.utils import (
+            canonical_graph,
+        )
+        from deepmd.pt_expt.utils.vesin_neighbor_list import (
+            is_vesin_torch_available,
+        )
+
+        state = np.array([[2.0, 3.0]])
+        reference = self.reference(
+            torch.as_tensor(self.coords, dtype=torch.float64, device=DEVICE),
+            torch.as_tensor(self.atom_types[None], dtype=torch.int64, device=DEVICE),
+            torch.as_tensor(self.cells, dtype=torch.float64, device=DEVICE),
+            charge_spin=torch.as_tensor(state, dtype=torch.float64, device=DEVICE),
+        )
+        self.assertGreater(float(reference["force"].abs().max()), 1e-8)
+        for method, available in (
+            ("dense", True),
+            ("nv", is_nv_available()),
+            ("vesin", is_vesin_torch_available()),
+        ):
+            with self.subTest(method=method):
+                if not available:
+                    self.skipTest(f"{method} is not installed")
+                dp = DeepPot(
+                    self.tmpfile.name,
+                    auto_batch_size=False,
+                    neighbor_graph_method=method,
+                )
+                with mock.patch.object(
+                    canonical_graph,
+                    "canonical_graph_from_neighbor_graph",
+                    wraps=canonical_graph.canonical_graph_from_neighbor_graph,
+                ) as convert:
+                    actual = dp.eval(
+                        self.coords, self.cells, self.atom_types, charge_spin=state
+                    )
+                self.assertEqual(convert.call_count, 0 if method == "vesin" else 1)
+                for value, key in zip(
+                    actual[:3], ("energy", "force", "virial"), strict=True
+                ):
+                    np.testing.assert_allclose(
+                        value,
+                        reference[key].detach().cpu().numpy(),
+                        rtol=1e-4,
+                        atol=1e-5,
+                    )
 
 
 if __name__ == "__main__":

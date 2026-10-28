@@ -10,12 +10,27 @@ before the factory runs; the factory is exposed when called with a raw dict.
 """
 
 import unittest
+from pathlib import (
+    Path,
+)
 
+import numpy as np
+
+from deepmd.jax.env import (
+    jnp,
+    nnx,
+)
 from deepmd.jax.model.ener_model import (
     EnergyModel,
 )
 from deepmd.jax.model.model import (
     get_model,
+)
+
+from ..common.stat_file import (
+    assert_energy_stat_cache_round_trip,
+    energy_model_params,
+    energy_stat_sample,
 )
 
 
@@ -60,6 +75,57 @@ class TestJAXModelFactoryFittingDefault(unittest.TestCase):
         data["fitting_net"]["type"] = "ener"
         model = get_model(data)
         self.assertIsInstance(model, EnergyModel)
+
+
+def test_jax_array_assignment_preserves_variable_for_shape_change() -> None:
+    """Backend array assignment updates an existing NNX variable container."""
+    descriptor = get_model(energy_model_params()).get_descriptor()
+    variable = descriptor.davg
+    new_shape = (3, *variable.shape[1:])
+
+    descriptor.davg = jnp.zeros(new_shape, dtype=variable.dtype)
+
+    assert descriptor.davg is variable
+    assert descriptor.davg.shape == new_shape
+
+
+def test_jax_energy_cache_round_trip_uses_fitting_outputs_only(
+    tmp_path: Path,
+) -> None:
+    models = []
+
+    def model_factory():
+        model = get_model(energy_model_params())
+        models.append(model)
+        return model
+
+    def sample_factory():
+        return [
+            {
+                key: jnp.asarray(value) if isinstance(value, np.ndarray) else value
+                for key, value in sample.items()
+            }
+            for sample in energy_stat_sample()
+        ]
+
+    assert_energy_stat_cache_round_trip(
+        model_factory,
+        tmp_path / "stat.hdf5",
+        sample_factory=sample_factory,
+    )
+    for model in models:
+        descriptor = model.get_descriptor()
+        fitting = model.get_fitting_net()
+        for value in (
+            *descriptor.get_stat_mean_and_stddev(),
+            fitting.fparam_avg,
+            fitting.fparam_inv_std,
+            fitting.aparam_avg,
+            fitting.aparam_inv_std,
+            model.atomic_model.out_bias,
+            model.atomic_model.out_std,
+        ):
+            assert isinstance(value, nnx.Variable)
 
 
 if __name__ == "__main__":

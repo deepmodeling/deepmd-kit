@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
+)
+from deepmd.utils.data import (
+    DeepmdData,
 )
 
 from ...seed import (
@@ -15,7 +21,14 @@ from ...seed import (
 class TestEnergyLossBase(unittest.TestCase):
     """Base class providing common setup for dpmodel EnergyLoss tests."""
 
-    def _make_data(self, natoms=5, nframes=2, numb_generalized_coord=0):
+    def _make_data(
+        self,
+        natoms=5,
+        nframes=2,
+        numb_generalized_coord=0,
+        hessian=False,
+        hessian_key="hessian",
+    ):
         """Generate fake model predictions and labels."""
         rng = np.random.default_rng(GLOBAL_SEED)
         model_dict = {
@@ -43,11 +56,62 @@ class TestEnergyLossBase(unittest.TestCase):
             label_dict["find_drdq"] = 1.0
         if hasattr(self, "enable_atom_ener_coeff") and self.enable_atom_ener_coeff:
             label_dict["atom_ener_coeff"] = rng.random((nframes, natoms, 1))
+        if hessian:
+            model_dict[hessian_key] = rng.random((nframes, 3 * natoms, 3 * natoms))
+            label_dict["hessian"] = rng.random((nframes, 3 * natoms, 3 * natoms))
+            label_dict["find_hessian"] = 1.0
         return model_dict, label_dict, natoms
 
 
 class TestEnergyLossBasic(TestEnergyLossBase):
     """Test basic energy loss (e, f, v, ae)."""
+
+    def test_inactive_terms_are_absent_from_the_data_contract(self) -> None:
+        """The declared labels must match the terms evaluated by the loss."""
+        loss_fn = EnergyLoss(starter_learning_rate=1.0)
+        required_keys = {item.key for item in loss_fn.label_requirement}
+        self.assertEqual(required_keys, {"energy", "force"})
+
+        model_dict, all_labels, natoms = self._make_data()
+        label_dict = {
+            key: value
+            for key, value in all_labels.items()
+            if key in required_keys
+            or (key.startswith("find_") and key.removeprefix("find_") in required_keys)
+        }
+        loss, more_loss = loss_fn.call(1.0, natoms, model_dict, label_dict)
+
+        self.assertTrue(np.isfinite(loss))
+        self.assertEqual(set(more_loss), {"rmse_e", "rmse_f", "rmse"})
+
+    def test_prefactor_force_declares_both_inputs(self) -> None:
+        """Atomic force weighting requires force and atom_pref labels."""
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_pf=1.0,
+            limit_pref_pf=1.0,
+        )
+        self.assertEqual(
+            {item.key for item in loss_fn.label_requirement},
+            {"force", "atom_pref"},
+        )
+
+    def test_default_prefactor_is_valid_training_data(self) -> None:
+        """use_default_pf makes a missing atom_pref equivalent to unit weights."""
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_pf=1.0,
+            limit_pref_pf=1.0,
+            use_default_pf=True,
+        )
+        atom_pref = next(
+            item for item in loss_fn.label_requirement if item.key == "atom_pref"
+        )
+        self.assertEqual(atom_pref.source_policy, "default")
 
     def test_forward(self) -> None:
         loss_fn = EnergyLoss(
@@ -90,6 +154,32 @@ class TestEnergyLossAecoeff(TestEnergyLossBase):
         loss, more_loss = loss_fn.call(1.0, natoms, model_dict, label_dict)
         self.assertIsNotNone(loss)
 
+    def test_ragged_frames_are_reduced_independently(self) -> None:
+        """Atomic coefficients retain the frame boundaries of a flat node axis."""
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            enable_atom_ener_coeff=True,
+        )
+        n_node = np.array([2, 3], dtype=np.int64)
+        model_dict = {
+            "energy": np.array([[3.0], [12.0]]),
+            "atom_energy": np.arange(1.0, 6.0).reshape(-1, 1),
+            "n_node": n_node,
+        }
+        label_dict = {
+            "energy": np.array([[3.0], [12.0]]),
+            "find_energy": 1.0,
+            "atom_ener_coeff": np.ones((5, 1)),
+        }
+
+        loss, _ = loss_fn.call(1.0, int(n_node.sum()), model_dict, label_dict)
+
+        self.assertEqual(float(loss), 0.0)
+
 
 class TestEnergyLossGeneralizedForce(TestEnergyLossBase):
     """Test energy loss with generalized force (numb_generalized_coord > 0).
@@ -124,6 +214,56 @@ class TestEnergyLossGeneralizedForce(TestEnergyLossBase):
         self.assertIn("rmse_gf", more_loss)
         self.assertIn("rmse_pf", more_loss)
 
+    def test_force_derived_terms_require_force_labels(self) -> None:
+        """PF and GF supervision are unavailable when force is unavailable."""
+        cases = (
+            (
+                "prefactor force",
+                {
+                    "start_pref_pf": 1.0,
+                    "limit_pref_pf": 1.0,
+                    "use_default_pf": True,
+                },
+                "rmse_pf",
+                0,
+            ),
+            (
+                "generalized force",
+                {
+                    "start_pref_gf": 1.0,
+                    "limit_pref_gf": 1.0,
+                    "numb_generalized_coord": 2,
+                },
+                "rmse_gf",
+                2,
+            ),
+        )
+        for name, term_kwargs, metric, numb_generalized_coord in cases:
+            with self.subTest(term=name):
+                loss_fn = EnergyLoss(
+                    starter_learning_rate=1.0,
+                    start_pref_e=0.0,
+                    limit_pref_e=0.0,
+                    start_pref_f=0.0,
+                    limit_pref_f=0.0,
+                    start_pref_v=0.0,
+                    limit_pref_v=0.0,
+                    **term_kwargs,
+                )
+                model_dict, label_dict, natoms = self._make_data(
+                    numb_generalized_coord=numb_generalized_coord,
+                )
+                label_dict["find_force"] = 0.0
+                loss, more_loss = loss_fn.call(
+                    1.0,
+                    natoms,
+                    model_dict,
+                    label_dict,
+                )
+
+                self.assertEqual(float(loss), 0.0)
+                self.assertTrue(np.isnan(more_loss[metric]))
+
 
 class TestEnergyLossHuber(TestEnergyLossBase):
     """Test energy loss with Huber loss."""
@@ -145,6 +285,87 @@ class TestEnergyLossHuber(TestEnergyLossBase):
         self.assertIsNotNone(loss)
 
 
+class TestEnergyLossHessian(TestEnergyLossBase):
+    """Test Hessian loss inside the dpmodel energy loss."""
+
+    def test_disabled_hessian_preserves_standard_serialization(self) -> None:
+        """Default losses must keep the pre-Hessian serialization contract."""
+        loss_fn = EnergyLoss(starter_learning_rate=1.0)
+
+        data = loss_fn.serialize()
+
+        self.assertEqual(data["@version"], 4)
+        self.assertNotIn("start_pref_h", data)
+        self.assertNotIn("limit_pref_h", data)
+        self.assertNotIn(
+            "hessian",
+            {item.key for item in loss_fn.label_requirement},
+        )
+        self.assertTrue(
+            all(
+                "special_shape" not in item.to_dict()
+                for item in loss_fn.label_requirement
+            )
+        )
+
+    def test_forward_hessian(self) -> None:
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_h=2.0,
+            limit_pref_h=1.0,
+        )
+        model_dict, label_dict, natoms = self._make_data(
+            hessian=True,
+            hessian_key="energy_derv_r_derv_r",
+        )
+        loss, more_loss = loss_fn.call(1.0, natoms, model_dict, label_dict)
+        diff_h = label_dict["hessian"].reshape(-1) - model_dict[
+            "energy_derv_r_derv_r"
+        ].reshape(-1)
+        l2_hessian_loss = np.mean(np.square(diff_h))
+        np.testing.assert_allclose(loss, 2.0 * l2_hessian_loss)
+        np.testing.assert_allclose(more_loss["rmse_h"], np.sqrt(l2_hessian_loss))
+        self.assertIn(
+            "hessian",
+            {item.key for item in loss_fn.label_requirement},
+        )
+
+    def test_hessian_label_requirement_loads_full_matrix(self) -> None:
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_h=1.0,
+            limit_pref_h=1.0,
+        )
+        hessian_req = next(
+            item for item in loss_fn.label_requirement if item.key == "hessian"
+        )
+        self.assertFalse(hessian_req.atomic)
+        self.assertEqual(hessian_req.special_shape, "hessian")
+
+        system = (
+            Path(__file__).resolve().parents[2] / "pt" / "hessian" / "data" / "H8C4N2O"
+        )
+        data = DeepmdData(str(system), type_map=["C", "H", "N", "O"])
+        data.add(
+            hessian_req.key,
+            hessian_req.ndof,
+            atomic=hessian_req.atomic,
+            must=hessian_req.must,
+            high_prec=hessian_req.high_prec,
+            special_shape=hessian_req.special_shape,
+        )
+
+        batch = data.get_batch(2)
+
+        self.assertEqual(batch["hessian"].shape, (2, (3 * data.natoms) ** 2))
+
+
 class TestEnergyLossSerialize(TestEnergyLossBase):
     """Test serialize/deserialize round-trip."""
 
@@ -160,15 +381,33 @@ class TestEnergyLossSerialize(TestEnergyLossBase):
             start_pref_gf=1.0,
             limit_pref_gf=0.5,
             numb_generalized_coord=2,
+            start_pref_h=2.0,
+            limit_pref_h=0.5,
         )
         data = loss_fn.serialize()
+        self.assertEqual(data["@version"], 5)
+        self.assertEqual(data["start_pref_h"], 2.0)
+        self.assertEqual(data["limit_pref_h"], 0.5)
         loss_fn2 = EnergyLoss.deserialize(data)
-        model_dict, label_dict, natoms = self._make_data(numb_generalized_coord=2)
+        model_dict, label_dict, natoms = self._make_data(
+            numb_generalized_coord=2,
+            hessian=True,
+        )
         loss1, more1 = loss_fn.call(1.0, natoms, model_dict, label_dict)
         loss2, more2 = loss_fn2.call(1.0, natoms, model_dict, label_dict)
         np.testing.assert_allclose(loss1, loss2)
         for key in more1:
             np.testing.assert_allclose(more1[key], more2[key])
+
+    def test_version_four_defaults_to_non_hessian_loss(self) -> None:
+        """Version-4 payloads deserialize without inventing Hessian supervision."""
+        data = EnergyLoss(starter_learning_rate=1.0).serialize()
+
+        loss_fn = EnergyLoss.deserialize(data)
+
+        self.assertFalse(loss_fn.has_h)
+        self.assertEqual(loss_fn.start_pref_h, 0.0)
+        self.assertEqual(loss_fn.limit_pref_h, 0.0)
 
 
 if __name__ == "__main__":
