@@ -174,7 +174,7 @@ class TestDPTestDensity(unittest.TestCase):
         model.change_out_bias(self.input_dict)
         model.change_out_bias(self.input_dict, bias_adjust_mode="set-by-statistic")
         # Keep both no-op overrides compatible with their base APIs.
-        model.change_out_bias(self.input_dict, "set-by-statistic", None)
+        model.change_out_bias(self.input_dict, "set-by-statistic", {})
         model.atomic_model.change_out_bias(
             self.input_dict, None, "set-by-statistic", None, None
         )
