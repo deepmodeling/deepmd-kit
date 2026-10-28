@@ -133,9 +133,10 @@ class _FakeMixedDataset:
             "real_natoms_vec": np.array(
                 [2, 2, int(atom_type == 0), int(atom_type == 1)], dtype=np.int32
             ),
-            "min_pair_dist": np.array(
-                [self.min_pair_distances[index]], dtype=np.float64
+            "pair_margin": np.array(
+                [self.min_pair_distances[index] / 0.5], dtype=np.float64
             ),
+            "find_pair_margin": np.float32(1.0),
         }
 
 
@@ -173,7 +174,7 @@ class TestStatSamplingCoverage(unittest.TestCase):
             _append_missing_type_frames(
                 sys_stat,
                 _FakeMixedDataset((1.0, 0.1, 0.8)),
-                min_pair_dist=0.5,
+                filter_enabled=True,
             )
 
             self.assertEqual(len(sys_stat["real_natoms_vec"]), 2)
@@ -193,7 +194,7 @@ class TestStatSamplingCoverage(unittest.TestCase):
                 _append_missing_type_frames(
                     sys_stat,
                     _FakeMixedDataset((1.0, 0.1, 0.2)),
-                    min_pair_dist=0.5,
+                    filter_enabled=True,
                 )
 
             self.assertEqual(len(sys_stat["real_natoms_vec"]), 1)

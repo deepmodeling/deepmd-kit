@@ -256,3 +256,70 @@ def test_border_op_export_autograd(dtype: torch.dtype) -> None:
         atol=atol,
         rtol=rtol,
     )
+
+
+# ---------------------------------------------------------------------------
+# 3. deepmd_export::border_op_backward as a differentiable op (issue #5906):
+#    its gradient is border_op's forward (the two are exact transposes).
+# ---------------------------------------------------------------------------
+
+
+def test_export_backward_op_semantics_self_comm() -> None:
+    """R then B on a self-comm dict: owner rows hold own+ghost sums, ghost
+    rows hold the completed owner value (the SFPG completion sequence).
+    """
+    from deepmd.pt_expt.utils.comm import (
+        ensure_comm_registered,
+    )
+
+    ensure_comm_registered()
+    nloc, nghost = 3, 2
+    keepalive: list = []
+    # ghosts [3,4] are images of owners [0,1]
+    comm = _build_self_swap(
+        nloc,
+        nghost,
+        np.array([0, 1], dtype=np.int32),
+        keepalive,
+        torch.float64,
+    )
+    x = torch.arange(10, dtype=torch.float64).reshape(5, 2).contiguous()
+    # the underlying op accumulates INTO its input buffer -- snapshot first
+    x_orig = x.clone()
+    r = torch.ops.deepmd_export.border_op_backward(*comm[:5], x.clone(), *comm[5:])
+    expected_owner = x_orig[:3].clone()
+    expected_owner[0] += x_orig[3]
+    expected_owner[1] += x_orig[4]
+    torch.testing.assert_close(r[:3], expected_owner, rtol=0, atol=0)
+    torch.testing.assert_close(
+        r[3:], torch.zeros(2, 2, dtype=torch.float64), rtol=0, atol=0
+    )
+    b = torch.ops.deepmd_export.border_op(*comm[:5], r, *comm[5:])
+    torch.testing.assert_close(b[3], b[0], rtol=0, atol=0)
+    torch.testing.assert_close(b[4], b[1], rtol=0, atol=0)
+
+
+def test_export_backward_op_gradient_is_border_op() -> None:
+    """d/dx of border_op_backward(x) applied to a cotangent v equals
+    border_op(v) -- the ops are transposes of each other.
+    """
+    from deepmd.pt_expt.utils.comm import (
+        ensure_comm_registered,
+    )
+
+    ensure_comm_registered()
+    nloc, nghost = 3, 2
+    keepalive: list = []
+    comm = _build_self_swap(
+        nloc,
+        nghost,
+        np.array([0, 1], dtype=np.int32),
+        keepalive,
+        torch.float64,
+    )
+    x = torch.randn(5, 2, dtype=torch.float64, requires_grad=True)
+    y = torch.ops.deepmd_export.border_op_backward(*comm[:5], x, *comm[5:])
+    v = torch.randn_like(y)
+    (grad,) = torch.autograd.grad(y, x, v)
+    expected = torch.ops.deepmd_export.border_op(*comm[:5], v.contiguous(), *comm[5:])
+    torch.testing.assert_close(grad, expected, rtol=0, atol=0)

@@ -973,7 +973,7 @@ class DPTrainer(AbstractTrainer):
             box=jax_data["box"] if jax_data["find_box"] else None,
             fparam=jax_data.get("fparam", None),
             aparam=jax_data.get("aparam", None),
-            pair_excl=getattr(model.atomic_model, "pair_excl", None),
+            pair_excl=model.atomic_model.pair_excl,
         )
         return jax_data, extended_coord, extended_atype, nlist, mapping, fp, ap
 

@@ -232,7 +232,7 @@ class FullValidatorBase(ABC):
             restart_training and self.full_val_file.exists()
         )
         self.table_column_specs = []
-        for column_name, metric_key in self.profile.column_order:
+        for column_name, metric_key in self.profile.columns(self.metric_name):
             _, metric_unit = format_metric_value_for_table(metric_key, 1.0)
             header_label = f"{column_name}({metric_unit})"
             self.table_column_specs.append(

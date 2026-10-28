@@ -1,7 +1,8 @@
 # Finetune the pre-trained model {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP)
 to vastly reduce the training cost, while it's not trivial in potential models.
@@ -73,7 +74,8 @@ If you wish to conduct fine-tuning using a randomly initialized fitting net in t
 $ dp --pt train input.json --finetune pretrained.pt --model-branch RANDOM
 ```
 
-The model section in input.json **must be the same as that in the pretrained model**.
+The model section in input.json **must be the same as that in the pretrained model**,
+apart from the native-spin initialization described below.
 If you do not know the model params in the pretrained model, you can add `--use-pretrain-script` in the fine-tuning command:
 
 ```bash
@@ -89,6 +91,26 @@ The model section will be overwritten (except the `type_map` subsection) by that
         "fitting_net" : {}
     }
 ```
+
+#### Initializing native spin from a spin-free checkpoint
+
+PyTorch DPA4/SeZM and PyTorch Exportable DPA4/DPA4C models support spin-free
+pretraining with a native-spin target. The source and target must use the same
+descriptor family and identical ordered `type_map` values. Set the target's
+`spin.scheme` to `native` and configure `use_spin`; these settings are retained
+even with `--use-pretrain-script`. The same rule applies to each selected branch
+in multi-task fine-tuning.
+
+For DPA4C with `dpa4_ener` or `sezm_ener` fitting, automatic hidden widths
+(an omitted `neuron` or zero entries) inherit the pretrained fitting widths.
+The resolved widths are stored in the target configuration so that checkpoint
+reconstruction uses the same architecture. Explicit widths are not rewritten
+and must remain compatible with weight transfer. `RANDOM` instead initializes
+the target fitting network and resolves its automatic widths from the target.
+
+The transfer retains pretrained geometric statistics and initializes new spin
+routes with a closed gate. DPA4C's per-type spin-reference magnitudes are measured
+from the fine-tuning data before adjusting the output bias.
 
 #### Fine-tuning from a multi-task pre-trained model
 
@@ -256,3 +278,39 @@ $ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHO
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
 If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
+
+## TensorFlow 2 Implementation {{ tensorflow_icon }}
+
+TensorFlow 2 fine-tuning reuses the same `--finetune` flag as the legacy
+TensorFlow backend:
+
+```bash
+dp --tf2 train input.json --finetune pretrained.tf2
+```
+
+The pre-trained model is a `.tf2` training checkpoint directory (or its
+checkpoint prefix). A frozen `.savedmodeltf` export cannot be fine-tuned,
+because it does not carry the structured variable metadata required to restore
+the model. The same command-line options as the legacy TensorFlow backend apply:
+`--model-branch` selects a branch in a multi-task pre-trained model, and
+`--use-pretrain-script` copies the descriptor/fitting parameters from the
+pre-trained model.
+
+## PyTorch-Exportable Implementation {{ pytorch_icon }}
+
+The PyTorch-Exportable backend implements fine-tuning with `--finetune`, and a
+pre-trained model can be either a `.pt` training checkpoint or a frozen `.pte`
+/ `.pt2` model:
+
+```bash
+dp --pt-expt train input.json --finetune pretrained.pt
+dp --pt-expt train input.json --finetune frozen_model.pte
+```
+
+Both single-task and multi-task fine-tuning are supported; multi-task
+fine-tuning uses the `finetune_head` field in each {ref}`model_dict <model/model_dict>` branch. Distributed fine-tuning works under
+[`torchrun`](parallel-training.md#pytorch-exportable-implementation) like
+regular PyTorch-Exportable training. `--use-pretrain-script` requires the
+pre-trained model to embed full model parameters: a `.pte` file frozen with
+older code that lacks `model_def_script` must be re-frozen before it can be
+used with that option.

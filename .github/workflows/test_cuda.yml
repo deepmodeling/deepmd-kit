@@ -13,6 +13,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 name: Test CUDA
+env:
+  # Temporarily disable Paddle in CUDA CI while its external downloads are
+  # unreliable. Keep this switch explicit so the coverage can be restored.
+  DP_CI_ALLOW_MISSING_PADDLE: "1"
+  DP_ENABLE_PADDLE: "0"
 jobs:
   test_python:
     name: Test Python on CUDA
@@ -53,7 +58,6 @@ jobs:
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          pip install --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cu126/paddlepaddle-gpu/" --index-url https://pypi.org/simple --trusted-host www.paddlepaddle.org.cn --trusted-host paddlepaddle.org.cn "paddlepaddle-gpu==3.4.0.dev20260310"
           source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
           # See https://github.com/jax-ml/jax/issues/29042
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
@@ -61,8 +65,13 @@ jobs:
           DP_VARIANT: cuda
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
+          # The float64 DPA4 training kernels serve the consistency tests only.
+          CMAKE_ARGS: -DDEEPMD_ENABLE_DPA4_FP64=ON
       - run: dp --version
-      - run: python -m pytest source/tests
+      - name: Verify float64 CUDA kernels are enabled
+        run: |
+          python -c "import torch; import deepmd.pt.cxx_op; from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import op_available, float64_available; assert torch.cuda.is_available(); assert op_available(); assert float64_available() is True"
+      - run: python -m pytest source/tests --ignore=source/tests/pd
         env:
           NUM_WORKERS: 0
           CUDA_VISIBLE_DEVICES: 0
@@ -83,7 +92,7 @@ jobs:
         with:
           python-version: "3.11"
           # cache: 'pip'
-      - name: Install wget and unzip
+      - name: Install build prerequisites
         run: sudo apt-get update && sudo apt-get install -y wget unzip
       - uses: lukka/get-cmake@latest
         with:
@@ -106,8 +115,15 @@ jobs:
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          pip install --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cu126/paddlepaddle-gpu/" --index-url https://pypi.org/simple --trusted-host www.paddlepaddle.org.cn --trusted-host paddlepaddle.org.cn "paddlepaddle-gpu==3.4.0.dev20260310"
-          source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
+          # Use the LAMMPS wheel's MPI distribution for every build and launch.
+          # Ubuntu 24.04 MPICH can start independent singleton worlds:
+          # https://github.com/mpi4py/mpi4py/issues/547
+          source/install/uv_with_retry.sh pip install --system mpich
+          export MPI_HOME=$(python -c 'import sys; print(sys.prefix)')
+          export MPICC=$MPI_HOME/bin/mpicc
+          export LD_LIBRARY_PATH=$MPI_HOME/lib:${LD_LIBRARY_PATH:-}
+          echo "MPI_HOME=$MPI_HOME" >> "$GITHUB_ENV"
+          source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit --reinstall-package mpi4py --no-binary mpi4py
           # See https://github.com/jax-ml/jax/issues/29042
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
         env:
@@ -115,10 +131,37 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
+      - name: Verify the two-rank MPI runtime
+        run: |
+          export LD_LIBRARY_PATH=$MPI_HOME/lib:${LD_LIBRARY_PATH:-}
+          timeout 60 "$MPI_HOME/bin/mpiexec" -n 2 python -c '
+          import os
+          from pathlib import Path
+          from mpi4py import MPI
+          comm = MPI.COMM_WORLD
+          assert comm.size == 2, MPI.Get_library_version()
+          assert comm.allgather(comm.rank) == [0, 1]
+          libraries = {
+              Path(line.split()[-1]).resolve()
+              for line in Path("/proc/self/maps").read_text().splitlines()
+              if Path(line.split()[-1]).name.startswith("libmpi")
+          }
+          expected = (Path(os.environ["MPI_HOME"]) / "lib").resolve()
+          assert libraries and all(p.parent == expected for p in libraries), libraries
+          if comm.rank == 0:
+              print(MPI.Get_library_version(), libraries)
+          '
+      - name: Test the default CUDA dtype contract
+        run: |
+          python -c "import torch; import deepmd.pt.cxx_op; from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import op_available, float64_available; assert torch.cuda.is_available(); assert op_available(); assert float64_available() is False"
+          python -m pytest source/tests/pt_expt/kernels/test_so2_value_train.py -k unsupported_value_dtypes
+        env:
+          CUDA_VISIBLE_DEVICES: 0
+          OMP_NUM_THREADS: 1
       - name: Convert models
         run: source/tests/infer/convert-models.sh
       - run: |
-          export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
+          export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
           source/install/test_cc_local.sh
         env:
           OMP_NUM_THREADS: 1
@@ -126,13 +169,21 @@ jobs:
           TF_INTER_OP_PARALLELISM_THREADS: 1
           CMAKE_GENERATOR: Ninja
           DP_VARIANT: cuda
-          DP_USE_MPICH2: 1
+          ENABLE_PADDLE: FALSE
+      - name: Test native-spin magnetic forces with CUDA Kokkos LAMMPS
+        run: |
+          export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:${LD_LIBRARY_PATH:-}
+          source/install/test_lammps_kokkos.sh
+        env:
+          CMAKE_GENERATOR: Ninja
+          DP_VARIANT: cuda
+          CUDA_VISIBLE_DEVICES: 0
+          OMP_NUM_THREADS: 1
+          TF_INTRA_OP_PARALLELISM_THREADS: 1
+          TF_INTER_OP_PARALLELISM_THREADS: 1
       - run: |
-          export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
+          export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
           export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-          cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/paddle/lib/* $GITHUB_WORKSPACE/dp_test/lib/
-          cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* $GITHUB_WORKSPACE/dp_test/lib/
-          cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* $GITHUB_WORKSPACE/dp_test/lib/
           python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
           python -m pytest source/ipi/tests
         env:
@@ -140,7 +191,9 @@ jobs:
           TF_INTRA_OP_PARALLELISM_THREADS: 1
           TF_INTER_OP_PARALLELISM_THREADS: 1
           LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
+          DPA4SPIN_LMP_REQUIRED: 1
           CUDA_VISIBLE_DEVICES: 0
+          ENABLE_PADDLE: 0
   pass:
     name: Pass testing on CUDA
     needs: [test_python, test_cc]

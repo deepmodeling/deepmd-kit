@@ -1,7 +1,9 @@
-# Compress a model {{ tensorflow_icon }} {{ pytorch_icon }}
+# Compress a model {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+> **Backends covered below**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable
+> {{ pytorch_icon }}, JAX {{ jax_icon }}, and DP {{ dpmodel_icon }}.
 
 ## Theory
 
@@ -70,19 +72,68 @@ dp compress -i graph.pb -o graph-compress.pb
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} TensorFlow 2 {{ tensorflow_icon }}
+
+```bash
+dp --tf2 compress -i model.ckpt.tf2 -o model-compress.savedmodeltf
+```
+
+TensorFlow 2 compression reads a `.tf2` training checkpoint directory or a
+checkpoint prefix and writes a compressed `.savedmodeltf` model. See the
+descriptor documentation for model-specific SavedModel export requirements.
+:::
+
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt compress -i model.pth -o model-compress.pth
 ```
 :::
 
-::::
-
-where `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
+:::{tab-item} PyTorch-Exportable {{ pytorch_icon }}
 
 ```bash
-$ dp compress --help
+dp --pt-expt compress -i dpa1-graph.pt2 -o dpa1-graph-compress.pt2
+```
+
+This command produces an executable compressed artifact only for descriptors
+that support the PyTorch-Exportable compression path. See the
+[DPA-1 model-compression requirements](../model/train-se-atten.md#model-compression)
+for the graph-lowered `.pt2` route used in this example.
+:::
+
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+dp --jax compress -i frozen_model.jax -o compressed_model.jax
+```
+
+JAX compression accepts `.jax` and `.hlo` inputs. Use `.jax` for the general,
+lossless compressed serialization path. Descriptor pages document whether a
+compressed model can also be exported to StableHLO `.hlo`.
+:::
+
+:::{tab-item} DP {{ dpmodel_icon }}
+
+```bash
+dp --dp compress -i model.dp -o model-compress.dp
+```
+
+DP compression accepts native `.dp`, `.yaml`, and `.yml` models.
+:::
+
+::::
+
+where `-i` gives the original frozen model, `-o` gives the compressed model.
+The compression entrypoints resolve the minimum neighbor distance and tabulate
+supported descriptor embedding networks. If the model does not contain a
+minimum neighbor distance, pass the training script with `-t` or
+`--training-script` so it can be computed from the training data.
+
+Several other command line options can be passed to `dp compress`, which can be checked with
+
+```bash
+dp compress --help
 ```
 
 An explanation will be provided
@@ -122,7 +173,7 @@ See the documentation of a specific descriptor to see whether it supports model 
 
 ## Requirements of installation {{ pytorch_icon }}
 
-When compressing models in the PyTorch backend, the customized OP library for the Python interface must be installed when [freezing the model](../freeze/freeze.md).
+When compressing models in the PyTorch-TorchScript backend, the customized OP library for the Python interface must be installed when [freezing the model](../freeze/freeze.md).
 
 The customized OP library for the Python interface is installed by default when building DeePMD-kit from source; see the [installation guide](../install/install-from-source.md) for details.
 

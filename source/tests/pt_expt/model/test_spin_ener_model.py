@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import torch
@@ -142,6 +145,73 @@ class TestSpinEnerModelOutputKeys(unittest.TestCase):
         self.assertEqual(result["force_mag"].shape, (1, natoms, 3))
         self.assertEqual(result["mask_mag"].shape, (1, natoms, 1))
         self.assertEqual(result["virial"].shape, (1, 9))
+
+    def test_mixed_size_padding_mask_is_public(self) -> None:
+        """Virtual-atom spin keeps rectangular padding out of every loss."""
+        model = _make_model()
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        cell = 8.0 * torch.eye(3, dtype=dtype)
+        coord = torch.rand((2, 6, 3), dtype=dtype, generator=generator)
+        coord = torch.matmul(coord, cell)
+        atype = torch.tensor(
+            [[0, 0, 1, 0, 1, 1], [0, 0, 1, 0, -1, -1]], dtype=torch.int64
+        )
+        spin = torch.rand((2, 6, 3), dtype=dtype, generator=generator)
+        coord[1, -2:] = 0.0
+        spin[1, -2:] = 0.0
+
+        result = eval_model(model, coord, cell.repeat(2, 1, 1), atype, spin)
+        real_atom = atype.to(env.DEVICE) >= 0
+
+        torch.testing.assert_close(result["mask"].bool(), real_atom)
+        self.assertTrue(torch.all(~result["mask_mag"][~real_atom]))
+        self.assertTrue(torch.all(result["atom_energy"][~real_atom] == 0.0))
+        self.assertTrue(torch.all(result["force"][~real_atom] == 0.0))
+        self.assertTrue(torch.all(result["force_mag"][~real_atom] == 0.0))
+
+    def test_compiled_mixed_size_rectangular_matches_eager(self) -> None:
+        """Dense compilation preserves the virtual-spin rectangular contract."""
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+            _get_model_structure_key,
+        )
+
+        model = _make_model()
+        compiled = _CompiledModel(model, _get_model_structure_key(model)).train()
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        coord = torch.rand((2, 6, 3), dtype=dtype, generator=generator).to(env.DEVICE)
+        atype = torch.tensor(
+            [[0, 0, 1, 0, 1, 1], [0, 0, 1, 0, -1, -1]],
+            dtype=torch.int64,
+            device=env.DEVICE,
+        )
+        spin = torch.rand((2, 6, 3), dtype=dtype, generator=generator).to(env.DEVICE)
+        box = (8.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)).repeat(2, 1, 1)
+        coord[1, -2:] = 0.0
+        spin[1, -2:] = 0.0
+
+        eager = model(coord.clone().requires_grad_(True), atype, spin, box=box)
+        with patch.object(torch, "compile", side_effect=lambda module, **_: module):
+            actual = compiled(coord, atype, box=box, spin=spin)
+
+        for key in (
+            "atom_energy",
+            "energy",
+            "force",
+            "force_mag",
+            "virial",
+            "mask",
+            "mask_mag",
+        ):
+            torch.testing.assert_close(actual[key], eager[key], rtol=1e-10, atol=1e-10)
+        self.assertGreater(float(actual["force_mag"].detach().abs().max()), 0.0)
+        actual["force_mag"].square().sum().backward()
+        self.assertTrue(
+            any(
+                parameter.grad is not None and torch.any(parameter.grad != 0)
+                for parameter in model.parameters()
+            )
+        )
 
 
 class TestSpinEnerModelSerialize(unittest.TestCase):

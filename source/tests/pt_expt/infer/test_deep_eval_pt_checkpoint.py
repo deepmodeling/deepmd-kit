@@ -357,7 +357,7 @@ class TestPtExptLoadPt(unittest.TestCase):
             output_def,
             nlist_backend="native",
         )
-        with self.assertRaisesRegex(ValueError, "only applies to graph-routed"):
+        with self.assertRaisesRegex(ValueError, "only applies to graph or edge-vector"):
             PtExptDeepEval(
                 self.pt_path,
                 output_def,
@@ -422,16 +422,143 @@ class TestPtExptLoadPt(unittest.TestCase):
 class TestNeighborGraphMethodResolution(unittest.TestCase):
     """Auto graph-builder selection must cover each host policy explicitly."""
 
-    def test_auto_resolution(self) -> None:
-        cases = (
-            ("cpu", False, "dense", False),
-            ("cuda", True, "nv", False),
-            ("cuda", False, "dense", True),
+    def test_auto_nlist_strategy_uses_frame_count(self) -> None:
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
         )
-        for device_type, nv_available, expected, warns in cases:
+
+        cases = (
+            ("cuda", 1, True, True, "vesin"),
+            ("cuda", 4, True, True, "nv"),
+            ("cuda", 1, True, False, "nv"),
+            ("cuda", 4, False, True, "vesin"),
+            ("cpu", 1, True, True, "vesin"),
+            ("cpu", 4, True, True, "nv"),
+            ("cuda", 1, False, False, None),
+            ("cpu", 1, False, True, "vesin"),
+            ("cpu", 1, True, False, "nv"),
+            ("cpu", 1, False, False, None),
+        )
+        for device, nf, nv_available, vesin_available, expected in cases:
+            with self.subTest(device=device, nf=nf, expected=expected):
+                coord = mock.Mock(device=torch.device(device))
+                atype = np.zeros((nf, 2), dtype=np.int64)
+                with (
+                    mock.patch.object(
+                        auto_neighbor_list, "is_nv_available", return_value=nv_available
+                    ),
+                    mock.patch.object(
+                        auto_neighbor_list,
+                        "is_vesin_torch_available",
+                        return_value=vesin_available,
+                    ),
+                ):
+                    builder = auto_neighbor_list.make_neighbor_list(
+                        "auto", coord.device, skin=1.0
+                    )
+                    if expected is None:
+                        self.assertIsNone(builder)
+                        continue
+                    with (
+                        mock.patch.object(
+                            builder._vesin, "build", return_value="vesin"
+                        ),
+                        mock.patch.object(builder._nv, "build", return_value="nv"),
+                    ):
+                        actual = builder.build(coord, atype, None, 3.0, [4])
+                self.assertEqual(actual, expected)
+
+    def test_native_edge_strategy_uses_frame_count(self) -> None:
+        """Native edge inputs use the shared carry-all strategy on every host."""
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        for device, nf, expected in (
+            ("cpu", 1, "vesin"),
+            ("cpu", 4, "nv"),
+            ("cuda", 1, "nv"),
+            ("cuda", 4, "nv"),
+        ):
+            with (
+                self.subTest(device=device, nf=nf),
+                mock.patch.object(
+                    auto_neighbor_list, "is_nv_available", return_value=True
+                ),
+                mock.patch.object(
+                    auto_neighbor_list, "is_vesin_torch_available", return_value=True
+                ),
+                mock.patch.object(
+                    auto_neighbor_list.VesinNeighborList, "build", return_value="vesin"
+                ) as vesin_build,
+                mock.patch.object(
+                    auto_neighbor_list.NvNeighborList, "build", return_value="nv"
+                ) as nv_build,
+            ):
+                coord = mock.Mock(device=torch.device(device))
+                atype = np.zeros((nf, 2), dtype=np.int64)
+                builder = auto_neighbor_list.make_neighbor_list(
+                    "native", coord.device, return_mode="edges"
+                )
+                actual = builder.build(
+                    coord, atype, None, 3.0, [1], return_mode="edges"
+                )
+                selected = vesin_build if expected == "vesin" else nv_build
+                selected.assert_called_once_with(
+                    coord, atype, None, 3.0, [1], return_mode="edges", pair_excl=None
+                )
+                self.assertEqual(actual, expected)
+
+    def test_explicit_resolution(self) -> None:
+        """Every implemented graph builder is accepted without rewriting."""
+        for method in ("dense", "ase", "cell", "vesin", "nv"):
+            with self.subTest(method=method):
+                self.assertEqual(
+                    PtExptDeepEval._resolve_neighbor_graph_method(method),
+                    method,
+                )
+
+    def test_auto_deferred_until_nf_known(self) -> None:
+        """Construction-time resolve leaves ``auto`` unresolved without ``nf``."""
+        self.assertEqual(
+            PtExptDeepEval._resolve_neighbor_graph_method("auto"),
+            "auto",
+        )
+
+    def test_auto_resolution(self) -> None:
+        # (device, nv, cell, vesin, nf, expected, warns)
+        #
+        # ``cell`` is the native threaded CPU search; it takes precedence over
+        # ``vesin`` on a CPU host at any frame count, because it batches no
+        # worse and its search is an order of magnitude faster.
+        cases = (
+            ("cpu", False, True, True, 1, "cell", False),
+            ("cpu", False, True, True, 4, "cell", False),
+            ("cpu", False, False, True, 1, "vesin", False),
+            ("cpu", False, False, True, 4, "dense", False),
+            ("cpu", False, False, False, 1, "dense", False),
+            ("cuda", True, True, True, 1, "vesin", False),
+            ("cuda", True, True, False, 1, "nv", False),
+            ("cuda", True, True, True, 4, "nv", False),
+            ("cuda", False, True, True, 1, "vesin", False),
+            ("cuda", False, True, True, 4, "dense", True),
+            ("cuda", False, True, False, 1, "dense", True),
+        )
+        for (
+            device_type,
+            nv_available,
+            cell_available,
+            vesin_available,
+            nf,
+            expected,
+            warns,
+        ) in cases:
             with self.subTest(
                 device_type=device_type,
                 nv_available=nv_available,
+                cell_available=cell_available,
+                vesin_available=vesin_available,
+                nf=nf,
             ):
                 with (
                     mock.patch(
@@ -442,18 +569,88 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                         "deepmd.pt.utils.nv_nlist.is_nv_available",
                         return_value=nv_available,
                     ),
+                    mock.patch(
+                        "deepmd.pt_expt.utils.cell_graph_builder.is_cell_search_available",
+                        return_value=cell_available,
+                    ),
+                    mock.patch(
+                        "deepmd.pt_expt.utils.vesin_neighbor_list.is_vesin_torch_available",
+                        return_value=vesin_available,
+                    ),
                 ):
                     if warns:
+                        # reset warn-once so each case can assert the message
+                        import deepmd.pt_expt.utils.graph_builder as gb
+
+                        gb._warned_auto_no_nv = False
                         with self.assertLogs(
-                            "deepmd.pt_expt.infer.deep_eval",
+                            "deepmd.pt_expt.utils.graph_builder",
                             level="WARNING",
                         ):
                             actual = PtExptDeepEval._resolve_neighbor_graph_method(
-                                "auto"
+                                "auto", nf=nf
                             )
                     else:
-                        actual = PtExptDeepEval._resolve_neighbor_graph_method("auto")
+                        actual = PtExptDeepEval._resolve_neighbor_graph_method(
+                            "auto", nf=nf
+                        )
                 self.assertEqual(actual, expected)
+
+
+class TestCellGraphDeviceRouting(unittest.TestCase):
+    """The CPU-only cell search must not receive CUDA tensors."""
+
+    @staticmethod
+    def _make_evaluator() -> PtExptDeepEval:
+        evaluator = object.__new__(PtExptDeepEval)
+        evaluator._neighbor_graph_method = "cell"
+        evaluator._rcut = 3.0
+        evaluator.metadata = {"graph_edge_dtype": "float32"}
+        return evaluator
+
+    def test_fused_cell_builder_uses_cpu(self) -> None:
+        """The single-frame fused cell builder receives CPU inputs."""
+        evaluator = self._make_evaluator()
+        expected = mock.sentinel.graph
+        with (
+            mock.patch.object(evaluator, "_model_pair_excl", return_value=None),
+            mock.patch(
+                "deepmd.pt_expt.utils.cell_graph_builder.build_neighbor_graph_fused",
+                return_value=expected,
+            ) as builder,
+        ):
+            actual = evaluator._build_eval_graph(
+                np.zeros((1, 6)),
+                np.zeros((1, 2), dtype=np.int64),
+                np.eye(3).reshape(1, 9),
+                torch.device("cuda"),
+            )
+
+        self.assertIs(actual, expected)
+        for value in builder.call_args.args[:3]:
+            self.assertEqual(value.device.type, "cpu")
+
+    def test_general_cell_builder_uses_cpu(self) -> None:
+        """The batched cell builder receives CPU inputs."""
+        evaluator = self._make_evaluator()
+        expected = mock.sentinel.graph
+        with (
+            mock.patch.object(evaluator, "_model_pair_excl", return_value=None),
+            mock.patch(
+                "deepmd.pt_expt.utils.cell_graph_builder.build_neighbor_graph_cell",
+                return_value=expected,
+            ) as builder,
+        ):
+            actual = evaluator._build_eval_graph(
+                np.zeros((2, 6)),
+                np.zeros((2, 2), dtype=np.int64),
+                np.tile(np.eye(3).reshape(1, 9), (2, 1)),
+                torch.device("cuda"),
+            )
+
+        self.assertIs(actual, expected)
+        for value in builder.call_args.args[:3]:
+            self.assertEqual(value.device.type, "cpu")
 
 
 class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
@@ -525,6 +722,44 @@ class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
                         rtol=1e-10,
                         atol=1e-10,
                         err_msg=name,
+                    )
+
+    def test_dense_introspection_survives_graph_checkpoint(self) -> None:
+        """Graph evaluation must not discard capacities used by introspection."""
+        coords = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]])
+        atom_types = np.array([0, 1], dtype=np.int32)
+        coord_t = torch.tensor(coords, dtype=torch.float64, device=DEVICE)
+        atype_t = torch.tensor(atom_types[None], dtype=torch.int64, device=DEVICE)
+        # Construct the two-atom dense list independently of the checkpoint
+        # loader: each center has one neighbor and the remaining slots pad.
+        nlist = torch.full(
+            (1, 2, sum(self.model.get_sel())), -1, dtype=torch.int64, device=DEVICE
+        )
+        nlist[0, :, 0] = torch.tensor([1, 0], device=DEVICE)
+        mapping = torch.arange(2, device=DEVICE).reshape(1, 2)
+        atomic_model = self.model.get_dp_atomic_model()
+        with torch.no_grad():
+            descriptor, rot_mat, g2, h2, _ = atomic_model.descriptor(
+                coord_t, atype_t, nlist, mapping=mapping
+            )
+            fitting = atomic_model.fitting_net
+            fitting.set_return_middle_output(True)
+            try:
+                middle = fitting(descriptor, atype_t, gr=rot_mat, g2=g2, h2=h2)[
+                    "middle_output"
+                ]
+            finally:
+                fitting.set_return_middle_output(False)
+
+        for layout, path in self.pt_paths.items():
+            with self.subTest(layout=layout):
+                dp = DeepPot(path, auto_batch_size=False)
+                for actual, expected in (
+                    (dp.eval_descriptor(coords, None, atom_types), descriptor),
+                    (dp.eval_fitting_last_layer(coords, None, atom_types), middle),
+                ):
+                    np.testing.assert_allclose(
+                        actual, expected.detach().cpu().numpy(), rtol=1e-10, atol=1e-10
                     )
 
     def test_nlist_controls_fail_without_changing_graph_semantics(self) -> None:

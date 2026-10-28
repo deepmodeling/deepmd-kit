@@ -39,6 +39,9 @@ from deepmd.dpmodel.utils.network import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.utils.bridging import (
+    window_midpoint,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -81,8 +84,8 @@ class RadialMLP(NativeOP):
     compile and non-compile paths.
 
     The hidden RMSNorm normalizes each edge's radial features by their own RMS.
-    The input ``edge_rbf`` carries the C^3 cutoff envelope and therefore
-    vanishes at ``rcut``; the RMSNorm divides that envelope out, and its ``eps``
+    When the input ``edge_rbf`` includes the C^3 cutoff envelope, it vanishes
+    at ``rcut``. The RMSNorm divides that envelope out, and its ``eps``
     floor is crossed as the edge approaches ``rcut``. On a sparse neighborhood
     (e.g. a dimer) this floor-crossing produces a sharp kink in the potential
     energy surface just inside the cutoff. Setting ``radial_norm=False`` drops
@@ -269,65 +272,125 @@ class C3CutoffEnvelope(NativeOP):
         return u**4 * series
 
 
-class InnerClamp(NativeOP):
+def pair_contact(
+    contact_radius: Any, center_type: Any, neighbor_type: Any, dtype: Any
+) -> Any:
     """
-    C3-continuous inner distance clamping for zone bridging.
-
-    Applies a septic Hermite polynomial transition that freezes distances
-    below ``r_inner`` to the constant ``r_inner``, then smoothly transitions
-    back to identity at ``r_outer``::
-
-        r̃(r) = r_inner                                    if r <= r_inner
-        r̃(r) = r_inner + (r_outer - r_inner) * h(t)       if r_inner < r < r_outer
-        r̃(r) = r                                          if r >= r_outer
-
-        h(t) = 20t^4 - 45t^5 + 36t^6 - 10t^7,  t = (r - r_inner) / (r_outer - r_inner)
-
-    Boundary conditions:
-    ``h(0)=0``, ``h(1)=1``, ``h'(0)=0``, ``h'(1)=1``,
-    ``h''(0)=0``, ``h''(1)=0``, ``h'''(0)=0``, ``h'''(1)=0``.
-    This ensures C3 continuity: ``dr̃/dr = 0`` at r_inner (frozen zone) and
-    ``dr̃/dr = 1`` at r_outer (identity zone), with matched second and third
-    derivatives at both boundaries.
+    Gather the length scale of each edge from the types at its ends.
 
     Parameters
     ----------
-    r_inner : float
-        Freeze radius in Å. Distances below this are clamped to ``r_inner``.
-    r_outer : float
-        Outer boundary of the transition zone in Å. Above this, ``r̃ = r``.
+    contact_radius : Any
+        Per-type length scales in Å with shape (ntypes + 1,), the trailing
+        entry belonging to the padding type.
+    center_type : Any
+        Type index of the center atom of every edge, with shape (E,).
+    neighbor_type : Any
+        Type index of the neighbor atom of every edge, with shape (E,).
+    dtype : Any
+        Floating-point dtype of the result. The edge distances are divided by
+        that result, so this is the dtype the geometry is reduced in rather
+        than the dtype of the incoming coordinates.
+
+    Returns
+    -------
+    Any
+        Contact distance of each edge in Å, with shape (E, 1).
+    """
+    xp = array_api_compat.array_namespace(center_type)
+    radius = xp.asarray(
+        contact_radius, dtype=dtype, device=array_api_compat.device(center_type)
+    )
+    contact = xp.take(radius, center_type) + xp.take(radius, neighbor_type)
+    return contact[:, None]
+
+
+class InnerClamp(NativeOP):
+    """
+    C3-continuous distance clamp of the DPA4 bridging window.
+
+    The window of a pair is two dimensionless fractions of that pair's own
+    length scale ``s``, the sum of the covalent radii of its two elements, so
+    one window shape serves every element combination. In the reduced distance
+    ``u = r / s`` the clamp freezes everything below the freeze point
+    ``f_z`` at that value and returns to the identity at ``f_outer``::
+
+        ũ = f_z                                             if u <= f_z
+        ũ = f_z + (f_outer - f_z) * h(t)                    if f_z < u < f_outer
+        ũ = u                                               if u >= f_outer
+
+        h(t) = 20t^4 - 45t^5 + 36t^6 - 10t^7,  t = (u - f_z) / (f_outer - f_z)
+        f_z = f_inner + 0.4 (f_outer - f_inner)
+
+    and the clamped distance is ``r̃ = s * ũ``. Boundary conditions
+    ``h(0)=0``, ``h(1)=1``, ``h'(0)=0``, ``h'(1)=1``, ``h''(0)=h''(1)=0``,
+    ``h'''(0)=h'''(1)=0`` give C3 continuity: ``dr̃/dr = 0`` at the freeze
+    point and ``dr̃/dr = 1`` at the outer radius (identity zone), with
+    matched second and third derivatives at both.
+
+    The freeze point sits two fifths into the window, one tenth of the width
+    below the frame-filter point at the midpoint, where the training data of a
+    bridged model end. The displayed distance therefore still moves at the
+    filter point, with slope ``h'(1/6) = 0.22``, so the network can fit the
+    labels just above it through the pair's own distance; frozen at the filter
+    point itself, the learned pair energy could only follow the switch
+    amplitude, whose slope at the midpoint pins the wall to a stiffness the
+    labels do not have. Below the filter point the displayed distance keeps
+    falling by ``0.6 h(1/6) = 0.62 %`` of the window width (5 mÅ for a C-C
+    pair) before it freezes; that band is the only range of displayed
+    distances no retained frame covers, and its shallowness is what bounds the
+    network's extrapolation there. The switch of the window
+    (:class:`BridgingSwitch`) spans the whole window, so below the freeze point
+    the learned energy of the pair follows the switch amplitude alone.
+
+    Parameters
+    ----------
+    f_inner : float
+        Inner radius of the window as a fraction of the pair length scale.
+    f_outer : float
+        Outer radius as a fraction of the pair length scale. At or above it the
+        clamp is the identity.
 
     Raises
     ------
     ValueError
-        If ``r_inner >= r_outer`` or either is non-positive.
+        If ``f_inner >= f_outer`` or either is non-positive.
     """
 
-    def __init__(self, r_inner: float, r_outer: float) -> None:
-        if r_inner <= 0 or r_outer <= 0:
-            raise ValueError("r_inner and r_outer must be positive")
-        if r_inner >= r_outer:
-            raise ValueError(f"r_inner ({r_inner}) must be < r_outer ({r_outer})")
-        self.r_inner = float(r_inner)
-        self.r_outer = float(r_outer)
+    #: Position of the freeze point inside the window, as a fraction of its width.
+    FREEZE_FRACTION = 0.4
 
-    def call(self, r: Any) -> Any:
+    def __init__(self, f_inner: float, f_outer: float) -> None:
+        if f_inner <= 0 or f_outer <= 0:
+            raise ValueError("f_inner and f_outer must be positive")
+        if f_inner >= f_outer:
+            raise ValueError(f"f_inner ({f_inner}) must be < f_outer ({f_outer})")
+        self.f_inner = float(f_inner)
+        self.f_outer = float(f_outer)
+        self.f_freeze = self.f_inner + self.FREEZE_FRACTION * (
+            self.f_outer - self.f_inner
+        )
+
+    def call(self, r: Any, contact: Any) -> Any:
         """
-        Apply inner distance clamping.
+        Apply the distance clamp.
 
         Parameters
         ----------
         r : Array
             Pair distances with shape (...) or (..., 1) in Å.
+        contact : Array
+            Length scale of each pair in Å, broadcastable against ``r``.
 
         Returns
         -------
         Array
-            Clamped distances r̃ with the same shape as input.
+            Clamped distances r̃ with the same shape as ``r``.
         """
         xp = array_api_compat.array_namespace(r)
+        u = r / contact
         t = xp.clip(
-            (r - self.r_inner) / (self.r_outer - self.r_inner), min=0.0, max=1.0
+            (u - self.f_freeze) / (self.f_outer - self.f_freeze), min=0.0, max=1.0
         )
         t2 = t * t
         t4 = t2 * t2
@@ -338,11 +401,11 @@ class InnerClamp(NativeOP):
         #   h''(0)=0, h''(1)=0
         #   h'''(0)=0, h'''(1)=0
         h = t4 * (20.0 + t * (-45.0 + t * (36.0 - 10.0 * t)))
-        interpolated = self.r_inner + (self.r_outer - self.r_inner) * h
-        # Identity zone: r >= r_outer returns r directly.
-        # Both branches have matching first three derivatives at r_outer,
+        interpolated = contact * (self.f_freeze + (self.f_outer - self.f_freeze) * h)
+        # Identity zone: u >= f_outer returns r directly.
+        # Both branches have matching first three derivatives there,
         # so xp.where preserves C3 continuity here.
-        return xp.where(r >= self.r_outer, r, interpolated)
+        return xp.where(u >= self.f_outer, r, interpolated)
 
 
 class BridgingSwitch(NativeOP):
@@ -353,11 +416,16 @@ class BridgingSwitch(NativeOP):
     that measures how far an edge sits outside the frozen zone. It is
     the elementary piece the Source Freeze Propagation Gate (SFPG)
     aggregates into a per-node "non-frozen confidence" via a product
-    over each source node's outgoing edges::
+    over each source node's outgoing edges.
 
-        w(r) = 0                                             if r <= r_inner  (frozen)
-        w(r) = h((r - r_inner) / (r_outer - r_inner))        if r_inner < r < r_outer  (transition)
-        w(r) = 1                                             if r >= r_outer  (normal)
+    The window of a pair is two dimensionless fractions of that pair's own
+    length scale ``s``, the sum of the covalent radii of its two elements, so
+    one window shape serves every element combination. In the reduced distance
+    ``u = r / s``::
+
+        w = 0                                            if u <= f_inner  (frozen)
+        w = h((u - f_inner) / (f_outer - f_inner))       if f_inner < u < f_outer  (transition)
+        w = 1                                            if u >= f_outer  (normal)
 
         h(t) = 35 t^4 - 84 t^5 + 70 t^6 - 20 t^7
 
@@ -367,37 +435,39 @@ class BridgingSwitch(NativeOP):
         h(1)=1, h'(1)    = h''(1)   = h'''(1)   = 0
 
     The vanishing first three derivatives at both endpoints give
-    ``w \in C^3(\mathbb{R}_{\ge 0})`` with zero slope/curvature at
-    ``r_inner`` and ``r_outer``, so forces (first derivatives) and the
+    ``w \in C^3(\mathbb{R}_{\ge 0})`` with zero slope/curvature at both
+    radii of every pair, so forces (first derivatives) and the
     force derivatives consumed by second-order training stay continuous
     across both zone boundaries.
 
-    The surrounding infrastructure (``compute_edge_src_gate``) owns the
-    per-node product reduction and broadcast; this module only encodes
-    the scalar amplitude shape.
+    The surrounding infrastructure (``compute_source_gates``) owns the
+    per-node product reduction and the per-edge leave-one-out product; this
+    module only encodes the scalar amplitude shape.
 
     Parameters
     ----------
-    r_inner : float
-        Inner radius in Å. At or below this distance ``w = 0``.
-    r_outer : float
-        Outer radius in Å. At or above this distance ``w = 1``.
+    f_inner : float
+        Inner radius as a fraction of the pair length scale. At or below it
+        ``w = 0``.
+    f_outer : float
+        Outer radius as a fraction of the pair length scale. At or above it
+        ``w = 1``.
 
     Raises
     ------
     ValueError
-        If ``r_inner <= 0``, ``r_outer <= 0``, or ``r_inner >= r_outer``.
+        If ``f_inner <= 0``, ``f_outer <= 0``, or ``f_inner >= f_outer``.
     """
 
-    def __init__(self, r_inner: float, r_outer: float) -> None:
-        if r_inner <= 0 or r_outer <= 0:
-            raise ValueError("r_inner and r_outer must be positive")
-        if r_inner >= r_outer:
-            raise ValueError(f"r_inner ({r_inner}) must be < r_outer ({r_outer})")
-        self.r_inner = float(r_inner)
-        self.r_outer = float(r_outer)
+    def __init__(self, f_inner: float, f_outer: float) -> None:
+        if f_inner <= 0 or f_outer <= 0:
+            raise ValueError("f_inner and f_outer must be positive")
+        if f_inner >= f_outer:
+            raise ValueError(f"f_inner ({f_inner}) must be < f_outer ({f_outer})")
+        self.f_inner = float(f_inner)
+        self.f_outer = float(f_outer)
 
-    def call(self, r: Any) -> Any:
+    def call(self, r: Any, contact: Any) -> Any:
         """
         Evaluate the C3 switching amplitude.
 
@@ -405,28 +475,147 @@ class BridgingSwitch(NativeOP):
         ----------
         r : Array
             Pair distances with shape (...) or (..., 1) in Å.
+        contact : Array
+            Length scale of each pair in Å, broadcastable against ``r``.
 
         Returns
         -------
         Array
-            Switching amplitudes in ``[0, 1]`` with the same shape as input.
+            Switching amplitudes in ``[0, 1]`` with the same shape as ``r``.
         """
         xp = array_api_compat.array_namespace(r)
         t = xp.clip(
-            (r - self.r_inner) / (self.r_outer - self.r_inner), min=0.0, max=1.0
+            (r / contact - self.f_inner) / (self.f_outer - self.f_inner),
+            min=0.0,
+            max=1.0,
         )
         t2 = t * t
         t4 = t2 * t2
         # h(t) = 35 t^4 - 84 t^5 + 70 t^6 - 20 t^7  (Horner form).
         # Degree-7 smootherstep: the unique polynomial of this degree that
-        # hits ``w(r_inner)=0, w(r_outer)=1`` together with C3 flatness at
-        # both radii.
+        # hits ``w = 0`` at the inner radius and ``w = 1`` at the outer one
+        # together with C3 flatness at both.
         return t4 * (35.0 + t * (-84.0 + t * (70.0 - 20.0 * t)))
+
+
+class BridgingClamp(NativeOP):
+    r"""
+    C4-continuous distance clamp whose slope is the bridging switch.
+
+    The clamp shares the window of :class:`BridgingSwitch` and is its integral:
+    the distance the descriptor sees moves with the true one at exactly the
+    rate at which the switch has opened. In the reduced distance ``u = r / s``,
+    with ``s`` the length scale of the pair::
+
+        ũ = f_mid                                          if u <= f_inner
+        ũ = f_mid + (f_outer - f_inner) * S(t)             if f_inner < u < f_outer
+        ũ = u                                              if u >= f_outer
+
+        S(t) = 7 t^5 - 14 t^6 + 10 t^7 - 2.5 t^8,  t = (u - f_inner) / (f_outer - f_inner)
+
+    and the clamped distance is ``r̃ = s * ũ``. ``S`` is the antiderivative of
+    the septic smootherstep ``h`` of the switch, so ``dr̃/dr = h(t)``: zero
+    below the inner radius, one above the outer radius, never above one in
+    between. Since ``S(1) = 1/2``, continuity at the outer radius fixes the
+    frozen value at the window midpoint ``f_mid = (f_inner + f_outer) / 2``.
+    The vanishing first three derivatives of ``h`` at both ends make ``r̃`` a
+    C4 function of ``r``.
+
+    Used together with the switch, the clamp keeps the radial features of a
+    close pair inside the range the training frames cover. The frame filter of
+    a bridged model keeps pairs down to the window midpoint, the clamped
+    distance never falls below it, and through the lower half of the window it
+    rises by less than 7 % of the window width (``S(1/2) = 35/512``), so there
+    the learned energy follows the switch amplitude.
+
+    Parameters
+    ----------
+    f_inner : float
+        Inner radius as a fraction of the pair length scale. At or below it the
+        distance the descriptor sees is frozen at the window midpoint.
+    f_outer : float
+        Outer radius as a fraction of the pair length scale. At or above it the
+        clamp is the identity.
+
+    Raises
+    ------
+    ValueError
+        If ``f_inner >= f_outer`` or either is non-positive.
+    """
+
+    def __init__(self, f_inner: float, f_outer: float) -> None:
+        if f_inner <= 0 or f_outer <= 0:
+            raise ValueError("f_inner and f_outer must be positive")
+        if f_inner >= f_outer:
+            raise ValueError(f"f_inner ({f_inner}) must be < f_outer ({f_outer})")
+        self.f_inner = float(f_inner)
+        self.f_outer = float(f_outer)
+
+    def call(self, r: Any, contact: Any) -> Any:
+        """
+        Apply the distance clamp.
+
+        Parameters
+        ----------
+        r : Array
+            Pair distances with shape (...) or (..., 1) in Å.
+        contact : Array
+            Length scale of each pair in Å, broadcastable against ``r``.
+
+        Returns
+        -------
+        Array
+            Clamped distances r̃ with the same shape as ``r``.
+        """
+        xp = array_api_compat.array_namespace(r)
+        width = self.f_outer - self.f_inner
+        u = r / contact
+        t = xp.clip((u - self.f_inner) / width, min=0.0, max=1.0)
+        t2 = t * t
+        # S(t) = 7 t^5 - 14 t^6 + 10 t^7 - 2.5 t^8  (Horner form), the
+        # antiderivative of the switch profile with S(0) = 0 and S(1) = 1/2.
+        rise = t2 * t2 * t * (7.0 + t * (-14.0 + t * (10.0 - 2.5 * t)))
+        interpolated = contact * (
+            window_midpoint(self.f_inner, self.f_outer) + width * rise
+        )
+        # Identity zone: both branches share their first four derivatives at
+        # the outer radius, so xp.where preserves the continuity there.
+        return xp.where(u >= self.f_outer, r, interpolated)
+
+
+def parse_basis_type(basis_type: str) -> tuple[str, bool]:
+    """
+    Split a radial basis type into its family and its ``/fix`` flag.
+
+    Parameters
+    ----------
+    basis_type : str
+        One of ``"bessel"``, ``"gaussian"``, ``"bessel/fix"`` or
+        ``"gaussian/fix"`` (case-insensitive).
+
+    Returns
+    -------
+    tuple[str, bool]
+        The basis family (``"bessel"`` or ``"gaussian"``) and whether the
+        basis parameters are held fixed during training.
+
+    Raises
+    ------
+    ValueError
+        If the basis type is not one of the four supported values.
+    """
+    family, _, suffix = str(basis_type).lower().partition("/")
+    if family not in ("bessel", "gaussian") or suffix not in ("", "fix"):
+        raise ValueError(
+            "`basis_type` must be 'bessel', 'gaussian', 'bessel/fix' or "
+            f"'gaussian/fix', got '{basis_type}'"
+        )
+    return family, suffix == "fix"
 
 
 class RadialBasis(NativeOP):
     """
-    Radial basis with C^3 cutoff envelope.
+    Radial basis with an optional C^3 cutoff envelope.
 
     The trainable radial parameters are stored in ``adam_freqs`` so HybridMuon
     routes them to Adam without weight decay.
@@ -450,8 +639,8 @@ class RadialBasis(NativeOP):
 
         w_n = n * π / rcut, for n = 1..n_radial (in 1/Å)
 
-    The C^3 cutoff envelope is multiplied directly into the output to ensure
-    strict smoothness at ``rcut``.
+    A positive ``exponent`` multiplies the C^3 cutoff envelope directly into
+    the output. Zero selects the raw basis without constructing an envelope.
 
     Parameters
     ----------
@@ -460,11 +649,15 @@ class RadialBasis(NativeOP):
     n_radial : int
         Number of basis functions.
     basis_type : str, optional
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
+        Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
+        ``"bessel/fix"`` and ``"gaussian/fix"``; the ``/fix`` forms are
+        evaluated like their family and differ only in training, where the
+        backends keep their frequencies or centres fixed.
     precision : str
         Floating-point precision for the radial basis frequencies and outputs.
     exponent : int, optional
-        Exponent for the C^3 cutoff envelope polynomial. Default is 7.
+        Exponent for the C^3 cutoff envelope polynomial. Zero disables the
+        envelope. Default is 7.
     """
 
     def __init__(
@@ -482,8 +675,9 @@ class RadialBasis(NativeOP):
         if self.n_radial <= 0:
             raise ValueError("`n_radial` must be positive")
         self.basis_type = str(basis_type).lower()
-        if self.basis_type not in ("bessel", "gaussian"):
-            raise ValueError("`basis_type` must be either 'bessel' or 'gaussian'")
+        # Parameter promotion in every backend consumes this trainability flag.
+        self.basis_family, fixed = parse_basis_type(self.basis_type)
+        self.trainable = not fixed
         self.precision = precision
         self.exponent = int(exponent)
         prec = PRECISION_DICT[self.precision.lower()]
@@ -491,7 +685,7 @@ class RadialBasis(NativeOP):
 
         # Frequencies: n*π/rcut, n=1..n_radial
         # Shape: (1, n_radial), stored as a trainable array.
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             freqs = np.arange(1, self.n_radial + 1, dtype=prec) * (math.pi / self.rcut)
         else:
             freqs = np.linspace(0.0, self.rcut, self.n_radial, dtype=prec)
@@ -499,10 +693,14 @@ class RadialBasis(NativeOP):
         gaussian_width = self.rcut / max(self.n_radial - 1, 1)
         self.gaussian_coeff = -0.5 / (gaussian_width * gaussian_width)
 
-        self.envelope = C3CutoffEnvelope(
-            rcut=self.rcut,
-            exponent=self.exponent,
-            precision=self.precision,
+        self.envelope = (
+            C3CutoffEnvelope(
+                rcut=self.rcut,
+                exponent=self.exponent,
+                precision=self.precision,
+            )
+            if self.exponent != 0
+            else None
         )
 
     def call(self, r: Any) -> Any:
@@ -517,8 +715,9 @@ class RadialBasis(NativeOP):
         Returns
         -------
         Array
-            Radial basis multiplied by C^3 cutoff envelope with shape (N, n_rbf).
-            The output is smoothly truncated to zero at r = rcut.
+            Radial basis with shape ``(N, n_radial)``. When
+            ``exponent > 0``, the output includes the C³ envelope and
+            vanishes smoothly at ``rcut``; otherwise it is the raw basis.
         """
         xp = array_api_compat.array_namespace(r)
         freqs = xp_asarray_nodetach(
@@ -526,7 +725,7 @@ class RadialBasis(NativeOP):
         )
         # === Step 1. Radial basis ===
         # Shape: (N, 1) * (1, n_radial) -> (N, n_radial)
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             # phi_n(r) = w_n * sinc(w_n * r / π)
             x = r * freqs  # (N, n_rbf)
             # torch.sinc(z) = sin(π z) / (π z) with sinc(0) = 1. The array API
@@ -542,15 +741,16 @@ class RadialBasis(NativeOP):
             dr = r - freqs  # (N, n_rbf)
             raw = xp.exp(dr * dr * self.gaussian_coeff)  # (N, n_rbf)
 
-        # === Step 2. Apply C^3 envelope for smooth cutoff ===
-        envelope = self.envelope(r)  # (N, 1)
-        return raw * envelope
+        # === Step 2. Apply the optional C³ envelope ===
+        if self.envelope is not None:
+            return raw * self.envelope(r)
+        return raw
 
     def serialize(self) -> dict[str, Any]:
         """Serialize RadialBasis including trainable frequencies."""
         return {
             "@class": "RadialBasis",
-            "@version": 1,
+            "@version": 2,
             "config": {
                 "rcut": self.rcut,
                 "basis_type": self.basis_type,
@@ -569,7 +769,7 @@ class RadialBasis(NativeOP):
         if data_cls != "RadialBasis":
             raise ValueError(f"Invalid class for RadialBasis: {data_cls}")
         version = int(data.pop("@version"))
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         config = data.pop("config", data)
         variables = data.pop("@variables", None)
         precision = str(config["precision"])
@@ -577,7 +777,11 @@ class RadialBasis(NativeOP):
             rcut=float(config["rcut"]),
             n_radial=int(config["n_radial"]),
             basis_type=str(config.get("basis_type", "bessel")),
-            exponent=int(config.get("exponent", 7)),
+            exponent=(
+                0
+                if version == 1 and config.get("apply_envelope") is False
+                else int(config.get("exponent", 7))
+            ),
             precision=precision,
         )
         if variables is not None:

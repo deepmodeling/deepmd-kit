@@ -35,6 +35,10 @@ def make_base_atomic_model(
     class BAM(ABC, PluginVariant, make_plugin_registry("atomic model")):
         """Base Atomic Model provides the interfaces of an atomic model."""
 
+        def adam_route_patterns(self) -> list[str]:
+            """Return atomic-model-relative parameter name patterns for HybridMuon's AdamW path."""
+            return []
+
         @abstractmethod
         def fitting_output_def(self) -> FittingOutputDef:
             """Get the output def of developer implemented atomic models."""
@@ -83,6 +87,14 @@ def make_base_atomic_model(
         def get_nnei(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.get_nsel()
+
+        def get_pair_exclude_types(self) -> list[tuple[int, int]]:
+            """Return the excluded atom-type pairs of this atomic model.
+
+            Always set by ``__init__`` (empty list when no exclusion is
+            configured); an empty return means the pair-exclusion mask is off.
+            """
+            return self.pair_exclude_types
 
         @abstractmethod
         def get_dim_fparam(self) -> int:
@@ -181,6 +193,17 @@ def make_base_atomic_model(
                 The overflow check frequency
             """
             raise NotImplementedError("This atomi model doesn't support compression!")
+
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Whether :meth:`enable_compression` consumes ``min_nbor_dist``.
+
+            Returns
+            -------
+            bool
+                Concrete default ``True``, so a model that does not report
+                otherwise keeps the neighbor-statistics pass.
+            """
+            return True
 
         def make_atom_mask(
             self,

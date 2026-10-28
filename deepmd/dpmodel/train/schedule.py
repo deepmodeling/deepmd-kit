@@ -30,6 +30,9 @@ from deepmd.dpmodel.utils.training_utils import (
     resolve_model_prob,
     resolve_model_prob_from_epochs,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -85,8 +88,9 @@ def resolve_step_schedule(
         Task keys in the order used by the trainer.  Single-task runs pass the
         one key under which their data is registered.
     training_data : Mapping[str, Any]
-        Training data of every task, keyed like ``model_keys``.  Only consulted
-        when multi-task sampling weights fall back to the per-task data size.
+        Training data of every task, keyed like ``model_keys``. Only consulted
+        when multi-task sampling weights default to native data sizes:
+        NumPy/HDF5 system counts or retained LMDB frame counts.
     epoch_length : Callable[[str], int]
         Maps a task key to the number of steps *this rank* performs during one
         epoch of that task.  Backends whose data pipeline is sharded across
@@ -100,7 +104,7 @@ def resolve_step_schedule(
         unit across ranks, which would desynchronize the run length and
         deadlock later collective calls.
     rank : int, optional
-        Process rank, used to restrict informational logging to the chief.
+        Global rank used for reporting when the launcher supplies no local rank.
 
     Returns
     -------
@@ -134,7 +138,7 @@ def resolve_step_schedule(
             raise ValueError("training.num_epoch must be positive.")
         (total_numb_batch,) = _epoch_lengths(keys, epoch_length, broadcast)
         steps = int(np.ceil(num_epoch * total_numb_batch))
-        if rank == 0:
+        if is_node_main_process(rank):
             log.info(
                 "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
                 steps,
@@ -155,7 +159,7 @@ def resolve_step_schedule(
             num_epoch_dict,
             np.asarray(per_task_total, dtype=np.float64),
         )
-        if rank == 0:
+        if is_node_main_process(rank):
             log.info(
                 "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
                 "with per-task target steps: %s.",

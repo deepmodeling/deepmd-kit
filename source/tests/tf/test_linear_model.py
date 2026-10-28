@@ -156,3 +156,34 @@ class TestLinearModelGetLoss(unittest.TestCase):
         self.assertEqual(result, "ener-loss")
         # the original config must be preserved for other consumers
         self.assertEqual(loss_config, {"type": "ener", "start_pref_e": 1.0})
+
+
+class TestLinearUpdateSelRejectsInnerPotential(unittest.TestCase):
+    def test_inner_potential_child_raises_cleanly(self) -> None:
+        """The TF backend does not implement analytical bridging: the
+        neighbor-stat phase (the first CLI touchpoint) must say so
+        explicitly instead of dying on a generic unknown-type dispatch.
+        """
+        from deepmd.tf.model.linear import (
+            LinearEnergyModel,
+        )
+
+        cfg = {
+            "type": "linear_ener",
+            "type_map": ["O", "H"],
+            "models": [
+                {
+                    "type": "standard",
+                    "descriptor": {"type": "se_e2_a", "sel": [10, 10], "rcut": 4.0},
+                    "fitting_net": {"neuron": [4]},
+                },
+                {
+                    "type": "inner_potential",
+                    "mode": "ZBL",
+                    "r_inner": 0.5,
+                    "r_outer": 0.8,
+                },
+            ],
+        }
+        with self.assertRaises(NotImplementedError):
+            LinearEnergyModel.update_sel(None, cfg["type_map"], cfg)

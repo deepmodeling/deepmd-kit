@@ -57,7 +57,7 @@ class DescrptBlockRepflows(DescrptBlockRepflowsDP):
         # entirely, so combining it with comm_dict is contradictory.
         # Surface this as a clear error rather than producing silently
         # wrong results.
-        if getattr(self, "use_loc_mapping", False):
+        if self.use_loc_mapping:
             raise RuntimeError(
                 "DescrptBlockRepflows._exchange_ghosts: comm_dict is "
                 "set but use_loc_mapping=True. Multi-rank parallel "
