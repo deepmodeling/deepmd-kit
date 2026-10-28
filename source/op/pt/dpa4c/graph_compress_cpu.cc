@@ -218,21 +218,25 @@ Kernels resolve_kernels(int lmax, bool has_modes, bool bridged) {
 /// Process-local cache of the re-laid-out tables.
 ///
 /// One entry serves every step of a molecular-dynamics run. An entry is
-/// identified by the storage of the radial table, the ordered pair FiLM table
-/// and the mode-mixing table, so a charge-state rebuild that binds new ordered
-/// pair tables beside the same radial table prepares its tables anew. The
-/// entry holds strong references to the source storage, which both keep the
-/// identifying pointers from being recycled under new tensors and make the
-/// lifetime explicit. A call shares ownership of the prepared tables it reads,
-/// so that an entry evicted by a concurrent call stays valid until it ends.
+/// identified, for each table the layout reads (the radial table, the ordered
+/// pair FiLM table and, with modes, the mode-mixing table), by the storage
+/// object that holds its values and by their address. Both charge-state
+/// rebuilds bring their tables in new storage objects, even at the same
+/// address: the eager descriptor binds new tensors, and the in-place constant
+/// update of an AOTInductor lower copies the rebuilt tables over the previous
+/// ones and wraps them in new tensors. The entry holds strong references to
+/// the source tensors, which keep the identifying storage objects alive, so
+/// that no later storage object can take their address. A call shares
+/// ownership of the prepared tables it reads, so that an entry evicted by a
+/// concurrent call stays valid until it ends.
 class TableCache {
  public:
   std::shared_ptr<const PreparedTables> get(const torch::Tensor& table,
                                             const torch::Tensor& pair_film,
                                             const torch::Tensor& pair_mixing,
                                             const Layout& layout) {
-    const Key key = {table.const_data_ptr(), pair_film.const_data_ptr(),
-                     pair_mixing.const_data_ptr()};
+    const Key key = {identify(table), identify(pair_film),
+                     layout.modes > 0 ? identify(pair_mixing) : Identity{}};
     std::lock_guard<std::mutex> guard(mutex_);
     for (const Entry& entry : entries_) {
       if (entry.key == key && entry.block == layout.block) {
@@ -260,7 +264,13 @@ class TableCache {
  private:
   static constexpr size_t kCapacity = 8;
 
-  using Key = std::array<const void*, 3>;
+  /// Storage object and address of the values of one table.
+  using Identity = std::array<const void*, 2>;
+  using Key = std::array<Identity, 3>;
+
+  static Identity identify(const torch::Tensor& tensor) {
+    return {tensor.storage().unsafeGetStorageImpl(), tensor.const_data_ptr()};
+  }
 
   struct Entry {
     Key key;

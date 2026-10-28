@@ -2598,6 +2598,108 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
         np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
 
 
+def _charge_state_model(resnet_dt: bool) -> torch.nn.Module:
+    """Build a small charge-conditioned DPA4C energy model on the backend device.
+
+    The conditioning projection is zero initialized so that an untrained
+    descriptor is unconditioned; it is given weight here to make the state
+    observable at all.
+
+    Parameters
+    ----------
+    resnet_dt
+        Whether the hidden layers of the fitting network carry a timestep. A
+        compressed model with one is frozen to the graph lower, and one
+        without it to the compact canonical lower on CUDA.
+    """
+    from deepmd.pt_expt.model import get_model as pt_expt_get_model
+
+    model = pt_expt_get_model(
+        {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 4,
+                "precision": "float32",
+                "add_chg_spin_ebd": True,
+                "default_chg_spin": [0.0, 1.0],
+                "seed": GLOBAL_SEED,
+            },
+            "fitting_net": {
+                "neuron": [8, 8],
+                "precision": "float32",
+                "resnet_dt": resnet_dt,
+                "seed": 1,
+            },
+        }
+    ).to(DEVICE)
+    generator = torch.Generator(device=DEVICE).manual_seed(GLOBAL_SEED)
+    for (
+        _,
+        param,
+    ) in model.atomic_model.descriptor.charge_spin_embedding.named_parameters():
+        with torch.no_grad():
+            param.copy_(
+                torch.randn(
+                    param.shape,
+                    generator=generator,
+                    device=DEVICE,
+                    dtype=param.dtype,
+                )
+                * 0.3
+            )
+    return model
+
+
+@unittest.skipUnless(
+    dpa4c_op_available(),
+    "the compiled DPA4C operator of the backend device is required",
+)
+class TestCompressedChargeStateSwitch(unittest.TestCase):
+    """A compressed archive answers for the charge state it switches to.
+
+    Serving a state copies the rebuilt tables over the constants of the
+    compiled lower that carry the condition, so the kernels of the backend
+    device have to read the copied values rather than anything they prepared
+    from the previous ones.
+    """
+
+    def test_a_state_served_later_answers_as_one_served_first(self) -> None:
+        """An instance that switches to a state answers as a fresh one does.
+
+        The first instance serves the default state and then the other state,
+        which the second instance serves at once.
+        """
+        model = _charge_state_model(resnet_dt=True)
+        model.atomic_model.descriptor.enable_compression(0.5)
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coords = rng.random((1, 5, 3)) * 6.0
+        cells = np.eye(3).reshape(1, 9) * 12.0
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        other_state = np.array([[2.0, 3.0]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "compressed_model.pt2")
+            deserialize_to_file(
+                path, {"model": model.serialize()}, lower_kind="auto", with_comm=False
+            )
+            later = DeepPot(path)
+            default = later.eval(
+                coords, cells, atom_types, charge_spin=np.array([[0.0, 1.0]])
+            )
+            actual = later.eval(coords, cells, atom_types, charge_spin=other_state)
+            expected = DeepPot(path).eval(
+                coords, cells, atom_types, charge_spin=other_state
+            )
+        # The states must differ, or an instance that kept the default state
+        # would still match.
+        self.assertGreater(float(np.abs(default[0] - expected[0]).max()), 1e-4)
+        for value, reference in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, reference, rtol=1e-6, atol=1e-6)
+
+
 @unittest.skipUnless(
     torch.cuda.is_available() and dpa4c_op_available(),
     "CUDA and the compiled DPA4C operator are required",
@@ -2618,49 +2720,8 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
     def setUpClass(cls) -> None:
         import copy
 
-        from deepmd.pt_expt.model import get_model as pt_expt_get_model
-
         cls.nt = 2
-        config = {
-            "type_map": ["O", "H"],
-            "descriptor": {
-                "type": "dpa4c",
-                "rcut": 4.0,
-                "channels": 8,
-                "lmax": 2,
-                "n_radial": 4,
-                "precision": "float32",
-                "add_chg_spin_ebd": True,
-                "default_chg_spin": [0.0, 1.0],
-                "seed": GLOBAL_SEED,
-            },
-            "fitting_net": {
-                "neuron": [8, 8],
-                "precision": "float32",
-                "resnet_dt": cls.lower_kind == "graph",
-                "seed": 1,
-            },
-        }
-        model = pt_expt_get_model(copy.deepcopy(config)).to("cuda")
-
-        # The conditioning projection is zero initialized so that an untrained
-        # descriptor is unconditioned; give it weight to make the state
-        # observable at all.
-        generator = torch.Generator(device="cuda").manual_seed(GLOBAL_SEED)
-        for (
-            _,
-            param,
-        ) in model.atomic_model.descriptor.charge_spin_embedding.named_parameters():
-            with torch.no_grad():
-                param.copy_(
-                    torch.randn(
-                        param.shape,
-                        generator=generator,
-                        device="cuda",
-                        dtype=param.dtype,
-                    )
-                    * 0.3
-                )
+        model = _charge_state_model(resnet_dt=cls.lower_kind == "graph")
         cls.reference = copy.deepcopy(model).eval()
         model.atomic_model.descriptor.enable_compression(0.5)
 
