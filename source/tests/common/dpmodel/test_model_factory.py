@@ -227,6 +227,7 @@ class TestModelFactory(unittest.TestCase):
             "fitting_net": {"type": "dipole", "custom": 5},
             "atom_exclude_types": [1],
             "pair_exclude_types": [[0, 1]],
+            "preset_out_bias": {"dipole": {"H": [0.0, 1.0, 2.0]}},
         }
         expected = {
             "type_map": ["O", "H"],
@@ -234,6 +235,7 @@ class TestModelFactory(unittest.TestCase):
             "fitting_net": {"type": "dipole", "custom": 5},
             "atom_exclude_types": [1],
             "pair_exclude_types": [[0, 1]],
+            "preset_out_bias": {"dipole": {"H": [0.0, 1.0, 2.0]}},
         }
         model = get_standard_model(
             data,
@@ -251,6 +253,9 @@ class TestModelFactory(unittest.TestCase):
         self.assertEqual(model.kwargs["fitting"].kwargs["embedding_width"], 7)
         self.assertEqual(model.kwargs["atom_exclude_types"], [1])
         self.assertEqual(model.kwargs["pair_exclude_types"], [[0, 1]])
+        self.assertEqual(
+            model.kwargs["preset_out_bias"], {"dipole": {"H": [0.0, 1.0, 2.0]}}
+        )
 
     def test_model_level_type_embedding_is_rejected(self) -> None:
         """Cover the shared validation used by every dpmodel-driven backend."""
@@ -299,6 +304,7 @@ class TestModelFactory(unittest.TestCase):
                 "sw_rmin": 0.2,
                 "sw_rmax": 4.0,
                 "smin_alpha": 0.37,
+                "preset_out_bias": {"energy": [None, 1.0]},
             },
             descriptor_base=_DescriptorBase,
             fitting_base=_FittingBase,
@@ -311,6 +317,9 @@ class TestModelFactory(unittest.TestCase):
         self.assertEqual(model.kwargs["smin_alpha"], 0.37)
         self.assertEqual(model.pairtab.rcut, 5.0)
         self.assertEqual(model.pairtab.sel, [4, 8])
+        # the composition computes the bias and therefore owns the preset
+        self.assertEqual(model.kwargs["preset_out_bias"], {"energy": [None, 1.0]})
+        self.assertNotIn("preset_out_bias", model.dp_model.kwargs)
 
 
 if __name__ == "__main__":

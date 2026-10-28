@@ -12,7 +12,11 @@ from deepmd.dpmodel.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebd
 from deepmd.dpmodel.utils.env_mat_stat import (
     merge_env_stat,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
 from deepmd.pt_expt.common import (
+    register_buffer_replacing_slot,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -156,7 +160,7 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
             )
             # Run through the strip embedding network
             embd_tensor = self.se_ttebd.embeddings_strip[0].call(two_side).detach()
-            torch.nn.Module.register_buffer(self, "type_embd_data", embd_tensor)
+            register_buffer_replacing_slot(self, "type_embd_data", embd_tensor)
 
     @cast_precision
     def call(
@@ -183,9 +187,10 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
     ) -> Any:
         """Compressed forward using tabulate_fusion_se_t_tebd custom op."""
         # env_mat: nf x nloc x nnei x 4
+        atype_ext_for_env = atype_ext.clamp_min(0)
         rr, _diff, sw = self.se_ttebd.env_mat.call(
             coord_ext,
-            atype_ext,
+            atype_ext_for_env,
             nlist,
             self.se_ttebd.mean[...],
             self.se_ttebd.stddev[...],
@@ -237,7 +242,9 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
         # nf x (nloc x nnei)
         nei_type = torch.gather(atype_ext, dim=1, index=nlist_index)
         # nfnl x nnei
-        nei_type = nei_type.view(nfnl, nnei)
+        nei_type = remap_atype_to_padding(
+            nei_type.view(nfnl, nnei), ntypes_with_padding
+        )
         # nfnl x nnei x nnei
         nei_type_i = nei_type.unsqueeze(2).expand(-1, -1, nnei)
         nei_type_j = nei_type.unsqueeze(1).expand(-1, nnei, -1)

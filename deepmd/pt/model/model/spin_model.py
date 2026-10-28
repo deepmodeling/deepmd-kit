@@ -27,6 +27,10 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+    remap_preset_out_bias,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -374,6 +378,12 @@ class SpinModel(torch.nn.Module):
             )
         return aparam
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the backbone's AdamW patterns with its parameter path."""
+        return [
+            f"backbone_model.{p}" for p in self.backbone_model.adam_route_patterns()
+        ]
+
     @torch.jit.export
     def get_type_map(self) -> list[str]:
         """Get the type map."""
@@ -385,6 +395,10 @@ class SpinModel(torch.nn.Module):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the backbone fitting into its bias."""
+        self.backbone_model.fold_vacuum_reference()
 
     @torch.jit.export
     def get_rcut(self) -> float:
@@ -454,6 +468,17 @@ class SpinModel(torch.nn.Module):
         """Returns whether it has spin input and output."""
         return True
 
+    def export_lower_input_kind(self) -> str:
+        """Return the dense ABI used by the virtual-atom spin model.
+
+        Returns
+        -------
+        str
+            ``"nlist"``, because virtual atoms are expanded inside the
+            bounded neighbor-list contract.
+        """
+        return "nlist"
+
     @torch.jit.export
     def has_message_passing(self) -> bool:
         """Returns whether the model has message passing."""
@@ -497,6 +522,7 @@ class SpinModel(torch.nn.Module):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         bias_adjust_mode: str = "change-by-statistic",
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -514,13 +540,24 @@ class SpinModel(torch.nn.Module):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        preset_out_bias : dict, optional
+            Preset on the public real-atom type map. It is normalized and
+            extended with unassigned virtual types before forwarding. Omit
+            to retain the model preset; an empty dict fits without fixing
+            preset outputs. Non-finite stored cells covered by a checkpoint
+            preset are recovered before residual fitting.
         """
+        preset_out_bias = remap_preset_out_bias(
+            normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
+            list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),
+        )
         spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         self.backbone_model.change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(
@@ -554,6 +591,8 @@ class SpinModel(torch.nn.Module):
             The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
+        preset_observed_type
+            Atom types known to occur in the sampled data, if already computed.
         """
 
         @functools.lru_cache
@@ -600,6 +639,8 @@ class SpinModel(torch.nn.Module):
         model_ret[f"{var_name}"] = torch.split(
             model_ret[f"{var_name}"], [nloc, nloc], dim=1
         )[0]
+        if "mask" in model_ret:
+            model_ret["mask"] = model_ret["mask"][:, :nloc]
         if self.backbone_model.do_grad_r(var_name):
             (
                 model_ret[f"{var_name}_derv_r"],
@@ -665,6 +706,8 @@ class SpinModel(torch.nn.Module):
         model_ret[f"{var_name}"] = torch.split(
             model_ret[f"{var_name}"], [nloc, nloc], dim=1
         )[0]
+        if "mask" in model_ret:
+            model_ret["mask"] = model_ret["mask"][:, :nloc]
         if self.backbone_model.do_grad_r(var_name):
             (
                 model_ret[f"{var_name}_derv_r"],
@@ -737,6 +780,8 @@ class SpinEnergyModel(SpinModel):
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
             output_def["atom_virial"].squeeze(-2)
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(
@@ -764,6 +809,8 @@ class SpinEnergyModel(SpinModel):
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
         model_predict["mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if self.backbone_model.do_grad_r("energy"):
             model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
@@ -804,6 +851,8 @@ class SpinEnergyModel(SpinModel):
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
         model_predict["extended_mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if self.backbone_model.do_grad_r("energy"):
             model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["extended_force_mag"] = model_ret[

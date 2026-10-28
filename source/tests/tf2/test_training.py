@@ -633,6 +633,7 @@ def test_training_energy_call_keeps_atomic_virial_disabled() -> None:
         },
         label_dict={"virial": tf.zeros((1, 9), dtype=tf.float64)},
         do_virial=True,
+        training=False,
     )
 
     assert captured == {

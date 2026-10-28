@@ -42,6 +42,8 @@ class DPModelBackend(Backend):
     """The features of the backend."""
     suffixes: ClassVar[list[str]] = [".dp", ".yaml", ".yml"]
     """The suffixes of the backend."""
+    preserves_lower_input_kind: ClassVar[bool] = True
+    """DPModel files retain lower provenance without binding an execution ABI."""
 
     def is_available(self) -> bool:
         """Check if the backend is available.
@@ -106,10 +108,10 @@ class DPModelBackend(Backend):
             The serialize hook of the backend.
         """
         from deepmd.dpmodel.utils.serialization import (
-            load_dp_model,
+            serialize_from_file,
         )
 
-        return load_dp_model
+        return serialize_from_file
 
     @property
     def deserialize_hook(self) -> Callable[[str, dict], None]:

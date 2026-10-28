@@ -39,6 +39,7 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -603,6 +604,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
         self.compress = False
+        self.geo_compress = False
         # graph-native lower opt-out flag (mirrors DescrptDPA1); not
         # serialized, re-derived structurally at construction/deserialization.
         self._graph_lower_disabled = False
@@ -1349,7 +1351,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # repinit
         g1_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+            take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
             (nframes, nall, self.tebd_dim),
         )
         g1_inp = xp_take_first_n(g1_ext, 1, nloc)
@@ -1418,6 +1420,10 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         if self.concat_output_tebd:
             g1 = xp.concat([g1, g1_inp], axis=-1)
         return g1, rot_mat, g2, h2, sw
+
+    def get_geo_compress(self) -> bool:
+        """Return whether geometric tabulated compression is active."""
+        return self.geo_compress
 
     def serialize(self) -> dict:
         repinit = self.repinit

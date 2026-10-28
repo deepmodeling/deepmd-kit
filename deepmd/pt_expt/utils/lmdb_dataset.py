@@ -13,11 +13,13 @@ from typing import (
     Any,
 )
 
+import numpy as np
+
 from deepmd.dpmodel.utils.lmdb_data import (
-    DistributedSameNlocBatchSampler,
+    DistributedLmdbBatchSampler,
     LmdbBatchIterator,
+    LmdbBatchSampler,
     LmdbDataReader,
-    SameNlocBatchSampler,
     collect_lmdb_sampling_groups,
     compute_block_targets,
 )
@@ -39,11 +41,11 @@ class LmdbDataSystem:
     ``get_nsystems()``, and the ``nbatches``/``sys_probs`` pair from which the
     trainer derives an epoch length. The whole LMDB counts as one logical
     system. Internally uses :class:`LmdbDataReader` for I/O and
-    :class:`SameNlocBatchSampler`, or its distributed wrapper, to draw
-    same-nloc batches. Statistics use a separate logical-system view in which
-    every ``(nloc, label-availability)`` group is sampled independently,
-    matching the training sampler without changing the identity of the LMDB as
-    one training dataset.
+    :class:`LmdbBatchSampler`, or its distributed wrapper, to draw batches.
+    Statistics use a separate logical-system view in which every
+    ``(nloc, label-availability)`` group is sampled independently, matching
+    the training sampler without changing the identity of the LMDB as one
+    training dataset.
 
     Parameters
     ----------
@@ -52,12 +54,13 @@ class LmdbDataSystem:
     type_map
         Global type map from the model config.
     batch_size
-        Batch size spec; ``int``, ``"auto"``, or ``"auto:N"``.
+        Batch size spec; ``int``, ``"auto"``, ``"auto:N"``, ``"max:N"``,
+        ``"filter:N"``, or ``"mix:N"`` for mixed-nloc batching.
     auto_prob_style
         Optional ``auto_prob`` string (e.g. ``"prob_sys_size"``) for
         per-system reweighting via :func:`compute_block_targets`.
     seed
-        Optional seed for the shuffle in :class:`SameNlocBatchSampler`.
+        Optional seed for the shuffle in :class:`LmdbBatchSampler`.
     num_workers
         Number of LMDB decoder worker processes. ``None`` selects the
         hardware-aware default; zero or one disables multiprocessing.
@@ -65,7 +68,7 @@ class LmdbDataSystem:
         Rank of this process in distributed training.
     world_size
         Number of distributed training processes. Values greater than one
-        select :class:`DistributedSameNlocBatchSampler`.
+        select :class:`DistributedLmdbBatchSampler`.
     """
 
     def __init__(
@@ -79,9 +82,7 @@ class LmdbDataSystem:
         rank: int = 0,
         world_size: int = 1,
     ) -> None:
-        self._reader = LmdbDataReader(
-            lmdb_path, type_map, batch_size, mixed_batch=False
-        )
+        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
 
         block_targets = None
         if auto_prob_style is not None and self._reader.frame_system_ids is not None:
@@ -92,23 +93,23 @@ class LmdbDataSystem:
             )
 
         if world_size > 1:
-            distributed_sampler = DistributedSameNlocBatchSampler(
-                self._reader,
-                rank=rank,
-                world_size=world_size,
-                shuffle=True,
-                seed=seed,
-                block_targets=block_targets,
+            self._sampler: LmdbBatchSampler | DistributedLmdbBatchSampler = (
+                DistributedLmdbBatchSampler(
+                    self._reader,
+                    rank=rank,
+                    world_size=world_size,
+                    shuffle=True,
+                    seed=seed,
+                    block_targets=block_targets,
+                )
             )
-            self._sampler = distributed_sampler
         else:
-            sampler = SameNlocBatchSampler(
+            self._sampler = LmdbBatchSampler(
                 self._reader,
                 shuffle=True,
                 seed=seed,
                 block_targets=block_targets,
             )
-            self._sampler = sampler
         self._refresh_stat_groups()
         num_workers = (
             get_lmdb_num_workers() if num_workers is None else int(num_workers)
@@ -120,13 +121,27 @@ class LmdbDataSystem:
         )
 
     def _refresh_stat_groups(self) -> None:
-        """Rebuild statistical systems from the training sampler's groups."""
+        """Build statistical systems from stack-compatible reader groups."""
         self._stat_groups = collect_lmdb_sampling_groups(self._reader)
         self._stat_offsets = [0] * len(self._stat_groups)
 
     # ------------------------------------------------------------------
     # pt_expt trainer surface
     # ------------------------------------------------------------------
+
+    def use_ragged_batches(self, ragged: bool) -> None:
+        """Select the layout :meth:`get_batch` delivers.
+
+        See :meth:`deepmd.dpmodel.utils.lmdb_data.LmdbDataReader.use_ragged_batches`.
+        The trainer calls this once it knows whether the model reads a flat
+        node axis, before training draws its first batch.
+
+        Parameters
+        ----------
+        ragged : bool
+            Whether to concatenate frames instead of padding them.
+        """
+        self._reader.use_ragged_batches(ragged)
 
     def get_batch(self, sys_idx: int | None = None) -> dict[str, Any]:
         """Return one batch as a numpy dict.
@@ -137,13 +152,21 @@ class LmdbDataSystem:
         del sys_idx
         return next(self._batch_iterator)
 
+    def state_dict(self) -> dict[str, Any]:
+        """Return the next training-batch cursor, excluding statistical reads."""
+        return self._batch_iterator.state_dict()
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore training progress without drawing or decoding any batch."""
+        self._batch_iterator.load_state_dict(state)
+
     def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
         """Return one batch from a homogeneous statistical system.
 
         Parameters
         ----------
         sys_idx : int
-            Index into the ``(nloc, label-availability)`` groups.
+            Index into the per-atom-count groups.
 
         Returns
         -------
@@ -154,6 +177,12 @@ class LmdbDataSystem:
         ------
         IndexError
             If ``sys_idx`` does not identify an available statistical group.
+
+        Notes
+        -----
+        The batch is rectangular whatever layout training uses: output
+        statistics accumulate over an ``(nf, nloc, ...)`` axis. A group is
+        uniform in atom count, so that layout pads nothing.
         """
         if not 0 <= sys_idx < len(self._stat_groups):
             raise IndexError(
@@ -168,7 +197,7 @@ class LmdbDataSystem:
             start = 0
         stop = min(start + batch_size, len(group_indices))
         self._stat_offsets[sys_idx] = stop
-        return self._reader.decode_batch(group_indices[start:stop])
+        return self._reader.decode_batch(group_indices[start:stop], ragged=False)
 
     def get_stat_nsystems(self) -> int:
         """Return the number of homogeneous statistical systems."""
@@ -189,13 +218,12 @@ class LmdbDataSystem:
     def add_data_requirements(
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
-        # Batches are partitioned by label availability. The sampler derives
-        # the partition on its first draw; only the distributed batch count is
-        # cached, so it is refreshed after the requirements change.
         self._reader.add_data_requirement(data_requirement)
         self._refresh_stat_groups()
-        if isinstance(self._sampler, DistributedSameNlocBatchSampler):
-            self._sampler.refresh_batch_count()
+
+    def set_frame_transform(self, transform) -> None:  # noqa: ANN001
+        """Install a per-frame transform on the underlying reader."""
+        self._reader.set_frame_transform(transform)
 
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""
@@ -214,12 +242,45 @@ class LmdbDataSystem:
         """Return one logical LMDB training dataset."""
         return 1
 
+    def get_model_sampling_size(self) -> int:
+        """Count retained frames, matching native PyTorch LMDB task weights."""
+        return len(self._reader)
+
+    @property
+    def uniform_sampling_mass(self) -> float:
+        """Return the queued batch's systems-per-frame selection weight."""
+        return self._batch_iterator.uniform_sampling_mass
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        """Return the pending pass's mean systems-per-frame selection weight."""
+        return self._batch_iterator.uniform_nominal_mass
+
+    def get_batch_pass_length(self) -> int:
+        """Return the local pass length belonging to the last returned batch."""
+        return self._batch_iterator.batch_pass_length
+
+    def get_epoch_batch_counts(self, world_size: int) -> np.ndarray:
+        """Return the actual local workload after distributed batch padding."""
+        return np.asarray([len(self._sampler)], dtype=np.float64)
+
+    def get_ntypes(self) -> int:
+        return len(self.type_map)
+
+    def get_type_map(self) -> list[str]:
+        return self.type_map
+
+    def get_batch_size(self) -> list[int]:
+        return [self._reader.batch_size]
+
+    @property
+    def system_dirs(self) -> list[str]:
+        return [self._reader.lmdb_path]
+
     @property
     def nbatches(self) -> list[int]:
         """Return the global batch count of one full pass."""
-        if isinstance(self._sampler, DistributedSameNlocBatchSampler):
-            return [self._sampler.total_batches]
-        return [len(self._sampler)]
+        return [self._sampler.total_batches]
 
     @property
     def sys_probs(self) -> list[float]:

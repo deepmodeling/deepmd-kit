@@ -32,6 +32,13 @@ from deepmd.common import (
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
+from deepmd.utils.bridging import (
+    DEFAULT_FRACTION_INNER,
+    DEFAULT_FRACTION_OUTER,
+)
+from deepmd.utils.data_config import (
+    data_group_configs,
+)
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     FULL_VALIDATION_PROFILES,
@@ -105,6 +112,14 @@ doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative c
 doc_se_e2_r = "Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor."
 doc_se_e3 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor."
 doc_se_a_tpe = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor."
+doc_vacuum_ref = (
+    "Reference the fitting network output of every atom to the output the same network gives "
+    "an isolated atom of the same type under the same frame parameters, atomic parameters and "
+    "case embedding, so that the energy of an atom without neighbors is exactly its output bias. "
+    "The reference applies to an output whose bias `preset_out_bias` fixes, which makes the preset value "
+    "the isolated-atom energy of every element; an output whose bias is fitted from the data keeps the "
+    "plain network output. It cannot be combined with `atom_ener`."
+)
 doc_se_atten = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor."
 doc_se_atten_v2 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor."
 doc_se_a_mask = "Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms."
@@ -217,17 +232,18 @@ def spin_args() -> list[Argument]:
         "Required for the `deepspin` scheme; ignored by the `native` scheme."
     )
     doc_scheme = (
-        "The spin implementation scheme, only effective for the DPA4/SeZM model. "
+        "The spin implementation scheme, only effective for descriptors that declare "
+        "native spin support (currently DPA4/SeZM and DPA4C). "
         "`native` injects the per-atom spin vector as an equivariant feature "
-        "(l=0 magnitude and l=1 direction) directly into the descriptor and "
+        "directly into the descriptor and "
         "derives the magnetic force as the negative spin gradient of the energy, "
         "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
         "representation and is the default. Other models always use the `deepspin` scheme."
     )
     doc_allow_missing_label = (
         "Whether to admit training systems that lack a `spin` data file, filling their "
-        "per-atom spin with zeros instead of raising. Supported only by the SeZM/DPA4 "
-        "spin model; defaults to false."
+        "per-atom spin with zeros instead of raising. Supported only by the native "
+        "spin models (SeZM/DPA4 and DPA4C); defaults to false."
     )
 
     return [
@@ -288,6 +304,8 @@ class ArgsPlugin:
             the name of a descriptor
         alias : list[str], optional
             the list of aliases of this descriptor
+        doc : str, optional
+            the descriptor documentation prefix
 
         Returns
         -------
@@ -450,6 +468,154 @@ def descrpt_se_a_args() -> list[Argument]:
 
 
 @descrpt_args_plugin.register(
+    "dpa4c",
+    alias=["DPA4C"],
+    doc=supported_backends("pt_expt")
+    + "DPA4C is the compact and compressible degree-wise descriptor of the DPA4 family.",
+)
+def descrpt_dpa4c_args() -> list[Argument]:
+    """Return the DPA4C descriptor arguments."""
+    return [
+        Argument(
+            "rcut",
+            float,
+            optional=True,
+            default=6.0,
+            doc="The outer cutoff radius.",
+        ),
+        Argument(
+            "channels",
+            int,
+            optional=True,
+            default=32,
+            doc=(
+                "Scalar degree-zero and edge channel width. Supported values "
+                "are 8, 16, 32, 64, and 128. This is the primary scaling "
+                "knob: it widens the edge features, the per-atom angular "
+                "state, and the descriptor output together. The fitting "
+                "network is sized against it; the released grades are "
+                "available as named model presets (see the DPA4C model "
+                "documentation)."
+            ),
+        ),
+        Argument(
+            "lmax",
+            int,
+            optional=True,
+            default=2,
+            doc="Maximum angular degree. Supported values are 2, 3, and 4.",
+        ),
+        Argument(
+            "basis_type",
+            str,
+            optional=True,
+            default="bessel",
+            doc=(
+                "Radial basis type. Supported values are `bessel`, `gaussian`, "
+                "`bessel/fix` and `gaussian/fix`. The `/fix` forms keep the "
+                "Bessel frequencies or Gaussian centres at their initial "
+                "values instead of training them."
+            ),
+        ),
+        Argument(
+            "n_radial",
+            int,
+            optional=True,
+            default=16,
+            doc=(
+                "Number of DPA4 radial basis functions forming the fixed "
+                "analytic radial input."
+            ),
+        ),
+        Argument(
+            "radial_modes",
+            int,
+            optional=True,
+            default=0,
+            doc=(
+                "Number of shared radial mode profiles that every ordered "
+                "atom-type pair mixes with its own coefficients. Zero leaves "
+                "each pair with a rescaled copy of one shared radial "
+                "function; larger values let each pair select its own radial "
+                "shape."
+            ),
+        ),
+        Argument(
+            "use_amp",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "If True, run the per-edge stage under bfloat16 automatic "
+                "mixed precision on CUDA during training. This lowers the "
+                "dominant activation footprint, which scales with the edge "
+                "count. The destination reduction and the invariant readout "
+                "stay in the descriptor precision. Evaluation and inference "
+                "are governed independently by the `DP_AMP_INFER` environment "
+                "variable, so a model trained in full precision can still "
+                "infer under mixed precision, and the reverse."
+            ),
+        ),
+        Argument(
+            "exclude_types",
+            list[list[int]],
+            optional=True,
+            default=[],
+            doc="Ordered atom-type pairs excluded from the descriptor.",
+        ),
+        Argument(
+            "precision",
+            str,
+            optional=True,
+            default="float32",
+            doc="Floating-point precision of descriptor parameters.",
+        ),
+        Argument(
+            "trainable",
+            bool,
+            optional=True,
+            default=True,
+            doc="Whether descriptor parameters are trainable.",
+        ),
+        Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "Whether to condition the descriptor on the frame-level "
+                "`charge_spin` input `[charge, multiplicity]` of shape "
+                "`[nframes, 2]`. The embedded condition is added to the "
+                "center type embedding and to the hidden state of the "
+                "ordered type-pair encoder, so it changes how a given "
+                "geometry maps to the degree-wise moments. This is unrelated "
+                "to `model.spin`, which carries a per-atom magnetic moment."
+            ),
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=(
+                "Fallback `[charge, multiplicity]` used when `charge_spin` is "
+                "absent from the input data. Only read when "
+                "`add_chg_spin_ebd` is enabled. Compression folds this value "
+                "into the frozen tables, so a compressed model evaluates "
+                "exactly this charge state and requires the option to be set."
+            ),
+        ),
+        Argument(
+            "seed",
+            [int, None],
+            optional=True,
+            default=None,
+            doc="Random seed for parameter initialization.",
+        ),
+    ]
+
+
+@descrpt_args_plugin.register(
     "dpa4",
     alias=["DPA4", "SeZM", "sezm"],
     doc=supported_backends("pt", "jax", "pt_expt") + doc_se_zm,
@@ -462,16 +628,22 @@ def descrpt_se_zm_args() -> list[Argument]:
     - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
     doc_rcut = "The cut-off radius."
     doc_env_exp = (
-        "C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`. "
-        "`rbf_env_exp` controls radial basis function envelope decay; "
-        "`edge_env_exp` controls message passing edge weight envelope decay. "
+        "C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]` "
+        "specifies the radial-basis and message-passing envelopes separately. "
+        "A zero radial-basis exponent disables that envelope. "
+        "An integer specifies only the message-passing envelope exponent and "
+        "disables the radial-basis envelope. "
         "Larger values give weaker suppression."
     )
     doc_channels = "Total channels per (l,m) coefficient."
-    doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
+    doc_basis_type = (
+        "Radial basis type. Supported values are `bessel`, `gaussian`, `bessel/fix` and `gaussian/fix`. "
+        "The `/fix` forms keep the Bessel frequencies or Gaussian centres at their initial values instead of training them, "
+        "so that separations no training frame constrains cannot move them."
+    )
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
-    doc_edge_norm = "Whether to apply standard channel RMSNorm on cutoff-vanishing feature branches. Setting to `false` removes RMSNorm from the radial network, environment-seed FiLM, and cross-focus competition, and uses unit-floor residual scaling for post-SO(2) messages. Setting to `false` is recommended."
+    doc_edge_norm = "Channel RMSNorm on the cutoff-vanishing feature branches. A bool switches every site together: `false` removes the RMSNorm from the radial-network hidden layers, the environment-seed FiLM scale/shift logits and the cross-focus competition scalars, and uses unit-floor residual scaling for post-SO(2) messages. A list of three bools `[radial, film, focus]` switches the sites individually; the post-SO(2) treatment follows the first (radial) entry. Recommended: `[false, true, false]` — the radial-site norms amplify noise where the radial features vanish at the cutoff and produce a spurious long-range force step, while the FiLM and focus norms are safe to keep."
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
@@ -773,7 +945,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument(
             "env_exp",
-            list[int],
+            [int, list[int]],
             optional=True,
             default=[7, 5],
             doc=doc_env_exp,
@@ -792,7 +964,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         ),
         Argument(
             "edge_norm",
-            bool,
+            [bool, list],
             optional=True,
             default=True,
             doc=doc_edge_norm,
@@ -1300,6 +1472,7 @@ def descrpt_se_atten_common_args() -> list[Argument]:
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
     doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of `G` (the embedding matrix) used to build the descriptor."
+    doc_lmax = "Maximum angular degree of the aggregated moment basis. The PyTorch backend supports integer values from 1 through 4."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
@@ -1329,6 +1502,12 @@ def descrpt_se_atten_common_args() -> list[Argument]:
             default=4,
             alias=["n_axis_neuron"],
             doc=doc_axis_neuron,
+        ),
+        Argument(
+            "lmax",
+            int,
+            optional=True,
+            doc=supported_backends("pt") + doc_lmax,
         ),
         Argument(
             "activation_function",
@@ -2600,6 +2779,144 @@ def descrpt_se_a_mask_args() -> list[Argument]:
     ]
 
 
+doc_descrpt_unimol = (
+    "The Uni-Mol v1 transformer backbone. Every atom attends to every other atom, so the "
+    "descriptor is neither local nor extensive and does not support periodic boundaries; it is "
+    "intended for molecular property and self-supervised pretraining work."
+)
+doc_fitting_unimol_pretrain = (
+    "The three self-supervised heads of Uni-Mol v1 pretraining: element prediction, coordinate "
+    "denoising and pairwise distance prediction."
+)
+
+
+@descrpt_args_plugin.register(
+    "unimol", doc=supported_backends("pt_expt") + doc_descrpt_unimol
+)
+def descrpt_unimol_args() -> list[Argument]:
+    doc_seed = "Random seed for parameter initialization"
+    doc_precision = f"The precision of the parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_encoder_layers = "Number of transformer blocks."
+    doc_encoder_embed_dim = "Width of the node representation."
+    doc_encoder_ffn_embed_dim = "Width of the feed-forward hidden layer."
+    doc_encoder_attention_heads = (
+        "Number of attention heads, which is also the width of the pair channel."
+    )
+    doc_max_atoms = "Largest molecule accepted, which fixes the neighbor count."
+    doc_max_seq_len = (
+        "Upstream's sequence-length guard, including the two virtual tokens."
+    )
+    doc_activation_function = (
+        f"The activation function. Uni-Mol uses the exact GELU, `gelu_erf`. "
+        f"Supported: {list_to_doc(ACTIVATION_FN_DICT.keys())}"
+    )
+    doc_dropout = "Dropout on the residual branches, applied during training."
+    doc_emb_dropout = "Dropout on the token embedding, applied during training."
+    doc_attention_dropout = (
+        "Dropout on the attention probabilities, applied during training."
+    )
+    doc_activation_dropout = "Dropout after the feed-forward activation."
+    doc_no_final_head_layer_norm = "Skip the layer norm on the pair delta. Upstream builds it unless its loss weight is negative."
+    doc_single_precision_basis = "Evaluate the Gaussian basis in fp32, as upstream does. Required to reproduce the released weights."
+    doc_single_precision_distance = (
+        "Round pairwise distances to fp32 before the basis, matching upstream's precomputed distance "
+        "matrix. The default computes them in the working precision, which is more accurate."
+    )
+    doc_virtual_token_position = (
+        "Where the two virtual tokens sit: `centroid` of the real atoms, which keeps the sequence "
+        "translation invariant, or `origin`, which reproduces upstream for pre-centred data."
+    )
+    doc_gaussian_kernels = "Number of Gaussian radial basis functions."
+    return [
+        Argument(
+            "encoder_layers", int, optional=True, default=15, doc=doc_encoder_layers
+        ),
+        Argument(
+            "encoder_embed_dim",
+            int,
+            optional=True,
+            default=512,
+            doc=doc_encoder_embed_dim,
+        ),
+        Argument(
+            "encoder_ffn_embed_dim",
+            int,
+            optional=True,
+            default=2048,
+            doc=doc_encoder_ffn_embed_dim,
+        ),
+        Argument(
+            "encoder_attention_heads",
+            int,
+            optional=True,
+            default=64,
+            doc=doc_encoder_attention_heads,
+        ),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument("max_seq_len", int, optional=True, default=512, doc=doc_max_seq_len),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="gelu_erf",
+            doc=doc_activation_function,
+        ),
+        Argument("dropout", float, optional=True, default=0.1, doc=doc_dropout),
+        Argument("emb_dropout", float, optional=True, default=0.1, doc=doc_emb_dropout),
+        Argument(
+            "attention_dropout",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_attention_dropout,
+        ),
+        Argument(
+            "activation_dropout",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_activation_dropout,
+        ),
+        Argument(
+            "no_final_head_layer_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_no_final_head_layer_norm,
+        ),
+        Argument(
+            "single_precision_basis",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_single_precision_basis,
+        ),
+        Argument(
+            "single_precision_distance",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_single_precision_distance,
+        ),
+        Argument(
+            "virtual_token_position",
+            str,
+            optional=True,
+            default="centroid",
+            doc=doc_virtual_token_position,
+        ),
+        Argument(
+            "gaussian_kernels",
+            int,
+            optional=True,
+            default=128,
+            doc=doc_gaussian_kernels,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, list, None], optional=True, doc=doc_seed),
+    ]
+
+
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     doc_descrpt_type = "The type of the descriptor."
 
@@ -2701,6 +3018,13 @@ def fitting_ener() -> list[Argument]:
             default=[],
             doc=doc_atom_ener,
         ),
+        Argument(
+            "vacuum_ref",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt") + doc_vacuum_ref,
+        ),
         Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(
             "use_aparam_as_mask",
@@ -2796,6 +3120,13 @@ def fitting_sezm_ener() -> list[Argument]:
             optional=True,
             default=[],
             doc=doc_atom_ener,
+        ),
+        Argument(
+            "vacuum_ref",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt", "pt_expt") + doc_vacuum_ref,
         ),
         Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(
@@ -3160,6 +3491,52 @@ def fitting_dipole() -> list[Argument]:
 
 
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
+@fitting_args_plugin.register(
+    "unimol_pretrain", doc=supported_backends("pt_expt") + doc_fitting_unimol_pretrain
+)
+def fitting_unimol_pretrain() -> list[Argument]:
+    doc_seed = "Random seed for parameter initialization"
+    doc_precision = f"The precision of the parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_n_token = (
+        "Size of the Uni-Mol vocabulary, which is the width of the element head."
+    )
+    doc_attention_heads = (
+        "Width of the pair channel, which the two pair-reading heads consume."
+    )
+    doc_max_atoms = (
+        "Largest molecule accepted, which fixes the distance head's column count."
+    )
+    doc_activation_function = f"The activation function of the heads. Supported: {list_to_doc(ACTIVATION_FN_DICT.keys())}"
+    doc_mask_token_head = "Build the element-prediction head."
+    doc_coord_head = "Build the coordinate-denoising head."
+    doc_dist_head = "Build the distance-prediction head."
+    return [
+        Argument("n_token", int, optional=True, default=31, doc=doc_n_token),
+        Argument(
+            "attention_heads", int, optional=True, default=64, doc=doc_attention_heads
+        ),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="gelu_erf",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "mask_token_head",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_mask_token_head,
+        ),
+        Argument("coord_head", bool, optional=True, default=True, doc=doc_coord_head),
+        Argument("dist_head", bool, optional=True, default=True, doc=doc_dist_head),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, list, None], optional=True, doc=doc_seed),
+    ]
+
+
 def fitting_variant_type_args() -> Variant:
     doc_descrpt_type = "The type of the fitting."
 
@@ -3238,10 +3615,20 @@ model_args_plugin = ArgsPlugin()
 hybrid_model_args_plugin = ArgsPlugin()
 
 
-def model_args(exclude_hybrid: bool = False) -> list[Argument]:
+def model_args(
+    exclude_hybrid: bool = False,
+    extra_model_types: "list[Argument] | None" = None,
+) -> list[Argument]:
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
+    doc_data_stat_full = (
+        "Scan every frame of the training data to compute the output statistics "
+        "(bias and standard deviation of the fitting target) exactly, instead of "
+        "estimating them from `data_stat_nbatch` batches per system. Recommended "
+        "for datasets containing rare elements, whose bias is otherwise fitted "
+        "from too few frames. Input statistics still use `data_stat_nbatch`."
+    )
     doc_data_bias_nsample = "The number of training samples in a system to compute and change the energy bias."
     doc_type_embedding = "The type embedding. In other backends, the type embedding is already included in the descriptor."
     doc_modifier = "The modifier of model output."
@@ -3254,7 +3641,23 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
-    doc_preset_out_bias = "The preset bias of the atomic output. Note that the set_davg_zero should be set to true. The bias is provided as a dict. Taking the energy model that has three atom types for example, the `preset_out_bias` may be given as `{ 'energy': [null, 0., 1.] }`. In this case the energy bias of type 1 and 2 are set to 0. and 1., respectively. A dipole model with two atom types may set `preset_out_bias` as `{ 'dipole': [null, [0., 1., 2.]] }`"
+    doc_preset_out_bias = (
+        "Fix the atomic output bias of chosen elements instead of fitting it from the data, keyed by output name. "
+        "For an energy model it is the energy of an isolated atom, so with `vacuum_ref` in the fitting net an atom "
+        "without neighbors gives exactly this energy. Four forms are accepted: a dict keyed by element symbol, "
+        "e.g. `{'energy': {'O': -430.1, 'H': -13.6}}`; the name of a bundled table of isolated-atom energies, e.g. "
+        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25`, `odac25`, `openmd` and `domain_cluster`, which takes precedence "
+        "over a file of the same name; "
+        "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
+        "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
+        "for tensor outputs, e.g. `{'dipole': [null, [0., 1., 2.]]}`. "
+        "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
+        "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
+        "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
+        "changed by fine-tuning. `dp change-bias` fits from its input data without reapplying the model's stored "
+        "preset; explicit `--bias-value` values override the bias directly. "
+        "Dipole models apply no output bias and take no preset."
+    )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
         "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
@@ -3281,6 +3684,13 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 optional=True,
                 default=1e-2,
                 doc=doc_data_stat_protect,
+            ),
+            Argument(
+                "data_stat_full",
+                bool,
+                optional=True,
+                default=False,
+                doc=supported_backends("pt", "pd") + doc_data_stat_full,
             ),
             Argument(
                 "data_bias_nsample",
@@ -3321,10 +3731,11 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[float | list[float] | None]],
+                dict[str, list[float | list | None] | dict[str, float | list] | str],
                 optional=True,
                 default=None,
-                doc=supported_backends("pt", "pd") + doc_preset_out_bias,
+                doc=supported_backends("pt", "pd", "pt_expt", "jax")
+                + doc_preset_out_bias,
             ),
             Argument(
                 "srtab_add_bias",
@@ -3380,6 +3791,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 [
                     *model_args_plugin.get_all_argument(),
                     *hybrid_models,
+                    *(extra_model_types or []),
                 ],
                 optional=True,
                 default_tag="standard",
@@ -3436,11 +3848,92 @@ def standard_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
+            *_bridging_method_args(),
         ],
         doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
         + "Standard model, which contains a descriptor and a fitting.",
     )
     return ca
+
+
+def _bridging_method_args() -> list[Argument]:
+    """The concise analytical-bridging arguments, shared by the model types
+    that accept the ``bridging_method`` sugar (``dpa4`` and ``standard``, the
+    latter with a DPA4C descriptor).
+    """
+    doc_bridging_method = (
+        "Short-range bridging method. Supports 'ZBL' and 'NLH'. "
+        "The value is case-insensitive; set it to 'None' to disable bridging. "
+        "This concise form is the recommended interface; it expands to the "
+        "equivalent explicit `linear_ener` composition over the learned "
+        "model and an `inner_potential` sub-model."
+    )
+    doc_bridging_fraction_inner = (
+        "Inner radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to. A pair closer than this interacts "
+        "through the analytical potential alone. In DPA4 the distance the "
+        "descriptor reads for the pair is frozen just below the window midpoint, "
+        "the two atoms disappear from the descriptors of every other atom, and their "
+        "fitting output falls to the bias of their types, which under `vacuum_ref` "
+        "leaves them the energy of isolated atoms; in DPA4C the pair is removed "
+        "from the descriptor. Because the window follows each pair's own size, "
+        "one value describes every element combination. Only used when "
+        "`bridging_method` is enabled and no explicit radius is given."
+    )
+    doc_bridging_fraction_outer = (
+        "Outer radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to. Pairs beyond it reach the learned "
+        "descriptor unchanged, and the transition zone between the two fractions "
+        "uses a C^3-continuous septic Hermite polynomial. Only used when "
+        "`bridging_method` is enabled and no explicit radius is given."
+    )
+    doc_bridging_r_inner = (
+        "Inner radius of the bridging window in Å, applied to every atom pair alike. "
+        "Giving it together with `bridging_r_outer` replaces the fractional window "
+        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
+    )
+    doc_bridging_r_outer = (
+        "Outer radius of the bridging window in Å, applied to every atom pair alike. "
+        "Giving it together with `bridging_r_inner` replaces the fractional window "
+        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
+    )
+    return [
+        Argument(
+            "bridging_method",
+            str,
+            optional=True,
+            default="None",
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
+        ),
+        Argument(
+            "bridging_fraction_inner",
+            float,
+            optional=True,
+            default=DEFAULT_FRACTION_INNER,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_inner,
+        ),
+        Argument(
+            "bridging_fraction_outer",
+            float,
+            optional=True,
+            default=DEFAULT_FRACTION_OUTER,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_outer,
+        ),
+        Argument(
+            "bridging_r_inner",
+            float,
+            optional=True,
+            default=None,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
+        ),
+        Argument(
+            "bridging_r_outer",
+            float,
+            optional=True,
+            default=None,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
+        ),
+    ]
 
 
 @model_args_plugin.register(
@@ -3478,21 +3971,6 @@ def sezm_model_args() -> Argument:
         "This training-time setting is independent of `use_compile`; eval-time "
         "TF32 is controlled separately by `validating.tf32_infer` or "
         "`DP_TF32_INFER`."
-    )
-    doc_bridging_method = (
-        "Short-range bridging method. Currently supports 'ZBL'. "
-        "The value is case-insensitive; set it to 'None' to disable bridging."
-    )
-    doc_bridging_r_inner = (
-        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
-        "Only used when `bridging_method` is enabled. "
-        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
-        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
-    )
-    doc_bridging_r_outer = (
-        "Outer clamping radius in Å. The transition zone "
-        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
-        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
     )
     doc_lora_rank = "LoRA rank; adapters are injected on every SO3Linear and SO2Linear."
     doc_lora_alpha = (
@@ -3593,27 +4071,7 @@ def sezm_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "pt_expt") + doc_info,
             ),
-            Argument(
-                "bridging_method",
-                str,
-                optional=True,
-                default="None",
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
-            ),
-            Argument(
-                "bridging_r_inner",
-                float,
-                optional=True,
-                default=0.5,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
-            ),
-            Argument(
-                "bridging_r_outer",
-                float,
-                optional=True,
-                default=0.8,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
-            ),
+            *_bridging_method_args(),
             Argument(
                 "lora",
                 dict,
@@ -3697,6 +4155,67 @@ def pairtab_model_args() -> Argument:
     return ca
 
 
+def inner_potential_model_args() -> Argument:
+    """Child-only model type: NOT registered in ``model_args_plugin``, so
+    ``model.type: "inner_potential"`` is rejected at the top level; it is
+    injected only into the ``linear_ener`` ``models`` variant.
+    """
+    doc_mode = (
+        "The analytical pair-potential formula. Supports 'zbl', the ZBL "
+        "universal screened repulsion, and 'nlh', a repulsion refitted to "
+        "self-consistent density-functional pair energies (case-insensitive)."
+    )
+    doc_fraction_inner = (
+        "Inner radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to, derived onto the learned sibling's "
+        "descriptor: a closer atom pair interacts through the analytical potential "
+        "alone. Because the window follows each pair's own size, one value "
+        "describes every element combination."
+    )
+    doc_fraction_outer = (
+        "Outer radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to. The transition zone between the "
+        "two fractions uses a C^3-continuous septic Hermite polynomial."
+    )
+    doc_r_inner = (
+        "Inner radius of the bridging window in Å, applied to every atom pair "
+        "alike. Giving it together with `r_outer` replaces the fractional window."
+    )
+    doc_r_outer = (
+        "Outer radius of the bridging window in Å, applied to every atom pair "
+        "alike. Giving it together with `r_inner` replaces the fractional window."
+    )
+    ca = Argument(
+        "inner_potential",
+        dict,
+        [
+            Argument("mode", str, optional=True, default="zbl", doc=doc_mode),
+            Argument(
+                "fraction_inner",
+                float,
+                optional=True,
+                default=DEFAULT_FRACTION_INNER,
+                doc=doc_fraction_inner,
+            ),
+            Argument(
+                "fraction_outer",
+                float,
+                optional=True,
+                default=DEFAULT_FRACTION_OUTER,
+                doc=doc_fraction_outer,
+            ),
+            Argument("r_inner", float, optional=True, default=None, doc=doc_r_inner),
+            Argument("r_outer", float, optional=True, default=None, doc=doc_r_outer),
+        ],
+        doc=supported_backends("pt", "pt_expt")
+        + "Analytical short-range bridging pair potential (e.g. ZBL), usable "
+        "only as a sub-model of a `linear_ener` composition over one DPA4 or "
+        "DPA4C model; the window radii are derived onto the learned sibling's "
+        "descriptor at build time.",
+    )
+    return ca
+
+
 @hybrid_model_args_plugin.register("linear_ener")
 def linear_ener_model_args() -> Argument:
     doc_weights = (
@@ -3705,7 +4224,11 @@ def linear_ener_model_args() -> Argument:
         'If "sum", the weights are set to be 1.'
     )
     doc_shared_dict = "The definition of the shared parameters used in the `models` within linear model."
-    models_args = model_args(exclude_hybrid=True)
+    models_args = model_args(
+        exclude_hybrid=True,
+        # child-only model type: valid inside `models`, rejected at top level
+        extra_model_types=[inner_potential_model_args()],
+    )
     models_args.name = "models"
     models_args.fold_subdoc = True
     models_args.set_dtype(list)
@@ -4095,6 +4618,10 @@ opt_args_plugin = ArgsPlugin()
 def optimizer_adam() -> list[Argument]:
     doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
     doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
+    doc_adam_eps = (
+        "Adam epsilon, added for numerical stability. The default is PyTorch's own; "
+        "recipes carried over from other frameworks sometimes assume a different one."
+    )
     doc_weight_decay = (
         "Weight decay coefficient for Adam, applied as an L2 penalty to gradients."
     )
@@ -4114,6 +4641,13 @@ def optimizer_adam() -> list[Argument]:
             doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
+            "adam_eps",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=supported_backends("pt_expt") + doc_adam_eps,
+        ),
+        Argument(
             "weight_decay",
             float,
             optional=True,
@@ -4127,6 +4661,10 @@ def optimizer_adam() -> list[Argument]:
 def optimizer_adamw() -> list[Argument]:
     doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
     doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
+    doc_adam_eps = (
+        "AdamW epsilon, added for numerical stability. The default is PyTorch's own; "
+        "recipes carried over from other frameworks sometimes assume a different one."
+    )
     doc_weight_decay = "Decoupled weight decay coefficient for the AdamW optimizer."
     return [
         Argument(
@@ -4142,6 +4680,13 @@ def optimizer_adamw() -> list[Argument]:
             optional=True,
             default=0.999,
             doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta2,
+        ),
+        Argument(
+            "adam_eps",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=supported_backends("pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
@@ -5120,6 +5665,98 @@ def loss_tensor() -> list[Argument]:
     ]
 
 
+@loss_args_plugin.register("unimol", doc=supported_backends("pt_expt"))
+def loss_unimol() -> list[Argument]:
+    doc_masked_token_loss = "Weight of the element-prediction term."
+    doc_masked_coord_loss = "Weight of the coordinate-denoising term."
+    doc_masked_dist_loss = "Weight of the distance-prediction term."
+    doc_x_norm_loss = "Weight of the node-norm regularizer."
+    doc_delta_pair_repr_norm_loss = "Weight of the pair-delta-norm regularizer."
+    doc_beta = (
+        "Transition point of the smooth L1 used by the coordinate and distance terms."
+    )
+    doc_mask_prob = "Expected fraction of atoms selected for corruption."
+    doc_leave_unmasked_prob = (
+        "Fraction of the selected atoms left with their true element, still predicted."
+    )
+    doc_random_token_prob = "Fraction of the selected atoms given a random element."
+    doc_noise_type = (
+        "Coordinate noise distribution: 'uniform', 'normal', 'trunc_normal' or 'none'."
+    )
+    doc_noise = "Scale of the coordinate noise, in the units of the coordinates."
+    doc_data_seed = (
+        "Seed of the corruption, combined with the frame index and a per-visit "
+        "draw so that a molecule is corrupted differently each time it comes "
+        "round. A run is reproducible from it only when one process decodes the "
+        "data (DP_LMDB_NUM_WORKERS=0); with decoder workers the draws follow how "
+        "frames were distributed."
+    )
+    return [
+        Argument(
+            "masked_token_loss",
+            [float, int],
+            optional=True,
+            default=1.0,
+            doc=doc_masked_token_loss,
+        ),
+        Argument(
+            "masked_coord_loss",
+            [float, int],
+            optional=True,
+            default=5.0,
+            doc=doc_masked_coord_loss,
+        ),
+        Argument(
+            "masked_dist_loss",
+            [float, int],
+            optional=True,
+            default=10.0,
+            doc=doc_masked_dist_loss,
+        ),
+        Argument(
+            "x_norm_loss",
+            [float, int],
+            optional=True,
+            default=0.01,
+            doc=doc_x_norm_loss,
+        ),
+        Argument(
+            "delta_pair_repr_norm_loss",
+            [float, int],
+            optional=True,
+            default=0.01,
+            doc=doc_delta_pair_repr_norm_loss,
+        ),
+        Argument("beta", [float, int], optional=True, default=1.0, doc=doc_beta),
+        Argument(
+            "mask_prob", [float, int], optional=True, default=0.15, doc=doc_mask_prob
+        ),
+        Argument(
+            "leave_unmasked_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_leave_unmasked_prob,
+        ),
+        Argument(
+            "random_token_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_random_token_prob,
+        ),
+        Argument(
+            "noise_type",
+            str,
+            optional=True,
+            default="uniform",
+            doc=doc_noise_type,
+        ),
+        Argument("noise", [float, int], optional=True, default=1.0, doc=doc_noise),
+        Argument("data_seed", int, optional=True, default=1, doc=doc_data_seed),
+    ]
+
+
 def loss_variant_type_args() -> Variant:
     doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, its legacy alias `ener_hess`, `dens` (Only DPA4/SeZM supported), or left unset. Hessian supervision is configured through `start_pref_h` and `limit_pref_h` on the `ener` loss. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
 
@@ -5141,15 +5778,15 @@ def loss_args() -> list[Argument]:
 
 
 #  --- Training configurations: --- #
-def training_data_args() -> list[
-    Argument
-]:  # ! added by Ziyao: new specification style for data systems.
+def training_data_args() -> Argument:
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item is expanded recursively in input order. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "either directly or beneath a parent directory."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -5162,22 +5799,33 @@ def training_data_args() -> list[
 - string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
 - string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
 - string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
+- string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model and needs no configuration of its own: a descriptor reading a flat node axis (the graph route of the PyTorch Exportable backend) takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms with `atype = -1` that the neighbor list, the model and the loss all skip. Unlike `"max:N"`, which leaves an under-filled batch whenever an nloc group is small, this keeps every batch close to `N` atoms. A lone frame with nloc > `N` still forms a batch of its own.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. A group expanding to multiple "
+        "sources including LMDB must omit this option; use separate training_data "
+        "groups with prob to assign source probabilities."
+    )
     doc_min_pair_dist = (
         "Minimum pairwise atomic distance threshold in Å. "
         "Frames containing any atom pair closer than this distance are excluded "
         "from loss computation, as DFT labels for near-collision configurations "
         "are often unreliable. Set to 0 to disable (default). "
-        "Under distributed training (DDP/FSDP), if any rank has no valid frame "
-        "in its current batch, every rank collectively skips that training step. "
-        "Note: enabling this adds an O(N²) distance check per frame in the "
-        "DataLoader workers (CPU-side), which may slow down training for large "
-        "systems. To avoid the overhead, consider pre-cleaning the dataset instead."
+        "A bridged model filters its training frames by the midpoint of its own "
+        "bridging window, below which its learned energy is throttled to less "
+        "than half of its amplitude; that radius is taken from the model, so this "
+        "key must be left unset for such a model and is an error otherwise. "
+        "A batch left without a valid frame is never trained on: under "
+        "distributed training the pt backend skips that step on every rank, and "
+        "the pt_expt backend draws the next batch on the rank concerned. "
+        "Note: enabling this adds a geometric check per frame on the CPU side "
+        "of the data pipeline, which may slow down training for large systems. "
+        "To avoid the overhead, consider pre-cleaning the dataset instead."
     )
 
     args = [
@@ -5204,7 +5852,10 @@ If MPI is used, the value should be considered as the batch size per task.'
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " When a group expands to multiple sources including LMDB, only "
+            "prob_sys_size and prob_uniform are supported. Use separate groups to configure "
+            "individual LMDB system probabilities.",
             alias=[
                 "auto_prob_style",
             ],
@@ -5222,14 +5873,30 @@ If MPI is used, the value should be considered as the batch size per task.'
             float,
             optional=True,
             default=0.0,
-            doc=supported_backends("pt") + doc_min_pair_dist,
+            doc=supported_backends("pt", "pt_expt") + doc_min_pair_dist,
+        ),
+        Argument(
+            "prob",
+            [float, None],
+            optional=True,
+            default=None,
+            doc="The probability of selecting a training batch from this entire "
+            "group. Applies when training_data is a list of group dictionaries. "
+            "Assigned probabilities must be non-negative and sum to at most one. "
+            "Groups without prob share the remaining probability in proportion "
+            "to their batch counts. If every group specifies prob, their sum "
+            "must be one. Within-group auto_prob and sys_probs remain independent.",
         ),
     ]
 
-    doc_training_data = "Configurations of training data."
+    doc_training_data = (
+        "Training data configured as one dictionary or a nonempty list of group "
+        "dictionaries. Each group has its own systems, batch_size and within-group "
+        "sampling rules; prob optionally controls the group's total probability."
+    )
     return Argument(
         "training_data",
-        dict,
+        [dict, list[dict]],
         optional=True,
         sub_fields=args,
         sub_variants=[],
@@ -5246,7 +5913,9 @@ def validation_data_args() -> list[
         "The data systems for validation. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "including multiple LMDB paths and parent directories containing LMDB datasets."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
@@ -5257,12 +5926,17 @@ def validation_data_args() -> list[
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
 - string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
-- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.'
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
+- string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model: a descriptor reading a flat node axis takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms that the neighbor list, the model and the loss all skip.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. Must be omitted when the "
+        "validation data expands to multiple sources including LMDB."
+    )
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
 
     args = [
@@ -5289,7 +5963,9 @@ def validation_data_args() -> list[
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " Only prob_sys_size and prob_uniform are supported when systems expands to "
+            "multiple sources including LMDB.",
             alias=[
                 "auto_prob_style",
             ],
@@ -5400,6 +6076,16 @@ def training_args(
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
     doc_save_ckpt = "The path prefix of saving check point files."
+    doc_reset_data_progress = (
+        "On --restart, discard the saved training-data cursors and task/system "
+        "selection RNG, retaining their newly initialized state. Model weights, "
+        "optimizer, learning-rate schedule and training step still resume. "
+        "Use this explicit reset when relocating data or intentionally changing "
+        "data settings; batches may repeat and exact data-order continuation "
+        "is unavailable. By default, saved data progress is restored strictly, "
+        "including dataset locations. Has no effect on fresh training, "
+        "initialization, finetuning or checkpoints without data progress."
+    )
     doc_save_dir = (
         "The directory in which periodic checkpoint files are written, "
         "including the regular checkpoints (the `save_ckpt` prefix) and, when "
@@ -5410,8 +6096,10 @@ def training_args(
         "set, checkpoints are written to the working directory."
     )
     doc_max_ckpt_keep = (
-        "The maximum number of checkpoints to keep. "
-        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
+        "The maximum number of recent periodic checkpoints to keep for the "
+        "regular checkpoint family. The EMA checkpoint family inherits this "
+        "value by default unless `ema_ckpt_keep` overrides it. The oldest "
+        "checkpoints are deleted when a family's retention window is exceeded. "
         "Defaults to 5."
     )
     doc_ckpt_keep_ratio = (
@@ -5433,7 +6121,9 @@ def training_args(
     doc_ema_ckpt_keep = (
         "The maximum number of periodic EMA checkpoints to keep. "
         "EMA checkpoints use the same prefix-based cleanup rule as regular "
-        "training checkpoints, but with an EMA-specific checkpoint prefix."
+        "training checkpoints, but with an EMA-specific checkpoint prefix. "
+        "When unset, it inherits `max_ckpt_keep`, so both checkpoint families "
+        "retain the same number by default."
     )
     doc_change_bias_after_training = (
         "Whether to change the output bias after the last training step, "
@@ -5443,7 +6133,10 @@ def training_args(
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing during training."
     doc_disp_avg = (
-        "Display the average loss over the display interval for training sets."
+        "Display the arithmetic mean of per-step training metrics within each "
+        "display interval, separately for each task. Tasks with no training "
+        "steps in an interval display NaN. Validation metrics are evaluated "
+        "at the display step, not averaged over training steps."
     )
     doc_profiling = (
         "Enable performance profiling. TensorFlow and PyTorch can export a Chrome "
@@ -5480,8 +6173,11 @@ def training_args(
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
-        "or an empty dict, defaults to weights proportional to the number of "
-        "systems per task."
+        "or an empty dict, defaults to each task's native data size: the number "
+        "of NPY/HDF5 systems, or retained LMDB frames on the PyTorch and "
+        "PyTorch Exportable backends. Grouped inputs sum their native sizes "
+        "without applying group probabilities. Batch size and nominal epoch "
+        "length do not affect these default weights."
     )
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
@@ -5501,7 +6197,9 @@ def training_args(
         "50% more communication (3x model size) due to parameter all-gather in "
         "both forward and backward passes. "
         "Default is 0. Requires distributed launch via torchrun. "
-        "Currently supports single-task training; does not support LKF or change_bias_after_training."
+        "Currently supports single-task training; does not support LKF or change_bias_after_training. "
+        "In the PyTorch Exportable backend, stages 2 and 3 additionally exclude "
+        "`enable_compile`, whose traced graph cannot carry sharded parameters."
     )
     doc_neighbor_graph_method = (
         "Select the carry-all neighbor-graph builder for graph-eligible PyTorch "
@@ -5584,10 +6282,17 @@ def training_args(
             [str, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_save_dir,
+            doc=supported_backends("pt", "pt_expt") + doc_save_dir,
         ),
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
+        ),
+        Argument(
+            "reset_data_progress",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt") + doc_reset_data_progress,
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
         Argument(
@@ -5595,7 +6300,7 @@ def training_args(
             [float, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_ckpt_keep_ratio,
+            doc=supported_backends("pt", "pt_expt") + doc_ckpt_keep_ratio,
             extra_check=lambda x: x is None or 0.0 < x < 1.0,
             extra_check_errmsg="must be a fraction in the open interval (0, 1)",
         ),
@@ -5604,24 +6309,24 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_enable_ema,
+            doc=supported_backends("pt", "pt_expt") + doc_enable_ema,
         ),
         Argument(
             "ema_decay",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt") + doc_ema_decay,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_decay,
             extra_check=lambda x: 0.0 <= x < 1.0,
             extra_check_errmsg="must be greater than or equal to 0 and less than 1",
         ),
         Argument(
             "ema_ckpt_keep",
-            int,
+            [int, None],
             optional=True,
-            default=3,
-            doc=supported_backends("pt") + doc_ema_ckpt_keep,
-            extra_check=lambda x: x > 0,
+            default=None,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_ckpt_keep,
+            extra_check=lambda x: x is None or x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
         Argument(
@@ -5642,7 +6347,7 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_disp_avg,
+            doc=supported_backends("pt", "pt_expt") + doc_disp_avg,
         ),
         Argument(
             "profiling",
@@ -5705,7 +6410,7 @@ def training_args(
             int,
             optional=True,
             default=0,
-            doc=supported_backends("pt") + doc_zero_stage,
+            doc=supported_backends("pt", "pt_expt") + doc_zero_stage,
         ),
         Argument(
             "neighbor_graph_method",
@@ -5728,6 +6433,19 @@ def training_args(
             "kernel fusion. TensorFlow 2 enables XLA jit_compile for the "
             "formatted lower-forward path. "
             "The first training step will be slower due to one-time compilation.",
+        ),
+        Argument(
+            "enable_tf32",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt")
+            + "Enable TF32 matmul precision for CUDA training forwards. "
+            "Independent of `enable_compile`; eval-time TF32 is controlled "
+            "separately by `validating.tf32_infer` or `DP_TF32_INFER`. The "
+            "PyTorch backend takes the same switch as `model.enable_tf32`, "
+            "because there only the SeZM model implements the compile and "
+            "precision path, while here it applies to every model.",
         ),
     ]
 
@@ -5900,10 +6618,13 @@ def validating_args() -> Argument:
         "Metric used to determine the best checkpoint during full validation. "
         "The string is case-insensitive. For energy training the supported "
         f"values are {energy_metrics}; for spin-energy training they are "
-        f"{spin_metrics}. `E` and `V` are per-atom metrics, `F` and `FR` use "
+        f"{spin_metrics}. `E` and `V` are per-atom metrics, `S` is stress, the "
+        "negated virial divided by the cell volume, `F` and `FR` use "
         "component-wise force errors, and `FM` uses magnetic-force errors, "
         "matching `dp test`. The corresponding loss prefactors must not both "
-        "be 0."
+        "be 0; `S` and `V` are two presentations of the virial and both "
+        "require `start_pref_v` and `limit_pref_v`. The validation log reports "
+        "whichever of `S` and `V` is selected, defaulting to `S`."
     )
     doc_full_val_file = "The file for writing full validation results only. This file is independent from `training.disp_file`."
     doc_full_val_start = (
@@ -5915,13 +6636,12 @@ def validating_args() -> Argument:
     )
     doc_compiled_infer = (
         "Whether to route eval-time forwards (including full validation) "
-        "through the DPA4/SeZM `torch.compile` path instead of eager. When `true`, "
-        "this flag is translated into `DP_COMPILE_INFER=1` at trainer "
-        "startup before any model is constructed, which is the env var SeZM "
-        "samples inside `SeZMModel.__init__`. A manually exported "
-        "`DP_COMPILE_INFER` takes precedence over this option. Only "
-        "meaningful when `model.use_compile=true`; has no effect on models "
-        "that do not implement the SeZM-style eval compile path."
+        "through `torch.compile` instead of eager. When `true`, this flag is "
+        "translated into `DP_COMPILE_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_COMPILE_INFER` takes "
+        "precedence over this option. In the PyTorch backend it applies when "
+        "`model.use_compile=true`; in the PyTorch Exportable backend it applies "
+        "when `training.enable_compile=true`."
     )
     doc_tf32_infer = (
         "Whether to enable TF32 `high` matmul precision for eval-time forwards "
@@ -5929,16 +6649,17 @@ def validating_args() -> Argument:
         "flag is translated into `DP_TF32_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_TF32_INFER` takes "
         "precedence over this option. This does not affect training forwards, "
-        "which are controlled by `model.enable_tf32`."
+        "which are controlled by `model.enable_tf32` (PyTorch) or "
+        "`training.enable_tf32` (PyTorch Exportable)."
     )
     doc_amp_infer = (
         "Whether to enable bf16 automatic mixed precision for eval-time forwards "
         "(including regular validation and full validation). When `true`, this "
         "flag is translated into `DP_AMP_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_AMP_INFER` takes "
-        "precedence over this option. This only affects SeZM/DPA4 descriptors "
-        "with `descriptor.use_amp=true`; training AMP remains controlled by "
-        "`descriptor.use_amp`."
+        "precedence over this option. This controls SeZM/DPA4 inference "
+        "independently of `descriptor.use_amp`; training AMP remains controlled "
+        "by `descriptor.use_amp`."
     )
     args = [
         Argument(
@@ -5953,7 +6674,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_ema_full_validation,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_full_validation,
         ),
         Argument(
             "validation_freq",
@@ -6017,21 +6738,21 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_compiled_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_compiled_infer,
         ),
         Argument(
             "tf32_infer",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_tf32_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_tf32_infer,
         ),
         Argument(
             "amp_infer",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_amp_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_amp_infer,
         ),
     ]
     return Argument(
@@ -6218,13 +6939,24 @@ def gen_json_schema(multi_task: bool = False) -> str:
     str
         JSON schema.
     """
+    from deepmd.utils.json_schema import (
+        with_data_groups,
+        with_model_presets,
+    )
+
     arg = Argument(
         "DeePMD-kit",
         dict,
         gen_args(multi_task=multi_task),
         doc=f"DeePMD-kit {__version__}",
     )
-    return json.dumps(generate_json_schema(arg))
+    return json.dumps(
+        with_model_presets(
+            with_data_groups(generate_json_schema(arg), multi_task),
+            generate_json_schema(model_args()),
+            multi_task,
+        )
+    )
 
 
 def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
@@ -6301,6 +7033,23 @@ def normalize(
     """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
+    training = data.get("training", {})
+    task_configs = training.get("data_dict", {}).values() if multi_task else (training,)
+    group_argument = training_data_args()
+    for task in task_configs:
+        groups = task.get("training_data")
+        if groups is None:
+            continue
+        data_group_configs(groups)
+        if isinstance(groups, list):
+            normalized = [
+                group_argument.normalize_value(group, trim_pattern="_*")
+                for group in groups
+            ]
+            if check:
+                for group in normalized:
+                    group_argument.check_value(group, strict=True)
+            task["training_data"] = normalized
     if check:
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)

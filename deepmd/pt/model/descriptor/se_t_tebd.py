@@ -924,17 +924,19 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
+        atype_for_env = atype.clamp_min(0)
         nb = nframes
         nall = extended_coord.view(nb, -1, 3).shape[1]
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
-            atype,
+            atype_for_env,
             self.mean,
             self.stddev,
             self.rcut,
             self.rcut_smth,
             protection=self.env_protection,
+            training=self.training,
         )
         # dmatrix: [1/r, dx/r^2, dy/r^2, dz/r^2], sw: distance weighting
         # nb x nloc x nnei
@@ -1013,6 +1015,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
             # nfnl x nnei
             nei_type = nei_type.reshape(nfnl, nnei)
+            nei_type = torch.where(
+                nei_type >= 0,
+                nei_type,
+                torch.full_like(nei_type, ntypes_with_padding - 1),
+            )
             # nfnl x nnei x nnei
             nei_type_i = nei_type.unsqueeze(2).expand([-1, -1, nnei])
             nei_type_j = nei_type.unsqueeze(1).expand([-1, nnei, -1])

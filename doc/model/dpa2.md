@@ -1,7 +1,9 @@
-# Descriptor DPA-2 {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
+# Descriptor DPA-2 {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch-TorchScript and
+> PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle
+> {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 The DPA-2 model implementation. See [DPA-2 paper](https://doi.org/10.1038/s41524-024-01493-2) for more details.
 
@@ -96,13 +98,13 @@ The performance improvement will be limited if other parts are more expensive.
 In the pt_expt backend, a graph-eligible DPA-2 descriptor (`repinit/use_three_body` `false` -- the three-body sub-block is not graph-eligible -- and not compressed) can be frozen through a NeighborGraph-native inference path instead of the legacy dense neighbor-list path:
 
 ```bash
-dp --pt_expt freeze -o model.pt2 --lower-kind graph
+dp --pt-expt freeze -o model.pt2 --lower-kind graph
 ```
 
 As with DPA-1's graph path (see [Difference among different backends](train-se-atten.md#difference-among-different-backends)), the graph route considers all neighbors within the cutoff rather than a fixed, padded selection, so its numeric result can differ slightly (down to the AOTInductor floating-point noise floor at non-binding `sel`, larger if `sel` is binding) from the dense/`nlist` path.
 
 > [!NOTE]
-> **Default route change in pt_expt (eager & training).** For a graph-eligible DPA-2 descriptor, the pt_expt backend now defaults to the carry-all graph route not only for `--lower-kind graph` freezing but also in **eager inference/evaluation and in (compiled) training** (`neighbor_graph_method=None` resolves to the graph). This changes the numerical behavior of existing pt_expt configurations relative to the dense neighbor-list route (by the amounts described above — negligible at non-binding `sel`). The other backends (dpmodel/PyTorch/Paddle/TensorFlow/JAX) are unaffected: they keep the dense route as their only path.
+> **Default route change in pt_expt (eager & training).** For a graph-eligible DPA-2 descriptor, the pt_expt backend now defaults to the carry-all graph route not only for `--lower-kind graph` freezing but also in **eager inference/evaluation and in (compiled) training** (`neighbor_graph_method=None` resolves to the graph). This changes the numerical behavior of existing pt_expt configurations relative to the dense neighbor-list route (by the amounts described above — negligible at non-binding `sel`). The other backends (dpmodel/PyTorch-TorchScript/Paddle/TensorFlow/JAX) are unaffected: they keep the dense route as their only path.
 >
 > To retain the legacy dense route on pt_expt:
 >
@@ -116,4 +118,4 @@ DPA-2's repformer block performs message passing (per-layer neighbor feature agg
 
 Per-atom virial on the graph route uses a different (but equally valid) decomposition than the dense path: each edge's full bond-virial contribution is assigned to its source (neighbor) atom, whereas the dense path's autograd-based per-atom decomposition distributes message-passing contributions across atoms differently. For non-message-passing descriptors the two conventions coincide; for DPA-2 they differ elementwise. Only the *total* virial (summed over all atoms) is convention-independent between the two paths; per-atom virial values from the graph and dense routes should not be compared directly.
 
-Multi-rank message-passing inference on the graph route requires every MPI rank to own or ghost at least one atom -- a rank with zero atoms in both categories raises an error rather than silently desynchronizing the collective per-layer ghost exchange. Pick a domain decomposition that keeps every rank non-empty, or use the dense (`nlist`, the default) artifact, which has no such restriction.
+Multi-rank message-passing inference on the graph route requires every MPI rank to own or ghost at least one atom -- a rank with zero atoms in both categories raises an error rather than silently desynchronizing the collective per-layer ghost exchange. For a graph-eligible DPA-2 descriptor, `deepmd` freezes through the graph route only: `--lower-kind nlist` is overridden to `graph` for such models, so a dense artifact is not selectable for the same model. Pick a domain decomposition that keeps every rank non-empty, or configure the model so it is not graph-eligible if you need the dense route.

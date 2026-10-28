@@ -27,7 +27,6 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 from deepmd.pt.model.model.sezm_model import (
-    InnerPotential,
     SeZMModel,
 )
 from deepmd.pt.model.model.spin_model import (
@@ -43,6 +42,10 @@ from deepmd.pt_expt.utils.edge_schema import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+    remap_preset_out_bias,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -76,10 +79,16 @@ class SeZMSpinModel(SeZMModel):
         real_sel: list[int],
         **kwargs: Any,
     ) -> None:
-        # Delay InnerPotential construction until ntypes_real is available.
-        bridging_method = str(kwargs.pop("bridging_method", "none")).upper()
-        kwargs["bridging_method"] = "none"
-
+        # A magnetic atom lies inside the bridging window of its own virtual
+        # partner, so the window mechanics would freeze every magnetic atom;
+        # the native spin scheme carries no virtual atoms and is the bridged
+        # spin model.
+        if str(kwargs.get("bridging_method", "none")).upper() != "NONE":
+            raise ValueError(
+                "Analytical bridging is not supported by the deepspin "
+                "(virtual-atom) scheme; use spin scheme 'native' for a bridged "
+                "DPA4/SeZM spin model."
+            )
         super().__init__(*args, **kwargs)
         self.spin = spin
         self.ntypes_real = self.spin.ntypes_real
@@ -93,13 +102,6 @@ class SeZMSpinModel(SeZMModel):
             "spin_mask",
             to_torch_tensor(self.spin.get_spin_mask()),
             persistent=False,
-        )
-
-        self.bridging_method = bridging_method
-        self.inter_potential = (
-            InnerPotential(type_map=self.get_type_map(), mode=self.bridging_method)
-            if self.bridging_method != "NONE"
-            else None
         )
 
     # =========================================================================
@@ -432,14 +434,35 @@ class SeZMSpinModel(SeZMModel):
         self,
         merged: Callable[[], list[dict[str, Any]]] | list[dict[str, Any]],
         bias_adjust_mode: str = "change-by-statistic",
+        preset_out_bias: dict | None = None,
     ) -> None:
-        """Change output bias using spin-expanded sampled data."""
+        """Change output bias using spin-expanded sampled data.
+
+        Parameters
+        ----------
+        merged : callable or list[dict]
+            Samples containing real-atom coordinates, types and spins.
+        bias_adjust_mode : str
+            'change-by-statistic' fits residual shifts; 'set-by-statistic'
+            fits absolute biases.
+        preset_out_bias : dict, optional
+            Preset on the public real-atom type map. It is normalized and
+            extended with unassigned virtual types before forwarding. Omit
+            to retain the model preset; an empty dict fits without fixing
+            preset outputs. Non-finite stored cells covered by a checkpoint
+            preset are recovered before residual fitting.
+        """
+        preset_out_bias = remap_preset_out_bias(
+            normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
+            list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),
+        )
         spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         super().change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(
@@ -600,10 +623,6 @@ class SeZMSpinModel(SeZMModel):
             sum(self.atomic_model.get_sel()),
             extra_nlist_sort=extra_nlist_sort,
         )
-
-    def _get_inter_potential_real_type_count(self) -> int:
-        """Return the number of real types for real-only ZBL masking."""
-        return self.ntypes_real
 
     def _get_spin_sampled_func(
         self, sampled_func: Callable[[], list[dict[str, Any]]]

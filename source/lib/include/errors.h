@@ -21,4 +21,15 @@ struct deepmd_exception_oom : public deepmd_exception {
   deepmd_exception_oom(const std::string& msg)
       : deepmd_exception(std::string("DeePMD-kit OOM: ") + msg) {};
 };
+
+/**
+ * @brief Invalid external neighbor-list row capacity.
+ *
+ * Backends may translate this input-specific failure to their native invalid
+ * argument status without reclassifying unrelated GPU runtime exceptions.
+ */
+struct deepmd_exception_nlist_capacity : public deepmd_exception {
+ public:
+  using deepmd_exception::deepmd_exception;
+};
 };  // namespace deepmd

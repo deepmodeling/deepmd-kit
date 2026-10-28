@@ -10,11 +10,11 @@ from .exclude_mask import (
     PairExcludeMask,
 )
 from .lmdb_data import (
-    DistributedSameNlocBatchSampler,
+    DistributedLmdbBatchSampler,
+    LmdbBatchSampler,
     LmdbDataReader,
     LmdbTestData,
     LmdbTestDataNlocView,
-    SameNlocBatchSampler,
     is_lmdb,
     make_neighbor_stat_data,
 )
@@ -79,11 +79,12 @@ from .training_utils import (
 __all__ = [
     "AtomExcludeMask",
     "DefaultNeighborList",
-    "DistributedSameNlocBatchSampler",
+    "DistributedLmdbBatchSampler",
     "EmbeddingNet",
     "EnvMat",
     "FittingNet",
     "GraphLayout",
+    "LmdbBatchSampler",
     "LmdbDataReader",
     "LmdbTestData",
     "LmdbTestDataNlocView",
@@ -93,7 +94,6 @@ __all__ = [
     "NeighborList",
     "NetworkCollection",
     "PairExcludeMask",
-    "SameNlocBatchSampler",
     "aggregate",
     "apply_pair_exclusion_nlist",
     "build_multiple_neighbor_list",

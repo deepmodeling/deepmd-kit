@@ -3,9 +3,11 @@
 
 #ifdef BUILD_PYTORCH
 #include <torch/torch.h>
+#include <torch/version.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -195,6 +197,18 @@ inline EdgeTensorPack createEdgeTensors(
     const bool with_geometry = true,
     const std::vector<int>* row_centers = nullptr,
     const bool fold_to_local = true) {
+  // Folding reads an owner for every extended atom, so a mapping shorter than
+  // that is a caller error rather than a degraded input: indexing it would be
+  // out of bounds, and the out-of-range owners it appears to yield would drop
+  // the corresponding edges one by one, leaving a quietly incomplete graph.
+  if (fold_to_local && mapping.size() < static_cast<size_t>(nall)) {
+    throw deepmd::deepmd_exception(
+        "folding ghost neighbours onto their local owners needs an owner for "
+        "each of the " +
+        std::to_string(nall) + " extended atoms, but the mapping holds " +
+        std::to_string(mapping.size()) +
+        "; under LAMMPS this is what 'atom_modify map yes' supplies");
+  }
   std::vector<std::int64_t> src;
   std::vector<std::int64_t> dst;
   std::vector<std::int64_t> src_ext;
@@ -234,8 +248,19 @@ inline EdgeTensorPack createEdgeTensors(
       std::int64_t src_node;
       if (fold_to_local) {
         const std::int64_t src_local = mapping[static_cast<size_t>(jj)];
+        // Folding is single-domain, where every extended atom has an owner
+        // among the local ones. An owner outside that range therefore marks a
+        // mapping that was never filled, not a neighbour to skip: skipping
+        // would discard every ghost edge and leave a graph that is quietly
+        // missing the whole halo.
         if (src_local < 0 || src_local >= nloc) {
-          continue;
+          throw deepmd::deepmd_exception(
+              "extended atom " + std::to_string(jj) + " of " +
+              std::to_string(nall) + " maps to owner " +
+              std::to_string(src_local) + ", which is not one of the " +
+              std::to_string(nloc) +
+              " local atoms; under LAMMPS an owner for every extended atom is "
+              "what 'atom_modify map yes' supplies");
         }
         src_node = src_local;
       } else {
@@ -393,27 +418,52 @@ struct CanonicalGraphTensorPack {
   torch::Tensor source_order;
 };
 
+/**
+ * @brief Return the scalar type of compact canonical graph indices.
+ *
+ * Unsigned 32-bit tensors entered the public C++ API in PyTorch 2.3. Older
+ * CPU-only libtorch releases can still build DeePMD-kit, but cannot execute
+ * the GPU-only compact canonical graph path.
+ */
+inline at::ScalarType canonicalGraphIndexType() {
+#if TORCH_VERSION_MAJOR > 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 3)
+  return torch::kUInt32;
+#else
+  throw deepmd_exception(
+      "compact canonical graph inference requires PyTorch 2.3 or later");
+#endif
+}
+
 inline CanonicalGraphTensorPack compactCanonicalGraph(
     const GraphTensorPack& graph) {
   const std::int64_t edge_count =
       graph.destination_row_ptr.select(0, graph.destination_row_ptr.size(0) - 1)
           .item<std::int64_t>();
   const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
+  if (static_cast<std::uint64_t>(storage_count) >
+      std::numeric_limits<std::uint32_t>::max()) {
+    throw deepmd_exception(
+        "compact canonical graph exceeds the uint32 edge-index range");
+  }
+  const auto index_type = canonicalGraphIndexType();
   auto source = torch::zeros({storage_count},
-                             graph.edge_index.options().dtype(torch::kInt64));
+                             graph.edge_index.options().dtype(index_type));
   auto edge_vec = torch::zeros({storage_count, 3},
                                graph.edge_vec.options().dtype(torch::kFloat32));
-  auto source_order = torch::arange(
-      storage_count, graph.edge_index.options().dtype(torch::kInt64));
+  auto source_order =
+      torch::arange(storage_count,
+                    graph.edge_index.options().dtype(torch::kInt64))
+          .to(index_type);
   if (edge_count > 0) {
     source.slice(0, 0, edge_count)
         .copy_(graph.edge_index.select(0, 0)
                    .slice(0, 0, edge_count)
-                   .to(torch::kInt64));
+                   .to(index_type));
     edge_vec.slice(0, 0, edge_count)
         .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
     source_order.slice(0, 0, edge_count)
-        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kInt64));
+        .copy_(graph.source_order.slice(0, 0, edge_count).to(index_type));
   }
   return {graph.atype,
           graph.n_node,
@@ -423,6 +473,98 @@ inline CanonicalGraphTensorPack compactCanonicalGraph(
           graph.destination_row_ptr,
           graph.source_row_ptr,
           source_order};
+}
+
+/**
+ * @brief Group an edge axis by a node-valued key.
+ *
+ * The key of a masked edge is taken to be ``node_count``, so masked entries
+ * land in one bucket past the last node and therefore form the suffix of the
+ * permutation, outside every CSR row. The grouping is a stable counting sort:
+ * the keys are bounded node indices, so sorting them comparison-wise costs a
+ * factor of log(E) that a histogram and a prefix sum do not. On a
+ * production-sized neighbor list that factor is the dominant cost of a
+ * molecular-dynamics step -- two comparison sorts over a few million edges are
+ * single-threaded and outweigh the model itself.
+ *
+ * @param key Node index of each edge, length ``edge_count``.
+ * @param mask Real-edge mask, length ``edge_count``, or null when every edge
+ *   is real.
+ * @param edge_count Number of edge slots.
+ * @param node_count Number of nodes.
+ * @param row_ptr Receives the CSR offsets, length ``node_count + 1``.
+ * @param order Receives the grouped permutation, length ``edge_count``.
+ */
+inline void groupEdgesByNode(const std::int64_t* key,
+                             const bool* mask,
+                             const std::int64_t edge_count,
+                             const std::int64_t node_count,
+                             torch::Tensor& row_ptr,
+                             torch::Tensor& order) {
+  const auto options = torch::TensorOptions().dtype(torch::kInt64);
+  row_ptr = torch::empty({node_count + 1}, options);
+  order = torch::empty({edge_count}, options);
+  std::vector<std::int64_t> cursor(node_count + 2, 0);
+  for (std::int64_t edge = 0; edge < edge_count; ++edge) {
+    const std::int64_t bucket =
+        (mask == nullptr || mask[edge]) ? key[edge] : node_count;
+    ++cursor[bucket + 1];
+  }
+  for (std::int64_t bucket = 0; bucket < node_count + 1; ++bucket) {
+    cursor[bucket + 1] += cursor[bucket];
+  }
+  std::int64_t* row_data = row_ptr.data_ptr<std::int64_t>();
+  std::copy(cursor.begin(), cursor.begin() + node_count + 1, row_data);
+  std::int64_t* order_data = order.data_ptr<std::int64_t>();
+  for (std::int64_t edge = 0; edge < edge_count; ++edge) {
+    const std::int64_t bucket =
+        (mask == nullptr || mask[edge]) ? key[edge] : node_count;
+    order_data[cursor[bucket]++] = edge;
+  }
+}
+
+/**
+ * @brief Build CSR views with device-native tensor operations.
+ *
+ * This path preserves the payload device. It is used when host pointers cannot
+ * access the edge tensors, while CPU payloads use the linear counting sort in
+ * @ref groupEdgesByNode.
+ */
+inline void buildGraphCSRWithTensorOps(GraphTensorPack& pack,
+                                       const std::int64_t node_count,
+                                       const bool destination_sorted) {
+  const auto index = pack.edge_index.to(torch::kInt64).contiguous();
+  const auto mask = pack.edge_mask.to(torch::kBool).contiguous();
+  const auto real_index = torch::nonzero(mask).reshape({-1});
+  const auto padding_index =
+      torch::nonzero(torch::logical_not(mask)).reshape({-1});
+  const auto real_destination = index.select(0, 1).index_select(0, real_index);
+  const auto real_source = index.select(0, 0).index_select(0, real_index);
+  const auto destination_counts =
+      torch::bincount(real_destination, {}, node_count);
+  const auto source_counts = torch::bincount(real_source, {}, node_count);
+  const auto zero = torch::zeros({1}, destination_counts.options());
+  pack.destination_row_ptr =
+      torch::cat({zero, torch::cumsum(destination_counts, 0)})
+          .to(torch::kInt64)
+          .contiguous();
+  pack.source_row_ptr = torch::cat({zero, torch::cumsum(source_counts, 0)})
+                            .to(torch::kInt64)
+                            .contiguous();
+  if (destination_sorted) {
+    pack.destination_order = torch::arange(index.size(1), real_index.options());
+  } else {
+    const auto real_destination_order =
+        torch::argsort(real_destination, 0, false);
+    pack.destination_order =
+        torch::cat(
+            {real_index.index_select(0, real_destination_order), padding_index})
+            .contiguous();
+  }
+  const auto real_source_order = torch::argsort(real_source, 0, false);
+  pack.source_order =
+      torch::cat({real_index.index_select(0, real_source_order), padding_index})
+          .contiguous();
 }
 
 /**
@@ -437,39 +579,25 @@ inline CanonicalGraphTensorPack compactCanonicalGraph(
 inline void buildGraphCSR(GraphTensorPack& pack,
                           const std::int64_t node_count,
                           const bool destination_sorted = false) {
-  const auto real_index = torch::nonzero(pack.edge_mask).reshape({-1});
-  const auto padding_index =
-      torch::nonzero(torch::logical_not(pack.edge_mask)).reshape({-1});
-  const auto real_destination =
-      pack.edge_index.select(0, 1).index_select(0, real_index);
-  const auto real_source =
-      pack.edge_index.select(0, 0).index_select(0, real_index);
-  const auto destination_counts =
-      torch::bincount(real_destination, {}, node_count);
-  const auto source_counts = torch::bincount(real_source, {}, node_count);
-  const auto zero = torch::zeros({1}, destination_counts.options());
-  pack.destination_row_ptr =
-      torch::cat({zero, torch::cumsum(destination_counts, 0)})
-          .to(torch::kInt64)
-          .contiguous();
-  pack.source_row_ptr = torch::cat({zero, torch::cumsum(source_counts, 0)})
-                            .to(torch::kInt64)
-                            .contiguous();
-  const auto real_source_order = torch::argsort(real_source, 0, false);
-  if (destination_sorted) {
-    pack.destination_order =
-        torch::arange(pack.edge_index.size(1), real_index.options());
-  } else {
-    const auto real_destination_order =
-        torch::argsort(real_destination, 0, false);
-    pack.destination_order =
-        torch::cat(
-            {real_index.index_select(0, real_destination_order), padding_index})
-            .contiguous();
+  if (!pack.edge_index.device().is_cpu()) {
+    buildGraphCSRWithTensorOps(pack, node_count, destination_sorted);
+    return;
   }
-  pack.source_order =
-      torch::cat({real_index.index_select(0, real_source_order), padding_index})
-          .contiguous();
+  const auto index = pack.edge_index.to(torch::kInt64).contiguous();
+  const auto mask = pack.edge_mask.to(torch::kBool).contiguous();
+  const std::int64_t edge_count = index.size(1);
+  const bool* mask_data = mask.const_data_ptr<bool>();
+  torch::Tensor destination_order;
+  groupEdgesByNode(index.const_data_ptr<std::int64_t>() + edge_count, mask_data,
+                   edge_count, node_count, pack.destination_row_ptr,
+                   destination_order);
+  groupEdgesByNode(index.const_data_ptr<std::int64_t>(), mask_data, edge_count,
+                   node_count, pack.source_row_ptr, pack.source_order);
+  pack.destination_order =
+      destination_sorted
+          ? torch::arange(edge_count,
+                          torch::TensorOptions().dtype(torch::kInt64))
+          : destination_order;
 }
 
 inline void buildGraphCSR(GraphTensorPack& pack) {
@@ -484,11 +612,27 @@ inline void buildGraphCSR(GraphTensorPack& pack) {
  */
 inline void canonicalizeGraphPayload(GraphTensorPack& pack,
                                      const std::int64_t node_count) {
-  const auto destination = pack.edge_index.select(0, 1);
-  const auto padding_node = torch::full_like(destination, node_count);
-  const auto destination_key =
-      torch::where(pack.edge_mask, destination, padding_node);
-  const auto order = torch::argsort(destination_key, /*stable=*/true, 0, false);
+  if (!pack.edge_index.device().is_cpu()) {
+    const auto destination = pack.edge_index.select(0, 1);
+    const auto padding_node = torch::full_like(destination, node_count);
+    const auto destination_key =
+        torch::where(pack.edge_mask, destination, padding_node);
+    const auto order =
+        torch::argsort(destination_key, /*stable=*/true, 0, false);
+    pack.edge_index = pack.edge_index.index_select(1, order).contiguous();
+    pack.edge_vec = pack.edge_vec.index_select(0, order).contiguous();
+    pack.edge_mask = pack.edge_mask.index_select(0, order).contiguous();
+    buildGraphCSR(pack, node_count, /*destination_sorted=*/true);
+    return;
+  }
+  const auto index = pack.edge_index.to(torch::kInt64).contiguous();
+  const auto mask = pack.edge_mask.to(torch::kBool).contiguous();
+  const std::int64_t edge_count = index.size(1);
+  torch::Tensor row_ptr;
+  torch::Tensor order;
+  groupEdgesByNode(index.const_data_ptr<std::int64_t>() + edge_count,
+                   mask.const_data_ptr<bool>(), edge_count, node_count, row_ptr,
+                   order);
   pack.edge_index = pack.edge_index.index_select(1, order).contiguous();
   pack.edge_vec = pack.edge_vec.index_select(0, order).contiguous();
   pack.edge_mask = pack.edge_mask.index_select(0, order).contiguous();
@@ -841,6 +985,25 @@ inline void remap_graph_outputs_to_dense_keys(
     atom_virial_full.index_put_({0, Slice(0, nloc), 0}, atom_virial_pub);
     output_map["energy_derv_c"] = atom_virial_full;
   }
+}
+
+/**
+ * @brief Flatten the per-atom virial emitted by a compact canonical lower.
+ *
+ * The compact lower emits the per-atom virial as a three-by-three tensor,
+ * whereas the graph lower flattens it to nine components -- the layout the
+ * dense-key remap consumes. The key is absent when the artifact was traced
+ * without the per-atom virial, in which case the remap never reads it either.
+ *
+ * @param[in,out] output_map Output tensor map of a canonical forward.
+ */
+inline void flatten_canonical_atom_virial(
+    std::map<std::string, torch::Tensor>& output_map) {
+  const auto entry = output_map.find("atom_virial");
+  if (entry == output_map.end()) {
+    return;
+  }
+  entry->second = entry->second.reshape({entry->second.size(0), 9});
 }
 
 /**

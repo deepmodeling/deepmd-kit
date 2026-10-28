@@ -8,6 +8,7 @@ from copy import (
     deepcopy,
 )
 
+import pytest
 import torch
 
 from deepmd.pt_expt.entrypoints.main import (
@@ -332,6 +333,61 @@ class TestDPFreezePtExpt(unittest.TestCase):
         dp = DeepPot(pt2_path)
         with self.assertRaises(ValueError):
             dp.eval(coord, box, atype, spin=spin)
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compile is slow (minutes); run locally only by default.",
+)
+@pytest.mark.parametrize(
+    "add_native_spin",
+    [
+        pytest.param(False, id="zbl"),  # ZBL composition (Linear over [DPA4, ZBL])
+        pytest.param(True, id="native_spin"),  # native-spin variant of the same
+    ],
+)
+def test_dpa4_variant_default_freeze_graph_with_comm(tmp_path, add_native_spin) -> None:
+    """The default ``dp freeze`` invocation on a DPA4 VARIANT yields a
+    with-comm graph ``.pt2`` -- aligned with standard DPA4 (issue #5906
+    Task 12b).
+
+    No ``--lower-kind`` flag means ``freeze()``'s ``lower_kind="nlist"``
+    default, which the nlist->graph auto-override in
+    ``deepmd/pt_expt/entrypoints/main.py`` must resolve to the graph lower
+    for every graph-capable model -- for the ZBL composition and the
+    native-spin variant exactly as for standard DPA4 (the plain native-spin
+    case is already pinned by ``test_native_spin_default_freeze_routes_to_
+    graph`` in ``model/test_dpa4_export.py``; these two cases pin the
+    variants).  Beyond the routing, the frozen archive must carry the nested
+    with-comm artifact (``has_comm_artifact is True``): a variant that
+    silently dropped it would freeze fine, pass every single-rank test, and
+    only fail (or worse, silently mis-answer) on multi-rank LAMMPS.
+    """
+    import json
+    import zipfile
+
+    from .model.test_zbl_bridging import (
+        ZBL_CONFIG,
+    )
+
+    config = deepcopy(ZBL_CONFIG)
+    if add_native_spin:
+        config["spin"] = {"use_spin": [True, False], "scheme": "native"}
+
+    model = get_model(deepcopy(config))
+    wrapper = ModelWrapper(model, model_params=deepcopy(config))
+    ckpt = tmp_path / "model.pt"
+    torch.save({"model": wrapper.state_dict()}, ckpt)
+
+    output = tmp_path / "frozen_dpa4_variant"  # suffixless: default CLI form
+    freeze(model=str(ckpt), output=str(output))
+
+    pt2 = output.with_suffix(".pt2")
+    assert pt2.exists(), "default suffix must follow the resolved graph kind"
+    with zipfile.ZipFile(pt2) as zf:
+        metadata = json.loads(zf.read("model/extra/metadata.json"))
+    assert metadata["lower_input_kind"] == "graph"
+    assert metadata["has_comm_artifact"] is True
 
 
 if __name__ == "__main__":

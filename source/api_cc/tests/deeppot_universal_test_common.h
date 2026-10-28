@@ -150,6 +150,11 @@ inline std::vector<FParamAParamCase> fparam_aparam_cases() {
       {"pytorch_pt2", Backend::PTExpt, "../../tests/infer/fparam_aparam.pt2",
        /*convert_pbtxt=*/false, nullptr,
        "../../tests/infer/fparam_aparam.expected", 1e-7, 1e-4,
+       /*supports_float=*/true},
+      {"jax_savedmodel", Backend::JAX,
+       "../../tests/infer/fparam_aparam.savedmodel",
+       /*convert_pbtxt=*/false, nullptr,
+       "../../tests/infer/fparam_aparam.expected", 1e-7, 1e-4,
        /*supports_float=*/true}};
 }
 

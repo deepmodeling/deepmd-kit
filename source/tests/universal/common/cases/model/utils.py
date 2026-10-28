@@ -131,6 +131,38 @@ class ModelTestCase:
         expected = getattr(self, "test_spin", False)
         self.assertEqual(self.module.has_spin(), expected)
 
+    def test_chg_spin_capability_contract(self) -> None:
+        """chg-spin queries are declared on the base model with concrete
+        defaults (False/0/None) -- direct calls, never ``hasattr`` probes.
+
+        ``has_default_chg_spin`` was merged into ``get_default_chg_spin``
+        (predicate: ``get_default_chg_spin() is not None``). Its absence on
+        the dpmodel side is pinned in
+        source/tests/universal/dpmodel/model/test_model.py -- pt is frozen
+        and still declares the (now-redundant) method.
+        """
+        assert isinstance(self.module.has_chg_spin_ebd(), bool)
+        assert isinstance(self.module.get_dim_chg_spin(), int)
+        dcs = self.module.get_default_chg_spin()
+        # Backend-agnostic: dpmodel returns a list, frozen pt returns a
+        # torch.Tensor -- pin the shape contract, not the container type.
+        assert dcs is None or len(dcs) == self.module.get_dim_chg_spin()
+
+    def test_property_capability_contract(self) -> None:
+        """Property queries are declared on the base model with concrete
+        defaults: ``get_var_name`` returns ``None`` for non-property models
+        (the support predicate), ``get_intensive`` defaults ``False``,
+        ``get_task_dim`` raises for non-property models.
+        """
+        vn = self.module.get_var_name()
+        assert vn is None or isinstance(vn, str)
+        assert isinstance(self.module.get_intensive(), bool)
+        if vn is None:
+            with self.assertRaises(NotImplementedError):
+                self.module.get_task_dim()
+        else:
+            assert isinstance(self.module.get_task_dim(), int)
+
     def test_forward(self) -> None:
         """Test forward and forward_lower."""
         test_spin = getattr(self, "test_spin", False)

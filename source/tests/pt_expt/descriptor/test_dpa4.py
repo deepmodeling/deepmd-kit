@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import os
+from contextlib import (
+    nullcontext,
+)
 from unittest import (
     mock,
 )
@@ -12,6 +16,9 @@ from torch.fx.experimental.proxy_tensor import (
 )
 
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DPDescrptDPA4
+from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
+)
 from deepmd.pt_expt.descriptor.dpa4 import (
     DescrptDPA4,
 )
@@ -51,6 +58,58 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
     def setup_method(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.device = env.DEVICE
+
+    @pytest.mark.parametrize(
+        "options",  # edge-local grid and Cartesian configurations
+        [
+            {"node_wise_s2": True},
+            {"node_wise_so3": True},
+            {"s2_activation": [True, False]},
+            {"edge_cartesian": True, "lmax": 1},
+            {"edge_cartesian": True, "lmax": 2},
+        ],
+    )
+    @pytest.mark.parametrize("training", [False, True])  # inference vs force training
+    def test_empty_edge_paths(self, options: dict, training: bool) -> None:
+        """Empty graph edges and fully masked neighbors give the same descriptors."""
+        descriptor = make_descriptor(2, 2, 3.0, channels=4, **options).to(self.device)
+        descriptor.train(training)
+        graph_data = {
+            "n_node": np.array([2], dtype=np.int64),
+            "edge_index": np.empty((2, 0), dtype=np.int64),
+            "edge_vec": np.empty((0, 3), dtype=np.float64),
+            "edge_mask": np.empty((0,), dtype=bool),
+        }
+        graph = NeighborGraph(
+            **{
+                key: torch.as_tensor(value, device=self.device)
+                for key, value in graph_data.items()
+            }
+        )
+        graph.edge_vec.requires_grad_(True)
+        atype = torch.tensor([0, 1], dtype=torch.int64, device=self.device)
+        actual = descriptor.call_graph(graph, atype)[0]
+        reference = DPDescrptDPA4.deserialize(descriptor.serialize()).call_graph(
+            NeighborGraph(**graph_data), atype.cpu().numpy()
+        )[0]
+        np.testing.assert_allclose(
+            actual.detach().cpu().numpy(), reference, rtol=1e-10, atol=1e-12
+        )
+        coord = torch.zeros((1, 2, 3), dtype=torch.float64, device=self.device)
+        nlist = torch.full((1, 2, 2), -1, dtype=torch.int64, device=self.device)
+        padded = descriptor(coord, atype[None, :], nlist)[0]
+        torch.testing.assert_close(actual, padded[0], rtol=1e-10, atol=1e-12)
+        edge_grad = torch.autograd.grad(
+            actual.sum(), graph.edge_vec, create_graph=training
+        )[0]
+        assert edge_grad.shape == (0, 3)
+        if training:
+            (actual.square().sum() + edge_grad.square().sum()).backward()
+            assert all(
+                torch.isfinite(parameter.grad).all()
+                for parameter in descriptor.parameters()
+                if parameter.grad is not None
+            )
 
     @pytest.mark.parametrize("use_env_seed", [True, False])  # env seed feature
     @pytest.mark.parametrize("use_mapping", [True, False])  # pass mapping vs None
@@ -102,6 +161,68 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             atol=atol,
             err_msg=err_msg,
         )
+
+    def test_default_charge_spin_uses_model_namespace(self) -> None:
+        """A device buffer supplies the default without a NumPy round trip."""
+        dtype = PRECISION_DICT["float64"]
+        descriptor = make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            add_chg_spin_ebd=True,
+            default_chg_spin=[-1.0, 3.0],
+        ).to(self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        with mock.patch.object(
+            torch.Tensor,
+            "numpy",
+            side_effect=TypeError("direct conversion is unavailable"),
+        ):
+            output = descriptor(coord_ext, atype_ext, nlist)[0]
+
+        assert output.device == self.device
+        assert torch.isfinite(output).all()
+
+    def test_train_and_eval_amp_switches_are_independent(self) -> None:
+        """Training follows ``use_amp``, evaluation follows ``DP_AMP_INFER``.
+
+        The block implementation is stubbed so a CUDA-device test double can
+        exercise the policy on CPU without constructing or executing a CUDA
+        tensor. Neither switch may leak into the other's mode.
+        """
+        block_input = mock.Mock(device=mock.Mock(type="cuda"))
+        block_output = object()
+
+        for amp_infer in (False, True):
+            with mock.patch.dict(
+                os.environ, {"DP_AMP_INFER": "1" if amp_infer else "0"}, clear=False
+            ):
+                for use_amp in (False, True):
+                    dd = make_descriptor(
+                        self.nt, self.sel_mix, self.rcut, use_amp=use_amp
+                    )
+                    for training in (False, True):
+                        dd.train(training)
+                        expected = use_amp if training else amp_infer
+                        with (
+                            mock.patch.object(
+                                DPDescrptDPA4,
+                                "_forward_blocks",
+                                return_value=block_output,
+                            ),
+                            mock.patch(
+                                "torch.autocast", return_value=nullcontext()
+                            ) as autocast_mock,
+                        ):
+                            actual = dd._forward_blocks(block_input)
+                        assert actual is block_output
+                        assert autocast_mock.called is expected, (
+                            f"amp_infer={amp_infer} use_amp={use_amp} "
+                            f"training={training}"
+                        )
 
     def test_random_gamma_train_eval_gate(self) -> None:
         """``random_gamma`` mirrors pt: rolled in train mode, fixed otherwise.
@@ -280,10 +401,11 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             assert name not in param_names
         # wigner tables must never be trainable
         assert not any("wigner" in n.lower() for n in param_names)
-        # all promoted parameters are float and trainable
+        # Declared weights remain parameters when their owning module freezes them.
         for name, p in param_names.items():
             assert p.is_floating_point(), name
-            assert p.requires_grad, name
+            owner = dd0.get_submodule(name.rpartition(".")[0])
+            assert p.requires_grad == bool(getattr(owner, "trainable", True)), name
 
     @pytest.mark.parametrize(
         "via_deserialize", [False, True]

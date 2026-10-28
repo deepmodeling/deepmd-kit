@@ -13,7 +13,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 29
+#define DP_C_API_VERSION 30
 
 /**
  * @brief Neighbor list.
@@ -442,6 +442,8 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
+ * @note The source and source-order arrays are uint32 as of API version 30;
+ *       API versions 28 and 29 declared them as signed int64.
  * @since API version 28
  */
 extern void DP_DeepPotComputeCanonicalGraphGPU(
@@ -450,11 +452,11 @@ extern void DP_DeepPotComputeCanonicalGraphGPU(
     double* d_force,
     double* d_atom_virial,
     const int64_t* d_atype,
-    const int64_t* d_source,
+    const uint32_t* d_source,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
     const int64_t* d_source_row_ptr,
-    const int64_t* d_source_order,
+    const uint32_t* d_source_order,
     int nloc,
     int nall_nodes,
     int64_t edge_storage);
@@ -1254,6 +1256,59 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
                                       float* virial,
                                       float* atomic_energy,
                                       float* atomic_virial);
+
+/**
+ * @brief Evaluate a compact canonical graph on the model device with a DP spin
+ * model.
+ *
+ * @param[in] dp The DP spin model to use.
+ * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
+ * @param[out] d_force Per-node force, shape ``(nall_nodes, 3)``.
+ * @param[out] d_force_mag Per-node magnetic force, shape ``(nall_nodes, 3)``.
+ * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``.
+ * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
+ * @param[in] d_source Source node per edge storage slot.
+ * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
+ * @param[in] d_destination_row_ptr Destination CSR offsets.
+ * @param[in] d_source_row_ptr Source CSR offsets.
+ * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] d_spin FP32 per-node magnetic moment, shape ``(nall_nodes, 3)``;
+ * halo rows carry their owner's moment.
+ * @param[in] nloc Number of owned local nodes.
+ * @param[in] nall_nodes Total local-plus-halo node count.
+ * @param[in] edge_storage Number of edge storage slots.
+ * @since API version 30
+ */
+extern void DP_DeepSpinComputeCanonicalGraphGPU(
+    DP_DeepSpin* dp,
+    double* d_atom_energy,
+    double* d_force,
+    double* d_force_mag,
+    double* d_atom_virial,
+    const int64_t* d_atype,
+    const uint32_t* d_source,
+    const float* d_edge_vec,
+    const int64_t* d_destination_row_ptr,
+    const int64_t* d_source_row_ptr,
+    const uint32_t* d_source_order,
+    const float* d_spin,
+    int nloc,
+    int nall_nodes,
+    int64_t edge_storage);
+
+/**
+ * @brief Query whether the compact canonical graph ABI is active for a DP spin
+ * model.
+ * @since API version 30
+ */
+extern bool DP_DeepSpinUsesCanonicalGraphInference(DP_DeepSpin* dp);
+
+/**
+ * @brief Query whether a DP spin model is served under the native spin scheme
+ * rather than the virtual-atom scheme.
+ * @since API version 30
+ */
+extern bool DP_DeepSpinUsesNativeSpinScheme(DP_DeepSpin* dp);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP with the mixed
@@ -2560,6 +2615,20 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
 int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp);
 
 /**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * It becomes the condition of every later evaluation that is not given one
+ * explicitly. Intended to be called once, before the first evaluation.
+ * @param[in] dp The DP to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepPotGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepPotSetChargeSpin(DP_DeepPot* dp,
+                                    const double* charge_spin,
+                                    const int numb_chg_spin);
+
+/**
  * @brief Check whether the atomic dimension of atomic parameters is nall
  * instead of nloc.
  *
@@ -2613,6 +2682,20 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
  * @since API version 27
  */
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * Applied to every model, so that the deviation is taken between models under
+ * the same condition.
+ * @param[in] dp The DP to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepPotModelDeviGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepPotModelDeviSetChargeSpin(DP_DeepPotModelDevi* dp,
+                                             const double* charge_spin,
+                                             const int numb_chg_spin);
 
 /**
  * @brief Check whether the atomic dimension of atomic parameters is nall
@@ -2713,6 +2796,20 @@ int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp);
 int DP_DeepSpinGetDimChgSpin(DP_DeepSpin* dp);
 
 /**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * It becomes the condition of every later evaluation that is not given one
+ * explicitly. Intended to be called once, before the first evaluation.
+ * @param[in] dp The DP Spin Model to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepSpinGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepSpinSetChargeSpin(DP_DeepSpin* dp,
+                                     const double* charge_spin,
+                                     const int numb_chg_spin);
+
+/**
  * @brief Check whether the atomic dimension of atomic parameters is nall
  * instead of nloc.
  *
@@ -2772,6 +2869,20 @@ int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp);
  * @since API version 29
  */
 int DP_DeepSpinModelDeviGetDimChgSpin(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * Applied to every model, so that the deviation is taken between models under
+ * the same condition.
+ * @param[in] dp The DP Spin Model Deviation to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepSpinModelDeviGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepSpinModelDeviSetChargeSpin(DP_DeepSpinModelDevi* dp,
+                                              const double* charge_spin,
+                                              const int numb_chg_spin);
 
 /**
  * @brief Check whether the atomic dimension of atomic parameters is nall
