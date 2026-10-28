@@ -585,6 +585,48 @@ def test_compact_rejects_neighbor_exclusions(
         lammps.close()
 
 
+@pytest.mark.parametrize("include_molecule", ["yes", "no"])
+def test_compact_rejects_neighbor_inclusion_groups(
+    compact_models: tuple[Path, Path], include_molecule: str
+) -> None:
+    """Reject a center without a populated row before compact packing reads it."""
+    model, _ = compact_models
+    lammps = PyLammps()
+    try:
+        if plugin := os.environ.get("DEEPMD_TEST_PLUGIN"):
+            lammps.lmp.command(f"plugin load {plugin}")
+        lammps.lmp.commands_list(
+            [
+                "units metal",
+                "boundary p p p",
+                "atom_style molecular",
+                "atom_modify map array",
+                "region box block 0 20 0 20 0 20 units box",
+                "create_box 1 box",
+                "create_atoms 1 single 5 5 5 units box",
+                "create_atoms 1 single 6 5 5 units box",
+                "set atom 1 mol 1",
+                "set atom 2 mol 1",
+                "group active id 1",
+                "group qm id 2",
+                "atom_modify first active",
+                "mass 1 16",
+                "neighbor 2.0 bin",
+                "neigh_modify include active",
+                f"pair_style deepmd {model.resolve()} center_group qm "
+                f"environment_cutoff 1.5 include_molecule {include_molecule}",
+                "pair_coeff * *",
+            ]
+        )
+        with pytest.raises(
+            Exception,
+            match=r"compact pair_style deepmd does not support neigh_modify include",
+        ):
+            lammps.run(0)
+    finally:
+        lammps.close()
+
+
 @pytest.mark.parametrize("scenario", ["cross_domain_molecule", "empty_selected_rank"])
 def test_compact_mpi_matches_serial(
     compact_models: tuple[Path, Path], tmp_path: Path, scenario: str

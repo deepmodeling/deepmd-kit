@@ -579,6 +579,14 @@ void PairDeepMD::init_style() {
         FLERR,
         "compact pair_style deepmd does not support neigh_modify exclude");
   }
+  // Inclusion groups leave neighbor rows outside atom->nfirst uninitialized.
+  // Compact centers and whole-molecule promotion can select those atoms, so
+  // rebuilding their environment requires a list covering every local atom.
+  if (neighbor->includegroup) {
+    error->all(
+        FLERR,
+        "compact pair_style deepmd does not support neigh_modify include");
+  }
   if (!atom->tag_enable) {
     error->all(FLERR,
                "compact pair_style deepmd requires atom IDs to be enabled");
