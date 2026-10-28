@@ -414,6 +414,7 @@ class TestEmbeddingEntrypoint(unittest.TestCase):
         dp.get_type_map.return_value = ["A", "B"]
         dp.get_dim_fparam.return_value = 0
         dp.get_dim_aparam.return_value = 0
+        dp.has_chg_spin_ebd.return_value = False
         dp.eval_embedding.return_value = (
             descriptor,
             atomic_feature,

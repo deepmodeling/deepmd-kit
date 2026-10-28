@@ -390,6 +390,22 @@ def _compressed_config(window: tuple[float, float] | None) -> dict:
     return config
 
 
+def test_compression_keeps_the_default_charge_state() -> None:
+    """A bridged model reports the charge state its compressed tables hold.
+
+    Compression folds the default condition of the learned model into its
+    tables, after which the model reads no condition input. The composition
+    still reports that default, which an archive of it serves when a caller
+    names no condition.
+    """
+    config = _compressed_config((0.5, 0.8))
+    config["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[0.0, 1.0])
+    model = get_model(config).eval()
+    model.atomic_model.enable_compression(0.5, 1.0, 0.002, 0.002)
+    assert model.get_dim_chg_spin() == 0
+    assert model.get_default_chg_spin() == [0.0, 1.0]
+
+
 class TestCompressedDPA4CZBLBridging:
     """A bridged compressed model keeps the fused and the canonical routes."""
 

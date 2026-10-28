@@ -637,6 +637,27 @@ magnetic force only from pair styles matching its own name pattern.
 A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
 is provided in `examples/spin/dpa4c/lmp/`.
 
+## Embedding extraction
+
+A trained DPA4C model exports learned representations for downstream analysis
+with `dp embed`. A single forward pass (no force or virial) produces the per-atom
+`descriptor`, the per-atom `atomic_feature` (the activation after the last
+fitting hidden layer), and the per-frame `structural_feature` (the sum of
+`atomic_feature` over the atoms):
+
+```bash
+dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
+```
+
+The command reads the training checkpoint (`.pt`) or the frozen model (`.pt2`),
+compressed or not, and a ZBL-bridged model reports the embeddings of its learned
+model. Unlike a LAMMPS run, `dp embed` reads the
+[inference settings](#inference-settings) when it runs rather than at export: on
+a GPU, a compressed model computes its descriptor with the fused kernels only
+when `DP_CUDA_INFER` is at least `1` for the command. See
+[model embeddings](../inference/embedding.md) for the output format and the
+Python interface.
+
 ## Data format
 
 DPA4C consumes a mixed-type neighbor list, so it supports both the

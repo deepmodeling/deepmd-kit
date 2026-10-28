@@ -12,8 +12,8 @@
 //     reduction accumulates in registers and the operator contains no atomic.
 //
 // The re-layout lives here rather than in the compression artifact because
-// one artifact has to serve both devices, and the transposed copy is built
-// once per model load.
+// one artifact has to serve both devices, and the transposed copy is built by
+// the first call that reads a set of tables and reused by every later one.
 
 #pragma once
 

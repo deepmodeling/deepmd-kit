@@ -299,6 +299,7 @@ class PolarFitting(GeneralFitting):
         h2: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        return_middle_output: bool = False,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -321,6 +322,10 @@ class PolarFitting(GeneralFitting):
             The frame parameter. shape: nf x nfp. nfp being `numb_fparam`
         aparam
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
+        return_middle_output
+            Whether this call also returns the input of the output layer, the
+            activation after the last hidden layer, under the
+            ``middle_output`` key.
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
@@ -329,7 +334,16 @@ class PolarFitting(GeneralFitting):
             "Must provide the rotation matrix for polarizability fitting."
         )
         # (nframes, nloc, _net_out_dim)
-        results = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        results = self._call_common(
+            descriptor,
+            atype,
+            gr,
+            g2,
+            h2,
+            fparam,
+            aparam,
+            return_middle_output=return_middle_output,
+        )
         out = results.pop(self.var_name)
         # out = out * self.scale[atype, ...]
         # Scale and diagonal shifts are serialized as NumPy arrays. Keep that

@@ -443,11 +443,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         import array_api_compat
 
-        if not self._graph_mapping_is_identity:
-            raise NotImplementedError(
-                "the graph route supports children sharing the parent "
-                "type_map only (no atype remapping)"
-            )
+        self._check_graph_mapping()
         nmodels = len(self.models)
         if self.weights == "sum":
             weights = [1.0] * nmodels
@@ -476,6 +472,80 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             contrib = ret["energy"] * ww
             energy = contrib if energy is None else energy + contrib
         return {"energy": xp.astype(energy, graph.edge_vec.dtype)}
+
+    def forward_embedding_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        node_mask: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Embeddings of the first descriptor-fitting child of the composition.
+
+        A composition such as a bridged DPA4 or DPA4C model holds one learned
+        descriptor-fitting child beside analytical terms. Its embeddings are
+        those of that child, which evaluates them on the same graph and counts
+        the nodes under the masks of both the composition and the child.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free).
+        atype
+            flat local atom types, clamped to valid types. N
+        node_mask
+            flat mask of the nodes the composition counts. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level conditioning, forwarded to the child.
+
+        Returns
+        -------
+        dict[str, Array]
+            The embeddings of the child, see
+            :meth:`~deepmd.dpmodel.atomic_model.base_atomic_model.BaseAtomicModel.forward_common_embedding_graph`.
+
+        Raises
+        ------
+        NotImplementedError
+            For children with remapped type maps, or when no child is a
+            descriptor-fitting model.
+        """
+        self._check_graph_mapping()
+        for model in self.models:
+            if isinstance(model, DPAtomicModel):
+                return model.forward_common_embedding_graph(
+                    graph,
+                    atype,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                    node_mask=node_mask,
+                )
+        raise NotImplementedError(
+            "this linear model has no descriptor-fitting child, so it provides "
+            "no embedding."
+        )
+
+    def _check_graph_mapping(self) -> None:
+        """Require the children to share the type map of the composition.
+
+        Raises
+        ------
+        NotImplementedError
+            If a child remaps the atom types, which the graph route does not
+            support.
+        """
+        if not self._graph_mapping_is_identity:
+            raise NotImplementedError(
+                "the graph route supports children sharing the parent "
+                "type_map only (no atype remapping)"
+            )
 
     def forward_atomic(
         self,
@@ -767,9 +837,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         stay omitted, letting each child apply its own default, rather than
         silently broadcasting one child's value to the others.
 
-        Children that do not consume the input (dimension 0, e.g. an
-        analytical bridging term) are excluded by the caller, so a learned
-        model composed with ZBL still inherits the learned default.
+        Children without the conditioning (e.g. an analytical bridging term)
+        are excluded by the caller, so a learned model composed with ZBL still
+        inherits the learned default.
         """
         if not actives or not all(has(m) for m in actives):
             return False, None
@@ -780,8 +850,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return True, get(actives[0])
 
     def _chg_spin_consumers(self) -> list:
-        """Children that actually consume ``charge_spin``."""
-        return [m for m in self.models if m.get_dim_chg_spin() > 0]
+        """Children conditioned on ``charge_spin``.
+
+        A compressed child carries its condition folded into frozen tables and
+        reads no input, yet it keeps the default that those tables hold.
+        """
+        return [m for m in self.models if m.has_chg_spin_ebd()]
 
     def _fparam_consumers(self) -> list:
         """Children that actually consume ``fparam``."""

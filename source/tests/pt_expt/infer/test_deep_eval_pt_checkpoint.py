@@ -1286,6 +1286,11 @@ class TestPtExptLoadPtSpinFparam(_SpinFilesMixin, unittest.TestCase):
         cls.spin_config = cfg
         super().setUpClass()
 
+    def test_reports_the_default_fparam(self) -> None:
+        """The checkpoint and the archive both report the default fparam."""
+        for suffix in (".pt", ".pte"):
+            self.assertTrue(DeepPot(self.files[suffix]).has_default_fparam(), suffix)
+
     def test_default_fparam_matches_explicit_pt(self) -> None:
         dp = DeepPot(self.files[".pt"])
         e_no, f_no, v_no, fm_no, _ = dp.eval(
