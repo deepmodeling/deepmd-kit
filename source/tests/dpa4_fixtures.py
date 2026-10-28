@@ -11,6 +11,71 @@ outside pytest's package machinery.
 import numpy as np
 
 
+def dpa4c_config() -> dict:
+    """Small DPA4C model shared by graph-lower and LAMMPS tests."""
+    return {
+        "type_map": ["A", "B"],
+        "descriptor": {
+            "type": "dpa4c",
+            "rcut": 3.0,
+            "channels": 16,
+            "lmax": 4,
+            "n_radial": 4,
+            "precision": "float64",
+            "seed": 17,
+        },
+        "fitting_net": {
+            "type": "ener",
+            "neuron": [16, 16],
+            "precision": "float64",
+            "seed": 19,
+        },
+    }
+
+
+def compressed_dpa4c_config(channels: int = 8) -> dict:
+    """The existing fp32 compact-canonical export fixture."""
+    config = dpa4c_config()
+    config["descriptor"].update(
+        channels=channels, lmax=2, n_radial=8, precision="float32"
+    )
+    # The fused fitting operator has no per-layer timestep.
+    config["fitting_net"].update(
+        neuron=[32, 32],
+        activation_function="silu",
+        precision="float32",
+        resnet_dt=False,
+    )
+    return config
+
+
+def conditioned_dpa4c_config(default_chg_spin=(2.0, 3.0)) -> dict:
+    """Canonical fixture with the condition used by the baked-state tests."""
+    config = compressed_dpa4c_config()
+    config["descriptor"].update(
+        add_chg_spin_ebd=True, default_chg_spin=list(default_chg_spin)
+    )
+    return config
+
+
+def activate_dpa4c_condition_head(descriptor) -> None:
+    """Use the existing deterministic, nonzero charge-conditioning head."""
+    import torch
+
+    head = descriptor.charge_spin_embedding.network.layers[-1]
+    generator = torch.Generator(device=head.w.device).manual_seed(11)
+    with torch.no_grad():
+        head.w.copy_(
+            torch.randn(
+                head.w.shape,
+                dtype=head.w.dtype,
+                device=head.w.device,
+                generator=generator,
+            )
+            * 0.5
+        )
+
+
 def jitter_zero_arrays(node, rng: np.random.Generator):
     """Return a copy of a serialized tree with every zero float array jittered.
 
