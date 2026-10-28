@@ -63,11 +63,19 @@ Inference batch size, calculated by multiplying the number of frames with the nu
 Setting this variable disables automatic growth; out-of-memory errors can still
 reduce the batch size.
 
-With the native PyTorch CUDA allocator, automatic multi-frame evaluation starts
-with one calibration frame and limits growth using the observed workspace and
-available device memory, leaving a 10% margin. This policy applies to both
-`dp test` and full validation in the PyTorch and PyTorch Exportable backends.
-Other GPU allocators and backends grow batches until an out-of-memory error.
+On GPUs, automatic sizing grows successful full batches exponentially and reuses
+that atom budget across systems. An out-of-memory error halves the actual
+attempted batch size and retries the same input. Growth beyond the failed size
+is retried after two successful full batches; repeated recovery probes
+increase the interval to four, then eight batches. This short, bounded delay
+favors recovering larger batches when subsequent input needs less memory, at
+the cost of occasional OOM retries even on a steady workload. Short final
+batches neither shrink the learned budget nor trigger growth.
+
+This policy applies to both `dp test` and full validation, without profiling CUDA
+allocator state on successful inference. It does not search for an exact maximum
+or guarantee the throughput-optimal batch size. Explicitly setting a positive
+`DP_INFER_BATCH_SIZE` disables growth, including these recovery probes.
 :::
 
 :::{envvar} DP_BACKEND

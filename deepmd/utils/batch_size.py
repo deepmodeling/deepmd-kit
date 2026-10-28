@@ -10,7 +10,6 @@ from collections.abc import (
 )
 from typing import (
     Any,
-    Protocol,
 )
 
 import array_api_compat
@@ -26,19 +25,15 @@ class RetrySignal(Exception):
     """Signal to retry execution after OOM error."""
 
 
-class BatchSizeBudget(Protocol):
-    """Limit atom budgets and observe completed batch attempts."""
-
-    def limit(self, batch_size: int) -> int:
-        """Return an admissible atom budget no larger than the proposal."""
-
-    def observe(self, nframes: int) -> None:
-        """Record an attempt; zero frames denotes an unsuccessful call."""
-
-
 class AutoBatchSize(ABC):
-    """This class allows DeePMD-kit to automatically decide the maximum
-    batch size that will not cause an OOM error.
+    """Grow inference batches and reuse the learned out-of-memory bound.
+
+    Successful full batches grow geometrically. After OOM, growth beyond the
+    failed bound resumes after two successful full batches; repeated recovery probes
+    extend that interval to four, then eight batches. This deliberately favors
+    recovering capacity over permanently avoiding OOM. Short tails and changes
+    in the number of atoms do not reset the learned state. No allocator profiling
+    or exact maximum search is needed.
 
     Notes
     -----
@@ -79,15 +74,16 @@ class AutoBatchSize(ABC):
         self.silent = silent
         self.current_batch_size = initial_batch_size
         DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
-        self._fixed_batch_size = DP_INFER_BATCH_SIZE > 0
-        self._budget: BatchSizeBudget | None = None
+        self._auto_growth = DP_INFER_BATCH_SIZE <= 0 and self.is_gpu_available()
+        self._successful_batches = 0
+        self._reprobe_interval = 2
         if DP_INFER_BATCH_SIZE > 0:
             self.current_batch_size = DP_INFER_BATCH_SIZE
             self.maximum_working_batch_size = DP_INFER_BATCH_SIZE
             self.minimal_not_working_batch_size = self.maximum_working_batch_size + 1
         else:
             self.maximum_working_batch_size = initial_batch_size
-            if self.is_gpu_available():
+            if self._auto_growth:
                 self.minimal_not_working_batch_size = 2**31
             else:
                 self.minimal_not_working_batch_size = (
@@ -111,7 +107,7 @@ class AutoBatchSize(ABC):
         *,
         max_nframes: int | None = None,
     ) -> tuple[int, Any]:
-        """Execute one batch within the search and backend resource budgets.
+        """Execute one batch, growing on success and backing off on OOM.
 
         Parameters
         ----------
@@ -140,24 +136,16 @@ class AutoBatchSize(ABC):
         if max_nframes is not None and max_nframes <= 0:
             raise ValueError("max_nframes must be positive")
         units_per_frame = max(natoms, 1)
-        proposed_size = self.current_batch_size
-        budget = self._get_batch_budget(natoms, max_nframes)
-        if budget is not None:
-            if budget is not self._budget:
-                self._budget = budget
-                self.maximum_working_batch_size = 0
-                self.minimal_not_working_batch_size = 2**31
-            self._set_batch_size(budget.limit(self.current_batch_size))
         batch_nframes = max(self.current_batch_size // units_per_frame, 1)
         if max_nframes is not None:
             batch_nframes = min(batch_nframes, max_nframes)
-        n_batch = 0
         try:
             n_batch, result = callable(batch_nframes, start_index)
         except Exception as e:
             if not self.is_oom_error(e):
                 raise
             attempted_size = batch_nframes * units_per_frame
+            self._successful_batches = 0
             self.minimal_not_working_batch_size = min(
                 self.minimal_not_working_batch_size, attempted_size
             )
@@ -175,32 +163,28 @@ class AutoBatchSize(ABC):
             if self.oom_retry_mode:
                 raise RetrySignal from e
             return 0, None
-        finally:
-            if budget is not None:
-                budget.observe(n_batch)
 
         n_tot = n_batch * units_per_frame
         self.maximum_working_batch_size = max(self.maximum_working_batch_size, n_tot)
-        if (
-            n_tot + units_per_frame > self.current_batch_size
-            and self.current_batch_size * self.factor
-            < self.minimal_not_working_batch_size
-        ):
-            # Calibration limits this attempt without discarding the requested
-            # atom budget for subsequent batches.
-            proposed_size = max(
-                proposed_size, int(self.current_batch_size * self.factor)
-            )
-            self._set_batch_size(
-                proposed_size if budget is None else budget.limit(proposed_size)
-            )
+        # A successful *actual* batch can disprove an old OOM bound. A
+        # truncated probe cannot: the proposed size was not actually tested.
+        if self._auto_growth and n_tot >= self.minimal_not_working_batch_size:
+            self.minimal_not_working_batch_size = 2**31
+        if self._auto_growth and n_tot + units_per_frame > self.current_batch_size:
+            # Large mandatory single frames also justify immediate growth.
+            next_batch_size = int(max(self.current_batch_size, n_tot) * self.factor)
+            self._successful_batches += 1
+            if (
+                next_batch_size < self.minimal_not_working_batch_size
+                or self._successful_batches >= self._reprobe_interval
+            ):
+                if next_batch_size >= self.minimal_not_working_batch_size:
+                    # Dampen repeated recovery probes, including oscillating
+                    # workloads where one sparse probe succeeds before OOM.
+                    self._reprobe_interval = min(2 * self._reprobe_interval, 8)
+                self._set_batch_size(next_batch_size)
+                self._successful_batches = 0
         return n_batch, result
-
-    def _get_batch_budget(
-        self, natoms: int, max_nframes: int | None
-    ) -> BatchSizeBudget | None:
-        """Return a backend resource budget, or None for OOM-driven sizing."""
-        return None
 
     def _set_batch_size(self, batch_size: int) -> None:
         old_batch_size = self.current_batch_size
