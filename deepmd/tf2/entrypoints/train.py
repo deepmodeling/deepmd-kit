@@ -160,7 +160,7 @@ class TF2TrainEntrypoint(AbstractTrainEntrypoint):
             type_map = list(task_config.model_params.get("type_map", []))
             ipt_type_map = type_map if type_map else None
             train_data = get_data(
-                dict(task_config.training_data_params),
+                task_config.training_data_params,
                 None,
                 ipt_type_map,
                 None,
@@ -254,7 +254,7 @@ def update_sel(
     for task_config in iter_training_task_configs(jdata):
         type_map = task_config.model_params.get("type_map")
         train_data = get_data(
-            dict(task_config.training_data_params),
+            task_config.training_data_params,
             0,
             type_map,
             None,

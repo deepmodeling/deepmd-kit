@@ -202,9 +202,74 @@ def canonical_graph_from_neighbor_graph(
     return result
 
 
+def canonical_graph_from_pairs(
+    center: torch.Tensor,
+    source: torch.Tensor,
+    edge_vec: torch.Tensor,
+    n_node: torch.Tensor,
+    node_count: int,
+) -> CanonicalGraph:
+    """Build a local canonical graph from active, unpadded neighbor pairs.
+
+    Parameters
+    ----------
+    center, source : torch.Tensor
+        Valid global node indices with shape (E,), int64, on one device.
+    edge_vec : torch.Tensor
+        Neighbor-minus-center vectors in angstrom with shape (E, 3), on the
+        index device. Geometry is converted to float32 for deployment.
+    n_node : torch.Tensor
+        Per-frame local node counts with shape (nf,), int64, on the same device.
+    node_count : int
+        Total number of local nodes across frames, equal to ``n_node.sum()``.
+
+    Returns
+    -------
+    CanonicalGraph
+        Destination-major graph with dual CSR and at least two storage slots.
+        All nodes are local; no coordinate differentiation is required.
+    """
+    edge_count = source.shape[0]
+    if max(edge_count, node_count) > UINT32_MAX:
+        raise ValueError("canonical graph node or edge count exceeds the uint32 range")
+    destination_order = torch.argsort(center, stable=True)
+    center = center.index_select(0, destination_order)
+    source = source.index_select(0, destination_order)
+    edge_vec = edge_vec.index_select(0, destination_order).to(torch.float32)
+    boundaries = torch.arange(node_count + 1, dtype=torch.int64, device=source.device)
+    destination_row_ptr = torch.searchsorted(center, boundaries)
+    source_order = torch.argsort(source, stable=True)
+    source_row_ptr = torch.searchsorted(
+        source.index_select(0, source_order), boundaries
+    )
+    # Guard slots keep the exported edge axis dynamic even for zero or one
+    # physical edge. CSR offsets exclude these slots from every node row.
+    if edge_count < 2:
+        padding = 2 - edge_count
+        source = torch.cat((source, source.new_zeros(padding)))
+        edge_vec = torch.cat((edge_vec, edge_vec.new_zeros((padding, 3))))
+        source_order = torch.cat(
+            (
+                source_order,
+                torch.arange(edge_count, 2, dtype=torch.int64, device=source.device),
+            )
+        )
+    n_node = n_node.contiguous()
+    return CanonicalGraph(
+        n_node=n_node,
+        n_local=n_node,
+        source=source.to(torch.uint32),
+        edge_vec=edge_vec,
+        destination_row_ptr=destination_row_ptr,
+        source_row_ptr=source_row_ptr,
+        source_order=source_order.to(torch.uint32),
+    )
+
+
 __all__ = [
     "UINT32_MAX",
     "CanonicalGraph",
     "canonical_graph_from_neighbor_graph",
+    "canonical_graph_from_pairs",
     "validate_canonical_graph_shapes",
 ]

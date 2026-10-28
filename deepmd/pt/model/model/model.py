@@ -26,6 +26,17 @@ class BaseModel(torch.nn.Module, make_base_model()):
             "min_nbor_dist", torch.tensor(-1.0, dtype=torch.float64, device=env.DEVICE)
         )
 
+    def export_lower_input_kind(self) -> str:
+        """Return the lower-input ABI that preserves this model's semantics.
+
+        Returns
+        -------
+        str
+            ``"nlist"`` for the standard PyTorch model contract. Models with
+            a graph-native deployment ABI override this method.
+        """
+        return "nlist"
+
     def compute_or_load_stat(
         self,
         sampled_func: Any,

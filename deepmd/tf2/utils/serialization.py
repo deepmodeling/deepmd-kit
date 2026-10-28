@@ -611,6 +611,7 @@ def serialize_from_file(model_file: str) -> dict:
         "backend": "TensorFlow2",
         "model": model_payload,
         "model_def_script": model_def_script,
+        "lower_input_kind": "nlist",
         "shared_links": state.get("shared_links"),
         "@variables": {
             "current_step": int(state.get("current_step", 0)),

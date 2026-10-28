@@ -15,16 +15,19 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingClamp as BridgingClampDP
 from deepmd.dpmodel.descriptor.dpa4c import DescrptDPA4C as DescrptDPA4CDP
-from deepmd.kernels.utils import (
-    cuda_infer_level,
-    use_amp_infer,
-)
 from deepmd.pt_expt.common import (
+    register_dpmodel_mapping,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.pt_expt.kernels.utils import (
+    fused_energy_force_enabled,
+    fused_operators_enabled,
+    use_amp_infer,
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
@@ -65,20 +68,34 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
         The same module, for use as an expression.
     """
     for submodule in module.modules():
-        if not getattr(submodule, "trainable", True):
-            continue
+        trainable = bool(getattr(submodule, "trainable", True))
         for name in _TRAINABLE_ATTRS.get(type(submodule).__name__, ()):
             value = submodule._buffers.get(name)
             if value is None or not value.is_floating_point():
                 continue
             del submodule._buffers[name]
-            setattr(submodule, name, torch.nn.Parameter(value, requires_grad=True))
+            setattr(submodule, name, torch.nn.Parameter(value, requires_grad=trainable))
 
     for submodule in module.modules():
         if not getattr(submodule, "trainable", True):
             for parameter in submodule.parameters(recurse=True):
                 parameter.requires_grad_(False)
     return module
+
+
+# The distance clamp of the bridging window is parameter-free (the two window
+# fractions only, no serialize()) and belongs to DPA4C alone; rebuild it fresh
+# from the stored constructor arguments.
+@torch_module
+class BridgingClamp(BridgingClampDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+register_dpmodel_mapping(
+    BridgingClampDP,
+    lambda v: BridgingClamp(v.f_inner, v.f_outer),
+)
 
 
 @BaseDescriptor.register("dpa4c")
@@ -101,6 +118,20 @@ class DescrptDPA4C(DescrptDPA4CDP):
     """
 
     _update_sel_cls = UpdateSel
+
+    #: The per-element length scales of the bridging window follow from
+    #: ``type_map``, which the constructor resolves on every load, so the
+    #: buffer they land in stays out of the state dict.
+    CONFIG_DERIVED_ARRAYS = ("contact_radius",)
+
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the descriptor, of the tensors that take the
+        AdamW path under HybridMuon: the first layer of the radial embedding,
+        which reads the radial basis and whose rows for rarely visited
+        separations receive almost no gradient.
+        """
+        return ["radial_embedding.layers.0."]
 
     #: Artifacts whose element type is not the ``float32`` the kernel consumes.
     _COMPRESSION_BUFFER_DTYPES: ClassVar[dict[str, torch.dtype]] = {
@@ -168,17 +199,17 @@ class DescrptDPA4C(DescrptDPA4CDP):
             self.compress
             and not self.training
             and not self.exclude_types
-            and cuda_infer_level() >= 1
+            and fused_operators_enabled()
             and graph.destination_order is not None
             and graph.destination_row_ptr is not None
         ):
-            from deepmd.kernels.cuda.dpa4c.graph_compress import (
+            from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
                 dpa4c_graph_compress,
                 mega_eligible,
                 op_available,
             )
 
-            if op_available() and mega_eligible(self):
+            if op_available(self.spin is not None) and mega_eligible(self):
                 # The operator conditions the moment on device from its frozen
                 # per-type table, so it takes the raw input rather than the
                 # output of ``SpinChannels.conditioned_spin``.
@@ -424,21 +455,68 @@ class DescrptDPA4C(DescrptDPA4CDP):
         and the cutoff survive without rounding, and the angular coupling
         layout keeps ``int32``; every other artifact is the ``float32`` the
         kernel consumes.
+
+        The operator scalars are that metadata followed by the two fractions of
+        the bridging window, from which the kernels resolve the switch on the
+        edge envelope and the clamped length the table reads after scaling
+        them by the length scale of each pair. The fractions are descriptor
+        configuration rather than table metadata, and equal fractions denote a
+        descriptor without a window.
+
+        The per-element length scales those fractions are measured against join
+        the artifacts in the same ``float32`` layout, so that an operator call
+        hands the kernels a frozen table instead of recasting one. They follow
+        ``type_map``, which the constructor resolves on every load, so the
+        buffer they land in stays out of the state dict.
         """
-        device = next(self.parameters()).device
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+            contact_radius_input,
+        )
+
+        device = self.stddev.device
         info = torch.as_tensor(artifacts["info"])
-        self._compression_scalars = tuple(
-            float(value) for value in info.detach().cpu().tolist()
+        window = (
+            (0.0, 0.0)
+            if self.bridging_switch is None
+            else (self.bridging_f_inner, self.bridging_f_outer)
+        )
+        self._compression_scalars = (
+            *(float(value) for value in info.detach().cpu().tolist()),
+            *window,
         )
         for name in self._COMPRESSION_BUFFER_NAMES:
             dtype = self._COMPRESSION_BUFFER_DTYPES.get(name, torch.float32)
             value = artifacts[name].to(device=device, dtype=dtype).contiguous()
-            buffer_name = f"compress_{name}"
-            if buffer_name in self._buffers:
-                self._buffers[buffer_name] = value
-            else:
-                self.register_buffer(buffer_name, value)
+            self._store_compression_buffer(name, value)
+        self._store_compression_buffer(
+            "contact_radius", contact_radius_input(self), persistent=False
+        )
         self.compress = True
+
+    def _store_compression_buffer(
+        self,
+        name: str,
+        value: torch.Tensor,
+        persistent: bool = True,
+    ) -> None:
+        """Bind one ``compress_``-prefixed artifact, replacing any earlier one.
+
+        Parameters
+        ----------
+        name
+            Artifact name without the ``compress_`` prefix.
+        value
+            Tensor to bind, already in the layout the kernels read.
+        persistent
+            Whether the buffer belongs in the state dict. Artifacts that follow
+            from the configuration alone are rebuilt on every load and are
+            bound without it.
+        """
+        buffer_name = f"compress_{name}"
+        if buffer_name in self._buffers:
+            self._buffers[buffer_name] = value
+        else:
+            self.register_buffer(buffer_name, value, persistent=persistent)
 
     def apply_charge_state(self, charge_spin: Any) -> None:
         """Re-specialize a compressed snapshot to a frame charge state.
@@ -478,7 +556,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
                 "This DPA4C was not built with `add_chg_spin_ebd`, so it has "
                 "no charge state to apply."
             )
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             build_charge_state_artifacts,
         )
 
@@ -571,7 +649,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         del min_nbor_dist, table_extrapolate, table_stride_2, check_frequency
         if self.compress:
             raise ValueError("Compression is already enabled.")
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             build_compression_artifacts,
         )
 
@@ -586,6 +664,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         atom_bias: torch.Tensor,
         do_atomic_virial: bool,
         spin: torch.Tensor | None = None,
+        pair_table: torch.Tensor | None = None,
     ) -> (
         tuple[
             torch.Tensor,
@@ -602,29 +681,31 @@ class DescrptDPA4C(DescrptDPA4CDP):
         Returns ``None`` when the model or graph cannot use the level-two CUDA
         path, allowing the caller to retain the generic autograd lower. The
         trailing output is the magnetic force, empty for a spin-free model.
+        ``pair_table`` carries the analytical pair potential of a bridged
+        model, which the backward edge scan evaluates alongside the descriptor.
         """
         if (
             self.training
             or not self.compress
             or bool(self.exclude_types)
-            or cuda_infer_level() < 2
+            or not fused_energy_force_enabled()
             or graph.destination_order is None
             or graph.destination_row_ptr is None
             or graph.source_order is None
             or graph.source_row_ptr is None
         ):
             return None
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             dpa4c_graph_compress_energy_force,
             ef_op_available,
             mega_eligible,
         )
-        from deepmd.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
         if (
-            not ef_op_available()
+            not ef_op_available(self.spin is not None)
             or not mega_eligible(self)
             or not fitting_eligible(fitting)
         ):
@@ -639,4 +720,5 @@ class DescrptDPA4C(DescrptDPA4CDP):
             atype.shape[0],
             do_atomic_virial,
             None if self.spin is None else self.require_spin(spin),
+            pair_table,
         )

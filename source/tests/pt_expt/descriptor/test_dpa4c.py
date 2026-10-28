@@ -29,12 +29,21 @@ from deepmd.pt_expt.utils import (
 )
 
 # Structural variants exercised by the backend-agnostic contracts. They span
-# both angular profiles and both radial function classes.
+# both angular profiles and both radial function classes, and one bridging
+# window whose transition zone holds several pairs of the test cluster.
 STRUCTURES = [
     {"channels": 16, "lmax": 2, "radial_modes": 0},
     {"channels": 32, "lmax": 4, "radial_modes": 0},
     {"channels": 32, "lmax": 2, "radial_modes": 3},
     {"channels": 16, "lmax": 3, "radial_modes": 3},
+    {
+        "channels": 16,
+        "lmax": 3,
+        "radial_modes": 3,
+        "inner_clamp_f_inner": 1.0,
+        "inner_clamp_f_outer": 1.25,
+        "inner_clamp_scale": "absolute",
+    },
 ]
 
 
@@ -226,6 +235,25 @@ class TestDPA4C:
         included.enable_compression(0.5)
         assert included.compress
 
+    def test_compression_round_trip_preserves_frozen_descriptor(self) -> None:
+        """Compression must depend on tensor values, not optimizer registration."""
+        frozen = self.build(precision="float32", trainable=False).eval()
+        assert not tuple(frozen.radial_embedding.parameters())
+        reference = self._evaluate(frozen, self.coord)
+
+        frozen.enable_compression(0.5, table_stride_1=0.2)
+        restored = DescrptDPA4C.deserialize(frozen.serialize()).to(env.DEVICE).eval()
+
+        assert restored.trainable is False
+        assert restored.compress
+        assert not tuple(restored.radial_embedding.parameters())
+        assert not any(parameter.requires_grad for parameter in restored.parameters())
+        # The descriptor computes in single precision, so the comparison takes
+        # the single-precision tolerances whatever the dtype of the output.
+        torch.testing.assert_close(
+            self._evaluate(restored, self.coord), reference, rtol=1.3e-6, atol=1e-5
+        )
+
     def test_serialization_preserves_parameters(self) -> None:
         restored = DescrptDPA4C.deserialize(self.descriptor.serialize()).to(env.DEVICE)
         original_parameters = dict(self.descriptor.named_parameters())
@@ -236,6 +264,20 @@ class TestDPA4C:
                 restored_parameters[name],
                 original_parameters[name],
             )
+
+    def test_deserialization_preserves_version_one_raw_radial_basis(self) -> None:
+        data = self.descriptor.serialize()
+        radial_basis = data["radial_basis"]
+        radial_basis["@version"] = 1
+        radial_basis["config"]["exponent"] = 5
+        radial_basis["config"]["apply_envelope"] = False
+        restored = DescrptDPA4C.deserialize(data).to(env.DEVICE)
+
+        assert restored.radial_basis.envelope is None
+        torch.testing.assert_close(
+            self._evaluate(restored, self.coord),
+            self._evaluate(self.descriptor, self.coord),
+        )
 
     @pytest.mark.parametrize("structure", STRUCTURES)
     def test_torch_export_matches_eager(self, structure: dict[str, int]) -> None:
@@ -427,6 +469,56 @@ class TestDPA4C:
             rtol=0.0,
         )
 
+    def test_bridging_window_is_c3_continuous(self) -> None:
+        window = {
+            "inner_clamp_f_inner": 0.5,
+            "inner_clamp_f_outer": 0.8,
+            "inner_clamp_scale": "absolute",
+        }
+        descriptor = self.build(channels=16, lmax=4, **window).eval()
+        plain = self.build(channels=16, lmax=4).eval()
+        # The septic switch meets both radii with three vanishing derivatives:
+        # at the inner radius the probe joins the constant of the removed
+        # edge, at the outer radius it joins the plain descriptor. The
+        # regularized distance exceeds the separation by 1e-14 Å, which the
+        # fourth derivative of the switch turns into the tolerance below.
+        inner = self._dimer_derivatives(descriptor, 0.5)
+        for order in (1, 2, 3):
+            torch.testing.assert_close(
+                inner[order],
+                torch.zeros_like(inner[order]),
+                atol=1e-8,
+                rtol=0.0,
+            )
+        outer = self._dimer_derivatives(descriptor, 0.8)
+        reference = self._dimer_derivatives(plain, 0.8)
+        assert reference[3].abs() > 1e-3
+        for order in range(4):
+            torch.testing.assert_close(
+                outer[order],
+                reference[order],
+                atol=1e-8,
+                rtol=0.0,
+            )
+
+    def test_frozen_edge_matches_removed_topology(self) -> None:
+        descriptor = self.build(
+            inner_clamp_f_inner=0.5,
+            inner_clamp_f_outer=0.8,
+            inner_clamp_scale="absolute",
+        ).eval()
+        plain = self.build().eval()
+        radius = torch.tensor(0.5, dtype=torch.float64, device=env.DEVICE)
+        removed = self._dimer_probe(descriptor, radius, active=False)
+        # The plain descriptor must see the pair, or the comparison is vacuous.
+        assert (self._dimer_probe(plain, radius) - removed).abs() > 1e-3
+        torch.testing.assert_close(
+            self._dimer_probe(descriptor, radius, active=True),
+            removed,
+            atol=0.0,
+            rtol=0.0,
+        )
+
     def test_coincident_edge_has_finite_third_derivative(self) -> None:
         descriptor = self.build(lmax=3).eval()
         derivatives = self._dimer_derivatives(descriptor, 0.0)
@@ -441,6 +533,45 @@ class TestDPA4C:
                 atol=1e-12,
                 rtol=0.0,
             )
+
+
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+@pytest.mark.parametrize("channels", [8, 32])
+@pytest.mark.parametrize("node_count", [0, 2])
+def test_native_spin_graph_without_edges(
+    precision: str, channels: int, node_count: int
+) -> None:
+    """The reference spin path supports zero nodes as well as isolated atoms."""
+    descriptor = TestDPA4C.build(
+        precision=precision, channels=channels, use_spin=[True, False]
+    ).eval()
+    with torch.no_grad():
+        descriptor.spin.spin_gate.fill_(1.0)
+    dtype = getattr(torch, precision)
+    graph = NeighborGraph(
+        n_node=torch.tensor([node_count], dtype=torch.int64, device=env.DEVICE),
+        n_local=torch.tensor([node_count], dtype=torch.int64, device=env.DEVICE),
+        edge_index=torch.empty((2, 0), dtype=torch.int64, device=env.DEVICE),
+        edge_vec=torch.empty((0, 3), dtype=dtype, device=env.DEVICE),
+        edge_mask=torch.empty((0,), dtype=torch.bool, device=env.DEVICE),
+    )
+    spin = torch.ones(
+        (node_count, 3), dtype=dtype, device=env.DEVICE, requires_grad=True
+    )
+    output, rot_mat = descriptor.call_graph(
+        graph,
+        torch.arange(node_count, dtype=torch.int64, device=env.DEVICE) % 2,
+        spin=spin,
+    )
+    assert output.shape == (node_count, descriptor.get_dim_out())
+    assert output.dtype == dtype
+    assert output.device == spin.device
+    assert torch.isfinite(output).all()
+    assert rot_mat is None
+    output.sum().backward()
+    assert spin.grad is not None
+    assert spin.grad.shape == spin.shape
+    assert torch.isfinite(spin.grad).all()
 
 
 class TestDPA4CSpinGate:
@@ -624,15 +755,24 @@ class TestDPA4CSpin:
             assert layer.autocast_output is False
 
     def test_compression_covers_the_spin_families(self) -> None:
-        """The compiled operator carries spin, so eligibility ignores it.
+        """Spin follows the degree profile, so compression covers it.
 
         Every spin width follows the degree profile rather than a parameter of
         its own, so a spin-conditioned descriptor is covered by the same
         structural set as a spin-free one and its frozen tables are built
         alongside the geometric caches.
+
+        Whether a device can consume them is a separate question, answered by
+        ``op_available``: the CUDA kernels carry the magnetic backward and the
+        CPU kernels do not, so a spin-conditioned descriptor keeps the
+        reference path on a CPU host while the tables are built either way.
         """
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             mega_eligible,
+            op_available,
+        )
+        from deepmd.pt_expt.kernels.utils import (
+            backend_device_type,
         )
 
         single = DescrptDPA4C(
@@ -646,6 +786,9 @@ class TestDPA4CSpin:
             use_spin=[True, False],
         ).to(env.DEVICE)
         assert mega_eligible(single)
+        assert op_available(spin=True) == (
+            op_available() and backend_device_type() == "cuda"
+        )
         single.enable_compression(0.5)
         assert single.compress
         assert single.compress_spin_pair.shape == (

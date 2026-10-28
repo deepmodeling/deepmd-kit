@@ -245,6 +245,20 @@ class DOSLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return configured global and atomic DOS/CDF metrics."""
+        return tuple(
+            name
+            for name, enabled in (
+                ("rmse_global_dos", self.has_dos),
+                ("rmse_global_cdf", self.has_cdf),
+                ("rmse_local_dos", self.has_ados),
+                ("rmse_local_cdf", self.has_acdf),
+            )
+            if enabled
+        )
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []

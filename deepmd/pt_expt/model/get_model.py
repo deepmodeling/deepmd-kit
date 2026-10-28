@@ -93,8 +93,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     this builder rejects the flag.
 
     Still unsupported here, each raising ``NotImplementedError``: the
-    virtual-atom (``deepspin``) spin scheme, ``lora``, and
-    ``preset_out_bias``.
+    virtual-atom (``deepspin``) spin scheme and ``lora``.
 
     Notes
     -----
@@ -134,10 +133,6 @@ def get_sezm_model(data: dict) -> BaseModel:
             "set `training.enable_compile` instead."
         )
         _WARNED_ONCE.add("use_compile")
-    if data.get("preset_out_bias"):
-        raise NotImplementedError(
-            "`preset_out_bias` is not supported for DPA4/SeZM in the pt_expt backend."
-        )
     data.pop("type", None)
     data.setdefault("descriptor", {})
     data.setdefault("fitting_net", {})
@@ -179,6 +174,7 @@ def get_sezm_model(data: dict) -> BaseModel:
         type_map=data["type_map"],
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=pair_exclude_types,
+        preset_out_bias=data.get("preset_out_bias"),
     )
 
 
@@ -235,8 +231,8 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     injected into the descriptor config (consumed by the descriptor's
     equivariant spin embedding). The non-spin backbone is built by the
     standard builder for the config's model type -- :func:`get_sezm_model`
-    for the DPA4/SeZM family (keeping its bridging/lora/compile/
-    preset_out_bias rejections and ``exclude_types`` consistency check),
+    for the DPA4/SeZM family (keeping its bridging/lora/compile rejections
+    and ``exclude_types`` consistency check),
     else :func:`get_standard_model` -- then re-classed through the
     registered :class:`NativeSpinEnergyModel`. Eligibility is the atomic
     model's own ``supports_native_spin()`` capability, not a descriptor-type
@@ -296,10 +292,10 @@ def _dpa4_family_child_builder(sub: dict) -> "BaseModel | None":
     A ``linear_ener`` child of the DPA4/SeZM model type must get exactly
     the semantics of a standalone ``type: "dpa4"`` model -- the
     descriptor/fitting type defaults, the exclusion consistency check, and
-    the loud rejections of unsupported options (``lora``, ``use_compile``,
-    ``preset_out_bias``) -- instead of the generic component build that
-    would silently ignore them. Returns ``None`` for non-DPA4-family
-    children so the shared builder uses its generic path.
+    the loud rejections of unsupported options (``lora``, ``use_compile``)
+    -- instead of the generic component build that would silently ignore
+    them. Returns ``None`` for non-DPA4-family children so the shared
+    builder uses its generic path.
 
     Parameters
     ----------
@@ -323,11 +319,10 @@ def get_linear_model(model_params: dict) -> BaseModel:
 
     Children with a ``descriptor`` build as learned atomic models;
     ``pairtab`` children build as pair-tabulation atomic models; an
-    ``inner_potential`` child builds the analytical bridging term, with
-    the learned sibling descriptor's ``inner_clamp_r_inner``/``_outer``
-    derived from the child's ``r_inner``/``r_outer`` (issue #5948). A
-    top-level ``spin`` section (scheme ``native``) wraps the composition
-    as a :class:`NativeSpinEnergyModel`.
+    ``inner_potential`` child builds the analytical bridging term, with the
+    learned sibling descriptor's window derived from the child's (issue
+    #5948). A top-level ``spin`` section (scheme ``native``) wraps the
+    composition as a :class:`NativeSpinEnergyModel`.
 
     Parameters
     ----------

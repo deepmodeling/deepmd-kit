@@ -22,6 +22,7 @@ import numpy as np
 
 from deepmd.dpmodel.utils.lmdb_data import (
     is_lmdb,
+    make_neighbor_stat_data,
 )
 from deepmd.entrypoints.test import test as run_model_test
 from deepmd.utils import (
@@ -35,7 +36,6 @@ from deepmd.utils.data_system import (
     get_data,
     process_systems,
     validate_backend_data_config,
-    validate_lmdb_systems,
 )
 
 
@@ -391,31 +391,21 @@ class TestDpdataFormatConversion(unittest.TestCase):
         data.close()
         data.close()
 
-    def test_multiple_lmdb_paths_are_rejected(self) -> None:
+    def test_multiple_lmdb_paths_use_native_group_composition(self) -> None:
+        """Converted support preserves upstream's multiple-source data API."""
         lmdb_a = self.root / "a.lmdb"
         lmdb_b = self.root / "b.lmdb"
         _write_minimal_lmdb(str(lmdb_a))
         _write_minimal_lmdb(str(lmdb_b))
-
-        with self.assertRaisesRegex(ValueError, "exactly one path"):
-            get_data(
-                {
-                    "systems": [str(lmdb_a), str(lmdb_b)],
-                    "batch_size": 1,
-                },
-                0.0,
-                ["H"],
-                None,
-            )
-
-    def test_backend_without_lmdb_support_rejects_any_resolved_path(self) -> None:
-        lmdb_path = self.root / "unsupported.lmdb"
-        _write_minimal_lmdb(str(lmdb_path))
-
-        with self.assertRaisesRegex(NotImplementedError, "Paddle backend"):
-            validate_lmdb_systems(
-                [str(lmdb_path)], backend_name="Paddle", supported=False
-            )
+        data = get_data(
+            {"systems": [str(lmdb_a), str(lmdb_b)], "batch_size": 1},
+            0.0,
+            ["H"],
+            None,
+        )
+        self.addCleanup(data_system.close_data_systems, data)
+        self.assertEqual(len(data.data_systems), 2)
+        self.assertEqual(data.get_batch()["coord"].shape, (1, 3))
 
     def test_lmdb_stack_frames_rejects_empty_batch(self) -> None:
         lmdb_path = self.root / "empty-batch.lmdb"
@@ -501,19 +491,110 @@ class TestDpdataFormatConversion(unittest.TestCase):
         batches = [data.get_batch(), data.get_batch()]
         self.assertEqual({float(batch["find_box"]) for batch in batches}, {0.0, 1.0})
 
-    def test_multiple_conversion_inputs_fail_before_dpdata_io(self) -> None:
+    def test_multiple_conversion_inputs_use_grouped_readers(self) -> None:
+        """Each input has its own cache and composes through the native API."""
         second = self.root / "second.extxyz"
         second.write_text(self.source.read_text())
-
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
-            with self.assertRaisesRegex(ValueError, "exactly one resolved input"):
-                process_systems(
-                    [str(self.source), str(second)],
-                    fmt="extxyz",
-                )
+            data = get_data(
+                {
+                    "systems": [str(self.source), str(second)],
+                    "format": "extxyz",
+                    "batch_size": 1,
+                    "auto_prob": "prob_uniform",
+                },
+                0,
+                ["H"],
+                None,
+            )
+        self.addCleanup(data.close)
+        self.assertEqual(_FakeMultiSystems.write_count, 2)
+        self.assertEqual(len(data.children), 2)
+        self.assertEqual(data.get_batch()["coord"].shape, (1, 3))
+        # A grouped checkpoint must restore the next batch, not its prefetch.
+        state = data.state_dict()
+        expected = data.get_batch()
+        data.load_state_dict(state)
+        np.testing.assert_array_equal(data.get_batch()["coord"], expected["coord"])
 
-        self.assertEqual(_FakeMultiSystems.load_calls, [])
-        self.assertEqual(_FakeMultiSystems.write_count, 0)
+    def test_group_construction_failure_closes_completed_readers(self) -> None:
+        """Factories retain ownership until every group is constructed."""
+        paths = [self.root / "valid.lmdb", self.root / "later.lmdb"]
+        for path in paths:
+            _write_minimal_lmdb(str(path))
+        acquired = []
+
+        def factory(path, batch_size, auto_prob):
+            if acquired:
+                raise ValueError("later source failed")
+            reader = LmdbDataSystem(path, ["H"], batch_size, auto_prob)
+            acquired.append(reader)
+            return reader
+
+        with self.assertRaisesRegex(ValueError, "later source failed"):
+            get_data(
+                {"systems": list(map(str, paths)), "batch_size": 1},
+                0,
+                ["H"],
+                None,
+                lmdb_factory=factory,
+            )
+        self.assertTrue(acquired[0]._closed)
+
+    def test_rare_nonperiodic_frame_outside_probe_is_partitioned(self) -> None:
+        """A single missed box must never disable PBC on its periodic neighbors."""
+        path = self.root / "rare-pbc.lmdb"
+        _write_repeated_lmdb(str(path), 300)
+        probe = {300 * i // 256 for i in range(256)}
+        rare = next(i for i in range(300) if i not in probe)
+        with lmdb.open(str(path)) as env, env.begin(write=True) as txn:
+            key = f"{rare:012d}".encode()
+            frame = msgpack.unpackb(txn.get(key), raw=False)
+            frame["cells"] = _encode_array(np.zeros((3, 3)))
+            txn.put(key, msgpack.packb(frame, use_bin_type=True))
+        data = LmdbDataSystem(str(path), ["H"], batch_size=32, seed=0)
+        self.addCleanup(data.close)
+        self.assertEqual({view.pbc for view in data.data_systems}, {False, True})
+        seen = {False: 0, True: 0}
+        for _ in range(data.get_batch_pass_length()):
+            batch = data.get_batch()
+            periodic = bool(batch["find_box"])
+            cells = batch["box"].reshape(-1, 9)
+            self.assertTrue(np.all(np.any(cells != 0, axis=1) == periodic))
+            self.assertEqual(len(batch["default_mesh"]), 7 if periodic else 1)
+            seen[periodic] += len(cells)
+        self.assertEqual(seen, {False: 1, True: 299})
+        # Full-validation views use their own availability index.
+        groups = data._test_data.availability_groups(np.arange(300))
+        self.assertEqual(sorted(map(len, groups)), [1, 299])
+        neighbor_data = make_neighbor_stat_data(str(path), ["H"])
+        self.assertEqual(
+            {view.pbc for view in neighbor_data.data_systems}, {False, True}
+        )
+        for view in neighbor_data.data_systems:
+            box = view._load_set(view.dirs[0])["box"]
+            self.assertEqual(box is not None, view.pbc)
+
+    def test_legacy_composition_counts_obey_mixed_type_invariant(self) -> None:
+        """Independent per-type maxima must not overrun the padded atom axis."""
+        path = self.root / "compositions.lmdb"
+        _write_repeated_lmdb(str(path), 2)
+        with lmdb.open(str(path)) as env, env.begin(write=True) as txn:
+            frame = msgpack.unpackb(txn.get(b"000000000001"), raw=False)
+            metadata = msgpack.unpackb(txn.get(b"__metadata__"), raw=False)
+            metadata["type_map"] = ["H", "O"]
+            txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+            frame["atom_names"] = ["H", "O"]
+            frame["atom_numbs"] = [0, 1]
+            frame["atom_types"] = _encode_array(np.array([1], dtype=np.int64))
+            txn.put(b"000000000001", msgpack.packb(frame, use_bin_type=True))
+        data = LmdbDataSystem(str(path), ["H", "O"], batch_size=2, seed=0)
+        self.addCleanup(data.close)
+        batch = data.get_batch()
+        np.testing.assert_array_equal(batch["natoms_vec"], [1, 1, 1, 0])
+        self.assertEqual(
+            set(map(tuple, batch["real_natoms_vec"])), {(1, 1, 1, 0), (1, 1, 0, 1)}
+        )
 
     def test_lmdb_sys_probs_fail_before_conversion(self) -> None:
         with self.assertRaisesRegex(ValueError, "does not support explicit sys_probs"):
@@ -741,6 +822,33 @@ class TestDpdataFormatConversion(unittest.TestCase):
             process_systems(str(source), fmt="extxyz")
             self.assertEqual(_FakeMultiSystems.write_count, 2)
 
+    def test_directory_symlinks_track_edits_retargets_and_cycles(self) -> None:
+        """ABACUS-style linked output trees participate in cache freshness."""
+        source = self.root / "run"
+        source.mkdir()
+        targets = [self.root / "out-a", self.root / "out-b"]
+        for target in targets:
+            target.mkdir()
+            (target / "running_scf.log").write_text("energy 0")
+        link = source / "OUT.ABACUS"
+        link.symlink_to(targets[0], target_is_directory=True)
+        # Follow a back edge without recursing forever.
+        (targets[0] / "parent").symlink_to(source, target_is_directory=True)
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            process_systems(str(source), fmt="abacus/scf")
+            process_systems(str(source), fmt="abacus/scf")
+            self.assertEqual(_FakeMultiSystems.write_count, 1)
+            child = targets[0] / "running_scf.log"
+            before = child.stat()
+            child.write_text("energy 42")
+            os.utime(child, ns=(before.st_atime_ns, before.st_mtime_ns))
+            process_systems(str(source), fmt="abacus/scf")
+            self.assertEqual(_FakeMultiSystems.write_count, 2)
+            link.unlink()
+            link.symlink_to(targets[1], target_is_directory=True)
+            process_systems(str(source), fmt="abacus/scf")
+            self.assertEqual(_FakeMultiSystems.write_count, 3)
+
     def test_source_signature_rejects_disappearing_regular_file(self) -> None:
         """Only dangling links may be fingerprinted after followed stat fails."""
         output = self.root / data_system._DPDATA_CACHE_DIR / "output.lmdb"
@@ -962,8 +1070,9 @@ class TestDpdataFormatConversion(unittest.TestCase):
                 )
 
         process.assert_called_once_with(
-            str(self.source.resolve()),
+            "data.extxyz",
             patterns=["*.extxyz"],
+            root_dir=config_path.parent,
             fmt="extxyz",
             out_fmt="deepmd/lmdb",
         )

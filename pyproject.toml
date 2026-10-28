@@ -80,6 +80,7 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 # which can be read by the build backend.
 [tool.deepmd_build_backend.optional-dependencies]
 test = [
+    "dependency_groups",
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # fixed in 3.23.0
     "ase>=3.23.0",
@@ -88,6 +89,7 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "pytest-timeout",
+    "jsonschema>=4.18",
     "dpgui",
     # DPA-ADAPT tests import sklearn via dpa_adapt.cv at module load time.
     "scikit-learn",
@@ -469,7 +471,6 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
 "deepmd/_vendors/**" = ["ALL"]
-"deepmd/kernels/**" = ["TID253", "B905"]
 "deepmd/tf/**" = ["TID253"]
 "deepmd/tf2/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253", "B905"]

@@ -13,6 +13,7 @@ import pytest
 from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
     save_dp_model,
+    serialize_from_file,
 )
 
 
@@ -70,3 +71,27 @@ def test_save_dp_model_accepts_hdf5_dataset_without_mutation(tmp_path: Path) -> 
     np.testing.assert_equal(
         loaded_model["model"]["layers"][0]["@variables"]["weights"], values
     )
+
+
+@pytest.mark.parametrize(
+    ("stored_lower_kind", "expected_lower_kind"),
+    [
+        pytest.param(None, "auto", id="unbound"),
+        pytest.param("graph", "graph", id="preserved"),
+    ],
+)
+def test_serialize_from_file_declares_lower_semantics(
+    tmp_path: Path,
+    stored_lower_kind: str | None,
+    expected_lower_kind: str,
+) -> None:
+    """The conversion hook distinguishes unbound and concrete lower ABIs."""
+    data: dict = {"model": {}}
+    if stored_lower_kind is not None:
+        data["lower_input_kind"] = stored_lower_kind
+    model_file = tmp_path / "model.dp"
+    save_dp_model(str(model_file), data)
+
+    serialized = serialize_from_file(str(model_file))
+
+    assert serialized["lower_input_kind"] == expected_lower_kind

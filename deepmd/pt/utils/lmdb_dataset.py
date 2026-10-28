@@ -3,6 +3,7 @@
 
 import functools
 import logging
+import warnings
 from collections.abc import (
     Iterator,
 )
@@ -27,10 +28,8 @@ from deepmd.dpmodel.utils.lmdb_data import (
     collate_lmdb_frames,
     collect_lmdb_sampling_groups,
     compute_block_targets,
-    count_group_blocks,
     is_lmdb,
     resolve_per_atom_keys,
-    system_block_lookup,
 )
 from deepmd.env import (
     get_lmdb_num_workers,
@@ -358,14 +357,12 @@ class LmdbDataset(Dataset):
             reader = self._reader
             # Per-block summary: original vs target frames
             block_lines = []
-            total_original = 0
+            total_original = len(reader)
             total_target = 0
-            # Pre-compute block_total_actual for proportional scaling
-            block_total_actual: list[int] = []
+            assigned_systems: set[int] = set()
             for sys_ids, target in self._block_targets:
                 actual = sum(reader.system_nframes[s] for s in sys_ids)
-                block_total_actual.append(actual)
-                total_original += actual
+                assigned_systems.update(sys_ids)
                 total_target += target
                 # Compact range notation: sys[0-146] instead of sys[0,1,2,...,146]
                 if len(sys_ids) > 3:
@@ -378,49 +375,36 @@ class LmdbDataset(Dataset):
                     f"{actual}->{target} (x{ratio:.2f})"
                 )
 
-            # A whole nloc group's block membership resolves as one indexing
-            # operation, which a dataset of 10^8 frames needs it to be. The
-            # lookup is the one the sampler allocates its targets with, so
-            # both agree on which systems a block claims.
-            n_blocks = len(self._block_targets)
-            lookup = system_block_lookup(self._block_targets)
-
-            # Compute expanded nloc counts analytically (no actual expansion)
-            expanded_nloc_info = {}
-            for nloc, indices in sorted(reader.nloc_groups.items()):
-                if reader.frame_system_ids is None:
-                    expanded_nloc_info[nloc] = len(indices)
-                    continue
-                counts = count_group_blocks(
-                    indices, reader.frame_system_ids, lookup, n_blocks
-                )
-                expanded = len(indices) - int(counts.sum())
-                for blk_idx, (_, blk_target) in enumerate(self._block_targets):
-                    n_actual = int(counts[blk_idx])
-                    if n_actual == 0:
-                        continue
-                    bta = block_total_actual[blk_idx]
-                    if bta > 0:
-                        t = max(round(blk_target * n_actual / bta), n_actual)
-                    else:
-                        t = n_actual
-                    expanded += t
-                expanded_nloc_info[nloc] = expanded
-
-            total_expanded = sum(expanded_nloc_info.values())
+            # Systems outside explicit blocks retain their original frames.
+            total_target += sum(
+                count
+                for sid, count in enumerate(reader.system_nframes)
+                if sid not in assigned_systems
+            )
             n_groups = len(reader.nloc_groups)
-            ratio_all = total_expanded / total_original if total_original > 0 else 0
+            ratio_all = total_target / total_original if total_original > 0 else 0
 
             log.info(
                 f"LMDB {name} auto_prob: "
-                f"{total_original}->{total_expanded} frames (x{ratio_all:.2f}), "
+                f"{total_original}->{total_target} frames (x{ratio_all:.2f}), "
                 f"{n_groups} nloc groups, {len(self._block_targets)} blocks:"
             )
             for bl in block_lines:
                 log.info(f"  {bl}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        self._reader.set_noise(noise_settings)
+        """Deprecated no-op kept for backward compatibility.
+
+        Mirrors :meth:`LmdbDataReader.set_noise`; see there. It will be
+        removed in a future release.
+        """
+        warnings.warn(
+            "LmdbDataset.set_noise() is deprecated and does nothing. "
+            "The denoising data pipeline it belonged to has been removed; "
+            "drop the call. This shim will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     @property
     def index(self) -> list[int]:

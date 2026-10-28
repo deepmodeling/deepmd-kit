@@ -43,6 +43,7 @@ from deepmd.pd.train.wrapper import (
 )
 from deepmd.pd.utils.dataloader import (
     DpLoaderSet,
+    create_dataset,
 )
 from deepmd.pd.utils.env import (
     DEVICE,
@@ -66,11 +67,18 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.compat import (
     update_deepmd_input,
 )
+from deepmd.utils.data_group import (
+    GroupedDataset,
+)
+from deepmd.utils.data_path import (
+    process_systems,
+)
 from deepmd.utils.data_system import (
     get_data,
-    process_systems,
     validate_backend_data_config,
-    validate_lmdb_systems,
+)
+from deepmd.utils.model_preset import (
+    expand_model_preset,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -103,47 +111,11 @@ def get_trainer(
         data_dict_single: dict[str, Any],
         rank: int = 0,
         seed: int | None = None,
-    ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
+    ) -> tuple[
+        DpLoaderSet | GroupedDataset, DpLoaderSet | GroupedDataset | None, DPPath | None
+    ]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data")
-        validation_systems = (
-            validation_dataset_params["systems"] if validation_dataset_params else None
-        )
-        training_systems = training_dataset_params["systems"]
-        validate_backend_data_config(
-            training_dataset_params,
-            backend_name="Paddle",
-            lmdb_supported=False,
-        )
-        trn_patterns = training_dataset_params.get("rglob_patterns", None)
-        training_systems = process_systems(
-            training_systems,
-            patterns=trn_patterns,
-            fmt=training_dataset_params.get("format", None),
-            out_fmt=training_dataset_params.get(
-                "out_format", training_dataset_params.get("output_format", None)
-            ),
-        )
-        validate_lmdb_systems(training_systems, backend_name="Paddle", supported=False)
-        if validation_systems is not None:
-            validate_backend_data_config(
-                validation_dataset_params,
-                backend_name="Paddle",
-                lmdb_supported=False,
-            )
-            val_patterns = validation_dataset_params.get("rglob_patterns", None)
-            validation_systems = process_systems(
-                validation_systems,
-                val_patterns,
-                fmt=validation_dataset_params.get("format", None),
-                out_fmt=validation_dataset_params.get(
-                    "out_format", validation_dataset_params.get("output_format", None)
-                ),
-            )
-            validate_lmdb_systems(
-                validation_systems, backend_name="Paddle", supported=False
-            )
-
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file")
         if rank != 0:
@@ -161,18 +133,16 @@ def get_trainer(
         # avoid the same batch sequence among devices
         rank_seed = [rank, seed % (2**32)] if seed is not None else None
         validation_data_single = (
-            DpLoaderSet(
-                validation_systems,
-                validation_dataset_params["batch_size"],
+            create_dataset(
+                validation_dataset_params,
                 model_params_single["type_map"],
                 seed=rank_seed,
             )
-            if validation_systems
+            if validation_dataset_params is not None
             else None
         )
-        train_data_single = DpLoaderSet(
-            training_systems,
-            training_dataset_params["batch_size"],
+        train_data_single = create_dataset(
+            training_dataset_params,
             model_params_single["type_map"],
             seed=rank_seed,
         )
@@ -285,6 +255,7 @@ def train(
     if LOCAL_RANK == 0:
         SummaryPrinter()()
     config = j_loader(input_file)
+    config["model"] = expand_model_preset(config["model"])
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pd"):
         init_model += ".pd"
@@ -324,6 +295,18 @@ def train(
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
     config = normalize(config, multi_task=multi_task)
 
+    # Validate every task and validation source before neighbor-stat loading
+    # can run the converter. Paddle has no LMDB reader.
+    task_data = (
+        config["training"]["data_dict"].values() if multi_task else [config["training"]]
+    )
+    for data_config in task_data:
+        for key in ("training_data", "validation_data"):
+            if data_config.get(key) is not None:
+                validate_backend_data_config(
+                    data_config[key], backend_name="Paddle", lmdb_supported=False
+                )
+
     # do neighbor stat
     min_nbor_dist = None
     if not skip_neighbor_stat:
@@ -334,7 +317,11 @@ def train(
         if not multi_task:
             type_map = config["model"].get("type_map")
             train_data = get_data(
-                config["training"]["training_data"], 0, type_map, None
+                config["training"]["training_data"],
+                0,
+                type_map,
+                None,
+                lmdb_supported=False,
             )
             config["model"], min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, config["model"]
@@ -348,6 +335,7 @@ def train(
                     0,
                     type_map,
                     None,
+                    lmdb_supported=False,
                 )
                 config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
                     BaseModel.update_sel(
@@ -578,7 +566,10 @@ def change_bias(
             nbatches,
         )
         updated_model = training.model_change_out_bias(
-            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+            model_to_change,
+            sampled_data,
+            _bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias={},
         )
 
     if not multi_task:

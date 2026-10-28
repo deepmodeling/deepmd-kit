@@ -6,12 +6,27 @@ remapping, auto_prob) live in source/tests/common/dpmodel/test_lmdb_data.py.
 Consistency tests (dpmodel vs pt) live in source/tests/consistent/test_lmdb_data.py.
 """
 
+from itertools import (
+    chain,
+    islice,
+    repeat,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
+
 import lmdb
 import msgpack
 import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.train import (
+    resolve_step_schedule,
+)
 from deepmd.dpmodel.utils import (
     lmdb_data,
 )
@@ -30,6 +45,10 @@ from deepmd.dpmodel.utils.lmdb_data import (
 from deepmd.pt.loss.ener import (
     EnergyStdLoss,
 )
+from deepmd.pt.utils.dataloader import (
+    create_dataloader,
+    create_dataset,
+)
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbBatchDataLoader,
     LmdbDataset,
@@ -38,8 +57,21 @@ from deepmd.pt.utils.lmdb_dataset import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.pt_expt.utils.lmdb_dataset import (
+    LmdbDataSystem,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.data_group import (
+    iter_data_sources,
+)
+from deepmd.utils.data_system import (
+    get_data,
+)
+
+from ..common.dpmodel.test_lmdb_data import (
+    _create_mixed_sid_nloc_lmdb,
 )
 
 
@@ -349,9 +381,11 @@ class TestTrainerInterface:
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
         ds.preload_and_modify_all_data_torch()
 
-    def test_set_noise_noop(self, lmdb_dir):
+    def test_set_noise_deprecated_noop(self, lmdb_dir):
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
-        ds.set_noise({})
+        for obj in (ds, ds._reader):
+            with pytest.warns(DeprecationWarning, match="set_noise"):
+                assert obj.set_noise({}) is None
 
 
 # ============================================================
@@ -1055,6 +1089,31 @@ def auto_prob_lmdb(tmp_path):
 class TestAutoProbDataset:
     """Test LmdbDataset with auto_prob_style."""
 
+    @pytest.mark.parametrize(
+        ("auto_prob", "expected_frames"),
+        [("prob_uniform", 300), ("prob_sys_size;0:1:0.5;1:2:0.5", 350)],
+    )
+    def test_summary_reports_exact_pass_frames(
+        self,
+        auto_prob_lmdb: str,
+        caplog: pytest.LogCaptureFixture,
+        auto_prob: str,
+        expected_frames: int,
+    ) -> None:
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style=auto_prob,
+        )
+        try:
+            with caplog.at_level("INFO", logger="deepmd.pt.utils.lmdb_dataset"):
+                ds.print_summary("training", None)
+            assert f"300->{expected_frames} frames" in caplog.text
+            assert sum(len(batch) for batch in ds._batch_sampler) == expected_frames
+        finally:
+            ds.close()
+
     def test_dataset_auto_prob_passthrough(self, auto_prob_lmdb):
         ds = LmdbDataset(
             auto_prob_lmdb,
@@ -1503,7 +1562,13 @@ class TestMultitaskLmdbTraining:
     All assertions are in a single test to avoid creating multiple trainers.
     """
 
-    def test_multitask_lmdb_end_to_end(self, multitask_lmdb_setup, monkeypatch):
+    @pytest.mark.parametrize("grouped", [False, True])
+    def test_multitask_lmdb_end_to_end(
+        self,
+        multitask_lmdb_setup: tuple[dict[str, Any], Path],
+        monkeypatch: pytest.MonkeyPatch,
+        grouped: bool,
+    ) -> None:
         from copy import (
             deepcopy,
         )
@@ -1522,6 +1587,20 @@ class TestMultitaskLmdbTraining:
         )
 
         config, tmp_path = multitask_lmdb_setup
+        if grouped:
+            branches = config["training"]["data_dict"]
+            branches["model_1"]["training_data"] = [
+                {
+                    **branches["model_1"]["training_data"],
+                    "prob": 0.6,
+                    "min_pair_dist": 0.1,
+                },
+                {**branches["model_2"]["training_data"], "prob": 0.4},
+            ]
+            branches["model_1"]["validation_data"]["systems"] = [
+                branches["model_1"]["validation_data"]["systems"],
+                branches["model_2"]["validation_data"]["systems"],
+            ]
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "2")
         config = update_deepmd_input(deepcopy(config), warning=True)
@@ -1548,21 +1627,433 @@ class TestMultitaskLmdbTraining:
             )
             assert "coord" in input_dict
             assert "sid" in log_dict
-        assert (
-            trainer.training_dataloader["model_1"]._batch_iterator._pool
-            is trainer.training_dataloader["model_2"]._batch_iterator._pool
-        )
+        native_loaders = [
+            source.loader
+            for loader in trainer.training_dataloader.values()
+            for source in iter_data_sources(loader)
+        ]
+        for loader in native_loaders:
+            next(iter(loader))
+        assert len({id(loader._batch_iterator._pool) for loader in native_loaders}) == 1
 
         # -- training run assertions --
         trainer.run()
         assert len(list(tmp_path.glob("model.ckpt*.pt"))) > 0
-        assert trainer.training_dataloader["model_1"]._batch_iterator.closed
-        assert trainer.training_dataloader["model_2"]._batch_iterator.closed
-        assert trainer.training_dataloader["model_1"].dataset._reader.closed
-        assert trainer.training_dataloader["model_2"].dataset._reader.closed
+        assert all(loader._batch_iterator.closed for loader in native_loaders)
+        assert all(loader.dataset._reader.closed for loader in native_loaders)
 
         # Explicit cleanup to free memory on CI
         import gc
 
         del trainer
         gc.collect()
+
+
+def test_multiple_lmdb_loader_uses_native_batch_sizes(
+    lmdb_dir: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    parent = tmp_path / "nested"
+    parent.mkdir()
+    second = parent / "second.lmdb"
+    _create_test_lmdb(str(second), nframes=4, natoms=8)
+    config = {"systems": [lmdb_dir, str(parent)], "batch_size": 2}
+    data = create_dataset(config, ["O", "H"])
+    loader = create_dataloader(data, config, seed=0)
+    try:
+        np.testing.assert_allclose(loader.probabilities, [5 / 7, 2 / 7])
+        assert loader.epoch_length == 7
+        batches = [batch for _ in range(3) for batch in loader]
+        assert {int(batch["sid"]) for batch in batches} == {0, 1}
+        assert {batch["coord"].shape[1] for batch in batches} == {6, 8}
+    finally:
+        loader.close()
+    assert all(source._reader.closed for source in iter_data_sources(data))
+
+
+def test_filter_can_remove_the_numpy_subset_of_a_mixed_group(
+    lmdb_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    numpy = str(Path(__file__).parent / "water" / "data" / "single")
+    config = {"systems": [numpy, lmdb_dir], "batch_size": "filter:8"}
+    pt_data = create_dataset(config, ["O", "H"])
+    numpy_data = get_data(
+        config,
+        0,
+        ["O", "H"],
+        None,
+        lmdb_factory=lambda path, batch_size, auto_prob: LmdbDataSystem(
+            path, ["O", "H"], batch_size, auto_prob, num_workers=0
+        ),
+    )
+    try:
+        assert isinstance(pt_data, LmdbDataset)
+        assert numpy_data.get_batch()["coord"].shape == (1, 6, 3)
+    finally:
+        pt_data.close()
+        numpy_data.close()
+
+
+def test_group_probability_preserves_single_lmdb_auto_prob(
+    auto_prob_lmdb: str, lmdb_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    config = [
+        {
+            "systems": auto_prob_lmdb,
+            "batch_size": 2,
+            "auto_prob": "prob_sys_size;0:1:0.5;1:3:0.5",
+            "prob": 0.6,
+        },
+        {"systems": lmdb_dir, "batch_size": 2, "prob": 0.4},
+    ]
+    data = create_dataset(config, ["O", "H"])
+    loader = create_dataloader(data, config, seed=0)
+    try:
+        assert data.children[0]._block_targets
+        np.testing.assert_allclose(loader.probabilities, [0.6, 0.4])
+        assert len(data.dataloaders) == 2
+    finally:
+        loader.close()
+
+
+def test_distributed_lmdb_groups_separate_mass_from_local_padding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    paths = [str(tmp_path / f"source_{index}.lmdb") for index in range(2)]
+    for path, frames in zip(paths, (1, 3), strict=True):
+        _create_test_lmdb(path, nframes=frames)
+    config = {"systems": paths, "batch_size": 1}
+    for rank in (0, 1):
+        data = create_dataset(config, ["O", "H"])
+        loader = create_dataloader(data, config, seed=0, rank=rank, world_size=2)
+        try:
+            np.testing.assert_allclose(loader.probabilities, [0.25, 0.75])
+            np.testing.assert_array_equal(loader.batch_counts, [1, 2])
+            np.testing.assert_array_equal(loader.sampling_sizes, [1, 3])
+            assert loader.epoch_length == 4
+        finally:
+            loader.close()
+
+
+@pytest.fixture
+def uniform_sources(tmp_path: Path) -> tuple[list[str], list[np.ndarray]]:
+    paths = [str(tmp_path / f"source_{index}.lmdb") for index in range(3)]
+    _create_test_lmdb(paths[0], nframes=2, natoms=6)
+    _create_mixed_sid_nloc_lmdb(paths[1], [(1, 6), (7, 10), (3, 16)])
+    _create_test_lmdb(paths[2], nframes=2, natoms=18)
+    markers = [np.zeros(2, dtype=int), np.repeat([1, 2, 3], [1, 7, 3]), np.full(2, 4)]
+    for path, values in zip(paths, markers, strict=True):
+        with lmdb.open(path) as database, database.begin(write=True) as transaction:
+            for index, value in enumerate(values):
+                key = format(index, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                frame["energies"] = {
+                    "type": "<f8",
+                    "shape": [1],
+                    "data": np.asarray([value], dtype=np.float64).tobytes(),
+                }
+                if index % 2 == 0:
+                    frame["virials"] = {
+                        "type": "<f8",
+                        "shape": [9],
+                        "data": np.ones(9, dtype=np.float64).tobytes(),
+                    }
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+    return paths, markers
+
+
+@pytest.mark.parametrize(
+    ("backend", "batch_size", "recursive", "ragged"),
+    [
+        ("pt", 1, False, False),
+        ("pt", "max:24", True, False),
+        ("pt", "filter:12", False, False),
+        ("pt", "mix:50", True, False),
+        ("pt_expt", 1, True, False),
+        ("pt_expt", "filter:12", True, False),
+        ("pt_expt", "mix:50", False, False),
+        ("pt_expt", "mix:50", False, True),
+    ],
+)
+def test_uniform_groups_balance_internal_system_frames(
+    uniform_sources: tuple[list[str], list[np.ndarray]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    batch_size: int | str,
+    recursive: bool,
+    ragged: bool,
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    paths, _ = uniform_sources
+    config = {
+        "systems": str(tmp_path) if recursive else paths,
+        "batch_size": batch_size,
+        "auto_prob": "prob_uniform",
+    }
+    requirements = [
+        DataRequirementItem("energy", 1, atomic=False, must=True, high_prec=True),
+        DataRequirementItem("virial", 9, atomic=False, must=False, high_prec=True),
+    ]
+    if backend == "pt":
+        data = create_dataset(config, ["O", "H"])
+        data.add_data_requirement(requirements)
+        owner = create_dataloader(data, config, seed=31)
+        batches = chain.from_iterable(repeat(owner))
+    else:
+        data = get_data(
+            config,
+            0,
+            ["O", "H"],
+            None,
+            seed=31,
+            lmdb_factory=lambda path, size, auto_prob: LmdbDataSystem(
+                path, ["O", "H"], size, auto_prob, seed=31, num_workers=0
+            ),
+        )
+        data.add_data_requirements(requirements)
+        data.use_ragged_batches(ragged)
+        owner = data
+        batches = (data.get_batch() for _ in repeat(None))
+    counts = np.zeros(5, dtype=np.int64)
+    mixed = False
+    try:
+        for batch in islice(batches, 2500):
+            labels = np.asarray(batch["energy"]).reshape(-1).astype(int)
+            available = np.asarray(batch["fid"]).reshape(-1).astype(int) % 2 == 0
+            assert np.all(available == available[0])
+            assert bool(batch["find_virial"]) == bool(available[0])
+            counts += np.bincount(labels, minlength=5)
+            mixed |= np.unique(labels).size > 1
+    finally:
+        owner.close()
+    eligible = 3 if batch_size == "filter:12" else 5
+    np.testing.assert_allclose(
+        counts[:eligible] / counts.sum(), 1 / eligible, atol=0.025
+    )
+    assert counts[eligible:].sum() == 0
+    if batch_size == "mix:50":
+        assert mixed
+
+
+@pytest.mark.parametrize("num_workers", [0, 1])
+def test_uniform_numpy_keeps_native_cursors_across_loader_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, num_workers: int
+) -> None:
+    from deepmd.pt.utils import (
+        env,
+    )
+
+    monkeypatch.setattr(env, "NUM_WORKERS", num_workers)
+    np.savetxt(tmp_path / "type.raw", [0], fmt="%d")
+    set_path = tmp_path / "set.000"
+    set_path.mkdir()
+    np.save(set_path / "coord.npy", np.arange(24, dtype=float).reshape(8, 3))
+    np.save(set_path / "box.npy", np.tile(np.eye(3).reshape(1, 9), (8, 1)))
+    config = {
+        "systems": [str(tmp_path), str(tmp_path)],
+        "batch_size": [7, 8],
+        "auto_prob": "prob_uniform",
+    }
+    data = create_dataset(config, ["O"])
+    loader = create_dataloader(data, config, seed=7)
+    try:
+        np.testing.assert_allclose(loader.probabilities, [2 / 3, 1 / 3])
+        np.testing.assert_allclose(
+            loader.probabilities * data.mean_batch_nframes, [8 / 3, 8 / 3]
+        )
+        # Deterministic source selection exposes short tails across outer passes.
+        loader.loader.sampler.weights[:] = torch.tensor(
+            [1.0, 0.0], dtype=torch.float64, device="cpu"
+        )
+        sizes = [batch["coord"].shape[0] for _ in range(2) for batch in loader]
+        assert sizes == [7, 1, 7, 1, 7, 1]
+        workers = tuple(loader.loader._iterator._workers) if num_workers else ()
+    finally:
+        loader.close()
+    assert all(not worker.is_alive() for worker in workers)
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+def test_uniform_group_combines_numpy_and_lmdb_systems(
+    uniform_sources: tuple[list[str], list[np.ndarray]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+) -> None:
+    from deepmd.pt.utils import (
+        env,
+    )
+
+    monkeypatch.setattr(env, "NUM_WORKERS", 0)
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    paths, _ = uniform_sources
+    numpy_path = tmp_path / "numpy"
+    set_path = numpy_path / "set.000"
+    set_path.mkdir(parents=True)
+    np.savetxt(numpy_path / "type.raw", [0], fmt="%d")
+    np.save(set_path / "coord.npy", np.zeros((2, 3), dtype=np.float64))
+    np.save(set_path / "box.npy", np.tile(np.eye(3).reshape(1, 9), (2, 1)))
+    np.save(set_path / "energy.npy", np.full((2, 1), 5.0, dtype=np.float64))
+    config = {
+        "systems": [str(numpy_path), *paths[:2]],
+        "batch_size": [3, 2, 2],
+        "auto_prob": "prob_uniform",
+    }
+    requirements = [
+        DataRequirementItem("energy", 1, atomic=False, must=True, high_prec=True)
+    ]
+    if backend == "pt":
+        data = create_dataset(config, ["O", "H"])
+        data.add_data_requirement(requirements)
+        owner = create_dataloader(data, config, seed=4)
+        batches = chain.from_iterable(repeat(owner))
+    else:
+        data = get_data(
+            config,
+            0,
+            ["O", "H"],
+            None,
+            seed=4,
+            lmdb_factory=lambda path, size, auto_prob: LmdbDataSystem(
+                path, ["O", "H"], size, auto_prob, seed=4, num_workers=0
+            ),
+        )
+        data.add_data_requirements(requirements)
+        owner = data
+        batches = (data.get_batch() for _ in repeat(None))
+    counts = np.zeros(6, dtype=np.int64)
+    try:
+        assert owner.children[0].uniform_sampling_mass == 0.5
+        for batch in islice(batches, 2000):
+            labels = np.asarray(batch["energy"]).reshape(-1).astype(int)
+            counts += np.bincount(labels, minlength=6)
+    finally:
+        owner.close()
+    np.testing.assert_allclose(counts[[0, 1, 2, 3, 5]] / counts.sum(), 0.2, atol=0.025)
+    assert counts[4] == 0
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_multitask_defaults_match_native_pt_sizes(
+    uniform_sources: tuple[list[str], list[np.ndarray]], grouped: bool
+) -> None:
+    paths, _ = uniform_sources
+    first = {"systems": paths[0], "batch_size": 1}
+    configs = {
+        "first": [{**first, "prob": 0.0}, {**first, "prob": 1.0}] if grouped else first,
+        "second": {
+            "systems": paths[1:],
+            "batch_size": "filter:12",
+            "auto_prob": "prob_uniform",
+        },
+    }
+    expected = [1 / 3, 2 / 3] if grouped else [0.2, 0.8]
+
+    def unused_epoch_length(key: str) -> int:
+        raise AssertionError(
+            f"Default model probabilities must not read epoch length: {key}"
+        )
+
+    for backend in ("pt", "pt_expt"):
+        datasets = {
+            key: (
+                create_dataset(config, ["O", "H"])
+                if backend == "pt"
+                else get_data(
+                    config,
+                    0,
+                    ["O", "H"],
+                    None,
+                    lmdb_factory=lambda path, size, auto_prob: LmdbDataSystem(
+                        path, ["O", "H"], size, auto_prob, num_workers=0
+                    ),
+                )
+            )
+            for key, config in configs.items()
+        }
+        try:
+            schedule = resolve_step_schedule(
+                {"numb_steps": 5},
+                multi_task=True,
+                model_keys=list(configs),
+                training_data=datasets,
+                epoch_length=unused_epoch_length,
+            )
+            np.testing.assert_allclose(schedule.model_prob, expected)
+        finally:
+            for data in datasets.values():
+                data.close()
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+def test_uniform_distributed_sources_use_the_queued_global_step(
+    uniform_sources: tuple[list[str], list[np.ndarray]],
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    paths, _ = uniform_sources
+    config = {"systems": paths, "batch_size": "mix:30", "auto_prob": "prob_uniform"}
+    requirements = [
+        DataRequirementItem("energy", 1, atomic=False, must=True, high_prec=True)
+    ]
+    owners, iterators = [], []
+    for rank in range(3):
+        if backend == "pt":
+            data = create_dataset(config, ["O", "H"])
+            data.add_data_requirement(requirements)
+            owner = create_dataloader(data, config, seed=12, rank=rank, world_size=3)
+            iterator = chain.from_iterable(repeat(owner))
+        else:
+            data = get_data(
+                config,
+                0,
+                ["O", "H"],
+                None,
+                seed=12,
+                lmdb_factory=lambda path, size, auto_prob: LmdbDataSystem(
+                    path,
+                    ["O", "H"],
+                    size,
+                    auto_prob,
+                    seed=12,
+                    rank=rank,
+                    world_size=3,
+                    num_workers=0,
+                ),
+            )
+            data.add_data_requirements(requirements)
+            data.use_ragged_batches(True)
+            owner = data
+            iterator = (source.get_batch() for source in repeat(data))
+        owners.append(owner)
+        iterators.append(iterator)
+    counts = np.zeros(5, dtype=np.int64)
+    try:
+        for _ in range(1000):
+            masses = [
+                [child.uniform_sampling_mass for child in owner.children]
+                for owner in owners
+            ]
+            np.testing.assert_allclose(masses, np.tile(masses[0], (3, 1)))
+            batches = [next(iterator) for iterator in iterators]
+            labels = [
+                np.asarray(batch["energy"]).reshape(-1).astype(int) for batch in batches
+            ]
+            sources = [
+                0 if values[0] == 0 else 2 if values[0] == 4 else 1 for values in labels
+            ]
+            assert sources[0] == sources[1] == sources[2]
+            mean_frames = np.mean([len(values) for values in labels])
+            assert masses[0][sources[0]] * mean_frames == pytest.approx(
+                [1, 3, 1][sources[0]]
+            )
+            counts += np.bincount(np.concatenate(labels), minlength=5)
+    finally:
+        for owner in owners:
+            owner.close()
+    np.testing.assert_allclose(counts / counts.sum(), 0.2, atol=0.035)
