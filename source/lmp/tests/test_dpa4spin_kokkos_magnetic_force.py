@@ -163,13 +163,24 @@ def _assert_snapshot(actual, expected, scale=1.0):
     np.testing.assert_allclose(actual["spin"], expected["spin"], atol=0, rtol=0)
     # The canonical kernels use float32; edge/reduction ordering differs between
     # host, folded single-rank and extended multi-rank graphs. A snapshot holds
-    # the per-atom virial only when its run requested it.
-    fields = [("force", 2e-7), ("magnetic_force", 5e-9)]
+    # the per-atom virial only when its run requested it; the global virial
+    # sums six atoms.
+    fields = [("force", 2e-7), ("magnetic_force", 5e-9), ("global_virial", 1e-6)]
     if "virial" in expected:
         fields.append(("virial", 2e-7))
     for name, atol in fields:
         np.testing.assert_allclose(
             actual[name], scale * np.array(expected[name]), rtol=5e-4, atol=atol
+        )
+    if "virial" in actual:
+        # The pair fills the global and the per-atom virial from separate
+        # outputs of the model, whose totals agree. The first six centroid
+        # components (xx, yy, zz, xy, xz, yz) are the global ones.
+        np.testing.assert_allclose(
+            np.sum(actual["virial"], axis=0)[:6],
+            actual["global_virial"],
+            rtol=5e-4,
+            atol=1e-6,
         )
     assert actual["energy"] == pytest.approx(
         scale * expected["energy"], rel=5e-6, abs=2e-7

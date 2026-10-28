@@ -18,6 +18,8 @@ from pathlib import (
 
 import numpy as np
 from lammps import (
+    LMP_STYLE_GLOBAL,
+    LMP_TYPE_VECTOR,
     lammps,
 )
 from mpi4py import (
@@ -43,12 +45,18 @@ def _snapshot(lmp, virial=False):
     def gather(name, count):
         return np.array(lmp.gather(name, 1, count)).reshape(-1, count).tolist()
 
+    # The pressure compute restricted to the pair reports the global pair
+    # virial (xx, yy, zz, xy, xz, yz) over the volume in pressure units; the
+    # volume over nktv2p turns it into eV (units metal).
+    pressure = lmp.extract_compute("pvirial", LMP_STYLE_GLOBAL, LMP_TYPE_VECTOR)
+    volume = lmp.get_thermo("vol") / lmp.extract_global("nktv2p")
     snapshot = {
         "ids": list(lmp.gather_atoms("id", 0, 1)),
         "force": gather("f", 3),
         "magnetic_force": gather("c_fmprop", 3),
         "spin": gather("c_spprop", 4),
         "energy": lmp.get_thermo("pe"),
+        "global_virial": [volume * pressure[k] for k in range(6)],
     }
     if virial:
         # centroid/stress/atom reports the negative per-atom virial in
@@ -112,6 +120,7 @@ def _run(lmp, args, selection, overlay=False):
         "neighbor 1.0 bin",
         "compute fmprop all property/atom fmx fmy fmz",
         "compute spprop all property/atom spx spy spz sp",
+        "compute pvirial all pressure NULL pair",
         "run 0",
     ):
         lmp.command(command)
