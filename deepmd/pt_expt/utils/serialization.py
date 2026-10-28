@@ -31,6 +31,7 @@ from deepmd.pt.utils.compile_compat import (
 )
 from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
+    model_has_energy_output,
 )
 from deepmd.utils.charge_state import (
     CHARGE_STATE_TABLE_RANGES,
@@ -1278,7 +1279,7 @@ def _collect_metadata(
     # and is an energy artifact.
     if lower_kind == "graph":
         meta["graph_output_keys"] = (
-            "energy" if "energy" in model.atomic_output_def().keys() else "internal"
+            "energy" if model_has_energy_output(model) else "internal"
         )
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
@@ -1598,7 +1599,7 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
         return None
     # The compact canonical ABIs and their fused operators produce energy,
     # force and virial; any other output takes the generic graph lower.
-    if allow_canonical and "energy" in model.atomic_output_def().keys():
+    if allow_canonical and model_has_energy_output(model):
         from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
             canonical_model_eligible as dpa1_canonical_eligible,
         )
@@ -2039,7 +2040,7 @@ def _trace_and_export_impl(
         canonical = lower_kind in ("dpa1_canonical", "dpa4c_canonical")
         if canonical:
             required_method = "forward_lower_canonical_graph_exportable"
-        elif "energy" in model.atomic_output_def().keys():
+        elif model_has_energy_output(model):
             required_method = "forward_lower_graph_exportable"
         else:
             # Any other output (dipole, polar, dos, property) exports the

@@ -33,6 +33,29 @@ def graph_edge_dtype(model: Any, lower_kind: str) -> str:
     return str(model.atomic_model.graph_edge_dtype())
 
 
+def model_has_energy_output(model: Any) -> bool:
+    """Return whether a model is an energy model.
+
+    A property model names its output freely, so ``property_name="energy"``
+    gives it an ``energy`` output too; it is told apart by its variable name.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing ``atomic_output_def`` and ``get_var_name``.
+
+    Returns
+    -------
+    bool
+        ``True`` when the model fits an energy rather than a property named
+        ``energy``.
+    """
+    if "energy" not in model.atomic_output_def().keys():
+        return False
+    get_var_name = getattr(model, "get_var_name", None)
+    return get_var_name is None or get_var_name() is None
+
+
 def model_requires_graph_lower(model: Any) -> bool:
     """Return whether a model can only run on the ``NeighborGraph`` lower.
 
@@ -91,7 +114,7 @@ def model_uses_graph_lower(model: Any) -> bool:
     # so a non-energy model (property/dos/dipole/polar) on this path raises
     # ``KeyError('energy')`` at its first compiled batch.
     try:
-        if "energy" not in model.atomic_output_def().keys():
+        if not model_has_energy_output(model):
             return False
     except (AttributeError, NotImplementedError):
         return False

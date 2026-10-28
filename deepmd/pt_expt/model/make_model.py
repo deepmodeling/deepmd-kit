@@ -32,6 +32,9 @@ from deepmd.pt_expt.kernels.utils import (
     fused_energy_force_enabled,
     fused_operators_enabled,
 )
+from deepmd.pt_expt.model.graph_lower import (
+    model_has_energy_output,
+)
 from deepmd.pt_expt.utils.graph_builder import (
     build_neighbor_graph_for_method,
     build_ragged_neighbor_graph,
@@ -137,7 +140,7 @@ def _fused_energy_force_graph(
     """
     # The fused operators reduce by sum and emit energy-style derivatives,
     # which a non-energy output (an intensive property, a DOS) does not share.
-    if "energy" not in model.atomic_output_def().keys():
+    if not model_has_energy_output(model):
         return None
     am = model.atomic_model
     parts = am.fused_decomposition()
@@ -818,7 +821,7 @@ def make_model(
             # compiling such a non-energy model instead.
             if self.mixed_types() and self.atomic_model.requires_graph_lower():
                 return getattr(self, "neighbor_graph_method", "dense")
-            if "energy" not in self.atomic_output_def().keys():
+            if not model_has_energy_output(self):
                 return None
             if self.mixed_types() and self.atomic_model.uses_graph_lower():
                 return getattr(self, "neighbor_graph_method", "dense")

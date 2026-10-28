@@ -773,12 +773,13 @@ class DeepEval(DeepEvalBackend):
 
         from deepmd.pt_expt.model.graph_lower import (
             model_exports_graph_lower,
+            model_has_energy_output,
         )
 
         use_graph_lower = model_exports_graph_lower(model)
         # A graph-only non-energy model (DPA4C dipole/polar) keeps the
         # internal keys of the common lower, like its frozen artifact.
-        energy_keys = "energy" in model.atomic_output_def().keys()
+        energy_keys = model_has_energy_output(model)
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params

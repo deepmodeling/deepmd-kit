@@ -34,6 +34,9 @@ from deepmd.infer.deep_dipole import (
 from deepmd.infer.deep_polar import (
     DeepPolar,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.pt_expt.entrypoints.main import (
     freeze,
 )
@@ -42,6 +45,13 @@ from deepmd.pt_expt.infer.deep_eval import (
 )
 from deepmd.pt_expt.model.get_model import (
     get_model,
+)
+from deepmd.pt_expt.model.graph_lower import (
+    model_has_energy_output,
+    model_uses_graph_lower,
+)
+from deepmd.pt_expt.model.make_model import (
+    _fused_energy_force_graph,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
@@ -304,6 +314,9 @@ def test_eval_full_derivatives_are_component_major(route: str) -> None:
         # A property that is itself named ``polar`` must not be renamed by
         # the ``polar`` request alias of DeepPolar.
         ("property", {"task_dim": 3, "property_name": "polar"}),
+        # A property named ``energy`` is still a property: it exports the
+        # common lower, not the energy model's.
+        ("property", {"task_dim": 3, "property_name": "energy", "intensive": True}),
     ],
 )
 def test_dos_and_property_freeze_and_eval(kind: str, fitting: dict) -> None:
@@ -327,6 +340,8 @@ def test_dos_and_property_freeze_and_eval(kind: str, fitting: dict) -> None:
         for path in (pte, ckpt):
             dp = DeepEval(path)
             assert dp.deep_eval.metadata["graph_output_keys"] == "internal"
+            if kind == "property":
+                assert isinstance(dp, DeepProperty)
             if kind == "dos":
                 assert dp.get_numb_dos() == fitting["numb_dos"]
             total, atomic = dp.eval(coord, cell, atype, atomic=True)
@@ -384,6 +399,26 @@ def test_dense_property_named_polar_keeps_its_key() -> None:
         )
     finally:
         shutil.rmtree(tmpdir)
+
+
+def test_property_named_energy_is_not_an_energy_model() -> None:
+    """Energy-only paths tell a property named ``energy`` from an energy model."""
+    descriptor = {**_params("dipole")["descriptor"], "output_rot_mat": False}
+    energy = get_model(_params("ener", descriptor)).eval()
+    prop = get_model(
+        _params(
+            "property",
+            descriptor,
+            task_dim=1,
+            property_name="energy",
+            intensive=True,
+        )
+    ).eval()
+    assert model_has_energy_output(energy)
+    assert not model_has_energy_output(prop)
+    assert not model_uses_graph_lower(prop)
+    # The fused operators reduce by sum, not the mean of an intensive property.
+    assert _fused_energy_force_graph(prop, None, None, None, None) is None
 
 
 @pytest.mark.parametrize("category", ["derv_r", "derv_c"])
