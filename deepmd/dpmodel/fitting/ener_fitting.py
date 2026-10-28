@@ -41,6 +41,7 @@ class EnergyFittingNet(InvarFitting):
         tot_ener_zero: bool = False,
         trainable: list[bool] | None = None,
         atom_ener: list[float] | None = None,
+        vacuum_ref: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: list[str | None] | None = None,
@@ -66,6 +67,7 @@ class EnergyFittingNet(InvarFitting):
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
             atom_ener=atom_ener,
+            vacuum_ref=vacuum_ref,
             activation_function=activation_function,
             precision=precision,
             layer_name=layer_name,
@@ -81,7 +83,7 @@ class EnergyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)

@@ -42,6 +42,14 @@ from deepmd.dpmodel.utils.network import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
+from deepmd.utils.charge_state import (
+    CHARGE_OFFSET,
+    CHARGE_TABLE_ROWS,
+    MULTIPLICITY_TABLE_ROWS,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -125,27 +133,44 @@ class SeZMTypeEmbedding(NativeOP):
         # === Step 2. Register the embedding table parameter ===
         self.adam_type_embedding = table
 
-    def call(self, atype: Any) -> Any:
+    def call(self, atype: Any | None = None) -> Any:
         """
         Gather type embeddings.
 
         Parameters
         ----------
         atype
-            Atom types with shape (...,). Valid type range is [0, ntypes-1].
+            Atom types with shape (...). Valid type range is [0, ntypes-1].
+            If omitted, return the complete embedding table, including the
+            optional padding row. This form is used by graph-native descriptor
+            ABIs that precompute the table once per forward call.
 
         Returns
         -------
         Array
-            Type embeddings with shape (..., embed_dim).
+            Gathered type embeddings with shape ``(..., embed_dim)`` when
+            ``atype`` is provided. Otherwise, the complete table with shape
+            ``(ntypes + int(padding), embed_dim)``.
         """
+        # === Step 1. Return the complete graph-native lookup table ===
+        if atype is None:
+            xp = array_api_compat.array_namespace(self.adam_type_embedding)
+            return xp_asarray_nodetach(
+                xp,
+                self.adam_type_embedding[...],
+                device=array_api_compat.device(self.adam_type_embedding),
+            )
+
+        # === Step 2. Gather rows for an explicit atom-type tensor ===
         xp = array_api_compat.array_namespace(atype)
         weight = xp_asarray_nodetach(
             xp, self.adam_type_embedding[...], device=array_api_compat.device(atype)
         )
-        # torch.embedding gather: flatten the indices to int64, take the rows,
-        # then restore the original index shape.
+        # Flattening provides one backend-neutral gather while preserving every
+        # leading batch or graph dimension on restoration.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
+        if self.padding:
+            index = remap_atype_to_padding(index, self.ntypes + 1)
         out = xp.take(weight, index, axis=0)
         return xp.reshape(out, (*atype.shape, self.embed_dim))
 
@@ -255,8 +280,8 @@ class GeometricInitialEmbedding(NativeOP):
             Optional per-edge neighbor-spin l=1 message with shape (E, 3, C) for
             the native spin scheme (built by ``SpinEmbedding.edge_l1``). It is
             added to the l=1 rows of the per-edge message, so it shares this
-            module's source gate, scatter and degree normalization with the
-            geometric message.
+            module's scatter and degree normalization with the geometric
+            message.
 
         Returns
         -------
@@ -292,6 +317,17 @@ class GeometricInitialEmbedding(NativeOP):
 
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
+        # The fused operator spans this broadcast and the scatter of Step 4, so
+        # it takes over whenever nothing else joins the message in between.
+        if (
+            self._can_fuse_scatter(zonal_coupling)
+            and spin_l1_message is None
+            and edge_cache.csr_cache is not None
+        ):
+            return self.forward_fused_scatter(
+                n_nodes, edge_cache, radial_feat, zonal_coupling
+            )
+
         radial_slot_index = xp_asarray_nodetach(
             xp, self.radial_slot_index_for_row, device=device
         )
@@ -305,7 +341,7 @@ class GeometricInitialEmbedding(NativeOP):
         # === Step 3b. Fold in the neighbor-spin l=1 message (native spin) ===
         # The l=1 coefficients occupy the first three packed non-scalar rows, so
         # the neighbor-spin message joins the geometric message there and then
-        # shares the source gate, scatter and degree normalization below.
+        # shares the scatter and degree normalization below.
         if spin_l1_message is not None:
             l1_local_index = xp_asarray_nodetach(xp, self.l1_local_index, device=device)
             scatter_index = xp.broadcast_to(
@@ -315,23 +351,13 @@ class GeometricInitialEmbedding(NativeOP):
                 non_scalar_message, 1, scatter_index, spin_l1_message
             )
 
-        # === Step 4. Source Freeze Propagation Gate (optional) ===
-        # Mute messages emitted by nodes whose local neighborhood enters
-        # the frozen zone. ``edge_src_gate`` is ``None`` outside bridging
-        # mode so this is a no-op in normal training.
-        src_gate = edge_cache.edge_src_gate
-        if src_gate is not None:
-            non_scalar_message = non_scalar_message * xp.astype(
-                xp.reshape(src_gate, (n_edge, 1, 1)), non_scalar_message.dtype
-            )
-
-        # === Step 5. Scatter to nodes and normalize ===
+        # === Step 4. Scatter to nodes and normalize ===
         # Destination scatter-add over ``edge_cache.dst`` (pt ``index_add_``),
         # applied after the validity masking below. This reduction is
         # layout-agnostic: it is correct both for the padded ``call`` (row-major
         # ``dst`` makes the accumulation order identical to a sum over the
-        # ``nnei`` axis, hence bit-exact) and for the sparse ``call_with_edges``
-        # (arbitrary ``dst`` order and per-node degree). The l=0 row is left at
+        # ``nnei`` axis, hence bit-exact) and for the graph-native ``call_graph``
+        # route (arbitrary ``dst`` order and per-node degree). The l=0 row is left at
         # its zero initialization by concatenating it below the contiguous
         # non-scalar rows 1..D-1.
         edge_mask = edge_cache.edge_mask
@@ -361,6 +387,22 @@ class GeometricInitialEmbedding(NativeOP):
         )  # (N, D, C)
         out = out * xp.astype(edge_cache.inv_sqrt_deg, out.dtype)
         return xp.astype(out, dtype)
+
+    def _can_fuse_scatter(self, zonal_coupling: Any) -> bool:
+        """Return whether a backend can run the fused scatter for this input."""
+        return False
+
+    def forward_fused_scatter(
+        self,
+        n_nodes: int,
+        edge_cache: EdgeCache,
+        radial_feat: Any,
+        zonal_coupling: Any,
+    ) -> Any:
+        """Build and reduce the geometric message with a backend operator."""
+        raise NotImplementedError(
+            "The fused GIE scatter is unavailable in the dpmodel reference"
+        )
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -440,6 +482,8 @@ class EnvironmentInitialEmbedding(NativeOP):
         Random seed for reproducibility.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+
     def __init__(
         self,
         *,
@@ -483,7 +527,10 @@ class EnvironmentInitialEmbedding(NativeOP):
         # plus, for the native spin scheme, the 3 envelope-gated neighbor-spin
         # components, so the inner product ``D = M^T M`` yields the neighbor
         # spin-spin invariants alongside the geometric ones.
-        self.coord_dim = 4 + (3 if self.spin_flags is not None else 0)
+        self.geometry_coord_dim = 4
+        self.coord_dim = self.geometry_coord_dim + (
+            3 if self.spin_flags is not None else 0
+        )
 
         # === RBF projection: n_radial -> rbf_out_dim (two-layer MLP) ===
         # rbf_out_dim = max(32, embed_dim - 2*type_dim) to align G-network width to embed_dim
@@ -561,19 +608,18 @@ class EnvironmentInitialEmbedding(NativeOP):
             dtype=PRECISION_DICT[self.precision.lower()],
         )
 
-        # === Native spin: per-type mask and isotropic channel scale ===
+        # === Native spin: per-type mask and post-quadratic activation gate ===
         # The mask gates the neighbor-spin channel by source type, so a
         # non-magnetic neighbor contributes zero and (critically) carries zero
-        # magnetic force ``-dE/ds``. The single scalar scale (shared across
-        # x/y/z) keeps the spin coordinates transforming with the geometry, so
-        # the env-matrix invariant stays SO(3)-invariant; ``output_proj`` is
-        # zero-initialized, so the spin contribution starts neutral regardless.
+        # magnetic force ``-dE/ds``. ``spin_scale`` multiplies the spin-only
+        # contribution after the environment quadratic form, providing a
+        # linear gate that can start from exactly zero.
         if self.spin_flags is not None:
             self.spin_mask = np.array(
                 [1.0 if flag else 0.0 for flag in self.spin_flags],
                 dtype=PRECISION_DICT[self.precision.lower()],
             )
-            self.spin_scale = np.ones(
+            self.spin_scale = np.zeros(
                 (1,), dtype=PRECISION_DICT[self.precision.lower()]
             )
 
@@ -643,11 +689,7 @@ class EnvironmentInitialEmbedding(NativeOP):
                     xp.take(xp.astype(atype_flat, xp.int64), src_i, axis=0),
                     axis=0,
                 )[:, None]  # (E, 1)
-                spin_scale = xp.astype(
-                    xp_asarray_nodetach(xp, self.spin_scale[...], device=device),
-                    r_tilde.dtype,
-                )
-                spin_chan = edge_env * spin_scale * spin_src * mask  # (E, 3)
+                spin_chan = edge_env * spin_src * mask  # (E, 3)
             else:
                 spin_chan = xp.zeros(
                     (r_tilde.shape[0], 3), dtype=r_tilde.dtype, device=device
@@ -676,18 +718,11 @@ class EnvironmentInitialEmbedding(NativeOP):
         outer_flat = xp.reshape(
             outer, (n_edge, self.coord_dim * self.embed_dim)
         )  # (E, coord_dim*embed_dim)
-        # Source Freeze Propagation Gate: mute the outer-product contribution
-        # of any edge whose source node has a neighbor in the frozen zone.
-        src_gate = edge_cache.edge_src_gate
-        if src_gate is not None:
-            outer_flat = outer_flat * xp.astype(
-                xp.reshape(src_gate, (n_edge, 1)), outer_flat.dtype
-            )
         # Destination scatter-add over ``dst`` (pt ``index_add_``), applied after
         # the validity masking below. Layout-agnostic: correct for the padded
         # ``call`` (row-major ``dst`` keeps the accumulation order identical to a
-        # sum over the ``nnei`` axis, hence bit-exact) and for the sparse
-        # ``call_with_edges`` (arbitrary ``dst`` order and per-node degree).
+        # sum over the ``nnei`` axis, hence bit-exact) and for the graph-native
+        # ``call_graph`` route (arbitrary ``dst`` order and per-node degree).
         edge_mask = edge_cache.edge_mask
         if edge_mask is not None:
             outer_flat = outer_flat * xp.astype(
@@ -715,9 +750,26 @@ class EnvironmentInitialEmbedding(NativeOP):
         # Summing over the coordinate axis makes D invariant to a joint rotation
         # of the geometry and the spin channels; with the spin channels present,
         # D additionally carries the neighbor spin-spin invariants.
-        env_agg_t = xp.permute_dims(env_agg, (0, 2, 1))  # (N, embed_dim, coord_dim)
-        env_agg_axis = env_agg[:, :, : self.axis_dim]  # (N, coord_dim, axis_dim)
-        D = xp.matmul(env_agg_t, env_agg_axis)  # (N, embed_dim, axis_dim)
+        if self.spin_flags is None:
+            env_agg_t = xp.permute_dims(env_agg, (0, 2, 1))
+            env_agg_axis = env_agg[:, :, : self.axis_dim]
+            D = xp.matmul(env_agg_t, env_agg_axis)
+        else:
+            geometry_agg = env_agg[:, : self.geometry_coord_dim, :]
+            spin_agg = env_agg[:, self.geometry_coord_dim :, :]
+            D_geometry = xp.matmul(
+                xp.permute_dims(geometry_agg, (0, 2, 1)),
+                geometry_agg[:, :, : self.axis_dim],
+            )
+            D_spin = xp.matmul(
+                xp.permute_dims(spin_agg, (0, 2, 1)),
+                spin_agg[:, :, : self.axis_dim],
+            )
+            spin_scale = xp.astype(
+                xp_asarray_nodetach(xp, self.spin_scale[...], device=device),
+                D_spin.dtype,
+            )
+            D = D_geometry + spin_scale * D_spin
 
         # === Step 6. Output projection for FiLM logits ===
         D_flat = xp.reshape(
@@ -847,7 +899,7 @@ class ChargeSpinEmbedding(NativeOP):
             raise ValueError("`embed_dim` must be positive")
 
         self.charge_embedding = SeZMTypeEmbedding(
-            ntypes=200,
+            ntypes=CHARGE_TABLE_ROWS,
             embed_dim=self.embed_dim,
             precision=self.precision,
             seed=child_seed(seed, 0),
@@ -855,7 +907,7 @@ class ChargeSpinEmbedding(NativeOP):
             padding=False,
         )
         self.spin_embedding = SeZMTypeEmbedding(
-            ntypes=100,
+            ntypes=MULTIPLICITY_TABLE_ROWS,
             embed_dim=self.embed_dim,
             precision=self.precision,
             seed=child_seed(seed, 1),
@@ -886,7 +938,7 @@ class ChargeSpinEmbedding(NativeOP):
             Mixed condition embedding with shape (nf, embed_dim).
         """
         xp = array_api_compat.array_namespace(charge_spin)
-        charge = xp.astype(charge_spin[:, 0], xp.int64) + 100
+        charge = xp.astype(charge_spin[:, 0], xp.int64) + CHARGE_OFFSET
         spin = xp.astype(charge_spin[:, 1], xp.int64)
         charge_embed = self.charge_embedding(charge)
         spin_embed = self.spin_embedding(spin)
@@ -989,6 +1041,8 @@ class SpinEmbedding(NativeOP):
         Whether parameters are trainable.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+
     def __init__(
         self,
         *,
@@ -1015,8 +1069,9 @@ class SpinEmbedding(NativeOP):
         self.spin_flags = [bool(flag) for flag in use_spin]
 
         # === Per-type spin gate ===
-        # Non-persistent: rebuilt from config on construction and moved with the
-        # module, so the deterministic mask never enters the serialized state.
+        # Configuration-derived (hence ``CONFIG_DERIVED_ARRAYS``): rebuilt on
+        # construction and moved with the module, so the deterministic mask
+        # never enters the serialized state.
         self.spin_mask = np.array(
             [1.0 if bool(flag) else 0.0 for flag in use_spin], dtype=prec
         )
@@ -1048,23 +1103,26 @@ class SpinEmbedding(NativeOP):
             seed=child_seed(seed_scalar, 1),
             trainable=self.trainable,
         )
+        self.mag_layer2.w = np.zeros(
+            (self.channels, self.channels),
+            dtype=prec,
+        )
 
         # === l=1 per-type per-channel weight ===
         # ``adam_`` prefix routes the table to Adam in HybridMuon, matching the
         # type-embedding treatment for per-type lookup parameters.
-        init_std = 1.0 / math.sqrt(float(self.ntypes + self.channels))
-        rng_vec = np.random.default_rng(child_seed(seed, 1))
-        self.adam_spin_vec_weight = rng_vec.normal(
-            0.0, init_std, size=(self.ntypes, self.channels)
-        ).astype(prec)
+        self.adam_spin_vec_weight = np.zeros(
+            (self.ntypes, self.channels),
+            dtype=prec,
+        )
 
         # === l=1 per-source-type per-channel weight for neighbor aggregation ===
         # Separate from the on-site weight: this scales the neighbor's spin
         # direction before it is aggregated into the center node's l=1 seed.
-        rng_nbr = np.random.default_rng(child_seed(seed, 2))
-        self.adam_spin_nbr_weight = rng_nbr.normal(
-            0.0, init_std, size=(self.ntypes, self.channels)
-        ).astype(prec)
+        self.adam_spin_nbr_weight = np.zeros(
+            (self.ntypes, self.channels),
+            dtype=prec,
+        )
 
     def call(self, spin: Any, atype: Any) -> tuple[Any, Any]:
         """
@@ -1124,9 +1182,9 @@ class SpinEmbedding(NativeOP):
         (neighbor) spin, scaled by a per-source-type per-channel weight and
         gated by the C^3 envelope. The message is returned per edge; the
         geometric initial embedding folds it into the l=1 rows and applies the
-        shared source gate, scatter and degree normalization, so a neighbor's
-        spin direction enters an atom's l=1 backbone before any interaction
-        block (the spin analogue of the geometric initial embedding).
+        shared scatter and degree normalization, so a neighbor's spin direction
+        enters an atom's l=1 backbone before any interaction block (the spin
+        analogue of the geometric initial embedding).
 
         Parameters
         ----------

@@ -73,6 +73,13 @@ def get_batch(system, type_map, data_requirement):
     return np_batch, pt_batch
 
 
+def _is_nan(value: float | torch.Tensor) -> bool:
+    """Return whether a scalar metric is NaN on any tensor device."""
+    if isinstance(value, torch.Tensor):
+        return bool(torch.isnan(value.detach()).item())
+    return bool(np.isnan(value))
+
+
 class TestEnerStdLossDefaultPf(unittest.TestCase):
     """Test use_default_pf feature in EnergyStdLoss."""
 
@@ -175,6 +182,71 @@ class TestEnerStdLossDefaultPf(unittest.TestCase):
         self.assertIn("rmse_pf", pt_more_loss)
         # The pref_force_loss should be a valid number (not NaN)
         self.assertFalse(np.isnan(pt_more_loss["l2_pref_force_loss"]))
+
+    def test_default_pf_requires_force_labels(self) -> None:
+        """Default atom weights cannot make a missing force label usable."""
+        loss_fn = EnergyStdLoss(
+            self.start_lr,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_pf=1.0,
+            limit_pref_pf=1.0,
+            use_default_pf=True,
+        )
+        label = dict(self.label_without_pref)
+        label["find_force"] = 0.0
+
+        _, loss, more_loss = loss_fn(
+            {},
+            lambda: self.model_pred,
+            label,
+            self.nloc,
+            self.cur_lr,
+        )
+
+        self.assertEqual(float(loss.detach().cpu()), 0.0)
+        self.assertTrue(_is_nan(more_loss["l2_pref_force_loss"]))
+        self.assertTrue(_is_nan(more_loss["rmse_pf"]))
+
+    def test_generalized_force_requires_force_labels(self) -> None:
+        """A present projection matrix cannot validate a missing force label."""
+        numb_generalized_coord = 2
+        loss_fn = EnergyStdLoss(
+            self.start_lr,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_gf=1.0,
+            limit_pref_gf=1.0,
+            numb_generalized_coord=numb_generalized_coord,
+        )
+        label = dict(self.label_with_pref)
+        label["find_force"] = 0.0
+        label["drdq"] = torch.ones(
+            (1, self.nloc * 3 * numb_generalized_coord),
+            dtype=label["force"].dtype,
+            device=label["force"].device,
+        )
+        label["find_drdq"] = 1.0
+
+        _, loss, more_loss = loss_fn(
+            {},
+            lambda: self.model_pred,
+            label,
+            self.nloc,
+            self.cur_lr,
+        )
+
+        self.assertEqual(float(loss.detach().cpu()), 0.0)
+        self.assertTrue(_is_nan(more_loss["l2_gen_force_loss"]))
+        self.assertTrue(_is_nan(more_loss["rmse_gf"]))
 
     def test_default_pf_disabled(self) -> None:
         """With use_default_pf=False (default), pf loss should NOT be computed without find_atom_pref."""
@@ -287,6 +359,7 @@ class TestEnerStdLossDefaultPf(unittest.TestCase):
         label_req = loss_fn.label_requirement
         atom_pref_req = next(r for r in label_req if r.key == "atom_pref")
         self.assertEqual(atom_pref_req.default, 1.0)
+        self.assertEqual(atom_pref_req.source_policy, "default")
 
     def test_serialize_deserialize(self) -> None:
         """Serialization round-trip should preserve use_default_pf."""

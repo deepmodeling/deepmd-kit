@@ -360,3 +360,89 @@ def test_pte_with_comm_dict_traces_and_loads(tmp_path) -> None:
         f"with-comm exported program must accept 15 positional inputs "
         f"(7 base + 8 comm); got {len(spec)}"
     )
+
+
+_DPA2_CHILD_CONFIG = {
+    "descriptor": {
+        "type": "dpa2",
+        "repinit": {
+            "rcut": 4.0,
+            "rcut_smth": 0.5,
+            "nsel": 10,
+            "neuron": [4, 8],
+            "axis_neuron": 2,
+        },
+        "repformer": {
+            "rcut": 3.0,
+            "rcut_smth": 0.5,
+            "nsel": 6,
+            "nlayers": 1,
+            "g1_dim": 8,
+            "g2_dim": 4,
+        },
+    },
+    "fitting_net": {"neuron": [8, 8], "seed": 1},
+}
+
+
+def _build_two_dpa2_linear_model() -> torch.nn.Module:
+    """Linear composition of two DPA2 children (OutisLi, #5884 review)."""
+    import copy
+
+    from deepmd.pt_expt.model.get_model import (
+        get_linear_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "models": [
+            copy.deepcopy(_DPA2_CHILD_CONFIG),
+            copy.deepcopy(_DPA2_CHILD_CONFIG),
+        ],
+        "weights": "mean",
+    }
+    model = get_linear_model(config)
+    model.to("cpu")
+    model.eval()
+    return model
+
+
+def test_two_dpa2_linear_composition_gets_with_comm_artifact() -> None:
+    """Issue #5906 Task 4 (OutisLi, #5884 review): a graph-eligible
+    linear_ener of two DPA2 children -- both needing cross-rank message
+    passing -- must request the with-comm artifact. Previously denied by
+    BOTH the isinstance(LinearEnergyAtomicModel) check and the
+    ``.descriptor is None`` fallthrough.
+    """
+    from deepmd.pt_expt.utils.serialization import (
+        _needs_with_comm_artifact,
+    )
+
+    model = _build_two_dpa2_linear_model()
+    assert _needs_with_comm_artifact(model, lower_kind="graph") is True
+    # dpa2's dense lower supports comm, so the nlist kind agrees.
+    assert _needs_with_comm_artifact(model, lower_kind="nlist") is True
+
+
+def test_bridged_composition_gets_with_comm_artifact() -> None:
+    """Bridged DPA4+ZBL is multi-rank once the SFPG exchange lands
+    (issue #5906 Task 2): supports_edge_parallel aggregation admits it,
+    so the graph with-comm artifact is requested. The dense (nlist) kind
+    stays denied -- DPA4's dense lower has no comm implementation.
+    """
+    import copy
+
+    from deepmd.pt_expt.model.get_model import get_model as get_pt_expt_model
+    from deepmd.pt_expt.utils.serialization import (
+        _needs_with_comm_artifact,
+    )
+
+    from .test_zbl_bridging import (
+        ZBL_CONFIG,
+    )
+
+    model = get_pt_expt_model(copy.deepcopy(ZBL_CONFIG))
+    model.to("cpu")
+    model.eval()
+    assert _needs_with_comm_artifact(model, lower_kind="graph") is True
+    assert _needs_with_comm_artifact(model, lower_kind="nlist") is False

@@ -1,15 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import sys
 import unittest
+from unittest.mock import (
+    patch,
+)
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
+    _xp_einsum_fallback,
     xp_add_at,
+    xp_asarray_nodetach,
     xp_bincount,
+    xp_einsum,
+    xp_maximum_at,
     xp_scatter_sum,
     xp_setitem_at,
     xp_sigmoid,
+    xp_uniform,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -53,6 +62,76 @@ class TestArrayConversion(unittest.TestCase):
         )
         self.assertTrue(param.requires_grad)
         self.assertEqual(param.device, DEVICE)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_foreign_tensor_is_converted_to_numpy_namespace(self) -> None:
+        tensor = torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        numpy_namespace = array_api_compat.array_namespace(np.empty(0))
+
+        # A CUDA tensor rejects the direct NumPy protocol. Simulate that
+        # boundary on CPU so the device-to-host fallback is exercised on every
+        # platform.
+        with patch.object(
+            torch.Tensor,
+            "numpy",
+            side_effect=TypeError("direct conversion is unavailable"),
+        ):
+            converted = xp_asarray_nodetach(numpy_namespace, tensor)
+
+        self.assertIsInstance(converted, np.ndarray)
+        np.testing.assert_allclose(converted, np.array([1.0, 2.0]))
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_native_tensor_keeps_its_autograd_graph(self) -> None:
+        tensor = torch.nn.Parameter(
+            torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        )
+        torch_namespace = array_api_compat.array_namespace(tensor)
+
+        converted = xp_asarray_nodetach(torch_namespace, tensor)
+
+        self.assertIs(converted, tensor)
+        self.assertTrue(converted.requires_grad)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_native_tensor_moves_to_a_requested_device(self) -> None:
+        """A requested device is honoured, and the move keeps the graph.
+
+        Model buffers and inputs normally travel together, so this is a no-op.
+        Tracing is the exception: a CPU export of a CUDA-resident model runs
+        CPU inputs through a module whose buffers stayed on the device, and
+        ignoring the request there surfaces as a fake-tensor device error far
+        downstream of the constant that caused it.
+        """
+        tensor = torch.nn.Parameter(
+            torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        )
+        torch_namespace = array_api_compat.array_namespace(tensor)
+
+        same = xp_asarray_nodetach(
+            torch_namespace, tensor, device=array_api_compat.device(tensor)
+        )
+        self.assertIs(same, tensor)
+
+        other = torch.device("cpu" if DEVICE.type == "cuda" else "meta")
+        moved = xp_asarray_nodetach(torch_namespace, tensor, device=other)
+        self.assertEqual(moved.device.type, other.type)
+        self.assertTrue(moved.requires_grad)
+
+
+class TestXpMaximumAtConsistent(unittest.TestCase):
+    """Test maximum-at identities that differ between backend primitives."""
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow is not installed")
+    def test_tf_preserves_all_negative_infinity_segment(self) -> None:
+        x = tnp.asarray(np.full(2, -np.inf, dtype=np.float64))
+        indices = tnp.asarray(np.array([0, 0], dtype=np.int64))
+        values = tnp.asarray(np.array([-np.inf, -np.inf], dtype=np.float64))
+
+        result = to_numpy_array(xp_maximum_at(x, indices, values))
+
+        self.assertTrue(np.isneginf(result[0]))
+        self.assertTrue(np.isneginf(result[1]))
 
 
 class TestXpScatterSumConsistent(unittest.TestCase):
@@ -370,3 +449,149 @@ class TestXpSetitemAtConsistent(unittest.TestCase):
             tnp.asarray(values_np),
         )
         np.testing.assert_allclose(ref, to_numpy_array(result), atol=1e-10)
+
+
+class TestXpUniform(unittest.TestCase):
+    """Each backend draws with its own generator, on the reference device."""
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_replays_under_torch_seed(self) -> None:
+        like = torch.zeros(7, dtype=torch.float64, device=DEVICE)
+        torch.manual_seed(4321)
+        a = xp_uniform(like, 512, 0.0, 2.0 * np.pi)
+        torch.manual_seed(4321)
+        b = xp_uniform(like, 512, 0.0, 2.0 * np.pi)
+        torch.manual_seed(1234)
+        c = xp_uniform(like, 512, 0.0, 2.0 * np.pi)
+
+        assert a.shape == (512,)
+        assert a.dtype == like.dtype
+        assert a.device.type == like.device.type
+        torch.testing.assert_close(a, b, rtol=0.0, atol=0.0)
+        # anti-vacuity: a constant would satisfy the replay check alone
+        assert not torch.allclose(a, c)
+        assert float(a.min()) >= 0.0
+        assert float(a.max()) < 2.0 * np.pi
+
+    def test_numpy_fallback_replays_under_the_project_seed(self) -> None:
+        """The fallback uses deepmd's seeded generator, not a fresh one."""
+        from deepmd.utils import random as dp_random
+
+        like = np.zeros(3, dtype=np.float64)
+        dp_random.seed(777)
+        a = xp_uniform(like, 64, -1.0, 1.0)
+        dp_random.seed(777)
+        b = xp_uniform(like, 64, -1.0, 1.0)
+        dp_random.seed(778)
+        c = xp_uniform(like, 64, -1.0, 1.0)
+
+        assert a.shape == (64,)
+        assert a.dtype == like.dtype
+        np.testing.assert_array_equal(a, b)
+        assert not np.allclose(a, c)
+        assert a.min() >= -1.0
+        assert a.max() < 1.0
+
+
+class TestXpEinsumConsistent(unittest.TestCase):
+    """Test xp_einsum consistency across backends.
+
+    The contraction ``"bfi,ifo->bfo"`` is the per-focus projection the DPA4
+    descriptor evaluates in several places. It is dispatched to each backend's
+    native ``einsum`` where one exists, which is what lets the backend choose
+    the execution order; the array-API fallback expresses the same contraction
+    as a batched matmul over the shared focus label.
+    """
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(20260825)
+        # (rows, batch, contracted) and (contracted, batch, cols)
+        self.lhs_np = rng.normal(size=(7, 3, 5))
+        self.rhs_np = rng.normal(size=(5, 3, 4))
+        self.ref = np.einsum("bfi,ifo->bfo", self.lhs_np, self.rhs_np)
+
+    def test_numpy_consistent_with_ref(self) -> None:
+        result = xp_einsum("bfi,ifo->bfo", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_consistent_with_ref(self) -> None:
+        result = xp_einsum(
+            "bfi,ifo->bfo",
+            torch.from_numpy(self.lhs_np),
+            torch.from_numpy(self.rhs_np),
+        )
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_consistent_with_ref(self) -> None:
+        result = xp_einsum(
+            "bfi,ifo->bfo", jnp.array(self.lhs_np), jnp.array(self.rhs_np)
+        )
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-6)
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        result = xp_einsum(
+            "bfi,ifo->bfo", xp.asarray(self.lhs_np), xp.asarray(self.rhs_np)
+        )
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+
+    def test_fallback_matches_the_native_contraction(self) -> None:
+        """The fallback is the reference the non-native namespaces rely on."""
+        result = _xp_einsum_fallback("bfi,ifo->bfo", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+        # Label names carry no meaning beyond their positions.
+        renamed = _xp_einsum_fallback("efi,ifo->efo", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(self.ref, to_numpy_array(renamed), atol=1e-12)
+
+    def test_fallback_handles_the_plain_matmul(self) -> None:
+        rng = np.random.default_rng(7)
+        lhs, rhs = rng.normal(size=(6, 4)), rng.normal(size=(4, 9))
+        result = _xp_einsum_fallback("ij,jk->ik", lhs, rhs)
+        np.testing.assert_allclose(lhs @ rhs, to_numpy_array(result), atol=1e-12)
+
+    def test_implicit_form_is_rejected(self) -> None:
+        """An implicit output would be ambiguous to the fallback."""
+        with self.assertRaises(ValueError):
+            xp_einsum("bfi,ifo", self.lhs_np, self.rhs_np)
+
+    def test_fallback_reorders_the_output(self) -> None:
+        """The output order is part of the specification, not of the operands."""
+        result = _xp_einsum_fallback("bfi,ifo->bof", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(
+            np.einsum("bfi,ifo->bof", self.lhs_np, self.rhs_np),
+            to_numpy_array(result),
+            atol=1e-12,
+        )
+
+    def test_fallback_batches_over_several_labels(self) -> None:
+        """The per-degree, per-focus projection shares two batch labels."""
+        rng = np.random.default_rng(31)
+        lhs = rng.normal(size=(6, 4, 2, 5))  # (N, D, F, Cin)
+        rhs = rng.normal(size=(4, 5, 2, 3))  # (D, Cin, F, Cout)
+        result = _xp_einsum_fallback("ndfi,difo->ndfo", lhs, rhs)
+        np.testing.assert_allclose(
+            np.einsum("ndfi,difo->ndfo", lhs, rhs),
+            to_numpy_array(result),
+            atol=1e-12,
+        )
+
+    def test_fallback_rejects_what_it_cannot_express(self) -> None:
+        """A contraction outside the implemented shape must not be approximated.
+
+        A label dropped from the output would need a reduction, a repeated
+        label a diagonal, and more than two operands a contraction path;
+        none of the three occurs in this codebase.
+        """
+        for subscripts in ("abc,def->abf", "ab,bc,cd->ad"):
+            with self.assertRaises(ValueError):
+                _xp_einsum_fallback(subscripts, self.lhs_np, self.rhs_np)
+        square = np.eye(4)
+        with self.assertRaises(ValueError):
+            _xp_einsum_fallback("ii,ij->ij", square, square)

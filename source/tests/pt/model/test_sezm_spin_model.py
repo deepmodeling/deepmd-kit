@@ -27,6 +27,9 @@ from deepmd.pt.train.training import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.compile_compat import (
+    SUPPORTED_COMPILE_TORCH,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -43,16 +46,18 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# TODO(torch-2.11): SeZM's ``torch.compile`` / AOT-export code paths are only
-# stable on torch 2.11.x. CI currently pins torch 2.10, where the compiled path
-# can segfault or drift, and other torch versions are similarly unstable. Skip
-# the compile-parity test off 2.11 until CI standardizes on a SeZM-compatible
-# torch, then drop this guard.
+# Keep compile-parity test gating aligned with the runtime allowlist in
+# ``deepmd.pt.utils.compile_compat``. Membership in the allowlist does not imply
+# that every release is installed in CI.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_TORCH_211 = (_TORCH_VERSION.major, _TORCH_VERSION.minor) != (2, 11)
-_SKIP_OFF_TORCH_211_REASON = (
-    "SeZM's torch.compile path is only stable on torch 2.11.x; "
-    f"current torch is {torch.__version__}."
+_SKIP_OFF_COMPILE_TORCH = (
+    _TORCH_VERSION.major,
+    _TORCH_VERSION.minor,
+) not in SUPPORTED_COMPILE_TORCH
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile path is only supported on torch "
+    + ", ".join(f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH)
+    + f"; current torch is {torch.__version__}."
 )
 
 
@@ -197,6 +202,21 @@ class TestSeZMSpinModel(unittest.TestCase):
             "bridging_r_outer": 1.2,
             "use_compile": use_compile,
         }
+
+    def test_adam_route_patterns_match_parameters(self) -> None:
+        """The native-spin SeZM model routes the same tensors as the plain model."""
+        model = get_model(self._build_model_params()).to(self.device)
+        patterns = sorted(model.adam_route_patterns())
+        self.assertEqual(
+            patterns,
+            [
+                "atomic_model.descriptor.env_seed_embedding.rbf_proj_layer1.",
+                "atomic_model.descriptor.radial_embedding.net.0.",
+            ],
+        )
+        names = [name for name, _ in model.named_parameters()]
+        for pattern in patterns:
+            self.assertTrue(any(pattern in name for name in names), pattern)
 
     def test_factory_shapes_and_masks(self) -> None:
         """Factory should build SeZMSpinModel with public real-type metadata."""
@@ -346,41 +366,32 @@ class TestSeZMSpinModel(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             prepare_model_for_loss(model, {"type": "dens"})
 
-    def test_bridging_masks_virtual_pairs(self) -> None:
-        """ZBL bridging should ignore virtual spin types without indexing them."""
-        model = get_model(self._build_model_params(bridging_method="ZBL")).to(
-            self.device
-        )
-        self.assertIsNotNone(model.inter_potential)
+    def test_bridging_is_rejected(self) -> None:
+        """The virtual-atom scheme does not compose with an analytical potential.
 
-        # Nodes 0 (type 0) and 1 (type 1) are real; node 2 (type 2) is a virtual
-        # spin atom (>= real_type_count=2).  Edges touching node 2 must be masked.
-        edge_vec = torch.tensor(
-            [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        edge_index = torch.tensor(
-            [[1, 0, 2, 0], [0, 1, 0, 2]], dtype=torch.long, device=self.device
-        )
-        atype_flat = torch.tensor([0, 1, 2], dtype=torch.long, device=self.device)
-        edge_mask = torch.tensor([True, True, True, True], device=self.device)
+        A magnetic atom sits within the bridging window of its own virtual
+        partner, so a bridged descriptor would freeze every magnetic atom; the
+        model refuses the combination instead of building it.
+        """
+        with self.assertRaisesRegex(ValueError, "native"):
+            get_model(self._build_model_params(bridging_method="ZBL"))
 
-        energy_with_virtual = model.inter_potential(
-            edge_vec, edge_index, atype_flat, edge_mask, n_node=3, real_type_count=2
-        )
-        energy_real_only = model.inter_potential(
-            edge_vec[:2],
-            edge_index[:, :2],
-            atype_flat,
-            edge_mask[:2],
-            n_node=3,
-            real_type_count=2,
+    def test_real_type_sequence_bias_override(self) -> None:
+        model = get_model(self._build_model_params()).to(self.device)
+        sample = {
+            "coord": self.coord,
+            "atype": self.atype,
+            "spin": self.spin,
+            "box": self.box,
+        }
+        model.change_out_bias([sample], preset_out_bias={"energy": [1.0, 2.0]})
+        bias = model.get_out_bias()
+        torch.testing.assert_close(
+            bias.reshape(-1),
+            torch.tensor([1.0, 2.0, 0.0, 0.0], dtype=bias.dtype, device=bias.device),
         )
 
-        torch.testing.assert_close(energy_with_virtual, energy_real_only)
-
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_matches_eager(self) -> None:
         """Compiled SeZM spin path should match eager predictions."""
         eager = get_model(self._build_model_params(use_compile=False)).to(self.device)

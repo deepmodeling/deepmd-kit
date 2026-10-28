@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import math
 import os
 import shutil
 import unittest
@@ -8,6 +9,9 @@ from copy import (
 )
 from pathlib import (
     Path,
+)
+from unittest.mock import (
+    patch,
 )
 
 import torch
@@ -251,6 +255,94 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
+
+    def test_filtered_tasks_share_retry_budget(self) -> None:
+        """All tasks share one retry budget when filtering invalid batches."""
+        config = deepcopy(self.config)
+        data_dict = config["training"]["data_dict"]
+        for task_data in data_dict.values():
+            task_data["training_data"]["min_pair_dist"] = 0.1
+        data_dict["model_1"]["training_data"]["systems"] = [
+            *data_dict["model_1"]["training_data"]["systems"],
+            str(Path(__file__).parent / "water/data/data_1"),
+        ]
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+        trainer = get_trainer(config, shared_links=self.shared_links)
+
+        loader_lengths = {
+            task_key: len(trainer.training_dataloader[task_key])
+            for task_key in trainer.model_keys
+        }
+        self.assertGreater(len(set(loader_lengths.values())), 1)
+        expected_attempts = max(loader_lengths.values())
+
+        for task_key in trainer.model_keys:
+            with self.subTest(task_key=task_key):
+                call_count = 0
+
+                def get_empty_data(
+                    is_train: bool = True,
+                    task_key: str = "Default",
+                ) -> tuple[dict, dict, dict]:
+                    nonlocal call_count
+                    call_count += 1
+                    return {}, {}, {}
+
+                trainer.get_data = get_empty_data
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    rf"after {expected_attempts} attempts",
+                ):
+                    trainer._next_training_batch(task_key)
+                self.assertEqual(call_count, expected_attempts)
+
+    def test_disp_avg_handles_unsampled_interval(self) -> None:
+        """Each task is unsampled in one interval; reporting consumes no batches."""
+        config = deepcopy(self.config)
+        config["training"]["numb_steps"] = 2
+        config["training"]["disp_freq"] = 1
+        config["training"]["disp_avg"] = True
+        config = update_deepmd_input(config, warning=True)
+        config = normalize(config, multi_task=True)
+        trainer = get_trainer(config, shared_links=self.shared_links)
+
+        with (
+            patch(
+                "deepmd.pt.train.training.dp_random.choice",
+                side_effect=[0, 1],
+            ),
+            patch.object(trainer, "get_data", wraps=trainer.get_data) as get_data,
+        ):
+            trainer.run()
+
+        training_tasks = [
+            call.kwargs.get("task_key", "Default")
+            for call in get_data.call_args_list
+            if call.kwargs.get("is_train", True)
+        ]
+        self.assertEqual(training_tasks, ["model_1", "model_2"])
+
+        with open("lcurve.out") as f:
+            lines = f.readlines()
+        header_lines = [line.split() for line in lines if line.startswith("#")]
+        data_lines = [line.split() for line in lines if not line.startswith("#")]
+        self.assertTrue(header_lines)
+        header_columns = header_lines[0][1:]
+        self.assertTrue(any("_val_" in column for column in header_columns))
+        for columns in data_lines:
+            self.assertEqual(len(columns), len(header_columns))
+        displayed_steps = [int(columns[0]) for columns in data_lines]
+        self.assertEqual(displayed_steps, [1, 2])
+        for row, sampled_task, unsampled_task in (
+            (data_lines[0], "model_1", "model_2"),
+            (data_lines[1], "model_2", "model_1"),
+        ):
+            sampled_index = header_columns.index(f"rmse_trn_{sampled_task}")
+            self.assertTrue(math.isfinite(float(row[sampled_index])))
+            for index, column in enumerate(header_columns):
+                if column.endswith(f"_trn_{unsampled_task}"):
+                    self.assertTrue(math.isnan(float(row[index])), column)
 
     def tearDown(self) -> None:
         MultiTaskTrainTest.tearDown(self)

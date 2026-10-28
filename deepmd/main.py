@@ -362,9 +362,19 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         choices=["nlist", "graph"],
         help="(Supported backend: PyTorch Exportable) Lower-level export form of the "
-        "frozen .pt2: 'nlist' (default, dense neighbor-list lower) or 'graph' "
-        "(NeighborGraph edge-list lower; only for graph-eligible models, currently "
-        "dpa1 with attn_layer=0). 'graph' selects the C++ graph inference path.",
+        "frozen .pt2: 'nlist' (dense neighbor-list lower) or 'graph' "
+        "(NeighborGraph edge-list lower, which selects the C++ graph inference "
+        "path). Only consulted for models that cannot use the graph lower: a "
+        "graph-capable model (DPA1/DPA2/DPA4, and every DPA model in future) "
+        "always freezes to 'graph', since the dense lower is deprecated in this "
+        "backend -- requesting 'nlist' for one logs a warning and is overridden.",
+    )
+    parser_frz.add_argument(
+        "--compress",
+        action="store_true",
+        help="(Supported backend: PyTorch Exportable) Compress the model before "
+        "export using the default compression settings. Eligible .pt2 models "
+        "use the accelerated compressed graph without an intermediate export.",
     )
 
     # * test script ********************************************************************
@@ -1095,6 +1105,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """
     parser = main_parser()
     parsed_args = parser.parse_args(args=args)
+    if (
+        parsed_args.command == "freeze"
+        and parsed_args.compress
+        and BACKEND_TABLE[parsed_args.backend] != "pytorch-exportable"
+    ):
+        parser.error("freeze --compress requires --pt-expt (PyTorch Exportable)")
     if parsed_args.command is None:
         parser.print_help()
     else:

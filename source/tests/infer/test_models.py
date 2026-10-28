@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
-import ase
+import ase.neighborlist
 import dpdata
 import numpy as np
 
@@ -32,15 +32,9 @@ STRICT_PLACES = 12
 STRICT_KEYS = frozenset(("se_e2_a", "se_e2_r"))
 
 
-@parameterized(
-    (
-        "se_e2_a",
-        "se_e2_r",
-        "fparam_aparam",
-    ),  # key
-    (".pb", ".pth", ".pte", ".pt2"),  # model extension
-)
-class TestDeepPot(unittest.TestCase):
+class DeepPotTestMixin:
+    """Shared DeepPotential checks for native and external neighbor lists."""
+
     # moved from tests/tf/test_deeppot_a.py
 
     @classmethod
@@ -397,18 +391,32 @@ class TestDeepPot(unittest.TestCase):
 
 
 @parameterized(
+    (
+        "se_e2_a",
+        "se_e2_r",
+        "fparam_aparam",
+    ),  # key
+    (".pb", ".pth", ".pte", ".pt2"),  # model extension
+)
+class TestDeepPot(DeepPotTestMixin, unittest.TestCase):
+    """Run the common inference checks with native neighbor construction."""
+
+
+@parameterized(
     ("se_e2_a",),  # key
     (".pb",),  # model extension
 )
-class TestDeepPotNeighborList(TestDeepPot):
+class TestDeepPotNeighborList(DeepPotTestMixin, unittest.TestCase):
+    """Run the common inference checks with an external ASE neighbor list."""
+
     @classmethod
     def setUpClass(cls) -> None:
         key, extension = cls.param
         cls.places = STRICT_PLACES if key in STRICT_KEYS else default_places
         cls.case = get_cases()[key]
-        model_name = cls.case.get_model(extension)
+        cls.model_name = cls.case.get_model(extension)
         cls.dp = DeepEval(
-            model_name,
+            cls.model_name,
             neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
                 cutoffs=cls.case.rcut, bothways=True
             ),
@@ -421,3 +429,25 @@ class TestDeepPotNeighborList(TestDeepPot):
     @unittest.skip("Zero atoms not supported")
     def test_zero_input(self) -> None:
         pass
+
+    def test_nopbc_matches_reference(self) -> None:
+        """The ASE path must preserve a testcase's open-boundary semantics."""
+        result = next(result for result in self.case.results if result.box is None)
+        ee, ff, vv, ae, av = self.dp.eval(
+            result.coord,
+            None,
+            result.atype,
+            atomic=True,
+            fparam=result.fparam,
+            aparam=result.aparam,
+        )[:5]
+
+        np.testing.assert_almost_equal(ff.ravel(), result.force.ravel(), STRICT_PLACES)
+        np.testing.assert_almost_equal(
+            ae.ravel(), result.atomic_energy.ravel(), STRICT_PLACES
+        )
+        np.testing.assert_almost_equal(
+            av.ravel(), result.atomic_virial.ravel(), STRICT_PLACES
+        )
+        np.testing.assert_almost_equal(ee.ravel(), result.energy, STRICT_PLACES)
+        np.testing.assert_almost_equal(vv.ravel(), result.virial, STRICT_PLACES)

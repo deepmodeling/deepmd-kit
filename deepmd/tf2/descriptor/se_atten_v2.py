@@ -14,7 +14,9 @@ from .dpa1 import (
 
 @BaseDescriptor.register("se_atten_v2")
 class DescrptSeAttenV2(DescrptDPA1, DescrptSeAttenV2DP):
-    pass
+    @classmethod
+    def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
+        return DescrptSeAttenV2DP.deserialize.__func__(cls, data)
 
 
 register_dpmodel_mapping(

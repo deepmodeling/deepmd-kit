@@ -1,0 +1,700 @@
+# Descriptor DPA4C {{ pytorch_icon }}
+
+> [!NOTE]
+> **Supported backends**: PyTorch Exportable {{ pytorch_icon }} (`dp --pt-expt`)
+
+DPA4C is the compact and compressible degree-wise descriptor of the DPA4
+family. Where DPA4/SeZM targets the accuracy frontier through equivariant
+message passing, DPA4C targets the throughput frontier: it reads each local
+environment once, keeps no message-passing state, and admits a compressed CUDA
+inference path in which its radial functions are replaced by tabulated splines.
+
+Choose DPA4C when the run is limited by simulation speed or system size rather
+than by the last increment of accuracy: large-scale molecular dynamics, long
+trajectories, and distillation from a DPA4 teacher. Choose DPA4 when accuracy
+is the binding constraint.
+
+DPA4C is selected as a descriptor, `descriptor.type: "dpa4c"`, and pairs with
+the standard energy fitting network. There is no separate `model.type` scaffold.
+
+## Quick start
+
+```bash
+cd examples/water/dpa4c
+dp --pt-expt train input.json
+```
+
+`examples/water/dpa4c/input.json` is a complete energy-training input you can
+copy and adapt. See [training energy models](train-energy.md) for the general
+workflow shared by all energy models.
+
+## How it works
+
+DPA4C predicts atomic energies and obtains forces and virials by
+differentiating the energy, the same conservative formulation used by every
+standard DeePMD energy model:
+
+```math
+\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i}.
+```
+
+For each atom the descriptor accumulates angular moments of its neighbors up to
+degree {ref}`lmax <model[standard]/descriptor[dpa4c]/lmax>`, contracts them into
+rotationally invariant scalars, and passes only those scalars to the fitting
+network. The neighbor shell is read exactly once: there is no message passing,
+so an atom's descriptor depends only on the atoms within
+{ref}`rcut <model[standard]/descriptor[dpa4c]/rcut>` of it.
+
+Three consequences shape how the model is used in practice.
+
+- **One-hop locality** keeps the per-step cost low and removes the cross-rank
+  halo exchange of intermediate features that a message-passing model needs, so
+  domain decomposition follows the ordinary pair-style path.
+- **Exact smoothness at the cutoff.** The radial map is exactly zero at and
+  beyond `rcut`, with continuous derivatives, so the potential energy surface
+  stays smooth as neighbors cross the cutoff.
+- **Analytic bounds on every per-atom quantity**, which is why compression needs
+  neither an extrapolation region nor overflow checking.
+
+## Configuration
+
+### Minimal input
+
+A minimal DPA4C descriptor needs nothing but its type; every option has a
+documented default.
+
+```json
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa4c",
+      "rcut": 6.0
+    },
+    "fitting_net": {
+      "neuron": [
+        128,
+        128,
+        128
+      ],
+      "activation_function": "silu"
+    }
+  }
+}
+```
+
+DPA4C has no `sel` option. It is graph-native: the descriptor consumes a
+carry-all neighbor graph that holds every neighbor within `rcut`, rather than a
+fixed-capacity neighbor list. There is no capacity to size, no dependence on the
+densest frame in the dataset, and no truncation to guard against.
+
+DPA4C defaults to `float32`
+({ref}`precision <model[standard]/descriptor[dpa4c]/precision>`), which is also
+what the compressed CUDA path requires. Double precision is neither necessary
+nor supported for compressed inference.
+
+### Options that matter
+
+Every option, with its default and full description, is listed in the
+{ref}`argument reference <model[standard]/descriptor[dpa4c]>`. Four of them
+carry the accuracy–cost trade-off:
+
+- **Width** — {ref}`channels <model[standard]/descriptor[dpa4c]/channels>`, one
+  of 8, 16, 32, 64, or 128. This is the primary scaling knob. It widens the
+  scalar and edge features, the per-atom angular state, and the descriptor
+  output together, so it costs both throughput and the largest system that fits
+  in memory.
+- **Angular degree** — {ref}`lmax <model[standard]/descriptor[dpa4c]/lmax>`, one
+  of 2, 3, or 4. Each additional degree adds angular components to the per-atom
+  state. Its absolute cost is fixed by the degree, so its *relative* cost is
+  largest at narrow widths.
+- **Radial resolution** —
+  {ref}`radial_modes <model[standard]/descriptor[dpa4c]/radial_modes>`. Zero
+  leaves every ordered atom-type pair with a rescaled copy of one shared radial
+  function; larger values let each pair select its own radial shape from several
+  shared profiles. It spends per-edge work without enlarging the per-atom state,
+  which makes it the lever to reach for when memory rather than throughput is
+  the binding constraint.
+- **Radial basis** —
+  {ref}`basis_type <model[standard]/descriptor[dpa4c]/basis_type>` and
+  {ref}`n_radial <model[standard]/descriptor[dpa4c]/n_radial>` select the
+  analytic basis that feeds the radial network; the `bessel/fix` and
+  `gaussian/fix` forms keep the frequencies or centres at their initial
+  values instead of training them.
+
+The fitting network is sized against the descriptor because the invariant
+output grows with `channels`. Unlike `radial_modes`, fitting width is not a free
+trade against memory: it adds per-atom activations and the derivatives saved for
+the force backward pass, so widening or deepening it costs throughput and
+capacity together. Widen it only when validation error is limited by fitting
+capacity rather than by the descriptor.
+
+> [!IMPORTANT]
+> The compressed CUDA path is compiled for `channels` in `{8, 16, 32, 64, 128}`,
+> `lmax` in `{2, 3, 4}`, and `radial_modes` in `{0, 2, 4, 8}` only. A model
+> trained outside those sets trains and evaluates correctly, but
+> `dp --pt-expt compress` rejects it. Choose these values with deployment in
+> mind.
+
+### Presets
+
+DPA4C preset names use `dpa4c-<size>-<version>`. Available sizes are listed in
+ascending computational cost; `neo` is the general-purpose starting point:
+
+| Version     | Available sizes                      |
+| ----------- | ------------------------------------ |
+| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus` |
+| `v20260901` | `nano`, `mini`, `neo`, `air`, `plus` |
+
+Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
+and `fitting_net`. Run-specific settings are written alongside the preset:
+
+```json
+{
+  "model": {
+    "preset": "dpa4c-neo-v20260911",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "seed": 42
+    },
+    "fitting_net": {
+      "seed": 42
+    }
+  }
+}
+```
+
+Explicit settings override the preset: `type_map` is replaced as a whole,
+while `descriptor` and `fitting_net` are merged key by key. See the
+[DPA4 preset rules](dpa4.md#presets) for expansion details and multi-task use.
+
+## Training
+
+The recommended objective is the standard conservative energy loss:
+
+```json
+{
+  "loss": {
+    "type": "ener"
+  }
+}
+```
+
+See [training energy models](train-energy.md) for the general workflow.
+
+### Mixed precision
+
+{ref}`use_amp <model[standard]/descriptor[dpa4c]/use_amp>` runs the per-edge
+stage under bfloat16 automatic mixed precision on CUDA during training. The
+activation footprint of that stage scales with the edge count and dominates
+memory, so enabling it lowers peak memory substantially; the destination
+reduction and the invariant readout stay in the descriptor precision. Use it on
+GPUs with native bf16 support.
+
+`use_amp` is an execution policy rather than model state: it is not serialized,
+and evaluation and inference are governed independently by `DP_AMP_INFER`. A
+model trained in full precision can therefore be evaluated under mixed
+precision, and the reverse.
+
+## Zone bridging
+
+DPA4C can add an analytical short-range repulsion to the learned energy, so that
+close approaches in high-temperature, high-pressure or collision simulations meet
+a physical repulsive wall instead of an extrapolated network output:
+
+```math
+E_i = E_i^{\mathrm{DPA4C}} + E_i^{\mathrm{pair}}.
+```
+
+Two potentials are available. `bridging_method: "zbl"` uses the
+Ziegler-Biersack-Littmark screened nuclear potential, which is derived from
+frozen atomic electron densities and covers every element.
+`bridging_method: "nlh"` uses the Nordlund-Lehtola-Hobler form, whose
+coefficients are fitted to self-consistent quantum-chemical pair energies and
+therefore follow the real repulsive wall much more closely; it leaves a smaller
+residual repulsion at ordinary bond lengths, which is energy the learned model
+would otherwise have to cancel. `zbl` is the default; whether `nlh` yields a
+better trained model has not been established.
+
+> [!NOTE]
+> The `nlh` coefficients shipped with DeePMD-kit are this project's own refit and
+> are **not** the coefficients published by Nordlund, Lehtola and Hobler. They are
+> fitted independently to the same open reference data — K. Nordlund, G. Hobler and
+> S. Lehtola, Zenodo [10.5281/zenodo.14172633](https://doi.org/10.5281/zenodo.14172633)
+> v1.0 (2024), CC BY 4.0 — under conditions this use requires, and are therefore
+> modified material. The functional form is that of
+> [Phys. Rev. A **111**, 032818 (2025)](https://doi.org/10.1103/PhysRevA.111.032818).
+> Pairs containing an element heavier than uranium, which the reference data does
+> not cover, fall back to ZBL.
+
+The analytical term acts on every pair inside `rcut`. The learned model, in turn, is
+made blind to pairs that are too close to be covered by training data. Below
+the inner radius of the window a pair leaves the descriptor entirely: both
+atoms are described exactly as if the other one were absent, and the pair
+interacts through the analytical term alone. Between the inner and the outer
+radius the pair enters the descriptor smoothly in two coupled ways: its
+amplitude opens from zero to one, and the separation its radial functions
+read is released at the same rate, from the midpoint of the window at the
+inner radius to the true separation at the outer radius. A pair deep inside
+the window therefore changes the descriptor through its amplitude alone,
+with its radial features held where the retained training frames place them.
+Beyond the outer radius the descriptor is the same as without bridging. The
+transition keeps the energy three times continuously differentiable, like the
+outer cutoff.
+
+The two radii follow the size of the pair they apply to. Each is a fraction of
+the covalent bond length of that element pair, so a hydrogen pair is described
+down to a much shorter separation than a caesium pair, and one setting covers
+every element combination in the type map. The defaults place the outer radius
+at 0.80 of the bond length, below all but the shortest multiple bonds, and
+the inner radius at 0.26, deep inside the repulsive wall where the analytical
+term is the responsible description.
+
+Enable it on the model:
+
+```json
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa4c",
+      "rcut": 6.0
+    },
+    "bridging_method": "zbl"
+  }
+}
+```
+
+`type_map` must name chemical elements, because the analytical term is built
+from their nuclear charges and the window from their covalent radii. `bridging_fraction_inner` and
+`bridging_fraction_outer` adjust the two fractions. Giving `bridging_r_inner`
+and `bridging_r_outer` instead replaces the rule with one window in Å applied
+to every pair alike, which is worth doing only for a single-element system or
+to reproduce an earlier model. See `examples/water/dpa4c/input-zbl.json` for a
+complete input.
+
+Training frames that contain a pair closer than the midpoint of its window are
+left out of the loss. Below the midpoint the learned contribution of the pair is
+throttled to less than half of its amplitude, so a label there would ask the
+model for a multiple of the energy it has to express; the separation the
+radial functions read never falls below the midpoint either, and through the
+lower half of the window it moves by less than 7 % of the window width, so the
+radial features of a close pair stay next to the range the retained frames
+cover. The threshold is derived from the window of each element pair, and
+`training_data.min_pair_dist` must stay unset on a bridged model. The data
+statistics, including those of `dp change-bias`, are drawn under the same
+filter, while validation batches are not filtered, so a validation error also
+covers frames that training leaves out.
+
+Bridging therefore relies on short-range training data. The labels that are
+kept have to reach into the window of every element pair, which in practice
+means adding dimer scans that run down to about half the covalent bond length.
+Between the inner radius and the closest retained label the learned
+contribution of the pair falls to zero with no data to shape it; labels inside
+the window keep that descent smooth, while a pair whose window holds no label
+can show spurious force maxima there.
+
+The same model can be written explicitly as a `linear_ener` model over the
+DPA4C model and an `inner_potential` sub-model with `weights: "sum"`; the
+concise form above expands to it.
+
+Bridging changes nothing in the workflow after training. The model freezes,
+compresses and runs in LAMMPS like a plain DPA4C model: compression still
+selects the compact canonical graph form, the fused kernels evaluate the
+analytical term in the same pass over the neighbors as the descriptor, and multi-GPU runs
+need no extra communication. Native spin and the frame charge state combine
+with bridging; the analytical term depends on the separation alone and leaves
+the magnetic force to the learned model.
+
+A model trained without bridging fine-tunes into its bridged form, and the
+other way round. Add the bridging keys above to the input, keep the
+architecture, and start from the earlier checkpoint:
+
+```bash
+dp --pt-expt train input-zbl.json --finetune model.ckpt.pt
+```
+
+The descriptor and the fitting net are carried over although the bridged model
+holds them one level deeper, inside the composition. Fine-tuning is required
+rather than optional: the bridging window changes what the descriptor sees at
+short range, so the learned part is trained against the analytical term it is
+now summed with.
+
+## Model compression
+
+Compression is the deployment step. It replaces the analytic radial functions
+and their type-pair modulation with tabulated splines evaluated by fused CPU or
+CUDA kernels. Eligible CUDA models use the compact canonical graph form;
+CPU models use the graph form with their dedicated kernels. Because the radial map is analytically bounded and
+vanishes at `rcut`, the table needs no extrapolation region and no overflow
+checking.
+
+Freeze and compress a checkpoint in one operation:
+
+```bash
+dp --pt-expt train input.json
+dp --pt-expt freeze -c model.ckpt.pt -o compressed_model --compress
+```
+
+This writes `compressed_model.pt2` directly using the default compression
+settings, without compiling an intermediate uncompressed archive. Compression
+selects the export schema appropriate to the model and target device.
+
+To compress an existing frozen archive or choose the spline spacing, use the
+compression command:
+
+```bash
+dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2 --step 0.01
+```
+
+For ASE, `DP(model="model.pt", freeze=True)` automatically compresses supported
+DPA4C checkpoints and exports a single-process `.pt2`. If compression is not
+supported, ASE warns and retains the ordinary freeze path. See the
+[ASE interface](../third-party/ase.md).
+
+Only `-s, --step` applies to DPA4C; it sets the uniform spline spacing in Å, and
+a smaller value means a finer table and a larger model. The `--extrapolate`,
+`--frequency`, and `--training-script` options exist for descriptors whose
+tables need a second region, an overflow guard, or a minimum neighbor distance
+computed from data; DPA4C needs none of them and ignores them.
+
+Compression requires:
+
+- the PyTorch Exportable backend;
+- `precision: "float32"`;
+- `channels`, `lmax` and `radial_modes` inside the compiled sets listed above;
+- an empty
+  {ref}`exclude_types <model[standard]/descriptor[dpa4c]/exclude_types>`, since
+  the fused kernel has no type-exclusion branch.
+
+`dp --pt-expt compress` and `freeze --compress` report an explicit error when
+any of these is not met.
+A model that excludes type pairs still trains and runs; deploy it as the
+uncompressed graph archive.
+
+## Running in LAMMPS
+
+DPA4C uses the PyTorch `.pt2` (AOTInductor) export path and is served by the
+`deepmd` pair style:
+
+```lammps
+pair_style deepmd compressed_model.pt2
+pair_coeff * * O H
+```
+
+### Choosing a pair style
+
+The compact canonical graph form exists so that the whole step can stay on the
+device. Only the Kokkos pair styles use that device-resident entry point; the
+host styles run the same archive through a per-step host round trip. On a GPU,
+reaching DPA4C's advertised throughput therefore takes three things together: a
+Kokkos-enabled LAMMPS build on the GPU backend, the compressed archive, and
+`DP_CUDA_INFER` set at export time as described under
+[Inference settings](#inference-settings). On a CPU host none of that applies --
+see [CPU hosts](#cpu-hosts).
+
+| Pair style    | Build                    | Accepted archive          | Execution                                      |
+| ------------- | ------------------------ | ------------------------- | ---------------------------------------------- |
+| `deepmd`      | any                      | graph lower or compressed | host round trip each step                      |
+| `deepmd/kk`   | Kokkos, GPU backend only | graph lower or compressed | device-resident; compressed uses fused kernels |
+| `dpa4spin`    | any, `atom_style spin`   | graph lower or compressed | host round trip each step                      |
+| `dpa4spin/kk` | Kokkos, GPU backend only | compressed only           | device-resident                                |
+
+Run under Kokkos with one GPU:
+
+```bash
+lmp -k on g 1 -sf kk -in in.lammps
+```
+
+### CPU hosts
+
+DPA4C has a second set of hand-written operators for the CPU, so a compressed
+archive runs the same fused pipeline on a host without a GPU. They are selected
+automatically -- there is no level to set, because they replace a lowering of
+the same arithmetic and are faster wherever they apply -- and they carry the
+same numerical contract as the CUDA ones: float32 model computation, no
+reduced-precision path.
+
+```bash
+export OMP_NUM_THREADS=$(nproc --all)
+export DP_INTRA_OP_PARALLELISM_THREADS=$OMP_NUM_THREADS
+export DP_INTER_OP_PARALLELISM_THREADS=1
+lmp -in in.lammps
+```
+
+Three conditions have to hold for the fused CPU path to be taken:
+
+- the archive is **compressed**, because the operator reads the radial table
+  rather than evaluating the radial network;
+- `channels` is one of 8, 16, 32, 64, 128, `lmax` one of 2, 3, 4, `radial_modes`
+  one of 0, 2, 4, 8, the parameters are float32, and no type pairs are excluded;
+- the descriptor is **not** spin-conditioned. The magnetic families need a
+  source-major counterpart of the destination scan, which only the CUDA kernels
+  carry; a spin model on a CPU host falls back to the portable path.
+
+`deepmd/kk` brings nothing on a CPU. Its purpose is to keep the neighbor list
+device-resident and avoid host-device synchronization, which on a host is
+already absent, and everything outside the pair style is about 2% of the step.
+Use the plain `deepmd` style.
+
+Two settings are worth knowing:
+
+- **Thread count.** The C++ interface reads
+  `DP_INTRA_OP_PARALLELISM_THREADS`, not `OMP_NUM_THREADS`, and warns when it
+  is unset. Set both, and prefer one thread per *physical* core.
+- **Processor affinity.** If LAMMPS is launched from a process that has already
+  initialized an OpenMP runtime under `OMP_PROC_BIND` -- a Python driver, for
+  instance -- it inherits that process's affinity mask, which may be a single
+  core, and will then run the model on one thread whatever `OMP_NUM_THREADS`
+  says. The symptom is a low `CPU use` percentage in the LAMMPS timing summary
+  next to a high thread count. Launch LAMMPS directly, or reset the mask in the
+  child.
+
+Resident memory is roughly 16 to 31 KB per atom depending on the grade, so a 4
+GiB budget holds between 124 000 atoms (Plus) and 230 000 atoms (Nano). Most of
+that is the neighbor graph, which depends on the cutoff rather than on the model
+width.
+
+`DP_CPU_MALLOC_RETAIN` controls a heap policy that matters at these sizes. By
+default the operator library keeps large blocks that a step reuses instead of
+returning them to the kernel on every free; without it a molecular-dynamics step
+re-faults its whole working set and loses more than half its throughput above
+about 32 000 atoms. Retaining them costs a few hundred megabytes to a gigabyte
+of resident memory. Set `DP_CPU_MALLOC_RETAIN=0` on a memory-constrained host to
+trade that back.
+
+### Multiple GPUs
+
+Because DPA4C performs no message passing, it needs no cross-rank halo exchange
+of intermediate features, and MPI domain decomposition follows the ordinary
+pair-style path. Launch one MPI rank per GPU and make every target device
+visible:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
+```
+
+Use a non-zero neighbor skin, for example `neighbor 2.0 bin`, to keep per-step
+GPU memory stable; a zero skin rebuilds the neighbor list every step.
+
+## Inference settings
+
+Inference behavior is controlled by environment variables read when the model is
+constructed:
+
+| Environment variable   | Default | Effect                                                                                                                                                          |
+| ---------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DP_CUDA_INFER`        | `0`     | Fused CUDA kernel level: `0` off, `1` fused descriptor and fitting, `2` additionally fuses force and virial assembly. Levels 1 and 2 are numerically identical. |
+| `DP_AMP_INFER`         | off     | bf16 autocast over the per-edge stage during inference. Independent of the training-time `use_amp`.                                                             |
+| `DP_TF32_INFER`        | `0`     | float32 matmul precision: `0` highest, `1` high, `2` medium.                                                                                                    |
+| `DP_CPU_MALLOC_RETAIN` | `1`     | Whether the CPU operator library retains large heap blocks between steps. See [CPU hosts](#cpu-hosts).                                                          |
+
+A compressed model needs `DP_CUDA_INFER` of at least `1` to reach its fused
+path on a GPU; at `0` it evaluates through the portable path and the compression
+brings no speedup. On a CPU host there is no equivalent level: the fused
+operators are always selected when the model is eligible. For molecular dynamics sensitive to the smoothness of the potential
+energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
+
+> [!IMPORTANT]
+> Set these variables **before** running `dp --pt-expt freeze` or
+> `dp --pt-expt compress`. The exported `.pt2` is an AOTInductor artifact, so the
+> kernel level and precision policy are captured into the graph at export time
+> and are **not** re-evaluated when the `.pt2` is later loaded by LAMMPS.
+
+## Native spin
+
+DPA4C accepts a per-atom magnetic moment as an equivariant descriptor input.
+The moment is not represented by a virtual atom: the atom count of the model
+equals the number of physical atoms, and the magnetic force is the negative
+spin gradient of the same energy that yields the conservative force,
+
+```math
+\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
+\qquad
+\mathbf{F}^{m}_i = -\frac{\partial E}{\partial \mathbf{s}_i} .
+```
+
+### What the descriptor represents
+
+The magnetic moment is an axial vector: it is even under spatial inversion and
+odd under time reversal, whereas a displacement is odd under inversion and even
+under time reversal. The descriptor therefore emits only invariants of even
+total spin order, which leaves it invariant under the full orthogonal group
+acting jointly on positions and moments, including improper operations, and
+invariant under time reversal. Reversing every moment leaves the energy
+unchanged and reverses the magnetic force.
+
+Four families of spin channels are accumulated over the neighbor shell and
+contracted against one another and against the geometric moments:
+
+| Family                              | Content                                                                                           | Interaction it represents                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Isotropic vector                    | $\sum_j \varphi_c(r_{ij})\,\hat{\mathbf{s}}_j$                                                    | Heisenberg exchange                         |
+| Bond-projected vector               | $\sum_j \varphi_c(r_{ij})\,(\hat{\mathbf{s}}_j\cdot\hat{\mathbf{u}}_{ij})\,\hat{\mathbf{u}}_{ij}$ | Symmetric anisotropic exchange              |
+| Quadrupole                          | $\sum_j \varphi_c(r_{ij})\,B_2(\hat{\mathbf{s}}_j)$                                               | Biquadratic exchange, single-ion anisotropy |
+| Magnitude and magnetic coordination | $\sum_j \varphi_c(r_{ij})\,\lvert\mathbf{s}_j\rvert^2$ and the gated neighbor count               | Longitudinal and stoichiometric terms       |
+
+Two-body Heisenberg exchange, biquadratic exchange and single-ion anisotropy
+are represented exactly rather than approximately: each corresponds to a single
+emitted invariant times a learned radial profile. The Dzyaloshinskii-Moriya
+interaction is not representable at any order, because the invariant read-out
+contains no antisymmetric contraction.
+
+The width of the spin block follows the degree-two width of the geometric
+descriptor, so it is set by
+{ref}`channels <model[standard]/descriptor[dpa4c]/channels>` and has no knob of
+its own.
+
+### Enabling native spin
+
+Native spin is requested at the model level, not on the descriptor. The
+`use_spin` list marks the magnetic types, either as booleans over the type map
+or by element name:
+
+```json
+{
+  "model": {
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "spin": {
+      "scheme": "native",
+      "use_spin": [
+        true,
+        false
+      ]
+    },
+    "descriptor": {
+      "type": "dpa4c",
+      "rcut": 6.0,
+      "channels": 32,
+      "lmax": 2,
+      "precision": "float32"
+    }
+  }
+}
+```
+
+The `native` scheme is required; the virtual-atom `deepspin` scheme is not
+supported by this descriptor. Training uses the `ener_spin` loss, whose
+`start_pref_fm` and `limit_pref_fm` weight the magnetic force. A complete
+example is provided in `examples/spin/dpa4c/input.json`.
+
+A moment is conditioned by a per-type gate and a reference magnitude measured
+from the training corpus, so a non-magnetic type contributes exactly zero to
+every spin channel and the magnitude of a magnetic type is normalized to order
+unity. A model that declares a magnetic type but receives no moment is
+rejected rather than evaluated at zero, since the latter is indistinguishable
+from a broken data pipeline and reports a vanishing magnetic force.
+
+### Running a spin model in LAMMPS
+
+Freeze and compress exactly as for any other DPA4C model, then select a spin
+pair style from the table under
+[Choosing a pair style](#choosing-a-pair-style). Both spin styles require
+`atom_style spin`:
+
+```lammps
+atom_style        spin
+pair_style        dpa4spin compressed_model.pt2
+pair_coeff        * * Ni O
+```
+
+Ghost moments are supplied by the forward communication that `atom_style spin`
+already performs, and the magnetic force is reduced back onto owning atoms
+alongside the conservative force, so domain decomposition needs no additional
+exchange.
+
+By default the pair styles store the precession magnetic force expected by the
+LAMMPS SPIN package (the model energy gradient scaled by the moment magnitude
+over `hbar`). A Newtonian Cartesian integrator instead needs the raw energy
+gradient `-dE/dS`. Select it with `magnetic_force cartesian` (requires
+`units metal`); the default is `magnetic_force precession`:
+
+```lammps
+pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
+```
+
+The selected convention is exposed as the scalar integer
+`Pair::extract("fm_cartesian_force", dim)` (zero for precession, one for
+Cartesian) so a consuming integrator can reject an incompatible configuration.
+
+`min_style spin` reads the magnetic force from the pair style and relaxes the
+moment directions. Spin dynamics through `fix nve/spin` requires a LAMMPS build
+whose fix recognizes this pair style, because the stock fix accumulates the
+magnetic force only from pair styles matching its own name pattern.
+
+A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
+is provided in `examples/spin/dpa4c/lmp/`.
+
+## Data format
+
+DPA4C consumes a mixed-type neighbor list, so it supports both the
+[standard DeePMD-kit data format](../data/system.md) and the
+[mixed-type data format](../data/system.md#mixed-type). Keep the `type_map`
+order consistent across the dataset, the input file, and any downstream
+`pair_coeff` mapping.
+
+## Limitations
+
+- DPA4C is implemented for the PyTorch Exportable backend (`dp --pt-expt`).
+- Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
+- Model compression requires `float32` and a configuration inside the compiled
+  sets listed under [Model compression](#model-compression). The resulting
+  archive runs fused kernels on either a CUDA device or a CPU host; only a
+  spin-conditioned model is CUDA-only.
+- The device-resident inference path requires a Kokkos-enabled LAMMPS build on
+  the GPU backend.
+- The descriptor is one-hop local by construction. Interactions beyond `rcut`
+  are not represented, and unlike a message-passing model the effective range
+  cannot be extended by adding layers.
+- Native spin requires the `native` scheme; the virtual-atom `deepspin` scheme
+  is not supported. The Dzyaloshinskii-Moriya interaction is not representable,
+  as explained under [Native spin](#native-spin).
+
+## Architecture details
+
+Background on how the descriptor works, linking each part to the options that
+control it. Skip it unless you are tuning those options.
+
+For every neighbor pair within `rcut`, the interatomic distance is expanded on
+an analytic radial basis (`basis_type`, with `n_radial` functions) and passed
+through a radial network that produces one amplitude per channel. The ordered
+pair of atom types modulates that amplitude with a learned scale and shift, so
+the radial shape depends on which species face each other without instantiating
+a separate network per pair. With `radial_modes` greater than zero, each ordered
+pair additionally mixes several shared radial profiles with its own
+coefficients, which lets pairs differ in shape rather than only in scale.
+
+Each amplitude is multiplied by a smooth cutoff envelope whose value and first
+derivatives vanish at `rcut`, and by the real spherical harmonics of the
+neighbor direction up to degree `lmax`.
+
+The per-atom state is the sum of these edge contributions, held separately for
+each angular degree. Degree zero carries `channels` scalar values; higher
+degrees carry progressively fewer channels, each with `2l + 1` angular
+components. This tapering keeps the state small, which is what bounds both the
+per-step cost and the memory per atom.
+
+The read-out contracts the moments into rotationally invariant scalars — norms
+and cross-channel products within each degree, together with couplings across
+degrees — and appends two measures of neighborhood density. Only these scalars
+reach the fitting network:
+
+```math
+\mathcal{D}_i = \mathrm{Invariants}\left(\{\mathbf{M}_i^{(l)}\}_{l=0}^{l_{\max}}\right).
+```
+
+Because the contraction is exactly rotationally invariant, the descriptor and
+hence the energy are invariant under global rotation, and the forces obtained by
+differentiation are equivariant.

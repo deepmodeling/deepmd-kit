@@ -550,7 +550,14 @@ class DeepEval(DeepEvalBackend):
         atype: np.ndarray,
         imap: np.ndarray,
         neighbor_list: "ase.neighborlist.NeighborList | None",
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+    ]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters
@@ -558,7 +565,8 @@ class DeepEval(DeepEvalBackend):
         coords : np.ndarray
             The coordinates of atoms. Should be of shape [natoms, 3]
         cell : Optional[np.ndarray]
-            The cell of the system. Should be of shape [3, 3]
+            The cell of the system. Should be of shape [3, 3]. None denotes
+            open boundary conditions.
         atype : np.ndarray
             The type of atoms. Should be of shape [natoms]
         imap : np.ndarray
@@ -588,7 +596,11 @@ class DeepEval(DeepEvalBackend):
             The index map of ghost atoms. Should be of shape [nghost]
         """
         pbc = np.repeat(cell is not None, 3)
-        cell = cell.reshape(3, 3)
+        # ASE still requires a 3x3 cell for non-periodic systems, but the cell
+        # must not be used to infer periodicity or create ghost atoms.
+        cell = (
+            np.zeros((3, 3), dtype=np.float64) if cell is None else cell.reshape(3, 3)
+        )
         positions = coords.reshape(-1, 3)
         neighbor_list.bothways = True
         neighbor_list.self_interaction = False
@@ -823,6 +835,9 @@ class DeepEval(DeepEvalBackend):
         else:
             pbc = True
             cells = np.array(cells).reshape([nframes, 9])
+        # Keep the original boundary semantics separate from the identity box
+        # used only to satisfy TensorFlow's non-optional box placeholder.
+        neighbor_cell = cells if pbc else None
 
         if self.has_fparam:
             assert fparam is not None
@@ -893,7 +908,7 @@ class DeepEval(DeepEvalBackend):
                 ghost_map,
             ) = self.build_neighbor_list(
                 coords,
-                cells if cells is not None else None,
+                neighbor_cell,
                 atom_types,
                 imap,
                 self.neighbor_list,
@@ -1554,7 +1569,14 @@ class DeepEvalOld:
         atype: np.ndarray,
         imap: np.ndarray,
         neighbor_list: "ase.neighborlist.NeighborList | None",
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+    ]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters
@@ -1562,7 +1584,8 @@ class DeepEvalOld:
         coords : np.ndarray
             The coordinates of atoms. Should be of shape [natoms, 3]
         cell : Optional[np.ndarray]
-            The cell of the system. Should be of shape [3, 3]
+            The cell of the system. Should be of shape [3, 3]. None denotes
+            open boundary conditions.
         atype : np.ndarray
             The type of atoms. Should be of shape [natoms]
         imap : np.ndarray
@@ -1592,7 +1615,11 @@ class DeepEvalOld:
             The index map of ghost atoms. Should be of shape [nghost]
         """
         pbc = np.repeat(cell is not None, 3)
-        cell = cell.reshape(3, 3)
+        # ASE still requires a 3x3 cell for non-periodic systems, but the cell
+        # must not be used to infer periodicity or create ghost atoms.
+        cell = (
+            np.zeros((3, 3), dtype=np.float64) if cell is None else cell.reshape(3, 3)
+        )
         positions = coords.reshape(-1, 3)
         neighbor_list.bothways = True
         neighbor_list.self_interaction = False

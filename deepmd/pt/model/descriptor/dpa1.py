@@ -70,10 +70,17 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     This descriptor, :math:`\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}`, is given by
 
     .. math::
-        \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \hat{\mathcal{G}}^i_<,
+        \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T
+        \mathcal{B}_{L}^i (\mathcal{B}_{L}^i)^T \hat{\mathcal{G}}^i_<,
 
-    where :math:`\hat{\mathcal{G}}^i` represents the embedding matrix:math:`\mathcal{G}^i`
-    after additional self-attention mechanism and :math:`\mathcal{R}^i` is defined by the full case in the se_e2_a descriptor.
+    where :math:`\hat{\mathcal{G}}^i` represents the embedding matrix
+    :math:`\mathcal{G}^i`
+    after additional self-attention mechanism. For :math:`L=1`,
+    :math:`\mathcal{B}_{L}^i` is the full environment matrix
+    :math:`\mathcal{R}^i` of the se_e2_a descriptor. For :math:`L=2,3,4`,
+    norm-normalized real spherical harmonics are appended to each environment
+    row. Their per-degree inner products are :math:`P_l(\cos\theta)`, adding
+    higher angular correlations without enumerating neighbor pairs.
     Note that we obtain :math:`\mathcal{G}^i` using the type embedding method by default in this descriptor.
 
     To perform the self-attention mechanism, the queries :math:`\mathcal{Q}^{i,l} \in \mathbb{R}^{N_c\times d_k}`,
@@ -134,6 +141,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
     axis_neuron: int
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+    lmax: int
+            Maximum angular degree of the aggregated moment basis. Supported
+            values are 1 through 4.
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
@@ -254,6 +264,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # not implemented
         spin: Any | None = None,
         type: str | None = None,
+        lmax: int = 1,
     ) -> None:
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -280,6 +291,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             ntypes,
             neuron=neuron,
             axis_neuron=axis_neuron,
+            lmax=lmax,
             tebd_dim=tebd_dim,
             tebd_input_mode=tebd_input_mode,
             set_davg_zero=set_davg_zero,
@@ -500,7 +512,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 2,
+            "@version": 4 if obj.lmax != 1 else 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -544,6 +556,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "trainable": self.trainable,
             "spin": None,
         }
+        if obj.adam_degree_gain_raw is not None:
+            data["@variables"]["degree_gain_raw"] = (
+                obj.adam_degree_gain_raw.detach().cpu().numpy()
+            )
+        if obj.lmax != 1:
+            data["lmax"] = obj.lmax
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.filter_layers_strip.serialize()})
         return data
@@ -551,7 +569,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 3, 1)
+        check_version_compatibility(data.pop("@version"), 4, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -568,6 +586,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
+        data.setdefault("lmax", 1)
         obj = cls(**data)
 
         def t_cvt(xx: Any) -> torch.Tensor:
@@ -578,6 +597,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         )
         obj.se_atten["davg"] = t_cvt(variables["davg"])
         obj.se_atten["dstd"] = t_cvt(variables["dstd"])
+        if obj.se_atten.adam_degree_gain_raw is not None:
+            obj.se_atten.adam_degree_gain_raw.data.copy_(
+                t_cvt(variables["degree_gain_raw"])
+            )
         obj.se_atten.filter_layers = NetworkCollection.deserialize(embeddings)
         if tebd_input_mode in ["strip"]:
             obj.se_atten.filter_layers_strip = NetworkCollection.deserialize(

@@ -143,7 +143,7 @@ pair_style deepspin models ... keyword value ...
 - models = frozen model(s) to compute the interaction.
   If multiple models are provided, then only the first model serves to provide energy, force and magnetic force prediction for each timestep of molecular dynamics,
   and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative_ or _aparam_ or _ttm_
+- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _charge_spin_ or _atomic_ or _relative_ or _aparam_ or _ttm_
 
 > [!NOTE]
 > Please note that the virial and atomic virial are not currently supported in spin models.
@@ -159,6 +159,8 @@ pair_style deepspin models ... keyword value ...
         id = compute id used to update the frame parameter.
     <i>aparam_from_compute</i> value = id
         id = compute id used to update the atom parameter.
+    <i>charge_spin</i> value = parameters
+        parameters = one or more charge/spin condition values required by models trained with a charge/spin embedding.
     <i>atomic</i> = no value is required.
         If this keyword is set, the force and magnetic force model deviation of each atom will be output.
     <i>relative</i> value = level
@@ -183,6 +185,8 @@ compute    TEMP all temp
 
 pair_style deepspin spin.pb aparam_from_compute 1
 compute    1 all ke/atom
+
+pair_style deepspin dpa4_spin.pt2 charge_spin 1.0 2.0
 ```
 
 ### Description
@@ -190,6 +194,8 @@ compute    1 all ke/atom
 Evaluate the interaction of the system with spin by using [DeepSPIN][dpspin] models. It is noticed that deep spin model is not a "pairwise" interaction, but a multi-body interaction.
 
 This pair style takes the deep spin model defined in a model file that usually has .pb/.pth/.savedmodel extensions. The model can be trained and frozen from multiple backends by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
+
+If the keyword `charge_spin` is set, the given per-frame charge/spin value(s) will be fed to models that were trained with a charge/spin embedding. If the keyword is not set, the model's stored `default_chg_spin` (if any) is used. When multiple models are given, the same `charge_spin` is fed to every model.
 
 The model deviation evaluates the consistency of the force and magnetic force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force and magnetic force prediction of each atom will be output.
 The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lammps.org/pair_hybrid.html) is not applied.

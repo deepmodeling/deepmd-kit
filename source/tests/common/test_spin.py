@@ -6,9 +6,83 @@ import numpy as np
 
 from deepmd.utils.spin import (
     Spin,
+    env_protection_descriptors,
+    normalize_spin_use_spin,
 )
 
 CUR_DIR = os.path.dirname(__file__)
+
+
+class EnvProtectionDescriptorsTest(unittest.TestCase):
+    def test_hybrid_only_configures_environment_matrix_children(self) -> None:
+        environment = {"type": "se_e2_a", "env_protection": 0.02}
+        dpa4 = {"type": "DPA4", "eps": 1e-7}
+        nested_environment = {"type": "se_atten"}
+        descriptor = {
+            "type": "hybrid",
+            "env_protection": 0.03,
+            "list": [
+                environment,
+                dpa4,
+                {
+                    "type": "hybrid",
+                    "env_protection": 0.04,
+                    "list": [nested_environment, {"type": "dpa4c"}],
+                },
+            ],
+        }
+        selected = list(env_protection_descriptors(descriptor))
+        self.assertEqual(len(selected), 2)
+        self.assertIs(selected[0], environment)
+        self.assertIs(selected[1], nested_environment)
+        for child in selected:
+            child.setdefault("env_protection", 0.01)
+        self.assertEqual(environment["env_protection"], 0.02)
+        self.assertEqual(nested_environment["env_protection"], 0.04)
+        self.assertNotIn("env_protection", descriptor)
+        self.assertNotIn("env_protection", descriptor["list"][2])
+        self.assertEqual(dpa4, {"type": "DPA4", "eps": 1e-7})
+        self.assertEqual(list(env_protection_descriptors({"type": "SeZM"})), [])
+
+
+class NormalizeUseSpinTest(unittest.TestCase):
+    """Unit tests for ``normalize_spin_use_spin`` (pure; all three forms)."""
+
+    def setUp(self) -> None:
+        self.type_map = ["Ni", "O", "H"]
+
+    def test_boolean_passthrough(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin([True, False, True], self.type_map),
+            [True, False, True],
+        )
+
+    def test_index_form(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin([0, 2], self.type_map),
+            [True, False, True],
+        )
+
+    def test_symbol_form(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin(["Ni", "H"], self.type_map),
+            [True, False, True],
+        )
+
+    def test_empty_list_all_false(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin([], self.type_map),
+            [False, False, False],
+        )
+
+    def test_unknown_symbol_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "absent from type_map"):
+            normalize_spin_use_spin(["Fe"], self.type_map)
+
+    def test_pure_no_input_mutation(self) -> None:
+        use_spin = ["Ni"]
+        normalize_spin_use_spin(use_spin, self.type_map)
+        self.assertEqual(use_spin, ["Ni"])
 
 
 class SpinTest(unittest.TestCase):
