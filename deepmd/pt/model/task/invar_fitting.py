@@ -192,6 +192,7 @@ class InvarFitting(GeneralFitting):
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
+        node_gate: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Based on embedding net output, alculate total energy.
 
@@ -202,6 +203,8 @@ class InvarFitting(GeneralFitting):
           shape [ntypes, self.dim_descrpt], required by ``vacuum_ref``.
         - return_atomic_feature: also return the last hidden activation under the
           ``atomic_feature`` key.
+        - node_gate: per-atom source gate of a bridged descriptor with shape
+          [nframes, natoms[0], 1]; the learned part of the output fades with it.
 
         Returns
         -------
@@ -217,6 +220,7 @@ class InvarFitting(GeneralFitting):
             aparam,
             vacuum_descriptor=vacuum_descriptor,
             return_atomic_feature=return_atomic_feature,
+            node_gate=node_gate,
         )
         result = {self.var_name: out[self.var_name].to(env.GLOBAL_PT_FLOAT_PRECISION)}
         if return_atomic_feature:

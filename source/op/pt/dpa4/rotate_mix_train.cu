@@ -35,9 +35,9 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
 
 #include <tuple>
+#include <type_traits>
 
 #include "rotate_mix_train/kernels.cuh"
 #include "sezm_train_ops.cuh"
@@ -66,6 +66,71 @@
 #undef DPA4_RMT_EXTERN
 
 using namespace dpa4_sezm_kernels;
+
+#define DPA4_RM_CHECK_LAUNCH(what)                                        \
+  do {                                                                    \
+    cudaError_t err = cudaGetLastError();                                 \
+    TORCH_CHECK(err == cudaSuccess, what, ": ", cudaGetErrorString(err)); \
+  } while (0)
+
+namespace {
+
+void check_rotate_inputs(const at::Tensor& x,
+                         const at::Tensor& src,
+                         const at::Tensor& runs,
+                         int64_t lmax,
+                         int64_t n_focus,
+                         int64_t rank,
+                         const char* who) {
+  TORCH_CHECK(x.is_cuda() && x.dim() == 3 && x.stride(2) == 1, who,
+              ": x must be (N, D, C_wide) with unit channel stride");
+  TORCH_CHECK(1 <= lmax && lmax <= kMaxLmax, who, ": unsupported lmax");
+  TORCH_CHECK(0 <= rank && rank <= kMaxRank, who, ": unsupported rank");
+  TORCH_CHECK(1 <= n_focus && n_focus <= kMaxRotateFocus, who,
+              ": unsupported focus count");
+  TORCH_CHECK(x.size(1) == (lmax + 1) * (lmax + 1), who,
+              ": x degree dimension does not match lmax");
+  TORCH_CHECK(x.size(2) % n_focus == 0, who,
+              ": channel width must split into the focus streams");
+  TORCH_CHECK(x.size(2) <= kNarrowChannelLanes ||
+                  (lmax == kMaxLmax && x.size(2) <= kWideChannelLanes),
+              who, ": channel width exceeds the supported block lane count");
+  const int64_t dim = (lmax + 1) * (lmax + 1);
+  TORCH_CHECK(runs.is_contiguous() && runs.dim() == 2 &&
+                  runs.size(0) == src.size(0) && runs.size(1) == 3 * dim - 2,
+              who, ": runs must be contiguous (E, 3 * DIM - 2)");
+  TORCH_CHECK(src.scalar_type() == at::kLong, who, ": src must be int64");
+}
+
+// Dispatch helper over the compile-time (L, RANK) grid.
+template <typename F>
+void dispatch_l_rank(int64_t lmax, int64_t rank, const F& f) {
+  const int key = (int)lmax * 8 + (int)rank;
+  switch (key) {
+#define DPA4_RM_CASE(L, R)                                                 \
+  case L * 8 + R:                                                          \
+    f(std::integral_constant<int, L>{}, std::integral_constant<int, R>{}); \
+    break;
+#define DPA4_RM_CASES_FOR_L(L) \
+  DPA4_RM_CASE(L, 0)           \
+  DPA4_RM_CASE(L, 1)           \
+  DPA4_RM_CASE(L, 2)           \
+  DPA4_RM_CASE(L, 3)           \
+  DPA4_RM_CASE(L, 4)
+    DPA4_RM_CASES_FOR_L(1)
+    DPA4_RM_CASES_FOR_L(2)
+    DPA4_RM_CASES_FOR_L(3)
+    DPA4_RM_CASES_FOR_L(4)
+    DPA4_RM_CASES_FOR_L(5)
+    DPA4_RM_CASES_FOR_L(6)
+#undef DPA4_RM_CASES_FOR_L
+#undef DPA4_RM_CASE
+    default:
+      TORCH_CHECK(false, "sezm_rotate_mix: unsupported (lmax, rank)");
+  }
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Host entries, composed by the fused SO(2) value-path operator.
@@ -97,17 +162,15 @@ at::Tensor rotate_mix_fwd(const at::Tensor& x_in,
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND(
-      at::kBFloat16, x.scalar_type(), "rotate_mix_fwd", [&] {
-        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
-          launch_rotate_mix_fwd<scalar_t, decltype(lc)::value,
-                                decltype(rc)::value>(
-              x.data_ptr<scalar_t>(), src.data_ptr<long>(),
-              runs.data_ptr<scalar_t>(), kc.data_ptr<scalar_t>(),
-              cb.data_ptr<scalar_t>(), u.data_ptr<scalar_t>(), n_edge,
-              x.stride(0), x.stride(1), cf, c_wide, threads, stream);
-        });
-      });
+  DPA4_SEZM_DISPATCH_TYPES(x.scalar_type(), "rotate_mix_fwd", [&] {
+    dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+      launch_rotate_mix_fwd<scalar_t, decltype(lc)::value, decltype(rc)::value>(
+          x.data_ptr<scalar_t>(), src.data_ptr<long>(),
+          runs.data_ptr<scalar_t>(), kc.data_ptr<scalar_t>(),
+          cb.data_ptr<scalar_t>(), u.data_ptr<scalar_t>(), n_edge, x.stride(0),
+          x.stride(1), cf, c_wide, threads, stream);
+    });
+  });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_fwd");
   return u;
 }
@@ -148,21 +211,20 @@ std::tuple<at::Tensor, at::Tensor> rotate_mix_fwd_pair(
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND(
-      at::kBFloat16, x.scalar_type(), "rotate_mix_fwd_pair", [&] {
-        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
-          launch_rotate_mix_fwd_pair<scalar_t, decltype(lc)::value,
-                                     decltype(rc)::value>(
-              x.data_ptr<scalar_t>(), h_gx.data_ptr<scalar_t>(),
-              src.data_ptr<long>(), runs.data_ptr<scalar_t>(),
-              h_gruns_t.defined() ? h_gruns_t.data_ptr<scalar_t>() : nullptr,
-              kc.data_ptr<scalar_t>(),
-              h_gkc_t.defined() ? h_gkc_t.data_ptr<scalar_t>() : nullptr,
-              cb.data_ptr<scalar_t>(), u0.data_ptr<scalar_t>(),
-              hgu0.data_ptr<scalar_t>(), n_edge, x.stride(0), x.stride(1),
-              h_gx.stride(0), h_gx.stride(1), cf, c_wide, threads, stream);
-        });
-      });
+  DPA4_SEZM_DISPATCH_TYPES(x.scalar_type(), "rotate_mix_fwd_pair", [&] {
+    dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+      launch_rotate_mix_fwd_pair<scalar_t, decltype(lc)::value,
+                                 decltype(rc)::value>(
+          x.data_ptr<scalar_t>(), h_gx.data_ptr<scalar_t>(),
+          src.data_ptr<long>(), runs.data_ptr<scalar_t>(),
+          h_gruns_t.defined() ? h_gruns_t.data_ptr<scalar_t>() : nullptr,
+          kc.data_ptr<scalar_t>(),
+          h_gkc_t.defined() ? h_gkc_t.data_ptr<scalar_t>() : nullptr,
+          cb.data_ptr<scalar_t>(), u0.data_ptr<scalar_t>(),
+          hgu0.data_ptr<scalar_t>(), n_edge, x.stride(0), x.stride(1),
+          h_gx.stride(0), h_gx.stride(1), cf, c_wide, threads, stream);
+    });
+  });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_fwd_pair");
   return {u0, hgu0};
 }
@@ -202,20 +264,18 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd(
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND(
-      at::kBFloat16, x.scalar_type(), "rotate_mix_bwd", [&] {
-        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
-          launch_rotate_mix_bwd<scalar_t, decltype(lc)::value,
-                                decltype(rc)::value>(
-              grad_u.data_ptr<scalar_t>(), x.data_ptr<scalar_t>(),
-              src.data_ptr<long>(), runs.data_ptr<scalar_t>(),
-              kc.data_ptr<scalar_t>(), cb.data_ptr<scalar_t>(),
-              grad_x_edge.data_ptr<scalar_t>(), grad_runs.data_ptr<scalar_t>(),
-              grad_kc.data_ptr<scalar_t>(),
-              rank > 0 ? pcb.data_ptr<scalar_t>() : nullptr, n_edge,
-              x.stride(0), x.stride(1), cf, c_wide, threads, stream);
-        });
-      });
+  DPA4_SEZM_DISPATCH_TYPES(x.scalar_type(), "rotate_mix_bwd", [&] {
+    dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+      launch_rotate_mix_bwd<scalar_t, decltype(lc)::value, decltype(rc)::value>(
+          grad_u.data_ptr<scalar_t>(), x.data_ptr<scalar_t>(),
+          src.data_ptr<long>(), runs.data_ptr<scalar_t>(),
+          kc.data_ptr<scalar_t>(), cb.data_ptr<scalar_t>(),
+          grad_x_edge.data_ptr<scalar_t>(), grad_runs.data_ptr<scalar_t>(),
+          grad_kc.data_ptr<scalar_t>(),
+          rank > 0 ? pcb.data_ptr<scalar_t>() : nullptr, n_edge, x.stride(0),
+          x.stride(1), cf, c_wide, threads, stream);
+    });
+  });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_bwd");
   if (rank > 0) {
     const at::ScalarType accumulation_type =
@@ -269,25 +329,24 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd2(
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND(
-      at::kBFloat16, x.scalar_type(), "rotate_mix_bwd2", [&] {
-        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
-          launch_rotate_mix_bwd2<scalar_t, decltype(lc)::value,
-                                 decltype(rc)::value>(
-              grad_u.data_ptr<scalar_t>(), x.data_ptr<scalar_t>(),
-              h_gx.data_ptr<scalar_t>(), src.data_ptr<long>(),
-              runs.data_ptr<scalar_t>(),
-              h_gruns_t.defined() ? h_gruns_t.data_ptr<scalar_t>() : nullptr,
-              kc.data_ptr<scalar_t>(),
-              h_gkc_t.defined() ? h_gkc_t.data_ptr<scalar_t>() : nullptr,
-              cb.data_ptr<scalar_t>(),
-              wants_gxe ? grad_x_edge.data_ptr<scalar_t>() : nullptr,
-              grad_runs.data_ptr<scalar_t>(), grad_kc.data_ptr<scalar_t>(),
-              rank > 0 ? pcb.data_ptr<scalar_t>() : nullptr, n_edge,
-              x.stride(0), x.stride(1), h_gx.stride(0), h_gx.stride(1), cf,
-              c_wide, threads, stream);
-        });
-      });
+  DPA4_SEZM_DISPATCH_TYPES(x.scalar_type(), "rotate_mix_bwd2", [&] {
+    dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+      launch_rotate_mix_bwd2<scalar_t, decltype(lc)::value,
+                             decltype(rc)::value>(
+          grad_u.data_ptr<scalar_t>(), x.data_ptr<scalar_t>(),
+          h_gx.data_ptr<scalar_t>(), src.data_ptr<long>(),
+          runs.data_ptr<scalar_t>(),
+          h_gruns_t.defined() ? h_gruns_t.data_ptr<scalar_t>() : nullptr,
+          kc.data_ptr<scalar_t>(),
+          h_gkc_t.defined() ? h_gkc_t.data_ptr<scalar_t>() : nullptr,
+          cb.data_ptr<scalar_t>(),
+          wants_gxe ? grad_x_edge.data_ptr<scalar_t>() : nullptr,
+          grad_runs.data_ptr<scalar_t>(), grad_kc.data_ptr<scalar_t>(),
+          rank > 0 ? pcb.data_ptr<scalar_t>() : nullptr, n_edge, x.stride(0),
+          x.stride(1), h_gx.stride(0), h_gx.stride(1), cf, c_wide, threads,
+          stream);
+    });
+  });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_bwd2");
   if (rank > 0) {
     const at::ScalarType accumulation_type =
@@ -334,13 +393,12 @@ at::Tensor segment_sum_csr(const at::Tensor& rows_in,
   const int threads = 256;
   const int tiles = (int)std::min<long>((feat + threads - 1) / threads, 64);
   dim3 grid((unsigned)n_seg, (unsigned)std::max(tiles, 1));
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::kBFloat16, at::kHalf, rows.scalar_type(), "segment_sum_csr", [&] {
-        segment_sum_kernel<scalar_t><<<grid, threads, 0, stream>>>(
-            rows.data_ptr<scalar_t>(), order_contiguous.data_ptr<long>(),
-            row_ptr_contiguous.data_ptr<long>(), out.data_ptr<scalar_t>(),
-            n_seg, feat);
-      });
+  DPA4_SEZM_DISPATCH_TYPES(rows.scalar_type(), "segment_sum_csr", [&] {
+    segment_sum_kernel<scalar_t><<<grid, threads, 0, stream>>>(
+        rows.data_ptr<scalar_t>(), order_contiguous.data_ptr<long>(),
+        row_ptr_contiguous.data_ptr<long>(), out.data_ptr<scalar_t>(), n_seg,
+        feat);
+  });
   DPA4_RM_CHECK_LAUNCH("sezm_segment_sum");
   return out;
 }

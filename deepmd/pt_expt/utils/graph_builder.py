@@ -34,18 +34,17 @@ def resolve_auto_graph_builder(
 ) -> str:
     """Resolve ``neighbor_graph_method="auto"`` to a concrete inference builder.
 
-    Single owner of the inference / DeepEval auto ladder. Training uses
+    Single owner of graph inference / DeepEval auto selection. Training uses
     :func:`resolve_neighbor_graph_method`, which never selects ``vesin``.
 
-    Mirrors :func:`deepmd.pt.model.model.sezm_model._select_neighbor_builder`:
-    ``vesin`` is eligible only for a single-frame batch (``nf == 1``), because
-    its API loops frames in Python (~1 ms/frame). Multi-frame batches stay on
-    ``nv`` (CUDA) or ``dense`` so ``auto_batch_size`` / ``dp test`` do not
-    regress to the per-frame loop.
+    ``vesin`` is preferred for single-frame CUDA inference. Its API loops over
+    frames in Python, so multi-frame CUDA batches prefer ``nv`` and fall back
+    to ``dense`` when Toolkit-Ops is unavailable.
 
     Notes
     -----
-    * CUDA + ``nvalchemiops``: ``nv`` (any ``nf``).
+    * CUDA + ``nf == 1`` + ``vesin.torch``: ``vesin``.
+    * CUDA + ``nvalchemiops``: ``nv``.
     * CPU + the operator library: ``cell``, whose search is threaded.
     * ``nf == 1`` + ``vesin.torch``: ``vesin``.
     * otherwise: ``dense``.
@@ -92,6 +91,8 @@ def resolve_auto_graph_builder(
         raise ValueError(f"nf must be >= 1, got {nf}")
 
     dev = torch.device(device)
+    if dev.type == "cuda" and nf == 1 and is_vesin_torch_available():
+        return "vesin"
     nv_available = is_nv_available()
     if dev.type == "cuda" and nv_available:
         return "nv"

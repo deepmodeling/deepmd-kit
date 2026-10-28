@@ -65,39 +65,52 @@ __all__ = [
     "_restore_observed_type_from_file",
     "_save_observed_type_to_file",
     "collect_observed_types",
-    "min_pair_dist_frame_mask",
     "observed_types_from_counts",
+    "pair_margin_frame_mask",
     "scan_redu_stats",
     "select_batch_frames",
 ]
 
 
-def min_pair_dist_frame_mask(
+def pair_margin_frame_mask(
     batch: dict[str, Any],
-    min_pair_dist: float,
+    enabled: bool,
 ) -> torch.Tensor | None:
     """
-    Return the valid-frame mask for a minimum pair-distance threshold.
+    Return the valid-frame mask of the pair-clearance filter.
+
+    The derived field holds each frame's margin against the thresholds its atom
+    pairs carry, so a frame is kept when that margin reaches one, whatever
+    length scale sized them. The registered filter radius is already
+    spent on that margin and takes no part in this comparison.
 
     Parameters
     ----------
     batch
         Data batch containing frame-aligned tensors.
-    min_pair_dist
-        Minimum allowed pair distance in Å.
+    enabled
+        Whether the pair-clearance filter is configured for this data.
 
     Returns
     -------
     torch.Tensor or None
         Boolean mask with shape (nframes), or ``None`` when filtering is
-        disabled or the distance field is unavailable.
+        disabled.
+
+    Raises
+    ------
+    RuntimeError
+        If the batch carries a placeholder instead of a derived margin, which
+        would otherwise accept every frame silently.
     """
-    if min_pair_dist <= 0.0 or "min_pair_dist" not in batch:
+    if not enabled:
         return None
-    distances = batch["min_pair_dist"]
-    if not isinstance(distances, torch.Tensor):
-        return None
-    return distances.reshape(-1) >= float(min_pair_dist)
+    if not batch.get("find_pair_margin", False):
+        raise RuntimeError(
+            "The pair-clearance filter is enabled, but the data source did not "
+            "derive the pair margin of the batch."
+        )
+    return batch["pair_margin"].reshape(-1) >= 1.0
 
 
 def select_batch_frames(
@@ -143,6 +156,8 @@ def make_stat_input(
     dataloaders: list[Any],
     nbatches: int,
     min_pair_dist: float = 0.0,
+    *,
+    filter_enabled_by_system: Sequence[bool] | None = None,
 ) -> list[dict[str, Any]]:
     """Pack data for statistics.
 
@@ -155,8 +170,13 @@ def make_stat_input(
     nbatches
         Maximum number of valid batches collected from each system.
     min_pair_dist
-        Minimum allowed pair distance in Å. Frames below the threshold are
-        excluded before statistics are accumulated.
+        Radius the training-frame filter was registered with. When
+        positive, frames holding a pair inside its window are dropped before
+        the statistics are accumulated, so they see the frames the optimizer
+        sees.
+    filter_enabled_by_system
+        Optional source-specific filter policies for grouped datasets. The
+        registered requirements retain each source's filter radius.
 
     Returns
     -------
@@ -167,12 +187,17 @@ def make_stat_input(
     lst = []
     log.info("Packing data for statistics from %d systems", len(datasets))
     for system_index in range(len(datasets)):
+        filter_enabled = (
+            min_pair_dist > 0.0
+            if filter_enabled_by_system is None
+            else filter_enabled_by_system[system_index]
+        )
         sys_stat = {}
         with torch.device("cpu"):
             dataloader = dataloaders[system_index]
             dataloader_size = len(dataloader)
             target_batches = min(nbatches, dataloader_size)
-            scan_limit = dataloader_size if min_pair_dist > 0.0 else target_batches
+            scan_limit = dataloader_size if filter_enabled else target_batches
             iterator = iter(dataloader)
             accepted_batches = 0
             scanned_batches = 0
@@ -186,7 +211,7 @@ def make_stat_input(
                     except StopIteration:
                         break
                 scanned_batches += 1
-                frame_mask = min_pair_dist_frame_mask(stat_data, min_pair_dist)
+                frame_mask = pair_margin_frame_mask(stat_data, filter_enabled)
                 if frame_mask is not None and not torch.any(frame_mask):
                     continue
                 if frame_mask is not None:
@@ -216,9 +241,8 @@ def make_stat_input(
             if min_pair_dist > 0.0:
                 log.info(
                     "Skipping data system %d in statistics because no frame "
-                    "satisfies min_pair_dist=%s.",
+                    "keeps every atom pair beyond the filter radius.",
                     system_index,
-                    min_pair_dist,
                 )
             else:
                 log.info(
@@ -265,6 +289,8 @@ def scan_redu_stats(
     keys: Sequence[str],
     intensive: bool = False,
     min_pair_dist: float = 0.0,
+    *,
+    filter_enabled_by_system: Sequence[bool] | None = None,
 ) -> ReduScanResult:
     """Accumulate exact reduced-label statistics over every training frame.
 
@@ -285,8 +311,11 @@ def scan_redu_stats(
     intensive
         Whether the fitting target is intensive.
     min_pair_dist
-        Minimum allowed pair distance in Angstrom. Frames below the threshold
-        are excluded.
+        Radius the training-frame filter was registered with. When
+        positive, frames holding a pair inside its window are excluded.
+    filter_enabled_by_system
+        Optional source-specific filter policies for grouped datasets. The
+        registered requirements retain each source's filter radius.
 
     Returns
     -------
@@ -305,9 +334,14 @@ def scan_redu_stats(
         "Scanning all frames of %d systems for output statistics", len(dataloaders)
     )
     with torch.device("cpu"):
-        for dataloader in dataloaders:
+        for system_index, dataloader in enumerate(dataloaders):
+            filter_enabled = (
+                min_pair_dist > 0.0
+                if filter_enabled_by_system is None
+                else filter_enabled_by_system[system_index]
+            )
             for batch in _full_pass_loader(dataloader):
-                frame_mask = min_pair_dist_frame_mask(batch, min_pair_dist)
+                frame_mask = pair_margin_frame_mask(batch, filter_enabled)
                 if frame_mask is not None:
                     if not torch.any(frame_mask):
                         continue
