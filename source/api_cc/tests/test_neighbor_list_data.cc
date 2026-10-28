@@ -139,6 +139,41 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
 }
 
 #ifdef BUILD_PYTORCH
+TEST(TestTorchDeviceSelection, CpuLibTorchUsesTorchFallback) {
+  if (torch_has_gpu_support()) {
+    GTEST_SKIP() << "This regression requires a CPU-only LibTorch build.";
+  }
+  int gpu_id = -1;
+  bool gpu_enabled = true;
+  ASSERT_NO_THROW(preselect_torch_device(/*gpu_rank=*/7, gpu_id, gpu_enabled));
+  EXPECT_EQ(gpu_id, 0);
+  EXPECT_FALSE(gpu_enabled);
+}
+
+#if DEEPMD_TORCH_HAS_GPU
+TEST(TestTorchDeviceSelection, SelectsRankLocalRuntimeDevice) {
+  const int count = torch::cuda::device_count();
+  if (count < 2) {
+    GTEST_SKIP() << "This regression requires two visible GPUs.";
+  }
+  // Exercise the actual current device, including toolkit-disabled builds
+  // where computing gpu_id alone would leave allocations on GPU 0.
+  c10::DeviceGuard restore(c10::Device(c10::DeviceType::CUDA, 0));
+  int gpu_id = -1;
+  bool gpu_enabled = false;
+  preselect_torch_device(count + 1, gpu_id, gpu_enabled);
+  EXPECT_TRUE(gpu_enabled);
+  EXPECT_EQ(gpu_id, 1);
+  EXPECT_EQ(
+      c10::impl::VirtualGuardImpl(c10::DeviceType::CUDA).getDevice().index(),
+      1);
+  EXPECT_EQ(torch::ones({1}, torch::TensorOptions().device(torch::kCUDA))
+                .device()
+                .index(),
+            1);
+}
+#endif
+
 TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
 #if TORCH_VERSION_MAJOR < 2 || \
     (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR < 3)

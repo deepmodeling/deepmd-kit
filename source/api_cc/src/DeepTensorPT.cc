@@ -9,28 +9,11 @@
 #include <sstream>
 
 #include "common.h"
+#include "commonPT.h"
 #include "device.h"
 #include "errors.h"
 
 using namespace deepmd;
-
-static torch::Tensor createNlistTensor(
-    const std::vector<std::vector<int>>& data) {
-  size_t total_size = 0;
-  for (const auto& row : data) {
-    total_size += row.size();
-  }
-  std::vector<int> flat_data;
-  flat_data.reserve(total_size);
-  for (const auto& row : data) {
-    flat_data.insert(flat_data.end(), row.begin(), row.end());
-  }
-
-  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
-  int nloc = data.size();
-  int nnei = nloc > 0 ? total_size / nloc : 0;
-  return flat_tensor.view({1, nloc, nnei});
-}
 
 void DeepTensorPT::translate_error(std::function<void()> f) {
   try {
@@ -74,22 +57,13 @@ void DeepTensorPT::init(const std::string& model,
     return;
   }
   name_scope = name_scope_;
+  preselect_torch_device(gpu_rank, gpu_id, gpu_enabled);
   deepmd::load_op_library(deepmd::DPBackend::PyTorch);
-  int gpu_num = torch::cuda::device_count();
-  if (gpu_num > 0) {
-    gpu_id = gpu_rank % gpu_num;
-  } else {
-    gpu_id = 0;
-  }
   torch::Device device(torch::kCUDA, gpu_id);
-  gpu_enabled = torch::cuda::is_available();
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    DPErrcheck(DPSetDevice(gpu_id));
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
   }
