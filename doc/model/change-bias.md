@@ -70,10 +70,10 @@ dp --pt change-bias model.pt -s data_dir -o model_updated.pt
 dp --pt change-bias model.pt -b -92.523 -187.66 -o model_updated.pt
 ```
 
-For multitask models, where `--model-branch` must be specified:
+For multitask models, select the task with `--task` (aliases: `--head`, `--model-branch`):
 
 ```sh
-dp --pt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-branch model_1
+dp --pt change-bias multi_model.pt -s data_dir -o model_updated.pt --task model_1
 ```
 :::
 
@@ -92,8 +92,11 @@ dp --pt-expt change-bias model.pte -s data_dir -o model_updated.pte
 dp --pt-expt change-bias model.pt -b -92.523 -187.66 -o model_updated.pt
 ```
 
-> [!NOTE]
-> Multi-task change-bias is not yet supported in the PyTorch-Exportable backend.
+For multitask models, select the task with `--task` (aliases: `--head`, `--model-branch`):
+
+```sh
+dp --pt-expt change-bias multi_model.pt -s data_dir -o model_updated.pt --task model_1
+```
 :::
 
 ::::

@@ -1029,9 +1029,10 @@ class TestGetData(unittest.TestCase):
                 trainer = get_trainer(config)
                 input_dict, label_dict = trainer.get_data(is_train=True)
 
-                # coord should be a tensor with requires_grad
+                # A batch is plain data: the wrapper marks the coordinates
+                # for the force computation inside its forward.
                 self.assertIsInstance(input_dict["coord"], torch.Tensor)
-                self.assertTrue(input_dict["coord"].requires_grad)
+                self.assertFalse(input_dict["coord"].requires_grad)
 
                 # atype should be an integer tensor
                 self.assertIsInstance(input_dict["atype"], torch.Tensor)

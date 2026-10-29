@@ -330,10 +330,10 @@ dp --pt-expt freeze -c model.ckpt.pt -o compressed_model --compress
 This writes `compressed_model.pt2` with the default compression settings. Set
 the [inference settings](#inference-settings) before running it.
 
-A branch of a multi-task model is frozen by naming it with `--head`:
+A branch of a multi-task model is frozen by naming it with `--task` (aliases: `--head`, `--model-branch`):
 
 ```bash
-dp --pt-expt freeze -c model.ckpt.pt -o compressed_branch --head CHOSEN_BRANCH --compress
+dp --pt-expt freeze -c model.ckpt.pt -o compressed_branch --task CHOSEN_BRANCH --compress
 ```
 
 A branch whose fitting network is shared with the other branches compresses

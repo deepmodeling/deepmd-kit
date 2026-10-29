@@ -610,7 +610,6 @@ class SeZMInteractionBlock(NativeOP):
             ]
             self.block_attn_res_so2 = None
             self.block_attn_res_ffns = None
-            self._forward_impl = self._forward_with_full_attn_res
         elif self.use_block_attn_res:
             self.full_attn_res_so2 = None
             self.full_attn_res_ffns = None
@@ -635,13 +634,11 @@ class SeZMInteractionBlock(NativeOP):
                 )
                 for i in range(self.ffn_blocks)
             ]
-            self._forward_impl = self._forward_with_block_attn_res
         else:
             self.full_attn_res_so2 = None
             self.full_attn_res_ffns = None
             self.block_attn_res_so2 = None
             self.block_attn_res_ffns = None
-            self._forward_impl = self._forward_with_residual_shortcuts
 
         self.trainable = bool(trainable)
 
@@ -691,7 +688,20 @@ class SeZMInteractionBlock(NativeOP):
             - full AttnRes path returns `(block_output, None, so2_unit_output, ffn_unit_outputs)`
             - block AttnRes path returns `(block_output, block_summary, None, None)`
         """
-        return self._forward_impl(x, edge_cache, radial_feat, unit_history, comm_dict)
+        # Resolve the method on the active module. A stored bound method retains
+        # its original instance when a functional backend reconstructs the module
+        # from a parameter tree, disconnecting that tree from the computation.
+        if self.use_full_attn_res:
+            return self._forward_with_full_attn_res(
+                x, edge_cache, radial_feat, unit_history, comm_dict
+            )
+        if self.use_block_attn_res:
+            return self._forward_with_block_attn_res(
+                x, edge_cache, radial_feat, unit_history, comm_dict
+            )
+        return self._forward_with_residual_shortcuts(
+            x, edge_cache, radial_feat, unit_history, comm_dict
+        )
 
     def _extract_l0_from_canonical(self, value: Array) -> Array:
         """

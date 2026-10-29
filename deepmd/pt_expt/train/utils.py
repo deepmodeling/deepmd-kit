@@ -5,7 +5,6 @@ from __future__ import (
     annotations,
 )
 
-import os
 from contextlib import (
     contextmanager,
 )
@@ -19,23 +18,19 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.train.inference import (
+    infer_compile_enabled as infer_compile_enabled,
+)
+from deepmd.dpmodel.train.inference import infer_env_defaults as infer_env_defaults
+from deepmd.dpmodel.train.inference import (
+    infer_matmul_precision,
+)
+from deepmd.dpmodel.train.inference import scoped_env_defaults as scoped_env_defaults
+
 if TYPE_CHECKING:
     from collections.abc import (
         Generator,
     )
-
-#: Accepted ``DP_TF32_INFER`` values and the matmul precision each selects.
-_TF32_INFER_PRECISIONS = {"0": "highest", "1": "high", "2": "medium"}
-_BOOL_ENV_VALUES = {
-    "1": True,
-    "true": True,
-    "yes": True,
-    "on": True,
-    "0": False,
-    "false": False,
-    "no": False,
-    "off": False,
-}
 
 
 def count_parameters(module: torch.nn.Module) -> tuple[int, int]:
@@ -55,93 +50,6 @@ def count_parameters(module: torch.nn.Module) -> tuple[int, int]:
     trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
     total = sum(p.numel() for p in module.parameters())
     return trainable, total
-
-
-def infer_env_defaults(validating_params: dict[str, Any]) -> dict[str, str]:
-    """
-    Translate the eval-time policy options into environment defaults.
-
-    Models sample these variables once, while they are being constructed, so
-    the configuration has to reach them through the environment rather than
-    through a constructor argument. A variable exported by the user takes
-    precedence; see :func:`scoped_env_defaults`.
-
-    Parameters
-    ----------
-    validating_params : dict[str, Any]
-        The normalized ``validating`` section.
-
-    Returns
-    -------
-    dict[str, str]
-        The environment variables requested by the configuration.
-    """
-    flags = {
-        "compiled_infer": "DP_COMPILE_INFER",
-        "tf32_infer": "DP_TF32_INFER",
-        "amp_infer": "DP_AMP_INFER",
-    }
-    return {
-        name: "1" for flag, name in flags.items() if validating_params.get(flag, False)
-    }
-
-
-@contextmanager
-def scoped_env_defaults(defaults: dict[str, str]) -> Generator[None, None, None]:
-    """Temporarily set missing environment variables and restore them afterward."""
-    previous = {key: os.environ.get(key) for key in defaults}
-    try:
-        for key, value in defaults.items():
-            os.environ.setdefault(key, value)
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
-def infer_matmul_precision() -> str:
-    """
-    Resolve the eval-time matmul precision from ``DP_TF32_INFER``.
-
-    Returns
-    -------
-    str
-        A ``torch.set_float32_matmul_precision`` level: ``"highest"`` for
-        ``0`` (the default), ``"high"`` for ``1``, ``"medium"`` for ``2``.
-
-    Raises
-    ------
-    ValueError
-        If ``DP_TF32_INFER`` is set to anything other than 0, 1 or 2.
-    """
-    value = os.environ.get("DP_TF32_INFER", "0").strip().lower()
-    if value not in _TF32_INFER_PRECISIONS:
-        raise ValueError(f"DP_TF32_INFER must be one of 0/1/2, got {value!r}")
-    return _TF32_INFER_PRECISIONS[value]
-
-
-def infer_compile_enabled() -> bool:
-    """
-    Resolve whether evaluation forwards use the compiled model.
-
-    Returns
-    -------
-    bool
-        Whether ``DP_COMPILE_INFER`` enables compiled evaluation.
-
-    Raises
-    ------
-    ValueError
-        If ``DP_COMPILE_INFER`` is not a supported boolean value.
-    """
-    value = os.environ.get("DP_COMPILE_INFER", "0").strip().lower()
-    if value not in _BOOL_ENV_VALUES:
-        choices = "/".join(_BOOL_ENV_VALUES)
-        raise ValueError(f"DP_COMPILE_INFER must be one of {choices}, got {value!r}")
-    return _BOOL_ENV_VALUES[value]
 
 
 class MatmulPrecisionPolicy:

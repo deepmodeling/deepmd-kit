@@ -54,6 +54,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
     xp_einsum,
+    xp_matmul,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -167,7 +168,7 @@ class LoRASO3(SO3Linear):
         A_by_l = xp_asarray_nodetach(xp, self.A_by_l[...], device=device)
         # einsum "lor,lri->lio" as a per-l batched matmul (B @ A) then transpose:
         # (L, F*Cout, R) @ (L, R, Cin) -> (L, F*Cout, Cin) -> (L, Cin, F*Cout)
-        return xp.permute_dims(xp.matmul(B_by_l, A_by_l), (0, 2, 1)) * self.scaling
+        return xp.permute_dims(xp_matmul(B_by_l, A_by_l), (0, 2, 1)) * self.scaling
 
     def call(self, x: Array) -> Array:
         """
@@ -197,8 +198,32 @@ class LoRASO3(SO3Linear):
                 (self.n_focus, self.out_channels),
             )
             out = xp.concat(
-                [out[:, :1, :, :] + bias[None, None, ...], out[:, 1:, :, :]], axis=1
+                [
+                    xp.astype(out[:, :1, :, :] + bias[None, None, ...], out.dtype),
+                    out[:, 1:, :, :],
+                ],
+                axis=1,
             )
+        return out
+
+    def call_scalar(self, x: Array) -> Array:
+        """Project the scalar coefficient with the degree-zero adapter weight."""
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        a = xp_asarray_nodetach(xp, self.A_by_l[0, ...], device=device)
+        b = xp_asarray_nodetach(xp, self.B_by_l[0, ...], device=device)
+        delta = xp.permute_dims(xp_matmul(b, a), (1, 0)) * self.scaling
+        weight = xp.reshape(
+            xp_asarray_nodetach(xp, self.weight[0, ...], device=device) + delta,
+            (self.in_channels, self.n_focus, self.out_channels),
+        )
+        out = xp_einsum("ndfi,ifo->ndfo", x[:, :1], weight)
+        if self.mlp_bias:
+            bias = xp.reshape(
+                xp_asarray_nodetach(xp, self.bias[...], device=device),
+                (self.n_focus, self.out_channels),
+            )
+            out = out + bias[None, None]
         return out
 
     def merge_into_base(self) -> SO3Linear:
@@ -351,13 +376,13 @@ class LoRASO2(SO2Linear):
         # einsum "ri,or->io" as a matmul (B @ A) then transpose:
         # (F*num_out_m0, R) @ (R, num_in_m0) -> (F*num_out_m0, num_in_m0)
         #   -> (num_in_m0, F*num_out_m0)
-        return xp.permute_dims(xp.matmul(B_m0, A_m0), (1, 0)) * self.scaling
+        return xp.permute_dims(xp_matmul(B_m0, A_m0), (1, 0)) * self.scaling
 
     def _compute_delta_m(self, m_idx: int, xp: Any, device: Any) -> Array:
         """Return ``ΔW_m[m_idx]`` with the same shape as ``weight_m[m_idx]``."""
         A_m = xp_asarray_nodetach(xp, self.A_m[m_idx][...], device=device)
         B_m = xp_asarray_nodetach(xp, self.B_m[m_idx][...], device=device)
-        return xp.permute_dims(xp.matmul(B_m, A_m), (1, 0)) * self.scaling
+        return xp.permute_dims(xp_matmul(B_m, A_m), (1, 0)) * self.scaling
 
     def _build_so2_weight(self, xp: Any, device: Any) -> Array:
         """Assemble the block-diagonal weight with LoRA delta folded in."""

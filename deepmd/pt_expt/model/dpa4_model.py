@@ -20,6 +20,9 @@ from typing import (
     Any,
 )
 
+from deepmd.utils.dpa4_serialization import (
+    normalize_sezm_atomic,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -57,7 +60,7 @@ class DPA4EnergyModel(EnergyModel):
         if model_type in ("sezm", "dpa4"):
             return cls.deserialize(cls._unwrap_pt_sezm_model(data))
         if model_type == "sezm_atomic":
-            return cls.deserialize(cls._normalize_pt_sezm_atomic(data))
+            return cls.deserialize(normalize_sezm_atomic(data))
         return super().deserialize(data)
 
     @staticmethod
@@ -91,42 +94,3 @@ class DPA4EnergyModel(EnergyModel):
                 "supported; rebuild the bridged model from its config."
             )
         return atomic_model
-
-    @staticmethod
-    def _normalize_pt_sezm_atomic(data: dict[str, Any]) -> dict[str, Any]:
-        """Convert a pt ``sezm_atomic`` dict to a standard atomic dict.
-
-        Strips the pt-only ``dens`` head state (``dens_fitting`` /
-        ``active_mode`` / the ``dens_force_rmsd`` @variable) and rewrites the
-        ``type``/``@version`` so the generic dpmodel atomic-model deserialize
-        accepts it.  A non-energy active mode or a populated dens head is
-        rejected because pt_expt only implements the energy path.
-        """
-        data = data.copy()
-        # pt emits ``@version`` 3 for ``sezm_atomic``; the standard dpmodel
-        # atomic-model deserialize requires exactly 2.  The only schema delta
-        # between the two is the stripped ``dens`` state below, so coercion is
-        # safe for the known-compatible range {2, 3}.  Validate the incoming
-        # version BEFORE coercing so a future incompatible pt schema (e.g.
-        # ``@version`` 4) is rejected loudly instead of mis-deserialized.
-        check_version_compatibility(int(data.get("@version", 2)), 3, 2)
-        if data.pop("dens_fitting", None) is not None:
-            raise NotImplementedError(
-                "Deserializing a pt SeZM/DPA4 checkpoint with a `dens` "
-                "fitting head is not supported in pt_expt."
-            )
-        active_mode = data.pop("active_mode", None)
-        if active_mode not in (None, "ener"):
-            raise NotImplementedError(
-                f"Deserializing a pt SeZM/DPA4 checkpoint in active_mode "
-                f"{active_mode!r} is not supported in pt_expt (energy only)."
-            )
-        variables = data.get("@variables")
-        if isinstance(variables, dict):
-            data["@variables"] = {
-                k: v for k, v in variables.items() if k in ("out_bias", "out_std")
-            }
-        # The standard dpmodel atomic-model deserialize checks @version == 2.
-        data["@version"] = 2
-        data["type"] = "standard"
-        return data

@@ -29,6 +29,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
     xp_einsum,
+    xp_matmul,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -268,7 +269,7 @@ class ChannelLinear(NativeOP):
         xp = array_api_compat.array_namespace(x)
         # einsum "...i,io->...o" is a plain matmul on the last axis
         device = array_api_compat.device(x)
-        out = xp.matmul(x, xp_asarray_nodetach(xp, self.weight[...], device=device))
+        out = xp_matmul(x, xp_asarray_nodetach(xp, self.weight[...], device=device))
         if self.use_bias:
             out = out + xp_asarray_nodetach(xp, self.bias[...], device=device)
         return out
@@ -451,7 +452,11 @@ class SO3Linear(NativeOP):
             )
             bias = xp.reshape(bias, (self.n_focus, self.out_channels))
             out = xp.concat(
-                [out[:, :1, :, :] + bias[None, None, ...], out[:, 1:, :, :]], axis=1
+                [
+                    xp.astype(out[:, :1, :, :] + bias[None, None, ...], out.dtype),
+                    out[:, 1:, :, :],
+                ],
+                axis=1,
             )
 
         return out

@@ -51,6 +51,13 @@ def xp_asarray_nodetach(
     """
     if array_api_compat.is_array_api_obj(obj):
         if array_api_compat.array_namespace(obj) is xp:
+            # NNX variables expose the JAX namespace but are not JAX array
+            # leaves. Materialize their differentiable array value before
+            # passing it to compiled array operations.
+            if array_api_compat.is_jax_namespace(
+                xp
+            ) and not array_api_compat.is_jax_array(obj):
+                obj = xp.asarray(obj)
             if dtype is not None and obj.dtype != dtype:
                 obj = xp.astype(obj, dtype)
             if device is not None and array_api_compat.device(obj) != device:
@@ -120,6 +127,18 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     return xp_swapaxes(out, axis, -1)
 
 
+def xp_matmul(left: Array, right: Array) -> Array:
+    """Multiply matrices using the backend's active precision policy."""
+    xp = array_api_compat.array_namespace(left, right)
+    if array_api_compat.is_jax_namespace(xp):
+        from deepmd.jax.utils.precision import (
+            matmul,
+        )
+
+        return matmul(left, right)
+    return xp.matmul(left, right)
+
+
 def xp_einsum(subscripts: str, *operands: Array) -> Array:
     """Contract *operands* according to the Einstein summation *subscripts*.
 
@@ -176,10 +195,12 @@ def xp_einsum(subscripts: str, *operands: Array) -> Array:
         return torch.einsum(subscripts, *operands)
     if array_api_compat.is_numpy_array(operands[0]):
         return np.einsum(subscripts, *operands)
-    if array_api_compat.is_jax_array(operands[0]):
-        import jax.numpy as jnp
+    if array_api_compat.is_jax_namespace(array_api_compat.array_namespace(*operands)):
+        from deepmd.jax.utils.precision import (
+            einsum,
+        )
 
-        return jnp.einsum(subscripts, *operands)
+        return einsum(subscripts, *operands)
     return _xp_einsum_fallback(subscripts, *operands)
 
 

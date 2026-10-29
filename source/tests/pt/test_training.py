@@ -1003,6 +1003,21 @@ class TestLearningRateRestart(unittest.TestCase):
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 
+    def test_init_model_accepts_weights_only_checkpoint(self) -> None:
+        """A published model without optimizer moments initializes a fresh run."""
+        original = get_trainer(deepcopy(self.config))
+        path = Path("weights_only.pt")
+        torch.save({"model": original.wrapper.state_dict()}, path)
+        initialized = get_trainer(deepcopy(self.config), init_model=str(path))
+        self.assertEqual(initialized.start_step, 0)
+        self.assertFalse(initialized.optimizer.state)
+        for name, parameter in original.wrapper.named_parameters():
+            torch.testing.assert_close(
+                initialized.wrapper.get_parameter(name), parameter, rtol=0, atol=0
+            )
+        initialized.run()
+        self.assertTrue(Path("model-3.pt").is_file())
+
     def test_restart_scheduler_matches_lr_schedule(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()

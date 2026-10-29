@@ -191,10 +191,9 @@ def test_full_validation_symmetric_metric_labels(family: str) -> None:
         ) + family.upper()
         columns = profile.columns(f"{family}:rmse", symm_virial=enabled)
         assert any(label == f"{expected}_RMSE" for label, _ in columns)
-        # The shared formatter reads the one profile of the portable trainer.
-        for formatter, arguments in ((shared_format, ()), (torch_format, (profile,))):
+        for formatter in (shared_format, torch_format):
             label, value, unit = formatter(
-                f"{family}:rmse", 1.0, *arguments, symm_virial=enabled
+                f"{family}:rmse", 1.0, profile, symm_virial=enabled
             )
             assert label == f"{expected}:RMSE"
             assert value == 1000.0

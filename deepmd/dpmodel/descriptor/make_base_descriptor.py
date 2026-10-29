@@ -287,6 +287,15 @@ def make_base_descriptor(
             """
             return None
 
+        def requires_full_neighbor_list(self) -> bool:
+            """Whether every neighbor inside the cutoff must be retained.
+
+            This requirement is independent of graph-lower availability and
+            spin conditioning. A selection count in such a descriptor sets
+            normalization, rather than a maximum number of neighbors.
+            """
+            return False
+
         def supports_graph_vacuum(self) -> bool:
             """Whether isolated-atom references can use the graph interface.
 

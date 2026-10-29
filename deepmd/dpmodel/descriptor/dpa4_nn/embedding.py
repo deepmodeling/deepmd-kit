@@ -30,6 +30,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
+    xp_matmul,
 )
 from deepmd.dpmodel.common import (
     get_xp_precision,
@@ -437,8 +438,8 @@ def spin_environment_invariants(moments: Any, axis_dim: int) -> Any:
     nodes, _, channels = moments.shape
     vector = moments[:, :3, :]
     quadrupole = moments[:, 4:, :]
-    vector_gram = xp.matmul(xp.permute_dims(vector, (0, 2, 1)), vector[:, :, :axis_dim])
-    quadrupole_gram = xp.matmul(
+    vector_gram = xp_matmul(xp.permute_dims(vector, (0, 2, 1)), vector[:, :, :axis_dim])
+    quadrupole_gram = xp_matmul(
         xp.permute_dims(quadrupole, (0, 2, 1)), quadrupole[:, :, :axis_dim]
     )
     return xp.concat(
@@ -786,10 +787,10 @@ class EnvironmentInitialEmbedding(NativeOP):
         if self.spin_flags is None:
             env_agg_t = xp.permute_dims(env_agg, (0, 2, 1))
             env_agg_axis = env_agg[:, :, : self.axis_dim]
-            D = xp.matmul(env_agg_t, env_agg_axis)
+            D = xp_matmul(env_agg_t, env_agg_axis)
         else:
             geometry_agg = env_agg[:, : self.geometry_coord_dim, :]
-            D = xp.matmul(
+            D = xp_matmul(
                 xp.permute_dims(geometry_agg, (0, 2, 1)),
                 geometry_agg[:, :, : self.axis_dim],
             )

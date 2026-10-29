@@ -6,6 +6,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.fitting.dpa4_ener import (
+    CaseFiLMConditioner as CaseFiLMConditionerDP,
+)
 from deepmd.dpmodel.fitting.dpa4_ener import GLUFittingNet as GLUFittingNetDP
 from deepmd.dpmodel.fitting.dpa4_ener import (
     SeZMEnergyFittingNet as SeZMEnergyFittingNetDP,
@@ -21,6 +24,31 @@ from deepmd.pt_expt.common import (
 from .base_fitting import (
     BaseFitting,
 )
+
+
+@torch_module
+class CaseFiLMConditioner(CaseFiLMConditionerDP):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._promote_parameters()
+
+    def _promote_parameters(self) -> None:
+        for name in self.PARAMETER_ATTRIBUTES:
+            if name in self._buffers:
+                value = self._buffers.pop(name)
+                self.register_parameter(
+                    name, torch.nn.Parameter(value, requires_grad=self.trainable)
+                )
+        for name in self.PARAMETER_LIST_ATTRIBUTES:
+            for parameter in getattr(self, name):
+                parameter.requires_grad_(self.trainable)
+
+    def set_variables(self, variables: dict[str, Any]) -> None:
+        super().set_variables(variables)
+        self._promote_parameters()
+
+    def forward(self, case_embd: torch.Tensor) -> torch.Tensor:
+        return self.call(case_embd)
 
 
 @torch_module

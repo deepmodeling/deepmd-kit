@@ -44,8 +44,8 @@ written by `dp --pt freeze`, or a `.pt2` or `.pte` written by
 `dp --pt-expt freeze`. The `.pt2` that `dp --pt freeze` writes for DPA4/SeZM is
 not supported; read the training checkpoint of such a model instead. Use
 `--dtype` to choose the output precision (`fp32`, `fp64`, or `native`; default
-`fp32`). Reading from a multi-task model additionally accepts `--head` to select
-the model branch.
+`fp32`). Reading from a multi-task model additionally accepts `--task`
+(aliases: `--head`, `--model-branch`) to select the model branch.
 
 A model that takes frame parameters, atomic parameters, or the total charge and
 spin multiplicity of each frame reads them from the `fparam.npy`, `aparam.npy`,

@@ -262,6 +262,10 @@ class DPAtomicModel(BaseAtomicModel):
             return self.descriptor.get_default_chg_spin()
         return None
 
+    def requires_full_neighbor_list(self) -> bool:
+        """Delegate the neighbor requirement to the descriptor."""
+        return self.descriptor.requires_full_neighbor_list()
+
     def uses_graph_lower(self) -> bool:
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())

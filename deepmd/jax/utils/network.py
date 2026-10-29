@@ -51,7 +51,10 @@ class NativeLayer(NativeLayerDP):
     _jax_skip_auto_convert_attrs: ClassVar[set[str]] = {"w", "b", "idt"}
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"w", "b", "idt"}:
+        # NNX graph reconstruction supplies typed variables before static
+        # attributes such as trainable. Those variables already carry the
+        # parameter policy and must retain their identity and metadata.
+        if name in {"w", "b", "idt"} and not isinstance(value, nnx.Variable):
             value = to_jax_array(value)
             if value is not None:
                 if self.trainable:

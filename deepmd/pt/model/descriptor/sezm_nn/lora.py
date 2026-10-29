@@ -36,11 +36,21 @@ from copy import (
     deepcopy,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import torch
 import torch.nn as nn
+
+from deepmd.dpmodel.fitting.dpa4_ener import (
+    _set_trainable_metadata,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Mapping,
+    )
 
 from .activation import (
     GatedActivation,
@@ -179,6 +189,18 @@ class LoRASO3(SO3Linear):
         if self.mlp_bias:
             bias = self.bias.view(self.n_focus, self.out_channels)
             out[:, 0, :, :] = out[:, 0, :, :] + bias.unsqueeze(0)
+        return out
+
+    def forward_scalar(self, x: torch.Tensor) -> torch.Tensor:
+        """Project the scalar coefficient with the degree-zero adapter weight."""
+        delta = (self.B_by_l[0] @ self.A_by_l[0]).mT * self.scaling
+        weight = (self.weight[0] + delta).view(
+            self.in_channels, self.n_focus, self.out_channels
+        )
+        out = torch.einsum("ndfi,ifo->ndfo", x[:, :1], weight)
+        if self.mlp_bias:
+            bias = self.bias.view(self.n_focus, self.out_channels)
+            out = out + bias[None, None]
         return out
 
     def merge_into_base(self) -> SO3Linear:
@@ -398,11 +420,16 @@ class LoRASO2(SO2Linear):
 # Fine-tune policy: freeze / unfreeze rules
 # ---------------------------------------------------------------------------
 
-# Leaf parameter names that stay trainable during LoRA fine-tune.  These are small
-# scalar / per-l scales / attention gating weights whose full-rank update costs
-# are negligible but directly absorb the domain shift of the downstream dataset.
+# Adapter factors and small affine/gating parameters remain trainable during
+# LoRA fine-tuning, including when the policy is applied to existing adapters.
 _UNFREEZE_LEAF_NAMES: frozenset[str] = frozenset(
     {
+        "A_by_l",
+        "B_by_l",
+        "A_m0",
+        "B_m0",
+        "A_m",
+        "B_m",
         "adam_scale",
         "adam_so2_layer_scales",
         "adam_ffn_layer_scales",
@@ -525,6 +552,30 @@ def has_lora(module: nn.Module) -> bool:
     return any(isinstance(m, (LoRASO3, LoRASO2)) for m in module.modules())
 
 
+def restore_lora_from_variables(model: nn.Module, variables: Mapping[str, Any]) -> None:
+    """Construct adapters before loading the portable descriptor variables.
+
+    The adapter arrays determine each rank, and the stored scaling determines
+    its alpha. Base weights remain unfused so optimizer moments still refer
+    to the same trainable arrays after a backend checkpoint conversion.
+    """
+    for name, module in list(model.named_modules()):
+        adapter = None
+        prefix = name + "."
+        if type(module) is SO3Linear and prefix + "A_by_l" in variables:
+            rank = variables[prefix + "A_by_l"].shape[-2]
+            alpha = float(variables.get(prefix + "lora_scaling", 1.0)) * rank
+            adapter = LoRASO3(module, rank=rank, alpha=alpha)
+        elif type(module) is SO2Linear and prefix + "A_m0" in variables:
+            rank = variables[prefix + "A_m0"].shape[0]
+            alpha = float(variables.get(prefix + "lora_scaling", 1.0)) * rank
+            adapter = LoRASO2(module, rank=rank, alpha=alpha)
+        if adapter is not None:
+            parent_name, _, attribute = name.rpartition(".")
+            parent = model.get_submodule(parent_name) if parent_name else model
+            _swap_submodule(parent, attribute, adapter)
+
+
 def apply_lora_to_sezm(
     model: nn.Module,
     *,
@@ -581,6 +632,9 @@ def apply_lora_to_sezm(
         sub = _get_submodule_or_none(model, path)
         if sub is None:
             continue
+        if path.rsplit(".", 1)[-1] in ("fitting_net", "dens_fitting_net"):
+            for module in sub.modules():
+                _set_trainable_metadata(module, True)
         for p in sub.parameters():
             p.requires_grad_(True)
 

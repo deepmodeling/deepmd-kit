@@ -3348,7 +3348,22 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         data.pop("@class", None)
         data.pop("type", None)
         atomic_model = SeZMAtomicModel.deserialize(data.pop("atomic_model"))
-        return cls(atomic_model_=atomic_model, **data)
+        model = cls(atomic_model_=atomic_model, **data)
+        model._restore_lora_trainability()
+        return model
+
+    def _restore_lora_trainability(self) -> None:
+        """Restore the adapter training policy after portable deserialization."""
+        if self.lora_config is not None:
+            from deepmd.pt.model.descriptor.sezm_nn.lora import (
+                apply_lora_to_sezm,
+            )
+
+            apply_lora_to_sezm(
+                self,
+                rank=int(self.lora_config["rank"]),
+                alpha=self.lora_config.get("alpha"),
+            )
 
     # =========================================================================
     # Context Managers

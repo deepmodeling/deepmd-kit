@@ -2661,6 +2661,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 ],
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
+                "use_amp": self.use_amp,
                 "edge_cartesian": self.edge_cartesian,
                 "node_cartesian": self.node_cartesian,
                 "so2_norm": self.so2_norm,
@@ -2733,6 +2734,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         config.pop("s2_grid_resolution", None)
         drop_retired_descriptor_options(config)
         obj = cls(**config)
+        from deepmd.pt.model.descriptor.sezm_nn.lora import (
+            restore_lora_from_variables,
+        )
+
+        restore_lora_from_variables(obj, variables)
         template = obj.state_dict()
         state = {
             key: safe_numpy_to_tensor(

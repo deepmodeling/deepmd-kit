@@ -2441,6 +2441,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         """Return the direction regularization scale in Å."""
         return self._EPS
 
+    def requires_full_neighbor_list(self) -> bool:
+        """The graph retains every neighbor inside the cutoff."""
+        return True
+
     def supports_graph_vacuum(self) -> bool:
         """Isolated references use the graph core without a dense sel capacity."""
         return True

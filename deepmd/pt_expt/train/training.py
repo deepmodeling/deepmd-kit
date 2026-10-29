@@ -63,6 +63,7 @@ from deepmd.dpmodel.train import (
 )
 from deepmd.dpmodel.train.data import (
     add_training_data_requirements,
+    next_training_batch,
 )
 from deepmd.dpmodel.train.data_progress import (
     DATA_PROGRESS_CHECKPOINT_KEY,
@@ -74,12 +75,11 @@ from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
 )
-from deepmd.dpmodel.utils.dist_check import (
-    pair_margin_frame_mask,
-    select_frames,
-)
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
+)
+from deepmd.dpmodel.utils.multi_task import (
+    get_case_embd_config as _get_case_embd_config,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     flatten_topologies,
@@ -1857,7 +1857,7 @@ class Trainer(AbstractTrainer):
 
     Uses ``DeepmdDataSystem`` for data loading (numpy batches converted
     to torch tensors at the boundary).  Supports single-task and multi-task
-    training.  Single-GPU only.
+    training with data parallelism and optional optimizer or parameter sharding.
 
     Parameters
     ----------
@@ -2881,7 +2881,11 @@ class Trainer(AbstractTrainer):
             return {}, {}
 
         batch = (
-            self._next_training_batch(data_sys, task_key)
+            next_training_batch(
+                data_sys,
+                filter_enabled=self.pair_filter_enabled_by_task[task_key],
+                task_key=task_key,
+            )
             if is_train
             else normalize_batch(data_sys.get_batch())
         )
@@ -2913,59 +2917,7 @@ class Trainer(AbstractTrainer):
                     dd[key] = torch.tensor(
                         float(val), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
                     )
-        # requires_grad on coord for force computation via autograd
-        if "coord" in input_dict and input_dict["coord"] is not None:
-            input_dict["coord"] = input_dict["coord"].requires_grad_(True)
-
         return input_dict, label_dict
-
-    def _next_training_batch(self, data_sys: Any, task_key: str) -> dict[str, Any]:
-        """Fetch the next training batch of a task, without its too-close frames.
-
-        Frames holding an atom pair closer than the task's frame filter allows
-        are dropped, and a batch left empty is replaced by the next one.
-        The retry is local to the rank and involves no collective, so
-        distributed ranks stay in lockstep: every rank still contributes
-        exactly one batch per optimizer step.
-
-        Parameters
-        ----------
-        data_sys : Any
-            Training data system of the task.
-        task_key : str
-            Resolved task key.
-
-        Returns
-        -------
-        dict[str, Any]
-            Normalized NumPy batch with at least one frame.
-
-        Raises
-        ------
-        RuntimeError
-            If one local reader pass of consecutive batches holds no valid frame.
-        """
-        filter_enabled = self.pair_filter_enabled_by_task[task_key]
-        discarded = 0
-        while True:
-            raw_batch = data_sys.get_batch()
-            batch = normalize_batch(raw_batch)
-            batch_filter_enabled = getattr(
-                raw_batch, "pair_filter_enabled", filter_enabled
-            )
-            frame_mask = pair_margin_frame_mask(batch, batch_filter_enabled)
-            if frame_mask is None or frame_mask.all():
-                return batch
-            if frame_mask.any():
-                return select_frames(batch, frame_mask)
-            discarded += 1
-            if discarded >= data_sys.get_batch_pass_length():
-                raise RuntimeError(
-                    f"No training frame of task {task_key!r} keeps every atom "
-                    "pair beyond the frame-filter radius within "
-                    f"{discarded} consecutive batches; lower "
-                    "`training_data.min_pair_dist` or clean the dataset."
-                )
 
     def _epoch_length(self, model_key: str) -> int:
         """Return the steps this rank takes during one epoch of a task.
@@ -3853,40 +3805,3 @@ def model_change_out_bias(
         recompute_input_stats=isinstance(_model, DPModelCommon),
         preset_out_bias=preset_out_bias,
     )
-
-
-def _get_case_embd_config(
-    model_params: dict[str, Any],
-) -> tuple[bool, dict[str, int]]:
-    """Check whether case embedding is enabled and build the index map.
-
-    Parameters
-    ----------
-    model_params : dict
-        Model parameters containing ``model_dict``.
-
-    Returns
-    -------
-    do_case_embd : bool
-        Whether case embedding is enabled.
-    case_embd_index : dict
-        Mapping from model key to case index (sorted alphabetically).
-    """
-    assert "model_dict" in model_params, (
-        "Only support setting case embedding for multi-task model!"
-    )
-    model_keys = list(model_params["model_dict"])
-    sorted_model_keys = sorted(model_keys)
-    numb_case_embd_list = [
-        model_params["model_dict"][mk].get("fitting_net", {}).get("dim_case_embd", 0)
-        for mk in sorted_model_keys
-    ]
-    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
-        raise ValueError(
-            "All models must have the same dimension of case embedding, "
-            f"while the settings are: {numb_case_embd_list}"
-        )
-    if numb_case_embd_list[0] == 0:
-        return False, {}
-    case_embd_index = {mk: idx for idx, mk in enumerate(sorted_model_keys)}
-    return True, case_embd_index

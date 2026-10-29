@@ -68,10 +68,10 @@ $ dp --pt train input.json --finetune pretrained.pt
 ```
 
 In this case, it is important to note that the fitting net weights, except the energy bias, will be automatically set to those in the pre-trained model. This default setting is consistent with the implementations in TensorFlow.
-If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--model-branch` parameter to "RANDOM":
+If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--task` parameter (aliases: `--head`, `--model-branch`) to "RANDOM":
 
 ```bash
-$ dp --pt train input.json --finetune pretrained.pt --model-branch RANDOM
+$ dp --pt train input.json --finetune pretrained.pt --task RANDOM
 ```
 
 The model section in input.json **must be the same as that in the pretrained model**,
@@ -122,7 +122,7 @@ For fine-tuning using this multitask pre-trained model (`multitask_pretrained.pt
 one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask_pretrained.pt` for fine-tuning with the following command:
 
 ```bash
-$ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHOOSEN_BRANCH
+$ dp --pt train input.json --finetune multitask_pretrained.pt --task CHOOSEN_BRANCH
 ```
 
 > [!NOTE]
@@ -133,7 +133,7 @@ $ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHO
 > ```
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
-If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
+If `--task` is not set or set to "RANDOM", a randomly initialized fitting net will be used.
 
 ### Multi-task fine-tuning
 
@@ -233,10 +233,10 @@ $ dp --pd train input.json --finetune pretrained.pd
 ```
 
 In this case, it is important to note that the fitting net weights, except the energy bias, will be automatically set to those in the pre-trained model. This default setting is consistent with the implementations in TensorFlow.
-If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--model-branch` parameter to "RANDOM":
+If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--task` parameter (aliases: `--head`, `--model-branch`) to "RANDOM":
 
 ```bash
-$ dp --pd train input.json --finetune pretrained.pd --model-branch RANDOM
+$ dp --pd train input.json --finetune pretrained.pd --task RANDOM
 ```
 
 The model section in input.json **must be the same as that in the pretrained model**.
@@ -266,7 +266,7 @@ For fine-tuning using this multitask pre-trained model (`multitask_pretrained.pd
 one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask_pretrained.pd` for fine-tuning with the following command:
 
 ```bash
-$ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHOOSEN_BRANCH
+$ dp --pd train input.json --finetune multitask_pretrained.pd --task CHOOSEN_BRANCH
 ```
 
 > [!NOTE]
@@ -277,7 +277,7 @@ $ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHO
 > ```
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
-If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
+If `--task` is not set or set to "RANDOM", a randomly initialized fitting net will be used.
 
 ## TensorFlow 2 Implementation {{ tensorflow_icon }}
 
@@ -292,7 +292,7 @@ The pre-trained model is a `.tf2` training checkpoint directory (or its
 checkpoint prefix). A frozen `.savedmodeltf` export cannot be fine-tuned,
 because it does not carry the structured variable metadata required to restore
 the model. The same command-line options as the legacy TensorFlow backend apply:
-`--model-branch` selects a branch in a multi-task pre-trained model, and
+`--task` (aliases: `--head`, `--model-branch`) selects a branch in a multi-task pre-trained model, and
 `--use-pretrain-script` copies the descriptor/fitting parameters from the
 pre-trained model.
 

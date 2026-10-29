@@ -174,8 +174,13 @@ class ModelWrapper(torch.nn.Module):
                 f"Multitask model must specify the inference task! "
                 f"Supported tasks are {list(self.model.keys())}."
             )
+        # The forces are derivatives with respect to the coordinates. They are
+        # marked here rather than on the batch: a parameter-sharding wrapper
+        # ties its resharding to the backward of every input of this module
+        # that requires gradients, and the engine may run that backward before
+        # the nodes of the force graph, which still read the parameters.
         input_dict = {
-            "coord": coord,
+            "coord": coord.requires_grad_(True),
             "atype": atype,
             "box": box,
             "do_atomic_virial": do_atomic_virial,

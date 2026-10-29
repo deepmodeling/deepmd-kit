@@ -52,7 +52,7 @@ class TestBackendDocumentation(unittest.TestCase):
         )
         self.assertEqual(
             argcheck.opt_args_plugin.get_argument("AdamW").doc,
-            "(Supported Backend: PyTorch, PaddlePaddle, PyTorch Exportable, "
+            "(Supported Backend: PyTorch, JAX, PaddlePaddle, PyTorch Exportable, "
             "TensorFlow 2) ",
         )
         adam_weight_decay = argcheck.opt_args_plugin.get_argument("Adam")[
@@ -60,7 +60,7 @@ class TestBackendDocumentation(unittest.TestCase):
         ]
         self.assertTrue(
             adam_weight_decay.doc.startswith(
-                "(Supported Backend: PyTorch, PaddlePaddle) "
+                "(Supported Backend: PyTorch, JAX, PaddlePaddle) "
             )
         )
         self.assertEqual(
@@ -133,7 +133,7 @@ class TestBackendDocumentation(unittest.TestCase):
             argcheck.opt_args_plugin.get_argument("AdamW")[
                 "weight_decay"
             ].doc.startswith(
-                "(Supported Backend: PyTorch, PaddlePaddle, PyTorch Exportable, "
+                "(Supported Backend: PyTorch, JAX, PaddlePaddle, PyTorch Exportable, "
                 "TensorFlow 2) "
             )
         )

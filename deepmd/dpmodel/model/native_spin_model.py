@@ -76,6 +76,7 @@ def make_native_spin_model(T_Model: type) -> type:
         """Native-spin variant of ``T_Model`` (see ``make_native_spin_model``)."""
 
         CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+        _backbone_model_registry = T_Model
 
         def __init__(self, *args: Any, spin: Spin, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
@@ -280,7 +281,7 @@ def make_native_spin_model(T_Model: type) -> type:
             backbone_cls = (
                 T_Model
                 if backbone_type == "standard"
-                else T_Model.get_class_by_type(backbone_type)
+                else cls._backbone_model_registry.get_class_by_type(backbone_type)
             )
             backbone = backbone_cls.deserialize(data)
             return cls(atomic_model_=backbone.atomic_model, spin=spin)

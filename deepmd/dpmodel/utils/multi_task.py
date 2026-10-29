@@ -321,7 +321,10 @@ def get_descriptor_component(model: Any, shared_type: str) -> Any:
 def set_descriptor_component(model: Any, shared_type: str, descriptor: Any) -> None:
     """Set a model descriptor or a hybrid sub-descriptor by shared type."""
     if shared_type == "descriptor":
-        model.atomic_model.descriptor = descriptor
+        owner = _atomic_model_attr_owner(model.atomic_model, "descriptor")
+        if owner is None:
+            raise ValueError("The model has no learned descriptor to share.")
+        owner.descriptor = descriptor
         return
     if "hybrid" in shared_type:
         hybrid_index = int(shared_type.split("_")[-1])
@@ -331,10 +334,26 @@ def set_descriptor_component(model: Any, shared_type: str, descriptor: Any) -> N
 
 
 def get_atomic_model_attr(model: Any, attr: str) -> Any | None:
-    """Get an attribute from ``model.atomic_model`` if it exists."""
-    if hasattr(model.atomic_model, attr):
-        return getattr(model.atomic_model, attr)
-    return None
+    """Get an attribute from the unique learned component of an atomic model."""
+    owner = _atomic_model_attr_owner(model.atomic_model, attr)
+    return getattr(owner, attr) if owner is not None else None
+
+
+def _atomic_model_attr_owner(atomic_model: Any, attr: str) -> Any | None:
+    """Find an unambiguous component while leaving analytical children intact."""
+    if hasattr(atomic_model, attr):
+        return atomic_model
+    owners = [
+        owner
+        for child in getattr(atomic_model, "models", ())
+        if (owner := _atomic_model_attr_owner(child, attr)) is not None
+    ]
+    if len(owners) > 1:
+        raise ValueError(
+            f"The atomic-model composition has {len(owners)} components with {attr!r}; "
+            "the requested shared component is ambiguous."
+        )
+    return owners[0] if owners else None
 
 
 def sanitize_shared_links(shared_links: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -359,3 +378,40 @@ def _model_prob_ratio(
     return float(model_key_prob_map[model_key_link]) / float(
         model_key_prob_map[model_key_base]
     )
+
+
+def get_case_embd_config(
+    model_params: dict[str, Any],
+) -> tuple[bool, dict[str, int]]:
+    """Check whether case embedding is enabled and build the index map.
+
+    Parameters
+    ----------
+    model_params : dict
+        Model parameters containing ``model_dict``.
+
+    Returns
+    -------
+    do_case_embd : bool
+        Whether case embedding is enabled.
+    case_embd_index : dict
+        Mapping from model key to case index (sorted alphabetically).
+    """
+    assert "model_dict" in model_params, (
+        "Only support setting case embedding for multi-task model!"
+    )
+    model_keys = list(model_params["model_dict"])
+    sorted_model_keys = sorted(model_keys)
+    numb_case_embd_list = [
+        model_params["model_dict"][mk].get("fitting_net", {}).get("dim_case_embd", 0)
+        for mk in sorted_model_keys
+    ]
+    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
+        raise ValueError(
+            "All models must have the same dimension of case embedding, "
+            f"while the settings are: {numb_case_embd_list}"
+        )
+    if numb_case_embd_list[0] == 0:
+        return False, {}
+    case_embd_index = {mk: idx for idx, mk in enumerate(sorted_model_keys)}
+    return True, case_embd_index

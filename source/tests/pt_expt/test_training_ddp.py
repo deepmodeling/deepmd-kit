@@ -41,6 +41,9 @@ from deepmd.pt_expt.entrypoints.main import (
 from deepmd.pt_expt.train.training import (
     Trainer,
 )
+from deepmd.pt_expt.utils.env import (
+    DEVICE,
+)
 from deepmd.pt_expt.utils.finetune import (
     get_finetune_rules,
 )
@@ -56,6 +59,9 @@ from deepmd.utils.compat import (
 
 from .compile_utils import (
     REQUIRES_SUPPORTED_COMPILE,
+)
+from .ddp_launcher import (
+    launch_worker,
 )
 
 # Paths to the water data used by PT tests
@@ -849,8 +855,16 @@ class TestDDPZeroStage(unittest.TestCase):
         run_dir = tempfile.mkdtemp(prefix=f"ddp_zero{zero_stage}_")
         try:
             mp.spawn(
-                _worker_zero_stage,
-                args=(2, port, self.data_dir, run_dir, zero_stage, result_dict),
+                launch_worker,
+                args=(
+                    "_worker_zero_stage",
+                    2,
+                    port,
+                    self.data_dir,
+                    run_dir,
+                    zero_stage,
+                    result_dict,
+                ),
                 nprocs=2,
                 join=True,
             )
@@ -889,8 +903,15 @@ class TestDDPZeroStage(unittest.TestCase):
         run_dir = tempfile.mkdtemp(prefix="ddp_zero1_muon_")
         try:
             mp.spawn(
-                _worker_zero_stage_muon,
-                args=(2, port, self.data_dir, run_dir, result_dict),
+                launch_worker,
+                args=(
+                    "_worker_zero_stage_muon",
+                    2,
+                    port,
+                    self.data_dir,
+                    run_dir,
+                    result_dict,
+                ),
                 nprocs=2,
                 join=True,
             )
@@ -919,8 +940,15 @@ class TestDDPEpochSchedule(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_epoch_schedule,
-            args=(2, port, self.data_dir, drifted, result_dict),
+            launch_worker,
+            args=(
+                "_worker_epoch_schedule",
+                2,
+                port,
+                self.data_dir,
+                drifted,
+                result_dict,
+            ),
             nprocs=2,
             join=True,
         )
@@ -963,8 +991,8 @@ class TestDDPSingleTaskTrain(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_single_task_train,
-            args=(2, port, self.data_dir, result_dict),
+            launch_worker,
+            args=("_worker_single_task_train", 2, port, self.data_dir, result_dict),
             nprocs=2,
             join=True,
         )
@@ -1003,8 +1031,8 @@ class TestDDPMinPairDistFilter(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_filtered_train,
-            args=(2, port, self.data_dir, result_dict),
+            launch_worker,
+            args=("_worker_filtered_train", 2, port, self.data_dir, result_dict),
             nprocs=2,
             join=True,
         )
@@ -1040,8 +1068,8 @@ class TestDDPMultiTaskTrain(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_multitask_train,
-            args=(2, port, self.data_dir, result_dict),
+            launch_worker,
+            args=("_worker_multitask_train", 2, port, self.data_dir, result_dict),
             nprocs=2,
             join=True,
         )
@@ -1082,8 +1110,8 @@ class TestDDPGradientAveraging(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_gradient_test,
-            args=(2, port, self.data_dir, result_dict),
+            launch_worker,
+            args=("_worker_gradient_test", 2, port, self.data_dir, result_dict),
             nprocs=2,
             join=True,
         )
@@ -1101,8 +1129,9 @@ class TestDDPGradientAveraging(unittest.TestCase):
                 msg=f"Gradients should be identical across ranks: {name}",
             )
 
-        # 2. Rebuild model in single process, replay each rank's batch,
-        #    compute manual average, compare to DDP gradient
+        # 2. Rebuild model in single process, replay each rank's batch on the
+        #    device of this process, compute manual average, compare to DDP
+        #    gradient
         config = r0["config"]
         tmpdir = tempfile.mkdtemp(prefix="ddp_grad_verify_")
         old_cwd = os.getcwd()
@@ -1119,21 +1148,20 @@ class TestDDPGradientAveraging(unittest.TestCase):
             # Forward+backward with rank 0's batch
             trainer.optimizer.zero_grad(set_to_none=True)
             input_0 = {
-                k: v.clone()
+                k: v.clone().to(DEVICE)
                 for k, v in r0["batch"].items()
                 if not k.startswith("label_")
             }
             label_0 = {
-                k[len("label_") :]: v.clone()
+                k[len("label_") :]: v.clone().to(DEVICE)
                 for k, v in r0["batch"].items()
                 if k.startswith("label_")
             }
-            input_0["coord"] = input_0["coord"].requires_grad_(True)
             cur_lr = trainer.scheduler.get_last_lr()[0]
             _, loss_0, _ = trainer.wrapper(**input_0, cur_lr=cur_lr, label=label_0)
             loss_0.backward()
             grad_0 = {
-                name: p.grad.detach().clone()
+                name: p.grad.detach().cpu().clone()
                 for name, p in trainer._unwrapped.named_parameters()
                 if p.grad is not None
             }
@@ -1141,20 +1169,19 @@ class TestDDPGradientAveraging(unittest.TestCase):
             # Forward+backward with rank 1's batch
             trainer.optimizer.zero_grad(set_to_none=True)
             input_1 = {
-                k: v.clone()
+                k: v.clone().to(DEVICE)
                 for k, v in r1["batch"].items()
                 if not k.startswith("label_")
             }
             label_1 = {
-                k[len("label_") :]: v.clone()
+                k[len("label_") :]: v.clone().to(DEVICE)
                 for k, v in r1["batch"].items()
                 if k.startswith("label_")
             }
-            input_1["coord"] = input_1["coord"].requires_grad_(True)
             _, loss_1, _ = trainer.wrapper(**input_1, cur_lr=cur_lr, label=label_1)
             loss_1.backward()
             grad_1 = {
-                name: p.grad.detach().clone()
+                name: p.grad.detach().cpu().clone()
                 for name, p in trainer._unwrapped.named_parameters()
                 if p.grad is not None
             }
@@ -1189,8 +1216,14 @@ class TestDDPMultiTaskGradient(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_multitask_gradient_test,
-            args=(2, port, self.data_dir, result_dict),
+            launch_worker,
+            args=(
+                "_worker_multitask_gradient_test",
+                2,
+                port,
+                self.data_dir,
+                result_dict,
+            ),
             nprocs=2,
             join=True,
         )
@@ -1253,8 +1286,9 @@ class TestDDPInitModel(_DDPResumeBase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_check_resume,
+            launch_worker,
             args=(
+                "_worker_check_resume",
                 2,
                 port,
                 self.data_dir,
@@ -1312,8 +1346,9 @@ class TestDDPRestart(_DDPResumeBase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_check_resume,
+            launch_worker,
             args=(
+                "_worker_check_resume",
                 2,
                 port,
                 self.data_dir,
@@ -1427,8 +1462,16 @@ class TestDDPFinetune(_DDPFinetuneBase):
         config = normalize(config)
 
         mp.spawn(
-            _worker_finetune,
-            args=(2, port, self.ckpt_path, config, None, result_dict),
+            launch_worker,
+            args=(
+                "_worker_finetune",
+                2,
+                port,
+                self.ckpt_path,
+                config,
+                None,
+                result_dict,
+            ),
             nprocs=2,
             join=True,
         )
@@ -1471,8 +1514,16 @@ class TestDDPFinetuneRandomFitting(_DDPFinetuneBase):
         config = normalize(config)
 
         mp.spawn(
-            _worker_finetune,
-            args=(2, port, self.ckpt_path, config, "RANDOM", result_dict),
+            launch_worker,
+            args=(
+                "_worker_finetune",
+                2,
+                port,
+                self.ckpt_path,
+                config,
+                "RANDOM",
+                result_dict,
+            ),
             nprocs=2,
             join=True,
         )
@@ -1569,8 +1620,16 @@ class TestDDPFinetuneNewType(unittest.TestCase):
         config = normalize(config)
 
         mp.spawn(
-            _worker_finetune,
-            args=(2, port, self.ckpt_path, config, None, result_dict),
+            launch_worker,
+            args=(
+                "_worker_finetune",
+                2,
+                port,
+                self.ckpt_path,
+                config,
+                None,
+                result_dict,
+            ),
             nprocs=2,
             join=True,
         )
@@ -1872,8 +1931,14 @@ class TestDDPCompileSingleTask(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_single_task_compile_train,
-            args=(2, port, self.data_dir, result_dict),
+            launch_worker,
+            args=(
+                "_worker_single_task_compile_train",
+                2,
+                port,
+                self.data_dir,
+                result_dict,
+            ),
             nprocs=2,
             join=True,
         )
@@ -1916,8 +1981,14 @@ class TestDDPCompileMultiTask(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_multitask_compile_train,
-            args=(2, port, self.data_dir, result_dict),
+            launch_worker,
+            args=(
+                "_worker_multitask_compile_train",
+                2,
+                port,
+                self.data_dir,
+                result_dict,
+            ),
             nprocs=2,
             join=True,
         )
@@ -2074,7 +2145,11 @@ class TestDDPMultiTaskFinetune(unittest.TestCase):
                     model_with_new_type_stat=ref_model,
                 )
 
-            cls.ref_state_dict = pretrained_wrapper.model.state_dict()
+            # The ranks report their states on the CPU.
+            cls.ref_state_dict = {
+                key: value.detach().cpu()
+                for key, value in pretrained_wrapper.model.state_dict().items()
+            }
         finally:
             os.chdir(old_cwd)
 
@@ -2127,8 +2202,9 @@ class TestDDPMultiTaskFinetune(unittest.TestCase):
         port = _find_free_port()
         result_dict = mp.Manager().dict()
         mp.spawn(
-            _worker_multitask_finetune,
+            launch_worker,
             args=(
+                "_worker_multitask_finetune",
                 2,
                 port,
                 self.data_dir,

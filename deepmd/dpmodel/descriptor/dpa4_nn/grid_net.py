@@ -40,6 +40,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
     xp_einsum,
+    xp_matmul,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -1341,7 +1342,7 @@ class BaseGridNet(NativeOP):
         coeff_flat = xp.reshape(
             coeff_dk, (n_batch, coeff_dim * self.n_frames, n_focus * n_channels)
         )
-        out = xp.matmul(to_grid[None, ...], coeff_flat)  # (N, G, F*C)
+        out = xp_matmul(to_grid[None, ...], coeff_flat)  # (N, G, F*C)
         return xp.reshape(out, (n_batch, self.projector.grid_size, n_focus, n_channels))
 
     def _from_grid(self, grid: Any) -> Any:
@@ -1359,7 +1360,7 @@ class BaseGridNet(NativeOP):
         grid_flat = xp.reshape(
             grid, (n_batch, self.projector.grid_size, n_focus * n_channels)
         )
-        coeff = xp.matmul(from_grid[None, ...], grid_flat)  # (N, D*K, F*C)
+        coeff = xp_matmul(from_grid[None, ...], grid_flat)  # (N, D*K, F*C)
         coeff = xp.reshape(
             coeff, (n_batch, coeff_dim, self.n_frames, n_focus, n_channels)
         )
@@ -1379,7 +1380,7 @@ class BaseGridNet(NativeOP):
         grid_flat = xp.reshape(
             grid, (n_batch, self.projector.grid_size, n_focus * n_channels)
         )
-        coeff = xp.matmul(from_grid[None, ...], grid_flat)  # (N, K, F*C)
+        coeff = xp_matmul(from_grid[None, ...], grid_flat)  # (N, K, F*C)
         coeff = xp.reshape(coeff, (n_batch, 1, self.n_frames, n_focus, n_channels))
         coeff = xp.permute_dims(coeff, (0, 1, 3, 2, 4))  # (N, 1, F, K, C)
         return xp.reshape(coeff, (n_batch, 1, n_focus, self.n_frames * n_channels))

@@ -297,10 +297,13 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_train.add_argument(
         # -m has been used by mpi-log
+        "--task",
+        "--head",
         "--model-branch",
+        dest="model_branch",
         type=str,
         default="",
-        help="(Supported backend: PyTorch) Model branch chosen for fine-tuning if multi-task. If not specified, it will re-init the fitting net.",
+        help="(Supported backend: PyTorch) Task (aliases: head, model branch) chosen for fine-tuning if multi-task. If not specified, it will re-init the fitting net.",
     )
     parser_train.add_argument(
         "--force-load",
@@ -352,11 +355,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="(Supported backend: TensorFlow) the name of weight file (.npy), if set, save the model's weight into the file",
     )
     parser_frz.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to freeze if in multi-task mode.",
+        help="(Supported backends: PyTorch, JAX) Task (aliases: head, model branch) to freeze if in multi-task mode.",
     )
     parser_frz.add_argument(
         "--hessian",
@@ -481,11 +486,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)",
     )
     parser_tst.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to test if in multi-task mode.",
+        help="(Supported backend: PyTorch) Task (aliases: head, model branch) to test if in multi-task mode.",
     )
 
     # * eval_desc script ***************************************************************
@@ -538,11 +545,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Output dtype for descriptors. `native` keeps the model output precision (default).",
     )
     parser_eval_desc.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+        help="(Supported backend: PyTorch) Task (aliases: head, model branch) to use if in multi-task mode.",
     )
 
     # * embedding script *************************************************************
@@ -599,12 +608,14 @@ def main_parser() -> argparse.ArgumentParser:
         help="Output dtype for embeddings. `native` keeps the model output precision.",
     )
     parser_embedding.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch, PyTorch Exportable) Task head (alias: "
-        "model branch) to use if in multi-task mode.",
+        help="(Supported backend: PyTorch, PyTorch Exportable) Task (aliases: "
+        "head, model branch) to use if in multi-task mode.",
     )
 
     # * compress model *****************************************************************
@@ -700,11 +711,13 @@ def main_parser() -> argparse.ArgumentParser:
         "analytically bounded domain",
     )
     parser_compress.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="Task head (alias: model branch) to compress if in multi-task mode.",
+        help="Task (aliases: head, model branch) to compress if in multi-task mode.",
     )
 
     # * print docs script **************************************************************
@@ -944,10 +957,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="The model after changing bias.",
     )
     parser_change_bias.add_argument(
+        "--task",
+        "--head",
         "--model-branch",
+        dest="model_branch",
         type=str,
         default=None,
-        help="Model branch chosen for changing bias if multi-task model.",
+        help="Task (aliases: head, model branch) chosen for changing bias if multi-task model.",
     )
 
     # --version

@@ -188,6 +188,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has default frame parameters."""
         return False
 
+    def requires_full_neighbor_list(self) -> bool:
+        """Whether evaluation requires every neighbor inside the cutoff."""
+        return False
+
     def uses_graph_lower(self) -> bool:
         """Returns whether this atomic model supports the NeighborGraph lower.
 

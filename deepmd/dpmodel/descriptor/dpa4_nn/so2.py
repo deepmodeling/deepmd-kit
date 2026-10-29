@@ -31,6 +31,7 @@ from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
     xp_einsum,
+    xp_matmul,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -68,6 +69,7 @@ from .indexing import (
     build_m_major_index,
     build_m_major_l_index,
     build_rotate_inv_rescale,
+    expand_degree_axis,
     get_so3_dim_of_lmax,
     map_degree_idx,
     project_D_to_m,
@@ -353,7 +355,11 @@ class SO2Linear(NativeOP):
                 (self.n_focus, self.out_channels),
             )
             out = xp.concat(
-                [out[:, :, :1, :] + bias0[:, None, None, :], out[:, :, 1:, :]], axis=2
+                [
+                    xp.astype(out[:, :, :1, :] + bias0[:, None, None, :], out.dtype),
+                    out[:, :, 1:, :],
+                ],
+                axis=2,
             )
         return out
 
@@ -388,11 +394,11 @@ class SO2Linear(NativeOP):
         Parameters
         ----------
         xp : Any, optional
-            The array namespace. Derived from ``self.weight_m0`` when either
-            ``xp`` or ``device`` is ``None``.
+            The array namespace. When ``None``, both the namespace and device
+            are derived from ``self.weight_m0``.
         device : Any, optional
-            The target device. Derived from ``self.weight_m0`` when either
-            ``xp`` or ``device`` is ``None``.
+            The target device. ``None`` uses the backend default, including
+            the device assigned by a functional backend during tracing.
 
         Returns
         -------
@@ -402,9 +408,9 @@ class SO2Linear(NativeOP):
         # The ``call`` hot path passes both explicitly; the kernel value-path
         # factories invoke ``_build_so2_weight()`` with no args, so fall back to
         # the stored weight for the namespace/device (numpy or torch buffer).
-        if xp is None or device is None:
-            xp = array_api_compat.array_namespace(self.weight_m0)
-            device = array_api_compat.device(self.weight_m0)
+        if xp is None:
+            xp = array_api_compat.array_namespace(self.weight_m0[...])
+            device = array_api_compat.device(self.weight_m0[...])
         in_total = self.reduced_dim * self.in_channels
         out_total = self.reduced_dim * self.out_channels
         num_in_m0 = (self.lmax + 1) * self.in_channels
@@ -494,7 +500,7 @@ class SO2Linear(NativeOP):
             # torch.bmm(x_flat[:, :, in0:in1], weight[:, in0:in1, out0:out1]): a
             # per-focus matmul batched over the focus axis (the leading batch axis
             # of xp.matmul), contracting the input coefficient/channel index i.
-            xp.matmul(
+            xp_matmul(
                 x_flat[:, :, in0:in1],
                 weight[:, in0:in1, out0:out1],
             )
@@ -679,7 +685,7 @@ class DynamicRadialDegreeMixer(NativeOP):
             (-1, self.input_dim),
         )
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
-        return xp.matmul(radial_m0, weight)
+        return xp_matmul(radial_m0, weight)
 
     def _scatter_degree_kernel(self, compact: Array) -> Array:
         xp = array_api_compat.array_namespace(compact)
@@ -799,7 +805,7 @@ class DynamicRadialDegreeMixer(NativeOP):
         kernel_flat = self._project_radial(radial_feat)
         if self.mode == "degree":
             kernel = self._scatter_degree_kernel(kernel_flat)
-            return xp.matmul(kernel, x_local)
+            return xp_matmul(kernel, x_local)
 
         if self.rank > 0:
             compact = xp.reshape(kernel_flat, (-1, self.degree_kernel_size, self.rank))
@@ -836,7 +842,7 @@ class DynamicRadialDegreeMixer(NativeOP):
             xp.permute_dims(kernel, (0, 1, 3, 2)),
             (-1, self.reduced_dim * self.rank, self.reduced_dim),
         )
-        mixed = xp.matmul(kernel_or, x_local)
+        mixed = xp_matmul(kernel_or, x_local)
         mixed = xp.reshape(
             mixed,
             (-1, self.reduced_dim, self.rank, self.channels),
@@ -2431,7 +2437,10 @@ class SO2Convolution(NativeOP):
                 )
                 x_local = xp.concat(
                     [
-                        x_local[:, :, :1, :] + bias_correction[:, :, None, :],
+                        xp.astype(
+                            x_local[:, :, :1, :] + bias_correction[:, :, None, :],
+                            x_local.dtype,
+                        ),
                         x_local[:, :, 1:, :],
                     ],
                     axis=2,
@@ -2583,11 +2592,11 @@ class SO2Convolution(NativeOP):
             key_mmax=self.mmax,
         )
         x_src = xp.take(x, edge_cache.src, axis=0)  # (E, D, C_wide)
-        x_local = xp.matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
+        x_local = xp_matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
         x_dst_local: Array | None = None
         if self.node_wise_grid_product is not None:
             x_dst = xp.take(x, edge_cache.dst, axis=0)  # (E, D, C_wide)
-            x_dst_local = xp.matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
+            x_dst_local = xp_matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
         return x_local, x_dst_local
 
     def _rotate_mix(
@@ -2630,22 +2639,19 @@ class SO2Convolution(NativeOP):
             projected radial features with shape (E, D_m, C_wide).
         """
         xp = array_api_compat.array_namespace(x)
-        device = array_api_compat.device(x)
         n_edge = edge_cache.src.shape[0]
 
         # === Step 1. Rotate to edge-aligned local frame ===
         x_local, x_dst_local = self._rotate_to_local(x, edge_cache)
 
         # === Step 2. Select radial/type features for reduced layout ===
-        rad_feat = xp.take(
-            radial_feat,
-            xp_asarray_nodetach(xp, self.degree_index_m[...], device=device),
-            axis=1,
+        rad_feat = expand_degree_axis(
+            radial_feat, self.lmax, self.mmax, axis=1
         )  # (E, D_m, C)
         if self.radial_hidden_proj is not None:
             rad_feat = self.radial_hidden_proj(rad_feat)
         if self.radial_degree_mixer is None:
-            x_local = x_local * rad_feat
+            x_local = xp.astype(x_local * rad_feat, x_local.dtype)
         else:
             x_local = self.radial_degree_mixer(x_local, rad_feat)
         if self.node_wise_grid_product is not None:
@@ -2696,7 +2702,7 @@ class SO2Convolution(NativeOP):
             key_lmax=self.lmax,
             key_mmax=self.mmax,
         )
-        return xp.matmul(Dt_from_m, x_local)  # (E, D, C_wide)
+        return xp_matmul(Dt_from_m, x_local)  # (E, D, C_wide)
 
     def cartesian_message(
         self,

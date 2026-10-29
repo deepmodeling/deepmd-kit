@@ -79,6 +79,8 @@ def _update_changed_model_tensors(
             continue
         target_value = target_state_dict[key]
         if torch.is_tensor(target_value) and torch.is_tensor(source_value):
+            # The checkpoint keeps the device it was loaded to.
+            source_value = source_value.to(target_value.device)
             if (
                 target_value.shape == source_value.shape
                 and target_value.dtype == source_value.dtype
@@ -89,6 +91,57 @@ def _update_changed_model_tensors(
                 target_state_dict[key] = source_value.detach().clone()
         elif target_value != source_value:
             target_state_dict[key] = source_value
+
+
+def load_checkpoint_model(
+    state_dict: dict[str, Any], branch: str | None = None
+) -> tuple[Any, dict[str, Any]]:
+    """Build the model of a training checkpoint with its weights.
+
+    Parameters
+    ----------
+    state_dict : dict[str, Any]
+        Model state of the checkpoint, which holds the model parameters in
+        ``_extra_state``.
+    branch : str or None
+        Branch of a multi-task checkpoint; None for a single-task checkpoint.
+
+    Returns
+    -------
+    model : torch.nn.Module
+        The model of the checkpoint, or of its branch.
+    model_params : dict[str, Any]
+        The parameters that build this model.
+    """
+    from copy import (
+        deepcopy,
+    )
+
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    model_params = state_dict["_extra_state"]["model_params"]
+    if branch is None:
+        model = get_model(deepcopy(model_params))
+        ModelWrapper(model).load_state_dict(state_dict)
+        return model, model_params
+    # A branch holds every weight it uses under its own prefix, the weights
+    # it shares with other branches included.
+    model_params = model_params["model_dict"][branch]
+    model = get_model(deepcopy(model_params))
+    prefix = f"model.{branch}."
+    ModelWrapper({branch: model}).load_state_dict(
+        {
+            key: value
+            for key, value in state_dict.items()
+            if key == "_extra_state" or key.startswith(prefix)
+        }
+    )
+    return model, model_params
 
 
 def _build_data_system(
@@ -518,12 +571,6 @@ def freeze(
     """
     import torch
 
-    from deepmd.pt_expt.model.get_model import (
-        get_model,
-    )
-    from deepmd.pt_expt.train.wrapper import (
-        ModelWrapper,
-    )
     from deepmd.pt_expt.utils.env import (
         DEVICE,
     )
@@ -547,27 +594,17 @@ def freeze(
     if multi_task:
         if head is None:
             raise ValueError(
-                "Multi-task model requires --head to specify which model to freeze. "
-                f"Available heads: {list(model_params['model_dict'].keys())}"
+                "Multi-task model requires --task to specify which model to freeze. "
+                f"Available tasks: {list(model_params['model_dict'].keys())}"
             )
         if head not in model_params["model_dict"]:
             raise ValueError(
                 f"Head '{head}' not found. "
                 f"Available: {list(model_params['model_dict'].keys())}"
             )
-        single_model_params = model_params["model_dict"][head]
-        prefix = f"model.{head}."
-        state_dict = {
-            key: value
-            for key, value in state_dict.items()
-            if key == "_extra_state" or key.startswith(prefix)
-        }
-    else:
-        single_model_params = model_params
-    m = get_model(single_model_params)
-    wrapper = ModelWrapper({head: m} if multi_task else m)
-    wrapper.load_state_dict(state_dict)
-
+    m, single_model_params = load_checkpoint_model(
+        state_dict, head if multi_task else None
+    )
     m.eval()
 
     # A graph-capable model ALWAYS freezes through the NeighborGraph lower.
@@ -682,9 +719,6 @@ def change_bias(
     from deepmd.dpmodel.common import (
         to_numpy_array,
     )
-    from deepmd.pt_expt.model.get_model import (
-        get_model,
-    )
     from deepmd.pt_expt.train.training import (
         get_additional_data_requirement,
         get_loss,
@@ -739,16 +773,18 @@ def change_bias(
         raise ValueError(f"Unsupported mode '{mode}'. Expected 'change' or 'set'.")
 
     if input_file.endswith(".pt"):
-        multi_task = "model_dict" in model_params
-        if multi_task:
-            raise NotImplementedError(
-                "Multi-task change-bias is not yet supported for the pt_expt backend."
+        branches = model_params.get("model_dict")
+        if branches is not None and model_branch not in branches:
+            raise ValueError(
+                "A multi-task checkpoint requires --task to select the model to "
+                f"change. Available tasks: {list(branches)}"
             )
-        type_map = model_params["type_map"]
-        model = get_model(model_params)
-        wrapper = ModelWrapper(model)
-        wrapper.load_state_dict(model_state_dict)
-        model_to_change = model
+        # The branch of a multi-task checkpoint; a single-task one has none.
+        branch = model_branch if branches is not None else None
+        if branch is not None:
+            log.info(f"Changing out bias for model {branch}.")
+        model_to_change, branch_params = load_checkpoint_model(model_state_dict, branch)
+        type_map = branch_params["type_map"]
 
     if input_file.endswith((".pte", ".pt2")):
         type_map = model_to_change.get_type_map()
@@ -806,7 +842,11 @@ def change_bias(
         output_path = (
             output if output is not None else input_file.replace(".pt", "_updated.pt")
         )
-        wrapper = ModelWrapper(model_to_change)
+        # The wrapper names the tensors of the model as the checkpoint does,
+        # so the other branches of a multi-task checkpoint stay as they are.
+        wrapper = ModelWrapper(
+            model_to_change if branch is None else {branch: model_to_change}
+        )
         _update_changed_model_tensors(model_state_dict, wrapper.state_dict())
         torch.save(old_state_dict, output_path)
     elif input_file.endswith((".pte", ".pt2")):

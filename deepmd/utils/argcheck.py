@@ -1006,7 +1006,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt", "pt_expt") + doc_random_gamma,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_random_gamma,
         ),
         Argument(
             "edge_cartesian",
@@ -1293,7 +1293,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt", "pt_expt") + doc_use_amp,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_use_amp,
         ),
         Argument(
             "add_chg_spin_ebd",
@@ -4467,23 +4467,23 @@ def sezm_model_args() -> Argument:
                     Argument(
                         "rank",
                         int,
-                        doc=supported_backends("pt") + doc_lora_rank,
+                        doc=supported_backends("jax", "pt") + doc_lora_rank,
                     ),
                     Argument(
                         "alpha",
                         float,
                         optional=True,
                         default=None,
-                        doc=supported_backends("pt") + doc_lora_alpha,
+                        doc=supported_backends("jax", "pt") + doc_lora_alpha,
                     ),
                 ],
                 optional=True,
                 default=None,
-                doc=supported_backends("pt") + doc_lora,
+                doc=supported_backends("jax", "pt") + doc_lora,
             ),
         ],
         alias=["DPA4", "SeZM", "sezm"],
-        doc=supported_backends("pt", "pt_expt") + doc_model,
+        doc=supported_backends("jax", "pt", "pt_expt") + doc_model,
     )
     return ca
 
@@ -5030,33 +5030,35 @@ def optimizer_adam() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta1,
+            doc=supported_backends("jax", "tf", "pt", "pd", "tf2") + doc_adam_beta1,
         ),
         Argument(
             "adam_beta2",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta2,
+            doc=supported_backends("jax", "tf", "pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
             "adam_eps",
             float,
             optional=True,
             default=1e-8,
-            doc=supported_backends("pt_expt") + doc_adam_eps,
+            doc=supported_backends("jax", "pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
             float,
             optional=True,
             default=0.0,
-            doc=supported_backends("pt", "pd") + doc_weight_decay,
+            doc=supported_backends("jax", "pt", "pd") + doc_weight_decay,
         ),
     ]
 
 
-@opt_args_plugin.register("AdamW", doc=supported_backends("pt", "pd", "pt_expt", "tf2"))
+@opt_args_plugin.register(
+    "AdamW", doc=supported_backends("jax", "pt", "pd", "pt_expt", "tf2")
+)
 def optimizer_adamw() -> list[Argument]:
     doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
     doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
@@ -5071,28 +5073,29 @@ def optimizer_adamw() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta1,
+            doc=supported_backends("jax", "pt", "pd", "tf2") + doc_adam_beta1,
         ),
         Argument(
             "adam_beta2",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta2,
+            doc=supported_backends("jax", "pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
             "adam_eps",
             float,
             optional=True,
             default=1e-8,
-            doc=supported_backends("pt_expt") + doc_adam_eps,
+            doc=supported_backends("jax", "pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
             float,
             optional=True,
             default=0.001,
-            doc=supported_backends("pt", "pd", "pt_expt", "tf2") + doc_weight_decay,
+            doc=supported_backends("jax", "pt", "pd", "pt_expt", "tf2")
+            + doc_weight_decay,
         ),
     ]
 
@@ -5210,7 +5213,7 @@ def optimizer_adamuon() -> list[Argument]:
 
 @opt_args_plugin.register(
     "HybridMuon",
-    doc=supported_backends("pt")
+    doc=supported_backends("jax", "pt")
     + "HybridMuon optimizer (DeePMD-kit custom implementation). "
     + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
     + "For matrix params: Muon update with Newton-Schulz based on selected muon_mode. "
@@ -5229,7 +5232,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             optional=True,
             default=0.95,
             alias=["muon_momentum"],
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
             "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
         ),
@@ -5238,7 +5241,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Adam beta1 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -5246,7 +5249,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.95,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Adam beta2 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -5254,7 +5257,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.001,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Weight decay coefficient. Applied to Muon-routed parameters and "
             + "the AdamW-style decay path for matrix parameters.",
         ),
@@ -5263,7 +5266,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
             "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
@@ -5274,7 +5277,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.18,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
             + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
             + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
@@ -5284,7 +5287,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             str,
             optional=True,
             default="slice",
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Muon routing mode. "
             + "'2d': only effective-rank-2 params are eligible for Muon; effective rank >2 goes to AdamW-style decoupled decay path. "
             + "'flat': effective-rank >=2 params are flattened to matrix-view (prod(shape[:-1]), shape[-1]) for Muon. "
@@ -5296,7 +5299,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
             + "Square matrices keep using the current standard Newton-Schulz path.",
         ),
@@ -5315,7 +5318,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt")
             + "Enable Magma-lite damping on the Muon route only. "
             "When enabled, HybridMuon computes momentum-gradient alignment "
             "per Muon block, applies EMA smoothing, and rescales Muon updates "
@@ -6726,7 +6729,7 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt_expt") + doc_reset_data_progress,
+            doc=supported_backends("jax", "pt_expt") + doc_reset_data_progress,
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
         Argument(
@@ -6743,14 +6746,14 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt", "pt_expt") + doc_enable_ema,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_enable_ema,
         ),
         Argument(
             "ema_decay",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt", "pt_expt") + doc_ema_decay,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_ema_decay,
             extra_check=lambda x: 0.0 <= x < 1.0,
             extra_check_errmsg="must be greater than or equal to 0 and less than 1",
         ),
@@ -6829,7 +6832,7 @@ def training_args(
             "gradient_max_norm",
             float,
             optional=True,
-            doc=supported_backends("pt", "pd", "pt_expt", "tf2")
+            doc=supported_backends("jax", "pt", "pd", "pt_expt", "tf2")
             + doc_gradient_max_norm,
         ),
         Argument(
@@ -6844,7 +6847,7 @@ def training_args(
             int,
             optional=True,
             default=0,
-            doc=supported_backends("pt", "pt_expt") + doc_zero_stage,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_zero_stage,
         ),
         Argument(
             "neighbor_graph_method",
@@ -6873,7 +6876,7 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt_expt")
+            doc=supported_backends("jax", "pt_expt")
             + "Enable TF32 matmul precision for CUDA training forwards. "
             "Independent of `enable_compile`; eval-time TF32 is controlled "
             "separately by `validating.tf32_infer` or `DP_TF32_INFER`. The "
@@ -7179,14 +7182,14 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt", "pt_expt") + doc_tf32_infer,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_tf32_infer,
         ),
         Argument(
             "amp_infer",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt", "pt_expt") + doc_amp_infer,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_amp_infer,
         ),
     ]
     return Argument(
@@ -7440,15 +7443,16 @@ def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
             )
 
 
-def validate_no_multitask_lora(data: dict[str, Any], multi_task: bool = False) -> None:
-    """Reject ``lora`` in multi-task configs.
+def validate_no_multitask_lora(
+    data: dict[str, Any], multi_task: bool = False, *, backend: str | None = None
+) -> None:
+    """Reject multi-task LoRA where shared adapters are not supported.
 
-    In multi-task training `share_params` aliases descriptor modules across
-    branches to the same Python object, so a per-branch LoRA injection would
-    silently collapse into one global adapter. Catch this at config time
-    rather than letting a confusing shared-adapter model slip through.
+    JAX supports shared adapters and validates their rank, scaling, and freezing
+    policy while resolving shared descriptors. Other backends keep the
+    single-task constraint because their trainers do not manage shared adapters.
     """
-    if not multi_task:
+    if not multi_task or backend == "jax":
         return
     model_dict = (data.get("model") or {}).get("model_dict") or {}
     for branch_key, branch in model_dict.items():
@@ -7513,7 +7517,11 @@ def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
 
 
 def normalize(
-    data: dict[str, Any], multi_task: bool = False, *, check: bool = True
+    data: dict[str, Any],
+    multi_task: bool = False,
+    *,
+    check: bool = True,
+    backend: str | None = None,
 ) -> dict[str, Any]:
     """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
@@ -7539,7 +7547,7 @@ def normalize(
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)
     _check_dpa3_chg_spin_migration(data)
-    validate_no_multitask_lora(data, multi_task=multi_task)
+    validate_no_multitask_lora(data, multi_task=multi_task, backend=backend)
     _apply_density_env_protection_default(data)
 
     return data

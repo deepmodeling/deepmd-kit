@@ -27,7 +27,6 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    xp_asarray_nodetach,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -47,6 +46,7 @@ from deepmd.utils.version import (
 
 from .indexing import (
     build_m_major_l_index,
+    expand_degree_axis,
     map_degree_idx,
 )
 from .so3 import (
@@ -227,18 +227,28 @@ class GatedActivation(NativeOP):
             )
         else:
             gate_logits = self.gate_linear(gate_src)
-        gating_scalars = xp.astype(xp_sigmoid(gate_logits), input_dtype)
+        vectors = self._apply_vector_gate(x[rest_idx], gate_logits, input_dtype)
+        return xp.concat([x0, vectors], axis=degree_axis)
+
+    def _apply_vector_gate(self, values: Any, logits: Any, dtype: Any) -> Any:
+        """Apply per-degree sigmoid gates in their prescribed storage dtype."""
+        xp = array_api_compat.array_namespace(values)
+        gates = self._expand_gates(xp.astype(xp_sigmoid(logits), dtype))
+        return values * gates
+
+    def _expand_gates(self, gating_scalars: Any) -> Any:
+        """Broadcast per-degree gates into the vector coefficient layout."""
+        xp = array_api_compat.array_namespace(gating_scalars)
         gating_scalars = xp.reshape(
             gating_scalars,
-            (x.shape[0], gate_scalar_source.shape[1], self.lmax, self.channels),
+            (*gating_scalars.shape[:2], self.lmax, self.channels),
         )
-        expand_index = xp_asarray_nodetach(
-            xp, self.expand_index, device=array_api_compat.device(x)
+        gates = expand_degree_axis(
+            gating_scalars, self.lmax, self.mmax, axis=2, scalar=False
         )
-        gates = xp.take(gating_scalars, expand_index, axis=2)
         if self.layout == "ndfc":
             gates = xp.permute_dims(gates, (0, 2, 1, 3))
-        return xp.concat([x0, x[rest_idx] * gates], axis=degree_axis)
+        return gates
 
     def serialize(self) -> dict[str, Any]:
         variables = {"expand_index": to_numpy_array(self.expand_index)}
@@ -276,7 +286,10 @@ class GatedActivation(NativeOP):
         variables = data.pop("@variables")
         obj = cls(**config)
         prec = PRECISION_DICT[obj.precision.lower()]
-        obj.expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
+        if not np.array_equal(
+            variables["expand_index"], to_numpy_array(obj.expand_index)
+        ):
+            raise ValueError("expand_index must match the configured degree layout")
         if obj.lmax > 0:
             obj.gate_linear.weight = np.asarray(
                 variables["gate_linear.weight"], dtype=prec

@@ -377,6 +377,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return any(m.compression_needs_min_nbor_dist() for m in self.models)
 
+    def requires_full_neighbor_list(self) -> bool:
+        """Retain every neighbor if any child requires the complete graph."""
+        return any(model.requires_full_neighbor_list() for model in self.models)
+
     def uses_graph_lower(self) -> bool:
         """Graph-capable iff EVERY child supports the graph lower.
 
@@ -773,6 +777,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
+    def _deserialize_child(cls, data: dict) -> BaseAtomicModel:
+        """Restore a child through the backend atomic-model registry."""
+        return BaseAtomicModel.get_class_by_type(data["type"]).deserialize(data)
+
+    @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 3, 2)
@@ -780,10 +789,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         data.pop("type", None)
         if "weights" not in data:
             data["weights"] = "mean"
-        models = [
-            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
-            for model in data["models"]
-        ]
+        models = [cls._deserialize_child(model) for model in data["models"]]
         data["models"] = models
         return super().deserialize(data)
 
@@ -1054,10 +1060,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     def deserialize(cls, data: Any) -> "DPZBLLinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
-        models = [
-            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
-            for model in data["models"]
-        ]
+        models = [cls._deserialize_child(model) for model in data["models"]]
         data["dp_model"], data["zbl_model"] = models[0], models[1]
         data.pop("@class", None)
         data.pop("type", None)

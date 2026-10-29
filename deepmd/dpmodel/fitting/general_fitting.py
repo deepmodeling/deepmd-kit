@@ -650,6 +650,8 @@ class GeneralFitting(NativeOP, BaseFitting):
         descriptor: Array,
         fparam: Array | None,
         aparam: Array | None,
+        *,
+        include_case_embedding: bool = True,
     ) -> Array | None:
         """Normalized conditioning columns appended to the descriptor of every atom.
 
@@ -663,6 +665,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             parameter is used when omitted.
         aparam : Array, optional
             Atomic parameters with shape (nf, nloc, numb_aparam).
+        include_case_embedding : bool, default=True
+            Append the case code as input columns. Feature-modulation
+            fittings consume the case code separately.
 
         Returns
         -------
@@ -720,7 +725,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 self.aparam_inv_std, dtype=aparam.dtype, device=aparam_device
             )
             columns.append((aparam - aparam_avg) * aparam_inv_std)
-        if self.dim_case_embd > 0:
+        if include_case_embedding and self.dim_case_embd > 0:
             assert self.case_embd is not None
             case_embd = xp.asarray(
                 self.case_embd, dtype=descriptor.dtype, device=device
@@ -739,6 +744,8 @@ class GeneralFitting(NativeOP, BaseFitting):
         vacuum_descriptor: Array | None,
         atype: Array,
         cond: Array | None,
+        *,
+        include_case_embedding: bool = True,
     ) -> Array | None:
         """Fitting input rows of the vacuum references.
 
@@ -759,6 +766,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             Atom types with shape (nf, nloc).
         cond : Array, optional
             Conditioning columns of the atoms with shape (nf, nloc, ncond).
+        include_case_embedding : bool, default=True
+            Append the case code to uniformly conditioned reference rows.
 
         Returns
         -------
@@ -797,7 +806,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 (nf, nloc, self.dim_descrpt),
             )
             return xp.concat([x_vac, cond], axis=-1)
-        if self.dim_case_embd == 0:
+        if not include_case_embedding or self.dim_case_embd == 0:
             return vacuum_descriptor
         assert self.case_embd is not None
         case_embd = xp.asarray(

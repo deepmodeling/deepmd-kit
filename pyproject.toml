@@ -158,6 +158,8 @@ jax = [
     'flax>=0.10.0;python_version>="3.10"',
     'orbax-checkpoint;python_version>="3.10"',
     'orbax-checkpoint;python_version>="3.10"',
+    "vesin>=0.6",
+    "flatbuffers>=24.3.25",
     # The pinning of ml_dtypes may conflict with TF
     # 'jax-ai-stack;python_version>="3.10"',
 ]

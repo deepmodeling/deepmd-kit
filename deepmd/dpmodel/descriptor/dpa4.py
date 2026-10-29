@@ -1599,6 +1599,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             # Random local-Z roll is a training-only augmentation; the model
             # is roll-equivariant, so inference fixes gamma.
             random_gamma=self.random_gamma and training,
+            gamma=(
+                self._rotation_angles(edge_vec)
+                if self.random_gamma and training
+                else None
+            ),
             wigner_calc=self.wigner_calc,
             build_wigner=self._build_full_wigner(),
         )
@@ -2346,6 +2351,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         return False
 
+    def requires_full_neighbor_list(self) -> bool:
+        """Selection counts normalize features without truncating neighbors."""
+        return True
+
     def supports_graph_vacuum(self) -> bool:
         """The dense adapter uses the same graph core; native spin needs it."""
         return True
@@ -2371,6 +2380,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     def uses_compact_edge_pairs(self) -> bool:
         """DPA4 attention is a per-edge scatter softmax; no pair axis."""
         return False
+
+    def _rotation_angles(self, edge_vec: Array) -> Array | None:
+        """Supply explicit random rolls for backends with functional RNGs.
+
+        A ``None`` result delegates sampling to the edge-cache backend.
+        """
+        return None
 
     def _in_training_mode(self) -> bool:
         """Whether the descriptor is currently in training mode.
@@ -2739,6 +2755,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 ],
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
+                "use_amp": self.use_amp,
                 "edge_cartesian": self.edge_cartesian,
                 "node_cartesian": self.node_cartesian,
                 "so2_norm": self.so2_norm,

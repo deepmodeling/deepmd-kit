@@ -356,7 +356,7 @@ dp --pt-expt freeze -c model.ckpt.pt -o frozen_model.pt2
 ```
 
 Both commands produce `.pt2` files for ASE or LAMMPS. For a multi-task model,
-add `--head BRANCH_NAME` to select a branch. No extra export option is needed
+add `--task BRANCH_NAME` (aliases: `--head`, `--model-branch`) to select a branch. No extra export option is needed
 for multi-rank LAMMPS. DPA4 does not support model compression.
 
 Export on the device type that will run the model. For a CPU archive, hide

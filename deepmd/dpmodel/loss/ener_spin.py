@@ -12,6 +12,7 @@ from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
 )
 from deepmd.dpmodel.loss.reduction import (
+    absolute_error,
     masked_atom_mean,
 )
 from deepmd.utils.data import (
@@ -177,7 +178,9 @@ class EnergySpinLoss(EnergyLoss):
         # The magnetic mask describes physical spin degrees of freedom, even
         # at atoms whose own energy is excluded from the atomic-energy sum.
         residual = (reference - prediction) * mask[:, None]
-        error = xp.square(residual) if self.loss_func == "mse" else xp.abs(residual)
+        error = (
+            xp.square(residual) if self.loss_func == "mse" else absolute_error(residual)
+        )
         mean_error = masked_atom_mean(error, mask, 3)
         find = label_dict.get("find_force_mag", 0.0)
         prefactor = self.limit_pref_fm + (self.start_pref_fm - self.limit_pref_fm) * (
@@ -188,7 +191,7 @@ class EnergySpinLoss(EnergyLoss):
         metrics = {f"{prefix}_fm": self.display_if_exist(metric, find)}
         if mae and self.loss_func == "mse":
             metrics["mae_fm"] = self.display_if_exist(
-                masked_atom_mean(xp.abs(residual), mask, 3), find
+                masked_atom_mean(absolute_error(residual), mask, 3), find
             )
         return prefactor * find * mean_error, metrics
 
