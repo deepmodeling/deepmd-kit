@@ -165,6 +165,16 @@ class TestDPTestDensity(unittest.TestCase):
         os.unlink(cls.model_path)
         cls.tmpdir.cleanup()
 
+    def _stat_sample(self, module: torch.nn.Module) -> dict:
+        """Return a cloned sample on the device used by statistic collection."""
+        device = next(module.parameters()).device
+        return {
+            key: value.detach().clone().to(device)
+            if isinstance(value, torch.Tensor)
+            else deepcopy(value)
+            for key, value in self.input_dict.items()
+        }
+
     def test_change_out_bias_noop(self) -> None:
         # fine-tuning calls the model-level change_out_bias, whose default
         # change-by-statistic mode would run the grid-less stat wrapper;
@@ -477,7 +487,7 @@ class TestDPTestDensity(unittest.TestCase):
         stat_dir = DPPath(tempfile.mkdtemp(dir=self.tmpdir.name), "w")
 
         def sampler() -> list:
-            return [dict(self.input_dict)]
+            return [self._stat_sample(model)]
 
         model.compute_or_load_stat(sampler, stat_file_path=stat_dir)
 
@@ -545,7 +555,7 @@ class TestDPTestDensity(unittest.TestCase):
         try:
 
             def sampler() -> list:
-                return [dict(self.input_dict)]
+                return [self._stat_sample(atomic_model)]
 
             atomic_model.compute_or_load_stat(sampler, stat_file_path=None)
         finally:
@@ -567,7 +577,7 @@ class TestDPTestDensity(unittest.TestCase):
         atomic_model = self.torch_model.atomic_model
 
         def sampler() -> list:
-            return [dict(self.input_dict)]
+            return [self._stat_sample(atomic_model)]
 
         atomic_model.compute_or_load_stat(sampler, stat_file_path=stat_dir)
         grid_type = len(self.config["model"]["type_map"]) - 1
@@ -596,7 +606,7 @@ class TestDPTestDensity(unittest.TestCase):
         atomic_model = self.torch_model.atomic_model
 
         def sampler() -> list:
-            return [dict(self.input_dict)]
+            return [self._stat_sample(atomic_model)]
 
         atomic_model.compute_or_load_stat(sampler, stat_file_path=stat_dir)
         grid_type = len(self.config["model"]["type_map"]) - 1
@@ -614,7 +624,7 @@ class TestDPTestDensity(unittest.TestCase):
         # density input; this must take the documented fallback rather than
         # assuming every sample contains grid coordinates.
         atomic_model = get_model(deepcopy(model_density)).atomic_model
-        sample = dict(self.input_dict)
+        sample = self._stat_sample(atomic_model)
         sample.pop("grid")
         with self.assertLogs(
             "deepmd.pt.model.atomic_model.density_atomic_model", level="WARNING"
@@ -642,7 +652,7 @@ class TestDPTestDensity(unittest.TestCase):
         atomic_model = model.atomic_model
 
         def sampler() -> list:
-            return [dict(self.input_dict)]
+            return [self._stat_sample(atomic_model)]
 
         with open_stat_file(StatFileSpec(str(stat_file))) as update_path:
             self.assertIsNotNone(update_path)
