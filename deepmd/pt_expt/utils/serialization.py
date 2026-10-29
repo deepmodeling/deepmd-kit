@@ -501,7 +501,7 @@ def build_synthetic_graph_inputs(
     Single source of the trace-time graph inputs, shared by ``.pt2`` export
     (:func:`_trace_and_export`) and compiled training
     (:func:`deepmd.pt_expt.train.training._trace_and_compile_graph`). Builds a
-    small random system and runs the carry-all
+    small deterministic system and runs the carry-all
     :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
     padded ``GraphLayout(edge_capacity=e_max)`` trace sample. Export uses the
     destination-major graph with CSR metadata; compiled training selects the
@@ -519,8 +519,10 @@ def build_synthetic_graph_inputs(
     (before ``fparam``/``aparam``); there is no ``charge_spin`` slot at all
     (native spin rejects ``add_chg_spin_ebd`` at build).
 
-    The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
-    i % ntypes``) is identical for both callers.
+    The system is identical for both callers and independent of dense neighbor
+    capacities. For at least four atoms it includes an isolated center and a
+    connected three-atom cluster. The highest atom type occurs in the cluster
+    even when the type map is larger than the sample.
 
     Parameters
     ----------
@@ -587,9 +589,21 @@ def build_synthetic_graph_inputs(
     box_np = (np.eye(3, dtype=np.float64) * box_size).reshape(1, 9)
     rng = np.random.default_rng(42)
     coord_np = rng.random((nframes, nloc, 3)) * box_size * 0.5 + box_size * 0.25
+    if nloc >= 4:
+        # Exercise multi-edge aggregation and empty neighborhoods in the same
+        # trace. Every other atom lies in [.75*rcut, 2.25*rcut]^3, so the
+        # origin is isolated even under periodic minimum-image distances.
+        coord_np[:, [0, 2, 3]] = rcut * np.array(
+            [[1.5, 1.5, 1.5], [1.6, 1.5, 1.5], [1.5, 1.65, 1.5]]
+        )
+        # Keep the isolated center inside n_local (the final atom is a
+        # synthetic ghost), including the minimal four-atom fixture.
+        coord_np[:, 1] = 0.0
     atype_np = np.zeros((nframes, nloc), dtype=np.int64)
     for i in range(nloc):
         atype_np[:, i] = i % ntypes
+    # Include the upper type-index boundary without growing the node axis.
+    atype_np[:, 0] = ntypes - 1
 
     coord_t = torch.tensor(coord_np, dtype=dtype, device=device)
     atype_t = torch.tensor(atype_np, dtype=torch.int64, device=device)
@@ -1320,7 +1334,10 @@ def _serialize_from_file_pte(model_file: str) -> dict:
         "model_def_script.json": "",
         "metadata.json": "",
     }
-    torch.export.load(model_file, extra_files=extra_files)
+    # Storage reconstruction requires CPU staging independently of the caller's
+    # default device; tensor placement is restored from the archive metadata.
+    with torch.device("cpu"):
+        torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
     metadata = (
@@ -1647,6 +1664,8 @@ def deserialize_to_file(
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
 
@@ -1690,6 +1709,10 @@ def deserialize_to_file(
         explicitly selects other levels.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
+    with_comm : bool, optional
+        Include a communication artifact in ``.pt2`` exports for models with
+        cross-rank message passing, by default True. Disable for
+        single-process inference.
     """
     lower_kind = _resolve_target_lower_kind(model_file, data, lower_kind)
     uses_dpa4_defaults = model_file.endswith(".pt2") and _uses_dpa4_kernel_defaults(
@@ -1717,6 +1740,7 @@ def deserialize_to_file(
                 model_json_override,
                 do_atomic_virial,
                 lower_kind,
+                with_comm=with_comm,
             )
         else:
             _deserialize_to_file_pte(
@@ -1748,6 +1772,70 @@ def _trace_and_export(
             lower_kind,
             target_device=target_device,
         )
+
+
+@contextlib.contextmanager
+def _cpu_reference_descriptors(model: torch.nn.Module) -> Iterator[None]:
+    """Temporarily use CPU reference descriptors for the eager vacuum fold.
+
+    Deployment descriptors bind accelerator operators at construction, before
+    they move to CPU for fake tracing. Changing their device or the kernel
+    environment cannot unbind those operators. Rebuild only descriptors whose
+    fittings still need a reference, leaving the folded bias and non-persistent
+    vacuum table on the original fitting. Restore the deployment descriptors
+    before tracing so their optimized bindings remain intact.
+    """
+    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+        DPAtomicModel,
+    )
+    from deepmd.pt_expt.utils import (
+        env,
+    )
+
+    atomic_models = [
+        module
+        for module in model.modules()
+        if isinstance(module, DPAtomicModel)
+        and module.fitting_net.needs_vacuum_descriptor()
+    ]
+    if not atomic_models:
+        yield
+        return
+
+    levels = (
+        "DP_CUDA_INFER",
+        "DP_TRITON_INFER",
+        "DP_CUTILE_INFER",
+        "DP_CUTE_INFER",
+        "DP_CUDA_TRAIN",
+        "DP_TRITON_TRAIN",
+        "DP_AMP_INFER",
+    )
+    saved_levels = {name: os.environ.get(name) for name in levels}
+    saved_device = env.DEVICE
+    descriptors = []
+    try:
+        env.DEVICE = torch.device("cpu")
+        os.environ.update(dict.fromkeys(levels, "0"))
+        for atomic_model in atomic_models:
+            descriptor = atomic_model.descriptor
+            reference = type(descriptor).deserialize(descriptor.serialize()).eval()
+            # Virtual-spin backbones can disable this route at runtime; that
+            # choice is deliberately absent from the portable descriptor.
+            if not descriptor.uses_graph_lower() and reference.uses_graph_lower():
+                reference.disable_graph_lower()
+            descriptors.append((atomic_model, descriptor))
+            atomic_model.descriptor = reference
+        yield
+    finally:
+        for atomic_model, descriptor in descriptors:
+            atomic_model.descriptor = descriptor
+        env.DEVICE = saved_device
+        for name, value in saved_levels.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def _trace_and_export_impl(
@@ -1833,12 +1921,15 @@ def _trace_and_export_impl(
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
     model.eval()
-    # The vacuum reference is resolved on the export object, folded into the
-    # fitting bias or stored as a per-type table, so the exported graph
-    # carries no reference atoms; the move to the tracing device follows, so
-    # the table lands there with the rest of the model.
-    model.fold_vacuum_reference()
+    # Fold the vacuum reference on the CPU tracing device. vacuum_descriptor
+    # evaluates an isolated atom of every type through the descriptor; on CUDA
+    # that path can allocate several GiB even when export already holds most of
+    # the GPU. Move first so the fold runs where tracing will, and so the
+    # folded bias or vacuum table stays on that device with the rest of the
+    # model.
     model.to("cpu")
+    with torch.no_grad(), _cpu_reference_descriptors(model):
+        model.fold_vacuum_reference()
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
@@ -2432,7 +2523,9 @@ def _charge_state_descriptor(data: dict, metadata: dict) -> Any | None:
     )
 
     model = BaseModel.deserialize(data["model"])
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    # A bridged composition carries its charge state in its learned part.
+    parts = model.atomic_model.fused_decomposition()
+    descriptor = None if parts is None else parts[0].descriptor
     if (
         descriptor is None
         or not getattr(descriptor, "compress", False)
@@ -2585,6 +2678,8 @@ def _deserialize_to_file_pt2(
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -2595,11 +2690,12 @@ def _deserialize_to_file_pt2(
     For models whose descriptor reports
     ``has_message_passing_across_ranks() == True`` (DPA2, DPA3 with
     ``use_loc_mapping=False``, or hybrids wrapping such children),
-    compiles a SECOND ``with-comm`` artifact and packs it alongside the
-    regular one. The ``with-comm`` variant accepts comm-dict tensors as
-    additional positional inputs and drives MPI ghost-atom exchange via
-    ``deepmd_export::border_op``. The C++ ``DeepPotPTExpt`` loader picks
-    the artifact based on the LAMMPS rank count at runtime.
+    compiles a SECOND ``with-comm`` artifact when ``with_comm`` is True and
+    packs it alongside the regular one. The ``with-comm`` variant accepts
+    comm-dict tensors as additional positional inputs and drives MPI
+    ghost-atom exchange via ``deepmd_export::border_op``. The C++
+    ``DeepPotPTExpt`` loader picks the artifact based on the LAMMPS rank
+    count at runtime.
 
     Layout inside the .pt2 ZIP (PyTorch 2.11 strict layout):
         regular   →  artifact at ``model/`` (AOTInductor's own layout)
@@ -2628,6 +2724,9 @@ def _deserialize_to_file_pt2(
         lower_kind=lower_kind,
     )
     metadata["output_keys"] = output_keys
+    metadata["has_comm_artifact"] = with_comm and bool(
+        metadata.get("has_comm_artifact")
+    )
 
     # A charge-state update swaps constants in one compiled artifact. A model
     # that also needs the with-comm lower would own two independent constant

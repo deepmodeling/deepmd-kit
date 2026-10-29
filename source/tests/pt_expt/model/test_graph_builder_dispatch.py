@@ -152,7 +152,7 @@ def test_explicit_nv_rejects_cpu():
         ("cpu", False, False, True, 1, "vesin"),
         ("cpu", False, False, True, 4, "dense"),
         ("cpu", True, False, False, 1, "dense"),
-        ("cuda", True, True, True, 1, "nv"),
+        ("cuda", True, True, True, 1, "vesin"),
         ("cuda", True, True, True, 4, "nv"),
         ("cuda", False, True, True, 1, "vesin"),
         ("cuda", False, True, True, 4, "dense"),

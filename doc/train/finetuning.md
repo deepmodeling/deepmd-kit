@@ -74,7 +74,8 @@ If you wish to conduct fine-tuning using a randomly initialized fitting net in t
 $ dp --pt train input.json --finetune pretrained.pt --model-branch RANDOM
 ```
 
-The model section in input.json **must be the same as that in the pretrained model**.
+The model section in input.json **must be the same as that in the pretrained model**,
+apart from the native-spin initialization described below.
 If you do not know the model params in the pretrained model, you can add `--use-pretrain-script` in the fine-tuning command:
 
 ```bash
@@ -90,6 +91,26 @@ The model section will be overwritten (except the `type_map` subsection) by that
         "fitting_net" : {}
     }
 ```
+
+#### Initializing native spin from a spin-free checkpoint
+
+PyTorch DPA4/SeZM and PyTorch Exportable DPA4/DPA4C models support spin-free
+pretraining with a native-spin target. The source and target must use the same
+descriptor family and identical ordered `type_map` values. Set the target's
+`spin.scheme` to `native` and configure `use_spin`; these settings are retained
+even with `--use-pretrain-script`. The same rule applies to each selected branch
+in multi-task fine-tuning.
+
+For DPA4C with `dpa4_ener` or `sezm_ener` fitting, automatic hidden widths
+(an omitted `neuron` or zero entries) inherit the pretrained fitting widths.
+The resolved widths are stored in the target configuration so that checkpoint
+reconstruction uses the same architecture. Explicit widths are not rewritten
+and must remain compatible with weight transfer. `RANDOM` instead initializes
+the target fitting network and resolves its automatic widths from the target.
+
+The transfer retains pretrained geometric statistics and initializes new spin
+routes with a closed gate. DPA4C's per-type spin-reference magnitudes are measured
+from the fine-tuning data before adjusting the output bias.
 
 #### Fine-tuning from a multi-task pre-trained model
 

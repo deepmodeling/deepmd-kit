@@ -34,7 +34,14 @@ Covered properties:
 import copy
 import dataclasses
 import os
+import tempfile
 import unittest
+from pathlib import (
+    Path,
+)
+from unittest import (
+    mock,
+)
 
 import torch
 from torch.fx.experimental.proxy_tensor import (
@@ -1710,6 +1717,77 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         self.assertEqual(set(actual), set(reference))
         for key in actual:
             torch.testing.assert_close(actual[key], reference[key])
+
+    def test_compact_canonical_deep_eval(self) -> None:
+        """A compiled canonical archive reaches the public evaluator unchanged."""
+        from deepmd.infer import (
+            DeepPot,
+        )
+        from deepmd.pt_expt.model import (
+            EnergyModel,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+        )
+
+        descriptor = _build_compressed_dpa1(
+            self.device, [16, 32, 64], act="silu", axis_neuron=16
+        )
+        model = (
+            EnergyModel(
+                descriptor,
+                self._build_fitting(descriptor.get_dim_out()),
+                type_map=["A", "B"],
+            )
+            .to(self.device)
+            .eval()
+        )
+        with (
+            _CudaLevel("2"),
+            torch.device(self.device),
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            reference = model(self.coord, self.atype, self.box, do_atomic_virial=True)
+            path = str(Path(directory) / "canonical.pt2")
+            deserialize_to_file(
+                path,
+                {"model": model.serialize()},
+                lower_kind="auto",
+                do_atomic_virial=True,
+                with_comm=False,
+            )
+            dp = DeepPot(path, auto_batch_size=False, neighbor_graph_method="dense")
+            self.assertEqual(
+                dp.deep_eval.metadata["lower_input_kind"], "dpa1_canonical"
+            )
+            with mock.patch.object(
+                dp.deep_eval, "_pt2_runner", wraps=dp.deep_eval._pt2_runner
+            ) as run:
+                actual = dp.eval(
+                    self.coord.cpu().numpy(),
+                    self.box.cpu().numpy(),
+                    self.atype[0].cpu().numpy(),
+                    atomic=True,
+                )
+            arguments = run.call_args.args
+            self.assertEqual(len(arguments), 8)
+            self.assertEqual(arguments[3].dtype, torch.uint32)
+            self.assertEqual(arguments[7].dtype, torch.uint32)
+            self.assertEqual(arguments[4].dtype, torch.float32)
+            self.assertGreater(float(reference["force"].abs().max()), 1e-8)
+            for value, key in zip(
+                actual,
+                ("energy", "force", "virial", "atom_energy", "atom_virial"),
+                strict=True,
+            ):
+                torch.testing.assert_close(
+                    torch.as_tensor(
+                        value, dtype=reference[key].dtype, device=self.device
+                    ),
+                    reference[key],
+                    atol=1e-4,
+                    rtol=1e-4,
+                )
 
     def test_compact_canonical_torch_export_contract(self) -> None:
         """torch.export records the fixed eight-tensor deployment ABI."""

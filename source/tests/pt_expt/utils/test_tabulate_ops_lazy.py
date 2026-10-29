@@ -23,6 +23,9 @@ import sys
 import textwrap
 
 import torch
+from torch._subclasses.fake_tensor import (
+    FakeTensorMode,
+)
 
 from deepmd.pt_expt.utils import (
     tabulate_ops,
@@ -105,3 +108,21 @@ def test_ensure_fake_registered_skips_monkeypatched_fallback() -> None:
             ns.__dict__.pop(op_name, None)
         tabulate_ops._registered.clear()
         tabulate_ops._registered.update(saved_registered)
+
+
+def test_composite_operator_uses_its_decomposition_for_fake_tensors() -> None:
+    """Composite operators retain PyTorch's fake-tensor decomposition."""
+    with torch.library._scoped_library("deepmd_test_tabulate", "DEF") as library:
+        library.define("identity(Tensor x) -> Tensor")
+        library.impl("identity", lambda x: x + 1, "CompositeImplicitAutograd")
+
+        def fake(value: torch.Tensor) -> torch.Tensor:
+            raise AssertionError("Composite operators must use their decomposition")
+
+        tabulate_ops._try_register_fake("deepmd_test_tabulate::identity", fake)
+        with FakeTensorMode():
+            value = torch.ones((3, 4), device="cpu")
+            result = torch.ops.deepmd_test_tabulate.identity(value)
+        assert result.shape == value.shape
+        assert result.dtype == value.dtype
+        assert result.device == value.device

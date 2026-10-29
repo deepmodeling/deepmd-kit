@@ -7,6 +7,9 @@ from pathlib import (
 from typing import (
     NoReturn,
 )
+from unittest.mock import (
+    patch,
+)
 
 import h5py
 import numpy as np
@@ -386,6 +389,42 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
         np.testing.assert_almost_equal(to_numpy_array(out_bias["foo"]), foo_bias)
         np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
+
+        # Standalone change-bias explicitly ignores the checkpoint preset.
+        adjusted_bias = foo_bias + 7.0
+        md0._store_out_stat({"foo": to_torch_tensor(adjusted_bias)})
+        forward = md0._get_forward_wrapper_func()
+        seen_biases = []
+
+        def check_forward(*args, **kwargs):
+            bias, _ = md0._fetch_out_stat(["foo"])
+            seen_biases.append(to_numpy_array(bias["foo"]).copy())
+            return forward(*args, **kwargs)
+
+        with patch.object(md0, "_get_forward_wrapper_func", return_value=check_forward):
+            BaseAtomicModel.change_out_bias(
+                md0,
+                self.merged_output_stat,
+                bias_adjust_mode="change-by-statistic",
+                preset_out_bias={},
+            )
+        self.assertTrue(seen_biases)
+        for seen_bias in seen_biases:
+            np.testing.assert_almost_equal(seen_bias, adjusted_bias)
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(
+            to_numpy_array(out_bias["foo"]), np.array([2.0, -5.0]).reshape(2, 1)
+        )
+        assert not np.allclose(to_numpy_array(out_bias["bar"]), bar_bias)
+
+        # The override does not remove the model's configured preset.
+        np.testing.assert_almost_equal(md0.preset_out_bias["foo"], foo_bias)
+        BaseAtomicModel.change_out_bias(
+            md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["foo"]), foo_bias)
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
         # 4. a preset that leaves an observed type unassigned is rejected
         md1 = DPAtomicModel(
             ds,
@@ -657,6 +696,43 @@ class TestModelPresetBias(unittest.TestCase):
                 )
                 np.testing.assert_allclose(
                     to_numpy_array(loaded.get_out_bias()).reshape(-1), bias, atol=1e-10
+                )
+
+    def test_empty_override_recovers_nonfinite_checkpoint_bias(self) -> None:
+        for value in (np.nan, np.inf, -np.inf):
+            with self.subTest(value=value):
+                loaded = EnergyModel.deserialize(self.model.serialize())
+                loaded.atomic_model.preset_out_bias = {
+                    "energy": [[-10.0], [-13.6], [-3.0]]
+                }
+                loaded.atomic_model.out_bias[0, :, 0] = to_torch_tensor(
+                    np.array([value, 7.0, value])
+                )
+                loaded = EnergyModel.deserialize(loaded.serialize())
+                forward = loaded.predict_atomic_outputs_for_stat
+                seen = []
+
+                def check_forward(*args, **kwargs):
+                    seen.append(
+                        to_numpy_array(loaded.get_out_bias()).reshape(-1).copy()
+                    )
+                    return forward(*args, **kwargs)
+
+                with patch.object(
+                    loaded, "predict_atomic_outputs_for_stat", check_forward
+                ):
+                    loaded.change_out_bias(self.sampled, preset_out_bias={})
+                self.assertTrue(seen)
+                for baseline in seen:
+                    np.testing.assert_allclose(baseline, [-10.0, 7.0, -3.0])
+                bias = to_numpy_array(loaded.get_out_bias()).reshape(-1)
+                self.assertTrue(np.isfinite(bias).all())
+                self.assertAlmostEqual(bias[2], -3.0)
+                prediction = loaded(self.sampled[0]["coord"], self.sampled[0]["atype"])
+                np.testing.assert_allclose(
+                    to_numpy_array(prediction["energy"]),
+                    to_numpy_array(self.sampled[0]["energy"]),
+                    atol=1e-5,
                 )
 
     def test_change_type_map_remaps_preset(self) -> None:

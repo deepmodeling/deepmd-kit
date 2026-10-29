@@ -209,6 +209,25 @@ def test_fold_reproduces_the_referenced_model() -> None:
     )
 
 
+def test_fold_vacuum_reference_keeps_cpu_residency(monkeypatch) -> None:
+    """Folding on CPU must leave every parameter and buffer on CPU.
+
+    Export moves the model to the CPU tracing device before folding. The fold
+    replaces ``bias_atom_e`` (and may set ``vacuum_table``) through numpy
+    assignment; those buffers must not jump back to ``env.DEVICE``.
+    """
+    model = make_model(True).to("cpu")
+    monkeypatch.setattr(env, "DEVICE", torch.device("meta"))
+    model.fold_vacuum_reference()
+    assert not model.atomic_model.fitting_net.vacuum_ref
+    for name, tensor in model.named_parameters():
+        assert tensor.device.type == "cpu", name
+    for name, tensor in model.named_buffers():
+        if tensor is None:
+            continue
+        assert tensor.device.type == "cpu", name
+
+
 def test_dense_and_graph_routes_share_the_vacuum_descriptor() -> None:
     """The reference rows appended to a graph equal the single-atom-frame descriptor."""
     model = make_model(vacuum_ref=True)
@@ -228,7 +247,7 @@ def test_dense_and_graph_routes_share_the_vacuum_descriptor() -> None:
     graph, atype_all, charge_spin, spin = am.append_vacuum_frames(
         graph, atype.reshape(-1), charge_spin, spin
     )
-    gg, _ = am.descriptor.call_graph(
+    gg, _, _ = am.descriptor.call_graph(
         graph,
         atype_all,
         type_embedding=am.descriptor.graph_type_embedding_table(),
