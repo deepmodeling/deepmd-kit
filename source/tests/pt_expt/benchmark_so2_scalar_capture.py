@@ -11,12 +11,14 @@ import copy
 import hashlib
 import json
 import os
-from pathlib import Path
 import site
 import subprocess
 import sys
 import time
 import traceback
+from pathlib import (
+    Path,
+)
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("--model", type=Path, required=True)
@@ -96,8 +98,13 @@ for installed in site.getsitepackages():
 import numpy as np
 import torch
 import triton
-from ase.build import bulk
-from deepmd.calculator import DP
+from ase.build import (
+    bulk,
+)
+
+from deepmd.calculator import (
+    DP,
+)
 from deepmd.utils.errors import OutOfMemoryError as DPOutOfMemoryError
 
 torch.set_num_threads(1)
@@ -260,7 +267,9 @@ try:
     torch.cuda.synchronize()
     result["steady_peak"] = peak()
     result["complete_peak"] = {k: max(full[k], result["steady_peak"][k]) for k in full}
-    from torch._inductor.codecache import PyCodeCache
+    from torch._inductor.codecache import (
+        PyCodeCache,
+    )
 
     wrappers = [
         str(m.__file__)

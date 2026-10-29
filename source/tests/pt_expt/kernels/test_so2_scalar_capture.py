@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Independent scalar storage emitted by the existing rotation producer."""
 
-from types import SimpleNamespace
+from types import (
+    SimpleNamespace,
+)
 
 import pytest
 import torch
