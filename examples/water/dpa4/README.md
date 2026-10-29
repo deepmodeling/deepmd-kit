@@ -6,10 +6,9 @@ water example dataset. The recommended model and descriptor type is `DPA4`;
 
 Input files:
 
-- `input.json`: baseline conservative energy training, using a compact
-  DPA4-Mini-style parameter set.
-- `input_preset.json`: energy training with the model architecture taken from
-  the named preset `dpa4-nano-v20260911` instead of being written out.
+- `input_preset.json`: recommended new-training path using the
+  `dpa4-nano-v20260911` preset.
+- `input.json`: advanced/manual architecture override example.
 - `input-zbl.json`: energy training with ZBL zone bridging.
 - `input_dens.json`: direct-force denoising training.
 - `input_multitask.json`: multitask training with a shared descriptor and

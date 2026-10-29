@@ -140,6 +140,29 @@ class TestChangeBias(unittest.TestCase):
         )
         np.testing.assert_allclose(updated_bias.numpy(), expected_bias.numpy())
 
+    def test_change_bias_ignores_checkpoint_preset(self):
+        checkpoint = paddle.load(str(self.model_path))
+        preset = {"energy": [1.0e6] * len(self.config["model"]["type_map"])}
+        checkpoint["model"]["_extra_state"]["model_params"]["preset_out_bias"] = preset
+        paddle.save(checkpoint, str(self.model_path))
+        run_dp(
+            f"dp --pd change-bias {self.model_path!s} -s {self.data_file[0]} -o {self.model_path_data_bias!s}"
+        )
+        updated = paddle.load(str(self.model_path_data_bias))
+        model_params = updated["model"]["_extra_state"]["model_params"]
+        self.assertEqual(model_params["preset_out_bias"], preset)
+        wrapper = ModelWrapper(get_model_for_wrapper(model_params))
+        wrapper.set_state_dict(updated["model"])
+        expected_model = model_change_out_bias(
+            self.trainer.wrapper.model["Default"],
+            self.sampled,
+            _bias_adjust_mode="change-by-statistic",
+        )
+        np.testing.assert_allclose(
+            wrapper.model["Default"].get_out_bias().numpy(),
+            expected_model.get_out_bias().numpy(),
+        )
+
     def tearDown(self):
         for f in os.listdir("."):
             if f.startswith("change-bias-model") and f.endswith(".pd"):

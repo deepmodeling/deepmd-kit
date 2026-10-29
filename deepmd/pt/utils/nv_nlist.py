@@ -172,9 +172,7 @@ class NvNeighborList(NeighborList):
             When provided, excluded type pairs are erased from the returned
             neighbor list (entries set to ``-1``) by
             :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
-            ``NvNeighborList`` is CUDA-only; the ``pair_excl`` parameter is
-            accepted for API parity with the other strategies but cannot be
-            validated on a CPU-only machine.
+            Search and exclusion run on the input device, either CPU or CUDA.
             ``return_mode='edges'`` does not support ``pair_excl``; a
             :class:`NotImplementedError` is raised in that combination.
         """

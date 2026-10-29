@@ -352,6 +352,8 @@ def merge_frame_edge_schemas(frames: list[EdgeNeighborList]) -> EdgeNeighborList
     """Merge per-frame local edge schemas into a batched flattened schema."""
     if not frames:
         raise ValueError("at least one frame schema is required")
+    if len(frames) == 1:
+        return frames[0]
     coord = torch.cat([frame.coord for frame in frames], dim=0)
     atype = torch.cat([frame.atype for frame in frames], dim=0)
     nloc = coord.shape[1]

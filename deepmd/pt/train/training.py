@@ -35,8 +35,8 @@ from deepmd.dpmodel.train import (
     change_model_out_bias,
     resolve_step_schedule,
 )
-from deepmd.dpmodel.utils import (
-    compute_total_numb_batch,
+from deepmd.dpmodel.train.data import (
+    add_training_data_requirements,
 )
 from deepmd.loggers import (
     is_node_main_process,
@@ -85,30 +85,26 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
-    get_sampler_from_params,
+    create_dataloader,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
     JIT,
     LOCAL_RANK,
-    NUM_WORKERS,
     SAMPLER_RECORD,
 )
 from deepmd.pt.utils.learning_rate import (
     BaseLR,
 )
-from deepmd.pt.utils.lmdb_dataset import (
-    LmdbBatchDataLoader,
-    LmdbDataset,
+from deepmd.pt.utils.spin_finetune import (
+    compute_native_spin_input_stats,
+    get_native_spin_finetune_state,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
-    min_pair_dist_frame_mask,
+    pair_margin_frame_mask,
     scan_redu_stats,
     select_batch_frames,
-)
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
 )
 from deepmd.pt_expt.train.ema import (
     EMA_CHECKPOINT_KEY,
@@ -132,6 +128,11 @@ from deepmd.pt_expt.train.validation import (
 from deepmd.utils.data import (
     DataRequirementItem,
     has_data_requirement,
+)
+from deepmd.utils.data_group import (
+    GroupedTrainingDataLoader,
+    TrainingDataLoader,
+    iter_data_sources,
 )
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
@@ -161,9 +162,6 @@ from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import (
-    DataLoader,
-)
 
 from deepmd.utils.stat_file import (
     StatFileSpec,
@@ -288,103 +286,36 @@ class Trainer:
                 yield from it
 
         def get_data_loader(
-            _training_data: DpLoaderSet | LmdbDataset,
-            _validation_data: DpLoaderSet | LmdbDataset | None,
+            _training_data: Any,
+            _validation_data: Any | None,
             _training_params: dict[str, Any],
         ) -> tuple[
-            DataLoader | LmdbBatchDataLoader,
+            TrainingDataLoader | GroupedTrainingDataLoader,
             Generator[Any, None, None],
-            DataLoader | LmdbBatchDataLoader | None,
+            TrainingDataLoader | GroupedTrainingDataLoader | None,
             Generator[Any, None, None] | None,
             int,
         ]:
-            def get_dataloader_and_iter_lmdb(
-                _data: LmdbDataset,
-            ) -> tuple[LmdbBatchDataLoader, Generator[Any, None, None]]:
-                # The sampler yields one list[int] per batch. Every batch is
-                # homogeneous in label availability; whether it is also
-                # homogeneous in atom count follows from the dataset's
-                # batch_size rule, which the sampler reads off the reader.
-                from deepmd.dpmodel.utils.lmdb_data import (
-                    LmdbBatchSampler,
-                )
-
-                _block_targets = getattr(_data, "_block_targets", None)
-                _sampler_kwargs = {
-                    "shuffle": True,
-                    "seed": _training_params.get("seed"),
-                    "block_targets": _block_targets,
-                }
-
-                if self.world_size > 1:
-                    from deepmd.dpmodel.utils.lmdb_data import (
-                        DistributedLmdbBatchSampler,
-                    )
-
-                    _inner_sampler = DistributedLmdbBatchSampler(
-                        _data._reader,
-                        rank=self.rank,
-                        world_size=self.world_size,
-                        **_sampler_kwargs,
-                    )
-                else:
-                    _inner_sampler = LmdbBatchSampler(
-                        _data._reader,
-                        **_sampler_kwargs,
-                    )
-
-                _dataloader = LmdbBatchDataLoader(
-                    _data,
-                    _inner_sampler,
-                    pin_memory=DEVICE.type != "cpu",
-                )
-                _data_iter = cycle_iterator(_dataloader)
-                return _dataloader, _data_iter
-
             def get_dataloader_and_iter(
-                _data: DpLoaderSet, _params: dict[str, Any]
-            ) -> tuple[DataLoader, Generator[Any, None, None]]:
-                _sampler = get_sampler_from_params(_data, _params)
-                if _sampler is None:
-                    log.warning(
-                        "Sampler not specified!"
-                    )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
-                _dataloader = DataLoader(
+                _data: Any, _params: Any
+            ) -> tuple[Any, Generator[Any, None, None]]:
+                _dataloader = create_dataloader(
                     _data,
-                    sampler=_sampler,
-                    batch_size=None,
-                    num_workers=NUM_WORKERS
-                    if dist.is_available()
-                    else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                    drop_last=False,
-                    collate_fn=lambda batch: batch,  # prevent extra conversion
-                    pin_memory=(DEVICE != "cpu"),  # pin memory only if not on CPU
+                    _params,
+                    seed=_training_params.get("seed"),
+                    rank=self.rank,
+                    world_size=self.world_size,
                 )
-                _data_iter = cycle_iterator(_dataloader)
-                return _dataloader, _data_iter
+                return _dataloader, cycle_iterator(_dataloader)
 
-            if isinstance(_training_data, LmdbDataset):
-                training_dataloader, training_data_iter = get_dataloader_and_iter_lmdb(
-                    _training_data
-                )
-            else:
-                training_dataloader, training_data_iter = get_dataloader_and_iter(
-                    _training_data, _training_params["training_data"]
-                )
+            training_dataloader, training_data_iter = get_dataloader_and_iter(
+                _training_data, _training_params["training_data"]
+            )
 
             if _validation_data is not None:
-                if isinstance(_validation_data, LmdbDataset):
-                    (
-                        validation_dataloader,
-                        validation_data_iter,
-                    ) = get_dataloader_and_iter_lmdb(_validation_data)
-                else:
-                    (
-                        validation_dataloader,
-                        validation_data_iter,
-                    ) = get_dataloader_and_iter(
-                        _validation_data, _training_params["validation_data"]
-                    )
+                validation_dataloader, validation_data_iter = get_dataloader_and_iter(
+                    _validation_data, _training_params["validation_data"]
+                )
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
                 )
@@ -403,9 +334,9 @@ class Trainer:
         def single_model_stat(
             _model: Any,
             _data_stat_nbatch: int,
-            _training_data: DpLoaderSet,
+            _training_data: Any,
             _stat_file_spec: StatFileSpec,
-            _min_pair_dist: float = 0.0,
+            _filter_enabled: bool = False,
             _data_stat_full: bool = False,
             finetune_has_new_type: bool = False,
             preset_observed_type: list[str] | None = None,
@@ -416,7 +347,10 @@ class Trainer:
                     _training_data.systems,
                     _training_data.dataloaders,
                     _data_stat_nbatch,
-                    min_pair_dist=_min_pair_dist,
+                    min_pair_dist=_filter_enabled,
+                    filter_enabled_by_system=getattr(
+                        _training_data, "stat_filter_enabled", None
+                    ),
                 )
                 return sampled
 
@@ -429,7 +363,10 @@ class Trainer:
                         ntypes,
                         keys,
                         intensive=intensive,
-                        min_pair_dist=_min_pair_dist,
+                        min_pair_dist=_filter_enabled,
+                        filter_enabled_by_system=getattr(
+                            _training_data, "stat_filter_enabled", None
+                        ),
                     )
                 )
 
@@ -519,41 +456,37 @@ class Trainer:
         )
 
         # Data
+        # Per-group requirements own the filter radii; tasks only enable filtering.
+        self.pair_filter_enabled_by_task: dict[str, bool] = {}
         if not self.multi_task:
             # add data requirement for labels
             data_requirement = self.loss.label_requirement
             data_requirement += get_additional_data_requirement(self.model)
-            min_pair_dist = float(
-                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+            filter_enabled = add_training_data_requirements(
+                training_data,
+                training_params["training_data"],
+                model_params,
+                data_requirement,
+                lambda data, requirements: data.add_data_requirement(requirements),
             )
-            if min_pair_dist > 0.0:
-                data_requirement.append(
-                    DataRequirementItem(
-                        "min_pair_dist",
-                        ndof=1,
-                        atomic=False,
-                        must=False,
-                        high_prec=False,
-                        default=min_pair_dist,
-                        source_policy="derived",
-                    )
-                )
-            training_data.add_data_requirement(data_requirement)
+            self.pair_filter_enabled_by_task["Default"] = filter_enabled
             if validation_data is not None:
                 validation_data.add_data_requirement(
                     self.loss.label_requirement
                     + get_additional_data_requirement(self.model)
                 )
             # Preload and apply modifiers to all data before computing statistics
-            training_data.preload_and_modify_all_data_torch()
+            for source in iter_data_sources(training_data):
+                source.preload_and_modify_all_data_torch()
             if validation_data is not None:
-                validation_data.preload_and_modify_all_data_torch()
+                for source in iter_data_sources(validation_data):
+                    source.preload_and_modify_all_data_torch()
             self.get_sample_func = single_model_stat(
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
                 self.stat_file_specs["Default"],
-                _min_pair_dist=min_pair_dist,
+                _filter_enabled=filter_enabled,
                 _data_stat_full=model_params.get("data_stat_full", False),
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
@@ -573,19 +506,9 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training",
-                to_numpy_array(self.training_dataloader.sampler.weights)
-                if not isinstance(training_data, LmdbDataset)
-                else [1.0],
-            )
+            self.training_dataloader.print_summary("training")
             if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(self.validation_dataloader.sampler.weights)
-                    if not isinstance(validation_data, LmdbDataset)
-                    else [1.0],
-                )
+                self.validation_dataloader.print_summary("validation")
         else:
             (
                 self.training_dataloader,
@@ -601,33 +524,25 @@ class Trainer:
                 data_requirement += get_additional_data_requirement(
                     self.model[model_key]
                 )
-                min_pair_dist = float(
-                    training_params["data_dict"][model_key]
-                    .get("training_data", {})
-                    .get("min_pair_dist", 0.0)
+                filter_enabled = add_training_data_requirements(
+                    training_data[model_key],
+                    training_params["data_dict"][model_key]["training_data"],
+                    model_params["model_dict"][model_key],
+                    data_requirement,
+                    lambda data, requirements: data.add_data_requirement(requirements),
                 )
-                if min_pair_dist > 0.0:
-                    data_requirement.append(
-                        DataRequirementItem(
-                            "min_pair_dist",
-                            ndof=1,
-                            atomic=False,
-                            must=False,
-                            high_prec=False,
-                            default=min_pair_dist,
-                            source_policy="derived",
-                        )
-                    )
-                training_data[model_key].add_data_requirement(data_requirement)
+                self.pair_filter_enabled_by_task[model_key] = filter_enabled
                 if validation_data[model_key] is not None:
                     validation_data[model_key].add_data_requirement(
                         self.loss[model_key].label_requirement
                         + get_additional_data_requirement(self.model[model_key])
                     )
                 # Preload and apply modifiers to all data before computing statistics
-                training_data[model_key].preload_and_modify_all_data_torch()
+                for source in iter_data_sources(training_data[model_key]):
+                    source.preload_and_modify_all_data_torch()
                 if validation_data[model_key] is not None:
-                    validation_data[model_key].preload_and_modify_all_data_torch()
+                    for source in iter_data_sources(validation_data[model_key]):
+                        source.preload_and_modify_all_data_torch()
                 _mt_user_observed = (
                     model_params["model_dict"][model_key]
                     .get("info", {})
@@ -638,7 +553,7 @@ class Trainer:
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
                     self.stat_file_specs[model_key],
-                    _min_pair_dist=min_pair_dist,
+                    _filter_enabled=filter_enabled,
                     _data_stat_full=model_params["model_dict"][model_key].get(
                         "data_stat_full", False
                     ),
@@ -672,40 +587,26 @@ class Trainer:
                     training_params["data_dict"][model_key],
                 )
 
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(self.training_dataloader[model_key].sampler.weights)
-                    if not isinstance(training_data[model_key], LmdbDataset)
-                    else [1.0],
+                self.training_dataloader[model_key].print_summary(
+                    f"training in {model_key}"
                 )
                 if (
                     validation_data is not None
                     and validation_data[model_key] is not None
                 ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[model_key].sampler.weights
-                        )
-                        if not isinstance(validation_data[model_key], LmdbDataset)
-                        else [1.0],
+                    self.validation_dataloader[model_key].print_summary(
+                        f"validation in {model_key}"
                     )
 
         # Resolve training steps
         def epoch_length(model_key: str) -> int:
             """Return the batches this rank consumes in one epoch of a task."""
-            _data = training_data[model_key] if self.multi_task else training_data
             _dataloader = (
                 self.training_dataloader[model_key]
                 if self.multi_task
                 else self.training_dataloader
             )
-            if isinstance(_data, LmdbDataset):
-                return len(_dataloader)
-            return compute_total_numb_batch(
-                _data.index,
-                to_numpy_array(_dataloader.sampler.weights),
-            )
+            return _dataloader.epoch_length
 
         schedule = resolve_step_schedule(
             training_params,
@@ -738,25 +639,7 @@ class Trainer:
         self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
-        # Minimum pairwise distance for filtering unphysical frames during training.
-        if self.multi_task:
-            self.min_pair_dist: float | dict[str, float] = {
-                model_key: float(
-                    training_params["data_dict"][model_key]
-                    .get("training_data", {})
-                    .get("min_pair_dist", 0.0)
-                )
-                for model_key in self.model_keys
-            }
-        else:
-            self.min_pair_dist = float(
-                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
-            )
-        self.has_min_pair_filter = (
-            any(value > 0.0 for value in self.min_pair_dist.values())
-            if isinstance(self.min_pair_dist, dict)
-            else self.min_pair_dist > 0.0
-        )
+        self.has_min_pair_filter = any(self.pair_filter_enabled_by_task.values())
         if self.has_min_pair_filter:
             if self.multi_task:
                 local_training_batch_attempts = max(
@@ -891,6 +774,24 @@ class Trainer:
                                 _pretrained_model_params["descriptor"],
                                 _model_key_from,
                             )
+                        if _finetune_rule_single.convert_to_native_spin:
+                            log.info(
+                                "Initialize native-spin branch '%s' from spin-free branch '%s'.",
+                                _model_key,
+                                _model_key_from,
+                            )
+                            converted = get_native_spin_finetune_state(
+                                self.wrapper.model[_model_key],
+                                pretrained_model_wrapper.model[_model_key_from],
+                                random_fitting=_new_fitting,
+                            )
+                            _new_state_dict.update(
+                                {
+                                    f"model.{_model_key}.{key}": value
+                                    for key, value in converted.items()
+                                }
+                            )
+                            return
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()
@@ -967,11 +868,16 @@ class Trainer:
                         model = (
                             self.model[_model_key] if self.multi_task else self.model
                         )
-                        model = model_change_out_bias(
-                            model,
+                        sample_func = (
                             self.get_sample_func[_model_key]
                             if self.multi_task
-                            else self.get_sample_func,
+                            else self.get_sample_func
+                        )
+                        if _finetune_rule.convert_to_native_spin:
+                            compute_native_spin_input_stats(model, sample_func)
+                        model = model_change_out_bias(
+                            model,
+                            sample_func,
                             _bias_adjust_mode="change-by-statistic"
                             if not _finetune_rule.get_random_fitting()
                             else "set-by-statistic",
@@ -1426,7 +1332,7 @@ class Trainer:
         try:
             self._run()
         finally:
-            self._close_lmdb_loaders()
+            self._close_data_loaders()
 
     def _training_results(
         self, more_loss: dict[str, Any], task_key: str = "Default"
@@ -1749,6 +1655,7 @@ class Trainer:
                     step_id=_step_id,
                     display_step=display_step_id,
                     lr=cur_lr,
+                    prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
                     save_checkpoint=(
                         self.save_model_merged
                         if self._lora_enabled
@@ -1760,6 +1667,7 @@ class Trainer:
                     step_id=_step_id,
                     display_step=display_step_id,
                     lr=cur_lr,
+                    prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
                     save_checkpoint=(
                         self.save_ema_model_merged
                         if self._lora_enabled
@@ -1773,27 +1681,9 @@ class Trainer:
                 and _step_id != self.start_step
             )
             if should_save_checkpoint:
-                # Abort before writing if any gradient norm since the previous
-                # checkpoint was non-finite.
-                self.nonfinite_grad_guard.raise_if_nonfinite(
-                    self.wrapper.named_parameters
+                self._save_training_checkpoint(
+                    step=_step_id, display_step=display_step_id, lr=cur_lr
                 )
-            if should_save_checkpoint and (
-                self.sharding.enabled or self.rank == 0 or dist.get_rank() == 0
-            ):
-                # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = self.ckpt_store.path_for(display_step_id)
-                self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
-                if self.rank == 0 or dist.get_rank() == 0:
-                    log.info(f"Saved model to {self.latest_model}")
-                    self.ckpt_store.publish(self.latest_model)
-                if self.model_ema is not None:
-                    self.latest_ema_model = self.ema_ckpt_store.path_for(
-                        display_step_id
-                    )
-                    self.save_ema_model(self.latest_ema_model, lr=cur_lr, step=_step_id)
-                    if self.rank == 0 or dist.get_rank() == 0:
-                        self.ema_ckpt_store.publish(self.latest_ema_model)
 
             # tensorboard
             if self.enable_tensorboard and (
@@ -1861,62 +1751,32 @@ class Trainer:
                 self._discarded_training_batches,
             )
 
-        if (
-            self.change_bias_after_training
-            and self.num_steps > self.start_step
-            and (self.rank == 0 or dist.get_rank() == 0)
-        ):
-            if not self.multi_task:
-                self.model = model_change_out_bias(
-                    self.model,
-                    self.get_sample_func,
-                    _bias_adjust_mode="change-by-statistic",
-                )
-            else:
-                for model_key in self.model_keys:
-                    self.model[model_key] = model_change_out_bias(
-                        self.model[model_key],
-                        self.get_sample_func[model_key],
+        if self.change_bias_after_training and self.num_steps > self.start_step:
+            if self.rank == 0 or dist.get_rank() == 0:
+                if not self.multi_task:
+                    self.model = model_change_out_bias(
+                        self.model,
+                        self.get_sample_func,
                         _bias_adjust_mode="change-by-statistic",
                     )
-            self.latest_model = self.ckpt_store.path_for(self.num_steps)
-            cur_lr = self.lr_schedule.value(self.num_steps - 1)
-            self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
-            log.info(f"Saved model to {self.latest_model}")
-            self.ckpt_store.publish(self.latest_model)
-            if self.model_ema is not None:
-                self.latest_ema_model = self.ema_ckpt_store.path_for(self.num_steps)
-                self.save_ema_model(
-                    self.latest_ema_model,
-                    lr=cur_lr,
-                    step=self.num_steps - 1,
-                )
-                self.ema_ckpt_store.publish(self.latest_ema_model)
+                else:
+                    for model_key in self.model_keys:
+                        self.model[model_key] = model_change_out_bias(
+                            self.model[model_key],
+                            self.get_sample_func[model_key],
+                            _bias_adjust_mode="change-by-statistic",
+                        )
+            self._save_training_checkpoint(
+                step=self.num_steps - 1,
+                display_step=self.num_steps,
+                lr=self.lr_schedule.value(self.num_steps - 1),
+            )
 
-        if self.num_steps == 0 and self.sharding.enabled:
-            # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
-            self.latest_model = self.ckpt_store.path_for(0)
-            self.save_model(self.latest_model, lr=0, step=0)
-            if self.model_ema is not None:
-                self.latest_ema_model = self.ema_ckpt_store.path_for(0)
-                self.save_ema_model(self.latest_ema_model, lr=0, step=0)
+        if self.num_steps == 0:
+            self._save_training_checkpoint(step=0, display_step=0, lr=0.0)
 
-        if (
-            self.rank == 0 or dist.get_rank() == 0
-        ):  # Handle the case if rank 0 aborted and re-assigned
-            if self.num_steps == 0:
-                if not self.sharding.enabled:
-                    # When num_steps is 0, the checkpoint is never saved in the loop
-                    self.latest_model = self.ckpt_store.path_for(0)
-                    self.save_model(self.latest_model, lr=0, step=0)
-                    if self.model_ema is not None:
-                        self.latest_ema_model = self.ema_ckpt_store.path_for(0)
-                        self.save_ema_model(self.latest_ema_model, lr=0, step=0)
-                log.info(f"Saved model to {self.latest_model}")
-                self.ckpt_store.publish(self.latest_model)
-                if self.model_ema is not None:
-                    self.ema_ckpt_store.publish(self.latest_ema_model)
-
+        if self.rank == 0 or dist.get_rank() == 0:
+            # Handle the case if rank 0 aborted and was reassigned.
             if self.timing_in_training:
                 average_message = self.step_timer.format_average()
                 if average_message is not None:
@@ -1950,10 +1810,9 @@ class Trainer:
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
 
-    def _close_lmdb_loaders(self) -> None:
-        """Release LMDB pipelines owned by training and validation loaders."""
+    def _close_data_loaders(self) -> None:
+        """Release native pipelines and readers owned by both dataset splits."""
         closed: set[int] = set()
-        datasets: dict[int, LmdbDataset] = {}
         for loaders in (self.training_dataloader, self.validation_dataloader):
             values = loaders.values() if isinstance(loaders, dict) else (loaders,)
             for loader in values:
@@ -1963,10 +1822,32 @@ class Trainer:
                 close = getattr(loader, "close", None)
                 if close is not None:
                     close()
-                if isinstance(loader, LmdbBatchDataLoader):
-                    datasets[id(loader.dataset)] = loader.dataset
-        for dataset in datasets.values():
-            dataset.close()
+
+    def _save_training_checkpoint(
+        self, *, step: int, display_step: int, lr: float
+    ) -> None:
+        """Publish live and optional EMA checkpoints after one all-rank check."""
+        self.ensure_finite_gradients_for_checkpoint()
+        # Preserve chief ownership if rank 0 was reassigned.
+        is_chief = self.rank == 0 or dist.get_rank() == 0
+        if not is_chief and not self.sharding.enabled:
+            return
+        self.latest_model = self.ckpt_store.path_for(display_step)
+        self.save_model(self.latest_model, lr=lr, step=step)
+        if is_chief:
+            log.info(f"Saved model to {self.latest_model}")
+            self.ckpt_store.publish(self.latest_model)
+        if self.model_ema is not None:
+            self.latest_ema_model = self.ema_ckpt_store.path_for(display_step)
+            self.save_ema_model(self.latest_ema_model, lr=lr, step=step)
+            if is_chief:
+                self.ema_ckpt_store.publish(self.latest_ema_model)
+
+    def ensure_finite_gradients_for_checkpoint(self) -> None:
+        """Check the accumulated gradient norm on all ranks before publication."""
+        self.nonfinite_grad_guard.raise_if_nonfinite(
+            self.wrapper.named_parameters, synchronize=self.is_distributed
+        )
 
     def _collect_checkpoint_states(
         self,
@@ -2161,12 +2042,6 @@ class Trainer:
             use_ema_weights=True,
         )
 
-    def _get_min_pair_dist(self, task_key: str) -> float:
-        """Return the minimum pair distance configured for one task."""
-        if isinstance(self.min_pair_dist, dict):
-            return self.min_pair_dist[task_key]
-        return self.min_pair_dist
-
     def _next_training_batch(
         self,
         task_key: str,
@@ -2207,8 +2082,12 @@ class Trainer:
 
         raise RuntimeError(
             "Unable to collect a globally valid training batch for task "
-            f"{task_key!r} after {max_attempts} attempts with "
-            f"min_pair_dist={self._get_min_pair_dist(task_key)}."
+            f"{task_key!r} after {max_attempts} attempts: no frame keeps every "
+            "atom pair beyond the frame-filter radius. A bridged model filters at "
+            "the midpoint of its bridging window, so lower "
+            "`bridging_fraction_inner` or `bridging_fraction_outer` there, or "
+            "`training_data.min_pair_dist` on any other model, or clean the "
+            "dataset."
         )
 
     def get_data(
@@ -2224,10 +2103,12 @@ class Trainer:
             return {}, {}, {}
         batch_data = next(iterator)
         # === Filter frames with atoms too close (training only) ===
-        min_pair_dist = self._get_min_pair_dist(task_key)
-        valid_mask = (
-            min_pair_dist_frame_mask(batch_data, min_pair_dist) if is_train else None
+        filter_enabled = is_train and getattr(
+            batch_data,
+            "pair_filter_enabled",
+            self.pair_filter_enabled_by_task[task_key],
         )
+        valid_mask = pair_margin_frame_mask(batch_data, filter_enabled)
         local_has_valid = valid_mask is None or bool(torch.any(valid_mask))
         if not local_has_valid:
             return {}, {}, {}
@@ -2349,9 +2230,35 @@ class Trainer:
         fout.flush()
 
 
+#: The world a validity group was drawn from, paired with that group. The flag
+#: is a host value and its answer gates host control flow, so reducing it over a
+#: CPU backend keeps it off the accelerator and out of its execution stream,
+#: where reading it back would drain the pipeline once per step.
+_VALIDITY_GROUP: tuple[Any, Any] | None = None
+
+
+def _validity_group() -> Any:
+    """Return the CPU process group used for the frame-validity agreement.
+
+    The group belongs to the world it was drawn from, so it is retained under
+    that world and rebuilt when a process enters a new one.
+    """
+    global _VALIDITY_GROUP
+    world = dist.group.WORLD
+    if _VALIDITY_GROUP is None or _VALIDITY_GROUP[0] is not world:
+        group = (
+            world if dist.get_backend() == "gloo" else dist.new_group(backend="gloo")
+        )
+        _VALIDITY_GROUP = (world, group)
+    return _VALIDITY_GROUP[1]
+
+
 def all_ranks_have_valid_frames(local_has_valid: bool) -> bool:
     """
     Return whether every distributed rank has a valid training frame.
+
+    The agreement travels over the CPU process group of :func:`_validity_group`,
+    so the flag it reduces lives on the host whatever device the model trains on.
 
     Parameters
     ----------
@@ -2364,11 +2271,9 @@ def all_ranks_have_valid_frames(local_has_valid: bool) -> bool:
         ``True`` only when every rank reports a valid frame.
     """
     all_ranks_have_valid = torch.tensor(
-        int(local_has_valid),
-        dtype=torch.int32,
-        device=DEVICE,
+        int(local_has_valid), dtype=torch.int32, device="cpu"
     )
-    dist.all_reduce(all_ranks_have_valid, op=dist.ReduceOp.MIN)
+    dist.all_reduce(all_ranks_have_valid, op=dist.ReduceOp.MIN, group=_validity_group())
     return bool(all_ranks_have_valid.item())
 
 
@@ -2600,6 +2505,7 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Callable[[], Any],
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> Any:
     from deepmd.pt.model.model.dp_model import (
         DPModelCommon,
@@ -2610,4 +2516,5 @@ def model_change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
         recompute_input_stats=isinstance(_model, DPModelCommon),
+        preset_out_bias=preset_out_bias,
     )
