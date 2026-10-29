@@ -9,6 +9,7 @@ from typing import (
 )
 
 from deepmd.utils.data_conversion import (
+    _DPDATA_CACHE_DIR,
     _convert_system_by_dpdata,
     _is_deepmd_data_format,
     _iter_conversion_inputs,
@@ -77,6 +78,11 @@ def expand_sys_str(
         name = str(candidate)
         if isinstance(candidate, DPOSPath):
             path = candidate.path
+            # Converted outputs are implementation details, not additional
+            # datasets when discovering an ancestor (including "."). Relative
+            # parts preserve explicit access to an output inside the cache.
+            if _DPDATA_CACHE_DIR in path.relative_to(root.path).parts:
+                continue
             if not candidate.is_dir():
                 continue
             if path != root.path and _inside_lmdb(path, root.path):

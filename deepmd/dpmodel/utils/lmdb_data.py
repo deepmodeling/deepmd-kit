@@ -1540,6 +1540,10 @@ def decode_lmdb_batch(
     for key, requirement in config.data_requirements.items():
         if _requirement_source_policy(requirement) == "derived":
             _resolve_derived_batch(batch, key, requirement, config, layout)
+    if "find_box" in batch and not bool(batch["find_box"]):
+        # Canonical model inputs use None for non-periodic boundaries; a
+        # default-filled zero cell must never reach matrix inversion.
+        batch["box"] = None
     batch["sid"] = np.asarray([0], dtype=np.int64)
     return batch
 
@@ -3229,6 +3233,8 @@ def collate_lmdb_frames(
     # to the batch, reporting the label as unavailable.
     for key, flag in find_flags.items():
         out.setdefault(key, flag)
+    if "find_box" in out and not bool(out["find_box"]):
+        out["box"] = None
     out["sid"] = xp.asarray([0], dtype=xp.int64, device=dev)
     return out
 
@@ -4704,8 +4710,9 @@ class LmdbTestDataNlocView:
 
     The underlying :class:`LmdbTestData` groups frames by atom count. This
     view fixes one ``nloc`` and can additionally select a label-compatible
-    subgroup within it. All other attributes (``pbc``, ``mixed_type``, …)
-    are forwarded to the underlying object. It lets downstream consumers
+    subgroup within it. Periodicity is resolved from this subgroup; other
+    attributes (``mixed_type``, …) are forwarded to the underlying object.
+    It lets downstream consumers
     that expect a ``DeepmdData``-style system work on mixed-nloc or
     partially labeled LMDB datasets without vector find flags.
     """
@@ -4732,7 +4739,18 @@ class LmdbTestDataNlocView:
     @property
     def pbc(self) -> bool:
         """Whether every frame represented by this view is periodic."""
-        return self._inner.pbc if self._pbc is None else self._pbc
+        if self._pbc is None:
+            # Availability partitions can differ from the snapshot's first
+            # frame. Infer from this view, not the dataset-wide PBC flag.
+            indices = (
+                self._frame_indices
+                if self._frame_indices is not None
+                else self._inner.nloc_groups[self._nloc]
+            )
+            self._pbc = bool(len(indices)) and _frame_source_available(
+                self._inner._read_frames(indices[:1])[0], "box"
+            )
+        return self._pbc
 
     def get_natoms(self) -> int:
         """Return the fixed atom count of this stack-compatible view."""

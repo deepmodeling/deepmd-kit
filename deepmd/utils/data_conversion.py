@@ -22,8 +22,11 @@ from pathlib import (
     Path,
 )
 from typing import (
-    IO,
     Any,
+)
+
+from filelock import (
+    FileLock,
 )
 
 log = logging.getLogger(__name__)
@@ -278,58 +281,62 @@ def _same_lock_file(lock_path: Path, expected: os.stat_result) -> bool:
     return (current.st_dev, current.st_ino) == (expected.st_dev, expected.st_ino)
 
 
-class _ConversionLock:
-    """Owned conversion lock with a heartbeat for detecting stalled writers."""
+def _conversion_lock_guard(lock_path: Path) -> FileLock:
+    """Serialize all changes to the owner file with an OS-managed lock.
 
-    def __init__(self, lock_path: Path, lock_file: IO[str]) -> None:
+    Filelock owns the guard's inode lifecycle; callers must never unlink it.
+    The OS releases the guard if a process crashes, so owner-file recovery
+    runs exclusively without implementing another stale-lock protocol.
+    """
+    return FileLock(str(lock_path) + ".guard")
+
+
+class _ConversionLock:
+    """Owned conversion lock with serialized creation, recovery and release."""
+
+    def __init__(self, lock_path: Path) -> None:
         self.path = lock_path
-        self._stat = None
-        try:
-            self._stat = os.fstat(lock_file.fileno())
-            payload = {
-                "hostname": socket.gethostname(),
-                "pid": os.getpid(),
-                "process_start": _process_start_time(os.getpid()),
-                "created": time.time(),
-            }
-            # The caller owns the file context, including initialization failures.
-            json.dump(payload, lock_file)
-            lock_file.flush()
-            os.fsync(lock_file.fileno())
-            self._stop = threading.Event()
-            self._thread = threading.Thread(
-                target=self._heartbeat,
-                name="deepmd-dpdata-conversion-lock",
-                daemon=True,
-            )
-            self._thread.start()
-        except BaseException:
-            lock_file.close()
-            # Before fstat succeeds this is the fresh, exclusively created
-            # empty lock; its lease has not expired and no owner is published.
-            if self._stat is None or _same_lock_file(self.path, self._stat):
+        with _conversion_lock_guard(lock_path), lock_path.open("x") as lock_file:
+            try:
+                self._stat = os.fstat(lock_file.fileno())
+                payload = {
+                    "hostname": socket.gethostname(),
+                    "pid": os.getpid(),
+                    "process_start": _process_start_time(os.getpid()),
+                    "created": time.time(),
+                }
+                # Publish a complete owner before a waiter can inspect it.
+                json.dump(payload, lock_file)
+                lock_file.flush()
+                os.fsync(lock_file.fileno())
+                self._stop = threading.Event()
+                self._thread = threading.Thread(
+                    target=self._heartbeat,
+                    name="deepmd-dpdata-conversion-lock",
+                    daemon=True,
+                )
+                self._thread.start()
+            except BaseException:
+                lock_file.close()
+                # Creation and cleanup share the guard, so no successor can
+                # have acquired this pathname even if initialization failed.
                 self.path.unlink(missing_ok=True)
-            raise
+                raise
 
     def _heartbeat(self) -> None:
         while not self._stop.wait(_CONVERSION_LOCK_HEARTBEAT_SECONDS):
-            if not _same_lock_file(self.path, self._stat):
-                return
-            try:
+            with _conversion_lock_guard(self.path):
+                if not _same_lock_file(self.path, self._stat):
+                    return
                 os.utime(self.path, None, follow_symlinks=False)
-            except FileNotFoundError:
-                return
 
     def release(self) -> None:
         """Stop heartbeating and remove only the lock inode we own."""
         self._stop.set()
         self._thread.join()
-        if _same_lock_file(self.path, self._stat):
-            try:
-                self.path.unlink()
-            except FileNotFoundError:
-                # Another waiter may already have removed this lock.
-                pass
+        with _conversion_lock_guard(self.path):
+            if _same_lock_file(self.path, self._stat):
+                self.path.unlink(missing_ok=True)
 
 
 def _lock_owner_is_alive(payload: dict[str, Any]) -> bool | None:
@@ -362,41 +369,43 @@ def _recover_stale_conversion_lock(lock_path: Path) -> bool:
     or clock skew. Never evict an identified remote writer on that evidence;
     report the stalled lock for owner verification instead of racing it.
     """
-    try:
-        lock_stat = lock_path.stat(follow_symlinks=False)
-    except FileNotFoundError:
-        return True
-    except OSError:
-        return False
-    try:
-        payload = json.loads(lock_path.read_text())
-    except (OSError, ValueError):
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
+    # Hold the same guard as creation/release across both the inode check
+    # and unlink. Another recovering waiter cannot publish a live successor
+    # into the check-to-unlink window.
+    with _conversion_lock_guard(lock_path):
+        try:
+            lock_stat = lock_path.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False
+        try:
+            payload = json.loads(lock_path.read_text())
+        except (OSError, ValueError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
 
-    owner_alive = _lock_owner_is_alive(payload)
-    lease_expired = time.time() - lock_stat.st_mtime > _CONVERSION_LOCK_STALE_SECONDS
-    if (
-        owner_alive is None
-        and lease_expired
-        and payload.get("hostname") not in (None, socket.gethostname())
-    ):
-        raise RuntimeError(
-            f"Cannot verify the remote owner of stalled dpdata conversion lock "
-            f"{lock_path} on {payload['hostname']}. Check that the owner has "
-            "stopped before removing the lock and retrying."
+        owner_alive = _lock_owner_is_alive(payload)
+        lease_expired = (
+            time.time() - lock_stat.st_mtime > _CONVERSION_LOCK_STALE_SECONDS
         )
-    stale = owner_alive is False or (owner_alive is None and lease_expired)
-    if not stale or not _same_lock_file(lock_path, lock_stat):
-        return False
-    log.warning("Recovering stale dpdata conversion lock %s", lock_path)
-    try:
-        lock_path.unlink()
-    except FileNotFoundError:
-        # Recovery is complete if another waiter removed the same stale lock.
-        pass
-    return True
+        if (
+            owner_alive is None
+            and lease_expired
+            and payload.get("hostname") not in (None, socket.gethostname())
+        ):
+            raise RuntimeError(
+                f"Cannot verify the remote owner of stalled dpdata conversion lock "
+                f"{lock_path} on {payload['hostname']}. Check that the owner has "
+                "stopped before removing the lock and retrying."
+            )
+        stale = owner_alive is False or (owner_alive is None and lease_expired)
+        if not stale or not _same_lock_file(lock_path, lock_stat):
+            return False
+        log.warning("Recovering stale dpdata conversion lock %s", lock_path)
+        lock_path.unlink(missing_ok=True)
+        return True
 
 
 def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> bool:
@@ -540,14 +549,12 @@ def _convert_system_by_dpdata(
     if not conversion_current:
         while True:
             try:
-                lock_file = lock_path.open("x")
+                conversion_lock = _ConversionLock(lock_path)
             except FileExistsError:
                 if _wait_for_conversion(source, output, lock_path):
                     break
                 continue
             else:
-                with lock_file:
-                    conversion_lock = _ConversionLock(lock_path, lock_file)
                 try:
                     if not _is_conversion_current(source, output):
                         log.info(

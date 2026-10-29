@@ -220,6 +220,11 @@ class LmdbDataset(Dataset):
         seed: int | list[int] | None = None,
     ) -> None:
         self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
+        # A batch has one periodicity: zero/missing cells must be separated
+        # exactly, including in statistics and full-validation snapshots.
+        self._reader.add_data_requirement(
+            [DataRequirementItem("box", 9, atomic=False, must=False)]
+        )
         self._collate = functools.partial(
             _collate_lmdb_batch, config=self._reader.decode_config
         )

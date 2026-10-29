@@ -5,6 +5,9 @@ import sys
 import tempfile
 import types
 import unittest
+from contextlib import (
+    nullcontext,
+)
 from pathlib import (
     Path,
 )
@@ -517,6 +520,71 @@ class TestDpdataFormatConversion(unittest.TestCase):
         expected = data.get_batch()
         data.load_state_dict(state)
         np.testing.assert_array_equal(data.get_batch()["coord"], expected["coord"])
+
+    def test_native_discovery_excludes_converted_cache(self) -> None:
+        """A later native group must not pick up an earlier conversion."""
+        native = self.root / "native.lmdb"
+        _write_minimal_lmdb(str(native))
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            converted = process_systems(str(self.source), fmt="extxyz")
+        self.assertEqual(process_systems(str(self.root)), [str(native)])
+        self.assertEqual(process_systems(str(self.root), ["*.lmdb"]), [str(native)])
+        # Explicit cache paths remain valid, including the converter's own
+        # output discovery for non-LMDB formats.
+        self.assertEqual(process_systems(converted), converted)
+        self.assertEqual(process_systems(str(Path(converted[0]).parent)), converted)
+
+    def test_legacy_composition_rejects_mixed_type_mismatch(self) -> None:
+        """NPY/HDF5 and LMDB cannot feed inconsistent legacy stat columns."""
+        native = self.root / "native.hdf5"
+        _write_minimal_deepmd_hdf5(str(native))
+        path = self.root / "data.lmdb"
+        _write_minimal_lmdb(str(path))
+        acquired = []
+
+        def factory(path, batch_size, auto_prob):
+            data = LmdbDataSystem(path, ["H"], batch_size, auto_prob)
+            acquired.append(data)
+            return data
+
+        for grouped in (False, True):
+            with self.subTest(grouped=grouped):
+                config = (
+                    [{"systems": str(path)}, {"systems": str(native)}]
+                    if grouped
+                    else {"systems": [str(path), str(native)]}
+                )
+                with self.assertRaisesRegex(ValueError, "agree on mixed_type"):
+                    get_data(config, 0, ["H"], None, lmdb_factory=factory)
+                self.assertTrue(acquired[-1]._closed)
+
+    def test_legacy_lmdb_task_weights_count_retained_frames(self) -> None:
+        """Automatic task weights use frame counts, including filtering."""
+        from deepmd.dpmodel.utils.training_utils import (
+            resolve_model_prob,
+        )
+
+        many = self.root / "many.lmdb"
+        filtered = self.root / "filtered.lmdb"
+        _write_repeated_lmdb(str(many), 4)
+        _write_mixed_nloc_lmdb(str(filtered))
+        with (
+            get_data({"systems": str(many)}, 0, ["H"], None) as first,
+            get_data(
+                {"systems": str(filtered), "batch_size": "filter:1"},
+                0,
+                ["H"],
+                None,
+            ) as second,
+        ):
+            np.testing.assert_allclose(
+                resolve_model_prob(
+                    ["many", "filtered"], None, {"many": first, "filtered": second}
+                ),
+                [0.8, 0.2],
+            )
+            self.assertEqual(first.get_nsystems(), 1)
+            self.assertEqual(second.get_model_sampling_size(), 1)
 
     def test_group_construction_failure_closes_completed_readers(self) -> None:
         """Factories retain ownership until every group is constructed."""
@@ -1038,15 +1106,25 @@ class TestDpdataFormatConversion(unittest.TestCase):
         """Metadata, payload or heartbeat failures cannot strand a fresh lock."""
         for target in ("os.fstat", "json.dump", "threading.Thread.start"):
             path = self.root / "init.lock"
-            with patch(
-                f"deepmd.utils.data_conversion.{target}",
-                side_effect=OSError("init failed"),
+            # Isolate owner-file initialization: patching os.fstat must not
+            # inject a fault inside filelock's independent OS-lock machinery.
+            with (
+                patch.object(
+                    data_conversion,
+                    "_conversion_lock_guard",
+                    return_value=nullcontext(),
+                ),
+                patch(
+                    f"deepmd.utils.data_conversion.{target}",
+                    side_effect=OSError("init failed"),
+                ),
             ):
-                with path.open("x") as lock_file:
-                    with self.assertRaisesRegex(OSError, "init failed"):
-                        data_conversion._ConversionLock(path, lock_file)
-                self.assertTrue(lock_file.closed)
+                with self.assertRaisesRegex(OSError, "init failed"):
+                    data_conversion._ConversionLock(path)
                 self.assertFalse(path.exists())
+            # The cleaned-up owner file permits a fresh initialization.
+            owner = data_conversion._ConversionLock(path)
+            owner.release()
 
     def test_dp_test_forwards_conversion_format_from_training_config(self) -> None:
         config_path = self.root / "input.json"

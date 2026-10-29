@@ -1184,6 +1184,10 @@ class LmdbDataSystem:
         batch_size = self._get_stat_batch_size(nloc)
         return (len(indices) + batch_size - 1) // batch_size
 
+    def get_model_sampling_size(self) -> int:
+        """Count retained frames for automatic multi-task sampling weights."""
+        return len(self._reader)
+
     def get_nsystems(self) -> int:
         return self.nsystems
 
@@ -1560,8 +1564,16 @@ def get_data(
         numpy_sources = [
             source for source in sources if isinstance(source, DeepmdDataSystem)
         ]
-        if len({source.mixed_type for source in numpy_sources}) > 1:
-            raise ValueError("All NumPy data systems must agree on mixed_type.")
+        # All legacy statistics consumers expect the same keys from every
+        # child, including real_natoms_vec for mixed-type data. LMDB children
+        # must participate in this check as well as NumPy/HDF5 children.
+        legacy_sources = [
+            source
+            for source in sources
+            if isinstance(source, (DeepmdDataSystem, LmdbDataSystem))
+        ]
+        if len({source.mixed_type for source in legacy_sources}) > 1:
+            raise ValueError("All data systems must agree on mixed_type.")
         ntypes = max(source.get_ntypes() for source in sources)
         for source in numpy_sources:
             source.sys_ntypes = ntypes

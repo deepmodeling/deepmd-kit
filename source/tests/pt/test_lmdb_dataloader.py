@@ -2057,3 +2057,98 @@ def test_uniform_distributed_sources_use_the_queued_global_step(
         for owner in owners:
             owner.close()
     np.testing.assert_allclose(counts / counts.sum(), 0.2, atol=0.035)
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+@pytest.mark.parametrize("batch_size", [32, "mix:192"])
+def test_lmdb_adapters_partition_rare_nonperiodic_frames(tmp_path, backend, batch_size):
+    """Training, statistics and full validation preserve each PBC subgroup."""
+    from deepmd.pt_expt.train.validation import (
+        FullValidator,
+    )
+
+    path = str(tmp_path / "mixed-pbc.lmdb")
+    _create_test_lmdb(path, nframes=300)
+    probe = {300 * i // 256 for i in range(256)}
+    rare = next(i for i in range(300) if i not in probe)
+    with lmdb.open(path) as env, env.begin(write=True) as transaction:
+        key = f"{rare:012d}".encode()
+        frame = msgpack.unpackb(transaction.get(key), raw=False)
+        frame["cells"]["data"] = np.zeros((3, 3), dtype=np.float64).tobytes()
+        transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+
+    config = {"systems": path, "batch_size": batch_size}
+    if backend == "pt":
+        data = create_dataset(config, ["O", "H"])
+        loader = create_dataloader(data, config, seed=0)
+        batches = iter(loader)
+        count = len(loader)
+    else:
+        data = get_data(
+            config,
+            0,
+            ["O", "H"],
+            None,
+            lmdb_factory=lambda path, batch_size, auto_prob: LmdbDataSystem(
+                path,
+                ["O", "H"],
+                batch_size,
+                num_workers=0,
+                seed=0,
+            ),
+        )
+        loader = None
+        count = data.get_batch_pass_length()
+        batches = (data.get_batch() for _ in range(count))
+
+    validator = FullValidator.__new__(FullValidator)
+    validator.validation_data = data
+    validator._lmdb_snapshots = {}
+    try:
+        seen = {False: [], True: []}
+        for _ in range(count):
+            batch = next(batches)
+            pbc = bool(batch["find_box"])
+            assert (batch["box"] is not None) == pbc
+            seen[pbc].extend(batch["fid"])
+            if pbc:
+                assert rare not in batch["fid"]
+            else:
+                # Exercise the consumer that would invert a zero cell and
+                # produce non-finite ghost coordinates before the fix.
+                from deepmd.pt.utils.nlist import (
+                    extend_input_and_build_neighbor_list,
+                )
+
+                with torch.device("cpu"):
+                    extended, _, _, _ = extend_input_and_build_neighbor_list(
+                        torch.as_tensor(batch["coord"]),
+                        torch.as_tensor(batch["atype"]),
+                        3.0,
+                        [6],
+                        mixed_types=True,
+                        box=batch["box"],
+                    )
+                    assert torch.isfinite(extended).all()
+        assert seen[False] == [rare]
+        assert len(seen[True]) == 299
+        # Statistics use a separate decoder/collation path on native PT.
+        with torch.device("cpu"):
+            stat_batches = (
+                [next(iter(dl)) for dl in data._get_nloc_dataloaders()]
+                if backend == "pt"
+                else [data.get_stat_batch(i) for i in range(data.get_stat_nsystems())]
+            )
+        assert {batch["box"] is None for batch in stat_batches} == {True, False}
+        views = list(validator._iter_validation_data_systems())
+        assert {view.pbc for view in views} == {True, False}
+        for view in views:
+            batch = view.get_test()
+            assert bool(batch["find_box"]) == view.pbc
+            assert len(batch["coord"]) == (299 if view.pbc else 1)
+    finally:
+        if loader is not None:
+            loader.close()
+        for snapshot in validator._lmdb_snapshots.values():
+            snapshot.close()
+        data.close()
