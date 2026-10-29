@@ -91,6 +91,7 @@ from __future__ import (
     annotations,
 )
 
+import os
 from typing import (
     TYPE_CHECKING,
     NamedTuple,
@@ -508,6 +509,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         kc_ptr,  # (E, KSZ * RANK) compact kernel, or (E, L+1, CW) when RANK == 0
         cb_ptr,  # (RANK, CW) channel basis (unread when RANK == 0)
         u_ptr,  # (F, E, ROW) focus-major output
+        scalar_ptr,  # optional independent (E, F, CF), pitch 2*CF
         n_edge,
         x_sn,
         x_sd,
@@ -516,6 +518,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         CW: tl.constexpr,  # true C_wide; BC = next_power_of_2(CW) lanes with mask
         BC: tl.constexpr,
         RANK: tl.constexpr,
+        SAVE_SCALAR: tl.constexpr = False,
     ):
         """One program per edge, channels vectorized.
 
@@ -576,6 +579,13 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                     tl.float32
                 )
                 tl.store(u_ptr + f_off + o * CF, xl[o] * rad, mask=cmask)
+                if SAVE_SCALAR and o == 0:
+                    scalar_off = (
+                        (chan // CF).to(tl.int64) * n_edge * (2 * CF)
+                        + edge * (2 * CF)
+                        + chan % CF
+                    )
+                    tl.store(scalar_ptr + scalar_off, xl[o] * rad, mask=cmask)
             for o in tl.static_range(L):
                 rad = tl.load(rad_base + (o + 1) * CW + chan, mask=cmask, other=0.0).to(
                     tl.float32
@@ -606,6 +616,13 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             if RANK == 1:
                 acc = acc * cb[0]
             tl.store(u_ptr + f_off + o * CF, acc, mask=cmask)
+            if SAVE_SCALAR and o == 0:
+                scalar_off = (
+                    (chan // CF).to(tl.int64) * n_edge * (2 * CF)
+                    + edge * (2 * CF)
+                    + chan % CF
+                )
+                tl.store(scalar_ptr + scalar_off, acc, mask=cmask)
         for o in tl.static_range(L):
             accn = tl.zeros((BC,), dtype=tl.float32)
             accq = tl.zeros((BC,), dtype=tl.float32)
@@ -2498,6 +2515,7 @@ def _rotate_mix_impl(
         kc,
         cb,
         u,
+        u,  # unread unless SAVE_SCALAR is enabled
         n_edge,
         x.stride(0),
         x.stride(1),
@@ -2506,10 +2524,71 @@ def _rotate_mix_impl(
         CW=c_wide,
         BC=triton.next_power_of_2(c_wide),
         RANK=int(rank),
+        SAVE_SCALAR=False,
         num_warps=warps,
         num_stages=stages,
     )
     return u
+
+
+def _rotate_mix_scalar_impl(
+    x: Tensor,
+    src: Tensor,
+    src_order: Tensor,
+    src_rowptr: Tensor,
+    wigner: Tensor,
+    kc: Tensor,
+    cb: Tensor,
+    lmax: int,
+    n_focus: int,
+    rank: int,
+) -> tuple[Tensor, Tensor]:
+    """Emit the l=0 competition input without retaining a view of ``u``.
+
+    The extra store uses the existing rotation accumulator; no second gather
+    or rotation is performed.  The padded focus-major scalar allocation keeps
+    the competition reduction layout used by the original compiled path.
+    Its padding is never read.  Both outputs own independent storage.
+    """
+    del src_order, src_rowptr
+    n_edge = src.shape[0]
+    c_wide = int(x.shape[2])
+    focus_dim = c_wide // int(n_focus)
+    row = (3 * int(lmax) + 1) * focus_dim
+    if not _use_triton(x):
+        u = _rotate_mix_reference(x, src, wigner, kc, cb, lmax, n_focus, rank)
+        return u, u[:, :, :focus_dim].permute(1, 0, 2).clone()
+    u = torch.empty(n_focus, n_edge, row, device=x.device, dtype=x.dtype)
+    pitch = 2 * focus_dim
+    scalar = torch.empty_strided(
+        (n_edge, n_focus, focus_dim),
+        (pitch, n_edge * pitch, 1),
+        device=x.device,
+        dtype=x.dtype,
+    )
+    if not _has_no_edges(n_edge):
+        warps, stages = rotate_mix_fwd_config(c_wide, int(lmax))
+        wrap_triton(_rotate_mix_fwd_kernel)[(n_edge,)](
+            x,
+            src,
+            wigner,
+            kc,
+            cb,
+            u,
+            scalar,
+            n_edge,
+            x.stride(0),
+            x.stride(1),
+            L=int(lmax),
+            CF=focus_dim,
+            CW=c_wide,
+            BC=triton.next_power_of_2(c_wide),
+            RANK=int(rank),
+            SAVE_SCALAR=True,
+            num_warps=warps,
+            num_stages=stages,
+        )
+    return u, scalar
 
 
 def _rotate_mix_bwd_impl(
@@ -3608,6 +3687,9 @@ def _mixing_stack_train_bwd_impl(
 _rotate_mix_op = torch.library.triton_op(
     "sezm_triton::so2_rotate_mix", mutates_args=()
 )(_rotate_mix_impl)
+_rotate_mix_scalar_op = torch.library.triton_op(
+    "sezm_triton::so2_rotate_mix_scalar", mutates_args=()
+)(_rotate_mix_scalar_impl)
 _rotate_mix_bwd_op = torch.library.triton_op(
     "sezm_triton::so2_rotate_mix_bwd", mutates_args=()
 )(_rotate_mix_bwd_impl)
@@ -3892,6 +3974,25 @@ def _rotate_mix_backward(ctx, grad_u):
     return grad_x, None, None, None, grad_wigner, grad_kc, grad_cb, None, None, None
 
 
+def _rotate_mix_scalar_setup_context(ctx, inputs, output):
+    _rotate_mix_setup_context(ctx, inputs, output)
+    ctx.set_materialize_grads(False)
+
+
+def _rotate_mix_scalar_backward(ctx, grad_u, grad_scalar):
+    # Exactly the slice/permutation adjoint of the old competition branch.
+    # Keep pad/add visible to Inductor so it can fuse the gradient merge.
+    if grad_scalar is not None:
+        focus_dim = grad_scalar.shape[-1]
+        extra = torch.nn.functional.pad(
+            grad_scalar.permute(1, 0, 2), (0, 3 * ctx.lmax * focus_dim)
+        )
+        grad_u = extra if grad_u is None else grad_u + extra
+    if grad_u is None:
+        return (None,) * 10
+    return _rotate_mix_backward(ctx, grad_u)
+
+
 def _rotate_mix_bwd_setup_context(ctx, inputs, output):
     grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank = inputs
     ctx.save_for_backward(grad_u, x, src, wigner, kc, cb)
@@ -4009,6 +4110,9 @@ def _segment_sum_backward(ctx, grad_out):
 
 _rotate_mix_op.register_autograd(
     _rotate_mix_backward, setup_context=_rotate_mix_setup_context
+)
+_rotate_mix_scalar_op.register_autograd(
+    _rotate_mix_scalar_backward, setup_context=_rotate_mix_scalar_setup_context
 )
 _rotate_mix_bwd_op.register_autograd(
     _rotate_mix_bwd_backward, setup_context=_rotate_mix_bwd_setup_context
@@ -5176,6 +5280,22 @@ _PACKED_WEIGHT_BUFFER_NAMES = (
 )
 
 
+def _save_competition_scalar(conv: SO2Convolution, x: Tensor) -> bool:
+    """Opt in only to the validated frozen two-focus FP32 inference layout."""
+    return (
+        os.environ.get("DP_SO2_SCALAR_CAPTURE_INFER", "0").strip().lower()
+        in ("1", "true", "yes", "on")
+        and not conv.training
+        and conv.triton_infer_level == 2
+        and conv.lmax == 3
+        and conv.n_focus == 2
+        and conv.so2_focus_dim == 32
+        and conv.focus_compete
+        and x.dtype == torch.float32
+        and x.is_cuda
+    )
+
+
 class _TritonSO2ValuePath:
     """Per-convolution entry running the SO(2) value path through the fused ops.
 
@@ -5331,7 +5451,8 @@ class _TritonSO2ValuePath:
             src_rowptr = torch.cat([counts.new_zeros(1), torch.cumsum(counts, 0)])
         else:
             src_order, src_rowptr = csr
-        u0 = _rotate_mix_op(
+        save_scalar = _save_competition_scalar(conv, x)
+        rotation = (_rotate_mix_scalar_op if save_scalar else _rotate_mix_op)(
             x.contiguous(),
             src,
             src_order,
@@ -5343,13 +5464,21 @@ class _TritonSO2ValuePath:
             conv.n_focus,
             rank,
         )
+        if save_scalar:
+            u0, scalar = rotation
+        else:
+            u0 = rotation
 
         # === Step 3. Cross-focus competition weight from the l = 0 scalars ===
         apply_alpha = bool(conv.focus_compete and conv.n_focus > 1)
         if apply_alpha:
             # The small (E, F, Cf) copy keeps the softmax backward from
             # retaining a view of the whole focus-major activation.
-            gate_src = u0[:, :, : conv.so2_focus_dim].permute(1, 0, 2).contiguous()
+            gate_src = (
+                scalar.contiguous()
+                if save_scalar
+                else u0[:, :, : conv.so2_focus_dim].permute(1, 0, 2).contiguous()
+            )
             alpha = conv._focus_alpha(gate_src).to(u0.dtype).contiguous()
         else:
             alpha = torch.ones(
