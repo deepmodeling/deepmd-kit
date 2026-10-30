@@ -2678,7 +2678,15 @@ class LmdbDataReader:
 
         Every frame of one LMDB exposes the same fields, so the classification
         is a property of the dataset and its registered requirements rather
-        than of a batch, and is resolved from a selected frame once.
+        than of a batch, and is resolved once.
+
+        A field the loader has no requirement for is classified by comparing
+        its leading axis with the atom count, which one frame cannot settle: a
+        frame-level field of length two looks per-atom on every two-atom
+        frame. When the dataset holds frames of another atom count, a field
+        that such a frame also carries is therefore kept per-atom only if it
+        matches there too. Declared fields match on every frame, so only the
+        shape-guessed ones can be dropped.
 
         Parameters
         ----------
@@ -2693,9 +2701,13 @@ class LmdbDataReader:
         """
         if self._per_atom_strides is None:
             frame = self[index]
-            self._per_atom_strides = per_atom_strides(
-                frame, resolve_per_atom_keys(frame, self._decode_config)
-            )
+            keys = resolve_per_atom_keys(frame, self._decode_config)
+            other = np.flatnonzero(self._frame_nlocs != self._frame_nlocs[index])
+            if other.size:
+                other_frame = self[int(other[0])]
+                other_keys = resolve_per_atom_keys(other_frame, self._decode_config)
+                keys -= (keys - other_keys) & other_frame.keys()
+            self._per_atom_strides = per_atom_strides(frame, keys)
         return self._per_atom_strides
 
     def decode_batch(

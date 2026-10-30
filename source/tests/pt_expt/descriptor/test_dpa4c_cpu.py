@@ -129,9 +129,13 @@ def test_fixed_basis_types_freeze_the_basis() -> None:
 
 
 def test_adam_route_patterns_name_the_first_radial_layer() -> None:
-    """The descriptor routes the layer that reads the radial basis to AdamW."""
+    """The descriptor routes the layer that reads the radial basis to AdamW.
+
+    The attention of a multi-block descriptor stays on the default route.
+    """
     descriptor = DescrptDPA4C(
-        rcut=3.0,
+        rcut=[3.0, 2.5],
+        n_blocks=2,
         ntypes=2,
         channels=8,
         lmax=2,

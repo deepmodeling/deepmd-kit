@@ -122,8 +122,9 @@ taking precedence; DPA4C keeps its required CUDA level of 2.
 DPA4C checkpoints also enable compression through the same export path as
 `dp --pt-expt freeze --compress`. Supported models use the dedicated CPU or
 CUDA compression kernels. If the configuration cannot be compressed, such as
-a `float64` descriptor or one with type exclusions, ASE logs the reason and
-continues with an ordinary frozen model. Other model families keep their
+a `float64` descriptor, one with type exclusions or one with several
+message-passing blocks, ASE logs the reason and continues with an ordinary
+frozen model. Other model families keep their
 uncompressed freeze behavior. Explicit `freeze --compress` reports an error
 for an unsupported compression configuration.
 

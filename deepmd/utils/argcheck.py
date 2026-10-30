@@ -478,10 +478,16 @@ def descrpt_dpa4c_args() -> list[Argument]:
     return [
         Argument(
             "rcut",
-            float,
+            [float, list[float]],
             optional=True,
             default=6.0,
-            doc="The outer cutoff radius.",
+            doc=(
+                "The cutoff radius shared by every message-passing block, or "
+                "a list of one non-increasing cutoff per block whose length "
+                "equals `n_blocks`. The first cutoff is the cutoff of the "
+                "neighbor graph and of the radial representation; the cutoff "
+                "of every further block bounds the edges its messages act on."
+            ),
         ),
         Argument(
             "channels",
@@ -538,6 +544,22 @@ def descrpt_dpa4c_args() -> list[Argument]:
                 "each pair with a rescaled copy of one shared radial "
                 "function; larger values let each pair select its own radial "
                 "shape."
+            ),
+        ),
+        Argument(
+            "n_blocks",
+            int,
+            optional=True,
+            default=1,
+            doc=(
+                "Number of message-passing blocks. One block is the one-hop "
+                "descriptor. Every further block reads the features of the "
+                "edge sources in the previous block, widens the receptive "
+                "field by one cutoff and exchanges one node feature across "
+                "ranks. Compression supports one block only. A model with "
+                "several blocks extrapolates poorly in pair contacts closer "
+                "than about 0.45 of the covalent bond length and should enable "
+                "`bridging_method` wherever such contacts can occur."
             ),
         ),
         Argument(

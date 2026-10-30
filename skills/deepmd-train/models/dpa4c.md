@@ -19,7 +19,11 @@ whereas DPA4C is implemented for `--pt-expt`.
 
 For a new DPA4C configuration, choose the family and grade first, then use a
 v20260911 preset. Available grades are nano, mini, neo, air, and plus; the name
-format is dpa4c-<grade>-v20260911. The maintained
+format is dpa4c-<grade>-v20260911. The presets dpa4c-<grade>-duo-v20260911,
+for mini, neo, air and plus, add a second message-passing block to the same
+grade: more accurate than the single-block grade one or two steps up at a
+similar uncompressed cost, but not compressible, so use them only when the
+uncompressed graph is the deployment. The maintained
 examples/water/dpa4c/input.json uses dpa4c-nano-v20260911.
 
 The model section of a new energy input should contain the preset, the dataset's
@@ -111,13 +115,17 @@ blindly replacing them with a newer preset.
 - `lmax` controls angular resolution.
 - `radial_modes` adds type-pair radial flexibility without widening the
   per-atom state.
+- `n_blocks` sets the message-passing depth; `rcut` is then one cutoff for
+  every block or a non-increasing list of length `n_blocks`. A model with
+  several blocks needs `bridging_method` wherever pair contacts closer than
+  about 0.45 of the covalent bond length can occur.
 - `use_amp` is the descriptor's CUDA bf16 policy and is independent of
   `training.enable_compile` and `training.enable_tf32`.
 - DPA4C has no `sel`; it consumes a carry-all neighbor graph within `rcut`.
 
 Use a compression-supported configuration when compressed deployment is
-required: `channels` in `{8, 16, 32, 64, 128}`, `lmax` in `{2, 3, 4}`, and
-`radial_modes` in `{0, 2, 4, 8}`.
+required: `n_blocks` of 1, `channels` in `{8, 16, 32, 64, 128}`, `lmax` in
+`{2, 3, 4}`, and `radial_modes` in `{0, 2, 4, 8}`.
 
 ## Freeze, compress, and test
 

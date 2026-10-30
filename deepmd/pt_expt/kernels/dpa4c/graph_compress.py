@@ -214,8 +214,9 @@ def mega_eligible(descriptor: Any) -> bool:
     Native spin is a compiled variant of the same kernels rather than a
     separate operator, and every spin width follows from the channel count, so
     a spin-conditioned descriptor is eligible on exactly the conditions a
-    spin-free one is. Each condition below is a width the compiled operator
-    specializes on.
+    spin-free one is. A descriptor with further message-passing blocks is not
+    eligible, since the operator compiles one reduction. Each condition below
+    is a width the compiled operator specializes on.
 
     Eligibility is a property of the descriptor alone: it decides whether the
     compression artifacts are worth building, which a snapshot does once for
@@ -237,6 +238,7 @@ def mega_eligible(descriptor: Any) -> bool:
         and int(getattr(descriptor, "lmax", -1)) in SUPPORTED_LMAX
         and int(getattr(descriptor, "radial_modes", -1)) in SUPPORTED_RADIAL_MODES
         and str(getattr(descriptor, "precision", "")).lower() in ("float32", "single")
+        and int(getattr(descriptor, "n_blocks", 1)) == 1
     )
 
 
@@ -269,6 +271,12 @@ def compression_ineligibility_reason(descriptor: Any) -> str | None:
         return (
             "DPA4C compression requires descriptor precision `float32`, "
             f"got {descriptor.stddev.dtype}"
+        )
+    if int(getattr(descriptor, "n_blocks", 1)) > 1:
+        return (
+            "DPA4C compressed inference has no kernel for further "
+            "message-passing blocks (`n_blocks` > 1). Deploy the "
+            "uncompressed graph archive."
         )
     if not mega_eligible(descriptor):
         return (
@@ -940,8 +948,8 @@ def build_compression_artifacts(
     Raises
     ------
     ValueError
-        If the descriptor excludes type pairs, or is not an fp32 model with a
-        compiled specialization.
+        If the descriptor excludes type pairs, has further message-passing
+        blocks, or is not an fp32 model with a compiled specialization.
     """
     reason = compression_ineligibility_reason(descriptor)
     if reason is not None:

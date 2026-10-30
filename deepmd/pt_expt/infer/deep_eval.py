@@ -2528,6 +2528,12 @@ class DeepEval(DeepEvalBackend):
         compact canonical layout directly when ``canonical`` asks for it and no
         pair exclusions are needed.
         """
+        # A caller may pass broadcast views, whose zero strides survive the
+        # zero-copy conversion to torch; the Warp neighbor search on the
+        # device rejects arrays whose inner strides are not contiguous.
+        coord_input = np.ascontiguousarray(coord_input)
+        if box_input is not None:
+            box_input = np.ascontiguousarray(box_input)
         method = self._neighbor_graph_method
         if method == "auto":
             coord_arr = np.asarray(coord_input)

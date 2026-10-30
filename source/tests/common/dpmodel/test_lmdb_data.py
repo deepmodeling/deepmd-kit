@@ -177,10 +177,12 @@ def _create_mix_probe_lmdb(path: str) -> str:
     """Create an LMDB whose frame-level fields collide in shape with the atom axis.
 
     Frames alternate between 2 and 9 atoms and carry a two-component
-    ``fparam`` alongside a nine-component ``virials``. A padding rule that
+    ``fparam`` alongside a nine-component ``virials``, and a two-component
+    ``homo_energy`` that no requirement declares. A padding rule that
     guessed the atom axis from a leading dimension would misclassify
-    ``fparam`` on the 2-atom frames and ``virials`` on the 9-atom ones, so this
-    fixture pins the classification down to the exact ambiguous shapes.
+    ``fparam`` and ``homo_energy`` on the 2-atom frames and ``virials`` on the
+    9-atom ones, so this fixture pins the classification down to the exact
+    ambiguous shapes.
     """
     nlocs = [2, 9, 2, 9, 2, 9]
     rng = np.random.RandomState(7)
@@ -201,6 +203,11 @@ def _create_mix_probe_lmdb(path: str) -> str:
                 "data": rng.randn(9).astype(np.float64).tobytes(),
             }
             frame["fparam"] = {
+                "type": "<f8",
+                "shape": (2,),
+                "data": rng.randn(2).astype(np.float64).tobytes(),
+            }
+            frame["homo_energy"] = {
                 "type": "<f8",
                 "shape": (2,),
                 "data": rng.randn(2).astype(np.float64).tobytes(),
@@ -1554,6 +1561,20 @@ class TestMixedNloc(unittest.TestCase):
         self.assertEqual(batch["coord"].shape, (2, 9, 3))
         np.testing.assert_array_equal(batch["fparam"][0], reader[0]["fparam"])
         np.testing.assert_array_equal(batch["virial"][0], reader[0]["virial"])
+
+    def test_unregistered_frame_field_is_not_padded(self):
+        """A field of length two is frame-level even when a 2-atom frame leads.
+
+        No requirement names ``homo_energy``, so only its shape classifies it,
+        and the leading 2-atom frame alone would read it as per-atom. A batch
+        of 9-atom frames would then try to pad it to nine rows.
+        """
+        path = _create_mix_probe_lmdb(f"{self._tmpdir.name}/unregistered.lmdb")
+        reader = LmdbDataReader(path, self._type_map, batch_size="mix:36")
+        self.assertNotIn("homo_energy", reader.per_atom_strides(0))
+        batch = reader.decode_batch([1, 3])
+        self.assertEqual(batch["homo_energy"].shape, (2, 2))
+        np.testing.assert_array_equal(batch["homo_energy"][1], reader[3]["homo_energy"])
 
     def test_mix_tracks_the_atom_proportional_weighting(self):
         """Packing to a budget must not distort how much each frame counts.

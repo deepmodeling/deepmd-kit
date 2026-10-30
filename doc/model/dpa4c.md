@@ -5,9 +5,12 @@
 
 DPA4C is the compact and compressible degree-wise descriptor of the DPA4
 family. Where DPA4/SeZM targets the accuracy frontier through equivariant
-message passing, DPA4C targets the throughput frontier: it reads each local
-environment once, keeps no message-passing state, and admits a compressed CUDA
-inference path in which its radial functions are replaced by tabulated splines.
+message passing, DPA4C targets the throughput frontier: by default it reads
+each local environment once, keeps no message-passing state, and admits a
+compressed CUDA inference path in which its radial functions are replaced by
+tabulated splines. A second message-passing block lets each neighbor take part
+in the message it sends, which removed about a fifth of the force error on the
+MatPES benchmark at about twice the cost of the uncompressed single block.
 
 Choose DPA4C when the run is limited by simulation speed or system size rather
 than by the last increment of accuracy: large-scale molecular dynamics, long
@@ -41,18 +44,29 @@ standard DeePMD energy model:
 For each atom the descriptor accumulates angular moments of its neighbors up to
 degree {ref}`lmax <model[standard]/descriptor[dpa4c]/lmax>`, contracts them into
 rotationally invariant scalars, and passes only those scalars to the fitting
-network. The neighbor shell is read exactly once: there is no message passing,
-so an atom's descriptor depends only on the atoms within
-{ref}`rcut <model[standard]/descriptor[dpa4c]/rcut>` of it.
+network. With one message-passing block, the default, the neighbor shell is
+read exactly once: there is no message passing, so an atom's descriptor depends
+only on the atoms within {ref}`rcut <model[standard]/descriptor[dpa4c]/rcut>`
+of it.
+
+{ref}`n_blocks <model[standard]/descriptor[dpa4c]/n_blocks>` adds further
+blocks. Each one reads the features that every neighbor computed in the
+previous block, reweights the message that the neighbor sends, and adds the
+directions of the neighbor's own environment to the moments of the atom, so
+two atoms of the same element at the same distance no longer send the same
+message. Every block extends the range of the descriptor by its cutoff.
 
 Three consequences shape how the model is used in practice.
 
-- **One-hop locality** keeps the per-step cost low and removes the cross-rank
-  halo exchange of intermediate features that a message-passing model needs, so
-  domain decomposition follows the ordinary pair-style path.
+- **One-hop locality** of the single block keeps the per-step cost low and
+  removes the cross-rank halo exchange of intermediate features that a
+  message-passing model needs, so domain decomposition follows the ordinary
+  pair-style path. A further block exchanges one small per-atom feature across
+  ranks.
 - **Exact smoothness at the cutoff.** The radial map is exactly zero at and
-  beyond `rcut`, with continuous derivatives, so the potential energy surface
-  stays smooth as neighbors cross the cutoff.
+  beyond `rcut`, with continuous derivatives, and the effect of every further
+  block fades out at its own cutoff in the same way, so the potential energy
+  surface stays smooth as neighbors cross a cutoff.
 - **Analytic bounds on every per-atom quantity**, which is why compression needs
   neither an extrapolation region nor overflow checking.
 
@@ -99,9 +113,19 @@ nor supported for compressed inference.
 ### Options that matter
 
 Every option, with its default and full description, is listed in the
-{ref}`argument reference <model[standard]/descriptor[dpa4c]>`. Four of them
+{ref}`argument reference <model[standard]/descriptor[dpa4c]>`. Five of them
 carry the accuracy–cost trade-off:
 
+- **Depth** — {ref}`n_blocks <model[standard]/descriptor[dpa4c]/n_blocks>`.
+  A second block is the cheapest accuracy of the family: on MatPES it removed
+  14% to 21% of the force error of every size, and a two-block model was more
+  accurate than the single-block model one or two sizes up that costs as much
+  as an uncompressed graph. A model with several blocks cannot be compressed
+  and runs as that uncompressed graph, while a single-block model can use the
+  much faster compressed kernels, so choose the depth with deployment in mind. `rcut`
+  then takes either one cutoff for every block or a list of one non-increasing
+  cutoff per block, such as `[6.0, 5.0]`; the default of 6 Å for both blocks is
+  the most accurate.
 - **Width** — {ref}`channels <model[standard]/descriptor[dpa4c]/channels>`, one
   of 8, 16, 32, 64, or 128. This is the primary scaling knob. It widens the
   scalar and edge features, the per-atom angular state, and the descriptor
@@ -141,13 +165,22 @@ capacity rather than by the descriptor.
 
 ### Presets
 
-DPA4C preset names use `dpa4c-<size>-<version>`. Available sizes are listed in
-ascending computational cost; `neo` is the general-purpose starting point:
+DPA4C preset names use `dpa4c-<size>-<version>`. The single-block sizes are
+listed in ascending computational cost, followed by the two-block sizes; `neo`
+is the general-purpose starting point:
 
-| Version     | Available sizes                      |
-| ----------- | ------------------------------------ |
-| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus` |
-| `v20260901` | `nano`, `mini`, `neo`, `air`, `plus` |
+| Version     | Available sizes                                                                    |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus`, `mini-duo`, `neo-duo`, `air-duo`, `plus-duo` |
+| `v20260901` | `nano`, `mini`, `neo`, `air`, `plus`                                               |
+
+A `duo` size is the size of the same name with two message-passing blocks, for
+example `dpa4c-air-duo-v20260911`. As an uncompressed graph it costs about
+twice as much per step as its single-block size and is more accurate than the
+single-block size one or two steps up. There is no `nano-duo`, because the
+single-block `mini` is more accurate at the same cost. A `duo` model cannot be
+compressed, so choose a single-block size where the compressed kernels are
+needed.
 
 Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
 and `fitting_net`. Run-specific settings are written alongside the preset:
@@ -211,6 +244,11 @@ a physical repulsive wall instead of an extrapolated network output:
 ```math
 E_i = E_i^{\mathrm{DPA4C}} + E_i^{\mathrm{pair}}.
 ```
+
+A model with several message-passing blocks needs it most: below about 0.45 of
+the covalent bond length its further blocks read features far outside the
+trained range and amplify the extrapolation of the network, while bridging
+removes such a pair from every block.
 
 Two potentials are available. `bridging_method: "zbl"` uses the
 Ziegler-Biersack-Littmark screened nuclear potential, which is derived from
@@ -308,12 +346,13 @@ DPA4C model and an `inner_potential` sub-model with `weights: "sum"`; the
 concise form above expands to it.
 
 Bridging changes nothing in the workflow after training. The model freezes,
-compresses and runs in LAMMPS like a plain DPA4C model: compression still
-selects the compact canonical graph form, the fused kernels evaluate the
-analytical term in the same pass over the neighbors as the descriptor, and multi-GPU runs
-need no extra communication. Native spin and the frame charge state combine
-with bridging; the analytical term depends on the separation alone and leaves
-the magnetic force to the learned model.
+compresses and runs in LAMMPS like the plain DPA4C model of the same depth: a
+compressed single-block model still takes the compact canonical graph form, the
+fused kernels evaluate the analytical term in the same pass over the neighbors
+as the descriptor, and multi-GPU runs need no settings of their own. Native
+spin and the frame charge state combine with bridging; the analytical term
+depends on the separation alone and leaves the magnetic force to the learned
+model.
 
 A model trained without bridging fine-tunes into its bridged form, and the
 other way round. Add the bridging keys above to the input, keep the
@@ -396,6 +435,7 @@ computed from data; DPA4C needs none of them and ignores them.
 Compression requires:
 
 - the PyTorch Exportable backend;
+- one message-passing block, `n_blocks: 1`;
 - `precision: "float32"`;
 - `channels`, `lmax` and `radial_modes` inside the compiled sets listed above;
 - an empty
@@ -404,8 +444,8 @@ Compression requires:
 
 `dp --pt-expt compress` and `freeze --compress` report an explicit error when
 any of these is not met.
-A model that excludes type pairs still trains and runs; deploy it as the
-uncompressed graph archive.
+A model with several blocks or with excluded type pairs still trains and runs;
+deploy it as the uncompressed graph archive.
 
 ## Running in LAMMPS
 
@@ -508,10 +548,13 @@ trade that back.
 
 ### Multiple GPUs
 
-Because DPA4C performs no message passing, it needs no cross-rank halo exchange
-of intermediate features, and MPI domain decomposition follows the ordinary
-pair-style path. Launch one MPI rank per GPU and make every target device
-visible:
+A single-block DPA4C performs no message passing, so it needs no cross-rank halo
+exchange of intermediate features, and MPI domain decomposition follows the
+ordinary pair-style path. A model with several blocks exchanges one small
+per-atom feature of the ghost atoms between its blocks; its frozen archive
+carries the program that does this, and the pair styles select it on their own.
+On a single MPI rank such a model needs `atom_modify map yes`. Launch one MPI
+rank per GPU and make every target device visible:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
@@ -531,6 +574,12 @@ ghost atoms to the ranks that own them themselves, staging only those values in
 host memory. On three RTX PRO 6000 GPUs with one million carbon atoms, a step of
 the Nano model took 6.8 ms with a CUDA-aware Open MPI and 11.3 ms with an MPI
 library without CUDA support, against 15.2 ms on one GPU.
+
+A model with several blocks hands device buffers to the same MPI library for
+the exchange between its blocks, so its ranks must run with the default CUDA
+allocator. Under `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, Open MPI
+over UCX cannot map such buffers between processes and aborts the first
+exchange.
 
 ## Inference settings
 
@@ -731,9 +780,13 @@ order consistent across the dataset, the input file, and any downstream
   spin-conditioned model is CUDA-only.
 - The device-resident inference path requires a Kokkos-enabled LAMMPS build on
   the GPU backend.
-- The descriptor is one-hop local by construction. Interactions beyond `rcut`
-  are not represented, and unlike a message-passing model the effective range
-  cannot be extended by adding layers.
+- A single-block descriptor is one-hop local: interactions beyond `rcut` are
+  not represented. Each further block extends the range by its own cutoff.
+- A model with several blocks cannot be compressed and runs as the
+  uncompressed graph archive. In pair contacts closer than about 0.45 of the
+  covalent bond length, which no training set samples, it extrapolates worse
+  than a single block; enable [zone bridging](#zone-bridging) wherever such
+  contacts can occur.
 - Native spin requires the `native` scheme; the virtual-atom `deepspin` scheme
   is not supported. The Dzyaloshinskii-Moriya interaction is not representable,
   as explained under [Native spin](#native-spin).
@@ -774,3 +827,17 @@ reach the fitting network:
 Because the contraction is exactly rotationally invariant, the descriptor and
 hence the energy are invariant under global rotation, and the forces obtained by
 differentiation are equivariant.
+
+A further block starts from the invariants and moments that every atom holds
+after the previous block. Each neighbor turns them into a few saturated
+features: equivariant keys, which describe how its own environment is oriented,
+and an invariant state. On every edge an attention logit combines the state of
+the neighbor, the orientation of its keys relative to the bond, and the edge
+amplitude in one small hidden layer, so the effect of a neighbor depends on its
+chemical environment and on the distance together. The logit rescales the
+amplitude of the edge by a factor between zero and two, and a softmax over the
+neighbors adds their keys to the moments of the atom. The block then sums the
+edges again and reads out the invariants as before. Every map that produces
+the output of a block starts at zero, so a model with several blocks starts
+out as its single-block counterpart, and every block vanishes smoothly at its
+own cutoff.

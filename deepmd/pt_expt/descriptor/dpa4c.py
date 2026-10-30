@@ -46,6 +46,7 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
         "adam_spin_quadrupole_weight",
         "spin_gate",
     ),
+    "BlockAttention": ("adam_field_gain",),
 }
 
 
@@ -211,7 +212,8 @@ class DescrptDPA4C(DescrptDPA4CDP):
         type_embedding
             Optional complete DPA4 type table.
         comm_dict
-            Communication metadata accepted by the common graph ABI; unused.
+            Border-exchange tensors of a domain-decomposed graph, read by
+            every further message-passing block.
         spin
             Per-node spin with shape ``(N, 3)``, mandatory for a
             spin-conditioned descriptor.
@@ -302,8 +304,9 @@ class DescrptDPA4C(DescrptDPA4CDP):
         graph
             Neighbor graph in descriptor compute precision.
         *args
-            Node types, the ordered pair cache, and the conditioned spin,
-            forwarded unchanged to the backend-neutral implementation.
+            Node types, the ordered pair cache, the conditioned spin, and the
+            border-exchange tensors, forwarded unchanged to the
+            backend-neutral implementation.
 
         Returns
         -------
@@ -347,6 +350,78 @@ class DescrptDPA4C(DescrptDPA4CDP):
             self.radial_mode_head.autocast_output = enabled
 
     # === Backend primitives ===
+
+    def exchange_ghost_rows(
+        self, values: torch.Tensor, comm_dict: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Refresh the ghost rows of a node feature through ``border_op``.
+
+        The copy from owner to ghost is exact: a ghost is a translated image of
+        its owner, every rank describes the equivariant features in the same
+        Cartesian frame, and a translation leaves them unchanged.
+        ``border_op`` has a registered backward, which reverse-communicates the
+        cotangent of the ghost rows to their owners.
+
+        Parameters
+        ----------
+        values
+            Node features with shape ``(N, W)``, the owned rows leading.
+        comm_dict
+            Border-exchange tensors of the domain decomposition.
+
+        Returns
+        -------
+        torch.Tensor
+            ``values`` with every ghost row replaced by its owner's row.
+        """
+        # border_op exchanges whole rows by raw pointer arithmetic, so the
+        # buffer must be contiguous.
+        return torch.ops.deepmd_export.border_op(
+            comm_dict["send_list"],
+            comm_dict["send_proc"],
+            comm_dict["recv_proc"],
+            comm_dict["send_num"],
+            comm_dict["recv_num"],
+            values.contiguous(),
+            comm_dict["communicator"],
+            comm_dict["nlocal"],
+            comm_dict["nghost"],
+        )
+
+    def complete_node_partials(
+        self, partials: torch.Tensor, comm_dict: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Sum ghost partials into their owners, then broadcast the totals back.
+
+        ``border_op_backward`` accumulates each ghost row into its owner
+        across ranks; ``border_op`` refills the ghost rows with the completed
+        owner values. The two ops are transposes of one another and both
+        carry autograd, so the gradient of the source gate crosses ranks.
+
+        Parameters
+        ----------
+        partials
+            Per-node partial sums with shape ``(N, W)``.
+        comm_dict
+            Border-exchange tensors of the domain decomposition.
+
+        Returns
+        -------
+        torch.Tensor
+            Completed sums on every owned and ghost row.
+        """
+        arguments = (
+            comm_dict["send_list"],
+            comm_dict["send_proc"],
+            comm_dict["recv_proc"],
+            comm_dict["send_num"],
+            comm_dict["recv_num"],
+        )
+        tail = (comm_dict["communicator"], comm_dict["nlocal"], comm_dict["nghost"])
+        completed = torch.ops.deepmd_export.border_op_backward(
+            *arguments, partials.contiguous(), *tail
+        )
+        return torch.ops.deepmd_export.border_op(*arguments, completed, *tail)
 
     def gather_rows(
         self,

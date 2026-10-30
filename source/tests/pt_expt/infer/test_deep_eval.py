@@ -2700,6 +2700,33 @@ class TestCompressedChargeStateSwitch(unittest.TestCase):
             np.testing.assert_allclose(value, reference, rtol=1e-6, atol=1e-6)
 
 
+class TestGraphInputLayout(unittest.TestCase):
+    """A graph archive answers for broadcast inputs as for contiguous ones."""
+
+    def test_broadcast_frames_match_their_copies(self) -> None:
+        """Frames given as zero-stride views evaluate like their copies.
+
+        A batch of identical cells is naturally a broadcast view, whose zero
+        frame stride survives the conversion to a tensor.
+        """
+        model = _charge_state_model(resnet_dt=True)
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nframes = 3
+        coords = np.broadcast_to(rng.random((1, 5, 3)) * 6.0, (nframes, 5, 3))
+        cells = np.broadcast_to(np.eye(3).reshape(1, 9) * 12.0, (nframes, 9))
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.pt2")
+            deserialize_to_file(
+                path, {"model": model.serialize()}, lower_kind="graph", with_comm=False
+            )
+            dp = DeepPot(path)
+            actual = dp.eval(coords, cells, atom_types)
+            expected = dp.eval(coords.copy(), cells.copy(), atom_types)
+        for value, reference in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, reference, rtol=1e-6, atol=1e-6)
+
+
 @unittest.skipUnless(
     torch.cuda.is_available() and dpa4c_op_available(),
     "CUDA and the compiled DPA4C operator are required",

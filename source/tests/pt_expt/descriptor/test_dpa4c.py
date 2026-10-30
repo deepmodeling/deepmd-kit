@@ -29,8 +29,9 @@ from deepmd.pt_expt.utils import (
 )
 
 # Structural variants exercised by the backend-agnostic contracts. They span
-# both angular profiles and both radial function classes, and one bridging
-# window whose transition zone holds several pairs of the test cluster.
+# both angular profiles and both radial function classes, one bridging window
+# whose transition zone holds several pairs of the test cluster, and two and
+# three message-passing blocks with and without that window.
 STRUCTURES = [
     {"channels": 16, "lmax": 2, "radial_modes": 0},
     {"channels": 32, "lmax": 4, "radial_modes": 0},
@@ -43,6 +44,24 @@ STRUCTURES = [
         "inner_clamp_f_inner": 1.0,
         "inner_clamp_f_outer": 1.25,
         "inner_clamp_scale": "absolute",
+    },
+    {"channels": 16, "lmax": 3, "radial_modes": 3, "rcut": [3.0, 2.5], "n_blocks": 2},
+    {
+        "channels": 16,
+        "lmax": 3,
+        "radial_modes": 3,
+        "rcut": [3.0, 2.5],
+        "n_blocks": 2,
+        "inner_clamp_f_inner": 1.0,
+        "inner_clamp_f_outer": 1.25,
+        "inner_clamp_scale": "absolute",
+    },
+    {
+        "channels": 16,
+        "lmax": 3,
+        "radial_modes": 3,
+        "rcut": 3.0,
+        "n_blocks": 3,
     },
 ]
 
@@ -77,18 +96,32 @@ class TestDPA4C:
         Mixed-precision tests must override it, because CUDA autocast ignores
         double operands and would otherwise leave the region untouched.
         """
-        return DescrptDPA4C(
-            rcut=3.0,
+        descriptor = DescrptDPA4C(
             ntypes=2,
             n_radial=4,
             seed=17,
             **{
+                "rcut": 3.0,
                 "channels": 16,
                 "lmax": 2,
                 "precision": "float64",
                 **structure,
             },
         ).to(env.DEVICE)
+        # The output maps of the further blocks start at zero, which makes
+        # every block the identity, so the contracts would not reach them.
+        # Every zero map is drawn at random to exercise the blocks.
+        generator = torch.Generator().manual_seed(17)
+        with torch.no_grad():
+            for block in descriptor.attentions:
+                for weight in block.parameters():
+                    if not torch.any(weight):
+                        weight.copy_(
+                            torch.randn(
+                                weight.shape, generator=generator, dtype=weight.dtype
+                            ).to(weight.device)
+                        )
+        return descriptor
 
     def _inputs(
         self,
@@ -471,6 +504,22 @@ class TestDPA4C:
         assert inside[2].abs() < 2e-8
         assert inside[3].abs() < 5e-4
 
+    def test_block_cutoff_is_c3_continuous(self) -> None:
+        """The factor of a further block relaxes to one at its own cutoff."""
+        descriptor = self.build(channels=16, lmax=3, rcut=[3.0, 2.0], n_blocks=2).eval()
+        single = self.build(channels=16, lmax=3).eval()
+        below = self._dimer_derivatives(descriptor, 2.0 - 1.0e-5)
+        boundary = self._dimer_derivatives(descriptor, 2.0)
+        beyond = self._dimer_derivatives(descriptor, 2.0 + 1.0e-5)
+        reference = self._dimer_derivatives(single, 2.0 + 1.0e-5)
+        # Beyond the block cutoff the descriptor is the single-block one, and
+        # the value and first three derivatives join it continuously.
+        for order in range(4):
+            torch.testing.assert_close(beyond[order], reference[order])
+            torch.testing.assert_close(
+                boundary[order], below[order], atol=2e-4, rtol=0.0
+            )
+
     def test_cutoff_edge_matches_removed_topology(self) -> None:
         descriptor = self.build().eval()
         radius = torch.tensor(
@@ -769,6 +818,29 @@ class TestDPA4CSpin:
         self.descriptor._apply_autocast_policy()
         for layer in self.descriptor.radial_embedding.layers:
             assert layer.autocast_output is False
+
+    def test_compression_rejects_further_blocks(self) -> None:
+        """A descriptor with further blocks has no compressed kernel."""
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+            compression_ineligibility_reason,
+            mega_eligible,
+        )
+
+        descriptor = DescrptDPA4C(
+            rcut=[3.0, 2.5],
+            n_blocks=2,
+            ntypes=2,
+            channels=8,
+            lmax=2,
+            n_radial=4,
+            precision="float32",
+            seed=23,
+        ).to(env.DEVICE)
+        assert not mega_eligible(descriptor)
+        reason = compression_ineligibility_reason(descriptor)
+        assert reason is not None and "n_blocks" in reason
+        with pytest.raises(ValueError, match="n_blocks"):
+            descriptor.enable_compression(0.5)
 
     def test_compression_covers_the_spin_families(self) -> None:
         """Spin follows the degree profile, so compression covers it.
