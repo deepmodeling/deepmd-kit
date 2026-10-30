@@ -77,6 +77,7 @@ from deepmd.utils.charge_state import (
 )
 from deepmd.utils.pt_checkpoint import (
     detect_pt_checkpoint_backend,
+    normalize_pt_model_params,
 )
 
 if TYPE_CHECKING:
@@ -650,7 +651,7 @@ class DeepEval(DeepEvalBackend):
                 "load it with `dp --pt` instead. If this is an exported model, "
                 "use a `.pte` or `.pt2` artifact."
             )
-        model_params = deepcopy(extra["model_params"])
+        model_params = normalize_pt_model_params(deepcopy(extra["model_params"]))
 
         if "model_dict" in model_params:
             # Multi-task: pick the requested head (defaults to "Default" if present).

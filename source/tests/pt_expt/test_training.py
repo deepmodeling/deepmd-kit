@@ -40,10 +40,14 @@ from deepmd.pt.optimizer import (
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
+from deepmd.pt_expt.infer.deep_eval import DeepEval as PtExptDeepEval
 from deepmd.pt_expt.model import (
     get_model,
 )
 from deepmd.pt_expt.train import training as training_module
+from deepmd.pt_expt.train.wrapper import (
+    ModelWrapper,
+)
 from deepmd.utils.argcheck import (
     normalize,
 )
@@ -308,6 +312,78 @@ def _make_config(data_dir: str, numb_steps: int = 5) -> dict:
         },
     }
     return config
+
+
+@pytest.mark.parametrize("resume_kind", ["init_model", "restart_model"])
+def test_legacy_property_resume_preserves_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resume_kind: str
+) -> None:
+    """Real experimental init/restart and save/reload retain effective metadata."""
+    from deepmd.dpmodel.output_def import (
+        ModelOutputDef,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    config = _make_config(os.path.join(EXAMPLE_DIR, "data"))
+    config["model"]["fitting_net"] = {
+        "type": "property",
+        "property_name": "property",
+        "task_dim": 1,
+        "intensive": True,
+        "neuron": [4],
+        "seed": 1,
+        "distinguish_types": True,
+    }
+    config["loss"] = {"type": "property"}
+    config = normalize(update_deepmd_input(config, warning=False))
+
+    # The checkpoint passed to the trainer retains its original legacy metadata.
+    legacy_params = copy.deepcopy(config["model"])
+    legacy_params["fitting_net"]["distinguish_types"] = False
+    source = ModelWrapper(
+        get_model(copy.deepcopy(legacy_params)), model_params=legacy_params
+    )
+    saved_train_infos = {
+        "lr": 0.001,
+        "step": 3,
+        "full_validation_metric": "e:mae",
+        "full_validation_topk_records": [{"metric": 0.25, "step": 2}],
+    }
+    source.train_infos = copy.deepcopy(saved_train_infos)
+    legacy_state = source.state_dict()
+    legacy_state["_extra_state"]["model_params"]["fitting_net"].pop("distinguish_types")
+    legacy_path = tmp_path / "legacy.pt"
+    torch.save({"model": legacy_state, "optimizer": None}, legacy_path)
+
+    trainer = get_trainer(config, **{resume_kind: str(legacy_path)})
+    expected_train_infos = (
+        saved_train_infos if resume_kind == "restart_model" else {"lr": 0, "step": 0}
+    )
+    assert trainer.start_step == expected_train_infos["step"]
+    assert trainer._unwrapped.train_infos == expected_train_infos
+    assert trainer.model.atomic_model.fitting_net.get_distinguish_types() is True
+    assert trainer._unwrapped.model_params["fitting_net"]["distinguish_types"] is True
+
+    trainer.save_checkpoint(trainer.start_step)
+    checkpoint_path = tmp_path / "model.ckpt.pt"
+    saved = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    extra_state = saved["model"]["_extra_state"]
+    assert extra_state["model_params"]["fitting_net"]["distinguish_types"] is True
+    assert extra_state["train_infos"] == expected_train_infos
+
+    # Use the inference loader, which reconstructs the model from saved metadata.
+    loaded = PtExptDeepEval(
+        str(checkpoint_path),
+        ModelOutputDef(trainer.model.atomic_output_def()),
+        auto_batch_size=False,
+    )
+    assert loaded._dpmodel.atomic_model.fitting_net.get_distinguish_types() is True
+    torch.testing.assert_close(loaded._dpmodel.state_dict(), trainer.model.state_dict())
+    original = torch.load(legacy_path, map_location="cpu", weights_only=True)
+    assert (
+        "distinguish_types"
+        not in original["model"]["_extra_state"]["model_params"]["fitting_net"]
+    )
 
 
 def test_pt_expt_energy_cache_round_trip_uses_fitting_outputs_only(
