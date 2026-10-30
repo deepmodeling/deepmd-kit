@@ -363,7 +363,10 @@ class TestDPTestDensity(unittest.TestCase):
         sd1 = module1.state_dict()
         self.assertEqual(set(sd0), set(sd1))
         for key in sd0:
-            torch.testing.assert_close(sd0[key], sd1[key])
+            # Serialization restores tensors on the default device (CPU),
+            # while the source module may live on CUDA. This round-trip
+            # checks serialized values and metadata, not device placement.
+            torch.testing.assert_close(sd0[key].cpu(), sd1[key].cpu())
 
     def test_loss_inference_mode(self) -> None:
         # inference=True reports the metrics even with zero prefactors
