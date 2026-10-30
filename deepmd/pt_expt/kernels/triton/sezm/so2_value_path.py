@@ -104,6 +104,10 @@ from torch.library import (
     wrap_triton,
 )
 
+from deepmd.pt_expt.kernels.utils import (
+    use_radial_head_packed,
+)
+
 from .gated_activation import (
     gated_activation_second_order,
     gated_activation_second_order_reference,
@@ -5175,6 +5179,14 @@ _PACKED_WEIGHT_BUFFER_NAMES = (
     "_triton_gw_all",
 )
 
+# Inference-only folded radial-head weights: the hidden up-projection
+# ``(C, C_wide)`` contracted into the degree-mixer blocks, plus the
+# up-projection itself for the ``l = 0`` rows the attention path reads.
+_RADIAL_PACKED_BUFFER_NAMES = (
+    "_triton_radial_weff",
+    "_triton_radial_wh",
+)
+
 
 class _TritonSO2ValuePath:
     """Per-convolution entry running the SO(2) value path through the fused ops.
@@ -5259,6 +5271,70 @@ class _TritonSO2ValuePath:
                 setattr(self._conv, name, weight)
             else:
                 self._conv.register_buffer(name, weight, persistent=False)
+        radial = self._pack_radial_weights()
+        if radial is not None:
+            for name, weight in zip(_RADIAL_PACKED_BUFFER_NAMES, radial, strict=True):
+                if name in self._conv._buffers:
+                    setattr(self._conv, name, weight)
+                else:
+                    self._conv.register_buffer(name, weight, persistent=False)
+
+    def _pack_radial_weights(self) -> tuple[Tensor, Tensor] | None:
+        """Fold the hidden up-projection into the degree-mixer weight product.
+
+        Returns ``None`` unless the convolution carries both the hidden
+        up-projection and the degree mixer with matching shapes. The effective
+        weight has one row per ``degree * input channel`` and one column per
+        degree-kernel column, so one contraction per direction replaces the
+        up-projected surface and the second projection of the unpacked path.
+        """
+        conv = self._conv
+        proj = conv.radial_hidden_proj
+        mixer = conv.radial_degree_mixer
+        if proj is None or mixer is None:
+            return None
+        wh = proj.weight.detach()  # (C, C_wide); ChannelLinear stores (in, out)
+        wm = mixer.weight.detach()  # ((lmax+1) * C_wide, kernel columns)
+        n_degree = conv.lmax + 1
+        if wm.shape[0] != n_degree * wh.shape[1] or wm.ndim != 2 or wh.ndim != 2:
+            return None
+        wm_blocks = wm.view(n_degree, wh.shape[1], wm.shape[1])
+        weff = (
+            torch.einsum("io,loj->lij", wh, wm_blocks)
+            .reshape(n_degree * wh.shape[0], wm.shape[1])
+            .contiguous()
+        )
+        return weff, wh.contiguous()
+
+    def _radial_packed_weights(
+        self, radial_feat: Tensor
+    ) -> tuple[Tensor, Tensor] | None:
+        """Return the packed radial weights when the folded path applies."""
+        if self._conv.training or not use_radial_head_packed():
+            return None
+        weff = getattr(self._conv, "_triton_radial_weff", None)
+        wh = getattr(self._conv, "_triton_radial_wh", None)
+        if weff is None or wh is None:
+            # The plain checkpoint-to-eval flow never runs the prepare hook
+            # (only the pt2/freeze serialization does), so fall back to
+            # packing from the live weights here, mirroring how
+            # ``_pack_weights`` falls back to ``_assemble_weights``.  Under
+            # compilation the fold runs once at trace time and the effective
+            # weight becomes a graph constant.
+            packed = self._pack_radial_weights()
+            if packed is None:
+                return None
+            weff, wh = packed
+        if (
+            radial_feat.dtype is not torch.float32
+            or not radial_feat.is_cuda
+            or not radial_feat.is_contiguous()
+            or radial_feat.ndim != 3
+            or radial_feat.shape[-1] != wh.shape[0]
+            or radial_feat.shape[1] * wh.shape[0] != weff.shape[0]
+        ):
+            return None
+        return weff, wh
 
     def _pack_weights(self, *, differentiable: bool) -> tuple[Tensor, Tensor, Tensor]:
         """Return live training weights or the prepared inference layouts."""
@@ -5296,26 +5372,40 @@ class _TritonSO2ValuePath:
             ``l = 0`` slice is consumed by the attention aggregation.  The
             degree-expanded ``(E, D_m, C_wide)`` layout of the reference path
             is never materialized: the mixer projection and the mixer-free
-            multiply read only the ``lmax + 1`` per-degree rows.
+            multiply read only the ``lmax + 1`` per-degree rows.  When the
+            folded radial head applies (``DP_RADIAL_HEAD_PACKED_INFER`` with
+            the packed weights prepared), only the consumed ``l = 0`` rows are
+            materialized, with shape (E, 1, C_wide); readers addressing
+            ``[:, 0, :]`` see identical values.
         """
         conv = self._conv
         src = edge_cache.src
         w0_all, w1_all, gw_all = self._pack_weights(differentiable=self._conv.training)
 
         # === Step 1. Radial features and the compact degree kernel ===
-        if conv.radial_hidden_proj is not None:
+        mixer = conv.radial_degree_mixer
+        radial_packed = self._radial_packed_weights(radial_feat)
+        if radial_packed is not None:
+            # Folded head: one (E, (lmax+1)*C) contraction produces the degree
+            # kernel directly and only the l = 0 rows are up-projected for the
+            # attention path, so the (E, lmax+1, C_wide) surface and its
+            # backward twin never reach memory.
+            weff, wh = radial_packed
+            kc = torch.matmul(radial_feat.flatten(1), weff)
+            rad_feat = torch.matmul(radial_feat[:, 0, :], wh).unsqueeze(1)
+        elif conv.radial_hidden_proj is not None:
             rad_feat = conv.radial_hidden_proj(radial_feat)  # (E, lmax+1, C_wide)
         else:
             rad_feat = radial_feat
-        mixer = conv.radial_degree_mixer
         if mixer is None:
             kc = rad_feat
             cb = rad_feat.new_zeros(1)
             rank = 0
         else:
-            kc = torch.matmul(
-                rad_feat.flatten(1), mixer.weight
-            )  # (E, degree_kernel_size * rank)
+            if radial_packed is None:
+                kc = torch.matmul(
+                    rad_feat.flatten(1), mixer.weight
+                )  # (E, degree_kernel_size * rank)
             cb = mixer.channel_basis.reshape(-1)
             rank = mixer.rank
 
