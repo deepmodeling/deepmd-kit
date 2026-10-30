@@ -41,6 +41,9 @@ from deepmd.pt.model.descriptor.sezm_nn.indexing import (
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
     DynamicRadialDegreeMixer,
 )
+from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+    _wigner_d_assemble_op as _WIGNER_ASSEMBLE_OP,
+)
 from deepmd.pt_expt.kernels.triton.sezm import (
     TRITON_AVAILABLE,
 )
@@ -59,6 +62,12 @@ from deepmd.pt_expt.kernels.triton.sezm.so2_rotation import (
 )
 
 _CUDA = torch.cuda.is_available()
+
+# The assembly operator registers only where the running torch accepts its
+# schema (torch >= 2.7); torch 2.4-2.6 have ``torch.library.custom_op`` but
+# reject a ``list[torch.Tensor]`` parameter, so tests that call the operator
+# directly gate on registration success, not on API presence.
+_WIGNER_OP_REGISTERED = _WIGNER_ASSEMBLE_OP is not None
 
 # All SeZM Triton kernels ship together (every per-module availability flag
 # reduces to "the triton package imports"), so one gate covers every
@@ -2093,8 +2102,8 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         return (dense * w1).sum() + (dense.transpose(-1, -2) * w2).sum()
 
     @unittest.skipUnless(
-        hasattr(torch.library, "custom_op"),
-        "the operator registration needs torch >= 2.4",
+        _WIGNER_OP_REGISTERED,
+        "the operator registration needs a torch that accepts its schema",
     )
     def test_op_matches_reference_with_grads(self):
         """Pure-PyTorch operator math; runs wherever the CPU CI runs."""
@@ -2165,8 +2174,8 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                 )
 
     @unittest.skipUnless(
-        hasattr(torch.library, "custom_op"),
-        "the operator registration needs torch >= 2.4",
+        _WIGNER_OP_REGISTERED,
+        "the operator registration needs a torch that accepts its schema",
     )
     def test_opcheck_schema_fake_autograd(self):
         """Schema/fake/autograd contract; pure PyTorch, CPU CI included."""
@@ -2196,8 +2205,8 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                     torch.set_default_device(saved)
 
     @unittest.skipUnless(
-        hasattr(torch.library, "custom_op"),
-        "the operator registration needs torch >= 2.4",
+        _WIGNER_OP_REGISTERED,
+        "the operator registration needs a torch that accepts its schema",
     )
     def test_make_fx_trace_selects_the_assemble_op(self):
         """The fake-mode probe half: make_fx tracing picks the opaque op.
@@ -2229,15 +2238,23 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         """Unsupported torches must import the module and stay eager.
 
         Two emulations run in subprocesses, one per incompatible class:
-        ``hide`` deletes ``torch.library.custom_op`` for the module's
-        re-execution (torch 2.1-2.3, where the API is absent), and
-        ``reject`` replaces it with a stub raising the schema-inference
-        error (torch 2.4-2.6, where the API exists but rejects a
-        ``list[torch.Tensor]`` parameter). In both, torch's own lazily
-        importing users of the API stay intact (the change is scoped to
-        the reload window), the operator stays unregistered, the eager
+        ``hide`` removes ``torch.library.custom_op`` for the module's
+        re-execution (torch 2.1-2.3, where the API is absent -- on a torch
+        that really lacks it the attribute is already gone and nothing is
+        deleted), and ``reject`` replaces it with a stub raising the
+        schema-inference error (torch 2.4-2.6, where the API exists but
+        rejects a ``list[torch.Tensor]`` parameter). In both, torch's own
+        lazily importing users of the API stay intact (the change is scoped
+        to the reload window), the operator stays unregistered, the eager
         forward/backward works, and make_fx tracing keeps the eager
         implementation instead of the operator node.
+
+        The child first imports the module untouched and asserts the
+        registration state its parent observed (passed as an argument), so
+        the successful-registration control is measured against reality
+        instead of API presence: on a torch whose registration legitimately
+        fails at import, the control asserts the import-time fallback, and
+        the operator-specific tests above are skipped by their decorator.
         """
         import pathlib
         import subprocess
@@ -2254,6 +2271,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
 
             mode = sys.argv[1]
             tree = pathlib.Path(sys.argv[2])
+            expected_registered = sys.argv[3] == "1"
             sys.meta_path = [
                 f
                 for f in sys.meta_path
@@ -2269,13 +2287,15 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
 
             import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
 
-            api_present = hasattr(torch.library, "custom_op")
-            if api_present:
+            if expected_registered:
                 assert wd._wigner_d_assemble_op is not None, "control: registers"
+            else:
+                assert wd._wigner_d_assemble_op is None, "control: import fallback"
 
             saved_custom_op = getattr(torch.library, "custom_op", None)
             if mode == "hide":
-                del torch.library.custom_op
+                if saved_custom_op is not None:
+                    del torch.library.custom_op
             elif mode == "reject":
                 def _rejected(*args, **kwargs):
                     raise TypeError(
@@ -2288,6 +2308,9 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             wd = importlib.reload(wd)
             if saved_custom_op is not None:
                 torch.library.custom_op = saved_custom_op
+            elif mode == "reject":
+                # The stub was injected over a missing attribute; remove it.
+                del torch.library.custom_op
             assert wd._wigner_d_assemble_op is None, "fallback: op stays out"
 
             calc = wd.WignerDCalculator(lmax=1, dtype=torch.float64).cpu()
@@ -2311,10 +2334,18 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             print("fallback-ok")
             """
         )
+        registered = wignerd_mod._wigner_d_assemble_op is not None
         for mode in ("hide", "reject"):
-            with self.subTest(emulation=mode):
+            with self.subTest(emulation=mode, registered=registered):
                 result = subprocess.run(
-                    [sys.executable, "-c", child, mode, str(tree)],
+                    [
+                        sys.executable,
+                        "-c",
+                        child,
+                        mode,
+                        str(tree),
+                        "1" if registered else "0",
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=300,
