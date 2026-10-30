@@ -15,7 +15,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 31
+#define DP_C_API_VERSION 32
 
 /**
  * @brief Neighbor list.
@@ -502,6 +502,7 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  *       DP_DeepPotComputeCanonicalGraphGPU, without ``d_virial``, ``d_coord``,
  *       ``world``, ``box`` and ``stream``; a binary built against that name
  *       fails to load rather than call a function of another argument list.
+ *       API version 31, which no release carries, took no ``box``.
  * @since API version 31
  */
 extern void DP_DPA4ComputeCanonicalGraphGPU(

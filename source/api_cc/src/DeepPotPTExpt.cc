@@ -2826,6 +2826,11 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         "decomposed over several ranks takes their communicator.");
   }
   if (long_range_ && world != nullptr && nall_nodes == 0) {
+    // A rank without nodes owns none and stores no edge.
+    if (nloc != 0 || edge_storage != 0) {
+      throw deepmd::deepmd_exception(
+          "invalid compact canonical graph dimensions.");
+    }
     translate_error([&] {
       const c10::DeviceGuard device_guard(torch::Device(torch::kCUDA, gpu_id));
       const ptexpt::CallerStreamScope stream_scope(stream, gpu_id);
