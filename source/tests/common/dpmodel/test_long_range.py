@@ -103,6 +103,23 @@ def test_pair_force_virial_of_a_central_potential() -> None:
     np.testing.assert_allclose(virial[0], coord.T @ force, rtol=1e-12, atol=1e-15)
 
 
+def test_pair_force_virial_orients_the_pair_virial() -> None:
+    """The virial of a pair is -g_p (x) pair_vec, the gradient index first."""
+    coord = np.array([[0.0, 0.0, 0.0], [1.0, 0.2, 0.0], [0.0, 1.5, 0.3]])
+    pairs = build_pair_graph(coord, np.array([3]), np.array([0, 1, 0]))
+    # A gradient that is not parallel to its pair, for which the virial is
+    # not symmetric and its orientation shows.
+    rng = np.random.default_rng(1)
+    grad = np.where(pairs.mask[:, None], rng.normal(size=pairs.vec.shape), 0.0)
+    _, atom_virial, virial = pair_force_virial(
+        grad, pairs.vec, pairs.index, pairs.mask, np.array([3])
+    )
+    expected = -np.einsum("pa,pb->ab", grad, pairs.vec)
+    assert not np.allclose(expected, expected.T)
+    np.testing.assert_allclose(virial[0], expected, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(atom_virial.sum(0), expected, rtol=1e-12, atol=1e-15)
+
+
 def test_les_kernel_closed_form() -> None:
     """LES is erf(alpha r)/r, finite at contact."""
     kernel = LESKernel(alpha=0.7)
