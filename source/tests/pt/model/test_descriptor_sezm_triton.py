@@ -2145,6 +2145,73 @@ class TestSeZMGieScatter(unittest.TestCase):
                         g1[1][:, grad_slice], g2[1], atol=1e-5, rtol=1e-5
                     )
 
+    @_GPU_KERNELS
+    def test_backward_reaches_the_degree_normalization(self):
+        """The degree normalization stays outside the operator on purpose.
+
+        The scaling descends from the cutoff envelope, so its cotangent is
+        part of the force.  The Triton path deliberately leaves the
+        ``out * inv_sqrt_deg`` multiply to the traced graph; this check
+        fails if a future refactor folds it into the kernel without a
+        gradient path for the scale (mirroring the CUDA operator's guard).
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(11)
+        n_edge, n_nodes = 2048, 64
+        zonal, radial, dst, order, row_ptr, _ = self._make_case(
+            n_edge, n_nodes, generator
+        )
+        inv_sqrt_deg = torch.rand(
+            n_nodes, device="cuda", generator=generator
+        ).clamp_min(0.1)
+        cotangent = torch.randn(
+            n_nodes,
+            self._ROWS + 1,
+            radial.shape[2],
+            device="cuda",
+            generator=torch.Generator(device="cuda").manual_seed(13),
+        )
+
+        grads = {}
+        for name, compose in (
+            (
+                "fused",
+                lambda z, r, sc: (
+                    gie_zonal_scatter(z, r, dst, order, row_ptr, n_nodes, 3)
+                    * sc[:, None, None]
+                ),
+            ),
+            (
+                "reference",
+                lambda z, r, sc: (
+                    self._reference(z, r, dst, n_nodes) * sc[:, None, None]
+                ),
+            ),
+        ):
+            z = zonal.clone().requires_grad_(True)
+            r = radial.clone().requires_grad_(True)
+            sc = inv_sqrt_deg.clone().requires_grad_(True)
+            compose(z, r, sc).backward(cotangent)
+            grads[name] = (z.grad, r.grad, sc.grad)
+
+        self.assertIsNotNone(
+            grads["fused"][2],
+            "the scale gradient must flow; a fold without a gradient path "
+            "silently biases inference forces",
+        )
+        torch.testing.assert_close(
+            grads["fused"][2], grads["reference"][2], atol=1e-5, rtol=1e-5
+        )
+        torch.testing.assert_close(
+            grads["fused"][0], grads["reference"][0], atol=1e-5, rtol=1e-5
+        )
+        torch.testing.assert_close(
+            grads["fused"][1], grads["reference"][1], atol=1e-5, rtol=1e-5
+        )
+
     def test_reference_cpu_matches_manual(self):
         """CPU reference equals a hand-written sequential accumulation."""
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
@@ -2165,6 +2232,74 @@ class TestSeZMGieScatter(unittest.TestCase):
             0, dst, zonal.unsqueeze(-1) * radial[:, slot_of_row]
         )
         torch.testing.assert_close(out, manual, atol=0.0, rtol=0.0)
+
+    def test_module_imports_and_falls_back_without_triton(self):
+        """The package contract: the module imports without the triton stack.
+
+        CPU-only torch wheels ship no triton; every sibling kernel module
+        guards its import and exports a meaningful availability flag.  A
+        child process blocks the triton import and checks the flag flips to
+        False, the reference composition still runs, and calling the fused
+        entry raises a loud error instead of an import-time crash.
+        """
+        import pathlib
+        import subprocess
+        import sys
+        import textwrap
+
+        import deepmd.pt_expt.kernels.triton.sezm.gie_scatter as gie_mod
+
+        tree = pathlib.Path(gie_mod.__file__).resolve().parents[5]
+        child = textwrap.dedent(
+            """
+            import pathlib
+            import sys
+
+            tree = pathlib.Path(sys.argv[1])
+            sys.meta_path = [
+                f
+                for f in sys.meta_path
+                if "editable"
+                not in (type(f).__module__ + "." + type(f).__name__).lower()
+                and "editable" not in getattr(f, "__name__", "").lower()
+            ]
+            sys.path.insert(0, str(tree))
+            sys.modules["triton"] = None  # any `import triton` now fails
+
+            import torch
+
+            import deepmd.pt_expt.kernels.triton.sezm.gie_scatter as gs
+
+            assert gs.GIE_SCATTER_TRITON_AVAILABLE is False
+
+            zonal = torch.ones(2, 3, device="cpu")
+            radial = torch.ones(2, 1, 4, device="cpu")
+            dst = torch.tensor([0, 1])
+            out = gs._reference(zonal, radial, dst, 2)
+            assert out.shape == (2, 4, 4)
+            assert float(out[0, 0, 0]) == 0.0
+
+            try:
+                gs.gie_zonal_scatter(zonal, radial, dst, None, None, 2, 1)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("expected a loud RuntimeError")
+            print("no-triton-ok")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", child, str(tree)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"no-triton child failed:\n{result.stdout}\n{result.stderr}",
+        )
+        self.assertIn("no-triton-ok", result.stdout)
 
     @_GPU_KERNELS
     def test_small_deterministic_topology(self):

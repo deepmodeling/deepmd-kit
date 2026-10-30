@@ -237,17 +237,13 @@ class GeometricInitialEmbedding(nn.Module):
         # contract: no tunable configuration, strictly removes the
         # (E, D-1, C) message round-trip, so no table selection is involved.
         if triton_infer_level() >= 1 and self.dtype is torch.float32 and self.lmax == 3:
-            try:
-                from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
-                    GIE_SCATTER_TRITON_AVAILABLE,
-                    gie_zonal_scatter,
-                )
-            except ImportError:
-                # The Triton stack is optional; a level-1 environment
-                # without it keeps the reference composition (and the CUDA
-                # operator above remains unaffected).
-                GIE_SCATTER_TRITON_AVAILABLE = False
-                gie_zonal_scatter = None
+            # The module owns its optional-triton import guard, so this
+            # import succeeds everywhere and the exported flag is the
+            # single source of truth for the capability check below.
+            from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+                GIE_SCATTER_TRITON_AVAILABLE,
+                gie_zonal_scatter,
+            )
 
             index_device = self.non_scalar_row_index.device
             packed_rows = torch.arange(
@@ -260,6 +256,7 @@ class GeometricInitialEmbedding(nn.Module):
             )
             if (
                 GIE_SCATTER_TRITON_AVAILABLE
+                and torch.cuda.is_available()
                 and torch.equal(self.non_scalar_row_index, packed_rows)
                 and torch.equal(self.radial_slot_index_for_row, packed_slots)
             ):
