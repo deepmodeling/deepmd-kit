@@ -98,49 +98,18 @@ class TestEmbeddingNetRefactor(unittest.TestCase):
         net2 = EmbeddingNet.deserialize(serialized)
 
         # Verify layers are still pt_expt NativeLayer modules
-        self.assertIsInstance(net2.layers, torch.nn.ModuleList)
-        for layer in net2.layers:
-            self.assertIsInstance(layer, NativeLayer)
+        for network in (net, net2):
+            self.assertIsInstance(network.layers, torch.nn.ModuleList)
+            for layer in network.layers:
+                self.assertIsInstance(layer, NativeLayer)
+                self.assertIsInstance(layer, torch.nn.Module)
+                self.assertTrue(hasattr(layer, "_parameters"))
 
         out2 = net2(x)
         np.testing.assert_allclose(
             out1.detach().cpu().numpy(),
             out2.detach().cpu().numpy(),
         )
-
-    def test_deserialize_preserves_layer_type(self) -> None:
-        """Test that deserialize uses type(obj.layers[0]) to preserve subclass layers.
-
-        This is the key fix: dpmodel's deserialize no longer hardcodes
-        super(EmbeddingNet, obj).__init__(layers), which would overwrite
-        pt_expt's converted layers. Instead it uses type(obj.layers[0])
-        to respect the subclass's layer type.
-        """
-        # Create pt_expt EmbeddingNet
-        net = EmbeddingNet(
-            in_dim=self.in_dim,
-            neuron=self.neuron,
-            activation_function=self.activation,
-            resnet_dt=self.resnet_dt,
-            precision=self.precision,
-            seed=GLOBAL_SEED,
-        )
-
-        # Verify layers are pt_expt NativeLayer (torch modules)
-        for layer in net.layers:
-            self.assertIsInstance(layer, torch.nn.Module)
-            self.assertTrue(hasattr(layer, "_parameters"))
-
-        # Deserialize
-        serialized = net.serialize()
-        net2 = EmbeddingNet.deserialize(serialized)
-
-        # Verify deserialized layers are STILL pt_expt NativeLayer, not dpmodel
-        for layer in net2.layers:
-            self.assertIsInstance(layer, torch.nn.Module)
-            self.assertTrue(hasattr(layer, "_parameters"))
-            # This would fail if deserialize used hardcoded dpmodel layers
-            self.assertIsInstance(layer, NativeLayer)
 
     def test_cross_backend_consistency(self) -> None:
         """Test numerical consistency between dpmodel and pt_expt EmbeddingNet."""

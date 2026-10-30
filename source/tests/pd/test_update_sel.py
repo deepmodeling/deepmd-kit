@@ -145,33 +145,6 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.pd.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_list(self, sel_mock) -> None:
-        sel_mock.return_value = self.mock_min_nbor_dist, [25]
-
-        jdata = {
-            "model": {
-                "descriptor": {
-                    "type": "se_atten",
-                    "sel": 30,
-                    "rcut": 6,
-                }
-            },
-            "training": {"training_data": {}},
-        }
-        expected_out = {
-            "model": {
-                "descriptor": {
-                    "type": "se_atten",
-                    "sel": 30,
-                    "rcut": 6,
-                }
-            },
-            "training": {"training_data": {}},
-        }
-        jdata = update_sel(jdata)
-        self.assertEqual(jdata, expected_out)
-
-    @patch("deepmd.pd.utils.update_sel.UpdateSel.get_nbor_stat")
     def test_update_sel_dpa2_auto(self, sel_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
 

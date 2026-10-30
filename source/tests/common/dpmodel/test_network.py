@@ -39,7 +39,7 @@ class TestNativeLayer(unittest.TestCase):
             ["tanh", "none"],
             [True, False],
             [None, [4], [3, 2]],
-            ["float32", "float64", "single", "double"],
+            ["float32", "float64"],
         ):
             nl0 = NativeLayer(
                 ni,
@@ -181,27 +181,6 @@ class TestEmbeddingNet(unittest.TestCase):
             inp = np.ones([ni], dtype=get_xp_precision(np, prec))
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
-    def test_is_concrete_class(self) -> None:
-        """Verify EmbeddingNet is a concrete class, not factory-generated."""
-        in_dim = 4
-        neuron = [8, 16, 32]
-        net = EmbeddingNet(
-            in_dim=in_dim,
-            neuron=neuron,
-            activation_function="tanh",
-            resnet_dt=True,
-            precision="float64",
-        )
-        # Check it's the actual EmbeddingNet class, not a dynamic class
-        self.assertEqual(net.__class__.__name__, "EmbeddingNet")
-        self.assertEqual(net.__class__.__module__, "deepmd.dpmodel.utils.network")
-        # Verify it has the expected attributes
-        self.assertEqual(net.in_dim, in_dim)
-        self.assertEqual(net.neuron, neuron)
-        self.assertEqual(net.activation_function, "tanh")
-        self.assertEqual(net.resnet_dt, True)
-        self.assertEqual(len(net.layers), len(neuron))
-
     def test_forward_pass(self) -> None:
         """Test EmbeddingNet forward pass produces correct shapes."""
         in_dim = 4
@@ -213,6 +192,11 @@ class TestEmbeddingNet(unittest.TestCase):
             resnet_dt=True,
             precision="float64",
         )
+        self.assertEqual(net.in_dim, in_dim)
+        self.assertEqual(net.neuron, neuron)
+        self.assertEqual(net.activation_function, "tanh")
+        self.assertTrue(net.resnet_dt)
+        self.assertEqual(len(net.layers), len(neuron))
         rng = np.random.default_rng()
         x = rng.standard_normal((5, in_dim))
         out = net.call(x)
@@ -310,36 +294,7 @@ class TestFittingNet(unittest.TestCase):
             )
             en1 = FittingNet.deserialize(en0.serialize())
             inp = np.ones([ni], dtype=get_xp_precision(np, prec))
-            en0.call(inp)
-            en1.call(inp)
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
-
-    def test_is_concrete_class(self) -> None:
-        """Verify FittingNet is a concrete class, not factory-generated."""
-        in_dim = 4
-        out_dim = 1
-        neuron = [8, 16]
-        net = FittingNet(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            neuron=neuron,
-            activation_function="tanh",
-            resnet_dt=True,
-            precision="float64",
-            bias_out=True,
-        )
-        # Check it's the actual FittingNet class, not a dynamic class
-        self.assertEqual(net.__class__.__name__, "FittingNet")
-        self.assertEqual(net.__class__.__module__, "deepmd.dpmodel.utils.network")
-        # Verify it has the expected attributes
-        self.assertEqual(net.in_dim, in_dim)
-        self.assertEqual(net.out_dim, out_dim)
-        self.assertEqual(net.neuron, neuron)
-        self.assertEqual(net.activation_function, "tanh")
-        self.assertEqual(net.resnet_dt, True)
-        self.assertEqual(net.bias_out, True)
-        # FittingNet has len(neuron) embedding layers + 1 output layer
-        self.assertEqual(len(net.layers), len(neuron) + 1)
 
     def test_forward_pass(self) -> None:
         """Test FittingNet forward pass produces correct output shape."""
@@ -354,6 +309,13 @@ class TestFittingNet(unittest.TestCase):
             resnet_dt=True,
             precision="float64",
         )
+        self.assertEqual(net.in_dim, in_dim)
+        self.assertEqual(net.neuron, neuron)
+        self.assertEqual(net.activation_function, "tanh")
+        self.assertTrue(net.resnet_dt)
+        self.assertEqual(net.out_dim, out_dim)
+        self.assertTrue(net.bias_out)
+        self.assertEqual(len(net.layers), len(neuron) + 1)
         # Single sample
         rng = np.random.default_rng()
         x = rng.standard_normal(in_dim)

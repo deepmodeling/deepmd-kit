@@ -170,3 +170,44 @@ class TestAutoBatchSize(unittest.TestCase):
         with self.assertRaises(OutOfMemoryError):
             auto.execute_all(evaluate, 1, 2, xp.zeros((1, 2)))
         self.assertEqual(attempts, [1])
+
+
+class TestLargeFrameBatchGrowth(unittest.TestCase):
+    @patch.dict(os.environ, {"DP_INFER_BATCH_SIZE": "0"})
+    def test_large_frames_grow_from_successful_work(self) -> None:
+        auto = CustomizedAutoBatchSizeGPU(1024)
+        attempts = []
+
+        def evaluate(nframes: int, start: int) -> tuple[int, None]:
+            attempts.append(nframes)
+            return nframes, None
+
+        for _ in range(3):
+            auto.execute(evaluate, 0, 10000)
+        self.assertEqual(attempts, [1, 2, 4])
+        self.assertEqual(auto.current_batch_size, 80000)
+
+    def test_large_frames_do_not_expand_explicit_or_cpu_limits(self) -> None:
+        for cls, limit in (
+            (CustomizedAutoBatchSizeCPU, "0"),
+            (CustomizedAutoBatchSizeGPU, "1024"),
+        ):
+            with (
+                self.subTest(cls=cls, limit=limit),
+                patch.dict(os.environ, {"DP_INFER_BATCH_SIZE": limit}),
+            ):
+                auto = cls(1024)
+                for _ in range(3):
+                    nframes, _ = auto.execute(lambda n, start: (n, None), 0, 10000)
+                    self.assertEqual(nframes, 1)
+                self.assertEqual(auto.current_batch_size, 1024)
+
+    @patch.dict(os.environ, {"DP_INFER_BATCH_SIZE": "0"})
+    def test_partial_tail_does_not_shrink_learned_budget(self) -> None:
+        auto = CustomizedAutoBatchSizeGPU(1024)
+        for natoms in (100, 101, 200):
+            nframes, _ = auto.execute(
+                lambda n, start: (n, None), 0, natoms, max_nframes=2
+            )
+            self.assertEqual(nframes, 2)
+            self.assertEqual(auto.current_batch_size, 1024)
