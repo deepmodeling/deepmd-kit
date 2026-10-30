@@ -1245,6 +1245,12 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
+        if self._dpmodel is not None:
+            return int(self._dpmodel.get_numb_dos())
+        # Metadata-only mode: the width is the shape of the ``dos`` output.
+        out_defs = self._model_output_def.get_data()
+        if "dos" in out_defs:
+            return int(out_defs["dos"].shape[0])
         return 0
 
     def get_var_name(self) -> str:
