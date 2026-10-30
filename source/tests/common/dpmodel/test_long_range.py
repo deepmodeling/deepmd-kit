@@ -2,6 +2,7 @@
 """Primitives of the long-range modules: pair topology, kernels and constraint."""
 
 import itertools
+import pathlib
 
 import numpy as np
 import pytest
@@ -174,6 +175,36 @@ def test_kernel_defaults_to_les() -> None:
     kernel = model.atomic_model.long_range.kernel
     assert isinstance(kernel, LESKernel)
     np.testing.assert_allclose(np.exp(kernel.log_alpha), 1.0)
+
+
+def test_composition_without_the_graph_lower_is_rejected(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A long-range sub-model takes no sibling without the NeighborGraph lower.
+
+    A ``pairtab`` sub-model has no NeighborGraph lower, so the composition
+    would evaluate on the dense route, which a long-range module does not
+    serve; the composition is rejected when it is built.
+    """
+    table = tmp_path / "table.txt"
+    np.savetxt(table, np.column_stack([np.linspace(0.0, 6.0, 61), *[np.zeros(61)] * 3]))
+    child = {
+        "type": "standard",
+        "type_map": ["A", "B"],
+        "descriptor": {"type": "dpa4c", "rcut": 3.0, "channels": 8, "seed": 1},
+        "fitting_net": {"type": "ener", "neuron": [8], "seed": 2},
+        "long_range": {"type": "latent_charge", "charge_net": {"neuron": [4]}},
+    }
+    pairtab = {"type": "pairtab", "tab_file": str(table), "rcut": 5.0, "sel": 20}
+    with pytest.raises(NotImplementedError, match="NeighborGraph"):
+        get_model(
+            {
+                "type": "linear_ener",
+                "type_map": ["A", "B"],
+                "weights": "sum",
+                "models": [child, pairtab],
+            }
+        )
 
 
 def _long_range(constraint: dict | None, channels: int = 2) -> LatentChargeLongRange:

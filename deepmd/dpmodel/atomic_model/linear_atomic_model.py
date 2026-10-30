@@ -118,18 +118,25 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     + ", ".join(f"{type(m).__name__}={dim_of(m)}" for m in models)
                 )
 
-        # A long-range module attributes each pair energy to both atoms of
-        # the pair. It is not combined with a bridging term, which defines the
-        # close-pair limit of a learned local energy, nor with atom exclusion,
-        # which removes atomic outputs.
-        if any(isinstance(m, InnerPotentialAtomicModel) for m in models) and any(
-            m.has_long_range() for m in models
-        ):
+        # A long-range module is evaluated on the NeighborGraph lower and
+        # attributes each pair energy to both atoms of the pair. It is not
+        # combined with a sub-model without that lower, which sends the whole
+        # composition to the dense route, with a bridging term, which defines
+        # the close-pair limit of a learned local energy, nor with atom
+        # exclusion, which removes atomic outputs.
+        long_range = any(m.has_long_range() for m in models)
+        if long_range and not all(m.uses_graph_lower() for m in models):
+            raise NotImplementedError(
+                "a sub-model carrying a long-range module is evaluated on the "
+                "NeighborGraph lower, which every sub-model of the composition "
+                "must provide"
+            )
+        if long_range and any(isinstance(m, InnerPotentialAtomicModel) for m in models):
             raise NotImplementedError(
                 "an inner_potential bridging term cannot be combined with a "
                 "sub-model carrying a long-range module"
             )
-        if self.atom_exclude_types and any(m.has_long_range() for m in models):
+        if self.atom_exclude_types and long_range:
             raise NotImplementedError(
                 "`atom_exclude_types` is not supported with a sub-model carrying "
                 "a long-range module"
