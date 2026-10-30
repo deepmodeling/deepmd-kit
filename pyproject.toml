@@ -208,6 +208,7 @@ minimum-version = "1.0"
 cmake.source-dir = "source"
 sdist.include = [
     "/deepmd/_version.py",
+    "/skills/**",
 ]
 sdist.exclude = [
     "/source/tests",
@@ -220,10 +221,8 @@ sdist.exclude = [
     "/data",
     "/.github",
 ]
-wheel.packages = [
-    "deepmd",
-    "dpa_adapt",
-]
+wheel.packages = ["deepmd", "dpa_adapt"]
+wheel.force-include = {"skills" = "deepmd/_skills"}
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
 

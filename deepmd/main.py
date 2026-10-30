@@ -23,6 +23,13 @@ from deepmd.backend.backend import (
 from deepmd.pretrained.registry import (
     available_model_names,
 )
+from deepmd.skills import (
+    add_parser,
+)
+from deepmd.skills import run as run_skills
+from deepmd.skills import (
+    workflow_help,
+)
 
 try:
     from deepmd._version import version as __version__
@@ -156,6 +163,7 @@ def main_parser() -> argparse.ArgumentParser:
         )
 
     subparsers = parser.add_subparsers(title="Valid subcommands", dest="command")
+    add_parser(subparsers)
 
     # * logging options parser *********************************************************
     # with use of the parent argument this options will be added to every parser
@@ -1086,6 +1094,10 @@ def main_parser() -> argparse.ArgumentParser:
         help="Optional cache directory for pretrained model files",
     )
 
+    parser.epilog += "\nDiscover bundled workflow guides: dp skills list."
+    guidance = workflow_help("deepmd-train")
+    if guidance:
+        parser_train.epilog = (parser_train.epilog or "") + "\n" + guidance
     return parser
 
 
@@ -1113,7 +1125,7 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         parser.error("freeze --compress requires --pt-expt (PyTorch Exportable)")
     if parsed_args.command is None:
         parser.print_help()
-    else:
+    elif parsed_args.command != "skills":
         parsed_args.log_level = get_ll(parsed_args.log_level)
 
     return parsed_args
@@ -1134,6 +1146,10 @@ def main(args: list[str] | None = None) -> None:
         if no command was input
     """
     args = parse_args(args=args)
+
+    if args.command == "skills":
+        run_skills(args)
+        return
 
     if args.backend not in BACKEND_TABLE:
         raise ValueError(f"Unknown backend {args.backend}")
