@@ -200,11 +200,15 @@ Training uses the usual energy loss; see
 [training energy models](train-energy.md). With `enable_compile`, the
 long-range interaction is part of the compiled model: the pairs, the wave
 numbers or the mesh of each batch are built outside the compiled region and
-enter it as inputs of dynamic size.
+enter it as inputs of dynamic size. Compiled training of a periodic model in
+the `pme` mode on the CPU requires PyTorch 2.13 or later.
 
 `dp --pt-expt freeze` exports the model, long-range module included, to
 `.pt2` or `.pte`, and `dp --pt-expt compress` compresses its descriptor into a
 `.pt2` archive while the networks of the long-range module stay as they are.
+Freezing a model with `periodic: true` to `.pt2` requires PyTorch 2.12 or
+later, except for a model that the dedicated operator described below
+evaluates, whose mesh the operator transforms.
 A trained checkpoint (`.pt`) and the frozen model are evaluated by `dp test`
 and the Python inference interface; the C++ interface and LAMMPS, with
 `pair_style deepmd` and `pair_style deepmd/kk`, read the `.pt2` archive.

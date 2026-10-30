@@ -31,6 +31,7 @@ from deepmd.pt_expt.model.get_model import (
 from deepmd.pt_expt.train.training import (
     _CompiledModel,
     _get_model_structure_key,
+    _trace_and_compile_graph,
     model_change_out_bias,
 )
 from deepmd.pt_expt.train.wrapper import (
@@ -38,9 +39,14 @@ from deepmd.pt_expt.train.wrapper import (
 )
 from deepmd.pt_expt.utils import (
     env,
+    serialization,
 )
 from deepmd.pt_expt.utils.serialization import (
+    check_mesh_compile_torch_version,
+    check_mesh_freeze_torch_version,
     deserialize_to_file,
+    mesh_compile_supported,
+    mesh_freeze_supported,
 )
 
 from ..compile_utils import (
@@ -1435,6 +1441,8 @@ def test_periodic_frozen_model_matches_mesh_evaluation(
     of a batch as inputs of dynamic size, and matches the model evaluated on
     the mesh; a batch without a cell keeps the direct sum.
     """
+    if suffix == ".pt2" and not mesh_freeze_supported():
+        pytest.skip(f"torch {torch.__version__} cannot package the mesh evaluation")
     config = _config(kernel)
     config["long_range"]["periodic"] = True
     config["long_range"]["k_grid_mode"] = grid_mode
@@ -1503,6 +1511,8 @@ def test_periodic_compressed_frozen_model_matches_uncompressed(
     the graph lower reads the mesh. Both match the uncompressed model on the
     mesh, for a periodic frame and for a cluster.
     """
+    if env.DEVICE.type != "cuda" and not mesh_freeze_supported():
+        pytest.skip(f"torch {torch.__version__} cannot package the mesh evaluation")
     config = _config(kernel, constraint=None if source is None else {"source": source})
     config["descriptor"].update(n_radial=8, precision="float32")
     config["fitting_net"].update(
@@ -2562,6 +2572,8 @@ def test_periodic_pme_serialization_round_trip(kernel: str) -> None:
 @REQUIRES_SUPPORTED_COMPILE
 def test_periodic_pme_compiled_matches_eager(kernel: str) -> None:
     """The compiled graph lower evaluates the PME model like the eager one."""
+    if not mesh_compile_supported(env.DEVICE):
+        pytest.skip(f"torch {torch.__version__} miscompiles the mesh virial here")
     model = _periodic_pme_model(kernel)
     coord, atype, box = _periodic_case()
     coord_t, atype_t, box_t = (
@@ -2584,3 +2596,72 @@ def test_periodic_pme_compiled_matches_eager(kernel: str) -> None:
     grads = [parameter.grad for parameter in model.atomic_model.long_range.parameters()]
     assert grads and all(grad is not None for grad in grads)
     assert all(torch.isfinite(grad).all() for grad in grads)
+
+
+@pytest.mark.parametrize(
+    ("version", "lower", "topologies", "accepted"),
+    [
+        ("2.11.0+cpu", "graph", ["all_pairs", "pme_mesh"], False),
+        ("2.12.0", "graph", ["all_pairs", "pme_mesh"], True),
+        ("2.11.0+cpu", "dpa4c_canonical", ["all_pairs", "pme_mesh"], True),
+        ("2.11.0+cpu", "graph", ["all_pairs"], True),
+    ],
+)
+def test_mesh_freeze_version_guard(
+    monkeypatch, version: str, lower: str, topologies: list[str], accepted: bool
+) -> None:
+    """A .pt2 graph lower that reads the PME mesh freezes from torch 2.12 on."""
+    monkeypatch.setattr(torch, "__version__", version)
+    metadata = {"lower_input_kind": lower, "topologies": topologies}
+    if accepted:
+        check_mesh_freeze_torch_version(metadata)
+    else:
+        with pytest.raises(RuntimeError, match=r"torch >= 2\.12"):
+            check_mesh_freeze_torch_version(metadata)
+
+
+def test_periodic_freeze_checks_the_torch_version(tmp_path, monkeypatch) -> None:
+    """The .pt2 freeze of a periodic model stops before AOTInductor where it cannot run."""
+    config = _config("les")
+    config["long_range"]["periodic"] = True
+    model = get_model(config)
+    monkeypatch.setattr(serialization, "mesh_freeze_supported", lambda: False)
+    with pytest.raises(RuntimeError, match=r"torch >= 2\.12"):
+        deserialize_to_file(
+            str(tmp_path / "periodic.pt2"),
+            {"model": model.serialize(), "model_def_script": config},
+            lower_kind="graph",
+        )
+
+
+@pytest.mark.parametrize(
+    ("version", "device", "grid_mode", "accepted"),
+    [
+        ("2.12.0", "cpu", "pme", False),
+        ("2.13.0", "cpu", "pme", True),
+        ("2.11.0", "cuda", "pme", True),
+        ("2.12.0", "cpu", "ragged", True),
+    ],
+)
+def test_mesh_compile_version_guard(
+    monkeypatch, version: str, device: str, grid_mode: str, accepted: bool
+) -> None:
+    """Compiled PME training runs on the CPU from torch 2.13 on, on CUDA throughout."""
+    config = _config("les")
+    config["long_range"]["periodic"] = True
+    config["long_range"]["k_grid_mode"] = grid_mode
+    model = get_model(config)
+    monkeypatch.setattr(torch, "__version__", version)
+    if accepted:
+        check_mesh_compile_torch_version(model, torch.device(device))
+    else:
+        with pytest.raises(RuntimeError, match=r"torch >= 2\.13"):
+            check_mesh_compile_torch_version(model, torch.device(device))
+
+
+def test_periodic_pme_compile_checks_the_torch_version(monkeypatch) -> None:
+    """The compiled training trace of a PME model stops where Inductor forms a wrong virial."""
+    model = _periodic_pme_model("les")
+    monkeypatch.setattr(serialization, "mesh_compile_supported", lambda device: False)
+    with pytest.raises(RuntimeError, match=r"torch >= 2\.13"):
+        _trace_and_compile_graph(model, None, None, None, None)

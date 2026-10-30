@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
     flatten_topologies,
 )
 from deepmd.dpmodel.utils.nlist import (
@@ -31,6 +32,7 @@ from deepmd.dpmodel.utils.serialization import (
     traverse_model_dict,
 )
 from deepmd.pt.utils.compile_compat import (
+    _torch_release,
     traced_output_keys,
 )
 from deepmd.pt_expt.model.graph_lower import (
@@ -334,6 +336,91 @@ def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
             "Upgrade torch; or disable the compact-pair consumers "
             "(dpa1: set 'attn_layer: 0'; dpa2: set 'update_g2_has_attn: "
             "false' and 'update_h2: false'); or use the dense (nlist) path."
+        )
+
+
+def mesh_freeze_supported() -> bool:
+    """Whether AOTInductor runs the mesh evaluation of a periodic graph lower.
+
+    The graph lower of a periodic long-range model evaluates its reciprocal
+    sum by FFTs over the mesh of every cell, and the derivatives of the real
+    transforms allocate complex buffers through the proxy executor of
+    AOTInductor. Its runtime allocates them with their declared dtype from
+    PyTorch 2.12 on; older runtimes allocate booleans, which the
+    complex-to-complex transform of the derivative rejects when the packaged
+    model runs.
+    """
+    return _torch_release() >= (2, 12)
+
+
+def mesh_compile_supported(device: torch.device) -> bool:
+    """Whether ``torch.compile`` forms the virial of the mesh evaluation on ``device``.
+
+    The CPU code generation of Inductor forms the strain derivative of the
+    mesh energy in a compiled training graph correctly from PyTorch 2.13 on,
+    the CUDA code generation in every release that compiles the model.
+    """
+    return device.type != "cpu" or _torch_release() >= (2, 13)
+
+
+def check_mesh_freeze_torch_version(metadata: dict) -> None:
+    """Fail fast before AOTInductor packages a mesh evaluation it cannot run.
+
+    Parameters
+    ----------
+    metadata : dict
+        The metadata of the traced lower, with its ``lower_input_kind`` and
+        its ``topologies``.
+
+    Raises
+    ------
+    RuntimeError
+        If the graph lower reads the PME mesh and :func:`mesh_freeze_supported`
+        does not hold.
+    """
+    if (
+        metadata.get("lower_input_kind") == "graph"
+        and PME_MESH in metadata.get("topologies", ())
+        and not mesh_freeze_supported()
+    ):
+        raise RuntimeError(
+            "freezing a periodic long-range model into a .pt2 graph lower "
+            f"requires torch >= 2.12; found torch {torch.__version__}, whose "
+            "AOTInductor runtime allocates the complex buffers of the mesh "
+            "derivatives as booleans. Upgrade torch, freeze to a .pte file, "
+            "or compress the model for the long-range operator on a CUDA "
+            "device."
+        )
+
+
+def check_mesh_compile_torch_version(
+    model: torch.nn.Module, device: torch.device
+) -> None:
+    """Fail fast before compiling a model whose virial Inductor forms wrongly.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model about to be traced for compiled training.
+    device : torch.device
+        The device of the trace.
+
+    Raises
+    ------
+    RuntimeError
+        If the model reads the PME mesh and :func:`mesh_compile_supported`
+        does not hold on ``device``.
+    """
+    if (
+        PME_MESH in model.atomic_model.required_topologies()
+        and not mesh_compile_supported(device)
+    ):
+        raise RuntimeError(
+            "compiled training of a periodic long-range model on the PME mesh "
+            f"requires torch >= 2.13 on the CPU; found torch {torch.__version__}, "
+            "whose Inductor CPU code generation forms a wrong virial for it. "
+            "Upgrade torch, train on a CUDA device, or set "
+            "`training.enable_compile` to false."
         )
 
 
@@ -765,7 +852,6 @@ def build_synthetic_topologies(
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         K_GRID,
-        PME_MESH,
         KGrid,
         PairGraph,
     )
@@ -3117,6 +3203,7 @@ def _deserialize_to_file_pt2(
     metadata["has_comm_artifact"] = with_comm and bool(
         metadata.get("has_comm_artifact")
     )
+    check_mesh_freeze_torch_version(metadata)
 
     # A charge-state update swaps constants in one compiled artifact. A model
     # that also needs the with-comm lower would own two independent constant

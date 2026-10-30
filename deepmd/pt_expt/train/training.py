@@ -891,6 +891,7 @@ def _trace_and_compile_graph(
         build_synthetic_graph_inputs,
         build_synthetic_topologies,
         check_graph_trace_torch_version,
+        check_mesh_compile_torch_version,
         count_synthetic_graph_edges,
     )
 
@@ -909,6 +910,7 @@ def _trace_and_compile_graph(
     # CUDA autograd-stream limitation) would otherwise mix a CPU model with
     # CUDA inputs and fail only on a GPU host.
     _trace_device = next(model.parameters()).device
+    check_mesh_compile_torch_version(model, _trace_device)
     e_real = count_synthetic_graph_edges(
         model,
         nframes=trace_nf,

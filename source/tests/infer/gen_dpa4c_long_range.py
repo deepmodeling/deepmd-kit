@@ -13,7 +13,8 @@ covers each lower and each kind of module:
 
 - ``deeppot_dpa4c_long_range.pt2`` and
   ``deeppot_dpa4c_long_range_periodic.pt2``: uncompressed, fp64, graph lower,
-  which compiles on the CPU;
+  which compiles on the CPU; the periodic one needs torch >= 2.12, whose
+  AOTInductor packages the mesh evaluation;
 - ``deeppot_dpa4c_long_range_compressed.pt2`` and
   ``deeppot_dpa4c_long_range_periodic_compressed.pt2``: compressed, fp32,
   compact canonical lower, whose operators are CUDA only; they are generated
@@ -230,6 +231,7 @@ def _export_compressed(pt2_path: str, config: dict) -> None:
 def main() -> None:
     from deepmd.pt_expt.utils.serialization import (
         deserialize_to_file,
+        mesh_freeze_supported,
     )
 
     ensure_inductor_compiler()
@@ -246,12 +248,17 @@ def main() -> None:
             "software": "deepmd-kit",
             "version": "3.0.0",
         }
-        print(f"Exporting to {stem}.pt2 (lower_kind='graph') ...")  # noqa: T201
-        deserialize_to_file(
-            f"{stem}.pt2", data, do_atomic_virial=True, lower_kind="graph"
-        )
-        _check_metadata(f"{stem}.pt2", "graph", periodic)
-        _write_ref(f"{stem}.pt2", f"{stem}.expected", periodic)
+        if periodic and not mesh_freeze_supported():
+            # The C++ and LAMMPS suites skip the archive this torch cannot
+            # package.
+            print(f"Skipping {stem}.pt2: the mesh evaluation needs torch >= 2.12")  # noqa: T201
+        else:
+            print(f"Exporting to {stem}.pt2 (lower_kind='graph') ...")  # noqa: T201
+            deserialize_to_file(
+                f"{stem}.pt2", data, do_atomic_virial=True, lower_kind="graph"
+            )
+            _check_metadata(f"{stem}.pt2", "graph", periodic)
+            _write_ref(f"{stem}.pt2", f"{stem}.expected", periodic)
 
         if os.environ.get("DP_VARIANT") == "cuda":
             compressed = f"{stem}_compressed"

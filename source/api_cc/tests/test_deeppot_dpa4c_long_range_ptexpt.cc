@@ -304,7 +304,8 @@ class TestInferDeepPotDpa4cLongRangePeriodicPtExpt : public ::testing::Test {
     if (!model_file.good()) {
       GTEST_SKIP() << "Skip because " << model_path
                    << " was not generated (gen_dpa4c_long_range.py writes the "
-                      "compressed archives on a CUDA device only).";
+                      "compressed archives on a CUDA device only, and the "
+                      "graph lower with torch >= 2.12).";
     }
     dp.init(model_path);
     deepmd_test::ExpectedRef ref;
