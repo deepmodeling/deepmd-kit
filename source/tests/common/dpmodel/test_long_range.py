@@ -6,6 +6,9 @@ import pathlib
 
 import numpy as np
 import pytest
+from scipy.integrate import (
+    trapezoid,
+)
 from scipy.special import (
     erf,
 )
@@ -96,6 +99,8 @@ def test_pair_force_virial_of_a_central_potential() -> None:
         expected[i] += d / np.linalg.norm(d) ** 3
     np.testing.assert_allclose(force, expected, rtol=1e-12)
     np.testing.assert_allclose(atom_virial.sum(0), virial[0], rtol=1e-12)
+    # The virial of central pairs in a cluster is sum_i r_i (x) f_i.
+    np.testing.assert_allclose(virial[0], coord.T @ force, rtol=1e-12, atol=1e-15)
 
 
 def test_les_kernel_closed_form() -> None:
@@ -285,7 +290,7 @@ def _spherical_ft(
         k_r = np.sum(
             amplitude[None, :] * np.exp(-(r[:, None] ** 2) / (2 * width**2)), -1
         )
-    return float(np.trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(k * r / np.pi), r))
+    return float(trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(k * r / np.pi), r))
 
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])
@@ -305,7 +310,7 @@ def test_kernel_kspace_matches_radial_ft(kernel: str) -> None:
             r = np.linspace(1e-9, 60.0, 20000)
             k_r = (1.0 - erf(0.8 * r)) / r  # erfc(0.8 r)/r
             expected = 4.0 * np.pi / kk**2 - float(
-                np.trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(kk * r / np.pi), r)
+                trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(kk * r / np.pi), r)
             )
         else:
             expected = _spherical_ft(kernel, kk)
