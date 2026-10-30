@@ -431,6 +431,53 @@ def test_kspace_energy_of_padded_frames_matches_frames_alone(
         start += n
 
 
+def test_kspace_energy_keeps_the_self_term_without_wave_numbers() -> None:
+    """A periodic frame without wave numbers below the cutoff keeps its self term.
+
+    For a small cell and a wide kernel, every wave number of the cell lies
+    beyond the cutoff, so the lattice sum reduces to the self term
+    -k_e K(0) q_i^2 / 2 of every node, which the mesh evaluation gives as
+    well, over both the ragged and the fixed k grid; a non-periodic batch has
+    zero energy.
+    """
+    from deepmd.dpmodel.long_range.reciprocal import (
+        kspace_energy,
+        mesh_energy,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_mesh_grid,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph.reciprocal_graph import (
+        build_fixed_k_grid,
+        empty_k_grid,
+    )
+
+    kernel = LESKernel(alpha=0.03)
+    k_max = kernel.kspace_cutoff()
+    box = np.diag([3.0, 3.0, 3.0])[None]
+    assert 2.0 * np.pi / 3.0 > k_max
+    coord = np.array([[0.2, 0.3, 0.4], [1.7, 1.6, 1.5]])
+    charge = np.array([[1.0], [-1.0]])
+    n_node = np.array([2])
+    expected = -0.5 * COULOMB_CONSTANT * 2.0 * 0.03 / np.sqrt(np.pi) * charge[:, 0] ** 2
+    for grid in (
+        build_k_grid(box, k_max, coord, n_node),
+        build_fixed_k_grid(box, np.array([1, 1, 1]), k_max, coord, n_node),
+    ):
+        assert not np.any(grid.mask)
+        np.testing.assert_allclose(
+            kspace_energy(charge, grid, kernel), expected, rtol=1e-12
+        )
+    mesh = build_mesh_grid(box, 0.5, coord)
+    frame_id = np.zeros(2, dtype=np.int64)
+    np.testing.assert_allclose(
+        mesh_energy(charge, mesh, frame_id, kernel, 8), expected, rtol=1e-4
+    )
+    np.testing.assert_array_equal(
+        kspace_energy(charge, empty_k_grid(1, coord), kernel), 0.0
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fixed k-grid mode
 # ---------------------------------------------------------------------------

@@ -125,8 +125,9 @@ def kspace_energy(
     Returns
     -------
     Array
-        The energy of every node with shape ``(N,)``, in eV; zero in a frame
-        without wave numbers.
+        The energy of every node with shape ``(N,)``, in eV. A periodic frame
+        whose wave numbers all lie beyond the cutoff keeps its self term; a
+        non-periodic batch, whose k grid holds no nodes, has zero energy.
     """
     xp = array_api_compat.array_namespace(charge)
     device = array_api_compat.device(charge)
@@ -164,12 +165,11 @@ def kspace_energy(
         xp.matrix_transpose(sin_phase), weight * rho_imag
     )
     potential = xp.sum(block_potential, axis=1)
-    # The self term belongs to the lattice sum of a frame with wave numbers;
-    # a non-periodic batch evaluated by a periodic module carries none.
-    has_points = xp.astype(xp.any(k_grid.mask, axis=(1, 2)), dtype)[:, None, None]
+    # Every node of a periodic frame carries its self term, whether or not a
+    # wave number of the frame lies within the cutoff; the slots of a
+    # non-periodic batch hold no nodes and hence no charge.
     potential = (
-        potential
-        - COULOMB_CONSTANT * kernel.contact_value(charge) * charge_slot * has_points
+        potential - COULOMB_CONSTANT * kernel.contact_value(charge) * charge_slot
     )
     slot_energy = 0.5 * xp.sum(charge_slot * potential, axis=-1)
     # === Step 5. Energy on the node axis ===
