@@ -72,6 +72,7 @@ from deepmd.utils.data_sampling import (
     system_probabilities,
 )
 from deepmd.utils.data_system import (
+    close_data_systems,
     print_summary,
 )
 
@@ -361,49 +362,70 @@ def create_dataset(
     modifier: BaseModifier | None = None,
 ) -> DpLoaderSet | LmdbDataset | GroupedDataset:
     """Construct native readers from the shared recursive group configuration."""
+    from deepmd.utils.data_system import (
+        conversion_will_write_lmdb,
+        validate_lmdb_sampling_options,
+    )
+
+    for params in data_group_configs(config):
+        if conversion_will_write_lmdb(params):
+            validate_lmdb_sampling_options(params, modifier=modifier)
+            if not type_map:
+                raise ValueError(
+                    "LMDB training data requires model/type_map to be set."
+                )
     groups = resolve_data_groups(config)
     configs = data_group_configs(config)
     datasets = []
-    for group, params in zip(groups, configs, strict=True):
-        sources = resolve_data_sources(group)
-        has_lmdb = any(source.format == "lmdb" for source in sources)
-        children = []
-        child_configs = []
-        for source in sources:
-            if source.format == "deepmd":
-                child = DpLoaderSet(
-                    list(source.systems),
-                    source.batch_size,
-                    type_map,
-                    seed=seed,
-                    modifier=modifier,
+    acquired = []
+    try:
+        for group, params in zip(groups, configs, strict=True):
+            sources = resolve_data_sources(group)
+            has_lmdb = any(source.format == "lmdb" for source in sources)
+            if has_lmdb:
+                validate_lmdb_sampling_options(params, modifier=modifier)
+            children = []
+            child_configs = []
+            for source in sources:
+                if source.format == "deepmd":
+                    child = DpLoaderSet(
+                        list(source.systems),
+                        source.batch_size,
+                        type_map,
+                        seed=seed,
+                        modifier=modifier,
+                    )
+                else:
+                    child = LmdbDataset(
+                        source.systems[0],
+                        type_map,
+                        source.batch_size,
+                        auto_prob_style=group.auto_prob,
+                        seed=seed,
+                    )
+                children.append(child)
+                acquired.append(child)
+                child_configs.append(
+                    {**params, "sys_probs": group.sys_probs if not has_lmdb else None}
                 )
-            else:
-                child = LmdbDataset(
-                    source.systems[0],
-                    type_map,
-                    source.batch_size,
-                    auto_prob_style=group.auto_prob,
+            datasets.append(
+                children[0]
+                if len(children) == 1
+                else GroupedDataset(
+                    children,
+                    child_configs,
+                    [None] * len(children),
+                    uniform=group.auto_prob == "prob_uniform",
                 )
-            children.append(child)
-            child_configs.append(
-                {**params, "sys_probs": group.sys_probs if not has_lmdb else None}
             )
-        datasets.append(
-            children[0]
-            if len(children) == 1
-            else GroupedDataset(
-                children,
-                child_configs,
-                [None] * len(children),
-                uniform=group.auto_prob == "prob_uniform",
-            )
+        return (
+            datasets[0]
+            if len(datasets) == 1
+            else GroupedDataset(datasets, configs, [group.prob for group in groups])
         )
-    return (
-        datasets[0]
-        if len(datasets) == 1
-        else GroupedDataset(datasets, configs, [group.prob for group in groups])
-    )
+    except BaseException:
+        close_data_systems(acquired)
+        raise
 
 
 def create_dataloader(

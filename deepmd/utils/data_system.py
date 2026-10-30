@@ -8,6 +8,9 @@ from collections.abc import (
 from functools import (
     cached_property,
 )
+from pathlib import (
+    Path,
+)
 from types import (
     SimpleNamespace,
 )
@@ -16,6 +19,9 @@ from typing import (
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
@@ -31,13 +37,18 @@ from deepmd.utils.data import (
 from deepmd.utils.data_config import (
     DataConfig,
     check_type_map_consistency,
+    data_group_configs,
     resolve_data_groups,
     resolve_data_sources,
 )
+from deepmd.utils.data_conversion import (
+    conversion_will_write_lmdb as conversion_will_write_lmdb,
+)
 from deepmd.utils.data_path import (
+    DatasetFormat,
     is_lmdb,
 )
-from deepmd.utils.data_path import process_systems as process_systems
+from deepmd.utils.data_path import process_systems as discover_systems
 from deepmd.utils.data_sampling import (
     data_child_seeds,
 )
@@ -802,6 +813,431 @@ class DeepmdDataSystem:
         return ts
 
 
+class LmdbDataSystem:
+    """A DeepmdDataSystem-compatible adapter for LMDB datasets.
+
+    The adapter returns raw DeePMD-style numpy batches (``type``,
+    ``natoms_vec``, ``default_mesh``) so it can be consumed by the legacy
+    TensorFlow/JAX training paths. Consumers that need the dpmodel canonical
+    format can still call ``normalize_batch`` on its output.
+    """
+
+    def __init__(
+        self,
+        lmdb_path: str,
+        type_map: list[str],
+        batch_size: int | str | list[int | str] = "auto",
+        auto_prob_style: str | None = None,
+        seed: int | None = None,
+    ) -> None:
+        # Keep the framework-agnostic LMDB implementation lazy so importing a
+        # legacy backend cannot create a data_system <-> dpmodel import cycle.
+        from deepmd.dpmodel.utils.lmdb_data import (
+            LmdbBatchIterator,
+            LmdbBatchSampler,
+            LmdbDataReader,
+            LmdbTestData,
+            compute_block_targets,
+        )
+
+        if not type_map:
+            raise ValueError(
+                "LMDB datasets require a non-empty model/type_map because "
+                "LMDB stores atom type indices and the training data adapter "
+                "must map them to element names."
+            )
+
+        self.lmdb_path = lmdb_path
+        self._type_map = list(type_map)
+        self._closed = False
+        self._data_dict = {
+            "box": DataRequirementItem(
+                "box",
+                9,
+                atomic=False,
+                must=False,
+                default=np.zeros(9, dtype=GLOBAL_NP_FLOAT_PRECISION),
+            ).dict,
+            "coord": {
+                "ndof": 3,
+                "atomic": True,
+                "must": True,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 0.0,
+                "dtype": None,
+                "output_natoms_for_type_sel": False,
+            },
+            "numb_copy": {
+                "ndof": 1,
+                "atomic": False,
+                "must": False,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 1,
+                "dtype": int,
+                "output_natoms_for_type_sel": False,
+            },
+        }
+
+        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
+        # Box availability is part of stack compatibility. Register it before
+        # any grouping so periodic and non-periodic frames never share the
+        # scalar ``find_box`` flag of one legacy batch.
+        box_requirement = DataRequirementItem(
+            "box",
+            9,
+            atomic=False,
+            must=False,
+            default=np.zeros(9, dtype=GLOBAL_NP_FLOAT_PRECISION),
+        )
+        self._reader.add_data_requirement([box_requirement])
+        self._test_data = LmdbTestData(
+            lmdb_path,
+            type_map=type_map,
+            shuffle_test=False,
+        )
+        self._test_data.add_data_requirement([box_requirement])
+        # LMDB is defined as mixed-type by its reader contract; determining
+        # this must not scan every frame during data-system initialization.
+        self.mixed_type = self._reader.mixed_type
+        self.nsystems = 1
+        self.natoms = [
+            int(self._reader.frame_nlocs.max()) if len(self._reader.frame_nlocs) else 0
+        ]
+        self.batch_size = [self._reader.batch_size]
+        self.sys_probs = [1.0]
+
+        block_targets = None
+        if auto_prob_style is not None and self._reader.frame_system_ids is not None:
+            block_targets = compute_block_targets(
+                auto_prob_style,
+                self._reader.nsystems,
+                self._reader.system_nframes,
+            )
+        self._sampler = LmdbBatchSampler(
+            self._reader,
+            shuffle=True,
+            seed=seed,
+            block_targets=block_targets,
+        )
+        self.nbatches = [self._sampler.total_batches]
+        self._batch_iterator = LmdbBatchIterator(self._reader, self._sampler, 0)
+        self._refresh_groups()
+
+    def _refresh_groups(self) -> None:
+        """Refresh bounded statistics chunks and full-validation views."""
+        from deepmd.dpmodel.utils.lmdb_data import (
+            LmdbTestDataNlocView,
+            collect_lmdb_sampling_groups,
+        )
+
+        groups = collect_lmdb_sampling_groups(self._reader)
+        self._stat_groups = groups
+        self._stat_offsets = [0] * len(groups)
+
+        # Neighbor statistics are a bounded sample, matching the dedicated
+        # LMDB path. Chunks additionally cap decoded atoms so one large-nloc
+        # group cannot create a large transient Python/NumPy allocation.
+        selected = np.zeros(len(self._reader), dtype=bool)
+        max_frames = min(len(self._reader), 2000)
+        if max_frames:
+            rng = np.random.RandomState(42)
+            chosen = (
+                rng.choice(len(self._reader), max_frames, replace=False)
+                if max_frames < len(self._reader)
+                else np.arange(len(self._reader), dtype=np.int64)
+            )
+            selected[np.asarray(chosen, dtype=np.int64)] = True
+
+        self._nloc_set_indices: dict[str, np.ndarray] = {}
+        data_systems = []
+        system_dirs: list[str] = []
+        any_pbc = False
+        for group_idx, (nloc, indices) in enumerate(groups):
+            group_label = f"{self.lmdb_path}#group={group_idx}:nloc={nloc}"
+            original_indices = self._reader.original_keys_array(indices)
+            frame = self._reader.peek_frame(int(indices[0]))
+            group_pbc = bool(float(frame.get("find_box", 0.0)) > 0.5)
+            any_pbc = any_pbc or group_pbc
+
+            stat_groups: dict[str, np.ndarray] = {}
+            sampled_indices = np.asarray(indices)[selected[np.asarray(indices)]]
+            chunk_size = max(1, min(128, 20000 // max(int(nloc), 1)))
+            for chunk_idx, start in enumerate(
+                range(0, len(sampled_indices), chunk_size)
+            ):
+                chunk = sampled_indices[start : start + chunk_size]
+                set_name = f"{group_label}:chunk={chunk_idx}"
+                self._nloc_set_indices[set_name] = np.asarray(chunk, dtype=np.int64)
+                stat_groups[set_name] = self._reader.original_keys_array(chunk)
+
+            data_systems.append(
+                LmdbTestDataNlocView(
+                    self._test_data,
+                    int(nloc),
+                    original_indices,
+                    pbc=group_pbc,
+                    stat_groups=stat_groups,
+                )
+            )
+            system_dirs.append(group_label)
+
+        # These views do not point back to this adapter, avoiding the
+        # ``data_systems=[self]`` reference cycle while satisfying both the
+        # neighbor-stat and JAX/TF2 full-validation contracts.
+        self.data_systems = data_systems
+        self.system_dirs = system_dirs
+        self.dirs = list(self._nloc_set_indices)
+        self.pbc = any_pbc
+
+    def add_data_requirements(
+        self, data_requirements: list[DataRequirementItem]
+    ) -> None:
+        """Add label/auxiliary data requirements."""
+        self._reader.add_data_requirement(data_requirements)
+        self._test_data.add_data_requirement(data_requirements)
+        for item in data_requirements:
+            self._data_dict[item.key] = item.dict
+        self._refresh_groups()
+        self.nbatches = [self._sampler.total_batches]
+        self._batch_iterator.close()
+        self._batch_iterator = type(self._batch_iterator)(
+            self._reader, self._sampler, 0
+        )
+
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
+        """Alias used by DataLoader-style backends."""
+        self.add_data_requirements(data_requirement)
+
+    def add(
+        self,
+        key: str,
+        ndof: int,
+        atomic: bool = False,
+        must: bool = False,
+        high_prec: bool = False,
+        type_sel: list[int] | None = None,
+        repeat: int = 1,
+        default: float = 0.0,
+        dtype: np.dtype | None = None,
+        output_natoms_for_type_sel: bool = False,
+    ) -> None:
+        item = DataRequirementItem(
+            key,
+            ndof,
+            atomic=atomic,
+            must=must,
+            high_prec=high_prec,
+            type_sel=type_sel,
+            repeat=repeat,
+            default=default,
+            dtype=dtype,
+            output_natoms_for_type_sel=output_natoms_for_type_sel,
+        )
+        self.add_data_requirements([item])
+
+    def get_data_dict(self, ii: int = 0) -> dict[str, dict[str, Any]]:
+        del ii
+        return self._data_dict
+
+    def _load_set(self, set_name: str) -> dict[str, Any]:
+        """Load one bounded same-nloc chunk for legacy neighbor statistics."""
+        indices = self._nloc_set_indices[str(set_name)]
+        return self._legacy_batch(self._reader.decode_batch(indices, ragged=False))
+
+    def _legacy_batch(self, batch: dict[str, Any]) -> dict[str, Any]:
+        """Translate a canonical LMDB batch to the legacy data-system shape."""
+        coord = np.asarray(batch["coord"])
+        nframes = coord.shape[0]
+        out: dict[str, Any] = {}
+        structural_keys = {"coord", "box"}
+        for key, value in batch.items():
+            if key in {
+                "atype",
+                "natoms",
+                "real_natoms_vec",
+                "fid",
+                "sid",
+                "n_node",
+            }:
+                continue
+            if key.startswith("find_") and key[5:] not in self._data_dict:
+                continue
+            if (
+                not key.startswith("find_")
+                and key not in structural_keys
+                and key not in self._data_dict
+            ):
+                continue
+            if value is None:
+                out[key] = None
+                continue
+            array = np.asarray(value)
+            data_info = self._data_dict.get(key)
+            if key == "coord" or (
+                data_info is not None and data_info["atomic"] and array.ndim >= 3
+            ):
+                array = array.reshape(nframes, -1)
+            out[key] = array
+
+        atype = np.asarray(batch["atype"], dtype=np.int32)
+        real_natoms_vec = np.asarray(
+            batch.get("real_natoms_vec", batch["natoms"]), dtype=np.int32
+        )
+        if real_natoms_vec.ndim == 1:
+            real_natoms_vec = np.tile(real_natoms_vec, (nframes, 1))
+        pad_nloc = int(atype.shape[1])
+        # Legacy mixed-type consumers require the per-type slots to sum to
+        # nloc. Composition is frame-specific and lives in real_natoms_vec;
+        # independent type maxima can exceed the size of every actual frame.
+        natoms_vec = np.zeros(2 + len(self._type_map), dtype=np.int32)
+        natoms_vec[:3] = pad_nloc
+
+        out["type"] = atype
+        out["natoms_vec"] = natoms_vec
+        out["real_natoms_vec"] = real_natoms_vec
+        if "box" not in out or out["box"] is None:
+            out["box"] = np.zeros((nframes, 9), dtype=GLOBAL_NP_FLOAT_PRECISION)
+            out["find_box"] = np.float32(0.0)
+        elif "find_box" not in out:
+            out["find_box"] = np.float32(0.0 if np.allclose(out["box"], 0.0) else 1.0)
+        out.setdefault("find_coord", np.float32(1.0))
+        if "numb_copy" not in out:
+            out["numb_copy"] = np.ones((nframes, 1), dtype=np.int64)
+            out["find_numb_copy"] = np.float32(0.0)
+        out["default_mesh"] = np.asarray(
+            make_default_mesh(bool(float(out["find_box"]) > 0.5), self.mixed_type),
+            dtype=np.int32,
+        )
+        return out
+
+    def _stack_frames(self, frames: list[dict[str, Any]]) -> dict[str, Any]:
+        """Collate already-decoded frames with the reader's flag semantics."""
+        if not frames:
+            raise ValueError("Cannot stack an empty LMDB frame batch.")
+        from deepmd.dpmodel.utils.lmdb_data import (
+            collate_lmdb_frames,
+            resolve_per_atom_keys,
+        )
+
+        per_atom_keys = resolve_per_atom_keys(frames[0], self._reader.decode_config)
+        return self._legacy_batch(collate_lmdb_frames(frames, per_atom_keys))
+
+    def get_batch(self, sys_idx: int | None = None) -> dict[str, Any]:
+        del sys_idx
+        return self._legacy_batch(next(self._batch_iterator))
+
+    @property
+    def uniform_sampling_mass(self) -> float:
+        """Weight the queued legacy batch using the shared frame-share rule."""
+        return self._batch_iterator.uniform_sampling_mass
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        """Return the source's mean systems-per-frame weight for a pass."""
+        return self._batch_iterator.uniform_nominal_mass
+
+    def get_batch_pass_length(self) -> int:
+        """Expose the shared iterator's pass length to grouped data sources."""
+        return self._batch_iterator.batch_pass_length
+
+    def state_dict(self) -> dict[str, Any]:
+        """Save training progress independently of statistical reads."""
+        return self._batch_iterator.state_dict()
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore the next training batch without eager decoding."""
+        self._batch_iterator.load_state_dict(state)
+
+    def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
+        """Return one bounded batch from a homogeneous statistical group."""
+        if not 0 <= sys_idx < len(self._stat_groups):
+            raise IndexError(f"Statistical system index {sys_idx} is out of range")
+        nloc, indices = self._stat_groups[sys_idx]
+        batch_size = self._get_stat_batch_size(nloc)
+        start = self._stat_offsets[sys_idx]
+        if start >= len(indices):
+            start = 0
+        stop = min(start + batch_size, len(indices))
+        self._stat_offsets[sys_idx] = stop
+        return self._legacy_batch(
+            self._reader.decode_batch(indices[start:stop], ragged=False)
+        )
+
+    def get_stat_nsystems(self) -> int:
+        """Return the number of stack-compatible statistical groups."""
+        return len(self._stat_groups)
+
+    def _get_stat_batch_size(self, nloc: int) -> int:
+        """Cap model-stat decoding by both frames and decoded atom rows."""
+        configured = self._reader.get_batch_size_for_nloc(nloc)
+        return max(1, min(configured, 128, 20000 // max(int(nloc), 1)))
+
+    def get_stat_numb_batches(self, sys_idx: int) -> int:
+        """Return the finite batch count of one statistical group."""
+        if not 0 <= sys_idx < len(self._stat_groups):
+            raise IndexError(f"Statistical system index {sys_idx} is out of range")
+        nloc, indices = self._stat_groups[sys_idx]
+        batch_size = self._get_stat_batch_size(nloc)
+        return (len(indices) + batch_size - 1) // batch_size
+
+    def get_model_sampling_size(self) -> int:
+        """Count retained frames for automatic multi-task sampling weights."""
+        return len(self._reader)
+
+    def get_nsystems(self) -> int:
+        return self.nsystems
+
+    def get_natoms(self) -> int:
+        return self.natoms[0]
+
+    def get_ntypes(self) -> int:
+        return len(self._type_map)
+
+    def get_type_map(self) -> list[str]:
+        return self._type_map
+
+    @property
+    def type_map(self) -> list[str]:
+        """Model-side atom names exposed by the legacy data-system API."""
+        return self._type_map
+
+    def get_batch_size(self) -> list[int]:
+        return self.batch_size
+
+    def print_summary(self, name: str, prob: Any | None = None) -> None:
+        del prob
+        self._reader.print_summary(name, self.sys_probs)
+
+    def close(self) -> None:
+        """Release LMDB readers idempotently."""
+        if getattr(self, "_closed", True):
+            return
+        self.data_systems = []
+        iterator = getattr(self, "_batch_iterator", None)
+        if iterator is not None:
+            iterator.close()
+        test_data = getattr(self, "_test_data", None)
+        if test_data is not None:
+            test_data.close()
+        reader = getattr(self, "_reader", None)
+        if reader is not None:
+            reader.close()
+        self._closed = True
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        self.close()
+
+
 def _format_name_length(name: str, width: int) -> str:
     if len(name) <= width:
         return "{: >{}}".format(name, width)
@@ -903,6 +1339,116 @@ def print_summary(
     )
 
 
+def validate_backend_data_config(
+    data_config: DataConfig,
+    *,
+    backend_name: str,
+    lmdb_supported: bool,
+) -> None:
+    """Reject unsupported converted output before dpdata performs any I/O."""
+    if not lmdb_supported and any(
+        conversion_will_write_lmdb(group) for group in data_group_configs(data_config)
+    ):
+        raise NotImplementedError(
+            f"{backend_name} backend does not support LMDB data yet. "
+            "Choose out_format='deepmd/hdf5' for automatic conversion."
+        )
+
+
+def validate_lmdb_sampling_options(
+    data_config: dict[str, Any], *, modifier: Any | None = None
+) -> None:
+    """Reject options that cannot be represented by one LMDB route."""
+    if modifier is not None:
+        raise ValueError(
+            "LMDB data does not support data modifiers. "
+            "Choose out_format='deepmd/hdf5' for automatic conversion."
+        )
+    if data_config.get("sys_probs") is not None:
+        raise ValueError(
+            "LMDB data does not support explicit sys_probs yet. Use auto_prob "
+            "('prob_sys_size', 'prob_uniform', or block weights) so sampling "
+            "can be derived from LMDB frame_system_ids."
+        )
+
+
+def close_data_systems(*values: Any) -> None:
+    """Close nested data-system mappings/sequences, ignoring shared objects."""
+    seen: set[int] = set()
+
+    def close_one(value: Any) -> None:
+        if value is None or id(value) in seen:
+            return
+        seen.add(id(value))
+        if isinstance(value, dict):
+            for child in value.values():
+                close_one(child)
+            return
+        if isinstance(value, (list, tuple)):
+            for child in value:
+                close_one(child)
+            return
+        close = getattr(value, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                log.warning(
+                    "Failed to close data system %r during cleanup",
+                    value,
+                    exc_info=True,
+                )
+
+    for value in values:
+        close_one(value)
+
+
+def process_systems(
+    systems: str | list[str],
+    patterns: list[str] | None = None,
+    fmt: str | None = None,
+    out_fmt: str | None = None,
+    *,
+    formats: tuple[DatasetFormat, ...] = ("deepmd", "lmdb"),
+    root_dir: str | Path | None = None,
+) -> list[str]:
+    """Process the user-input systems.
+
+    If it is a single directory, search for all the systems in the directory.
+    If it is a list, each item in the list is treated as a directory to search.
+    If it is a single LMDB path, return it directly without expansion.
+    If fmt is specified and is not a DeePMD data format, each input path is
+    converted by dpdata and the converted systems are returned.
+    Check if the systems are valid.
+
+    Parameters
+    ----------
+    systems : str or list of str
+        The user-input systems
+    patterns : list of str, optional
+        The patterns to match the systems, by default None
+    fmt : str, optional
+        The dpdata input format. If None, no conversion is performed.
+    out_fmt : str, optional
+        The dpdata output format. If None, ``deepmd/lmdb`` is used when fmt
+        triggers conversion.
+
+    Returns
+    -------
+    result_systems: list of str
+        The valid systems
+    """
+    # Preserve this legacy signature while sharing routing with all backends.
+    return discover_systems(
+        systems,
+        patterns,
+        formats=formats,
+        root_dir=root_dir,
+        fmt=fmt,
+        out_fmt=out_fmt,
+    )
+
+
 def get_data(
     jdata: DataConfig,
     rcut: float,
@@ -912,6 +1458,7 @@ def get_data(
     *,
     lmdb_factory: Callable[[str, int | str, str | None], Any] | None = None,
     seed: int | None = None,
+    lmdb_supported: bool = True,
 ) -> Any:
     """Build native data readers and compose independently configured groups.
 
@@ -929,8 +1476,8 @@ def get_data(
         If in multi task mode
     lmdb_factory
         Optional backend adapter accepting an LMDB path, batch size, and
-        internal auto-probability rule. Without it, only NPY/HDF5 sources
-        are discovered.
+        internal auto-probability rule. Defaults to the legacy LMDB adapter
+        used by TensorFlow/JAX; NPY/HDF5 sources retain their native reader.
     seed
         Seed for group selection. If omitted, draws from the shared training
         random generator seed the group-selection streams.
@@ -945,6 +1492,31 @@ def get_data(
         GroupedDataSystem,
     )
 
+    configs = data_group_configs(jdata)
+    for config in configs:
+        validate_backend_data_config(
+            config, backend_name="Selected", lmdb_supported=lmdb_supported
+        )
+        if conversion_will_write_lmdb(config):
+            validate_lmdb_sampling_options(config, modifier=modifier)
+            if not type_map:
+                raise ValueError(
+                    "LMDB training data requires model/type_map to be set."
+                )
+
+    if lmdb_factory is None and lmdb_supported:
+
+        def lmdb_factory(
+            path: str, batch_size: int | str, auto_prob: str | None
+        ) -> LmdbDataSystem:
+            return LmdbDataSystem(
+                path,
+                type_map,
+                batch_size,
+                auto_prob_style=auto_prob,
+                seed=seed if seed is not None else int(dp_random.choice(2**32)),
+            )
+
     groups = resolve_data_groups(
         jdata, formats=("deepmd", "lmdb") if lmdb_factory is not None else ("deepmd",)
     )
@@ -956,65 +1528,84 @@ def get_data(
         iter(data_child_seeds(seed, len(groups) + 1)) if needs_composition else iter(())
     )
     group_sources = []
-    for group in groups:
-        sources = resolve_data_sources(group)
-        has_lmdb = any(source.format == "lmdb" for source in sources)
-        children = []
-        for source in sources:
-            if source.format == "deepmd":
-                child = DeepmdDataSystem(
-                    systems=list(source.systems),
-                    batch_size=source.batch_size,
-                    test_size=1,
-                    shuffle_test=True,
-                    rcut=rcut,
-                    type_map=type_map,
-                    optional_type_map=not multi_task_mode,
-                    modifier=modifier,
-                    trn_all_set=True,
-                    sys_probs=group.sys_probs if not has_lmdb else None,
-                    auto_prob_style=group.auto_prob or "prob_sys_size",
+    try:
+        for group in groups:
+            sources = resolve_data_sources(group)
+            has_lmdb = any(source.format == "lmdb" for source in sources)
+            if has_lmdb:
+                validate_lmdb_sampling_options(
+                    {"sys_probs": group.sys_probs}, modifier=modifier
                 )
-            else:
-                assert lmdb_factory is not None
-                child = lmdb_factory(
-                    source.systems[0], source.batch_size, group.auto_prob
-                )
-            children.append(child)
-        group_sources.append(children)
+            children = []
+            group_sources.append(children)
+            for source in sources:
+                if source.format == "deepmd":
+                    child = DeepmdDataSystem(
+                        systems=list(source.systems),
+                        batch_size=source.batch_size,
+                        test_size=1,
+                        shuffle_test=True,
+                        rcut=rcut,
+                        type_map=type_map,
+                        optional_type_map=not multi_task_mode,
+                        modifier=modifier,
+                        trn_all_set=True,
+                        sys_probs=group.sys_probs if not has_lmdb else None,
+                        auto_prob_style=group.auto_prob or "prob_sys_size",
+                    )
+                else:
+                    assert lmdb_factory is not None
+                    child = lmdb_factory(
+                        source.systems[0], source.batch_size, group.auto_prob
+                    )
+                children.append(child)
 
-    sources = [source for children in group_sources for source in children]
-    numpy_sources = [
-        source for source in sources if isinstance(source, DeepmdDataSystem)
-    ]
-    if len({source.mixed_type for source in numpy_sources}) > 1:
-        raise ValueError("All NumPy data systems must agree on mixed_type.")
-    ntypes = max(source.get_ntypes() for source in sources)
-    for source in numpy_sources:
-        source.sys_ntypes = ntypes
-        source.natoms_vec = [
-            system.get_natoms_vec(ntypes).astype(int) for system in source.data_systems
+        sources = [source for children in group_sources for source in children]
+        numpy_sources = [
+            source for source in sources if isinstance(source, DeepmdDataSystem)
         ]
-    datasets = [
-        (
-            children[0]
-            if len(children) == 1
+        # All legacy statistics consumers expect the same keys from every
+        # child, including real_natoms_vec for mixed-type data. LMDB children
+        # must participate in this check as well as NumPy/HDF5 children.
+        legacy_sources = [
+            source
+            for source in sources
+            if isinstance(source, (DeepmdDataSystem, LmdbDataSystem))
+        ]
+        if len({source.mixed_type for source in legacy_sources}) > 1:
+            raise ValueError("All data systems must agree on mixed_type.")
+        ntypes = max(source.get_ntypes() for source in sources)
+        for source in numpy_sources:
+            source.sys_ntypes = ntypes
+            source.natoms_vec = [
+                system.get_natoms_vec(ntypes).astype(int)
+                for system in source.data_systems
+            ]
+        datasets = [
+            (
+                children[0]
+                if len(children) == 1
+                else GroupedDataSystem(
+                    children,
+                    [None] * len(children),
+                    seed=next(seeds),
+                    uniform=group.auto_prob == "prob_uniform",
+                )
+            )
+            for group, children in zip(groups, group_sources, strict=True)
+        ]
+        return (
+            datasets[0]
+            if len(datasets) == 1
             else GroupedDataSystem(
-                children,
-                [None] * len(children),
-                seed=next(seeds),
-                uniform=group.auto_prob == "prob_uniform",
+                datasets, [group.prob for group in groups], seed=next(seeds)
             )
         )
-        for group, children in zip(groups, group_sources, strict=True)
-    ]
-    return (
-        datasets[0]
-        if len(datasets) == 1
-        else GroupedDataSystem(
-            datasets, [group.prob for group in groups], seed=next(seeds)
-        )
-    )
+    except BaseException:
+        # Ownership transfers only after the complete hierarchy is usable.
+        # A later source or metadata mismatch must release earlier LMDB maps.
+        close_data_systems(group_sources)
+        raise
 
 
 def get_neighbor_stat_data(jdata: DataConfig, type_map: list[str] | None) -> Any:

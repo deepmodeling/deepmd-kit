@@ -155,6 +155,21 @@ This frame-share definition intentionally changes older NPY/HDF5 `prob_uniform` 
 
 `validation_data` remains a dictionary. Its `systems` accepts the same recursive paths and multiple-LMDB inputs on supported backends; `numb_btch` continues to apply to the whole validation dataset.
 
+### Automatic format conversion
+
+Set `format` on a training or validation data group to a dpdata format such as
+`extxyz`, `abacus/scf`, or `ase/traj`. Each selected input path is converted and
+cached separately; `out_format` defaults to `deepmd/lmdb`. LMDB requires an
+explicit model `type_map`. Paddle, data modifiers, and explicit `sys_probs`
+require another output format such as `deepmd/hdf5`.
+
+Automatic conversion loads each input path eagerly through dpdata. Its supported
+scale is limited to inputs whose parsed arrays **and intermediate copies fit in
+available RAM**; it is not a streaming converter. For large trajectories, split
+inputs into separate paths or convert them offline before training. Multiple
+converted paths use the same data-group sampling rules described above, including
+the current frame-share definition of `prob_uniform`.
+
 ### Mixed precision
 
 The section {ref}`mixed_precision <training/mixed_precision>` specifies the mixed precision settings, which will enable the mixed precision training workflow for DeePMD-kit. The keys are explained below:

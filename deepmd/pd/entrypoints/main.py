@@ -75,6 +75,7 @@ from deepmd.utils.data_path import (
 )
 from deepmd.utils.data_system import (
     get_data,
+    validate_backend_data_config,
 )
 from deepmd.utils.model_preset import (
     expand_model_preset,
@@ -294,6 +295,18 @@ def train(
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
     config = normalize(config, multi_task=multi_task)
 
+    # Validate every task and validation source before neighbor-stat loading
+    # can run the converter. Paddle has no LMDB reader.
+    task_data = (
+        config["training"]["data_dict"].values() if multi_task else [config["training"]]
+    )
+    for data_config in task_data:
+        for key in ("training_data", "validation_data"):
+            if data_config.get(key) is not None:
+                validate_backend_data_config(
+                    data_config[key], backend_name="Paddle", lmdb_supported=False
+                )
+
     # do neighbor stat
     min_nbor_dist = None
     if not skip_neighbor_stat:
@@ -304,7 +317,11 @@ def train(
         if not multi_task:
             type_map = config["model"].get("type_map")
             train_data = get_data(
-                config["training"]["training_data"], 0, type_map, None
+                config["training"]["training_data"],
+                0,
+                type_map,
+                None,
+                lmdb_supported=False,
             )
             config["model"], min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, config["model"]
@@ -318,6 +335,7 @@ def train(
                     0,
                     type_map,
                     None,
+                    lmdb_supported=False,
                 )
                 config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
                     BaseModel.update_sel(
