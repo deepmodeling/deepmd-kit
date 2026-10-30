@@ -395,6 +395,9 @@ class MultiTaskTrainTest:
                         f"case_embd should NOT be shared: {state_key}",
                     )
 
+        if self.descriptor.get("type") == "dpa3":
+            self._assert_frozen_heads()
+
     def test_multitask_finetune(self) -> None:
         """Train, then finetune with 4 branches from pretrained 2-branch model.
 
@@ -704,6 +707,200 @@ class MultiTaskTrainTest:
         # Run 1 step to verify no crash
         trainer_ft.run()
 
+    def test_multitask_finetune_no_change_model_params(self) -> None:
+        """Test change_model_params=False preserves user config in multi-task finetune.
+
+        Contrasts with change_model_params=True which overwrites descriptor/fitting
+        from pretrained (preserving trainable flags).
+        """
+        from deepmd.pt_expt.utils.finetune import (
+            get_finetune_rules,
+        )
+
+        # Phase 1: train 2-branch multi-task model (2 steps)
+        config_pretrain = _make_multitask_config(
+            self.descriptor, share_fitting=self.share_fitting, numb_steps=2
+        )
+        config_pretrain["training"]["save_freq"] = 2
+        config_pretrain["model"], shared_links_pre = preprocess_shared_params(
+            config_pretrain["model"]
+        )
+        config_pretrain = update_deepmd_input(config_pretrain, warning=False)
+        config_pretrain = normalize(config_pretrain, multi_task=True)
+        trainer = get_trainer(config_pretrain, shared_links=shared_links_pre)
+        trainer.run()
+
+        ckpt_path = os.path.join(os.getcwd(), "model.ckpt.pt")
+        self.assertTrue(os.path.exists(ckpt_path), "Pretrained checkpoint not created")
+
+        # Phase 2: build finetune config with marker in descriptor
+        ft_config = _make_multitask_config(
+            self.descriptor, share_fitting=self.share_fitting
+        )
+        # model_1: no finetune_head → resume (model_1 in pretrained_keys)
+        # model_2: finetune_head="model_2" → finetune
+        ft_config["model"]["model_dict"]["model_2"]["finetune_head"] = "model_2"
+        ft_config["training"]["numb_steps"] = 1
+        ft_config["training"]["save_freq"] = 1
+
+        # Add markers to descriptor in each branch (before preprocess_shared_params
+        # resolves shared_dict references)
+        ft_config["model"]["shared_dict"]["my_descriptor"]["_test_marker"] = True
+
+        # Phase 3: test change_model_params=False
+        ft_config_false = deepcopy(ft_config)
+        ft_config_false["model"], _ = preprocess_shared_params(ft_config_false["model"])
+        model_config_false, finetune_links_false = get_finetune_rules(
+            ckpt_path, deepcopy(ft_config_false["model"]), change_model_params=False
+        )
+
+        # User config preserved: marker still present
+        self.assertTrue(
+            model_config_false["model_dict"]["model_1"]["descriptor"].get(
+                "_test_marker", False
+            ),
+            "model_1 descriptor should preserve _test_marker with change_model_params=False",
+        )
+        self.assertTrue(
+            model_config_false["model_dict"]["model_2"]["descriptor"].get(
+                "_test_marker", False
+            ),
+            "model_2 descriptor should preserve _test_marker with change_model_params=False",
+        )
+        # FinetuneRuleItem has correct type_map
+        for mk in ("model_1", "model_2"):
+            self.assertEqual(
+                finetune_links_false[mk].get_finetune_tmap(),
+                ["O", "H"],
+                f"{mk} finetune tmap should be ['O','H']",
+            )
+        # model_1 is resuming, model_2 is not
+        self.assertTrue(
+            finetune_links_false["model_1"].resuming,
+            "model_1 should be resuming (no finetune_head, name in pretrained_keys)",
+        )
+        self.assertFalse(
+            finetune_links_false["model_2"].resuming,
+            "model_2 should not be resuming (has finetune_head)",
+        )
+
+        # Phase 4: test change_model_params=True (contrast)
+        ft_config_true = deepcopy(ft_config)
+        # Also set trainable=False to verify it's preserved
+        ft_config_true["model"]["shared_dict"]["my_descriptor"]["trainable"] = False
+        ft_config_true["model"], _ = preprocess_shared_params(ft_config_true["model"])
+        model_config_true, _finetune_links_true = get_finetune_rules(
+            ckpt_path, deepcopy(ft_config_true["model"]), change_model_params=True
+        )
+
+        # Marker overwritten from pretrained
+        self.assertFalse(
+            model_config_true["model_dict"]["model_1"]["descriptor"].get(
+                "_test_marker", False
+            ),
+            "model_1 descriptor should NOT have _test_marker with change_model_params=True",
+        )
+        self.assertFalse(
+            model_config_true["model_dict"]["model_2"]["descriptor"].get(
+                "_test_marker", False
+            ),
+            "model_2 descriptor should NOT have _test_marker with change_model_params=True",
+        )
+        # trainable=False should be preserved
+        self.assertFalse(
+            model_config_true["model_dict"]["model_1"]["descriptor"].get(
+                "trainable", True
+            ),
+            "model_1 descriptor trainable should be preserved as False",
+        )
+        self.assertFalse(
+            model_config_true["model_dict"]["model_2"]["descriptor"].get(
+                "trainable", True
+            ),
+            "model_2 descriptor trainable should be preserved as False",
+        )
+
+        # Phase 5: build trainer with change_model_params=False → run 1 step
+        ft_config_run = deepcopy(ft_config)
+        ft_config_run["model"], shared_links_ft = preprocess_shared_params(
+            ft_config_run["model"]
+        )
+        ft_config_run["model"], finetune_links_run = get_finetune_rules(
+            ckpt_path, ft_config_run["model"], change_model_params=False
+        )
+        ft_config_run = update_deepmd_input(ft_config_run, warning=False)
+        ft_config_run = normalize(ft_config_run, multi_task=True)
+        trainer_ft = get_trainer(
+            deepcopy(ft_config_run),
+            finetune_model=ckpt_path,
+            shared_links=shared_links_ft,
+            finetune_links=finetune_links_run,
+        )
+        trainer_ft.run()
+
+    def test_multitask_restart(self) -> None:
+        """Train, then restart from checkpoint and verify."""
+        # Phase 1: train
+        config1 = deepcopy(self.config)
+        config1["training"]["numb_steps"] = 2
+        config1["training"]["save_freq"] = 2
+        trainer1 = get_trainer(config1, shared_links=self.shared_links)
+        trainer1.run()
+
+        ckpt_path = "model.ckpt.pt"
+        self.assertTrue(os.path.exists(ckpt_path), "Checkpoint not created")
+
+        # Phase 2: restart to step 4
+        config2 = deepcopy(self.config)
+        config2["training"]["numb_steps"] = 4
+        config2["training"]["save_freq"] = 4
+        trainer2 = get_trainer(
+            config2,
+            restart_model=ckpt_path,
+            shared_links=self.shared_links,
+        )
+        self.assertEqual(trainer2.start_step, 2)
+        trainer2.run()
+
+    def _assert_frozen_heads(self) -> None:
+        """Export a trained head and reject missing or invalid head selections."""
+        from deepmd.pt_expt.entrypoints.main import (
+            freeze,
+        )
+        from deepmd.pt_expt.model import (
+            BaseModel,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        checkpoint = "model.ckpt.pt"
+        output = "frozen_model_1.pte"
+        freeze(model=checkpoint, output=output, head="model_1")
+        self.assertTrue(os.path.exists(output), "Frozen model not created")
+        data = serialize_from_file(output)
+        self.assertIn("model", data)
+        self.assertIsInstance(BaseModel.deserialize(data["model"]), torch.nn.Module)
+        with self.assertRaises(ValueError, msg="Should require --head"):
+            freeze(model=checkpoint, output="frozen.pte", head=None)
+        with self.assertRaises(ValueError, msg="Should reject invalid head"):
+            freeze(model=checkpoint, output="frozen.pte", head="nonexistent")
+
+    def tearDown(self) -> None:
+        for f in os.listdir("."):
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f == "lcurve.out":
+                os.remove(f)
+            if f.endswith(".pte"):
+                os.remove(f)
+        if os.path.isdir("stat_files"):
+            shutil.rmtree("stat_files")
+
+
+class SingleTaskFinetuneTest:
+    """Fine-tune independent task heads from a single-head checkpoint."""
+
     def test_multitask_finetune_from_single_task(self) -> None:
         """Finetune multi-task model from a single-task pretrained .pt checkpoint.
 
@@ -713,11 +910,6 @@ class MultiTaskTrainTest:
         model_1: finetune_head="Default" → copies from single-task pretrained
         model_2: no finetune_head, not in pretrained_keys=["Default"] → RANDOM fitting
         """
-        if self.share_fitting:
-            # Single-task pretrained has no dim_case_embd; incompatible with
-            # shared fitting multi-task target.
-            return
-
         from deepmd.pt_expt.utils.finetune import (
             get_finetune_rules,
         )
@@ -858,136 +1050,9 @@ class MultiTaskTrainTest:
         # Phase 5: run 1 step to verify no crash
         trainer_ft.run()
 
-    def test_multitask_finetune_no_change_model_params(self) -> None:
-        """Test change_model_params=False preserves user config in multi-task finetune.
 
-        Contrasts with change_model_params=True which overwrites descriptor/fitting
-        from pretrained (preserving trainable flags).
-        """
-        from deepmd.pt_expt.utils.finetune import (
-            get_finetune_rules,
-        )
-
-        # Phase 1: train 2-branch multi-task model (2 steps)
-        config_pretrain = _make_multitask_config(
-            self.descriptor, share_fitting=self.share_fitting, numb_steps=2
-        )
-        config_pretrain["training"]["save_freq"] = 2
-        config_pretrain["model"], shared_links_pre = preprocess_shared_params(
-            config_pretrain["model"]
-        )
-        config_pretrain = update_deepmd_input(config_pretrain, warning=False)
-        config_pretrain = normalize(config_pretrain, multi_task=True)
-        trainer = get_trainer(config_pretrain, shared_links=shared_links_pre)
-        trainer.run()
-
-        ckpt_path = os.path.join(os.getcwd(), "model.ckpt.pt")
-        self.assertTrue(os.path.exists(ckpt_path), "Pretrained checkpoint not created")
-
-        # Phase 2: build finetune config with marker in descriptor
-        ft_config = _make_multitask_config(
-            self.descriptor, share_fitting=self.share_fitting
-        )
-        # model_1: no finetune_head → resume (model_1 in pretrained_keys)
-        # model_2: finetune_head="model_2" → finetune
-        ft_config["model"]["model_dict"]["model_2"]["finetune_head"] = "model_2"
-        ft_config["training"]["numb_steps"] = 1
-        ft_config["training"]["save_freq"] = 1
-
-        # Add markers to descriptor in each branch (before preprocess_shared_params
-        # resolves shared_dict references)
-        ft_config["model"]["shared_dict"]["my_descriptor"]["_test_marker"] = True
-
-        # Phase 3: test change_model_params=False
-        ft_config_false = deepcopy(ft_config)
-        ft_config_false["model"], _ = preprocess_shared_params(ft_config_false["model"])
-        model_config_false, finetune_links_false = get_finetune_rules(
-            ckpt_path, deepcopy(ft_config_false["model"]), change_model_params=False
-        )
-
-        # User config preserved: marker still present
-        self.assertTrue(
-            model_config_false["model_dict"]["model_1"]["descriptor"].get(
-                "_test_marker", False
-            ),
-            "model_1 descriptor should preserve _test_marker with change_model_params=False",
-        )
-        self.assertTrue(
-            model_config_false["model_dict"]["model_2"]["descriptor"].get(
-                "_test_marker", False
-            ),
-            "model_2 descriptor should preserve _test_marker with change_model_params=False",
-        )
-        # FinetuneRuleItem has correct type_map
-        for mk in ("model_1", "model_2"):
-            self.assertEqual(
-                finetune_links_false[mk].get_finetune_tmap(),
-                ["O", "H"],
-                f"{mk} finetune tmap should be ['O','H']",
-            )
-        # model_1 is resuming, model_2 is not
-        self.assertTrue(
-            finetune_links_false["model_1"].resuming,
-            "model_1 should be resuming (no finetune_head, name in pretrained_keys)",
-        )
-        self.assertFalse(
-            finetune_links_false["model_2"].resuming,
-            "model_2 should not be resuming (has finetune_head)",
-        )
-
-        # Phase 4: test change_model_params=True (contrast)
-        ft_config_true = deepcopy(ft_config)
-        # Also set trainable=False to verify it's preserved
-        ft_config_true["model"]["shared_dict"]["my_descriptor"]["trainable"] = False
-        ft_config_true["model"], _ = preprocess_shared_params(ft_config_true["model"])
-        model_config_true, _finetune_links_true = get_finetune_rules(
-            ckpt_path, deepcopy(ft_config_true["model"]), change_model_params=True
-        )
-
-        # Marker overwritten from pretrained
-        self.assertFalse(
-            model_config_true["model_dict"]["model_1"]["descriptor"].get(
-                "_test_marker", False
-            ),
-            "model_1 descriptor should NOT have _test_marker with change_model_params=True",
-        )
-        self.assertFalse(
-            model_config_true["model_dict"]["model_2"]["descriptor"].get(
-                "_test_marker", False
-            ),
-            "model_2 descriptor should NOT have _test_marker with change_model_params=True",
-        )
-        # trainable=False should be preserved
-        self.assertFalse(
-            model_config_true["model_dict"]["model_1"]["descriptor"].get(
-                "trainable", True
-            ),
-            "model_1 descriptor trainable should be preserved as False",
-        )
-        self.assertFalse(
-            model_config_true["model_dict"]["model_2"]["descriptor"].get(
-                "trainable", True
-            ),
-            "model_2 descriptor trainable should be preserved as False",
-        )
-
-        # Phase 5: build trainer with change_model_params=False → run 1 step
-        ft_config_run = deepcopy(ft_config)
-        ft_config_run["model"], shared_links_ft = preprocess_shared_params(
-            ft_config_run["model"]
-        )
-        ft_config_run["model"], finetune_links_run = get_finetune_rules(
-            ckpt_path, ft_config_run["model"], change_model_params=False
-        )
-        ft_config_run = update_deepmd_input(ft_config_run, warning=False)
-        ft_config_run = normalize(ft_config_run, multi_task=True)
-        trainer_ft = get_trainer(
-            deepcopy(ft_config_run),
-            finetune_model=ckpt_path,
-            shared_links=shared_links_ft,
-            finetune_links=finetune_links_run,
-        )
-        trainer_ft.run()
+class MixedTypesStatTest:
+    """Preserve and extend descriptor statistics for mixed-type systems."""
 
     def test_change_type_map_stat(self) -> None:
         """Validate change_type_map preserves existing types' stats.
@@ -999,9 +1064,6 @@ class MultiTaskTrainTest:
            new type gets data-computed values (davg=0, dstd=0.1 for zero
            observations via StatItem defaults).
         """
-        if not self.mixed_types:
-            return
-
         old_tmap = ["O", "H"]
         new_tmap = ["O", "H", "B"]
 
@@ -1141,117 +1203,6 @@ class MultiTaskTrainTest:
                         )
                     break
 
-    def test_multitask_restart(self) -> None:
-        """Train, then restart from checkpoint and verify."""
-        # Phase 1: train
-        config1 = deepcopy(self.config)
-        config1["training"]["numb_steps"] = 2
-        config1["training"]["save_freq"] = 2
-        trainer1 = get_trainer(config1, shared_links=self.shared_links)
-        trainer1.run()
-
-        ckpt_path = "model.ckpt.pt"
-        self.assertTrue(os.path.exists(ckpt_path), "Checkpoint not created")
-
-        # Phase 2: restart to step 4
-        config2 = deepcopy(self.config)
-        config2["training"]["numb_steps"] = 4
-        config2["training"]["save_freq"] = 4
-        trainer2 = get_trainer(
-            config2,
-            restart_model=ckpt_path,
-            shared_links=self.shared_links,
-        )
-        self.assertEqual(trainer2.start_step, 2)
-        trainer2.run()
-
-    def test_multitask_freeze(self) -> None:
-        """Train, then freeze with --head and verify.
-
-        Only runs for dpa3 descriptor to avoid redundant slow freeze tests.
-        """
-        if self.descriptor.get("type") != "dpa3":
-            return
-
-        from deepmd.pt_expt.entrypoints.main import (
-            freeze,
-        )
-
-        # Train
-        config = deepcopy(self.config)
-        trainer = get_trainer(config, shared_links=self.shared_links)
-        trainer.run()
-
-        # Freeze head model_1
-        ckpt_path = "model.ckpt.pt"
-        output_path = "frozen_model_1.pte"
-        freeze(model=ckpt_path, output=output_path, head="model_1")
-        self.assertTrue(os.path.exists(output_path), "Frozen model not created")
-
-        # Verify frozen model loads
-        from deepmd.pt_expt.model import (
-            BaseModel,
-        )
-        from deepmd.pt_expt.utils.serialization import (
-            serialize_from_file,
-        )
-
-        data = serialize_from_file(output_path)
-        self.assertIn("model", data)
-        frozen_model = BaseModel.deserialize(data["model"])
-        self.assertIsInstance(frozen_model, torch.nn.Module)
-
-    def test_multitask_freeze_no_head_raises(self) -> None:
-        """Freezing multi-task model without --head raises ValueError.
-
-        Only runs for dpa3 descriptor to avoid redundant slow freeze tests.
-        """
-        if self.descriptor.get("type") != "dpa3":
-            return
-
-        from deepmd.pt_expt.entrypoints.main import (
-            freeze,
-        )
-
-        config = deepcopy(self.config)
-        trainer = get_trainer(config, shared_links=self.shared_links)
-        trainer.run()
-
-        ckpt_path = "model.ckpt.pt"
-        with self.assertRaises(ValueError, msg="Should require --head"):
-            freeze(model=ckpt_path, output="frozen.pte", head=None)
-
-    def test_multitask_freeze_invalid_head_raises(self) -> None:
-        """Freezing multi-task model with invalid --head raises ValueError.
-
-        Only runs for dpa3 descriptor to avoid redundant slow freeze tests.
-        """
-        if self.descriptor.get("type") != "dpa3":
-            return
-
-        from deepmd.pt_expt.entrypoints.main import (
-            freeze,
-        )
-
-        config = deepcopy(self.config)
-        trainer = get_trainer(config, shared_links=self.shared_links)
-        trainer.run()
-
-        ckpt_path = "model.ckpt.pt"
-        with self.assertRaises(ValueError, msg="Should reject invalid head"):
-            freeze(model=ckpt_path, output="frozen.pte", head="nonexistent")
-
-    def tearDown(self) -> None:
-        for f in os.listdir("."):
-            if f.startswith("model") and f.endswith(".pt"):
-                os.remove(f)
-            if f == "lcurve.out":
-                os.remove(f)
-            if f.endswith(".pte"):
-                os.remove(f)
-        if os.path.isdir("stat_files"):
-            shutil.rmtree("stat_files")
-
 
 class TestMultiTaskEpochSchedule(unittest.TestCase):
     """Test the run length and task weights derived from num_epoch_dict."""
@@ -1289,7 +1240,11 @@ class TestMultiTaskEpochSchedule(unittest.TestCase):
         np.testing.assert_allclose(trainer.model_prob, [0.25, 0.75])
 
 
-class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskSeA(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+    SingleTaskFinetuneTest,
+):
     """Multi-task training with se_e2_a descriptor."""
 
     @classmethod
@@ -1315,7 +1270,10 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
-class TestMultiTaskSeAShareFit(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskSeAShareFit(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+):
     """Multi-task training with se_e2_a descriptor and shared fitting_net."""
 
     @classmethod
@@ -1341,7 +1299,12 @@ class TestMultiTaskSeAShareFit(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
-class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskDPA1(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+    SingleTaskFinetuneTest,
+    MixedTypesStatTest,
+):
     """Multi-task training with DPA1 (se_atten) descriptor."""
 
     @classmethod
@@ -1367,7 +1330,11 @@ class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
-class TestMultiTaskDPA1ShareFit(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskDPA1ShareFit(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+    MixedTypesStatTest,
+):
     """Multi-task training with DPA1 descriptor and shared fitting_net."""
 
     @classmethod
@@ -1393,7 +1360,12 @@ class TestMultiTaskDPA1ShareFit(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
-class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskDPA2(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+    SingleTaskFinetuneTest,
+    MixedTypesStatTest,
+):
     """Multi-task training with DPA2 descriptor."""
 
     @classmethod
@@ -1419,7 +1391,11 @@ class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
-class TestMultiTaskDPA2ShareFit(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskDPA2ShareFit(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+    MixedTypesStatTest,
+):
     """Multi-task training with DPA2 descriptor and shared fitting_net."""
 
     @classmethod
@@ -1445,7 +1421,12 @@ class TestMultiTaskDPA2ShareFit(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
-class TestMultiTaskDPA3(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskDPA3(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+    SingleTaskFinetuneTest,
+    MixedTypesStatTest,
+):
     """Multi-task training with DPA3 descriptor."""
 
     @classmethod
@@ -1471,7 +1452,11 @@ class TestMultiTaskDPA3(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
-class TestMultiTaskDPA3ShareFit(unittest.TestCase, MultiTaskTrainTest):
+class TestMultiTaskDPA3ShareFit(
+    unittest.TestCase,
+    MultiTaskTrainTest,
+    MixedTypesStatTest,
+):
     """Multi-task training with DPA3 descriptor and shared fitting_net."""
 
     @classmethod
