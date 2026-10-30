@@ -493,6 +493,53 @@ class TestSeZMModelCompile(unittest.TestCase):
         )
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_eval_compile_pins_is_inference_on_the_inference_slot(self) -> None:
+        """The eval slot must lower through ``compile_fx_inner(is_inference=True)``.
+
+        The existing suite (cache-slot presence, eager parity) holds with the
+        flag set, cleared, or absent; only this call-shape pin notices a
+        refactor that drops the argument and quietly reinstates the
+        peak-memory cost.  ``sezm_model`` imports ``compile_fx_inner`` from
+        its home module at call time, so the spy patches the source module.
+        """
+        coord, atype, box = self._make_frame_with_natoms(7)
+
+        model_dyn = get_sezm_model(self._build_model_params(use_compile=False))
+        self._randomize_params(model_dyn)
+        model_dyn.eval()
+        with mock.patch.dict(
+            os.environ,
+            {
+                "DP_COMPILE_INFER": "1",
+                # A cache hit would skip the lowering this test observes.
+                "TORCHINDUCTOR_FX_GRAPH_CACHE": "0",
+                "TORCHINDUCTOR_AUTOGRAD_CACHE": "0",
+            },
+            clear=False,
+        ):
+            model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
+            model_cmp.load_state_dict(model_dyn.state_dict())
+            model_cmp.eval()
+
+            import torch._inductor.compile_fx as _compile_fx_mod
+
+            calls: list[dict] = []
+            real = _compile_fx_mod.compile_fx_inner
+
+            def _spy(*args, **kwargs):
+                calls.append(kwargs)
+                return real(*args, **kwargs)
+
+            with mock.patch.object(_compile_fx_mod, "compile_fx_inner", _spy):
+                model_cmp(coord, atype, box=box)
+
+        self.assertTrue(
+            any(kwargs.get("is_inference") is True for kwargs in calls),
+            "the eval slot must lower through compile_fx_inner(is_inference=True); "
+            f"observed call kwargs: {calls}",
+        )
+
     def test_compile_cache_slots_and_eval_shape_change(self) -> None:
         """Compile cache slots should coexist while eval handles batch-size growth."""
         coord_1, atype_1, box_1, _, _, _ = self._make_tiny_frame()
