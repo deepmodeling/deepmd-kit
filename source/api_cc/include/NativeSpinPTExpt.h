@@ -14,13 +14,16 @@
 
 #include <torch/torch.h>
 
+#include <mutex>
+
 #include "DeepSpin.h"
 
 // Forward-declare to keep the private header out of the public one. Defined in
 // commonPTExpt.h.
 namespace deepmd::ptexpt {
 class ChargeStateFold;
-}
+class GraphReplay;
+}  // namespace deepmd::ptexpt
 
 namespace torch::inductor {
 class AOTIModelPackageLoader;
@@ -52,8 +55,9 @@ struct CanonicalGraphTensorPack;
  *   graph-lower descriptor can be frozen this way.
  * - ``lower_input_kind == "dpa4c_canonical"``, the compact deployment ABI
  *   (``forward_lower_canonical_graph_exportable``): the eight dual-CSR graph
- *   tensors -- uint32 topology and float32 edge vectors -- and the moment at
- *   positional index 8, with no conditional tail.
+ *   tensors -- source words of four or eight bytes, int64 row pointers and
+ *   positions, and float32 edge vectors -- and the moment at positional
+ *   index 8, with no conditional tail.
  *
  * Three entry points share the selected forward:
  *
@@ -289,7 +293,10 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    * @param[out] d_force Per-node force, GPU [nall_nodes * 3] row-major.
    * @param[out] d_force_mag Per-node magnetic force, GPU [nall_nodes * 3]
    *   row-major.
-   * @param[out] d_atom_virial Per-node virial, GPU [nall_nodes * 9] row-major.
+   * @param[out] d_virial Virial of the graph, GPU [9], or null when it is not
+   *   requested.
+   * @param[out] d_atom_virial Per-node virial, GPU [nall_nodes * 9] row-major,
+   *   or null when the per-atom virial is not requested.
    * @param[in] d_atype Per-node atom types, GPU [nall_nodes].
    * @param[in] d_source Source-node index per edge, GPU [edge_storage].
    * @param[in] d_edge_vec Destination-major edge vectors, GPU
@@ -297,6 +304,8 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    * @param[in] d_destination_row_ptr Destination CSR offsets, GPU
    *   [nall_nodes + 1].
    * @param[in] d_source_row_ptr Source CSR offsets, GPU [nall_nodes + 1].
+   *   Read only for the per-atom virial; may be null, together with
+   *   ``d_source_order``, when ``d_atom_virial`` is null.
    * @param[in] d_source_order Source-grouped edge positions, GPU
    *   [edge_storage].
    * @param[in] d_spin Per-node magnetic moment, GPU [nall_nodes * 3]
@@ -304,21 +313,25 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    * @param[in] nloc Number of local atoms.
    * @param[in] nall_nodes Graph node count (local + ghost).
    * @param[in] edge_storage Allocated edge capacity.
+   * @param[in] stream Caller stream; see DeepSpin::compute_canonical_graph_gpu.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
                                    double* d_force_mag,
+                                   double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::uint32_t* d_source_order,
+                                   const std::int64_t* d_source_order,
                                    const float* d_spin,
-                                   const int nloc,
-                                   const int nall_nodes,
-                                   const std::int64_t edge_storage) override;
+                                   const std::int64_t nloc,
+                                   const std::int64_t nall_nodes,
+                                   const std::int64_t edge_storage,
+                                   void* stream) override;
 
   bool uses_canonical_graph_inference() const override;
 
@@ -502,6 +515,9 @@ class NativeSpinPTExpt : public DeepSpinBackend {
   // Which of the two schemas the loaded artifact declares: the compact
   // dual-CSR ABI when true, the general NeighborGraph ABI when false.
   bool canonical_abi_ = false;
+  // Two-entry source CSR placeholders that decline the per-atom virial.
+  at::Tensor source_row_placeholder_;
+  at::Tensor source_order_placeholder_;
   // Edge-vector precision the NeighborGraph artifact was traced with, read
   // from the ``graph_edge_dtype`` metadata field. The compact ABI is float32
   // by definition and validates that at load.
@@ -525,6 +541,15 @@ class NativeSpinPTExpt : public DeepSpinBackend {
   at::Tensor edge_index_tensor;      // node-space edges (folded or extended)
   at::Tensor edge_index_ext_tensor;  // extended-atom edges, for the geometry
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
+  // CUDA-graph replay of repeated device-resident canonical evaluations,
+  // declared after the loader so that the graph is released before the
+  // constants it reads.
+  std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
+  // Serializes the runs of the model, which runs on a single-threaded runner,
+  // the device-resident entry point, whose replay of canonical evaluations
+  // keeps its graph across calls, and the replacement of the constants. The
+  // mutex is recursive because a replayed evaluation enters the runner again.
+  std::recursive_mutex evaluation_mutex_;
   // The charge/spin condition a compressed descriptor folded into the
   // constants of its lower, re-runnable so that a condition chosen at runtime
   // can be served.  Null for an uncompressed model, which reads its condition

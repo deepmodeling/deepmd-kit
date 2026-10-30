@@ -21,6 +21,7 @@
 #include <cmath>
 #include <tuple>
 
+#include "../fp32_ridge.h"
 #include "so2_conv_launch.h"
 
 namespace {
@@ -514,34 +515,6 @@ torch::Tensor dpa4_wigner_runs(torch::Tensor quat,
                     mono_exp.contiguous(), at::cuda::getCurrentCUDAStream());
 }
 
-/// Ridge point of the current device: peak fp32 FMA throughput over DRAM
-/// bandwidth, in FLOP per byte.
-///
-/// The fused convolution trades memory traffic for float32 SIMT arithmetic,
-/// so the arithmetic budget at which it stops paying scales with this ratio.
-/// The Python routing gate normalizes its measured threshold by the ridge of
-/// the card it was calibrated on, which makes the decision follow the actual
-/// part rather than an architecture name. Attribute queries cover every
-/// supported toolkit; the FMA-per-SM width is 128 lanes on every consumer and
-/// data-center part since Ampere except the A100 die (64), which the
-/// compute-capability pair identifies.
-double dpa4_fp32_ridge() {
-  int dev = 0;
-  cudaGetDevice(&dev);
-  int sm_count = 0, clock_khz = 0, mem_clock_khz = 0, bus_width = 0;
-  int major = 0, minor = 0;
-  cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, dev);
-  cudaDeviceGetAttribute(&clock_khz, cudaDevAttrClockRate, dev);
-  cudaDeviceGetAttribute(&mem_clock_khz, cudaDevAttrMemoryClockRate, dev);
-  cudaDeviceGetAttribute(&bus_width, cudaDevAttrGlobalMemoryBusWidth, dev);
-  cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
-  cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, dev);
-  const int lanes = (major < 8 || (major == 8 && minor == 0)) ? 64 : 128;
-  const double flops = 2.0 * lanes * sm_count * (clock_khz * 1e3);
-  const double bytes = (mem_clock_khz * 1e3) * (bus_width / 8.0) * 2.0;
-  return bytes > 0.0 ? flops / bytes : 0.0;
-}
-
 torch::Tensor dpa4_wigner_runs_backward(torch::Tensor grad_runs,
                                         torch::Tensor quat,
                                         torch::Tensor dmono_coeff,
@@ -586,7 +559,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
       "dpa4_wigner_runs_backward(Tensor grad_runs, Tensor quat, "
       "Tensor dmono_coeff, Tensor dmono_exp) -> Tensor");
   m.impl("dpa4_wigner_runs_backward", torch::kCUDA, &dpa4_wigner_runs_backward);
-  m.def("dpa4_fp32_ridge() -> float", &dpa4_fp32_ridge);
+  m.def("dpa4_fp32_ridge() -> float", &fp32_ridge);
 }
 
 namespace dpa4 {

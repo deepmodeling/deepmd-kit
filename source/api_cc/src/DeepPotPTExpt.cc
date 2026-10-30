@@ -38,10 +38,19 @@ namespace {
 // commonPT.h (deepmd namespace) so DeepSpinPTExpt.cc can share them for its
 // native-spin graph route.
 
-void synchronize_current_accelerator_stream() {
-#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+// Wait for the evaluation that the calling thread enqueued on its current
+// stream of ``device``, on which the device-resident entry points without a
+// caller's stream enqueue all of their work; the work and the CUDA graph
+// captures of other threads on the device proceed meanwhile.
+void synchronize_current_accelerator_stream(const int device) {
+#if defined(DEEPMD_TORCH_HAS_CUDA)
+  c10::cuda::getCurrentCUDAStream(static_cast<c10::DeviceIndex>(device))
+      .synchronize();
+#elif defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+  (void)device;
   DPErrcheck(gpuDeviceSynchronize());
 #else
+  (void)device;
   throw deepmd::deepmd_exception(
       "GPU-resident inference requires a GPU-enabled DeePMD-kit build.");
 #endif
@@ -251,10 +260,12 @@ void DeepPotPTExpt::init(const std::string& model,
     lower_input_is_graph_ = lower_input_kind == "graph";
     lower_input_is_canonical_ = lower_input_kind == "dpa1_canonical" ||
                                 lower_input_kind == "dpa4c_canonical";
+    canonical_requires_source_csr_ = lower_input_kind == "dpa1_canonical";
   } else {
     lower_input_is_edge_ = false;
     lower_input_is_graph_ = false;
     lower_input_is_canonical_ = false;
+    canonical_requires_source_csr_ = false;
   }
   if (lower_input_is_edge_) {
     std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
@@ -279,9 +290,12 @@ void DeepPotPTExpt::init(const std::string& model,
           "compact canonical graph artifacts require float32 edge vectors.");
     }
     if (!metadata.obj_val.count("canonical_index_dtype") ||
-        metadata["canonical_index_dtype"].as_string() != "uint32") {
+        metadata["canonical_index_dtype"].as_string() != "auto" ||
+        !metadata.obj_val.count("canonical_index_storage") ||
+        metadata["canonical_index_storage"].as_string() != "byte_words") {
       throw deepmd::deepmd_exception(
-          "compact canonical graph artifacts require uint32 topology; "
+          "compact canonical graph artifacts require automatic-width byte "
+          "indices; "
           "re-freeze the model with the current DeePMD-kit version.");
     }
   }
@@ -297,9 +311,13 @@ void DeepPotPTExpt::init(const std::string& model,
     output_keys.push_back(v.as_string());
   }
 
-  // Load the AOTInductor model package
+  // Load the AOTInductor model package. An instance runs its model one call
+  // at a time (evaluation_mutex_), so the model runs on the single-threaded
+  // runner, which records no completion event per run: a run is free to be
+  // enqueued before the previous one finishes and to be captured into a CUDA
+  // graph.
   loader = std::make_unique<torch::inductor::AOTIModelPackageLoader>(
-      model, "model", false, 1,
+      model, "model", /*run_single_threaded=*/true, 1,
       gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
                   : static_cast<c10::DeviceIndex>(-1));
 
@@ -445,10 +463,27 @@ void DeepPotPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
   // constants without opening a second failure point.
   std::vector<double> next_charge_spin(charge_spin);
   if (charge_state_fold_) {
-    charge_state_fold_->apply(charge_spin,
-                              gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
-                                          : torch::Device(torch::kCPU),
-                              *loader);
+    const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
+    translate_error([&] {
+      // Evaluations still in flight on a caller's stream, and a captured
+      // evaluation, read the constants the fold replaces, and the next
+      // evaluation, possibly on another stream, reads those it writes; the
+      // fold therefore waits for the device on both sides.
+      if (gpu_enabled) {
+        ptexpt::synchronize_device(gpu_id);
+      }
+      if (canonical_replay_) {
+        canonical_replay_->invalidate();
+      }
+      charge_state_fold_->apply(charge_spin,
+                                gpu_enabled
+                                    ? torch::Device(torch::kCUDA, gpu_id)
+                                    : torch::Device(torch::kCPU),
+                                *loader);
+      if (gpu_enabled) {
+        ptexpt::synchronize_device(gpu_id);
+      }
+    });
   }
   default_chg_spin_.swap(next_charge_spin);
 }
@@ -473,6 +508,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model(
   if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
+  const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
   return loader->run(inputs);
 }
 
@@ -497,6 +533,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_edges(
   if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
+  const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
   return loader->run(inputs);
 }
 
@@ -529,6 +566,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
   if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
+  const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
   return loader->run(inputs);
 }
 
@@ -541,8 +579,10 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_canonical_graph(
     const torch::Tensor& destination_row_ptr,
     const torch::Tensor& source_row_ptr,
     const torch::Tensor& source_order) {
-  return loader->run({atype, n_node, n_local, source, edge_vec,
-                      destination_row_ptr, source_row_ptr, source_order});
+  const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
+  return loader->run({atype, n_node, n_local, canonicalIndexBytes(source),
+                      edge_vec, destination_row_ptr, source_row_ptr,
+                      source_order});
 }
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
@@ -2528,23 +2568,28 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
       torch::from_blob(d_force, {nnode, 3}, opt_f64).copy_(force_t);
       torch::from_blob(d_atom_virial, {nnode, 9}, opt_f64).copy_(av);
     }
-    synchronize_current_accelerator_stream();
+    synchronize_current_accelerator_stream(gpu_id);
   });
 }
 
 void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     double* d_atom_energy,
     double* d_force,
+    double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::uint32_t* d_source_order,
-    const int nloc,
-    const int nall_nodes,
-    const std::int64_t edge_storage) {
+    const std::int64_t* d_source_order,
+    const double* d_coord,
+    void* world,
+    const std::int64_t nloc,
+    const std::int64_t nall_nodes,
+    const std::int64_t edge_storage,
+    void* stream) {
   if (!lower_input_is_canonical_) {
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a compact canonical artifact.");
@@ -2553,66 +2598,149 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a CUDA device.");
   }
-  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2 ||
-      static_cast<std::uint64_t>(edge_storage) >
-          std::numeric_limits<std::uint32_t>::max()) {
+  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2) {
     throw deepmd::deepmd_exception(
         "invalid compact canonical graph dimensions.");
   }
+  ptexpt::check_canonical_index(d_source, index_width, nall_nodes);
+  if (d_force == nullptr || d_atype == nullptr || d_source == nullptr ||
+      d_edge_vec == nullptr || d_destination_row_ptr == nullptr ||
+      (nloc > 0 && d_atom_energy == nullptr)) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: the energy and force outputs and the "
+        "graph inputs must not be null; only the virial, the per-atom virial "
+        "and the source CSR are optional.");
+  }
+  if (d_atom_virial != nullptr && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: the per-atom virial was requested, but "
+        "this .pt2 model was exported without it (do_atomic_virial=False).");
+  }
+  const bool has_source_csr =
+      d_source_row_ptr != nullptr && d_source_order != nullptr;
+  if (!has_source_csr &&
+      (d_source_row_ptr != nullptr || d_source_order != nullptr ||
+       d_atom_virial != nullptr || canonical_requires_source_csr_)) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: the source CSR may be omitted only as "
+        "a pair, without a per-atom virial, and only for an artifact that "
+        "assembles the force without it.");
+  }
 
   translate_error([&] {
+    // The source CSR placeholders and the replay belong to the instance, so
+    // one evaluation at a time prepares and runs them.
+    const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
     const torch::Device device(torch::kCUDA, gpu_id);
     const c10::DeviceGuard device_guard(device);
-    const auto opt_f32 =
-        torch::TensorOptions().dtype(torch::kFloat32).device(device);
+    const ptexpt::CallerStreamScope stream_scope(stream, gpu_id);
     const auto opt_i64 =
         torch::TensorOptions().dtype(torch::kInt64).device(device);
-    const auto opt_u32 = torch::TensorOptions()
-                             .dtype(deepmd::canonicalGraphIndexType())
-                             .device(device);
-    auto atype = torch::from_blob(const_cast<std::int64_t*>(d_atype),
-                                  {nall_nodes}, opt_i64);
-    auto source = torch::from_blob(const_cast<std::uint32_t*>(d_source),
-                                   {edge_storage}, opt_u32);
-    auto edge_vec = torch::from_blob(const_cast<float*>(d_edge_vec),
-                                     {edge_storage, 3}, opt_f32);
-    auto destination_row_ptr =
-        torch::from_blob(const_cast<std::int64_t*>(d_destination_row_ptr),
-                         {nall_nodes + 1}, opt_i64);
-    auto source_row_ptr = torch::from_blob(
-        const_cast<std::int64_t*>(d_source_row_ptr), {nall_nodes + 1}, opt_i64);
-    auto source_order = torch::from_blob(
-        const_cast<std::uint32_t*>(d_source_order), {edge_storage}, opt_u32);
-    auto n_node = torch::full({1}, nall_nodes, opt_i64);
-    auto n_local = torch::full({1}, nloc, opt_i64);
-
-    std::map<std::string, torch::Tensor> output;
-    extract_outputs(output,
-                    run_model_canonical_graph(atype, n_node, n_local, source,
-                                              edge_vec, destination_row_ptr,
-                                              source_row_ptr, source_order));
-    auto atom_energy = output["atom_energy"]
-                           .reshape({nall_nodes})
-                           .slice(0, 0, nloc)
-                           .contiguous();
-    auto force = output["force"].reshape({nall_nodes, 3}).contiguous();
-    auto atom_virial =
-        output["atom_virial"].reshape({nall_nodes, 9}).contiguous();
-    if (nloc > 0) {
-      torch::from_blob(
-          d_atom_energy, {nloc},
-          torch::TensorOptions().dtype(torch::kFloat64).device(device))
-          .copy_(atom_energy);
+    const auto opt_index =
+        torch::TensorOptions()
+            .dtype(index_width == DP_CANONICAL_INDEX32 ? torch::kInt32
+                                                       : torch::kInt64)
+            .device(device);
+    if (!has_source_csr && !source_row_placeholder_.defined()) {
+      source_row_placeholder_ = torch::zeros({2}, opt_i64);
+      source_order_placeholder_ = torch::zeros({2}, opt_i64);
     }
-    torch::from_blob(
-        d_force, {nall_nodes, 3},
-        torch::TensorOptions().dtype(torch::kFloat64).device(device))
-        .copy_(force);
-    torch::from_blob(
-        d_atom_virial, {nall_nodes, 9},
-        torch::TensorOptions().dtype(torch::kFloat64).device(device))
-        .copy_(atom_virial);
-    synchronize_current_accelerator_stream();
+    const void* const source_row_data =
+        has_source_csr ? d_source_row_ptr : source_row_placeholder_.data_ptr();
+    const void* const source_order_data =
+        has_source_csr ? d_source_order : source_order_placeholder_.data_ptr();
+
+    // The tensors over the caller's buffers are built inside the evaluation,
+    // which a replay skips: wrapping a device buffer queries the driver for
+    // the device that holds it.
+    const auto evaluate = [&] {
+      const auto opt_f32 =
+          torch::TensorOptions().dtype(torch::kFloat32).device(device);
+      const auto opt_f64 =
+          torch::TensorOptions().dtype(torch::kFloat64).device(device);
+      auto atype = torch::from_blob(const_cast<std::int64_t*>(d_atype),
+                                    {nall_nodes}, opt_i64);
+      auto source = torch::from_blob(const_cast<void*>(d_source),
+                                     {edge_storage}, opt_index);
+      auto edge_vec = torch::from_blob(const_cast<float*>(d_edge_vec),
+                                       {edge_storage, 3}, opt_f32);
+      auto destination_row_ptr =
+          torch::from_blob(const_cast<std::int64_t*>(d_destination_row_ptr),
+                           {nall_nodes + 1}, opt_i64);
+      auto source_row_ptr =
+          has_source_csr
+              ? torch::from_blob(const_cast<std::int64_t*>(d_source_row_ptr),
+                                 {nall_nodes + 1}, opt_i64)
+              : source_row_placeholder_;
+      auto source_order =
+          has_source_csr
+              ? torch::from_blob(const_cast<std::int64_t*>(d_source_order),
+                                 {edge_storage}, opt_i64)
+              : source_order_placeholder_;
+      // The node counts are allocated inside the evaluation, so that a
+      // captured graph owns them.
+      auto n_node = torch::full({1}, nall_nodes, opt_i64);
+      auto n_local = torch::full({1}, nloc, opt_i64);
+      std::map<std::string, torch::Tensor> output;
+      extract_outputs(output,
+                      run_model_canonical_graph(atype, n_node, n_local, source,
+                                                edge_vec, destination_row_ptr,
+                                                source_row_ptr, source_order));
+      auto atom_energy = output["atom_energy"]
+                             .reshape({nall_nodes})
+                             .slice(0, 0, nloc)
+                             .contiguous();
+      auto force = output["force"].reshape({nall_nodes, 3}).contiguous();
+      // The results reach the fp64 outputs through ptexpt::copy_results. The
+      // DPA4C operator returns the force, the virial and the atomic energy in
+      // fp64, a list of one dtype; the DPA1 assembly returns its force and
+      // virial in fp32 beside an fp64 atomic energy, which the copy converts
+      // one tensor at a time.
+      std::vector<torch::Tensor> targets = {
+          torch::from_blob(d_force, {nall_nodes, 3}, opt_f64)};
+      std::vector<torch::Tensor> results = {force};
+      if (d_virial != nullptr) {
+        targets.push_back(torch::from_blob(d_virial, {9}, opt_f64));
+        results.push_back(output["virial"].reshape({9}));
+      }
+      if (nloc > 0) {
+        targets.push_back(torch::from_blob(d_atom_energy, {nloc}, opt_f64));
+        results.push_back(atom_energy);
+      }
+      ptexpt::copy_results(targets, results, nall_nodes);
+      if (d_atom_virial != nullptr) {
+        torch::from_blob(d_atom_virial, {nall_nodes, 9}, opt_f64)
+            .copy_(output["atom_virial"].reshape({nall_nodes, 9}));
+      }
+    };
+    // A graph without halo nodes keeps its extents from step to step, so its
+    // evaluation is replayed; a domain's halo changes its extent at every
+    // neighbor rebuild, so a graph with halo nodes is evaluated eagerly. A
+    // model with a long-range module reads the node positions, whose address
+    // is then part of the key, and is evaluated eagerly over several ranks,
+    // where it may communicate between its kernels.
+    const bool long_range = has_long_range();
+    if (nloc != nall_nodes || (long_range && world != nullptr)) {
+      evaluate();
+    } else {
+      if (!canonical_replay_) {
+        canonical_replay_ = std::make_unique<ptexpt::GraphReplay>();
+      }
+      canonical_replay_->run(
+          {ptexpt::address_key(d_atom_energy), ptexpt::address_key(d_force),
+           ptexpt::address_key(d_virial), ptexpt::address_key(d_atom_virial),
+           ptexpt::address_key(d_atype), ptexpt::address_key(d_source),
+           ptexpt::address_key(d_edge_vec),
+           ptexpt::address_key(d_destination_row_ptr),
+           ptexpt::address_key(source_row_data),
+           ptexpt::address_key(source_order_data),
+           ptexpt::address_key(long_range ? d_coord : nullptr), nloc,
+           nall_nodes, edge_storage, index_width},
+          gpu_id, evaluate);
+    }
+    if (stream == nullptr) {
+      synchronize_current_accelerator_stream(gpu_id);
+    }
   });
 }
 
@@ -2670,20 +2798,25 @@ void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,
 void DeepPotPTExpt::compute_canonical_graph_gpu(
     double* d_atom_energy,
     double* d_force,
+    double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::uint32_t* d_source_order,
-    const int nloc,
-    const int nall_nodes,
-    const std::int64_t edge_storage) {
+    const std::int64_t* d_source_order,
+    const double* d_coord,
+    void* world,
+    const std::int64_t nloc,
+    const std::int64_t nall_nodes,
+    const std::int64_t edge_storage,
+    void* stream) {
   compute_canonical_graph_gpu_impl(
-      d_atom_energy, d_force, d_atom_virial, d_atype, d_source, d_edge_vec,
-      d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc, nall_nodes,
-      edge_storage);
+      d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
+      index_width, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+      d_source_order, d_coord, world, nloc, nall_nodes, edge_storage, stream);
 }
 
 bool DeepPotPTExpt::uses_fp32_edge_vectors() const {
@@ -2698,6 +2831,10 @@ bool DeepPotPTExpt::supports_device_edge_inference() const {
 
 bool DeepPotPTExpt::uses_canonical_graph_inference() const {
   return lower_input_is_canonical_;
+}
+
+bool DeepPotPTExpt::canonical_graph_requires_source_csr() const {
+  return canonical_requires_source_csr_;
 }
 
 #endif

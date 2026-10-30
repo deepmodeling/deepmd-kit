@@ -90,7 +90,8 @@ def kokkos_model():
     with zipfile.ZipFile(model) as archive:
         meta = json.loads(archive.read("model/extra/metadata.json"))
     assert meta["lower_input_kind"] == "dpa4c_canonical"
-    assert meta["canonical_index_dtype"] == "uint32"
+    assert meta["canonical_index_dtype"] == "auto"
+    assert meta["canonical_index_storage"] == "byte_words"
     assert meta["graph_edge_dtype"] == "float32"
     assert meta["spin_scheme"] == "native"
     assert meta["type_map"] == ["Ni", "O"]
@@ -161,10 +162,25 @@ def _assert_snapshot(actual, expected, scale=1.0):
     assert actual["ids"] == expected["ids"] == list(range(1, 7))
     np.testing.assert_allclose(actual["spin"], expected["spin"], atol=0, rtol=0)
     # The canonical kernels use float32; edge/reduction ordering differs between
-    # host, folded single-rank and extended multi-rank graphs.
-    for name, atol in (("force", 2e-7), ("magnetic_force", 5e-9)):
+    # host, folded single-rank and extended multi-rank graphs. A snapshot holds
+    # the per-atom virial only when its run requested it; the global virial
+    # sums six atoms.
+    fields = [("force", 2e-7), ("magnetic_force", 5e-9), ("global_virial", 1e-6)]
+    if "virial" in expected:
+        fields.append(("virial", 2e-7))
+    for name, atol in fields:
         np.testing.assert_allclose(
             actual[name], scale * np.array(expected[name]), rtol=5e-4, atol=atol
+        )
+    if "virial" in actual:
+        # The pair fills the global and the per-atom virial from separate
+        # outputs of the model, whose totals agree. The first six centroid
+        # components (xx, yy, zz, xy, xz, yz) are the global ones.
+        np.testing.assert_allclose(
+            np.sum(actual["virial"], axis=0)[:6],
+            actual["global_virial"],
+            rtol=5e-4,
+            atol=1e-6,
         )
     assert actual["energy"] == pytest.approx(
         scale * expected["energy"], rel=5e-6, abs=2e-7
@@ -213,7 +229,14 @@ def test_kokkos_conventions_and_mpi(samples):
                 np.testing.assert_array_equal(precession[~finite], 0.0)
             for repeated in sample["snapshots"][1:]:
                 _assert_snapshot(repeated, actual)
-            _assert_snapshot(sample["scaled"], actual, scale=2.75)
+            virial_snapshots = sample["virial_snapshots"]
+            first = virial_snapshots[0]
+            _assert_snapshot(first, host[selection]["virial_snapshots"][0])
+            _assert_snapshot(first, single[selection]["virial_snapshots"][0])
+            # Requesting the per-atom virial changes no force or energy.
+            _assert_snapshot(first, actual)
+            _assert_snapshot(virial_snapshots[1], first)
+            _assert_snapshot(sample["scaled"], first, scale=2.75)
 
 
 def test_kokkos_overlay_accumulates(samples):
@@ -224,6 +247,7 @@ def test_kokkos_overlay_accumulates(samples):
             assert overlay["pair_style"] == "hybrid/overlay/kk"
             assert overlay["run_style_active"] == 1
             assert overlay["convention"] == int(selection == "cartesian")
-            for snapshot in overlay["snapshots"]:
-                _assert_snapshot(snapshot, host[selection]["snapshots"][0], scale=2.0)
-                _assert_snapshot(snapshot, result[selection]["snapshots"][0], scale=2.0)
+            for key in ("snapshots", "virial_snapshots"):
+                for snapshot in overlay[key]:
+                    _assert_snapshot(snapshot, host[selection][key][0], scale=2.0)
+                    _assert_snapshot(snapshot, result[selection][key][0], scale=2.0)

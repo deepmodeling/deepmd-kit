@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// Generated instantiation shard of the compressed DPA4C descriptor. The
+// maintained kernels live in graph_compress_kernel.cuh; CMake selects the
+// scalar width and the angular degrees of each source so that nvcc compiles
+// the template grid in parallel (see the shard layout in CMakeLists.txt).
+
+#include "@DPA4C_KERNEL_HEADER@"
+
+namespace deepmd_dpa4c {
+
+@DPA4C_SHARD_INSTANTIATIONS@
+}  // namespace deepmd_dpa4c

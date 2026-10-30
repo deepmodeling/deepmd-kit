@@ -1145,6 +1145,150 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
             )
         )
 
+    def test_fused_network_matches_the_layer_kernels_bitwise(self) -> None:
+        """The fused network reproduces the per-layer kernels bit for bit.
+
+        ``graph_fitting_energy_gradient`` evaluates a run with the fused
+        network wherever that serves it and with the per-layer kernels
+        elsewhere, while the separate forward and backward operators always
+        take the per-layer kernels. The runs, sized by the multiprocessor
+        count, span the shapes the dispatch selects by run size: a cluster or
+        latency shape up to one panel per multiprocessor, the throughput shape
+        of the widths that have one beyond, at a width of 96 the 32-node panels
+        on a run that one wave of either throughput shape holds and the 64-node
+        panels on runs that they pass in fewer waves or in two waves or more,
+        and the per-layer kernels wherever the fused network declines a run.
+        The tiled calls end in a short tail, one of them after a first run of
+        exactly two waves of 64-node panels.
+        Four networks cover the input paths and the depth: an input narrower
+        than the width and not a multiple of four, an aligned input wider than
+        the width, whose layer-0 backward contracts in several passes, a single
+        square layer without biases, whose backward the residual seeds, and
+        the eight layers the fused network holds at most. A network whose runs
+        the fused network never serves, as on a device or build without a
+        kernel image of compute capability 7.0 or later, is reported as
+        skipped, since its comparison covers the per-layer kernels alone. The
+        route of a run is that of the rules of the dispatch
+        (``graph_fitting_route_rule``), which the call shares.
+        """
+        from deepmd.pt_expt.kernels.graph_fitting import (
+            ensure_registered,
+        )
+
+        ensure_registered()
+        sms = torch.cuda.get_device_properties(self.device).multi_processor_count
+        runs = (
+            (37, 0),
+            (16 * sms + 3, 0),
+            (32 * sms - 1, 0),
+            (48 * sms + 17, 0),
+            (96 * sms + 17, 0),
+            (96 * sms + 17, 32 * sms - 1),
+            (256 * sms + 37, 0),
+            (256 * sms + 37, 256 * sms),
+        )
+        gen = torch.Generator(device=self.device).manual_seed(11)
+        for width in (96, 192, 256, 384):
+            networks = (
+                (70, 3, True),
+                (2 * width + 8, 3, True),
+                (width, 1, False),
+                (70, 8, True),
+            )
+            for act in ("tanh", "silu"):
+                for din, depth, biased in networks:
+                    self._assert_fused_matches_layers(
+                        width, act, din, depth, biased, runs, gen
+                    )
+
+    def _assert_fused_matches_layers(
+        self,
+        width: int,
+        act: str,
+        din: int,
+        depth: int,
+        biased: bool,
+        runs: tuple[tuple[int, int], ...],
+        gen: torch.Generator,
+    ) -> None:
+        """Compare the fused and per-layer kernels on one network."""
+        from deepmd.pt_expt.kernels.fitting_routes import (
+            PER_LAYER,
+        )
+        from deepmd.pt_expt.kernels.graph_fitting import (
+            fitting_operator_arguments,
+        )
+
+        fit = self._build(
+            resnet_dt=False, act=act, dim_descrpt=din, neuron=[width] * depth
+        )
+        network = fitting_operator_arguments(fit)
+        biases = (
+            network.biases
+            if biased
+            else [layer_bias.new_empty(0) for layer_bias in network.biases]
+        )
+        head_bias = network.head_bias if biased else network.head_bias.new_empty(0)
+        bias = fit.bias_atom_e[:, 0].contiguous()
+        fused_runs = 0
+        for nodes, tile in runs:
+            x = torch.randn(nodes, din, generator=gen, device=self.device)
+            atype = torch.randint(0, 2, (nodes,), generator=gen, device=self.device)
+            seed = torch.rand(
+                nodes, generator=gen, device=self.device, dtype=torch.float64
+            )
+            with torch.no_grad():
+                layer_energy, saved = torch.ops.deepmd.graph_fitting(
+                    x,
+                    atype,
+                    network.weights,
+                    biases,
+                    network.residuals,
+                    network.head_weight,
+                    head_bias,
+                    bias,
+                    network.activation,
+                )
+                layer_gradient = torch.ops.deepmd.graph_fitting_backward(
+                    seed[:, None],
+                    saved,
+                    network.weights,
+                    biases,
+                    network.residuals,
+                    network.head_weight,
+                    network.activation,
+                )
+                gradient = x.clone()
+                energy = torch.ops.deepmd.graph_fitting_energy_gradient(
+                    gradient,
+                    atype,
+                    network.weights,
+                    biases,
+                    network.residuals,
+                    network.head_weight,
+                    head_bias,
+                    bias,
+                    network.activation,
+                    seed,
+                    tile,
+                )
+            # The operator serves every run of a call with the fused network
+            # where its rules route a run of the call's run size there.
+            run = min(tile, nodes) if tile > 0 else nodes
+            fused_runs += (
+                torch.ops.deepmd.graph_fitting_route_rule(network.weights, run)
+                != PER_LAYER
+            )
+            with self.subTest(width=width, act=act, din=din, nodes=nodes, tile=tile):
+                self.assertTrue(torch.equal(energy, layer_energy))
+                self.assertTrue(torch.equal(gradient, layer_gradient))
+        with self.subTest(width=width, act=act, din=din, depth=depth):
+            if fused_runs == 0:
+                self.skipTest(
+                    "the fused network serves no run of this network on this "
+                    "device and build"
+                )
+
     def test_timestep_falls_back(self) -> None:
         from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
@@ -1771,8 +1915,10 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
                 )
             arguments = run.call_args.args
             self.assertEqual(len(arguments), 8)
-            self.assertEqual(arguments[3].dtype, torch.uint32)
-            self.assertEqual(arguments[7].dtype, torch.uint32)
+            # A small graph passes its uint32 source words as their bytes.
+            self.assertEqual(arguments[3].dtype, torch.uint8)
+            self.assertEqual(arguments[3].shape[-1], 4)
+            self.assertEqual(arguments[7].dtype, torch.int64)
             self.assertEqual(arguments[4].dtype, torch.float32)
             self.assertGreater(float(reference["force"].abs().max()), 1e-8)
             for value, key in zip(
@@ -1819,7 +1965,8 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
 
         self.assertEqual(metadata["lower_input_kind"], "dpa1_canonical")
         self.assertEqual(metadata["graph_edge_dtype"], "float32")
-        self.assertEqual(metadata["canonical_index_dtype"], "uint32")
+        self.assertEqual(metadata["canonical_index_dtype"], "auto")
+        self.assertEqual(metadata["canonical_index_storage"], "byte_words")
         self.assertNotIn("graph_index_dtype", metadata)
         self.assertEqual(
             output_keys,

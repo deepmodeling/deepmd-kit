@@ -59,6 +59,46 @@ def test_torch_211_inference_keeps_default_cpp_parallelism(monkeypatch) -> None:
     assert "cpp.max_horizontal_fusion_size" not in build_inductor_compile_options()
 
 
+def test_inductor_kernels_write_separate_output_buffers() -> None:
+    """Generated kernels write separate output buffers instead of an input."""
+
+    def fn(
+        a: torch.Tensor, b: torch.Tensor, w: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # The product is an extern kernel. Where in-place buffers are allowed,
+        # the fused kernel of the addition and the weighted sum stores the
+        # shifted values over the buffer of the product.
+        shifted = a @ b + 1.0
+        return shifted, (shifted * w).sum(-1)
+
+    from torch._inductor.utils import (
+        run_and_get_code,
+    )
+
+    a, b, w = (
+        torch.randn(shape, dtype=torch.float64, device="cpu")
+        for shape in ((16, 9), (9, 9), (16, 9))
+    )
+    expected = a @ b + 1.0
+
+    def generated_code(options: dict) -> list[str]:
+        compiled = torch.compile(fn, backend="inductor", options=options)
+        (shifted, total), codes = run_and_get_code(compiled, a, b, w)
+        torch.testing.assert_close(shifted, expected)
+        torch.testing.assert_close(total, (expected * w).sum(-1))
+        return codes
+
+    options = build_inductor_compile_options()
+    # The same graph with in-place buffers allowed must store over its input,
+    # so that the assertion below tests the option rather than the graph.
+    in_place = generated_code({**options, "inplace_buffers": True})
+    separate = generated_code(options)
+    torch._dynamo.reset()
+
+    assert any("in_out_ptr" in code for code in in_place)
+    assert not any("in_out_ptr" in code for code in separate)
+
+
 def test_fusion_size_environment_is_shared(monkeypatch) -> None:
     monkeypatch.setenv("DP_FUSION_SIZE", "16")
 

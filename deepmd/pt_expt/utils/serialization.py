@@ -706,6 +706,7 @@ def build_synthetic_canonical_graph_inputs(
     )
     from deepmd.pt_expt.utils.canonical_graph import (
         canonical_graph_from_neighbor_graph,
+        canonical_index_bytes,
     )
 
     sample = build_synthetic_graph_inputs(
@@ -750,7 +751,7 @@ def build_synthetic_canonical_graph_inputs(
         atype,
         compact.n_node,
         compact.n_local,
-        compact.source,
+        canonical_index_bytes(compact.source),
         compact.edge_vec,
         compact.destination_row_ptr,
         compact.source_row_ptr,
@@ -759,36 +760,27 @@ def build_synthetic_canonical_graph_inputs(
     return compact_sample if spin is None else (*compact_sample, spin)
 
 
-def _build_canonical_graph_dynamic_shapes(
-    *sample_inputs: torch.Tensor,
-) -> tuple:
-    """Build dynamic shapes for the compact deployment ABI.
-
-    The trailing spin slot is present only for a native-spin model, so the
-    sample length selects the shape tuple.
-    """
-    from deepmd.pt_expt.utils.canonical_graph import (
-        UINT32_MAX,
-    )
-
+def _build_canonical_graph_dynamic_shapes(*, want_spin: bool) -> tuple:
+    """Build dynamic node, edge and index-word axes for the compact ABI."""
     nframes_dim = torch.export.Dim("nframes", min=1)
     node_dim = torch.export.Dim("n_node_total", min=1)
-    edge_storage_dim = torch.export.Dim(
-        "nedge_storage",
-        min=2,
-        max=UINT32_MAX,
-    )
+    edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
+    # The source CSR keeps extents of its own: a caller that declines the
+    # per-atom virial passes two-entry placeholders in its place.
+    source_row_dim = torch.export.Dim("n_source_row", min=2)
+    source_order_dim = torch.export.Dim("n_source_order", min=2)
+    word_bytes_dim = torch.export.Dim("index_word_bytes", min=4, max=8)
     shapes = (
         {0: node_dim},
         {0: nframes_dim},
         {0: nframes_dim},
-        {0: edge_storage_dim},
+        {0: edge_storage_dim, 1: word_bytes_dim},
         {0: edge_storage_dim},
         {0: node_dim + 1},
-        {0: node_dim + 1},
-        {0: edge_storage_dim},
+        {0: source_row_dim},
+        {0: source_order_dim},
     )
-    return shapes if len(sample_inputs) == len(shapes) else (*shapes, {0: node_dim})
+    return (*shapes, {0: node_dim}) if want_spin else shapes
 
 
 def count_synthetic_graph_edges(
@@ -1212,7 +1204,7 @@ def _collect_metadata(
     }
     if is_spin:
         # The scheme is what selects the serving backend class in C++
-        # (``deepmd_create_deepspin_backend_v1``): "native" is served by
+        # (``deepmd_create_deepspin_backend_v2``): "native" is served by
         # NativeSpinPTExpt, "deepspin" by DeepSpinPTExpt. It is a property of
         # the model alone, orthogonal to ``lower_input_kind`` below.
         meta["spin_scheme"] = spin_scheme
@@ -1271,7 +1263,8 @@ def _collect_metadata(
     meta["lower_input_kind"] = lower_kind
     meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
     if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
-        meta["canonical_index_dtype"] = "uint32"
+        meta["canonical_index_dtype"] = "auto"
+        meta["canonical_index_storage"] = "byte_words"
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
@@ -1562,6 +1555,32 @@ def _dpa4_kernel_levels_for_target(
                 os.environ[name] = value
 
 
+def _fold_case_embeddings(model: torch.nn.Module) -> None:
+    """Fold the fixed case embedding of every fitting into its first layer.
+
+    A deployed model evaluates a single case, so the schema selection, the
+    launch tuners and the fused fitting operators see a plain fitting network
+    (see :meth:`~deepmd.dpmodel.fitting.general_fitting.GeneralFitting.fold_case_embedding`).
+    """
+    from deepmd.dpmodel.fitting.general_fitting import (
+        GeneralFitting,
+    )
+
+    # The fold replaces submodules, so the fittings are collected before it.
+    fittings = [
+        module for module in model.modules() if isinstance(module, GeneralFitting)
+    ]
+    for fitting in fittings:
+        fitting.fold_case_embedding()
+        if fitting.dim_case_embd:
+            log.warning(
+                "The case embedding of a fitting network is kept, since the "
+                "residual of its first layer adds the input to the output; "
+                "the export evaluates that network without the fused fitting "
+                "operators."
+            )
+
+
 def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None:
     """Select the graph schema supported by the target model.
 
@@ -1586,6 +1605,7 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
     )
 
     model = BaseModel.deserialize(data["model"])
+    _fold_case_embeddings(model)
     if not (model_uses_graph_lower(model) and _supports_graph_export(model)):
         return None
     if allow_canonical:
@@ -1752,6 +1772,20 @@ def deserialize_to_file(
             )
 
 
+def _canonical_symbolic_shapes(lower_kind: str) -> contextlib.AbstractContextManager:
+    """Preserve zero and one in the canonical program's dynamic shape ranges.
+
+    A single frame is a valid deployment input, including graphs with zero
+    or one physical edge. Size-oblivious symbols retain these extents through
+    tracing and AOTInductor compilation without disabling runtime guards.
+    """
+    if lower_kind not in ("dpa1_canonical", "dpa4c_canonical"):
+        return contextlib.nullcontext()
+    from torch.fx.experimental import _config as symbolic_config
+
+    return symbolic_config.patch(backed_size_oblivious=True)
+
+
 def _trace_and_export(
     data: dict,
     model_json_override: dict | None = None,
@@ -1763,7 +1797,10 @@ def _trace_and_export(
     import deepmd.pt_expt.utils.env as _env
 
     target_device = _env.DEVICE
-    with _dpa4_kernel_levels_for_target(data["model"], target_device):
+    with (
+        _dpa4_kernel_levels_for_target(data["model"], target_device),
+        _canonical_symbolic_shapes(lower_kind),
+    ):
         return _trace_and_export_impl(
             data,
             model_json_override,
@@ -1920,6 +1957,9 @@ def _trace_and_export_impl(
         # Registry-dispatched (incl. native spin, type "native_spin"): the
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
+    # The fold rebuilds the first fitting layers on the default device, where
+    # the deserialized model resides, so it precedes the move below.
+    _fold_case_embeddings(model)
     model.eval()
     # Fold the vacuum reference on the CPU tracing device. vacuum_descriptor
     # evaluates an isolated atom of every type through the descriptor; on CUDA
@@ -1961,7 +2001,7 @@ def _trace_and_export_impl(
         run_autotune,
     )
 
-    run_autotune(model, target_device)
+    run_autotune(model, target_device, lower_kind)
 
     # Pack after checkpoint deserialization. The non-persistent buffers become
     # constants in the CPU trace and move with the exported graph to the
@@ -2102,7 +2142,9 @@ def _trace_and_export_impl(
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
-            dynamic_shapes = _build_canonical_graph_dynamic_shapes(*sample_inputs)
+            dynamic_shapes = _build_canonical_graph_dynamic_shapes(
+                want_spin=is_native_spin
+            )
         elif with_comm_dict:
             # Load libdeepmd_op_pt.so and register border_op fake/autograd
             # metadata now, mirroring the dense with-comm precedent below.
@@ -2783,14 +2825,27 @@ def _deserialize_to_file_pt2(
     aoti_configs["assert_indirect_indexing"] = False
     if is_cuda:
         aoti_configs["realize_opcount_threshold"] = 0
+    # In the compact canonical lower of a compressed descriptor, expressions of
+    # the weights alone, such as the per-type energy bias that the program sums
+    # from two parameters ahead of the fused operator, are evaluated once, by
+    # the first call after the constants are loaded, instead of at every call.
+    # An update of the constants marks them for evaluation again at the next
+    # call, so a charge state applied at run time stays consistent. The setting
+    # applies to the compact canonical lower alone, the program whose constant
+    # updates the tests check; the other packages of the archive keep the
+    # shared options.
+    lower_configs = dict(aoti_configs)
+    if metadata.get("lower_input_kind") in ("dpa1_canonical", "dpa4c_canonical"):
+        lower_configs["aot_inductor.use_runtime_constant_folding"] = True
     log.info(
         "Compiling the AOTInductor package for %s (the slowest freeze stage; "
         "typically several minutes)...",
         _env.DEVICE,
     )
-    aoti_compile_and_package(
-        exported, package_path=model_file, inductor_configs=aoti_configs
-    )
+    with _canonical_symbolic_shapes(lower_kind):
+        aoti_compile_and_package(
+            exported, package_path=model_file, inductor_configs=lower_configs
+        )
 
     # Charge-state fold. Present only for a compressed charge-conditioned
     # descriptor, whose frozen tables the deployment rebuilds once when the

@@ -544,9 +544,11 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
     misbehaved on the combination of data-dependent edge counts and a
     second-order autograd graph -- most visibly the oversized fused Triton
     reduction kernels that fail ``make_ttgir`` (``PassManager::run failed``) on
-    some GPU/Triton combinations. Options absent from the running PyTorch's
-    configuration registry are dropped so the returned dictionary stays valid
-    across releases.
+    some GPU/Triton combinations. It also gives every generated kernel output
+    buffers separate from its inputs, without which Triton 3.7.1 can compute a
+    reduction wrongly. Options absent from the running PyTorch's configuration
+    registry are dropped so the returned dictionary stays valid across
+    releases.
 
     Parameters
     ----------
@@ -595,6 +597,18 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # access. A 1D grid keeps that axis on the x dimension (limit 2**31-1).
         # The option is shared by the training and evaluation graphs.
         "triton.max_tiles": 1,
+        # Inductor can generate a reduction kernel that loads an input inside
+        # its reduction loop and stores a result over that input in the same
+        # iteration. Where the tuned configuration launches more threads than
+        # the block has elements, Triton 3.7.1 replicates the block across
+        # warps: every copy loads, only the first copy stores, and no barrier
+        # separates the loads of an iteration from that store, so a lagging
+        # copy can load the stored value and the reduction comes out wrong
+        # intermittently. The Inductor cache keeps the tuned configuration, so
+        # every later process that loads the kernel from the cache can compute
+        # the reduction wrongly as well. Separate output buffers leave no
+        # kernel that stores over its own inputs.
+        "inplace_buffers": False,
     }
     # ``DP_TUNE_TRAIN`` grades the compile-time investment of the training
     # graphs (cumulative levels; inference graphs ignore it, the AOTI export

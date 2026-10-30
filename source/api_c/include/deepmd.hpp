@@ -1359,24 +1359,59 @@ class DeepPot : public DeepBaseModel {
 
   /**
    * @brief Evaluate a compact canonical graph on the model device.
+   *
+   * ``d_virial`` may be null when the virial is not requested.
+   * ``d_atom_virial`` may be null, and then so may the source CSR unless
+   * canonical_graph_requires_source_csr() holds. ``d_coord`` holds the node
+   * positions and ``world`` the MPI communicator of a system on several
+   * ranks, which a model with a long-range module reads (has_long_range());
+   * both may be null for any other model. A non-null ``stream`` is the
+   * caller's accelerator stream on the model device. The arguments have the
+   * semantics of DP_DPA4ComputeCanonicalGraphGPU.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
+                                   double* d_virial,
                                    double* d_atom_virial,
                                    const int64_t* d_atype,
-                                   const uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const int64_t* d_destination_row_ptr,
                                    const int64_t* d_source_row_ptr,
-                                   const uint32_t* d_source_order,
-                                   const int nloc,
-                                   const int nall_nodes,
-                                   const int64_t edge_storage) {
-    DP_DeepPotComputeCanonicalGraphGPU(
-        dp, d_atom_energy, d_force, d_atom_virial, d_atype, d_source,
-        d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
-        nloc, nall_nodes, edge_storage);
+                                   const int64_t* d_source_order,
+                                   const double* d_coord,
+                                   void* world,
+                                   const int64_t nloc,
+                                   const int64_t nall_nodes,
+                                   const int64_t edge_storage,
+                                   void* stream = nullptr) {
+    DP_DPA4ComputeCanonicalGraphGPU(
+        dp, d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
+        index_width, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+        d_source_order, d_coord, world, nloc, nall_nodes, edge_storage, stream);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Query whether every compact canonical evaluation reads the source
+   * CSR.
+   */
+  bool canonical_graph_requires_source_csr() const {
+    const bool result = DP_DeepPotCanonicalGraphRequiresSourceCSR(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
+   * @brief Query whether the model carries a long-range module, which
+   * evaluates a complete non-periodic system only; see
+   * DP_DeepPotHasLongRange.
+   */
+  bool has_long_range() const {
+    const bool result = DP_DeepPotHasLongRange(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
   }
 
   /**
@@ -1919,26 +1954,34 @@ class DeepSpin : public DeepBaseModel {
    * @brief Evaluate a compact canonical graph on the model device.
    *
    * Graph, moment, and output pointers reside on the model device; the halo
-   * rows of the moment carry their owner's value.
+   * rows of the moment carry their owner's value. ``d_virial`` may be null
+   * when the virial is not requested. ``d_atom_virial`` may be null, and then
+   * so may the source CSR. A non-null ``stream`` is the caller's accelerator
+   * stream on the model device, with the semantics of
+   * DP_DPA4ComputeCanonicalGraphGPU.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
                                    double* d_force_mag,
+                                   double* d_virial,
                                    double* d_atom_virial,
                                    const int64_t* d_atype,
-                                   const uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const int64_t* d_destination_row_ptr,
                                    const int64_t* d_source_row_ptr,
-                                   const uint32_t* d_source_order,
+                                   const int64_t* d_source_order,
                                    const float* d_spin,
-                                   const int nloc,
-                                   const int nall_nodes,
-                                   const int64_t edge_storage) {
-    DP_DeepSpinComputeCanonicalGraphGPU(
-        dp, d_atom_energy, d_force, d_force_mag, d_atom_virial, d_atype,
-        d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
-        d_source_order, d_spin, nloc, nall_nodes, edge_storage);
+                                   const int64_t nloc,
+                                   const int64_t nall_nodes,
+                                   const int64_t edge_storage,
+                                   void* stream = nullptr) {
+    DP_DPA4SpinComputeCanonicalGraphGPU(
+        dp, d_atom_energy, d_force, d_force_mag, d_virial, d_atom_virial,
+        d_atype, d_source, index_width, d_edge_vec, d_destination_row_ptr,
+        d_source_row_ptr, d_source_order, d_spin, nloc, nall_nodes,
+        edge_storage, stream);
     DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
   }
 
@@ -2606,6 +2649,17 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
   int dim_chg_spin() const {
     assert(dp);
     return dchgspin;
+  }
+
+  /**
+   * @brief Query whether any of the models carries a long-range module; see
+   * DP_DeepPotModelDeviHasLongRange.
+   **/
+  bool has_long_range() const {
+    assert(dp);
+    const bool result = DP_DeepPotModelDeviHasLongRange(dp);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
+    return result;
   }
 
   /**

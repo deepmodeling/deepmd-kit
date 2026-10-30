@@ -281,6 +281,11 @@ both graphs.  The options are:
       Workaround for PyTorch <=2.11 bugs pytorch/pytorch#174379,
       #178080, #179494.  All three manifest only under data-dependent
       symbolic shapes -- exactly our edge count.
+* ``inplace_buffers=False``
+      Triton 3.7.1 can compute a reduction wrongly when the kernel stores
+      its result over an input that it loads in the same loop and the
+      tuned configuration replicates the block across warps; separate
+      output buffers leave no kernel that stores over its own inputs.
 
 NOTE 7 -- Multi-slot compile cache key
 --------------------------------------

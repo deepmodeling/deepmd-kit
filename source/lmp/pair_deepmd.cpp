@@ -1082,6 +1082,24 @@ void PairDeepMD::coeff(int narg, char** arg) {
 
 /* ---------------------------------------------------------------------- */
 
+void PairDeepMD::init_style() {
+  PairDeepBaseModel::init_style();
+  // A long-range module sums over every pair of atoms of the system, to which
+  // a periodic box would add the periodic images.
+  const bool long_range = numb_models > 1 ? deep_pot_model_devi.has_long_range()
+                                          : deep_pot.has_long_range();
+  if (long_range &&
+      (domain->xperiodic || domain->yperiodic || domain->zperiodic)) {
+    error->all(FLERR,
+               "pair style {}: a model with a long-range module evaluates a "
+               "complete non-periodic system; use a non-periodic boundary (f, "
+               "s or m) in every dimension.",
+               force->pair_style);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
 int PairDeepMD::pack_reverse_comm(int n, int first, double* buf) {
   int i, m, last;
 

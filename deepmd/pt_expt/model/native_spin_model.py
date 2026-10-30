@@ -329,10 +329,10 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         has no conditional tail, so index 8 is the last slot.
 
         The magnetic force is a value here rather than an autograd result: the
-        fused operator emits the on-site half from the node kernel and the
-        neighbour half per edge, and the deployment path reduces the second
-        onto source nodes. ``mask_mag`` is derived from the types by the same
-        single owner the eager translation uses.
+        fused operator closes the on-site part in its node kernel and
+        accumulates the neighbour part of every edge onto the edge's source
+        node before it returns. ``mask_mag`` is derived from the types by the
+        same single owner the eager translation uses.
 
         Parameters
         ----------

@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "DeepBaseModel.h"
+#include "canonical_graph.h"
 #include "common.h"
 #include "neighbor_list.h"
 
@@ -290,17 +291,20 @@ class DeepSpinBackend : public DeepBaseModelBackend {
       double* d_atom_energy,
       double* d_force,
       double* d_force_mag,
+      double* d_virial,
       double* d_atom_virial,
       const std::int64_t* d_atype,
-      const std::uint32_t* d_source,
+      const void* d_source,
+      DP_CanonicalIndexWidth index_width,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
       const std::int64_t* d_source_row_ptr,
-      const std::uint32_t* d_source_order,
+      const std::int64_t* d_source_order,
       const float* d_spin,
-      const int nloc,
-      const int nall_nodes,
-      const std::int64_t edge_storage);
+      const std::int64_t nloc,
+      const std::int64_t nall_nodes,
+      const std::int64_t edge_storage,
+      void* stream);
   virtual bool uses_canonical_graph_inference() const;
 
   /**
@@ -634,33 +638,44 @@ class DeepSpin : public DeepBaseModel {
    * @param[out] d_force Per-node force, [nall_nodes * 3] row-major.
    * @param[out] d_force_mag Per-node magnetic force, [nall_nodes * 3]
    *row-major.
-   * @param[out] d_atom_virial Per-node virial, [nall_nodes * 9] row-major.
+   * @param[out] d_virial Virial of the graph, [9], or null when it is not
+   *requested.
+   * @param[out] d_atom_virial Per-node virial, [nall_nodes * 9] row-major, or
+   *null when the per-atom virial is not requested.
    * @param[in] d_atype Per-node atom types, [nall_nodes].
    * @param[in] d_source Source-node index per edge, [edge_storage].
    * @param[in] d_edge_vec Destination-major edge vectors, [edge_storage * 3].
    * @param[in] d_destination_row_ptr Destination CSR offsets, [nall_nodes + 1].
-   * @param[in] d_source_row_ptr Source CSR offsets, [nall_nodes + 1].
+   * @param[in] d_source_row_ptr Source CSR offsets, [nall_nodes + 1]. The
+   *source CSR is read only for the per-atom virial and may be null, together
+   *with ``d_source_order``, when ``d_atom_virial`` is null.
    * @param[in] d_source_order Source-grouped edge positions, [edge_storage].
    * @param[in] d_spin Per-node magnetic moment, [nall_nodes * 3] row-major;
    *ghost rows carry their owner's moment.
    * @param[in] nloc Number of local atoms.
    * @param[in] nall_nodes Graph node count (local + ghost).
    * @param[in] edge_storage Allocated edge capacity.
+   * @param[in] stream Accelerator stream (``cudaStream_t``) of the model
+   *device on which the inputs were produced and the outputs will be consumed,
+   *with the semantics of DeepPot::compute_canonical_graph_gpu.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
                                    double* d_force_mag,
+                                   double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::uint32_t* d_source_order,
+                                   const std::int64_t* d_source_order,
                                    const float* d_spin,
-                                   const int nloc,
-                                   const int nall_nodes,
-                                   const std::int64_t edge_storage);
+                                   const std::int64_t nloc,
+                                   const std::int64_t nall_nodes,
+                                   const std::int64_t edge_storage,
+                                   void* stream = nullptr);
 
  protected:
   std::shared_ptr<deepmd::DeepSpinBackend> dp;

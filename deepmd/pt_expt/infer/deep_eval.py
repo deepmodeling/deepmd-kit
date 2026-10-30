@@ -259,6 +259,17 @@ class DeepEval(DeepEvalBackend):
         # above (_load_pt2 / _load_pte / _load_pt), so this is the one
         # place that sees every model load regardless of archive kind.
         _warn_legacy_edge_vec(self.metadata)
+        if self.metadata.get("lower_input_kind") in (
+            "dpa1_canonical",
+            "dpa4c_canonical",
+        ) and (
+            self.metadata.get("canonical_index_dtype") != "auto"
+            or self.metadata.get("canonical_index_storage") != "byte_words"
+        ):
+            raise ValueError(
+                "Compact canonical graph artifacts require automatic-width byte "
+                "indices; re-freeze the model with the current DeePMD-kit version."
+            )
 
         # ``neighbor_graph_method`` selects searches for graph and edge-vector
         # inputs. Extended-coordinate inputs use ``nlist_backend`` instead.
@@ -2169,6 +2180,7 @@ class DeepEval(DeepEvalBackend):
         from deepmd.pt_expt.utils.canonical_graph import (
             CanonicalGraph,
             canonical_graph_from_neighbor_graph,
+            canonical_index_bytes,
         )
         from deepmd.pt_expt.utils.env import (
             DEVICE,
@@ -2246,7 +2258,7 @@ class DeepEval(DeepEvalBackend):
                 atype_t,
                 graph.n_node,
                 graph.n_local,
-                graph.source,
+                canonical_index_bytes(graph.source),
                 graph.edge_vec,
                 graph.destination_row_ptr,
                 graph.source_row_ptr,

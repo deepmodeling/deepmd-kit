@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 #include <stdint.h>
+
+#include "canonical_graph.h"
 #ifdef __cplusplus
 extern "C" {
 #else
@@ -13,7 +15,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 30
+#define DP_C_API_VERSION 31
 
 /**
  * @brief Neighbor list.
@@ -427,39 +429,87 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
                                              const DP_Nlist* comm_nlist);
 
 /**
- * @brief Evaluate a compact canonical graph on the model device.
+ * @brief Evaluate a compact canonical graph on the model device: the
+ * device-resident inference of the DPA4 family, whose compressed DPA4C
+ * archives are frozen with the compact canonical lower, as are compressed
+ * DPA1 archives.
  *
  * @param[in] dp The DP to use.
  * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
  * @param[out] d_force Per-node force, shape ``(nall_nodes, 3)``.
- * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``.
+ * @param[out] d_virial Virial of the graph, nine components, or NULL when it
+ * is not requested.
+ * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``, or
+ * NULL when the per-atom virial is not requested.
  * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
  * @param[in] d_source Source node per edge storage slot.
+ * @param[in] index_width Width of each source index, four or eight bytes.
  * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
  * @param[in] d_destination_row_ptr Destination CSR offsets.
- * @param[in] d_source_row_ptr Source CSR offsets.
- * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] d_source_row_ptr Source CSR offsets. May be NULL together with
+ * ``d_source_order`` and ``d_atom_virial`` unless
+ * DP_DeepPotCanonicalGraphRequiresSourceCSR reports otherwise.
+ * @param[in] d_source_order Source-grouped int64 edge storage positions.
+ * @param[in] d_coord Node positions in the length unit of the model, shape
+ * ``(nall_nodes, 3)``, in the order of ``d_atype``, or NULL. Only a model
+ * with a long-range module (DP_DeepPotHasLongRange) reads them, and it
+ * requires them; every other model ignores them.
+ * @param[in] world Pointer to the MPI communicator of the caller (an
+ * ``MPI_Comm``), as the ``world`` argument of DP_NewNlist_comm, when the
+ * system spans several ranks, or NULL on a single rank. A model with a
+ * long-range module evaluates a complete non-periodic system: on a single
+ * rank its nodes are the whole system (``nall_nodes == nloc``); on several
+ * ranks it requires the communicator, reads the positions of the nodes each
+ * rank owns, and is evaluated on every rank at every step, a rank without
+ * nodes included (``nall_nodes``, ``nloc`` and ``edge_storage`` zero), whose
+ * buffers sized by the nodes or by the edge storage may then be NULL. Every
+ * other model ignores it.
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
- * @note The source and source-order arrays are uint32 as of API version 30;
- *       API versions 28 and 29 declared them as signed int64.
- * @since API version 28
+ * @param[in] stream Accelerator stream (``cudaStream_t``) of the model device
+ * on which the inputs were produced and the outputs will be consumed; a
+ * non-NULL stream requires a CUDA build. The evaluation is enqueued on it
+ * without a synchronization of the stream. A graph without halo nodes is
+ * captured into a CUDA graph on the second consecutive call with the same
+ * buffers and extents and replayed while they stay the same, except where a
+ * model with a long-range module receives a communicator. The host waits for
+ * the device when a call captures or releases a graph, which happens on that
+ * second call and on a call whose buffers or extents change.
+ * DP_DeepPotSetChargeSpin waits for the work in flight on the model device
+ * before it replaces the constants and for the replacement before it returns,
+ * and the caller completes the work on its stream before it deletes the model.
+ * NULL runs on the current stream of the calling thread for the model device
+ * and waits for that stream before returning. Models in different threads of
+ * one process evaluate concurrently, and their captures, releases of graphs
+ * and charge-state updates, which wait for the whole device, take turns; CUDA
+ * work outside DeePMD-kit that waits for the whole device while a capture is
+ * under way invalidates it, and the model then evaluates without replay.
+ * @note API versions 28 to 30 named this function
+ *       DP_DeepPotComputeCanonicalGraphGPU, without ``d_virial``, ``d_coord``,
+ *       ``world`` and ``stream``; a binary built against that name fails to
+ *       load rather than call a function of another argument list.
+ * @since API version 31
  */
-extern void DP_DeepPotComputeCanonicalGraphGPU(
+extern void DP_DPA4ComputeCanonicalGraphGPU(
     DP_DeepPot* dp,
     double* d_atom_energy,
     double* d_force,
+    double* d_virial,
     double* d_atom_virial,
     const int64_t* d_atype,
-    const uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
     const int64_t* d_source_row_ptr,
-    const uint32_t* d_source_order,
-    int nloc,
-    int nall_nodes,
-    int64_t edge_storage);
+    const int64_t* d_source_order,
+    const double* d_coord,
+    void* world,
+    int64_t nloc,
+    int64_t nall_nodes,
+    int64_t edge_storage,
+    void* stream);
 
 /**
  * @brief Query whether the loaded artifact supports device-edge inference.
@@ -478,6 +528,24 @@ extern bool DP_DeepPotUsesFP32EdgeVectors(DP_DeepPot* dp);
  * @since API version 28
  */
 extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
+
+/**
+ * @brief Query whether every compact canonical evaluation reads the source
+ * CSR, rather than only an evaluation that requests the per-atom virial.
+ * @since API version 31
+ */
+extern bool DP_DeepPotCanonicalGraphRequiresSourceCSR(DP_DeepPot* dp);
+
+/**
+ * @brief Query whether the model carries a long-range module.
+ *
+ * Such a module sums its interaction over every pair of atoms, so the model
+ * evaluates only a complete non-periodic system, and the device-resident
+ * entry DP_DPA4ComputeCanonicalGraphGPU passes it the node positions and, on
+ * several ranks, the communicator.
+ * @since API version 31
+ */
+extern bool DP_DeepPotHasLongRange(DP_DeepPot* dp);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
@@ -1259,42 +1327,59 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
 
 /**
  * @brief Evaluate a compact canonical graph on the model device with a DP spin
- * model.
+ * model: the device-resident inference of native-spin DPA4C archives.
  *
  * @param[in] dp The DP spin model to use.
  * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
  * @param[out] d_force Per-node force, shape ``(nall_nodes, 3)``.
  * @param[out] d_force_mag Per-node magnetic force, shape ``(nall_nodes, 3)``.
- * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``.
+ * @param[out] d_virial Virial of the graph, nine components, or NULL when it
+ * is not requested.
+ * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``, or
+ * NULL when the per-atom virial is not requested.
  * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
  * @param[in] d_source Source node per edge storage slot.
+ * @param[in] index_width Width of each source index, four or eight bytes.
  * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
  * @param[in] d_destination_row_ptr Destination CSR offsets.
- * @param[in] d_source_row_ptr Source CSR offsets.
- * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] d_source_row_ptr Source CSR offsets, read only for the per-atom
+ * virial. May be NULL together with ``d_source_order`` when ``d_atom_virial``
+ * is NULL.
+ * @param[in] d_source_order Source-grouped int64 edge storage positions.
  * @param[in] d_spin FP32 per-node magnetic moment, shape ``(nall_nodes, 3)``;
  * halo rows carry their owner's moment.
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
- * @since API version 30
+ * @param[in] stream Accelerator stream (``cudaStream_t``) of the model device
+ * on which the inputs were produced and the outputs will be consumed, under
+ * the contract described for DP_DPA4ComputeCanonicalGraphGPU.
+ * DP_DeepSpinSetChargeSpin waits for the work in flight on the model device
+ * before it replaces the constants and for the replacement before it returns.
+ * @note API version 30 named this function DP_DeepSpinComputeCanonicalGraphGPU,
+ *       without ``d_virial`` and ``stream``; a binary built against that name
+ *       fails to load rather than call a function of another argument list.
+ * @since API version 31
  */
-extern void DP_DeepSpinComputeCanonicalGraphGPU(
+extern void DP_DPA4SpinComputeCanonicalGraphGPU(
     DP_DeepSpin* dp,
     double* d_atom_energy,
     double* d_force,
     double* d_force_mag,
+    double* d_virial,
     double* d_atom_virial,
     const int64_t* d_atype,
-    const uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
     const int64_t* d_source_row_ptr,
-    const uint32_t* d_source_order,
+    const int64_t* d_source_order,
     const float* d_spin,
-    int nloc,
-    int nall_nodes,
-    int64_t edge_storage);
+    int64_t nloc,
+    int64_t nall_nodes,
+    int64_t edge_storage,
+    void* stream);
 
 /**
  * @brief Query whether the compact canonical graph ABI is active for a DP spin
@@ -2682,6 +2767,14 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
  * @since API version 27
  */
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Query whether any model of a DP Model Deviation carries a long-range
+ * module; see DP_DeepPotHasLongRange.
+ * @param[in] dp The DP Model Deviation to use.
+ * @since API version 31
+ */
+extern bool DP_DeepPotModelDeviHasLongRange(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Fix the charge/spin condition served for the rest of the run.

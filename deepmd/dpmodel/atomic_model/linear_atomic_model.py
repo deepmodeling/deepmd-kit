@@ -933,7 +933,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
-        masked_nlist = xp.clip(nlist_larger, 0, None)
+        masked_nlist = xp.maximum(nlist_larger, xp.zeros_like(nlist_larger))
         pairwise_rr = PairTabAtomicModel._get_pairwise_dist(
             extended_coord, masked_nlist
         )

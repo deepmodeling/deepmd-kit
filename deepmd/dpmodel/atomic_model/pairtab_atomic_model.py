@@ -434,7 +434,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         expanded_idx = xp.broadcast_to(
             idx[..., xp.newaxis, xp.newaxis], (*idx.shape, 1, 4)
         )
-        clipped_indices = xp.astype(xp.clip(expanded_idx, 0, nspline - 1), xp.int64)
+        clipped_indices = xp.astype(
+            xp.minimum(
+                xp.maximum(expanded_idx, xp.zeros_like(expanded_idx)), nspline - 1
+            ),
+            xp.int64,
+        )
 
         # (nframes, nloc, nnei, 4)
         final_coef = xp.squeeze(

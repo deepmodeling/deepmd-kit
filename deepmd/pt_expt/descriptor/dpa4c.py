@@ -439,8 +439,8 @@ class DescrptDPA4C(DescrptDPA4CDP):
         if compression is not None:
             obj._set_compression(
                 {
-                    name: torch.as_tensor(compression["@variables"][name])
-                    for name in obj._COMPRESSION_BUFFER_NAMES
+                    name: torch.as_tensor(value)
+                    for name, value in obj._compression_variables(compression).items()
                 }
             )
         return obj
