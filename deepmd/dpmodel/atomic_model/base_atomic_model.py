@@ -474,14 +474,22 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self,
         graph: "NeighborGraph",
         atype: Array,
+        node_mask: Array | None = None,
     ) -> tuple["NeighborGraph", Array, Array]:
-        """Apply graph masks shared by standard and fused atomic forwards."""
+        """Apply graph masks shared by the standard, fused and embedding forwards.
+
+        ``node_mask`` is the flat mask of the nodes an enclosing model counts;
+        it is combined with the output mask of this model, and ``None``
+        imposes nothing further.
+        """
         atype_clamped, output_mask = self._prepare_graph_nodes(
             graph.n_node,
             graph.n_local,
             atype,
             graph.edge_vec,
         )
+        if node_mask is not None:
+            output_mask = output_mask & node_mask
         self._assert_graph_pair_excluded(graph, atype_clamped)
         return graph, atype_clamped, output_mask
 
@@ -548,6 +556,113 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             comm_dict=comm_dict,
         )
         return self._finalize_atomic_ret(ret_dict, output_mask, atype)
+
+    def forward_common_embedding_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+        node_mask: Array | None = None,
+    ) -> dict[str, Array]:
+        """Embeddings on the flat node axis, from a forward without derivatives.
+
+        The embedding analogue of :meth:`forward_common_atomic_graph`: the
+        same masks select the counted nodes, and
+        :meth:`forward_embedding_graph` evaluates the embeddings. The per-node
+        embeddings of a virtual atom (type < 0) read zero, while an excluded
+        atom keeps them and is left out of the structural feature only.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free)
+        atype
+            flat local atom types. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level charge/spin conditioning, forwarded to the descriptor
+            as on :meth:`forward_common_atomic_graph`.
+        node_mask
+            flat mask of the nodes an enclosing model counts (real, owned and
+            not excluded there), combined with this model's own; ``None``
+            imposes nothing further.
+
+        Returns
+        -------
+        dict[str, Array]
+            ``descriptor`` with shape (N, d); ``atomic_feature``, the
+            activation after the last hidden layer of the fitting network,
+            with shape (N, h); and ``structural_feature``, the sum of
+            ``atomic_feature`` over the counted nodes of every frame, with
+            shape (nf, h).
+        """
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        graph, atype_clamped, output_mask = self._prepare_graph_inputs(
+            graph, atype, node_mask
+        )
+        ret = self.forward_embedding_graph(
+            graph,
+            atype_clamped,
+            output_mask,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+        )
+        real = self.make_atom_mask(atype)[:, None]
+        for key in ("descriptor", "atomic_feature"):
+            ret[key] = xp.where(real, ret[key], xp.zeros_like(ret[key]))
+        return ret
+
+    def forward_embedding_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        node_mask: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Evaluate the embeddings of :meth:`forward_common_embedding_graph`.
+
+        Only an atomic model with a learned descriptor and fitting network has
+        embeddings; such a model overrides this method.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free)
+        atype
+            flat local atom types, clamped to valid types. N
+        node_mask
+            flat mask of the counted nodes, over which the structural feature
+            sums. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level charge/spin conditioning.
+
+        Returns
+        -------
+        dict[str, Array]
+            The embeddings of :meth:`forward_common_embedding_graph`.
+
+        Raises
+        ------
+        NotImplementedError
+            For an atomic model without a learned descriptor and fitting
+            network.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} has no learned descriptor and fitting "
+            "network, so it provides no embedding."
+        )
 
     def _assert_nlist_pair_excluded(self, nlist: Array, extended_atype: Array) -> None:
         """Fail-safe: assert the nlist reaching the dense seam is pre-excluded.

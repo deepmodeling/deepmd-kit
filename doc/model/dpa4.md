@@ -923,9 +923,14 @@ with h5py.File("embedding.hdf5", "r") as f:
     structural_feature = group["structural_feature"][:]
 ```
 
-This command operates on the training checkpoint (`.pt`), not the frozen
-`.pt2`, and honors both `DP_COMPILE_INFER` and `DP_TRITON_INFER`. See
-[model embeddings](../inference/embedding.md) for the full description.
+This command reads the training checkpoint (`.pt`) or a `.pt2` frozen through
+the [graph-native route](#graph-native-inference-route-pt_expt). A checkpoint
+of the PyTorch backend honors `DP_COMPILE_INFER` and `DP_TRITON_INFER`; a
+checkpoint of the PyTorch Exportable backend and such a `.pt2` honor
+`DP_TRITON_INFER` and `DP_CUDA_INFER` set when the command runs. The `.pt2`
+written by `dp --pt freeze` is not supported; read its training checkpoint
+instead. See [model embeddings](../inference/embedding.md) for the full
+description.
 
 ## Data format
 

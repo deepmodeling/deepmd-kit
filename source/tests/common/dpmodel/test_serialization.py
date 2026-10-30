@@ -12,6 +12,7 @@ import pytest
 
 from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
+    record_to_array,
     save_dp_model,
     serialize_from_file,
 )
@@ -95,3 +96,44 @@ def test_serialize_from_file_declares_lower_semantics(
     serialized = serialize_from_file(str(model_file))
 
     assert serialized["lower_input_kind"] == expected_lower_kind
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        pytest.param(".yaml", id="yaml"),
+        pytest.param(".dp", id="native-hdf5"),
+    ],
+)
+def test_saved_arrays_keep_shape_and_dtype(tmp_path: Path, suffix: str) -> None:
+    """Shape, dtype and values of every array survive a save and a load.
+
+    The text record of an empty array carries a nested list that has lost its
+    trailing dimensions, such as the coupling layout of a compressed DPA4C
+    without sparse degree triples, whose shape the compressed operator checks.
+    """
+    arrays = {
+        "empty_rows": np.zeros((0, 8), dtype=np.int32),
+        "empty_columns": np.zeros((3, 0), dtype=np.float32),
+        "matrix": np.arange(6, dtype=np.float64).reshape(2, 3),
+        "scalar": np.array(3.0, dtype=np.float64),
+    }
+    model_file = tmp_path / f"model{suffix}"
+    save_dp_model(str(model_file), {"model": {"@variables": dict(arrays)}})
+
+    restored = load_dp_model(str(model_file))["model"]["@variables"]
+    for name, array in arrays.items():
+        assert restored[name].shape == array.shape, name
+        assert restored[name].dtype == array.dtype, name
+        np.testing.assert_array_equal(restored[name], array)
+
+
+def test_array_record_without_shape() -> None:
+    """A record that names no shape takes the shape of its nested lists."""
+    record = {
+        "@class": "np.ndarray",
+        "@is_variable": True,
+        "dtype": "float64",
+        "value": [[1.0, 2.0]],
+    }
+    np.testing.assert_array_equal(record_to_array(record), np.array([[1.0, 2.0]]))

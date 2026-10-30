@@ -623,6 +623,36 @@ def test_prepared_table_is_reused_across_calls() -> None:
 
 
 @_CPU
+@pytest.mark.parametrize("rewrite", ["rebound", "in_place"])
+@pytest.mark.parametrize("table", [6, 7], ids=["pair_film", "pair_mixing"])
+def test_new_pair_tables_reach_the_kernel(table: int, rewrite: str) -> None:
+    """New ordered pair tables reach the kernel beside the same radial table.
+
+    A charge-state rebuild leaves the radial table bound and brings new
+    ordered pair tables in one of two ways: the eager descriptor binds new
+    tensors, while a frozen lower has its constants rewritten in place, after
+    which AOTInductor wraps the same bytes in a new tensor, as the DLPack
+    import does here. In neither case may the call be served the tables
+    prepared for the previous contents. The FiLM and mode-mixing tables
+    follow the radial table among the operator arguments.
+    """
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=False)
+    arguments = list(_arguments(descriptor, graph, atype))
+    first, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    contents = 1.5 * arguments[table] + 0.2
+    if rewrite == "in_place":
+        arguments[table] = torch.from_dlpack(arguments[table].copy_(contents))
+    else:
+        arguments[table] = contents
+    second, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference = _reference_descriptor(graph.edge_vec, *_spin_free(tuple(arguments)))
+    torch.testing.assert_close(second, reference, atol=3.0e-5, rtol=3.0e-5)
+    assert (second - first).abs().max() > 1.0e-3
+
+
+@_CPU
 def test_spin_descriptor_keeps_the_reference_path() -> None:
     """A spin-conditioned descriptor is declined rather than mis-evaluated.
 
