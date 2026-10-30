@@ -522,28 +522,26 @@ __device__ void load_kernel_terms(int kernel,
   }
 }
 
-// The transform of the kernel at k^2 and its logarithmic derivative with
-// respect to k^2.
+// The transform of the kernel at k^2 and its derivative with respect to k^2.
 __device__ __forceinline__ void kernel_transform(int kernel,
                                                  const KernelTerms& terms,
                                                  int gaussians,
                                                  float k_sq,
                                                  float& value,
-                                                 float& log_slope) {
+                                                 float& slope) {
   if (kernel == kLes) {
     value = 4.f * static_cast<float>(kPi) *
             expf(-k_sq * terms.inv_four_alpha_sq) / k_sq;
-    log_slope = -terms.inv_four_alpha_sq - 1.f / k_sq;
+    slope = value * (-terms.inv_four_alpha_sq - 1.f / k_sq);
     return;
   }
   value = 0.f;
-  float slope = 0.f;
+  slope = 0.f;
   for (int g = 0; g < gaussians; ++g) {
     const float term = terms.weight[g] * expf(-terms.half_width_sq[g] * k_sq);
     value += term;
     slope -= terms.half_width_sq[g] * term;
   }
-  log_slope = value != 0.f ? slope / value : 0.f;
 }
 
 // The influence function of one frame on its half spectrum: multiplies every
@@ -602,8 +600,8 @@ __global__ void __launch_bounds__(kThreads)
       const bool weightless =
           row_weightless || 2 * m3 == n3 || (m1 == 0 && m2 == 0 && m3 == 0);
       float influence = 0.f;
+      float influence_slope = 0.f;
       float k[3] = {0.f, 0.f, 0.f};
-      float log_slope = 0.f;
       if (!weightless) {
 #pragma unroll
         for (int a = 0; a < 3; ++a) {
@@ -611,21 +609,26 @@ __global__ void __launch_bounds__(kThreads)
         }
         const float k_sq = k[0] * k[0] + k[1] * k[1] + k[2] * k[2];
         float transform;
-        kernel_transform(kernel, terms, gaussians, k_sq, transform, log_slope);
+        float slope;
+        kernel_transform(kernel, terms, gaussians, k_sq, transform, slope);
         influence = row_factor * transform * factor[n1 + n2 + i3];
+        influence_slope = row_factor * slope * factor[n1 + n2 + i3];
       }
       // An interior plane of the half spectrum stands for its mirror as well.
       const float multiplicity = m3 == 0 ? 1.f : 2.f;
       const int index = row * half + i3;
-      float energy = 0.f;
+      float power = 0.f;
       for (int c = 0; c < channels; ++c) {
         float2& value = spectrum[int64_t{c} * modes + index];
-        energy += value.x * value.x + value.y * value.y;
+        power += value.x * value.x + value.y * value.y;
         value.x *= influence;
         value.y *= influence;
       }
-      energy *= 0.5f * multiplicity * influence;
-      const float twice = 2.f * log_slope * energy;
+      const float energy = power * (0.5f * multiplicity * influence);
+      // Twice the derivative of the energy of the mode with respect to k^2,
+      // formed from the derivative of the transform, which stays defined
+      // where the transform vanishes.
+      const float twice = power * (multiplicity * influence_slope);
       row_sum[0] += energy;
       row_sum[1] += energy + twice * k[0] * k[0];
       row_sum[2] += energy + twice * k[1] * k[1];
