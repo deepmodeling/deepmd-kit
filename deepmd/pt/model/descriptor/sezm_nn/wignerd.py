@@ -44,6 +44,15 @@ from .utils import (
 
 _TORCH_RELEASE = Version(torch.__version__).release[:2]
 
+# ``torch.compiler.is_compiling`` is absent before torch 2.3.  The eager
+# Wigner path must stay runnable on those versions, so resolve the callable
+# once at import time instead of calling it unconditionally.
+_COMPILER_IS_COMPILING = getattr(
+    getattr(torch, "compiler", None),
+    "is_compiling",
+    None,
+)
+
 
 def _wigner_d_assemble_impl(
     blocks: list[torch.Tensor],
@@ -728,13 +737,14 @@ class WignerDCalculator(nn.Module):
 
         # ``is_compiling`` alone is not enough here: this module is traced
         # through make_fx fake tensors, where the flag stays False.  A fake
-        # tensor carries its mode, so probe for that instead.
-        tracing = (
-            torch.compiler.is_compiling()
-            or getattr(blocks[0], "fake_mode", None) is not None
-            if blocks
-            else False
+        # tensor carries its mode, so probe for that instead.  On torch older
+        # than 2.3 the callable does not exist and the fake-tensor probe
+        # carries the decision alone.
+        compiling = (
+            _COMPILER_IS_COMPILING() if _COMPILER_IS_COMPILING is not None else False
         )
+        fake_mode = bool(blocks) and getattr(blocks[0], "fake_mode", None) is not None
+        tracing = compiling or fake_mode
         # One assembly implementation serves both routes: the eager call
         # goes straight to the differentiable scatter (autograd flows through
         # the slice assignments), the traced call hides it behind the opaque
