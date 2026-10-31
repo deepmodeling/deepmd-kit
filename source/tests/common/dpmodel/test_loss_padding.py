@@ -467,6 +467,97 @@ class TestTensorLossGlobalGradAccum:
         )
 
 
+class TestGlobalRMSEDisplayPerFrame:
+    """Global rmse displays normalize each frame by its own real atom count."""
+
+    @staticmethod
+    def _frames(ncomp):
+        # extensive errors [NA, NB]: a per-atom error of 1 in each frame
+        label = _rnd(2, ncomp)
+        pred = label + np.array([[NA], [NB]], dtype=np.float64)
+        mask = np.array([[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB], dtype=np.float64)
+        return pred, label, mask
+
+    @staticmethod
+    def _assert_matches_frames(call, pred, label, mask, keys):
+        _, batch = call(pred, label, mask, NP)
+        _, more_A = call(pred[:1], label[:1], np.ones((1, NA)), NA)
+        _, more_B = call(pred[1:], label[1:], np.ones((1, NB)), NB)
+        for key in keys:
+            expected = np.sqrt((float(more_A[key]) ** 2 + float(more_B[key]) ** 2) / 2)
+            np.testing.assert_allclose(float(batch[key]), expected, rtol=1e-12)
+
+    def test_dos_and_cdf(self):
+        loss = DOSLoss(
+            starter_learning_rate=1.0,
+            numb_dos=NUMB_DOS,
+            start_pref_dos=1.0,
+            limit_pref_dos=1.0,
+            start_pref_cdf=1.0,
+            limit_pref_cdf=1.0,
+            start_pref_ados=0.0,
+            limit_pref_ados=0.0,
+            start_pref_acdf=0.0,
+            limit_pref_acdf=0.0,
+        )
+
+        def call(pred, label, mask, natoms):
+            return loss.call(
+                1.0,
+                natoms,
+                {"dos": pred, "mask": mask},
+                {"dos": label, "find_dos": 1.0},
+            )
+
+        pred, label, mask = self._frames(NUMB_DOS)
+        _, more = call(pred, label, mask, NP)
+        np.testing.assert_allclose(float(more["rmse_global_dos"]), 1.0, rtol=1e-12)
+        cdf = np.sqrt(np.mean(np.square(np.arange(1, NUMB_DOS + 1))))
+        np.testing.assert_allclose(float(more["rmse_global_cdf"]), cdf, rtol=1e-12)
+        pred, label = _rnd(2, NUMB_DOS), _rnd(2, NUMB_DOS)
+        self._assert_matches_frames(
+            call, pred, label, mask, ("rmse_global_dos", "rmse_global_cdf")
+        )
+
+    def test_tensor(self):
+        loss = TensorLoss(
+            tensor_name="dipole",
+            tensor_size=TENSOR_SIZE,
+            label_name="dipole",
+            pref_atomic=0.0,
+            pref=1.0,
+        )
+
+        def call(pred, label, mask, natoms):
+            return loss.call(
+                1.0,
+                natoms,
+                {"global_dipole": pred, "mask": mask},
+                {"dipole": label, "find_dipole": 1.0},
+            )
+
+        pred, label, mask = self._frames(TENSOR_SIZE)
+        _, more = call(pred, label, mask, NP)
+        np.testing.assert_allclose(float(more["rmse_global_dipole"]), 1.0, rtol=1e-12)
+        pred, label = _rnd(2, TENSOR_SIZE), _rnd(2, TENSOR_SIZE)
+        self._assert_matches_frames(call, pred, label, mask, ("rmse_global_dipole",))
+
+    def test_unmasked_unchanged(self):
+        loss = TensorLoss(
+            tensor_name="dipole",
+            tensor_size=TENSOR_SIZE,
+            label_name="dipole",
+            pref_atomic=0.0,
+            pref=1.0,
+        )
+        pred, label = _rnd(2, TENSOR_SIZE), _rnd(2, TENSOR_SIZE)
+        _, more = loss.call(
+            1.0, NB, {"global_dipole": pred}, {"dipole": label, "find_dipole": 1.0}
+        )
+        expected = np.sqrt(np.mean(np.square(pred - label))) / NB
+        assert float(more["rmse_global_dipole"]) == expected
+
+
 # ---------------------------------------------------------------------------
 # Task 3: EnergyLoss -- energy, force, virial, atom_ener, atom_pref
 # ---------------------------------------------------------------------------

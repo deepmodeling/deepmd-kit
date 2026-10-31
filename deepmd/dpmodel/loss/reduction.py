@@ -204,3 +204,46 @@ def masked_atom_num(mask: Array | None, natoms: Any, dtype: Any) -> Any:
         return natoms
     xp = array_api_compat.array_namespace(mask)
     return xp.mean(xp.astype(xp.sum(mask, axis=-1), dtype))
+
+
+def masked_global_rmse(diff: Array, mask: Array | None, natoms: Any) -> Array:
+    """Display-only RMSE of an extensive global term, normalized per atom.
+
+    Without a mask every frame has ``natoms`` atoms and the RMSE of the whole
+    batch is divided by it. With a mask, frames may hold different numbers of
+    real atoms, so each frame's mean squared error is normalized by its own
+    squared atom count before averaging over frames. A batch then reports the
+    same value as the mean of its frames' squared RMSEs taken one at a time.
+
+    Parameters
+    ----------
+    diff : Array
+        Global prediction error of shape ``[nf, ncomp]``.
+    mask : Array or None
+        Per-atom mask of shape ``[nf, nloc]``, or ``None`` when not mixed_type.
+    natoms
+        Atom count used when ``mask`` is ``None``.
+
+    Returns
+    -------
+    Array
+        ``sqrt(mean(diff**2)) / natoms`` without a mask, else
+        ``sqrt(mean_f(mean(diff_f**2) / n_f**2))`` with ``n_f`` the number of
+        real atoms of frame ``f``. Frames without any real atom are excluded
+        from the average; a batch with none reports ``0``.
+    """
+    xp = array_api_compat.array_namespace(diff)
+    if mask is None:
+        return xp.sqrt(xp.mean(xp.square(diff))) / natoms
+    real_natoms = xp.astype(xp.sum(mask, axis=-1), diff.dtype)
+    frame_mse = xp.mean(xp.square(diff), axis=-1)
+    # A frame of nothing but padding has no atom to normalize by; it is left
+    # out of the average, and a batch without any real atom reports 0.
+    has_atoms = real_natoms > 0
+    safe_natoms = xp.where(has_atoms, real_natoms, xp.ones_like(real_natoms))
+    frame_val = xp.where(
+        has_atoms, frame_mse / xp.square(safe_natoms), xp.zeros_like(frame_mse)
+    )
+    nvalid = xp.sum(xp.astype(has_atoms, diff.dtype))
+    safe_nvalid = xp.where(nvalid > 0, nvalid, xp.ones_like(nvalid))
+    return xp.sqrt(xp.sum(frame_val) / safe_nvalid)
