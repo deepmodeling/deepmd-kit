@@ -1618,7 +1618,8 @@ def serialize_from_file(model_file: str) -> dict:
         The serialized model data.  If the archive contains
         ``model_def_script.json`` (training config), it is included
         under the ``"model_def_script"`` key. ``lower_input_kind`` records
-        the concrete lower ABI from the artifact metadata.
+        the concrete lower ABI and ``do_atomic_virial`` whether the archive
+        exports the per-atom virial, both from the artifact metadata.
     """
     if model_file.endswith(".pt2"):
         return _serialize_from_file_pt2(model_file)
@@ -1645,6 +1646,7 @@ def _serialize_from_file_pte(model_file: str) -> dict:
     model_dict["lower_input_kind"] = metadata.get(
         "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
     )
+    model_dict["do_atomic_virial"] = bool(metadata.get("do_atomic_virial", False))
     if extra_files["model_def_script.json"]:
         model_dict["model_def_script"] = json.loads(
             extra_files["model_def_script.json"]
@@ -1682,6 +1684,7 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
     model_dict["lower_input_kind"] = metadata.get(
         "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
     )
+    model_dict["do_atomic_virial"] = bool(metadata.get("do_atomic_virial", False))
     if model_def_script_json:
         model_dict["model_def_script"] = json.loads(model_def_script_json)
     return model_dict
