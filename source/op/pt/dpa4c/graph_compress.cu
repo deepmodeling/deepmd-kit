@@ -26,6 +26,7 @@
 
 #include "../canonical_index.h"
 #include "../graph_ops.h"
+#include "../long_range/charge_sum.h"
 #include "graph_compress_launch.h"
 
 namespace {
@@ -1090,11 +1091,12 @@ __device__ __forceinline__ double fixed_point_value(unsigned long long word) {
 // Per-node preparation of one evaluation: the node types with virtual atoms
 // (negative types) mapped onto type zero, the ownership mask that selects the
 // energy-contributing nodes -- a real atom among the leading ``n_local``
-// nodes of its frame -- as the int32 output mask and as the fp64 cotangent
-// that seeds the fitting backward, and cleared fixed-point force totals. The
-// frame of a node comes from ``frame_row_ptr`` when the batch holds several
-// frames and is frame zero otherwise; nodes past the last frame are padding,
-// which no frame owns.
+// nodes of its frame -- as the int32 output mask, as the fp64 cotangent that
+// seeds the fitting backward and, unless ``charged`` is null, as the boolean
+// mask of the nodes that carry the charges of a long-range module, and
+// cleared fixed-point force totals. The frame of a node comes from
+// ``frame_row_ptr`` when the batch holds several frames and is frame zero
+// otherwise; nodes past the last frame are padding, which no frame owns.
 __global__ void energy_force_prologue_kernel(
     long node_count,
     long frame_count,
@@ -1104,6 +1106,7 @@ __global__ void energy_force_prologue_kernel(
     long* __restrict__ node_type,
     double* __restrict__ seed,
     int* __restrict__ mask,
+    bool* __restrict__ charged,
     unsigned long long* __restrict__ force,
     unsigned long long* __restrict__ spin_force,
     const float* __restrict__ contact_radius,
@@ -1142,6 +1145,9 @@ __global__ void energy_force_prologue_kernel(
     const bool owned = raw >= 0 && node - frame_begin < n_local[frame];
     seed[node] = owned ? 1.0 : 0.0;
     mask[node] = owned ? 1 : 0;
+    if (charged != nullptr) {
+      charged[node] = owned;
+    }
 #pragma unroll
     for (int word = 0; word < kForceWords; ++word) {
       force[node * kForceWords + word] = 0ull;
@@ -1174,6 +1180,11 @@ constexpr int kEpilogueTotals = 10;
 // double-precision work, which most devices run at a small fraction of the
 // single-precision rate, spreads over kEpilogueTotals times as many warps.
 // The warps of a total also write the per-node results that pair with it.
+//
+// A long-range module adds its node energies, its forces at fixed charges and
+// its per-node virials, ``extra_energy``, ``extra_force`` and
+// ``extra_virial``, onto those of the descriptor and the fitting; all three
+// are null for a model without one.
 __global__ void __launch_bounds__(kEpilogueThreads* kEpilogueTotals)
     energy_force_epilogue_kernel(
         long node_count,
@@ -1184,6 +1195,9 @@ __global__ void __launch_bounds__(kEpilogueThreads* kEpilogueTotals)
         const double* __restrict__ raw_energy,
         const double* __restrict__ seed,
         const float* __restrict__ node_virial,
+        const double* __restrict__ extra_energy,
+        const float* __restrict__ extra_force,
+        const float* __restrict__ extra_virial,
         double* __restrict__ force,
         double* __restrict__ force_mag,
         double* __restrict__ atom_energy,
@@ -1209,10 +1223,12 @@ __global__ void __launch_bounds__(kEpilogueThreads* kEpilogueTotals)
       // A node whose force contributions left the range of the fixed-point
       // totals reports its energy as not a number, which marks the forces of
       // its frame.
-      const double value =
-          force_fixed[node * kForceWords + kForceRangeWord] != 0
-              ? CUDART_NAN
-              : raw_energy[node] * seed[node];
+      double value = force_fixed[node * kForceWords + kForceRangeWord] != 0
+                         ? CUDART_NAN
+                         : raw_energy[node] * seed[node];
+      if (extra_energy != nullptr) {
+        value += extra_energy[node];
+      }
       atom_energy[node] = value;
       if (node < frame_end) {
         sum += value;
@@ -1220,8 +1236,12 @@ __global__ void __launch_bounds__(kEpilogueThreads* kEpilogueTotals)
       continue;
     }
     if (component < 3) {
-      force[node * 3 + component] =
+      double value =
           fixed_point_value(force_fixed[node * kForceWords + component]);
+      if (extra_force != nullptr) {
+        value += static_cast<double>(extra_force[node * 3 + component]);
+      }
+      force[node * 3 + component] = value;
       if (force_mag != nullptr) {
         // The magnetic force is minus the energy gradient with respect to the
         // moment: its on-site part and the neighbour part of its sources.
@@ -1235,6 +1255,9 @@ __global__ void __launch_bounds__(kEpilogueThreads* kEpilogueTotals)
     }
     if (node < frame_end) {
       sum += static_cast<double>(node_virial[node * 9 + component]);
+      if (extra_virial != nullptr) {
+        sum += static_cast<double>(extra_virial[node * 9 + component]);
+      }
     }
   }
 
@@ -1313,7 +1336,9 @@ __global__ void __launch_bounds__(kEpilogueThreads* kEpilogueTotals)
 }
 
 // Per-node results of a batch of several frames; the frame totals follow
-// from the segment reductions of the caller.
+// from the segment reductions of the caller. ``extra_energy`` and
+// ``extra_force`` are the contributions of a long-range module, as in
+// energy_force_epilogue_kernel.
 __global__ void energy_force_nodes_kernel(
     long node_count,
     const unsigned long long* __restrict__ force_fixed,
@@ -1321,6 +1346,8 @@ __global__ void energy_force_nodes_kernel(
     const float* __restrict__ spin_gradient,
     const double* __restrict__ raw_energy,
     const double* __restrict__ seed,
+    const double* __restrict__ extra_energy,
+    const float* __restrict__ extra_force,
     double* __restrict__ force,
     double* __restrict__ force_mag,
     double* __restrict__ atom_energy,
@@ -1329,17 +1356,25 @@ __global__ void energy_force_nodes_kernel(
        node < node_count; node += static_cast<long>(blockDim.x) * gridDim.x) {
 #pragma unroll
     for (int component = 0; component < 3; ++component) {
-      force[node * 3 + component] =
+      double value =
           fixed_point_value(force_fixed[node * kForceWords + component]);
+      if (extra_force != nullptr) {
+        value += static_cast<double>(extra_force[node * 3 + component]);
+      }
+      force[node * 3 + component] = value;
       if (force_mag != nullptr) {
         force_mag[node * 3 + component] =
             -(static_cast<double>(spin_gradient[node * 3 + component]) +
               fixed_point_value(spin_fixed[node * kForceWords + component]));
       }
     }
-    atom_energy[node] = force_fixed[node * kForceWords + kForceRangeWord] != 0
-                            ? CUDART_NAN
-                            : raw_energy[node] * seed[node];
+    double value = force_fixed[node * kForceWords + kForceRangeWord] != 0
+                       ? CUDART_NAN
+                       : raw_energy[node] * seed[node];
+    if (extra_energy != nullptr) {
+      value += extra_energy[node];
+    }
+    atom_energy[node] = value;
     if (atom_virial_zero != nullptr) {
 #pragma unroll
       for (int component = 0; component < 9; ++component) {
@@ -1353,6 +1388,379 @@ int epilogue_blocks(long node_count) {
   return static_cast<int>(std::max<long>(
       1, std::min<long>((node_count + kEpilogueThreads - 1) / kEpilogueThreads,
                         kEpilogueBlocks)));
+}
+
+// Validates the graph inputs of a fused energy-force operator named ``op``
+// that its prologue reads before the runs validate the rest of the payload:
+// the frame counts, the node types and, for a windowed descriptor, the
+// contact radii, and the source CSR, which is either complete, requesting the
+// per-atom virial, or the two-entry placeholder that declines it. ``source``
+// is replaced by its typed view. Returns whether the per-atom virial is
+// requested.
+bool check_energy_force_inputs(const char* op,
+                               const torch::Tensor& edge_vec,
+                               torch::Tensor& source,
+                               const torch::Tensor& destination_row_ptr,
+                               const torch::Tensor& source_row_ptr,
+                               const torch::Tensor& source_order,
+                               const torch::Tensor& n_node,
+                               const torch::Tensor& n_local,
+                               const torch::Tensor& atype,
+                               const torch::Tensor& type_embedding,
+                               const torch::Tensor& contact_radius,
+                               double f_inner,
+                               double f_outer) {
+  TORCH_CHECK(edge_vec.is_cuda(), op, ": edge_vec must be a CUDA tensor");
+  source = deepmd::canonical_index_view(source);
+  TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0), op,
+              ": source and edge_vec must share the edge axis");
+  const long node_count = atype.size(0);
+  const long edge_count = edge_vec.size(0);
+  TORCH_CHECK(destination_row_ptr.numel() == node_count + 1, op,
+              ": atype and destination_row_ptr describe different node "
+              "counts");
+  const torch::Device device = edge_vec.device();
+  const auto on_device = [&](const torch::Tensor& tensor) {
+    return tensor.is_cuda() && tensor.device() == device &&
+           tensor.is_contiguous();
+  };
+  TORCH_CHECK(on_device(n_node) && n_node.dim() == 1 &&
+                  n_node.scalar_type() == torch::kInt64 && on_device(n_local) &&
+                  n_local.dim() == 1 &&
+                  n_local.scalar_type() == torch::kInt64 &&
+                  n_local.numel() == n_node.numel() && n_node.numel() > 0,
+              op,
+              ": n_node and n_local must be contiguous int64 tensors on the "
+              "device of edge_vec with one shared shape (nf,), nf >= 1");
+  TORCH_CHECK(on_device(atype) && atype.dim() == 1 &&
+                  atype.scalar_type() == torch::kInt64,
+              op,
+              ": atype must be a contiguous int64 tensor of shape (N,) on the "
+              "device of edge_vec");
+  TORCH_CHECK(
+      f_outer <= f_inner || (on_device(contact_radius) &&
+                             contact_radius.scalar_type() == torch::kFloat32 &&
+                             contact_radius.dim() == 1 &&
+                             contact_radius.size(0) == type_embedding.size(0)),
+      op,
+      ": a windowed descriptor needs contiguous fp32 contact radii of shape "
+      "(type_count,) on the device of edge_vec");
+  const bool atom_virial = source_row_ptr.numel() == node_count + 1 &&
+                           source_order.numel() == edge_count;
+  TORCH_CHECK(
+      atom_virial || (source_row_ptr.numel() == 2 && source_order.numel() == 2),
+      op, ": the source CSR must hold ", node_count + 1, " row pointers and ",
+      edge_count,
+      " positions, or two entries each to decline the per-atom virial; got ",
+      source_row_ptr.numel(), " and ", source_order.numel());
+  if (atom_virial) {
+    TORCH_CHECK((source.scalar_type() == torch::kUInt32 ||
+                 source.scalar_type() == torch::kInt64) &&
+                    on_device(source_row_ptr) &&
+                    source_row_ptr.scalar_type() == torch::kInt64 &&
+                    on_device(source_order) &&
+                    source_order.scalar_type() == torch::kInt64,
+                op,
+                ": the per-atom virial needs uint32 or int64 sources and a "
+                "source CSR of contiguous int64 row pointers and positions on "
+                "the device of edge_vec");
+  }
+  return atom_virial;
+}
+
+// A fixed-point force word cannot hold a non-finite value, so a frame of a
+// batch whose energy or virial is not finite reports every force of its
+// nodes, and every magnetic force unless ``force_mag`` is null, as not a
+// number (see energy_force_epilogue_kernel). Nodes past the last frame
+// belong to none and keep their forces.
+void mark_broken_frames(const torch::Tensor& energy,
+                        const torch::Tensor& virial,
+                        const torch::Tensor& frame_row_ptr,
+                        long node_count,
+                        torch::Tensor& force,
+                        torch::Tensor* force_mag) {
+  const auto broken =
+      torch::cat({torch::logical_not(torch::isfinite(energy).all(1).logical_and(
+                      torch::isfinite(virial).flatten(1).all(1))),
+                  torch::zeros({1}, energy.options().dtype(torch::kBool))});
+  const auto frame =
+      torch::searchsorted(frame_row_ptr,
+                          torch::arange(node_count, frame_row_ptr.options()),
+                          /*out_int32=*/false, /*right=*/true) -
+      1;
+  const auto node_broken = broken.index_select(0, frame).unsqueeze(1);
+  force.masked_fill_(node_broken, std::numeric_limits<double>::quiet_NaN());
+  if (force_mag != nullptr) {
+    force_mag->masked_fill_(node_broken,
+                            std::numeric_limits<double>::quiet_NaN());
+  }
+}
+
+// A fitting network of the fused energy-force operators -- the energy fitting
+// or the charge network of a long-range module: its layer plan, weights,
+// head, per-type bias and activation.
+struct FittingNetwork {
+  const FittingLayerPlan& plan;
+  const std::vector<torch::Tensor>& ws;
+  const std::vector<torch::Tensor>& bs;
+  const std::vector<int64_t>& resnets;
+  const torch::Tensor& w_head;
+  const torch::Tensor& b_head;
+  const torch::Tensor& bias_atom_e;
+  int64_t act;
+};
+
+// The fitting routes of the runs of ``run`` nodes into which a fused operator
+// splits its node axis, and the buffers they need. The full runs and the tail
+// run each take the route of their own size; an absent table, like an empty
+// one, leaves both to the rules. A route of the fused network needs the
+// transposed weights, and its kernel writes the pre-activations of a run and
+// the sheet through which the CTAs of a cluster exchange their columns into
+// the pre-activation buffer; the per-layer kernels need the activation
+// ping-pong, sized for the largest run that takes them, and the
+// pre-activations of a run between their forward and their backward. With
+// ``deferred``, every run of the per-layer kernels keeps its pre-activations
+// at its own place on the node axis, so that its backward may follow the
+// forward of other runs and other work of the operator; the buffer then holds
+// every node, as the descriptor of the long-range operator does.
+class FittingRuns {
+ public:
+  FittingRuns(cudaStream_t stream,
+              const FittingNetwork& fitting,
+              long run,
+              long node_count,
+              std::optional<std::vector<int64_t>> table,
+              const torch::TensorOptions& f32,
+              bool deferred = false)
+      : fitting_(fitting), run_(run) {
+    const std::vector<int64_t> routes =
+        std::move(table).value_or(std::vector<int64_t>{});
+    const long tail = node_count % run;
+    const long full_count = node_count / run;
+    full_route_ = fitting_route(fitting.plan, fitting.ws, run, routes);
+    tail_route_ = tail > 0
+                      ? fitting_route(fitting.plan, fitting.ws, tail, routes)
+                      : full_route_;
+    const long per_layer_nodes =
+        std::max(full_count > 0 && full_route_ == kFittingPerLayer ? run : 0L,
+                 tail > 0 && tail_route_ == kFittingPerLayer ? tail : 0L);
+    if ((full_count > 0 && full_route_ != kFittingPerLayer) ||
+        (tail > 0 && tail_route_ != kFittingPerLayer)) {
+      transposed_ =
+          torch::empty({fitting_fused_transposed_floats(fitting.ws)}, f32);
+      fitting_fused_transpose(stream, fitting.plan, fitting.ws,
+                              transposed_.data_ptr<float>());
+    }
+    if (per_layer_nodes > 0) {
+      const int slots = fitting.plan.n_layer > 1 ? 2 : 1;
+      scratch_ =
+          torch::empty({slots, per_layer_nodes, fitting.plan.width_max}, f32);
+      slot_[0] = scratch_[0].data_ptr<float>();
+      slot_[1] = slots > 1 ? scratch_[1].data_ptr<float>() : slot_[0];
+    }
+    // The kept pre-activations of the run from node ``begin`` start at
+    // ``begin * saved_width``, a 16-byte boundary, since every hidden width is
+    // a multiple of four (check_weights of graph_fitting.cu).
+    kept_ = deferred && per_layer_nodes > 0;
+    saved_ = torch::empty(
+        {(kept_ ? node_count : run) * fitting.plan.saved_width()}, f32);
+  }
+
+  // The outputs ``output`` of the ``count`` nodes of the run from node
+  // ``begin``, whose descriptor rows are ``x``, and the cotangent ``d_x`` of
+  // those rows from the output cotangent ``seed``; ``d_x`` may take the place
+  // of ``x``.
+  void output_and_cotangent(cudaStream_t stream,
+                            long begin,
+                            long count,
+                            const float* x,
+                            float* d_x,
+                            long width,
+                            const long* node_type,
+                            const double* seed,
+                            double* output) const {
+    forward(stream, begin, count, x, d_x, width, node_type, seed, output);
+    backward(stream, begin, count, seed, d_x);
+  }
+
+  // The outputs of a run as in output_and_cotangent, and on a route of the
+  // fused network its cotangent as well, which that network forms in the same
+  // pass; a run of the per-layer kernels saves its pre-activations for
+  // backward().
+  void forward(cudaStream_t stream,
+               long begin,
+               long count,
+               const float* x,
+               float* d_x,
+               long width,
+               const long* node_type,
+               const double* seed,
+               double* output) const {
+    const FittingNetwork& fitting = fitting_;
+    const int64_t route = route_of(count);
+    if (route != kFittingPerLayer) {
+      fitting_energy_gradient_range(
+          stream, fitting.plan, x, width, node_type, fitting.ws, fitting.bs,
+          fitting.resnets, fitting.w_head, fitting.b_head, fitting.bias_atom_e,
+          fitting.act, transposed_.data_ptr<float>(), seed, count, saved(begin),
+          output, d_x, route);
+      return;
+    }
+    fitting_forward_range(stream, fitting.plan, x, width, node_type, fitting.ws,
+                          fitting.bs, fitting.resnets, fitting.w_head,
+                          fitting.b_head, fitting.bias_atom_e, fitting.act,
+                          count, saved(begin), slot_, output);
+  }
+
+  // The cotangent ``d_x`` of a run of the per-layer kernels from ``seed``,
+  // after its forward(); nothing for a run of the fused network, whose
+  // forward() has formed it. Without ``deferred`` it follows the forward of
+  // its own run.
+  void backward(cudaStream_t stream,
+                long begin,
+                long count,
+                const double* seed,
+                float* d_x) const {
+    if (route_of(count) != kFittingPerLayer) {
+      return;
+    }
+    const FittingNetwork& fitting = fitting_;
+    fitting_backward_range(stream, fitting.plan, seed, saved(begin), fitting.ws,
+                           fitting.bs, fitting.resnets, fitting.w_head,
+                           fitting.act, count, slot_[0],
+                           fitting.plan.n_layer > 1 ? slot_[1] : nullptr, d_x);
+  }
+
+ private:
+  int64_t route_of(long count) const {
+    return count == run_ ? full_route_ : tail_route_;
+  }
+
+  float* saved(long begin) const {
+    return saved_.data_ptr<float>() +
+           (kept_ ? begin * fitting_.plan.saved_width() : 0);
+  }
+
+  const FittingNetwork& fitting_;
+  long run_;
+  int64_t full_route_ = 0;
+  int64_t tail_route_ = 0;
+  bool kept_ = false;
+  torch::Tensor transposed_;
+  torch::Tensor scratch_;
+  torch::Tensor saved_;
+  float* slot_[2] = {nullptr, nullptr};
+};
+
+// The state of a fused energy-force evaluation that its epilogue reads.
+struct EpilogueInputs {
+  const torch::Tensor& n_node;
+  const torch::Tensor& frame_row_ptr;
+  const torch::Tensor& force_fixed;
+  const torch::Tensor& raw_energy;
+  const torch::Tensor& seed;
+  torch::Tensor& node_virial;
+  EvaluationWords* evaluation_words;
+};
+
+// The magnetic terms of a native-spin model: the fixed-point totals and the
+// on-site gradient that form the magnetic force.
+struct SpinTerms {
+  const torch::Tensor& fixed;
+  const torch::Tensor& gradient;
+  torch::Tensor& force_mag;
+};
+
+// The inputs of the per-atom virial, which the source CSR attributes to the
+// source nodes of the edges.
+struct SourceVirialTerms {
+  const torch::Tensor& edge_gradient;
+  const torch::Tensor& edge_vec;
+  const torch::Tensor& row_ptr;
+  const torch::Tensor& order;
+};
+
+// The terms of a long-range module: node energies (N, 1) float64, forces at
+// fixed charges (N, 3) and per-node virials (N, 9) float32.
+struct LongRangeTerms {
+  const torch::Tensor& energy;
+  const torch::Tensor& force;
+  const torch::Tensor& atom_virial;
+};
+
+// The node results and the frame totals of a fused energy-force evaluation
+// (energy_force_epilogue_kernel for a single frame, energy_force_nodes_kernel
+// and segment reductions for several), and the per-atom virial
+// ``atom_virial_output``, which is zero without ``source_virial``. ``spin`` is
+// null for a model without spin and ``long_range`` for a model without a
+// long-range module.
+void finish_energy_force(cudaStream_t stream,
+                         long node_count,
+                         int blocks,
+                         const EpilogueInputs& step,
+                         const SpinTerms* spin,
+                         const SourceVirialTerms* source_virial,
+                         const LongRangeTerms* long_range,
+                         torch::Tensor& energy,
+                         torch::Tensor& atom_energy,
+                         torch::Tensor& force,
+                         torch::Tensor& virial,
+                         torch::Tensor& atom_virial_output) {
+  const auto* force_words = reinterpret_cast<const unsigned long long*>(
+      step.force_fixed.data_ptr<int64_t>());
+  const auto* spin_words = spin != nullptr
+                               ? reinterpret_cast<const unsigned long long*>(
+                                     spin->fixed.data_ptr<int64_t>())
+                               : nullptr;
+  const float* spin_gradient =
+      spin != nullptr ? spin->gradient.data_ptr<float>() : nullptr;
+  double* force_mag =
+      spin != nullptr ? spin->force_mag.data_ptr<double>() : nullptr;
+  const double* extra_energy =
+      long_range != nullptr ? long_range->energy.data_ptr<double>() : nullptr;
+  const float* extra_force =
+      long_range != nullptr ? long_range->force.data_ptr<float>() : nullptr;
+  float* atom_virial_zero =
+      source_virial != nullptr ? nullptr : atom_virial_output.data_ptr<float>();
+  if (step.n_node.size(0) == 1) {
+    auto partial = torch::empty({blocks, kEpilogueTotals},
+                                energy.options().dtype(torch::kFloat64));
+    energy_force_epilogue_kernel<<<blocks, kEpilogueThreads * kEpilogueTotals,
+                                   0, stream>>>(
+        node_count, step.n_node.data_ptr<long>(), force_words, spin_words,
+        spin_gradient, step.raw_energy.data_ptr<double>(),
+        step.seed.data_ptr<double>(), step.node_virial.data_ptr<float>(),
+        extra_energy, extra_force,
+        long_range != nullptr ? long_range->atom_virial.data_ptr<float>()
+                              : nullptr,
+        force.data_ptr<double>(), force_mag, atom_energy.data_ptr<double>(),
+        atom_virial_zero, partial.data_ptr<double>(), step.evaluation_words,
+        energy.data_ptr<double>(), virial.data_ptr<double>());
+    DPA4C_CHECK_LAUNCH("dpa4c energy-force epilogue");
+  } else {
+    energy_force_nodes_kernel<<<blocks, kEpilogueThreads, 0, stream>>>(
+        node_count, force_words, spin_words, spin_gradient,
+        step.raw_energy.data_ptr<double>(), step.seed.data_ptr<double>(),
+        extra_energy, extra_force, force.data_ptr<double>(), force_mag,
+        atom_energy.data_ptr<double>(), atom_virial_zero);
+    DPA4C_CHECK_LAUNCH("dpa4c energy-force nodes");
+    energy.copy_(frame_scalar_sum(atom_energy, step.n_node));
+    if (long_range != nullptr) {
+      step.node_virial.add_(long_range->atom_virial);
+    }
+    virial.copy_(frame_virial_sum(step.node_virial, step.n_node));
+    mark_broken_frames(energy, virial, step.frame_row_ptr, node_count, force,
+                       spin != nullptr ? &spin->force_mag : nullptr);
+  }
+  if (source_virial != nullptr) {
+    atom_virial_output.copy_(canonical_source_virial(
+        source_virial->edge_gradient, source_virial->edge_vec,
+        source_virial->row_ptr, source_virial->order, node_count));
+    if (long_range != nullptr) {
+      atom_virial_output.add_(
+          long_range->atom_virial.reshape({node_count, 3, 3}));
+    }
+  }
 }
 
 }  // namespace
@@ -1451,71 +1859,12 @@ dpa4c_canonical_compress_energy_force(
     int64_t tile,
     torch::Tensor pair_table,
     std::optional<std::vector<int64_t>> fitting_routes) {
-  TORCH_CHECK(edge_vec.is_cuda(),
-              "dpa4c_canonical_compress_energy_force: edge_vec must be a CUDA "
-              "tensor");
-  source = deepmd::canonical_index_view(source);
-  TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
-              "dpa4c_canonical_compress_energy_force: source and edge_vec "
-              "must share the edge axis");
+  const bool atom_virial = check_energy_force_inputs(
+      "dpa4c_canonical_compress_energy_force", edge_vec, source,
+      destination_row_ptr, source_row_ptr, source_order, n_node, n_local, atype,
+      type_embedding, contact_radius, f_inner, f_outer);
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
   const long node_count = atype.size(0);
-  const long edge_count = edge_vec.size(0);
-  TORCH_CHECK(destination_row_ptr.numel() == node_count + 1,
-              "dpa4c_canonical_compress_energy_force: atype and "
-              "destination_row_ptr describe different node counts");
-  // The prologue reads the frame counts, the node types and, for a windowed
-  // descriptor, the contact radii before the runs validate the rest of the
-  // payload, so those inputs are validated here.
-  const torch::Device device = edge_vec.device();
-  const auto on_device = [&](const torch::Tensor& tensor) {
-    return tensor.is_cuda() && tensor.device() == device &&
-           tensor.is_contiguous();
-  };
-  TORCH_CHECK(on_device(n_node) && n_node.dim() == 1 &&
-                  n_node.scalar_type() == torch::kInt64 && on_device(n_local) &&
-                  n_local.dim() == 1 &&
-                  n_local.scalar_type() == torch::kInt64 &&
-                  n_local.numel() == n_node.numel() && n_node.numel() > 0,
-              "dpa4c_canonical_compress_energy_force: n_node and n_local must "
-              "be contiguous int64 tensors on the device of edge_vec with one "
-              "shared shape (nf,), nf >= 1");
-  TORCH_CHECK(on_device(atype) && atype.dim() == 1 &&
-                  atype.scalar_type() == torch::kInt64,
-              "dpa4c_canonical_compress_energy_force: atype must be a "
-              "contiguous int64 tensor of shape (N,) on the device of "
-              "edge_vec");
-  TORCH_CHECK(
-      f_outer <= f_inner || (on_device(contact_radius) &&
-                             contact_radius.scalar_type() == torch::kFloat32 &&
-                             contact_radius.dim() == 1 &&
-                             contact_radius.size(0) == type_embedding.size(0)),
-      "dpa4c_canonical_compress_energy_force: a windowed descriptor "
-      "needs contiguous fp32 contact radii of shape (type_count,) on "
-      "the device of edge_vec");
-  // The source CSR is either complete, which requests the per-atom virial,
-  // or the two-entry placeholder, which declines it.
-  const bool atom_virial = source_row_ptr.numel() == node_count + 1 &&
-                           source_order.numel() == edge_count;
-  TORCH_CHECK(
-      atom_virial || (source_row_ptr.numel() == 2 && source_order.numel() == 2),
-      "dpa4c_canonical_compress_energy_force: the source CSR must "
-      "hold ",
-      node_count + 1, " row pointers and ", edge_count,
-      " positions, or two entries each to decline the per-atom "
-      "virial; got ",
-      source_row_ptr.numel(), " and ", source_order.numel());
-  if (atom_virial) {
-    TORCH_CHECK((source.scalar_type() == torch::kUInt32 ||
-                 source.scalar_type() == torch::kInt64) &&
-                    on_device(source_row_ptr) &&
-                    source_row_ptr.scalar_type() == torch::kInt64 &&
-                    on_device(source_order) &&
-                    source_order.scalar_type() == torch::kInt64,
-                "dpa4c_canonical_compress_energy_force: the per-atom virial "
-                "needs uint32 or int64 sources and a source CSR of contiguous "
-                "int64 row pointers and positions on the device of edge_vec");
-  }
   const int channels = static_cast<int>(type_embedding.size(1));
   const bool has_spin = spin.dim() == 2;
   const Dimensions widths =
@@ -1571,7 +1920,7 @@ dpa4c_canonical_compress_energy_force(
       node_count, frame_count, n_local.data_ptr<long>(),
       frame_count > 1 ? frame_row_ptr.data_ptr<long>() : nullptr,
       atype.data_ptr<long>(), node_type.data_ptr<long>(),
-      seed.data_ptr<double>(), mask.data_ptr<int>(),
+      seed.data_ptr<double>(), mask.data_ptr<int>(), nullptr,
       reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>()),
       has_spin ? reinterpret_cast<unsigned long long*>(
                      spin_fixed.data_ptr<int64_t>())
@@ -1589,36 +1938,10 @@ dpa4c_canonical_compress_energy_force(
                        : node_count;
   auto descriptor = torch::empty({run, widths.output_width}, f32);
   auto state = torch::empty({run, widths.moment_width + 2}, f32);
-  auto saved = torch::empty({run * plan.saved_width()}, f32);
-  // The full runs and the tail run each take the fitting route of their own
-  // size; an absent table, like an empty one, leaves both to the rules. A
-  // route of the fused network needs only the transposed weights besides the
-  // saved pre-activations; the per-layer kernels need the activation
-  // ping-pong, sized for the largest run that takes them.
-  const std::vector<int64_t> routes =
-      std::move(fitting_routes).value_or(std::vector<int64_t>{});
-  const long tail = node_count % run;
-  const int64_t full_route = fitting_route(plan, ws, run, routes);
-  const int64_t tail_route =
-      tail > 0 ? fitting_route(plan, ws, tail, routes) : full_route;
-  const long full_count = node_count / run;
-  const long per_layer_nodes =
-      std::max(full_count > 0 && full_route == kFittingPerLayer ? run : 0L,
-               tail > 0 && tail_route == kFittingPerLayer ? tail : 0L);
-  torch::Tensor transposed;
-  torch::Tensor scratch;
-  float* slot[2] = {nullptr, nullptr};
-  if ((full_count > 0 && full_route != kFittingPerLayer) ||
-      (tail > 0 && tail_route != kFittingPerLayer)) {
-    transposed = torch::empty({fitting_fused_transposed_floats(ws)}, f32);
-    fitting_fused_transpose(stream, plan, ws, transposed.data_ptr<float>());
-  }
-  if (per_layer_nodes > 0) {
-    const int slots = plan.n_layer > 1 ? 2 : 1;
-    scratch = torch::empty({slots, per_layer_nodes, plan.width_max}, f32);
-    slot[0] = scratch[0].data_ptr<float>();
-    slot[1] = slots > 1 ? scratch[1].data_ptr<float>() : slot[0];
-  }
+  const FittingNetwork fitting{plan,   ws,     bs,          resnets,
+                               w_head, b_head, bias_atom_e, act};
+  const FittingRuns runs(stream, fitting, run, node_count,
+                         std::move(fitting_routes), f32);
 
   auto empty_index = torch::empty({0}, source.options());
   auto empty_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
@@ -1668,26 +1991,11 @@ dpa4c_canonical_compress_energy_force(
     dispatch(channels, false, arguments, stream);
 
     // The cotangent replaces the descriptor, which the run no longer needs.
-    const int64_t route = count == run ? full_route : tail_route;
-    if (route != kFittingPerLayer) {
-      fitting_energy_gradient_range(
-          stream, plan, descriptor.data_ptr<float>(), widths.output_width,
-          node_type.data_ptr<long>() + begin, ws, bs, resnets, w_head, b_head,
-          bias_atom_e, act, transposed.data_ptr<float>(),
-          seed.data_ptr<double>() + begin, count, saved.data_ptr<float>(),
-          raw_energy.data_ptr<double>() + begin, descriptor.data_ptr<float>(),
-          route);
-    } else {
-      fitting_forward_range(
-          stream, plan, descriptor.data_ptr<float>(), widths.output_width,
-          node_type.data_ptr<long>() + begin, ws, bs, resnets, w_head, b_head,
-          bias_atom_e, act, count, saved.data_ptr<float>(), slot,
-          raw_energy.data_ptr<double>() + begin);
-      fitting_backward_range(
-          stream, plan, seed.data_ptr<double>() + begin,
-          saved.data_ptr<float>(), ws, bs, resnets, w_head, act, count, slot[0],
-          plan.n_layer > 1 ? slot[1] : nullptr, descriptor.data_ptr<float>());
-    }
+    runs.output_and_cotangent(
+        stream, begin, count, descriptor.data_ptr<float>(),
+        descriptor.data_ptr<float>(), widths.output_width,
+        node_type.data_ptr<long>() + begin, seed.data_ptr<double>() + begin,
+        raw_energy.data_ptr<double>() + begin);
 
     arguments.descriptor_gradient = descriptor.data_ptr<float>();
     arguments.state = state.data_ptr<float>();
@@ -1716,65 +2024,339 @@ dpa4c_canonical_compress_energy_force(
     dispatch(channels, true, arguments, stream);
   }
 
-  const auto* force_words = reinterpret_cast<const unsigned long long*>(
-      force_fixed.data_ptr<int64_t>());
-  const auto* spin_words = has_spin
-                               ? reinterpret_cast<const unsigned long long*>(
-                                     spin_fixed.data_ptr<int64_t>())
-                               : nullptr;
-  float* atom_virial_zero =
-      atom_virial ? nullptr : atom_virial_output.data_ptr<float>();
-  if (frame_count == 1) {
-    auto partial = torch::empty({blocks, kEpilogueTotals}, f64);
-    energy_force_epilogue_kernel<<<blocks, kEpilogueThreads * kEpilogueTotals,
-                                   0, stream>>>(
-        node_count, n_node.data_ptr<long>(), force_words, spin_words,
-        has_spin ? spin_gradient.data_ptr<float>() : nullptr,
-        raw_energy.data_ptr<double>(), seed.data_ptr<double>(),
-        node_virial.data_ptr<float>(), force.data_ptr<double>(),
-        has_spin ? force_mag.data_ptr<double>() : nullptr,
-        atom_energy.data_ptr<double>(), atom_virial_zero,
-        partial.data_ptr<double>(), evaluation_words, energy.data_ptr<double>(),
-        virial.data_ptr<double>());
-    DPA4C_CHECK_LAUNCH("dpa4c energy-force epilogue");
-  } else {
-    energy_force_nodes_kernel<<<blocks, kEpilogueThreads, 0, stream>>>(
-        node_count, force_words, spin_words,
-        has_spin ? spin_gradient.data_ptr<float>() : nullptr,
-        raw_energy.data_ptr<double>(), seed.data_ptr<double>(),
-        force.data_ptr<double>(),
-        has_spin ? force_mag.data_ptr<double>() : nullptr,
-        atom_energy.data_ptr<double>(), atom_virial_zero);
-    DPA4C_CHECK_LAUNCH("dpa4c energy-force nodes");
-    energy.copy_(frame_scalar_sum(atom_energy, n_node));
-    virial.copy_(frame_virial_sum(node_virial, n_node));
-    // A fixed-point force word cannot hold a non-finite value, so a frame
-    // whose energy or virial is not finite reports every force as not a
-    // number (see energy_force_epilogue_kernel).
-    // Nodes past the last frame belong to none and keep their forces.
-    const auto broken = torch::cat(
-        {torch::logical_not(torch::isfinite(energy).all(1).logical_and(
-             torch::isfinite(virial).flatten(1).all(1))),
-         torch::zeros({1}, energy.options().dtype(torch::kBool))});
-    const auto frame =
-        torch::searchsorted(frame_row_ptr, torch::arange(node_count, i64),
-                            /*out_int32=*/false, /*right=*/true) -
-        1;
-    const auto node_broken = broken.index_select(0, frame);
-    force.masked_fill_(node_broken.unsqueeze(1),
-                       std::numeric_limits<double>::quiet_NaN());
-    if (has_spin) {
-      force_mag.masked_fill_(node_broken.unsqueeze(1),
-                             std::numeric_limits<double>::quiet_NaN());
-    }
-  }
-  if (atom_virial) {
-    atom_virial_output.copy_(
-        canonical_source_virial(edge_gradient, edge_vec_float, source_row_ptr,
-                                source_order, node_count));
-  }
+  const EpilogueInputs step{n_node, frame_row_ptr, force_fixed,     raw_energy,
+                            seed,   node_virial,   evaluation_words};
+  const SpinTerms spin_terms{spin_fixed, spin_gradient, force_mag};
+  const SourceVirialTerms source_terms{edge_gradient, edge_vec_float,
+                                       source_row_ptr, source_order};
+  finish_energy_force(stream, node_count, blocks, step,
+                      has_spin ? &spin_terms : nullptr,
+                      atom_virial ? &source_terms : nullptr, nullptr, energy,
+                      atom_energy, force, virial, atom_virial_output);
   return {energy,    atom_energy, force, virial, atom_virial_output,
           force_mag, mask};
+}
+
+// Energy, force and virial of one compressed inference step of a model with a
+// latent-charge long-range module.
+//
+// The module reads charges that its network predicts from the descriptor of
+// every node, and the energy of the charges depends on all of them, so the
+// descriptor backward cannot start before every charge is known. The
+// operator evaluates the descriptor of every node with its moment state, and
+// the charges from the descriptor; then the long range of the charges at
+// fixed charges with its derivative with respect to them
+// (deepmd::latent_charge_sum); then the energy fitting with its cotangent, to
+// which the Jacobian row of every charge with respect to the descriptor of
+// its node, the cotangent of a unit seed, scaled by that derivative adds the
+// cotangent of the charge network; and one descriptor backward from the sum.
+// As in dpa4c_canonical_compress_energy_force, the two networks evaluate the
+// node axis in runs of ``tile`` nodes, and each takes the fused network or
+// the per-layer kernels by a fitting-route table of its own
+// (``fitting_routes`` and ``charge_fitting_routes``). A run of the fused
+// charge network forms its Jacobian rows in the pass of its charges, and a
+// run of the per-layer kernels after the energy fitting, from the
+// pre-activations that it keeps for every node; on a V100 at 512 atoms that
+// order shortens the LAMMPS step by 3.3% against forming them before the
+// long range. The Jacobian rows take the width of the descriptor for every
+// node. The edge backward adds every force onto the
+// fixed-point totals as in dpa4c_canonical_compress_energy_force, and the
+// epilogue adds the energies, the forces at fixed charges and the per-node
+// virials of the long range.
+//
+// The charge network has one channel and the layout of an eligible energy
+// fitting; its per-type bias is ``charge_bias``. ``coord``, ``total_charge``,
+// ``box``, ``coefficient``, ``communicator``, ``kernel``, ``channel``,
+// ``prefactor``, ``order`` and ``spacing`` are those of
+// deepmd::latent_charge_sum, whose charged nodes are the owned real nodes of
+// the frames. The per-atom virial and the source CSR follow
+// dpa4c_canonical_compress_energy_force; the descriptor carries no spin
+// condition and the model no analytical pair potential.
+std::tuple<torch::Tensor,
+           torch::Tensor,
+           torch::Tensor,
+           torch::Tensor,
+           torch::Tensor,
+           torch::Tensor>
+dpa4c_canonical_compress_long_range_energy_force(
+    torch::Tensor edge_vec,
+    torch::Tensor source,
+    torch::Tensor destination_row_ptr,
+    torch::Tensor source_row_ptr,
+    torch::Tensor source_order,
+    torch::Tensor n_node,
+    torch::Tensor n_local,
+    torch::Tensor atype,
+    torch::Tensor table,
+    torch::Tensor basis_table,
+    torch::Tensor basis_matrix,
+    torch::Tensor pair_film,
+    torch::Tensor pair_mixing,
+    torch::Tensor type_embedding,
+    torch::Tensor readout_matrices,
+    torch::Tensor coupling_meta,
+    torch::Tensor coupling_entry,
+    torch::Tensor coupling_value,
+    torch::Tensor output_mean,
+    torch::Tensor output_inv_std,
+    torch::Tensor spin,
+    torch::Tensor spin_pair,
+    torch::Tensor spin_type,
+    torch::Tensor contact_radius,
+    int64_t lmax,
+    double table_stride,
+    double table_max,
+    double rcut,
+    double eps,
+    double degree_floor,
+    double f_inner,
+    double f_outer,
+    std::vector<torch::Tensor> ws,
+    std::vector<torch::Tensor> bs,
+    std::vector<int64_t> resnets,
+    torch::Tensor w_head,
+    torch::Tensor b_head,
+    torch::Tensor bias_atom_e,
+    int64_t act,
+    int64_t tile,
+    std::vector<torch::Tensor> charge_ws,
+    std::vector<torch::Tensor> charge_bs,
+    std::vector<int64_t> charge_resnets,
+    torch::Tensor charge_w_head,
+    torch::Tensor charge_b_head,
+    torch::Tensor charge_bias,
+    int64_t charge_act,
+    torch::Tensor coord,
+    torch::Tensor total_charge,
+    std::optional<torch::Tensor> box,
+    torch::Tensor coefficient,
+    torch::Tensor communicator,
+    int64_t kernel,
+    int64_t channel,
+    double prefactor,
+    int64_t order,
+    double spacing,
+    std::optional<std::vector<int64_t>> fitting_routes,
+    std::optional<std::vector<int64_t>> charge_fitting_routes) {
+  constexpr const char* kOp =
+      "dpa4c_canonical_compress_long_range_energy_force";
+  const bool atom_virial = check_energy_force_inputs(
+      kOp, edge_vec, source, destination_row_ptr, source_row_ptr, source_order,
+      n_node, n_local, atype, type_embedding, contact_radius, f_inner, f_outer);
+  const c10::cuda::CUDAGuard device_guard(edge_vec.device());
+  TORCH_CHECK(spin.dim() != 2, kOp,
+              ": a descriptor with a spin condition is not supported");
+  const long node_count = atype.size(0);
+  TORCH_CHECK(coord.is_cuda() && coord.device() == edge_vec.device() &&
+                  coord.dim() == 2 && coord.size(0) == node_count &&
+                  coord.size(1) == 3 && coord.scalar_type() == torch::kFloat64,
+              kOp,
+              ": coord must be a float64 tensor of shape (N, 3) on the device "
+              "of edge_vec");
+  const int channels = static_cast<int>(type_embedding.size(1));
+  const Dimensions widths = profile_dimensions(channels, static_cast<int>(lmax),
+                                               /*has_spin=*/false);
+  const long frame_count = n_node.size(0);
+  const auto f32 = edge_vec.options().dtype(torch::kFloat32);
+  const auto f64 = edge_vec.options().dtype(torch::kFloat64);
+  const auto i64 = edge_vec.options().dtype(torch::kInt64);
+  auto edge_vec_float = edge_vec.to(torch::kFloat32).contiguous();
+  const auto stream = at::cuda::getCurrentCUDAStream();
+
+  // Every output receives its own allocation, so that no two of the six
+  // unannotated results share storage.
+  auto energy = torch::empty({frame_count, 1}, f64);
+  auto atom_energy = torch::empty({node_count, 1}, f64);
+  auto force = torch::empty({node_count, 3}, f64);
+  auto virial = torch::empty({frame_count, 3, 3}, f64);
+  auto atom_virial_output = torch::empty({node_count, 3, 3}, f32);
+  auto mask =
+      torch::empty({node_count}, edge_vec.options().dtype(torch::kInt32));
+  if (node_count == 0) {
+    energy.zero_();
+    virial.zero_();
+    return {energy, atom_energy, force, virial, atom_virial_output, mask};
+  }
+
+  auto raw_energy = torch::empty({node_count}, f64);
+  auto seed = torch::empty({node_count}, f64);
+  auto charged =
+      torch::empty({node_count}, edge_vec.options().dtype(torch::kBool));
+  auto node_type = torch::empty({node_count}, i64);
+  auto force_fixed = torch::empty({node_count, kForceWords}, i64);
+  auto node_virial = torch::empty({node_count, 9}, f32);
+  auto edge_gradient =
+      atom_virial ? torch::empty_like(edge_vec_float) : torch::Tensor();
+  const int blocks = epilogue_blocks(node_count);
+  auto words =
+      torch::zeros({static_cast<long>(sizeof(EvaluationWords) / sizeof(int))},
+                   edge_vec.options().dtype(torch::kInt32));
+  auto* evaluation_words =
+      reinterpret_cast<EvaluationWords*>(words.data_ptr<int>());
+  const torch::Tensor frame_row_ptr =
+      frame_count > 1 ? frame_row_pointer(n_node) : torch::Tensor();
+  energy_force_prologue_kernel<<<blocks, kEpilogueThreads, 0, stream>>>(
+      node_count, frame_count, n_local.data_ptr<long>(),
+      frame_count > 1 ? frame_row_ptr.data_ptr<long>() : nullptr,
+      atype.data_ptr<long>(), node_type.data_ptr<long>(),
+      seed.data_ptr<double>(), mask.data_ptr<int>(), charged.data_ptr<bool>(),
+      reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>()),
+      nullptr, f_outer > f_inner ? contact_radius.data_ptr<float>() : nullptr,
+      evaluation_words);
+  DPA4C_CHECK_LAUNCH("dpa4c long-range energy-force prologue");
+
+  const FittingLayerPlan plan = fitting_layer_plan(ws);
+  const FittingLayerPlan charge_plan = fitting_layer_plan(charge_ws);
+  TORCH_CHECK(plan.n_layer > 0 && ws[0].size(0) == widths.output_width &&
+                  charge_plan.n_layer > 0 &&
+                  charge_ws[0].size(0) == widths.output_width,
+              kOp,
+              ": the first weights of the energy fitting and of the charge "
+              "network must match the descriptor width");
+  TORCH_CHECK(charge_w_head.numel() == charge_ws.back().size(1) &&
+                  charge_bias.dim() == 1 &&
+                  charge_bias.size(0) == bias_atom_e.size(0),
+              kOp,
+              ": the charge network must have a scalar head and one bias per "
+              "type, as the energy fitting has");
+
+  // === Step 1. Descriptor and moment state of every node ===
+  auto descriptor = torch::empty({node_count, widths.output_width}, f32);
+  auto state = torch::empty({node_count, widths.moment_width + 2}, f32);
+  auto empty_index = torch::empty({0}, source.options());
+  auto empty_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
+  const Payload payload{source,
+                        empty_mask,
+                        empty_index,
+                        destination_row_ptr,
+                        node_type,
+                        table,
+                        basis_table,
+                        basis_matrix,
+                        pair_film,
+                        pair_mixing,
+                        type_embedding,
+                        readout_matrices,
+                        coupling_meta,
+                        coupling_entry,
+                        coupling_value,
+                        output_mean,
+                        output_inv_std,
+                        spin,
+                        spin_pair,
+                        spin_type,
+                        contact_radius,
+                        true,
+                        lmax,
+                        table_stride,
+                        table_max,
+                        rcut,
+                        eps,
+                        degree_floor,
+                        f_inner,
+                        f_outer,
+                        0};
+  Arguments arguments =
+      build_arguments(payload, edge_vec_float, channels, widths);
+  arguments.system_node_count = node_count;
+  arguments.descriptor = descriptor.data_ptr<float>();
+  arguments.state_out = state.data_ptr<float>();
+  arguments.type_mismatch = &evaluation_words->node_types.type_mismatch;
+  arguments.largest_radius = &evaluation_words->node_types.largest_radius;
+  arguments.type_present =
+      present_types(arguments, &evaluation_words->node_types);
+  dispatch(channels, false, arguments, stream);
+
+  // === Step 2. Charges of the nodes and their descriptor Jacobian ===
+  // The charge of a node is a function of the descriptor of that node alone,
+  // so the cotangent of its descriptor through the charge network is the
+  // derivative of the energy with respect to the charge times the Jacobian
+  // row of the charge, the input cotangent of a unit seed. A run of the fused
+  // network forms the charges and those rows in one pass, before the long
+  // range forms the derivative and the energy fitting overwrites the
+  // descriptor; a run of the per-layer kernels forms its charges here and
+  // its rows from their saved pre-activations after the energy fitting.
+  const long run = tile > 0
+                       ? std::max<long>(1, std::min<long>(tile, node_count))
+                       : node_count;
+  const long width = widths.output_width;
+  const auto charge_bias_double = charge_bias.to(torch::kFloat64).contiguous();
+  const FittingNetwork charge_fitting{
+      charge_plan,   charge_ws,     charge_bs,          charge_resnets,
+      charge_w_head, charge_b_head, charge_bias_double, charge_act};
+  const FittingRuns charge_runs(stream, charge_fitting, run, node_count,
+                                std::move(charge_fitting_routes), f32, true);
+  const auto unit_seed = torch::ones({run}, f64);
+  auto raw_charge = torch::empty({node_count}, f64);
+  auto charge_jacobian = torch::empty({node_count, width}, f32);
+  for (long begin = 0; begin < node_count; begin += run) {
+    const long count = std::min(run, node_count - begin);
+    charge_runs.forward(
+        stream, begin, count, descriptor.data_ptr<float>() + begin * width,
+        charge_jacobian.data_ptr<float>() + begin * width, width,
+        node_type.data_ptr<long>() + begin, unit_seed.data_ptr<double>(),
+        raw_charge.data_ptr<double>() + begin);
+  }
+
+  // === Step 3. Long range of the charges ===
+  // The per-node virials of the charged nodes sum to the virial of each frame,
+  // which the frame totals form with those of the descriptor.
+  const auto long_range = deepmd::long_range::latent_charge_sum(
+      coord, raw_charge.to(torch::kFloat32).unsqueeze(1), charged, n_node,
+      total_charge, box, coefficient, communicator, kernel, channel, prefactor,
+      order, spacing);
+  const torch::Tensor& long_range_energy = std::get<0>(long_range);
+  const torch::Tensor& charge_gradient = std::get<1>(long_range);
+  const torch::Tensor& long_range_force = std::get<2>(long_range);
+  const torch::Tensor& long_range_atom_virial = std::get<3>(long_range);
+
+  // === Step 4. Cotangent of the descriptor ===
+  // The cotangent of the energy fitting replaces the descriptor run by run;
+  // the runs of the per-layer kernels of the charge network then form their
+  // Jacobian rows, and the rows, scaled by the derivative of the energy with
+  // respect to the charges, add the cotangent of the charge network.
+  const FittingNetwork fitting{plan,   ws,     bs,          resnets,
+                               w_head, b_head, bias_atom_e, act};
+  const FittingRuns runs(stream, fitting, run, node_count,
+                         std::move(fitting_routes), f32);
+  for (long begin = 0; begin < node_count; begin += run) {
+    const long count = std::min(run, node_count - begin);
+    float* const run_descriptor = descriptor.data_ptr<float>() + begin * width;
+    runs.output_and_cotangent(
+        stream, begin, count, run_descriptor, run_descriptor, width,
+        node_type.data_ptr<long>() + begin, seed.data_ptr<double>() + begin,
+        raw_energy.data_ptr<double>() + begin);
+  }
+  for (long begin = 0; begin < node_count; begin += run) {
+    const long count = std::min(run, node_count - begin);
+    charge_runs.backward(stream, begin, count, unit_seed.data_ptr<double>(),
+                         charge_jacobian.data_ptr<float>() + begin * width);
+  }
+  descriptor.addcmul_(charge_jacobian, charge_gradient);
+
+  // === Step 5. Descriptor backward and force assembly ===
+  arguments.descriptor_gradient = descriptor.data_ptr<float>();
+  arguments.state = state.data_ptr<float>();
+  arguments.moment_gradient = state.data_ptr<float>();
+  arguments.force =
+      reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>());
+  arguments.node_virial = node_virial.data_ptr<float>();
+  arguments.edge_gradient =
+      atom_virial ? edge_gradient.data_ptr<float>() : nullptr;
+  arguments.clear_padding = true;
+  dispatch(channels, true, arguments, stream);
+
+  // === Step 6. Node results and frame totals ===
+  const EpilogueInputs step{n_node, frame_row_ptr, force_fixed,     raw_energy,
+                            seed,   node_virial,   evaluation_words};
+  const SourceVirialTerms source_terms{edge_gradient, edge_vec_float,
+                                       source_row_ptr, source_order};
+  const LongRangeTerms long_range_terms{long_range_energy, long_range_force,
+                                        long_range_atom_virial};
+  finish_energy_force(stream, node_count, blocks, step, nullptr,
+                      atom_virial ? &source_terms : nullptr, &long_range_terms,
+                      energy, atom_energy, force, virial, atom_virial_output);
+  return {energy, atom_energy, force, virial, atom_virial_output, mask};
 }
 
 TORCH_LIBRARY_FRAGMENT(deepmd, library) {
@@ -1789,4 +2371,6 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
                &dpa4c_canonical_compress_backward_inplace);
   library.impl("dpa4c_canonical_compress_energy_force", torch::kCUDA,
                &dpa4c_canonical_compress_energy_force);
+  library.impl("dpa4c_canonical_compress_long_range_energy_force", torch::kCUDA,
+               &dpa4c_canonical_compress_long_range_energy_force);
 }

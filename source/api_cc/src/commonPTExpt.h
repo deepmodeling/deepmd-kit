@@ -165,19 +165,21 @@ inline void copy_results(const std::vector<torch::Tensor>& targets,
  * @brief Replay repeated device-resident evaluations as one CUDA graph.
  *
  * Launching kernels dominates an evaluation of a small system. Two
- * evaluations over the same buffers and extents launch the same kernels with
- * the same arguments, so the evaluation is captured into a CUDA graph on the
- * second consecutive call with the same key -- every buffer address and
- * extent the evaluation depends on -- and relaunched as a whole while the key
- * stays the same. A call with another key releases the graph and evaluates
- * eagerly.
+ * evaluations over the same buffers, extents and host values launch the same
+ * kernels with the same arguments, so the evaluation is captured into a CUDA
+ * graph on the second consecutive call with the same key -- every buffer
+ * address, extent and host value that shapes its launches -- and relaunched
+ * as a whole while the key stays the same. A call with another key releases
+ * the graph and evaluates eagerly.
  *
  * The evaluation must be free of host synchronization, and every device
  * tensor it uses beyond the caller's buffers must either be allocated inside
  * it, so that the graph owns them, or persist at an address that the key
- * covers. The constants of the model are read where they reside at capture,
- * so whoever replaces them calls ``invalidate`` first. An evaluation that
- * cannot be captured runs eagerly instead (see ``capture``).
+ * covers; a replay repeats the launches of the capture without the host code
+ * that made them, so every host value that shapes them belongs to the key.
+ * The constants of the model are read where they reside at capture, so
+ * whoever replaces them calls ``invalidate`` first. An evaluation that cannot
+ * be captured runs eagerly instead (see ``capture``).
  *
  * A capture, like the release of a graph, waits for the whole device, and
  * both hold ``device_wide_mutex``, so the replays of different models capture
@@ -193,7 +195,8 @@ class GraphReplay {
   /**
    * @brief Evaluate under ``key`` on the current stream of ``device``.
    *
-   * @param key Every buffer address and extent ``evaluate`` depends on.
+   * @param key Every buffer address, extent and host value that shapes the
+   * launches of ``evaluate``.
    * @param device Index of the CUDA device.
    * @param evaluate The evaluation, enqueued on the current stream.
    */

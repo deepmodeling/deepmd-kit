@@ -436,6 +436,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
       const std::int64_t* d_source_order,
       const double* d_coord,
       void* world,
+      const double* box,
       const std::int64_t nloc,
       const std::int64_t nall_nodes,
       const std::int64_t edge_storage,
@@ -915,9 +916,10 @@ class DeepPot : public DeepBaseModel {
    * @brief Whether the model carries a long-range module.
    *
    * Such a module sums its interaction over every pair of atoms of the
-   * system, so the model evaluates only a complete non-periodic system, and
-   * compute_canonical_graph_gpu() passes it the positions of the nodes and,
-   * on several ranks, the communicator.
+   * system, and over the images of the cell of a periodic system when it
+   * serves periodic systems, so the model evaluates complete systems, and
+   * compute_canonical_graph_gpu() passes it the positions of the nodes, the
+   * cell and, on several ranks, the communicator.
    */
   bool has_long_range() const;
 
@@ -948,35 +950,48 @@ class DeepPot : public DeepBaseModel {
    * @param[in] world Pointer to the MPI communicator of the caller (an
    * ``MPI_Comm``), as InputNlist::world, when the system spans several
    * ranks, or null on a single rank. A model with a long-range module
-   * evaluates a complete non-periodic system: on a single rank its nodes are
-   * the whole system (``nall_nodes == nloc``); on several ranks it requires
+   * evaluates a complete system: a single rank holds every node of a
+   * non-periodic system (``nall_nodes == nloc``), and the halo nodes of a
+   * periodic one are images of its owned nodes; on several ranks it requires
    * the communicator, reads the positions of the nodes each rank owns, and
    * is evaluated on every rank at every step, a rank without nodes included
    * (``nall_nodes``, ``nloc`` and ``edge_storage`` zero), whose buffers
    * sized by the nodes or by the edge storage may then be null. Every other
    * model ignores it.
+   * @param[in] box The cell of a periodic system in host memory, nine values
+   * in the length unit of the model, row-major with the lattice vectors as
+   * rows, or null for a non-periodic system. A model with a long-range
+   * module that serves periodic systems evaluates the system over the images
+   * of the cell, one whose module serves none rejects a cell, and every
+   * other model ignores it.
    * @param[in] nloc Number of owned local nodes.
    * @param[in] nall_nodes Total local-plus-halo node count.
    * @param[in] edge_storage Number of edge storage slots.
-   * @param[in] stream Accelerator stream (``cudaStream_t``) of the model
-   * device on which the inputs were produced and the outputs will be
-   * consumed; a non-null stream requires a CUDA build. The evaluation is
-   * enqueued on it without a synchronization of the stream. A graph without
-   * halo nodes is captured into a CUDA graph on the second consecutive call
-   * with the same buffers and extents and replayed while they stay the same,
-   * except where a model with a long-range module receives a communicator.
-   * The host waits for the device when a call captures or releases a graph,
-   * which happens on that second call and on a call whose buffers or extents
-   * change. set_charge_spin waits for the work in flight on the model device
-   * before it replaces the constants and for the replacement before it
-   * returns, and the caller completes the work on its stream before it
-   * destroys the model. A null stream runs on the current stream of the
-   * calling thread for the model device and waits for that stream before
-   * returning. Models in different threads of one process evaluate
-   * concurrently, and their captures, releases of graphs and charge-state
-   * updates, which wait for the whole device, take turns; CUDA work outside
-   * DeePMD-kit that waits for the whole device while a capture is under way
-   * invalidates it, and the model then evaluates without replay.
+   * @param[in] stream Accelerator stream (``cudaStream_t``) of the model device
+   * on which the inputs were produced and the outputs will be consumed; a
+   * non-null stream requires a CUDA build. The evaluation is enqueued on it
+   * without a synchronization of the stream. A graph without halo nodes is
+   * captured into a CUDA graph on the second consecutive call with the same
+   * buffers and extents and replayed while they stay the same, except where a
+   * model with a long-range module receives a communicator. A model whose
+   * module serves periodic systems copies the cell into memory of its own,
+   * which a replay reads, and the mesh size of the cell counts as an extent: a
+   * call with another cell than the previous call first waits for the earlier
+   * evaluations, consecutive evaluations on different streams run in call
+   * order, and after the mesh size changes, the model evaluates without replay
+   * for 64 calls, after which the capture follows as for new extents. The host
+   * waits for the device when a call captures or releases a graph, which
+   * happens on that second call and on a call whose buffers or extents change.
+   * set_charge_spin waits for the work in flight on the model device before it
+   * replaces the constants and for the replacement before it returns, and the
+   * caller completes the work on its stream before it destroys the model. A
+   * null stream runs on the current stream of the calling thread for the model
+   * device and waits for that stream before returning. Models in different
+   * threads of one process evaluate concurrently, and their captures, releases
+   * of graphs and charge-state updates, which wait for the whole device, take
+   * turns; CUDA work outside DeePMD-kit that waits for the whole device while a
+   * capture is under way invalidates it, and the model then evaluates without
+   * replay.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
@@ -991,6 +1006,7 @@ class DeepPot : public DeepBaseModel {
                                    const std::int64_t* d_source_order,
                                    const double* d_coord,
                                    void* world,
+                                   const double* box,
                                    const std::int64_t nloc,
                                    const std::int64_t nall_nodes,
                                    const std::int64_t edge_storage,
@@ -1233,5 +1249,16 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
 
  protected:
   std::vector<std::shared_ptr<deepmd::DeepPot>> dps;
+
+ private:
+  /**
+   * @brief Check that every model accepts the cell handed to the ensemble.
+   * An empty cell, which a non-periodic system hands a model with a
+   * long-range module, is accepted only when every model carries one: the
+   * neighbor-list entries of other models, such as those of the TensorFlow
+   * backend, read the cell of the region.
+   **/
+  template <typename VALUETYPE>
+  void check_ensemble_box(const std::vector<VALUETYPE>& dbox) const;
 };
 }  // namespace deepmd

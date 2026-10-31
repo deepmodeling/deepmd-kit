@@ -142,6 +142,9 @@ _TRAINER_KEYS = ("lora",)
 _LEARNED_CHILD_KEYS = (
     "descriptor",
     "fitting_net",
+    # A long-range module belongs to the learned energy; the composition then
+    # rejects it beside the bridging term.
+    "long_range",
     "model_branch_alias",
     "info",
     "use_compile",

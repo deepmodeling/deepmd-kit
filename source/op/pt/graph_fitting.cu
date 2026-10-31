@@ -2402,6 +2402,13 @@ bool launch_first_listed(long panels, Fn&& launch, ShapeList<Shapes...>) {
 template <int W>
 struct FusedShapes;
 template <>
+struct FusedShapes<64> {
+  using Latency = ShapeList<FusedShape<64, 2, 2, 4, 4, 1, 1, 4, 32>,
+                            FusedShape<64, 1, 4, 4, 2, 2, 1, 8>>;
+  using Throughput = ShapeList<FusedShape<64, 1, 4, 4, 2, 2, 4, 3>,
+                               FusedShape<64, 1, 4, 4, 4, 2, 2, 2, 16>>;
+};
+template <>
 struct FusedShapes<96> {
   using Latency = ShapeList<FusedShape<96, 3, 2, 4, 4, 1, 1, 4, 32>,
                             FusedShape<96, 1, 4, 4, 2, 3, 1, 8>>;
@@ -2441,6 +2448,8 @@ struct FusedShapes<384> {
 template <typename Fn>
 bool with_fused_shapes(long width, Fn&& fn) {
   switch (width) {
+    case 64:
+      return fn(FusedShapes<64>{});
     case 96:
       return fn(FusedShapes<96>{});
     case 192:
@@ -2499,21 +2508,21 @@ bool visit_compared_shapes(long width, bool latency, Fn&& visit) {
 ///
 /// A run of more panels than multiprocessors takes the throughput shape of its
 /// width, the fastest on sm_120 of those that fit the register and
-/// shared-memory budgets: the two narrow widths take 32-node panels, three
-/// and two CTAs per SM, whose small lane tiles keep the most panels in
-/// flight, and a width of 256 takes 64-node panels on one CTA per SM, which
-/// stream each weight slice to half as many CTAs as 32-node panels and so keep
-/// the L2 traffic within the FMA rate. A width of 96 moves on to 64-node
-/// panels of twelve warps, two CTAs per SM in place of three, once a run
-/// fills two waves of them, or once they pass it in fewer waves than the
-/// 32-node panels, each shape at the CTAs per SM that the device keeps
-/// resident. Such a panel streams each weight slice once for twice the nodes
-/// of a 32-node panel, and on sm_120 the larger panels take 6% less time at
-/// 100,800 nodes and 11% less at 131,072, the default node tile; from two
-/// waves on, this gain outweighs the cost of their last, partly filled wave,
-/// and below two waves a wave fewer outweighs it: on the 92 multiprocessors
-/// of an L20, one wave of 64-node panels takes 0.064 ms at 10,296 nodes
-/// against 0.078 ms for two waves of 32-node panels.
+/// shared-memory budgets: the narrow widths take 32-node panels, four CTAs
+/// per SM at a width of 64, three at 96 and two at 192, whose small lane
+/// tiles keep the most panels in flight, and a width of 256 takes 64-node
+/// panels on one CTA per SM, which stream each weight slice to half as many
+/// CTAs as 32-node panels and so keep the L2 traffic within the FMA rate. A
+/// width of 96 moves on to 64-node panels of twelve warps, two CTAs per SM in
+/// place of three, once a run fills two waves of them, or once they pass it in
+/// fewer waves than the 32-node panels, each shape at the CTAs per SM that the
+/// device keeps resident. Such a panel streams each weight slice once for twice
+/// the nodes of a 32-node panel, and on sm_120 the larger panels take 6% less
+/// time at 100,800 nodes and 11% less at 131,072, the default node tile; from
+/// two waves on, this gain outweighs the cost of their last, partly filled
+/// wave, and below two waves a wave fewer outweighs it: on the 92
+/// multiprocessors of an L20, one wave of 64-node panels takes 0.064 ms at
+/// 10,296 nodes against 0.078 ms for two waves of 32-node panels.
 ///
 /// A width that the 128 columns of the per-layer large tile divide is left to
 /// the per-layer kernels at runs of more panels than multiprocessors on a

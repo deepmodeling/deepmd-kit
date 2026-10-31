@@ -1188,7 +1188,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
             (256 * sms + 37, 256 * sms),
         )
         gen = torch.Generator(device=self.device).manual_seed(11)
-        for width in (96, 192, 256, 384):
+        for width in (64, 96, 192, 256, 384):
             networks = (
                 (70, 3, True),
                 (2 * width + 8, 3, True),

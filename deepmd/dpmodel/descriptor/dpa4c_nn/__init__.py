@@ -14,7 +14,6 @@ from .charge_state import (
 from .geometry import (
     MAX_ANGULAR_DEGREE,
     build_angular_basis,
-    build_moment_indices,
     degree_offsets,
     derive_degree_channels,
     packed_l2_to_stf,
@@ -41,7 +40,6 @@ __all__ = [
     "SpinChannels",
     "build_angular_basis",
     "build_bispectrum_layout",
-    "build_moment_indices",
     "canonicalize_charge_spin",
     "degree_offsets",
     "derive_bispectrum_ranks",
