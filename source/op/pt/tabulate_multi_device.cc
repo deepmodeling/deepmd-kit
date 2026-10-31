@@ -20,6 +20,43 @@ void GetTensorDevice(const torch::Tensor& t, std::string& str) {
   }
 }
 
+static void ValidateGpuLastLayerSize(const int64_t last_layer_size) {
+  // The GPU tabulation kernels use this dimension either as the block size or
+  // to size dynamic shared memory, so reject invalid models before any launch:
+  // an out-of-range value overflows the block dimension (or divides by zero)
+  // inside the launch configuration.
+  TORCH_CHECK(last_layer_size > 0 && last_layer_size <= 1024,
+              "last_layer_size must be between 1 and 1024 for GPU tabulation, "
+              "but got ",
+              last_layer_size);
+}
+
+static void ValidatePositiveLastLayerSize(const int64_t last_layer_size) {
+  // SE-T-TEBD uses a fixed-size GPU block and loops over the output width, so
+  // it only requires a positive loop bound rather than the generic 1024 cap.
+  TORCH_CHECK(last_layer_size > 0,
+              "last_layer_size must be positive for GPU tabulation, but got ",
+              last_layer_size);
+}
+
+static void ValidateGpuLastLayerSizeBeforeAllocation(
+    const torch::Tensor& table_tensor, const int64_t last_layer_size) {
+  // Forward wrappers allocate descriptor tensors using last_layer_size, so a
+  // negative GPU width must be rejected before torch::empty sees the shape.
+  if (table_tensor.device().is_cuda()) {
+    ValidateGpuLastLayerSize(last_layer_size);
+  }
+}
+
+static void ValidatePositiveGpuLastLayerSizeBeforeAllocation(
+    const torch::Tensor& table_tensor, const int64_t last_layer_size) {
+  // Reject invalid SE-T-TEBD widths before constructing the output tensor,
+  // while preserving widths above the maximum CUDA block dimension.
+  if (table_tensor.device().is_cuda()) {
+    ValidatePositiveLastLayerSize(last_layer_size);
+  }
+}
+
 using NamedTensor = std::pair<const char*, torch::Tensor>;
 
 /**
@@ -102,6 +139,7 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
   CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
                                      two_embed, nloc, nnei, last_layer_size,
@@ -168,6 +206,7 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_grad_gpu(
         dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
@@ -239,6 +278,7 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
   CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_grad_grad_gpu(
         dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
@@ -248,9 +288,6 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
         "The input tensor is on the GPU, but the GPU support for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    TORCH_CHECK(last_layer_size <= 1024,
-                "In the process of model compression, the size of the "
-                "last layer of embedding net must be less than 1024!");
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_grad_grad_cpu(
         dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
@@ -294,6 +331,7 @@ void TabulateFusionSeTForward(const torch::Tensor& table_tensor,
   const int64_t nnei_j = em_tensor.size(2);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_t_gpu(descriptor, table, table_info, em_x, em,
                                      nloc, nnei_i, nnei_j, last_layer_size);
@@ -346,6 +384,7 @@ void TabulateFusionSeTGradForward(const torch::Tensor& table_tensor,
   const int64_t last_layer_size = descriptor_tensor.size(1);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_t_grad_gpu(dy_dem_x, dy_dem, table, table_info,
                                           em_x, em, dy, nloc, nnei_i, nnei_j,
@@ -403,6 +442,7 @@ void TabulateFusionSeTGradGradForward(const torch::Tensor& table_tensor,
   const int64_t last_layer_size = descriptor_tensor.size(1);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_t_grad_grad_gpu(dz_dy, table, table_info, em_x,
                                                em, dz_dy_dem_x, dz_dy_dem, nloc,
@@ -413,9 +453,6 @@ void TabulateFusionSeTGradGradForward(const torch::Tensor& table_tensor,
         "the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    TORCH_CHECK(last_layer_size <= 1024,
-                "In the process of model compression, the size of the "
-                "last layer of embedding net must be less than 1024!");
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_t_grad_grad_cpu(dz_dy, table, table_info, em_x,
                                                em, dz_dy_dem_x, dz_dy_dem, nloc,
@@ -460,6 +497,7 @@ void TabulateFusionSeTTebdForward(const torch::Tensor& table_tensor,
   const int64_t nnei_j = em_tensor.size(2);
   // compute
   if (device == "GPU") {
+    ValidatePositiveLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_t_tebd_gpu(descriptor, table, table_info, em_x,
                                           em, nloc, nnei_i, nnei_j,
@@ -513,6 +551,7 @@ void TabulateFusionSeTTebdGradForward(const torch::Tensor& table_tensor,
 
   // compute
   if (device == "GPU") {
+    ValidatePositiveLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_t_tebd_grad_gpu(dy_dem_x, table, table_info,
                                                em_x, em, dy, nloc, nnei_i,
@@ -566,6 +605,7 @@ void TabulateFusionSeTTebdGradGradForward(
   const int64_t last_layer_size = descriptor_tensor.size(3);
   // compute
   if (device == "GPU") {
+    ValidatePositiveLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_t_tebd_grad_grad_gpu(
         dz_dy, table, table_info, em_x, em, dz_dy_dem_x, nloc, nnei_i, nnei_j,
@@ -576,11 +616,6 @@ void TabulateFusionSeTTebdGradGradForward(
         "for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    TORCH_CHECK(last_layer_size <= 1024,
-                "In the process of model compression, the "
-                "size of the "
-                "last layer of embedding net must be less "
-                "than 1024!");
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_t_tebd_grad_grad_cpu(
         dz_dy, table, table_info, em_x, em, dz_dy_dem_x, nloc, nnei_i, nnei_j,
@@ -616,6 +651,7 @@ void TabulateFusionSeRForward(const torch::Tensor& table_tensor,
   const int64_t nnei = em_tensor.size(1);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_r_gpu(descriptor, table, table_info, em, nloc,
                                      nnei, last_layer_size);
@@ -662,6 +698,7 @@ void TabulateFusionSeRGradForward(const torch::Tensor& table_tensor,
   const int64_t last_layer_size = descriptor_tensor.size(2);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_r_grad_gpu(dy_dem, table, table_info, em, dy,
                                           nloc, nnei, last_layer_size);
@@ -708,6 +745,7 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
   const int64_t last_layer_size = descriptor_tensor.size(2);
   // compute
   if (device == "GPU") {
+    ValidateGpuLastLayerSize(last_layer_size);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_r_grad_grad_gpu(
         dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
@@ -717,11 +755,6 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
         "support for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    TORCH_CHECK(last_layer_size <= 1024,
-                "In the process of model compression, "
-                "the size of the "
-                "last layer of embedding net must be "
-                "less than 1024!");
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_r_grad_grad_cpu(
         dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
@@ -906,6 +939,7 @@ class TabulateFusionSeAOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1094,6 +1128,7 @@ class TabulateFusionSeAttenOp
       const torch::Tensor& two_embed_tensor,
       int64_t last_layer_size,
       bool is_sorted) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1262,6 +1297,7 @@ class TabulateFusionSeTOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1415,6 +1451,7 @@ class TabulateFusionSeROp
       const torch::Tensor& table_info_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1573,6 +1610,8 @@ class TabulateFusionSeTTebdOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidatePositiveGpuLastLayerSizeBeforeAllocation(table_tensor,
+                                                     last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
