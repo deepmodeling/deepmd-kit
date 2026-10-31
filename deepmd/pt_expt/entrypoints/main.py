@@ -851,8 +851,12 @@ def change_bias(
             )
         )
         model_dict = model_to_change.serialize()
+        # The updated archive keeps the lower of the input archive, as a
+        # backend conversion does, so that only the bias changes.
         deserialize_to_file(
-            output_path, {"model": model_dict, "model_def_script": model_params}
+            output_path,
+            {"model": model_dict, "model_def_script": model_params},
+            lower_kind=pte_data["lower_input_kind"],
         )
     log.info(f"Saved model to {output_path}")
 
