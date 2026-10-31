@@ -1120,6 +1120,35 @@ def test_compressed_frozen_model_matches_uncompressed(
             )
 
 
+@pytest.mark.skipif(
+    env.DEVICE.type != "cuda", reason="the compact canonical path is CUDA only"
+)
+def test_compressed_further_blocks_with_long_range_fail_fast(tmp_path) -> None:
+    """A compressed multi-block model with a long-range module is refused.
+
+    The compact canonical operators evaluate the further message-passing
+    blocks and the long range each, but not together, so the deployment of
+    such a model on the CUDA backend stops with a diagnostic instead of
+    falling back to the uncompressed equations of a generic lower.
+    """
+    config = _config("les")
+    config["descriptor"].update(
+        n_radial=8, precision="float32", n_blocks=2, rcut=[3.0, 2.5]
+    )
+    config["fitting_net"].update(
+        neuron=[32, 32], activation_function="silu", resnet_dt=False
+    )
+    config["fitting_net"]["precision"] = "float32"
+    model = get_model(config).to(env.DEVICE).eval()
+    model.atomic_model.enable_compression(0.5)
+    with pytest.raises(ValueError, match="further message-passing blocks"):
+        deserialize_to_file(
+            str(tmp_path / "duo_long_range.pt2"),
+            {"model": model.serialize(), "model_def_script": config},
+            lower_kind="auto",
+        )
+
+
 @pytest.mark.parametrize("kernel", ["les", "sog"])
 @REQUIRES_SUPPORTED_COMPILE
 def test_compiled_matches_eager(kernel: str) -> None:

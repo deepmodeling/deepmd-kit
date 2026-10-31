@@ -531,14 +531,15 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
           atom_energy, force, out_force_mag.data_ptr<double>(), total_virial,
           atom_virial, atype, source, deepmd::canonical_index_width(nodes),
           edge_vec, destination_row_ptr, source_row_ptr, source_order,
-          graph_spin.data_ptr<float>(), natoms, nodes, edge_storage, stream);
+          graph_spin.data_ptr<float>(), /*world=*/nullptr, /*halo=*/nullptr,
+          natoms, nodes, edge_storage, stream);
     } else {
       dp.compute_canonical_graph_gpu(
           atom_energy, force, total_virial, atom_virial, atype, source,
           deepmd::canonical_index_width(nodes), edge_vec, destination_row_ptr,
           source_row_ptr, source_order,
-          /*d_coord=*/nullptr, /*world=*/nullptr, /*box=*/nullptr, natoms,
-          nodes, edge_storage, stream);
+          /*d_coord=*/nullptr, /*world=*/nullptr, /*halo=*/nullptr,
+          /*box=*/nullptr, natoms, nodes, edge_storage, stream);
     }
   }
 

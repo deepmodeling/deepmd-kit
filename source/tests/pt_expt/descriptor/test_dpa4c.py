@@ -819,8 +819,8 @@ class TestDPA4CSpin:
         for layer in self.descriptor.radial_embedding.layers:
             assert layer.autocast_output is False
 
-    def test_compression_rejects_further_blocks(self) -> None:
-        """A descriptor with further blocks has no compressed kernel."""
+    def test_compression_packs_further_blocks(self) -> None:
+        """A descriptor with further blocks compresses, one record per block."""
         from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             compression_ineligibility_reason,
             mega_eligible,
@@ -836,11 +836,10 @@ class TestDPA4CSpin:
             precision="float32",
             seed=23,
         ).to(env.DEVICE)
-        assert not mega_eligible(descriptor)
-        reason = compression_ineligibility_reason(descriptor)
-        assert reason is not None and "n_blocks" in reason
-        with pytest.raises(ValueError, match="n_blocks"):
-            descriptor.enable_compression(0.5)
+        assert mega_eligible(descriptor)
+        assert compression_ineligibility_reason(descriptor) is None
+        descriptor.enable_compression(0.5)
+        assert descriptor.compress_blocks.shape[0] == 1
 
     def test_compression_covers_the_spin_families(self) -> None:
         """Spin follows the degree profile, so compression covers it.

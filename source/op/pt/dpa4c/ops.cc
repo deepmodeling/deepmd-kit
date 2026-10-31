@@ -34,6 +34,19 @@
 // CSR; a two-entry placeholder in place of `source_row_ptr` and
 // `source_order` declines it, which leaves it zero.
 //
+// A descriptor of several message-passing blocks passes the records of its
+// further blocks as `blocks`, one row per block in the layout of
+// deepmd/pt_expt/kernels/dpa4c/attention.py, and may pass their cutoffs in Å
+// as `block_rcut`, one per record, none above the one before or above `rcut`:
+// a further block of a smaller cutoff than the block before then scans the
+// edges inside it alone, and without them every further block scans the edges
+// of the first. A descriptor of one block passes none or an empty matrix, and
+// no cutoffs. A node set of a decomposed domain that holds halo
+// rows after its owned rows passes their border plan, `halo_send`,
+// `halo_swaps` and `communicator` (source/op/pt/border_exchange.h), with
+// which the operator refreshes the features of the halo rows that the
+// further blocks read; it then evaluates the owned rows alone.
+//
 // The fused long-range operator evaluates a model whose atomic energy adds a
 // latent-charge long-range module with a charge network of one channel. It
 // takes the arguments of the fused operator up to `tile`, the network that
@@ -134,7 +147,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "float degree_floor, float f_inner, float f_outer, "
       "Tensor[] ws, Tensor[] bs, int[] resnets, "
       "Tensor w_head, Tensor b_head, Tensor bias_atom_e, int act, "
-      "int tile, Tensor pair_table, int[]? fitting_routes=None) "
+      "int tile, Tensor pair_table, int[]? fitting_routes=None, "
+      "Tensor? blocks=None, Tensor? halo_send=None, Tensor? halo_swaps=None, "
+      "Tensor? communicator=None, float[]? block_rcut=None) "
       "-> (Tensor energy, Tensor atom_energy, Tensor force, Tensor virial, "
       "Tensor atom_virial, Tensor force_mag, Tensor mask)");
   library.def(

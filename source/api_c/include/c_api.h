@@ -463,8 +463,23 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * requires the communicator, reads the positions of the nodes each rank owns,
  * and is evaluated on every rank at every step, a rank without nodes included
  * (``nall_nodes``, ``nloc`` and ``edge_storage`` zero), whose buffers sized by
- * the nodes or by the edge storage may then be NULL. Every other model
- * ignores it.
+ * the nodes or by the edge storage may then be NULL. A model with further
+ * message-passing blocks (DP_DeepPotCanonicalGraphRequiresHalo) exchanges the
+ * features of halo nodes through it with the ranks of ``halo``. Every other
+ * model ignores it.
+ * @param[in] halo The halo exchange of the node set, in host memory with its
+ * send list on the model device, or NULL for a node set without halo nodes. A
+ * model with further message-passing blocks reads features of the sources of
+ * its edges, so a node set with halo nodes requires it: the model refreshes
+ * the halo nodes from their owners before every block that reads them and
+ * evaluates the owned nodes alone, that is the energies of the owned nodes,
+ * the virial of the edges they own and the force of these edges on both of
+ * their nodes, so that the forces on the halo nodes are the contributions of
+ * this rank, which the caller folds onto their owners. Every rank of the
+ * decomposition then calls the model at every step, a rank without owned
+ * nodes included, and the messages travel on ``world``. Such a node set is
+ * evaluated without replay, and the host waits for the stream once before
+ * every swap with another rank. Every other model rejects a halo exchange.
  * @param[in] box The cell of a periodic system in host memory, nine values in
  * the length unit of the model, row-major with the lattice vectors as rows,
  * or NULL for a non-periodic system. A model with a long-range module that
@@ -500,8 +515,9 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * then evaluates without replay.
  * @note API versions 28 to 30 named this function
  *       DP_DeepPotComputeCanonicalGraphGPU, without ``d_virial``, ``d_coord``,
- *       ``world``, ``box`` and ``stream``; a binary built against that name
- *       fails to load rather than call a function of another argument list.
+ *       ``world``, ``halo``, ``box`` and ``stream``; a binary built against
+ *       that name fails to load rather than call a function of another
+ *       argument list.
  * @since API version 31
  */
 extern void DP_DPA4ComputeCanonicalGraphGPU(
@@ -519,6 +535,7 @@ extern void DP_DPA4ComputeCanonicalGraphGPU(
     const int64_t* d_source_order,
     const double* d_coord,
     void* world,
+    const DP_HaloExchange* halo,
     const double* box,
     int64_t nloc,
     int64_t nall_nodes,
@@ -549,6 +566,17 @@ extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
  * @since API version 31
  */
 extern bool DP_DeepPotCanonicalGraphRequiresSourceCSR(DP_DeepPot* dp);
+
+/**
+ * @brief Query whether a compact canonical evaluation of a node set with halo
+ * nodes requires its halo exchange.
+ *
+ * A model with further message-passing blocks reads features of the sources
+ * of its edges, which DP_DPA4ComputeCanonicalGraphGPU refreshes on the halo
+ * nodes from their owners through the halo exchange of the node set.
+ * @since API version 31
+ */
+extern bool DP_DeepPotCanonicalGraphRequiresHalo(DP_DeepPot* dp);
 
 /**
  * @brief Query whether the model carries a long-range module.
@@ -1363,6 +1391,13 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
  * @param[in] d_source_order Source-grouped int64 edge storage positions.
  * @param[in] d_spin FP32 per-node magnetic moment, shape ``(nall_nodes, 3)``;
  * halo rows carry their owner's moment.
+ * @param[in] world Pointer to the MPI communicator of the caller (an
+ * ``MPI_Comm``) when the system spans several ranks, or NULL on a single rank,
+ * under the contract described for DP_DPA4ComputeCanonicalGraphGPU.
+ * @param[in] halo The halo exchange of the node set, or NULL for a node set
+ * without halo nodes, under the contract described for
+ * DP_DPA4ComputeCanonicalGraphGPU; DP_DeepSpinCanonicalGraphRequiresHalo
+ * reports whether the model reads it.
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
@@ -1372,8 +1407,9 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
  * DP_DeepSpinSetChargeSpin waits for the work in flight on the model device
  * before it replaces the constants and for the replacement before it returns.
  * @note API version 30 named this function DP_DeepSpinComputeCanonicalGraphGPU,
- *       without ``d_virial`` and ``stream``; a binary built against that name
- *       fails to load rather than call a function of another argument list.
+ *       without ``d_virial``, ``world``, ``halo`` and ``stream``; a binary
+ *       built against that name fails to load rather than call a function of
+ *       another argument list.
  * @since API version 31
  */
 extern void DP_DPA4SpinComputeCanonicalGraphGPU(
@@ -1391,6 +1427,8 @@ extern void DP_DPA4SpinComputeCanonicalGraphGPU(
     const int64_t* d_source_row_ptr,
     const int64_t* d_source_order,
     const float* d_spin,
+    void* world,
+    const DP_HaloExchange* halo,
     int64_t nloc,
     int64_t nall_nodes,
     int64_t edge_storage,
@@ -1402,6 +1440,14 @@ extern void DP_DPA4SpinComputeCanonicalGraphGPU(
  * @since API version 30
  */
 extern bool DP_DeepSpinUsesCanonicalGraphInference(DP_DeepSpin* dp);
+
+/**
+ * @brief Query whether a compact canonical evaluation of a node set with halo
+ * nodes requires its halo exchange for a DP spin model, as
+ * DP_DeepPotCanonicalGraphRequiresHalo does for a DP.
+ * @since API version 31
+ */
+extern bool DP_DeepSpinCanonicalGraphRequiresHalo(DP_DeepSpin* dp);
 
 /**
  * @brief Query whether a DP spin model is served under the native spin scheme

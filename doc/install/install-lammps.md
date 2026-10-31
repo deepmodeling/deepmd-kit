@@ -164,4 +164,12 @@ mpirun --mca opal_cuda_support 1 -x UCX_MEMTYPE_CACHE=n -np 2 lmp -k on g 2 -sf 
 
 With `UCX_MEMTYPE_CACHE=n`, UCX queries the memory type of every buffer instead of taking it from a cache that can report a GPU buffer as host memory and make UCX abort.
 
+On a node with an InfiniBand or RoCE adapter, UCX may split every large message between two GPUs of the node across the direct GPU-to-GPU path and the adapter, whose share is far slower and holds up the whole message. Two more options keep each message on a single path, which the GPUs write directly:
+
+```bash
+mpirun --mca opal_cuda_support 1 -x UCX_MEMTYPE_CACHE=n -x UCX_MAX_RNDV_RAILS=1 -x UCX_RNDV_SCHEME=put_zcopy -np 4 lmp -k on g 4 -sf kk -in in.lammps
+```
+
+On a node of eight RTX PRO 6000 GPUs with a RoCE adapter, four ranks then exchange 2 MB in 0.07 ms instead of 0.54 ms. Models of several message-passing blocks exchange atom features at every block of every step and gain the most: a two-block DPA4C model of 100,800 atoms steps about a third faster on four GPUs of that node.
+
 Launch a run on a single MPI rank without these options: it exchanges no atom data, and the CUDA support adds a memory-type query to every MPI call, which can lengthen the step of a small system by more than 10%.

@@ -290,11 +290,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         "coupling_value",
         "output_mean",
         "output_inv_std",
+        "blocks",
     )
     # The low-rank radial table and its expansion, which a payload compressed
     # without that table does not carry; empty artifacts select the radial
-    # table itself, so such a payload loads as the snapshot it was.
-    _OPTIONAL_COMPRESSION_BUFFER_NAMES = ("basis_table", "basis_matrix")
+    # table itself, so such a payload loads as the snapshot it was. A payload
+    # of a single-block descriptor compressed before further blocks existed
+    # carries no block records either, and an empty array denotes one block.
+    _OPTIONAL_COMPRESSION_BUFFER_NAMES = ("basis_table", "basis_matrix", "blocks")
 
     def __init__(
         self,

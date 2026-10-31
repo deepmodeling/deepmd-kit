@@ -96,6 +96,46 @@ class CanonicalGraph:
     source_order: torch.Tensor
 
 
+@dataclass(frozen=True)
+class BorderPlan:
+    """Store the border plan of the node set of one domain of a decomposed frame.
+
+    The node set holds the owned nodes first, then the halo nodes, images of
+    atoms that other swaps of a LAMMPS brick decomposition deliver. A model
+    whose further message-passing blocks read features of the edge sources
+    refreshes the halo rows of those features from their owners with this
+    plan (``source/op/pt/border_exchange.h``), and evaluates the owned nodes
+    alone. A node set without halo nodes carries a plan without swaps.
+
+    Parameters
+    ----------
+    send_nodes
+        Nodes that the swaps send, the swaps concatenated in order, with shape
+        ``(M,)``, int32, on the device of the graph; entries past the rows of
+        the swaps are unused.
+    swaps
+        Swap table with shape ``(nswap, 5)``, int32, on the CPU: the rank that
+        swap ``s`` sends to, the rank it receives from, the counts of the rows
+        it sends and receives, and the first halo row it receives into.
+    communicator
+        Address of the MPI_Comm handle of the decomposition, an int64 CPU
+        tensor of one element, zero for a single process.
+    """
+
+    send_nodes: torch.Tensor
+    swaps: torch.Tensor
+    communicator: torch.Tensor
+
+    @classmethod
+    def single_domain(cls, device: torch.device) -> BorderPlan:
+        """Return the plan of a node set without halo nodes."""
+        return cls(
+            send_nodes=torch.zeros(2, dtype=torch.int32, device=device),
+            swaps=torch.zeros(0, 5, dtype=torch.int32, device="cpu"),
+            communicator=torch.zeros(1, dtype=torch.int64, device="cpu"),
+        )
+
+
 def validate_canonical_graph_shapes(
     graph: CanonicalGraph,
     node_count: int,

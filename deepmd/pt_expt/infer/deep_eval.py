@@ -2352,6 +2352,7 @@ class DeepEval(DeepEvalBackend):
     ) -> tuple[tuple[torch.Tensor | None, ...], int, int]:
         """Pack local graph inputs according to the exported artifact's ABI."""
         from deepmd.pt_expt.utils.canonical_graph import (
+            BorderPlan,
             canonical_index_bytes,
         )
         from deepmd.pt_expt.utils.env import (
@@ -2421,6 +2422,16 @@ class DeepEval(DeepEvalBackend):
                 fparam_t,
                 aparam_t,
                 self._make_charge_spin_input(nframes, charge_spin),
+            )
+        if canonical and self.metadata.get("has_message_passing", False):
+            # Frames held whole carry no halo nodes, so the border plan of a
+            # model with further message-passing blocks has no swaps.
+            border = BorderPlan.single_domain(DEVICE)
+            model_inputs = (
+                *model_inputs,
+                border.communicator,
+                border.send_nodes,
+                border.swaps,
             )
         topology_names = self.metadata.get("topologies", ())
         if topology_names:

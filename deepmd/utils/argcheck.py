@@ -556,10 +556,10 @@ def descrpt_dpa4c_args() -> list[Argument]:
                 "descriptor. Every further block reads the features of the "
                 "edge sources in the previous block, widens the receptive "
                 "field by one cutoff and exchanges one node feature across "
-                "ranks. Compression supports one block only. A model with "
-                "several blocks extrapolates poorly in pair contacts closer "
-                "than about 0.45 of the covalent bond length and should enable "
-                "`bridging_method` wherever such contacts can occur."
+                "ranks. A model with several blocks extrapolates poorly in "
+                "pair contacts closer than about 0.45 of the covalent bond "
+                "length and should enable `bridging_method` wherever such "
+                "contacts can occur."
             ),
         ),
         Argument(

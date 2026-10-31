@@ -153,6 +153,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         coord: torch.Tensor | None = None,
         communicator: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
+        halo_send: torch.Tensor | None = None,
+        halo_swaps: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate an eligible compressed canonical deployment graph.
 
@@ -189,10 +191,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Node positions with shape ``(N, 3)`` in Å, float64, for a model
             with a long-range module; ``None`` otherwise.
         communicator
-            For a model with a long-range module, the address of the MPI_Comm
-            handle of a frame decomposed into domains, one per rank, as an
-            int64 CPU tensor of one element, whose owned nodes are then those
-            of one domain; zero or ``None`` for a complete frame.
+            For a model with a long-range module or with further
+            message-passing blocks, the address of the MPI_Comm handle of a
+            frame decomposed into domains, one per rank, as an int64 CPU
+            tensor of one element, whose owned nodes are then those of one
+            domain; zero or ``None`` for a complete frame.
         box
             For a model with a long-range module, the cells of the frames
             with shape ``(nf, 9)``, float64 on the CPU, the rows of every
@@ -200,6 +203,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             complete non-periodic frame, and ``None`` non-periodic frames.
             The halo nodes of a periodic frame are images of its owned
             nodes.
+        halo_send, halo_swaps
+            For a model with further message-passing blocks, the send list and
+            the swap table of the border plan of a single frame (see
+            :class:`~deepmd.pt_expt.utils.canonical_graph.BorderPlan`), with
+            ``communicator``; ``None`` for a frame without halo nodes.
 
         Returns
         -------
@@ -216,13 +224,24 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             canonical_model_eligible as dpa4c_canonical_eligible,
         )
         from deepmd.pt_expt.kernels.dpa4c.canonical import (
+            canonical_model_unsupported_reason as dpa4c_canonical_unsupported,
+        )
+        from deepmd.pt_expt.kernels.dpa4c.canonical import (
             dpa4c_canonical_compress_energy_force,
         )
         from deepmd.pt_expt.utils.canonical_graph import (
+            BorderPlan,
             CanonicalGraph,
             validate_canonical_graph_shapes,
         )
 
+        if (halo_send is None) != (halo_swaps is None):
+            raise ValueError(
+                "the send list and the swap table of a border plan come together"
+            )
+        reason = dpa4c_canonical_unsupported(self)
+        if reason is not None:
+            raise ValueError(reason)
         use_dpa4c = dpa4c_canonical_eligible(self)
         if not use_dpa4c and not dpa1_canonical_eligible(self):
             raise ValueError("model is not eligible for compact canonical deployment")
@@ -315,6 +334,15 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             # counts itself, so nothing runs on the node axis around it. The
             # fitting-route table measured for the network on the backend
             # device, if any, becomes a literal of the traced program.
+            border = (
+                None
+                if halo_send is None
+                else BorderPlan(
+                    send_nodes=halo_send,
+                    swaps=halo_swaps,
+                    communicator=communicator,
+                )
+            )
             energy, atom_energy, force, virial, atom_virial, force_mag, mask = (
                 dpa4c_canonical_compress_energy_force(
                     descriptor,
@@ -325,6 +353,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     spin,
                     None if pair_potential is None else pair_potential.pair_table,
                     fitting_routes(fitting),
+                    border,
                 )
             )
         else:
@@ -383,11 +412,17 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         coord: torch.Tensor | None = None,
         communicator: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
+        halo_send: torch.Tensor | None = None,
+        halo_swaps: torch.Tensor | None = None,
         *,
         do_atomic_virial: bool,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace the compact canonical deployment forward with ``make_fx``.
+
+        The traced module takes the eight graph tensors, then the inputs that
+        the model reads in the order ``coord``, ``communicator``, ``box``,
+        ``halo_send``, ``halo_swaps``.
 
         Parameters
         ----------
@@ -399,8 +434,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             For a model with a long-range module, sample node positions with
             shape ``(N, 3)``, float64, a sample communicator, an int64 CPU
             tensor of one element, and sample cells with shape ``(nf, 9)``,
-            float64 on the CPU, which the traced module then takes as its
-            ninth to eleventh inputs; ``None`` otherwise.
+            float64 on the CPU; ``None`` otherwise.
+        halo_send, halo_swaps
+            For a model with further message-passing blocks, a sample border
+            plan, with the sample ``communicator`` and without ``coord`` and
+            ``box``; ``None`` otherwise.
         do_atomic_virial
             Whether the traced output includes per-node virial.
         **make_fx_kwargs
@@ -410,13 +448,74 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         -------
         torch.nn.Module
             Traced compact deployment module of eight inputs, or eleven with
-            the node positions, the communicator and the cells.
+            the node positions, the communicator and the cells, or with the
+            communicator and the border plan.
         """
         model = self
-        if not (coord is None) == (communicator is None) == (box is None):
+        long_range = (coord, communicator, box)
+        border = (communicator, halo_send, halo_swaps)
+        if not (
+            all(value is None for value in (*long_range, halo_send, halo_swaps))
+            or (
+                all(value is not None for value in long_range)
+                and halo_send is None
+                and halo_swaps is None
+            )
+            or (
+                all(value is not None for value in border)
+                and coord is None
+                and box is None
+            )
+        ):
             raise ValueError(
-                "the compact lower of a model with a long-range module takes "
-                "the node positions, the communicator and the cells together"
+                "the compact lower takes the node positions, the communicator "
+                "and the cells of a long-range module together, or the "
+                "communicator and the border plan of further message-passing "
+                "blocks together"
+            )
+
+        if halo_send is not None:
+
+            def fn_message_passing(
+                atype: torch.Tensor,
+                n_node: torch.Tensor,
+                n_local: torch.Tensor,
+                source: torch.Tensor,
+                edge_vec: torch.Tensor,
+                destination_row_ptr: torch.Tensor,
+                source_row_ptr: torch.Tensor,
+                source_order: torch.Tensor,
+                communicator: torch.Tensor,
+                halo_send: torch.Tensor,
+                halo_swaps: torch.Tensor,
+            ) -> dict[str, torch.Tensor]:
+                return model.forward_lower_canonical_graph(
+                    atype,
+                    n_node,
+                    n_local,
+                    source,
+                    edge_vec,
+                    destination_row_ptr,
+                    source_row_ptr,
+                    source_order,
+                    do_atomic_virial=do_atomic_virial,
+                    communicator=communicator,
+                    halo_send=halo_send,
+                    halo_swaps=halo_swaps,
+                )
+
+            return make_fx(fn_message_passing, **make_fx_kwargs)(
+                atype,
+                n_node,
+                n_local,
+                source,
+                edge_vec,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
+                communicator,
+                halo_send,
+                halo_swaps,
             )
 
         if coord is not None:

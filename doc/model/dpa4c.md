@@ -120,12 +120,14 @@ carry the accuracy–cost trade-off:
   A second block is the cheapest accuracy of the family: on MatPES it removed
   14% to 21% of the force error of every size, and a two-block model was more
   accurate than the single-block model one or two sizes up that costs as much
-  as an uncompressed graph. A model with several blocks cannot be compressed
-  and runs as that uncompressed graph, while a single-block model can use the
-  much faster compressed kernels, so choose the depth with deployment in mind. `rcut`
-  then takes either one cutoff for every block or a list of one non-increasing
-  cutoff per block, such as `[6.0, 5.0]`; the default of 6 Å for both blocks is
-  the most accurate.
+  as an uncompressed graph. Compression narrows that comparison: the compressed
+  kernels of a single block are far faster than its uncompressed graph, while
+  the dense layers of a further block act on every edge in either form, so a
+  compressed two-block step costs several times the compressed single-block
+  step (see [Model compression](#model-compression)); choose the depth with
+  deployment in mind. `rcut` then takes either one cutoff
+  for every block or a list of one non-increasing cutoff per block, such as
+  `[6.0, 5.0]`; the default of 6 Å for both blocks is the most accurate.
 - **Width** — {ref}`channels <model[standard]/descriptor[dpa4c]/channels>`, one
   of 8, 16, 32, 64, or 128. This is the primary scaling knob. It widens the
   scalar and edge features, the per-atom angular state, and the descriptor
@@ -178,9 +180,11 @@ A `duo` size is the size of the same name with two message-passing blocks, for
 example `dpa4c-air-duo-v20260911`. As an uncompressed graph it costs about
 twice as much per step as its single-block size and is more accurate than the
 single-block size one or two steps up. There is no `nano-duo`, because the
-single-block `mini` is more accurate at the same cost. A `duo` model cannot be
-compressed, so choose a single-block size where the compressed kernels are
-needed.
+single-block `mini` is more accurate at the same cost. A `duo` model compresses
+like a single-block one, but its second block evaluates two dense layers on
+every edge, which compression cannot tabulate, so a compressed `duo` step on a
+GPU costs several times the compressed step of its single-block size (see
+[Model compression](#model-compression)).
 
 Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
 and `fitting_net`. Run-specific settings are written alongside the preset:
@@ -347,12 +351,13 @@ concise form above expands to it.
 
 Bridging changes nothing in the workflow after training. The model freezes,
 compresses and runs in LAMMPS like the plain DPA4C model of the same depth: a
-compressed single-block model still takes the compact canonical graph form, the
-fused kernels evaluate the analytical term in the same pass over the neighbors
-as the descriptor, and multi-GPU runs need no settings of their own. Native
-spin and the frame charge state combine with bridging; the analytical term
-depends on the separation alone and leaves the magnetic force to the learned
-model.
+compressed model still takes the compact canonical graph form, the fused
+kernels evaluate the analytical term in the same pass over the neighbors as the
+descriptor, and with several blocks they remove a pair below the inner radius
+from every block, as the model does. Multi-GPU runs need no settings of their
+own. Native spin and the frame charge state
+combine with bridging; the analytical term depends on the separation alone and
+leaves the magnetic force to the learned model.
 
 A model trained without bridging fine-tunes into its bridged form, and the
 other way round. Add the bridging keys above to the input, keep the
@@ -435,7 +440,6 @@ computed from data; DPA4C needs none of them and ignores them.
 Compression requires:
 
 - the PyTorch Exportable backend;
-- one message-passing block, `n_blocks: 1`;
 - `precision: "float32"`;
 - `channels`, `lmax` and `radial_modes` inside the compiled sets listed above;
 - an empty
@@ -444,8 +448,36 @@ Compression requires:
 
 `dp --pt-expt compress` and `freeze --compress` report an explicit error when
 any of these is not met.
-A model with several blocks or with excluded type pairs still trains and runs;
-deploy it as the uncompressed graph archive.
+A model with excluded type pairs still trains and runs; deploy it as the
+uncompressed graph archive.
+
+A model with several message-passing blocks compresses on the same terms. On a
+GPU, the fused kernels evaluate every block, each within its own cutoff, in the
+same energy-force pass, including zone bridging and native spin, and LAMMPS
+runs the archive on one GPU or on several (see [Multiple GPUs](#multiple-gpus)).
+On a CPU host, the fused operators cover a single block, so a model with several
+blocks evaluates its descriptor through the portable path. A model with several
+blocks and a latent-charge long-range module cannot be exported for a GPU in
+compressed form; the export reports an error.
+
+The further blocks are the expensive part of a compressed `duo` model: the
+radial table removes the radial network of the first block, but the dense
+layers of the second block act on every edge. On one RTX PRO 6000 Blackwell GPU
+with LAMMPS and Kokkos, a step of a 100 800-atom boron-carbon-nitrogen diamond
+took:
+
+| Size   | Single block | `duo`    |
+| ------ | ------------ | -------- |
+| `mini` | 3.6 ms       | 18.6 ms  |
+| `neo`  | 5.1 ms       | 36.1 ms  |
+| `air`  | 7.6 ms       | 50.3 ms  |
+| `plus` | 12.5 ms      | 123.5 ms |
+
+A further block evaluates only the edges inside its own cutoff, so a smaller
+cutoff for the second block shortens the step: on the same system a `mini-duo`
+model with `rcut` `[8.0, 6.0]` took 23.7 ms, against 41.3 ms with 8 Å for both
+blocks and 19.5 ms with 6 Å for both, and a `plus-duo` model 132.4 ms, against
+270.4 ms and 121.2 ms.
 
 ## Running in LAMMPS
 
@@ -505,12 +537,14 @@ export DP_INTER_OP_PARALLELISM_THREADS=1
 lmp -in in.lammps
 ```
 
-Three conditions have to hold for the fused CPU path to be taken:
+Four conditions have to hold for the fused CPU path to be taken:
 
 - the archive is **compressed**, because the operator reads the radial table
   rather than evaluating the radial network;
 - `channels` is one of 8, 16, 32, 64, 128, `lmax` one of 2, 3, 4, `radial_modes`
   one of 0, 2, 4, 8, the parameters are float32, and no type pairs are excluded;
+- the descriptor has **one** message-passing block; a model with several blocks
+  on a CPU host falls back to the portable path;
 - the descriptor is **not** spin-conditioned. The magnetic families need a
   source-major counterpart of the destination scan, which only the CUDA kernels
   carry; a spin model on a CPU host falls back to the portable path.
@@ -579,7 +613,15 @@ A model with several blocks hands device buffers to the same MPI library for
 the exchange between its blocks, so its ranks must run with the default CUDA
 allocator. Under `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, Open MPI
 over UCX cannot map such buffers between processes and aborts the first
-exchange.
+exchange. Each block exchanges its features once in the forward and once in the
+backward of every step, while the atoms whose neighbors are all owned by their
+own rank are evaluated, so the speed of the exchange decides how well such a
+model scales; on a node with an InfiniBand or RoCE adapter, launch it with the
+UCX options of
+[Install LAMMPS](../install/install-lammps.md#mpi-for-runs-on-several-gpus).
+With them, a `mini-duo` step of a 100 800-atom boron-carbon-nitrogen diamond
+took 18.8 ms on one RTX PRO 6000 GPU, 9.8 ms on two and 5.6 ms on four, and a
+`plus-duo` step 124.3 ms, 63.7 ms and 32.5 ms.
 
 ## Inference settings
 
@@ -776,17 +818,18 @@ order consistent across the dataset, the input file, and any downstream
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression requires `float32` and a configuration inside the compiled
   sets listed under [Model compression](#model-compression). The resulting
-  archive runs fused kernels on either a CUDA device or a CPU host; only a
-  spin-conditioned model is CUDA-only.
+  archive runs fused kernels on either a CUDA device or a CPU host; a
+  spin-conditioned model and a model with several blocks run them on CUDA only.
 - The device-resident inference path requires a Kokkos-enabled LAMMPS build on
   the GPU backend.
 - A single-block descriptor is one-hop local: interactions beyond `rcut` are
   not represented. Each further block extends the range by its own cutoff.
-- A model with several blocks cannot be compressed and runs as the
-  uncompressed graph archive. In pair contacts closer than about 0.45 of the
-  covalent bond length, which no training set samples, it extrapolates worse
-  than a single block; enable [zone bridging](#zone-bridging) wherever such
-  contacts can occur.
+- A model with several blocks costs several times its single-block size per
+  step even when compressed, and on a GPU it cannot be combined with a
+  latent-charge long-range module in compressed form. In pair contacts closer
+  than about 0.45 of the covalent bond length, which no training set samples,
+  it extrapolates worse than a single block; enable
+  [zone bridging](#zone-bridging) wherever such contacts can occur.
 - Native spin requires the `native` scheme; the virtual-atom `deepspin` scheme
   is not supported. The Dzyaloshinskii-Moriya interaction is not representable,
   as explained under [Native spin](#native-spin).

@@ -1147,6 +1147,118 @@ inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
 }
 
 // ============================================================================
+// Halo exchange of a compact canonical node set.
+// ============================================================================
+
+/**
+ * @brief The halo exchange of a node set as the compact canonical lower of a
+ * model with further message-passing blocks receives it
+ * (source/op/pt/border_exchange.h): the nodes the swaps send, int32 on the
+ * model device, and the swap table, an int32 CPU tensor of shape
+ * ``(nswap, 5)`` whose columns are the rank a swap sends to, the rank it
+ * receives from, the counts of the nodes it sends and receives, and the first
+ * halo node it receives into.
+ */
+struct HaloTensors {
+  at::Tensor send_nodes;
+  at::Tensor swaps;
+};
+
+/**
+ * @brief The halo exchange of a node set without halo nodes, on the model
+ * device ``device``.
+ */
+inline HaloTensors empty_halo(const torch::Device& device) {
+  const auto int32_option = torch::TensorOptions().dtype(torch::kInt32);
+  return {torch::zeros({0}, int32_option.device(device)),
+          torch::zeros({0, 5}, int32_option)};
+}
+
+/**
+ * @brief The swap table of ``nswap`` swaps (HaloTensors::swaps).
+ */
+inline at::Tensor halo_swap_table(const int nswap,
+                                  const int* sendproc,
+                                  const int* recvproc,
+                                  const int* sendnum,
+                                  const int* recvnum,
+                                  const int* firstrecv) {
+  if (nswap < 0) {
+    throw deepmd::deepmd_exception(
+        "the halo exchange has a negative number of swaps.");
+  }
+  auto swaps =
+      torch::empty({nswap, 5}, torch::TensorOptions().dtype(torch::kInt32));
+  int* const table = swaps.data_ptr<int>();
+  for (int s = 0; s < nswap; ++s) {
+    table[5 * s + 0] = sendproc[s];
+    table[5 * s + 1] = recvproc[s];
+    table[5 * s + 2] = sendnum[s];
+    table[5 * s + 3] = recvnum[s];
+    table[5 * s + 4] = firstrecv[s];
+  }
+  return swaps;
+}
+
+/**
+ * @brief The tensors of a halo exchange of the C API, whose send list resides
+ * on ``device``; the send list is wrapped, not copied.
+ */
+inline HaloTensors halo_tensors(const DP_HaloExchange& halo,
+                                const torch::Device& device) {
+  at::Tensor swaps =
+      halo_swap_table(halo.nswap, halo.sendproc, halo.recvproc, halo.sendnum,
+                      halo.recvnum, halo.firstrecv);
+  std::int64_t sent = 0;
+  for (int s = 0; s < halo.nswap; ++s) {
+    sent += halo.sendnum[s];
+  }
+  if (sent > 0 && halo.d_sendlist == nullptr) {
+    throw deepmd::deepmd_exception(
+        "the swaps of the halo exchange send nodes, but its send list is "
+        "null.");
+  }
+  const auto int32_option =
+      torch::TensorOptions().dtype(torch::kInt32).device(device);
+  at::Tensor send_nodes =
+      sent > 0 ? torch::from_blob(const_cast<int*>(halo.d_sendlist), {sent},
+                                  int32_option)
+               : torch::zeros({0}, int32_option);
+  return {send_nodes, swaps};
+}
+
+/**
+ * @brief The halo exchange of the extended node set of a host neighbor list,
+ * whose ``nloc`` owned nodes precede the ghost atoms that ``fwd_map`` keeps,
+ * in the order of the atoms. ``fwd_map`` maps an atom to its node, or to -1
+ * for an atom of a type the model drops, whose swaps send and receive the
+ * nodes that remain. The send list is copied to ``device``.
+ */
+inline HaloTensors halo_tensors(const InputNlist& lmp_list,
+                                const std::vector<int>& fwd_map,
+                                const int nloc,
+                                const torch::Device& device) {
+  std::vector<std::vector<int>> sendlist;
+  std::vector<int> sendnum, recvnum;
+  remap_comm_sendlist(sendlist, sendnum, recvnum, lmp_list, fwd_map);
+  std::vector<int> firstrecv(lmp_list.nswap);
+  std::vector<int> nodes;
+  int next = nloc;
+  for (int s = 0; s < lmp_list.nswap; ++s) {
+    firstrecv[s] = next;
+    next += recvnum[s];
+    nodes.insert(nodes.end(), sendlist[s].begin(), sendlist[s].end());
+  }
+  at::Tensor send_nodes =
+      torch::from_blob(nodes.data(), {static_cast<std::int64_t>(nodes.size())},
+                       torch::TensorOptions().dtype(torch::kInt32))
+          .to(device, torch::kInt32, /*non_blocking=*/false, /*copy=*/true);
+  return {send_nodes,
+          halo_swap_table(lmp_list.nswap, lmp_list.sendproc, lmp_list.recvproc,
+                          sendnum.data(), recvnum.data(), firstrecv.data())};
+}
+
+// ============================================================================
 // Charge-state fold — the runtime charge/spin condition of a compressed model.
 // ============================================================================
 

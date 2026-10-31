@@ -672,6 +672,47 @@ def test_compact_canonical_export_accepts_source_csr_placeholders(
 
 
 @_GPU
+def test_a_multi_block_export_reads_its_border_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The compact lower of further message-passing blocks reads its border plan.
+
+    The communicator and the border plan follow the graph by name, since their
+    positions are those of the long-range inputs of the energy lower; a program
+    that took them for long-range inputs would ignore the halo rows of a
+    decomposed frame and give wrong energies on several ranks. Each of them
+    must reach the fused operator, and the metadata must announce the message
+    passing, from which the C++ interface decides to pass a border plan.
+    """
+    monkeypatch.setenv("DP_CUDA_INFER", "2")
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config).to("cpu").eval()
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    exported, metadata, _model_json, _output_keys = _trace_and_export(
+        {"model": model.serialize()},
+        lower_kind="dpa4c_canonical",
+        do_atomic_virial=True,
+    )
+    assert metadata["has_message_passing"]
+    user_inputs = exported.graph_signature.user_inputs
+    placeholders = {
+        node.name: node
+        for node in exported.graph_module.graph.nodes
+        if node.op == "placeholder"
+    }
+    for name, expected in zip(
+        user_inputs[-3:], ("communicator", "halo_send", "halo_swaps"), strict=True
+    ):
+        assert name.startswith(expected), user_inputs
+        assert any(
+            user.target
+            is torch.ops.deepmd.dpa4c_canonical_compress_energy_force.default
+            for user in placeholders[name].users
+        ), name
+
+
+@_GPU
 @pytest.mark.parametrize("index_dtype", [torch.uint32, torch.int64])
 def test_canonical_atom_virial_sums_to_frame(
     monkeypatch: pytest.MonkeyPatch,

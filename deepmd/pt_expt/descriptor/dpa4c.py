@@ -240,11 +240,11 @@ class DescrptDPA4C(DescrptDPA4CDP):
         ):
             from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
                 dpa4c_graph_compress,
-                mega_eligible,
+                graph_operator_eligible,
                 op_available,
             )
 
-            if op_available(self.spin is not None) and mega_eligible(self):
+            if op_available(self.spin is not None) and graph_operator_eligible(self):
                 # The operator conditions the moment on device from its frozen
                 # per-type table, so it takes the raw input rather than the
                 # output of ``SpinChannels.conditioned_spin``.
@@ -806,7 +806,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             dpa4c_graph_compress_energy_force,
             ef_op_available,
-            mega_eligible,
+            graph_operator_eligible,
         )
         from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
@@ -814,7 +814,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
 
         if (
             not ef_op_available(self.spin is not None)
-            or not mega_eligible(self)
+            or not graph_operator_eligible(self)
             or not fitting_eligible(fitting)
         ):
             return None

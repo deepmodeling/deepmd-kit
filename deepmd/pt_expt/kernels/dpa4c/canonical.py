@@ -18,11 +18,58 @@ from deepmd.pt_expt.kernels.utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+
     from deepmd.pt_expt.utils.canonical_graph import (
+        BorderPlan,
         CanonicalGraph,
     )
 
 _cpu_library: torch.library.Library | None = None
+
+
+def canonical_model_unsupported_reason(model: Any) -> str | None:
+    """Return why a compressed DPA4C model has no compact canonical operator.
+
+    On the CUDA backend, a compressed DPA4C model whose descriptor carries
+    further message-passing blocks and whose learned part carries a long-range
+    module would take the compact canonical path, whose operators evaluate the
+    blocks and the long range each, but not yet together. Such a model must
+    not fall back to a generic lower, which would silently evaluate the
+    uncompressed equations, so the deployment reports this reason instead.
+
+    Parameters
+    ----------
+    model
+        Model to deploy.
+
+    Returns
+    -------
+    str or None
+        Diagnostic of the missing operator, or ``None`` when the compact
+        canonical path serves or declines the model on other grounds.
+    """
+    if backend_device_type() != "cuda":
+        return None
+    atomic_model = getattr(model, "atomic_model", None)
+    parts = None if atomic_model is None else atomic_model.fused_decomposition()
+    if parts is None or not parts[0].has_long_range():
+        return None
+    descriptor = parts[0].descriptor
+    if not (
+        bool(getattr(descriptor, "compress", False))
+        and getattr(descriptor, "attentions", None)
+    ):
+        return None
+    return (
+        "A compressed DPA4C model with further message-passing blocks "
+        "(`n_blocks` > 1) and a long-range module has no compact canonical "
+        "operator yet: the fused CUDA path evaluates the further blocks and "
+        "the long range each, but not together. Deploy the uncompressed "
+        "archive, or a single-block model with the long-range module."
+    )
 
 
 def canonical_model_eligible(model: Any) -> bool:
@@ -60,8 +107,10 @@ def canonical_model_eligible(model: Any) -> bool:
         return False
     # A latent-charge long-range module joins the pipeline through the node
     # positions and the cells, which its operator reads in place of a pair
-    # list or a mesh; that pipeline evaluates no pair potential.
+    # list or a mesh; that pipeline evaluates no pair potential and one block.
     if parts[0].has_long_range():
+        if descriptor.attentions:
+            return False
         from deepmd.pt_expt.long_range.latent_charge import (
             LatentChargeLongRange,
         )
@@ -294,10 +343,11 @@ def _cpu_energy_force(
 
     The force and the virial are assembled by index reduction in fp64. The
     per-atom virial is attributed to the source nodes that the source CSR
-    lists, and is zero when two-entry placeholders take the place of the CSR.
-    A frame whose energy or virial is not finite reports every force of its
-    nodes, and every magnetic force, as not a number, as the CUDA operator
-    does.
+    lists, and is zero when two-entry placeholders take the place of the CSR;
+    the part of the switch totals of a source gate belongs to the node of the
+    row that holds each edge, its destination. A frame whose energy or virial
+    is not finite reports every force of its nodes, and every magnetic force,
+    as not a number, as the CUDA operator does.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         frame_id_from_n_node,
@@ -348,19 +398,37 @@ def _cpu_energy_force(
         *args[:_DESCRIPTOR_TAIL_COUNT],
     )
     # The trailing fitting-route table, which a caller may leave to its default,
-    # sets only the speed of the CUDA operator.
+    # sets only the speed of the CUDA operator, and so do the trailing cutoffs
+    # of the further blocks: the reference reads them from the records and
+    # evaluates every block on the whole graph.
     ws, bs, resnets, w_head, b_head, bias_atom_e, act, _tile, pair_table = args[
         _DESCRIPTOR_TAIL_COUNT : _DESCRIPTOR_TAIL_COUNT + 9
     ]
-    descriptor, state = _cpu_forward(*descriptor_args)
+    _routes, blocks, halo_send, halo_swaps, communicator = (
+        *args[_DESCRIPTOR_TAIL_COUNT + 9 :],
+        *(None,) * 5,
+    )[:5]
+    further = {
+        "blocks_record": blocks,
+        "exchange": _self_swap_exchange(
+            halo_send, halo_swaps, communicator, node_count
+        ),
+    }
+    descriptor, state = _cpu_forward(*descriptor_args, **further)
     energy, saved = torch.ops.deepmd.graph_fitting(
         descriptor, atype, ws, bs, resnets, w_head, b_head, bias_atom_e, act
     )
     gradient = torch.ops.deepmd.graph_fitting_backward(
         seed.reshape(-1, 1), saved, ws, bs, resnets, w_head, act
     )
-    edge_gradient, spin_gradient, edge_spin_gradient, pair_energy = _generic_backward(
-        gradient, state, *descriptor_args, pair=(pair_table, seed)
+    (
+        edge_gradient,
+        row_gradient,
+        spin_gradient,
+        edge_spin_gradient,
+        pair_energy,
+    ) = _generic_backward(
+        gradient, state, *descriptor_args, pair=(pair_table, seed), **further
     )
     if pair_table.numel():
         energy = energy + pair_energy
@@ -368,8 +436,12 @@ def _cpu_energy_force(
 
     edge_index, edge_mask, _ = _generic_topology(source, destination_row_ptr)
     keep = edge_mask[:, None].to(torch.float64)
-    g = edge_gradient.to(torch.float64) * keep
-    outer = -(g[:, :, None] * edge_vec.to(torch.float64)[:, None, :])
+    source_part = edge_gradient.to(torch.float64) * keep
+    row_part = row_gradient.to(torch.float64) * keep
+    g = source_part + row_part
+    vector = edge_vec.to(torch.float64)[:, None, :]
+    source_outer = -(source_part[:, :, None] * vector)
+    row_outer = -(row_part[:, :, None] * vector)
     source_index, destination_index = edge_index[0], edge_index[1]
     destination_force = torch.zeros(
         node_count, 3, dtype=torch.float64, device=device
@@ -387,7 +459,7 @@ def _cpu_energy_force(
     atom_energy[out_of_range] = torch.nan
     node_virial = torch.zeros(
         node_count, 3, 3, dtype=torch.float64, device=device
-    ).index_add_(0, destination_index, outer)
+    ).index_add_(0, destination_index, source_outer + row_outer)
     # Padding nodes past the last frame belong to none: they enter no frame
     # total, as in the CUDA operator.
     frame_id = frame_id_from_n_node(n_node, n_total=node_count)
@@ -405,7 +477,8 @@ def _cpu_energy_force(
             torch.arange(node_count, dtype=torch.int64, device=device), listed
         )
         positions = source_order[: int(source_row_ptr[-1])].to(torch.int64)
-        atom_virial.index_add_(0, rows, outer[positions])
+        atom_virial.index_add_(0, rows, source_outer[positions])
+        atom_virial.index_add_(0, destination_index, row_outer)
     if spin_gradient.ndim == 2:
         spin_force = torch.zeros(
             node_count, 3, dtype=torch.float64, device=device
@@ -486,7 +559,72 @@ _FORCE_FIXED_LIMIT = 2.0**30
 _DESCRIPTOR_TAIL_COUNT = _DESCRIPTOR_ARGUMENT_COUNT - 4
 
 
-def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
+def _self_swap_exchange(
+    send_nodes: torch.Tensor | None,
+    swaps: torch.Tensor | None,
+    communicator: torch.Tensor | None,
+    node_count: int,
+) -> Callable[[torch.Tensor], torch.Tensor] | None:
+    """Return the halo exchange of a border plan for the reference evaluation.
+
+    The reference runs in one process, so it serves the plans of a single
+    domain, whose swaps all copy rows of this process: swap by swap, the halo
+    rows from the first receive take the rows of the send list, so that a
+    swap may send the rows an earlier swap received. ``None`` without a plan,
+    or for a plan without swaps.
+
+    Raises
+    ------
+    RuntimeError
+        If the plan names another rank or does not fill the halo rows.
+    """
+    if swaps is None or swaps.shape[0] == 0:
+        return None
+    if int(communicator.reshape(-1)[0]) != 0:
+        raise RuntimeError(
+            "dpa4c_canonical_compress_energy_force: the reference evaluation "
+            "serves the border plan of a single process, but a communicator "
+            "was given"
+        )
+    table = swaps.to(device="cpu", dtype=torch.int64).tolist()
+    send = send_nodes.to(torch.int64)
+    copies = []
+    offset = 0
+    expected = table[0][4]
+    for send_rank, receive_rank, sent, received, first in table:
+        if send_rank != receive_rank or sent != received or first != expected:
+            raise RuntimeError(
+                "dpa4c_canonical_compress_energy_force: the reference "
+                "evaluation copies the halo rows of self swaps that fill the "
+                f"halo in order, got the swap {(send_rank, receive_rank, sent, received, first)}"
+            )
+        receive = torch.arange(
+            first, first + received, dtype=torch.int64, device=send.device
+        )
+        copies.append((receive, send[offset : offset + sent]))
+        offset += sent
+        expected = first + received
+    if expected != node_count:
+        raise RuntimeError(
+            "dpa4c_canonical_compress_energy_force: the swaps of the border "
+            f"plan fill the rows up to {expected} of {node_count}"
+        )
+
+    def exchange(rows: torch.Tensor) -> torch.Tensor:
+        for receive, sent in copies:
+            rows = rows.index_copy(
+                0, receive.to(rows.device), rows[sent.to(rows.device)]
+            )
+        return rows
+
+    return exchange
+
+
+def _cpu_forward(
+    *args: Any,
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         _reference_forward as generic_forward,
     )
@@ -506,20 +644,28 @@ def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
         *tail[:-_CANONICAL_SCALAR_COUNT],
         True,
         *tail[-_CANONICAL_SCALAR_COUNT:],
+        blocks_record=blocks_record,
+        exchange=exchange,
     )
 
 
 def _generic_backward(
     *args: Any,
     pair: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Run the generic reference backward on a compact payload.
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Run the generic reference cotangents on a compact payload.
 
     ``pair`` is the series table and the energy cotangent of an analytical
     pair potential; the compact descriptor operators carry none.
+    ``blocks_record`` and ``exchange`` are those of the reference descriptor.
+    The results are those of ``_reference_cotangents``, whose second one is
+    the part of the coordinate cotangent that belongs to the destination of
+    every edge.
     """
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
-        _reference_backward as generic_backward,
+        _reference_cotangents as generic_cotangents,
     )
 
     descriptor_gradient, state, edge_vec, source, destination_row_ptr, atype, *tail = (
@@ -530,7 +676,7 @@ def _generic_backward(
         destination_row_ptr,
     )
     no_pair = edge_vec.new_empty(0)
-    return generic_backward(
+    return generic_cotangents(
         descriptor_gradient,
         state,
         edge_vec,
@@ -543,11 +689,16 @@ def _generic_backward(
         True,
         *tail[-_CANONICAL_SCALAR_COUNT:],
         *((no_pair, no_pair) if pair is None else pair),
+        blocks_record=blocks_record,
+        exchange=exchange,
     )
 
 
 def _cpu_backward(*args: Any) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    return _generic_backward(*args)[:3]
+    edge_gradient, row_gradient, spin_gradient, edge_spin_gradient, _ = (
+        _generic_backward(*args)
+    )
+    return edge_gradient + row_gradient, spin_gradient, edge_spin_gradient
 
 
 def _cpu_backward_inplace(
@@ -605,6 +756,7 @@ def dpa4c_canonical_compress_energy_force(
     spin: torch.Tensor | None = None,
     pair_table: torch.Tensor | None = None,
     fitting_routes: list[int] | None = None,
+    border: BorderPlan | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -635,6 +787,16 @@ def dpa4c_canonical_compress_energy_force(
     configuration short of three atoms within about 0.01 Å of one atom
     reaches, is not detected.
 
+    A descriptor of several message-passing blocks evaluates every further
+    block from the records of its compression. On the node set of one domain
+    of a decomposed frame, whose halo nodes follow its owned nodes, the
+    operator then refreshes the features of the halo nodes that the further
+    blocks read through ``border`` and evaluates the owned nodes alone: their
+    energies, the per-node virials of the edges they own, and the force of
+    every edge they own on both of its nodes, so that the forces on the halo
+    nodes are the contributions of this domain, which the caller folds onto
+    their owners.
+
     Parameters
     ----------
     descriptor
@@ -663,6 +825,11 @@ def dpa4c_canonical_compress_energy_force(
         Fitting-route table of the CUDA operator, which sets only its speed
         (``deepmd.pt_expt.kernels.fitting_routes``). ``None`` or an empty
         table leaves the routes to the rules of the operator.
+    border
+        Border plan of the node set for a descriptor of several blocks, whose
+        owned nodes are the leading ``n_local`` nodes of its single frame, or
+        ``None`` for a node set without halo nodes. A descriptor of one block
+        takes none.
 
     Returns
     -------
@@ -709,6 +876,11 @@ def dpa4c_canonical_compress_energy_force(
     ensure_fitting_registered()
     if not mega_eligible(descriptor):
         raise ValueError("model is not eligible for compact canonical DPA4C inference")
+    if border is not None and not descriptor.attentions:
+        raise ValueError(
+            "a border plan serves the further message-passing blocks, but the "
+            "descriptor has one block"
+        )
 
     network = fitting_operator_arguments(fitting)
     return torch.ops.deepmd.dpa4c_canonical_compress_energy_force(
@@ -736,4 +908,13 @@ def dpa4c_canonical_compress_energy_force(
         # AOTInductor proxy executor of torch 2.13 and earlier hands a
         # serialized empty int list to the operator as None.
         list(fitting_routes) if fitting_routes else None,
+        descriptor.compress_blocks if descriptor.attentions else None,
+        *(
+            (None, None, None)
+            if border is None
+            else (border.send_nodes, border.swaps, border.communicator)
+        ),
+        [float(cutoff) for cutoff in descriptor.block_rcut[1:]]
+        if descriptor.attentions
+        else None,
     )
