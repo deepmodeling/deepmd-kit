@@ -49,6 +49,9 @@ from deepmd.utils.spin import (
     env_protection_descriptors,
 )
 
+from .density_model import (
+    GridDensityModel,
+)
 from .dipole_model import (
     DipoleModel,
 )
@@ -433,6 +436,8 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = DOSModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+    elif fitting_net_type == "density":
+        modelcls = GridDensityModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
     elif fitting_net_type == "population":
