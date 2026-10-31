@@ -31,9 +31,14 @@ in the cell :data:`BOX` and without a cell, at the neutral default state
 9 Å apart, beyond the cutoff of the descriptor, which only the long-range
 module couples; in the cell, the first group meets its images across the
 boundary.
+
+``deeppot_dpa4c_long_range_periodic_mesh.expected`` holds the mesh topology
+that the Python builder forms for the periodic case, against which the C++
+suite checks the mesh it builds for the graph lower; it needs no archive.
 """
 
 import copy
+import dataclasses
 import json
 import os
 import sys
@@ -206,6 +211,46 @@ def _write_ref(pt2_path: str, ref_path: str, periodic: bool = False) -> None:
     print(f"Wrote {ref_path}")  # noqa: T201
 
 
+def _write_mesh_ref(config: dict, ref_path: str) -> None:
+    """Write the mesh topology of the reference frame, built in Python, for the C++ twin.
+
+    The graph lower of a periodic archive reads the mesh that the C++
+    interface builds from the cell at the spacing of the archive. The
+    reference is the mesh of the Python builder at that spacing, in the cell
+    :data:`BOX` and without a cell (sections ``periodic`` and ``cluster``).
+    It needs no archive, so it is written by every PyTorch release.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph.reciprocal_graph import (
+        build_mesh_grid,
+        empty_mesh_grid,
+    )
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(_model_dict(config))
+    module = model.atomic_model.long_range
+    module.use_mesh_evaluation()
+    spacing = module.topology_params()["pme_mesh"]["spacing"]
+    coord = _COORDS[0]
+    sections = {}
+    for name, mesh in (
+        ("periodic", build_mesh_grid(BOX, spacing, coord)),
+        ("cluster", empty_mesh_grid(1, coord)),
+    ):
+        sections[name] = {"spacing": np.array([spacing])}
+        for field in dataclasses.fields(mesh):
+            sections[name][field.name] = np.asarray(
+                getattr(mesh, field.name), dtype=np.float64
+            )
+    write_expected_ref(
+        ref_path,
+        sections=sections,
+        source_script="source/tests/infer/gen_dpa4c_long_range.py",
+    )
+    print(f"Wrote {ref_path}")  # noqa: T201
+
+
 def _export_compressed(pt2_path: str, config: dict) -> None:
     """Compress the fp32 model and export it for the CUDA device."""
     from deepmd.pt_expt.model.model import (
@@ -248,6 +293,8 @@ def main() -> None:
             "software": "deepmd-kit",
             "version": "3.0.0",
         }
+        if periodic:
+            _write_mesh_ref(config, f"{stem}_mesh.expected")
         if periodic and not mesh_freeze_supported():
             # The C++ and LAMMPS suites skip the archive this torch cannot
             # package.

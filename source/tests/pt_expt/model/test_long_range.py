@@ -25,6 +25,9 @@ from deepmd.dpmodel.utils.neighbor_graph import (
 from deepmd.infer import (
     DeepPot,
 )
+from deepmd.pt_expt.entrypoints.main import (
+    change_bias,
+)
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -159,6 +162,35 @@ def test_energy_matches_direct_pair_sum(kernel: str) -> None:
     np.testing.assert_allclose(
         out["atom_energy"].sum().item(), expected, rtol=1e-12, atol=1e-14
     )
+
+
+def test_charges_read_the_atomic_parameters() -> None:
+    """The charge network reads the atomic parameters that the energy fitting reads."""
+    config = _config("les", constraint=None)
+    config["fitting_net"]["numb_aparam"] = 1
+    short_range_config = copy.deepcopy(config)
+    short_range_config.pop("long_range")
+    model = get_model(config).to(env.DEVICE).eval()
+    # The same seeds give the short-range networks of both models.
+    short_range = get_model(short_range_config).to(env.DEVICE).eval()
+    neutral = copy.deepcopy(model)
+    with torch.no_grad():
+        for parameter in neutral.atomic_model.long_range.charge_net.parameters():
+            parameter.zero_()
+    coord, atype = _batch(seed=7)
+    long_range_energy = []
+    for value in (0.0, 1.5):
+        aparam = torch.full(
+            (*atype.shape, 1), value, dtype=torch.float64, device=env.DEVICE
+        )
+        energy = short_range(coord, atype, aparam=aparam)["energy"]
+        # Without charges the long-range model is the short-range one.
+        torch.testing.assert_close(
+            neutral(coord, atype, aparam=aparam)["energy"], energy
+        )
+        long_range_energy.append(model(coord, atype, aparam=aparam)["energy"] - energy)
+    difference = (long_range_energy[1] - long_range_energy[0]).abs()
+    assert torch.all(difference > 1e-6), difference
 
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])
@@ -868,6 +900,34 @@ def test_frozen_model_matches_direct_forward(
                 atol=1e-10,
                 err_msg=name,
             )
+
+
+def test_change_bias_keeps_the_graph_lower(tmp_path) -> None:
+    """change-bias rewrites a frozen long-range model on its graph lower."""
+    config = _config("les")
+    model = get_model(config).to(env.DEVICE).eval()
+    frozen = tmp_path / "long_range.pte"
+    deserialize_to_file(
+        str(frozen),
+        {"model": model.serialize(), "model_def_script": config},
+        lower_kind="graph",
+    )
+    bias = [0.5, -1.25]
+    updated = tmp_path / "long_range_updated.pte"
+    change_bias(str(frozen), bias_value=bias, output=str(updated))
+    before = DeepPot(str(frozen), auto_batch_size=False)
+    after = DeepPot(str(updated), auto_batch_size=False)
+    assert after.deep_eval.metadata["lower_input_kind"] == "graph"
+    coord, atype = _batch(seed=7)
+    coord, atype = coord.cpu().numpy(), atype.cpu().numpy()
+    energy, force, _ = before.eval(coord, None, atype, mixed_type=True)
+    new_energy, new_force, _ = after.eval(coord, None, atype, mixed_type=True)
+    old_bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)
+    # The padding atoms, of type -1, carry no bias.
+    delta = np.asarray(bias) - old_bias
+    shift = np.where(atype >= 0, delta[atype], 0.0).sum(axis=-1)
+    np.testing.assert_allclose(new_energy.reshape(-1), energy.reshape(-1) + shift)
+    np.testing.assert_allclose(new_force, force, rtol=1e-12, atol=1e-12)
 
 
 @pytest.mark.parametrize(

@@ -9,6 +9,7 @@
 // positions of the atoms and the cell.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <vector>
@@ -26,6 +27,7 @@
 #include <limits>
 #include <string>
 
+#include "../src/longRangePTExpt.h"
 #include "commonPT.h"
 #ifdef DEEPMD_TORCH_HAS_CUDA
 #include <ATen/cuda/Sleep.h>
@@ -52,6 +54,8 @@ constexpr const char* kPeriodicCompressedModelPath =
     "../../tests/infer/deeppot_dpa4c_long_range_periodic_compressed.pt2";
 constexpr const char* kPeriodicCompressedRefPath =
     "../../tests/infer/deeppot_dpa4c_long_range_periodic_compressed.expected";
+constexpr const char* kPeriodicMeshRefPath =
+    "../../tests/infer/deeppot_dpa4c_long_range_periodic_mesh.expected";
 
 // The full neighbor list of a non-periodic system within ``rc``: every atom
 // is local, so the list holds no ghost.
@@ -384,6 +388,48 @@ TYPED_TEST(TestInferDeepPotDpa4cLongRangePeriodicPtExpt,
   EXPECT_THROW(this->dp.compute(ener, force, virial, this->coord, this->atype,
                                 std::vector<VALUETYPE>(9, 0.)),
                deepmd::deepmd_exception);
+}
+
+// The mesh topology that the C++ interface builds for the graph lower of a
+// periodic model matches the mesh of the Python builder field by field, in
+// the cell and without a cell. The reference needs no archive, so the test
+// runs whatever PyTorch release generated the fixtures.
+TEST(TestInferDeepPotDpa4cLongRangeMeshPtExpt, matches_python_builder) {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#else
+  deepmd_test::ExpectedRef ref;
+  ref.load(kPeriodicMeshRefPath);
+  // The fields in the order of the topology inputs of the graph lower.
+  const std::vector<std::string> names = {"box",  "volume", "coord",  "strain",
+                                          "mask", "mode_1", "mode_2", "mode_3"};
+  std::vector<double> coord = ref.get("periodic", "coord");
+  const auto coord_tensor =
+      torch::from_blob(coord.data(),
+                       {static_cast<std::int64_t>(coord.size() / 3), 3},
+                       torch::kFloat64)
+          .clone();
+  const double spacing = ref.get("periodic", "spacing")[0];
+  for (const std::string section : {"periodic", "cluster"}) {
+    const std::vector<double> box =
+        section == "periodic" ? ref.get(section, "box") : std::vector<double>{};
+    const auto fields = deepmd::ptexpt::buildMeshTopology(
+        coord_tensor, box, spacing, torch::kFloat64);
+    ASSERT_EQ(fields.size(), names.size());
+    for (std::size_t k = 0; k < names.size(); ++k) {
+      const auto actual = fields[k].to(torch::kFloat64).contiguous().view(-1);
+      const std::vector<double> expected = ref.get(section, names[k]);
+      ASSERT_EQ(actual.numel(), static_cast<std::int64_t>(expected.size()))
+          << section << " " << names[k];
+      const double* value = actual.data_ptr<double>();
+      for (std::size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR(value[i], expected[i],
+                    1e-12 * std::max(1.0, std::abs(expected[i])))
+            << section << " " << names[k] << "[" << i << "]";
+      }
+    }
+  }
+#endif
 }
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT && defined(DEEPMD_TORCH_HAS_CUDA)
