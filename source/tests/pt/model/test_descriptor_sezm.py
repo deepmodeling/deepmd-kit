@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib.util
 import itertools
 import math
 import os
@@ -698,6 +699,24 @@ class TestDescrptSeZM(_SeZMTestCase):
         for name, model_kwargs in cases.items():
             with self.subTest(mode=name):
                 self._assert_forward_backward_smoke(**model_kwargs)
+
+    def test_registry_construction(self) -> None:
+        """Every type key must resolve to the descriptor class in the registry.
+
+        A module-level helper once ended up decorated with
+        ``register("SeZM")``, which silently replaced the class with a
+        plain function in the registry and broke factory construction.
+        """
+        from deepmd.pt.model.descriptor.base_descriptor import (
+            BaseDescriptor,
+        )
+
+        for type_name in ("SeZM", "sezm", "DPA4", "dpa4"):
+            with self.subTest(type=type_name):
+                cls = BaseDescriptor.get_class_by_type(type_name)
+                self.assertIs(cls, DescrptSeZM)
+                model = cls(**_descriptor_kwargs())
+                self.assertIsInstance(model, DescrptSeZM)
 
     def test_fixed_basis_types_freeze_the_basis(self) -> None:
         """``/fix`` basis types keep the basis parameters out of training only."""
@@ -3114,6 +3133,186 @@ class TestSourceFreezePropagationGate(TestDescriptorEnergyCurveSmoothness):
                 f"the invariance tolerance {self.INVARIANCE_TOLERANCE:.3e}."
             ),
         )
+
+
+@unittest.skipUnless(
+    torch.cuda.is_available() and importlib.util.find_spec("triton") is not None,
+    "the packed Wigner layout engages on CUDA with Triton",
+)
+class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
+    """End-to-end coverage with ``DP_PACKED_D_INFER`` actually set.
+
+    Drives the whole chain with the flag on: the edge-cache build, the
+    per-block gate in ``sezm.py``, and the consumers in ``so2.py`` /
+    ``embedding.py`` all run against the banded storage, and the outputs
+    must match the same model built through the dense layout.
+    """
+
+    def _kwargs(self):
+        return {
+            "rcut": 3.0,
+            "sel": [1, 1],
+            "ntypes": 2,
+            "l_schedule": [1, 1],
+            "mmax": 1,
+            "channels": 32,
+            "focus_dim": 32,
+            "n_focus": 2,
+            "n_radial": 3,
+            "radial_mlp": [6],
+            "ffn_neurons": 8,
+            "ffn_blocks": 1,
+            "random_gamma": False,
+            "n_atten_head": 1,
+            "mlp_bias": False,
+            "precision": "float32",
+            "trainable": True,
+            "radial_so2_mode": "degree_channel",
+            "radial_so2_rank": 2,
+        }
+
+    def test_flag_on_builds_band_and_matches_dense(self):
+        import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
+
+        saved_flag = os.environ.get("DP_PACKED_D_INFER")
+        saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_PACKED_D_INFER"] = "1"
+        os.environ["DP_TRITON_INFER"] = "2"
+
+        def restore():
+            for key, old in (
+                ("DP_PACKED_D_INFER", saved_flag),
+                ("DP_TRITON_INFER", saved_level),
+            ):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+        self.addCleanup(restore)
+
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [0.0, 0.0, 1.5]]], dtype=torch.float32, device="cuda"
+        )
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device="cuda")
+        nlist = torch.tensor([[[0, 1], [1, -1]]], dtype=torch.long, device="cuda")
+
+        records = []
+        real_build = edge_cache_mod._build_edge_wigner
+
+        def spy(*args, **kwargs):
+            built = real_build(*args, **kwargs)
+            records.append(tuple(None if t is None else tuple(t.shape) for t in built))
+            return built
+
+        model = DescrptSeZM(**self._kwargs()).cuda()
+        model.eval()
+        # Freeze the channel basis: the production inference configuration
+        # (the banded layout excludes gradient-enabled consumers, so a
+        # trainable basis keeps the dense layout even in eval).
+        for block in model.blocks:
+            mixer = getattr(block.so2_conv, "radial_degree_mixer", None)
+            if mixer is not None and getattr(mixer, "channel_basis", None) is not None:
+                mixer.channel_basis.requires_grad_(False)
+
+        with mock.patch.object(edge_cache_mod, "_build_edge_wigner", spy):
+            with torch.no_grad():
+                packed_out = model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
+            # The flag-on cache carries the band and never materializes the
+            # dense surfaces: D = (E, D_dim, D_dim) with D_dim = (lmax+1)^2,
+            # band = (E, 3 * D_dim - 2).
+            d_dense, dt_dense, _quat, d_packed = records[-1]
+            self.assertIsNone(d_dense)
+            self.assertIsNone(dt_dense)
+            self.assertIsNotNone(d_packed)
+            self.assertEqual(d_packed, (3, 10))
+
+            # Training keeps the dense layout even with the flag on: the
+            # parameter-gradient consumers address the dense surface.
+            model.train()
+            model(coord, atype, nlist, mapping=None, comm_dict=None)
+            d_dense_t, dt_dense_t, _quat_t, d_packed_t = records[-1]
+            self.assertIsNone(d_packed_t)
+            self.assertIsNotNone(d_dense_t)
+            self.assertIsNotNone(dt_dense_t)
+            model.eval()
+
+            # Same model, flag off: the dense layout through the same
+            # consumers, bitwise-equal outputs.
+            os.environ.pop("DP_PACKED_D_INFER", None)
+            with torch.no_grad():
+                dense_out = model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
+            d_dense_o, _dt, _quat_o, d_packed_o = records[-1]
+            self.assertIsNone(d_packed_o)
+            self.assertIsNotNone(d_dense_o)
+        self.assertTrue(torch.equal(packed_out, dense_out))
+
+    def test_eval_backward_with_trainable_basis_keeps_dense(self):
+        """Eval-mode parameter gradients keep the dense layout.
+
+        ``.eval()`` does not freeze the channel-basis parameter, and an
+        eval backward against it would reach the dense-only basis-grad
+        helper, so the gate must keep the dense storage; with the basis
+        frozen the band serves the ordinary inference backward.
+        """
+        import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
+
+        saved_flag = os.environ.get("DP_PACKED_D_INFER")
+        saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_PACKED_D_INFER"] = "1"
+        os.environ["DP_TRITON_INFER"] = "2"
+
+        def restore():
+            for key, old in (
+                ("DP_PACKED_D_INFER", saved_flag),
+                ("DP_TRITON_INFER", saved_level),
+            ):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+        self.addCleanup(restore)
+
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [0.0, 0.0, 1.5]]], dtype=torch.float32, device="cuda"
+        )
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device="cuda")
+        nlist = torch.tensor([[[0, 1], [1, -1]]], dtype=torch.long, device="cuda")
+
+        records = []
+        real_build = edge_cache_mod._build_edge_wigner
+
+        def spy(*args, **kwargs):
+            built = real_build(*args, **kwargs)
+            records.append(built[3] is not None)
+            return built
+
+        model = DescrptSeZM(**self._kwargs()).cuda()
+        model.eval()
+        basis_params = []
+        for block in model.blocks:
+            mixer = getattr(block.so2_conv, "radial_degree_mixer", None)
+            if mixer is not None and getattr(mixer, "channel_basis", None) is not None:
+                basis_params.append(mixer.channel_basis)
+        self.assertTrue(basis_params, "the fixture must carry trainable bases")
+        self.assertTrue(all(param.requires_grad for param in basis_params))
+
+        with mock.patch.object(edge_cache_mod, "_build_edge_wigner", spy):
+            # Eval forward + backward against the trainable basis: the
+            # dense-only gradient consumer must not see the band.
+            out = model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
+            out.sum().backward()
+            self.assertFalse(records[-1])
+            self.assertIsNotNone(basis_params[0].grad)
+
+            # Freeze the basis: the gradient consumer is gone and the
+            # inference band serves the ordinary backward again.
+            for param in basis_params:
+                param.requires_grad_(False)
+            with torch.no_grad():
+                model(coord, atype, nlist, mapping=None, comm_dict=None)
+            self.assertTrue(records[-1])
 
 
 if __name__ == "__main__":
