@@ -2053,3 +2053,474 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSeZMGieScatter(unittest.TestCase):
+    """Fused zonal message build + destination reduction for the GIE head."""
+
+    _ROWS = 15  # non-scalar rows at lmax=3: 3+5+7
+
+    def _make_case(self, n_edge, n_nodes, generator, view_radial=False, channels=32):
+        """Random operator inputs; a sliced radial view when asked.
+
+        Returns ``(zonal, radial, dst, order, row_ptr, parent)`` where
+        ``parent`` is the unsliced backing tensor (the leaf for the view
+        case, so the strided operand survives to the operator boundary).
+        """
+        zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
+        parent = torch.randn(n_edge, 4, channels, device="cuda", generator=generator)
+        radial = parent[:, 1:, :] if view_radial else parent[:, 1:, :].contiguous()
+        dst = torch.randint(0, n_nodes, (n_edge,), device="cuda", generator=generator)
+        order = torch.argsort(dst, dim=0, stable=True)
+        counts = torch.bincount(dst, minlength=n_nodes)
+        row_ptr = torch.cat(
+            [
+                torch.zeros(1, dtype=torch.int64, device="cuda"),
+                torch.cumsum(counts, 0).to(torch.int64),
+            ]
+        )
+        return zonal, radial, dst, order, row_ptr, parent
+
+    def _reference(self, zonal, radial, dst, n_nodes):
+        """Composition reference: broadcast the message, then index_add."""
+        counts = [3, 5, 7]
+        slot_of_row = torch.repeat_interleave(
+            torch.arange(3, device=zonal.device),
+            torch.tensor(counts, device=zonal.device),
+        )
+        msg = zonal.unsqueeze(-1) * radial[:, slot_of_row]
+        out = zonal.new_zeros(n_nodes, self._ROWS + 1, radial.shape[2])
+        out[:, 1:, :].index_add_(0, dst, msg)
+        return out
+
+    @_GPU_KERNELS
+    def test_forward_backward_matches_reference(self):
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(5)
+        # channels = 40 (non-power-of-two) rides the padded channel block
+        for n_edge, n_nodes, channels in ((4096, 128, 32), (777, 33, 40)):
+            for view_radial in (False, True):
+                with self.subTest(n_edge=n_edge, n_nodes=n_nodes, view=view_radial):
+                    zonal, radial, dst, order, row_ptr, parent = self._make_case(
+                        n_edge, n_nodes, generator, view_radial, channels
+                    )
+                    # The view case must reach the operator boundary as a
+                    # real slice: the leaf is the parent and the operand is
+                    # the strided view (a clone here would hand the kernel a
+                    # contiguous copy and hide the strided addressing).
+                    z1 = zonal.clone().requires_grad_(True)
+                    if view_radial:
+                        self.assertFalse(radial.is_contiguous())
+                        leaf = parent.requires_grad_(True)
+                        operand = leaf[:, 1:, :]
+                        grad_pair = (z1, leaf)
+                        grad_slice = slice(1, None)
+                    else:
+                        leaf = None
+                        operand = radial.clone().requires_grad_(True)
+                        grad_pair = (z1, operand)
+                        grad_slice = slice(None)
+                    out = gie_zonal_scatter(
+                        z1, operand, dst, order, row_ptr, n_nodes, 3
+                    )
+                    z2 = zonal.clone().requires_grad_(True)
+                    r2 = radial.clone().requires_grad_(True)
+                    ref = self._reference(z2, r2, dst, n_nodes)
+                    torch.testing.assert_close(out, ref, atol=1e-5, rtol=1e-5)
+                    self.assertTrue(
+                        torch.equal(out[:, 0, :], torch.zeros_like(out[:, 0, :]))
+                    )
+                    cotangent = torch.randn(
+                        out.shape,
+                        device="cuda",
+                        generator=torch.Generator(device="cuda").manual_seed(37),
+                    )
+                    g1 = torch.autograd.grad(out, grad_pair, cotangent)
+                    g2 = torch.autograd.grad(ref, (z2, r2), cotangent)
+                    torch.testing.assert_close(g1[0], g2[0], atol=1e-5, rtol=1e-5)
+                    torch.testing.assert_close(
+                        g1[1][:, grad_slice], g2[1], atol=1e-5, rtol=1e-5
+                    )
+
+    @_GPU_KERNELS
+    def test_backward_reaches_the_degree_normalization(self):
+        """The degree normalization stays outside the operator on purpose.
+
+        The scaling descends from the cutoff envelope, so its cotangent is
+        part of the force.  The Triton path deliberately leaves the
+        ``out * inv_sqrt_deg`` multiply to the traced graph; this check
+        fails if a future refactor folds it into the kernel without a
+        gradient path for the scale (mirroring the CUDA operator's guard).
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(11)
+        n_edge, n_nodes = 2048, 64
+        zonal, radial, dst, order, row_ptr, _ = self._make_case(
+            n_edge, n_nodes, generator
+        )
+        inv_sqrt_deg = torch.rand(
+            n_nodes, device="cuda", generator=generator
+        ).clamp_min(0.1)
+        cotangent = torch.randn(
+            n_nodes,
+            self._ROWS + 1,
+            radial.shape[2],
+            device="cuda",
+            generator=torch.Generator(device="cuda").manual_seed(13),
+        )
+
+        grads = {}
+        for name, compose in (
+            (
+                "fused",
+                lambda z, r, sc: (
+                    gie_zonal_scatter(z, r, dst, order, row_ptr, n_nodes, 3)
+                    * sc[:, None, None]
+                ),
+            ),
+            (
+                "reference",
+                lambda z, r, sc: (
+                    self._reference(z, r, dst, n_nodes) * sc[:, None, None]
+                ),
+            ),
+        ):
+            z = zonal.clone().requires_grad_(True)
+            r = radial.clone().requires_grad_(True)
+            sc = inv_sqrt_deg.clone().requires_grad_(True)
+            compose(z, r, sc).backward(cotangent)
+            grads[name] = (z.grad, r.grad, sc.grad)
+
+        self.assertIsNotNone(
+            grads["fused"][2],
+            "the scale gradient must flow; a fold without a gradient path "
+            "silently biases inference forces",
+        )
+        torch.testing.assert_close(
+            grads["fused"][2], grads["reference"][2], atol=1e-5, rtol=1e-5
+        )
+        torch.testing.assert_close(
+            grads["fused"][0], grads["reference"][0], atol=1e-5, rtol=1e-5
+        )
+        torch.testing.assert_close(
+            grads["fused"][1], grads["reference"][1], atol=1e-5, rtol=1e-5
+        )
+
+    def test_reference_cpu_matches_manual(self):
+        """CPU reference equals a hand-written sequential accumulation."""
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            _reference,
+        )
+
+        generator = torch.Generator().manual_seed(7)
+        n_edge, n_nodes = 513, 17
+        zonal = torch.randn(n_edge, self._ROWS, generator=generator, device="cpu")
+        radial = torch.randn(n_edge, 3, 32, generator=generator, device="cpu")
+        dst = torch.randint(0, n_nodes, (n_edge,), generator=generator, device="cpu")
+        out = _reference(zonal, radial, dst, n_nodes)
+        slot_of_row = torch.repeat_interleave(
+            torch.arange(3, device="cpu"), torch.tensor([3, 5, 7], device="cpu")
+        )
+        manual = torch.zeros(n_nodes, self._ROWS + 1, 32, device="cpu")
+        manual[:, 1:, :].index_add_(
+            0, dst, zonal.unsqueeze(-1) * radial[:, slot_of_row]
+        )
+        torch.testing.assert_close(out, manual, atol=0.0, rtol=0.0)
+
+    def test_module_imports_and_falls_back_without_triton(self):
+        """The package contract: the module imports without the triton stack.
+
+        CPU-only torch wheels ship no triton; every sibling kernel module
+        guards its import and exports a meaningful availability flag.  A
+        child process blocks the triton import and checks the flag flips to
+        False, the reference composition still runs, and calling the fused
+        entry raises a loud error instead of an import-time crash.
+        """
+        import pathlib
+        import subprocess
+        import sys
+        import textwrap
+
+        import deepmd.pt_expt.kernels.triton.sezm.gie_scatter as gie_mod
+
+        tree = pathlib.Path(gie_mod.__file__).resolve().parents[5]
+        child = textwrap.dedent(
+            """
+            import pathlib
+            import sys
+
+            tree = pathlib.Path(sys.argv[1])
+            sys.meta_path = [
+                f
+                for f in sys.meta_path
+                if "editable"
+                not in (type(f).__module__ + "." + type(f).__name__).lower()
+                and "editable" not in getattr(f, "__name__", "").lower()
+            ]
+            sys.path.insert(0, str(tree))
+            sys.modules["triton"] = None  # any `import triton` now fails
+
+            import torch
+
+            import deepmd.pt_expt.kernels.triton.sezm.gie_scatter as gs
+
+            assert gs.GIE_SCATTER_TRITON_AVAILABLE is False
+
+            zonal = torch.ones(2, 3, device="cpu")
+            radial = torch.ones(2, 1, 4, device="cpu")
+            dst = torch.tensor([0, 1])
+            out = gs._reference(zonal, radial, dst, 2)
+            assert out.shape == (2, 4, 4)
+            assert float(out[0, 0, 0]) == 0.0
+
+            try:
+                gs.gie_zonal_scatter(zonal, radial, dst, None, None, 2, 1)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("expected a loud RuntimeError")
+            print("no-triton-ok")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", child, str(tree)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"no-triton child failed:\n{result.stdout}\n{result.stderr}",
+        )
+        self.assertIn("no-triton-ok", result.stdout)
+
+    @_GPU_KERNELS
+    def test_small_deterministic_topology(self):
+        """Hand-built edges cover isolated nodes, short segments and a tile
+        boundary crossing (BLOCK_E = 16) with padded channels.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(47)
+        n_nodes, channels = 6, 40
+        # node0: a long segment; node1: isolated (no edges); node2: one
+        # edge; nodes 3-5: segments straddling the BLOCK_E boundary
+        dst = torch.tensor(
+            [0] * 18 + [2] + [3] * 7 + [4] * 8 + [5] * 9,
+            device="cuda",
+            dtype=torch.int64,
+        )
+        n_edge = dst.numel()
+        zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
+        radial = torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+        order = torch.argsort(dst, dim=0, stable=True)
+        counts = torch.bincount(dst, minlength=n_nodes)
+        row_ptr = torch.cat(
+            [
+                torch.zeros(1, dtype=torch.int64, device="cuda"),
+                torch.cumsum(counts, 0).to(torch.int64),
+            ]
+        )
+
+        z1 = zonal.clone().requires_grad_(True)
+        r1 = radial.clone().requires_grad_(True)
+        out = gie_zonal_scatter(z1, r1, dst, order, row_ptr, n_nodes, 3)
+        z2 = zonal.clone().requires_grad_(True)
+        r2 = radial.clone().requires_grad_(True)
+        ref = self._reference(z2, r2, dst, n_nodes)
+        torch.testing.assert_close(out, ref, atol=1e-5, rtol=1e-5)
+        # the isolated node keeps a zero row block
+        self.assertTrue(torch.equal(out[1], torch.zeros_like(out[1])))
+        cot = torch.randn_like(out)
+        g1 = torch.autograd.grad(out, (z1, r1), cot)
+        g2 = torch.autograd.grad(ref, (z2, r2), cot)
+        torch.testing.assert_close(g1[0], g2[0], atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(g1[1], g2[1], atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
+    def test_backward_respects_channel_padding_boundary(self):
+        """Padded channel lanes must not read past the radial tensor.
+
+        The radial operand is a slice of a NaN-filled parent sized to the
+        padded channel block: any out-of-bounds lane load reads a NaN and,
+        through ``0 * NaN``, surfaces in a valid zonal-gradient entry.  A
+        correct joint edge/channel mask keeps every gradient finite.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(43)
+        n_edge, n_nodes, channels = 777, 33, 40
+        zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
+        parent = torch.full(
+            (n_edge, 3, 64), float("nan"), device="cuda", dtype=torch.float32
+        )
+        radial = parent[:, :, :channels]
+        radial.copy_(
+            torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+        )
+        self.assertFalse(radial.is_contiguous())
+        dst = torch.randint(0, n_nodes, (n_edge,), device="cuda", generator=generator)
+        order = torch.argsort(dst, dim=0, stable=True)
+        counts = torch.bincount(dst, minlength=n_nodes)
+        row_ptr = torch.cat(
+            [
+                torch.zeros(1, dtype=torch.int64, device="cuda"),
+                torch.cumsum(counts, 0).to(torch.int64),
+            ]
+        )
+
+        # The leaf is the parent: the operator receives the strided view
+        # itself, so the backward's radial loads walk the parent's NaN
+        # padding when the channel mask is missing (a clone here would
+        # hand the backward a contiguous copy and hide the overread).
+        parent_leaf = parent.requires_grad_(True)
+        radial_view = parent_leaf[:, :, :channels]
+        z1 = zonal.clone().requires_grad_(True)
+        out = gie_zonal_scatter(z1, radial_view, dst, order, row_ptr, n_nodes, 3)
+        cot = torch.randn_like(out)
+        gz, gr = torch.autograd.grad(out, (z1, parent_leaf), cot)
+        self.assertTrue(torch.isfinite(gz).all())
+        self.assertTrue(torch.isfinite(gr).all())
+        # The reference composition on the same inputs stays the oracle.
+        z2 = zonal.clone().requires_grad_(True)
+        r2 = radial.clone().requires_grad_(True)
+        ref = self._reference(z2, r2, dst, n_nodes)
+        ref_gz, ref_gr = torch.autograd.grad(ref, (z2, r2), cot)
+        torch.testing.assert_close(gz, ref_gz, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(gr[:, :, :channels], ref_gr, atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
+    def test_compile_matches_eager(self):
+        """The compiled path must match eager (guards the launch-grid trap)."""
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(11)
+        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
+            4096, 128, generator, view_radial=True
+        )
+
+        def fn(z, r):
+            return gie_zonal_scatter(z, r, dst, order, row_ptr, 128, 3)
+
+        z_e = zonal.clone().requires_grad_(True)
+        r_e = radial.clone().requires_grad_(True)
+        out_e = fn(z_e, r_e)
+        cotangent = torch.randn_like(out_e)
+        g_e = torch.autograd.grad(out_e, (z_e, r_e), cotangent)
+
+        z_c = zonal.clone().requires_grad_(True)
+        r_c = radial.clone().requires_grad_(True)
+        out_c = torch.compile(fn)(z_c, r_c)
+        g_c = torch.autograd.grad(out_c, (z_c, r_c), cotangent)
+
+        torch.testing.assert_close(out_c, out_e, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(g_c[0], g_e[0], atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(g_c[1], g_e[1], atol=1e-6, rtol=1e-6)
+
+    @_GPU_KERNELS
+    def test_embedding_dispatch_two_state(self):
+        """Module-level two states: bound op vs reference composition."""
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(13)
+        n_edge, n_nodes, channels = 2048, 64, 32
+        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
+            n_edge, n_nodes, generator
+        )
+        # Dense rotation surface the base layout gathers the coupling from
+        d_full = torch.randn(n_edge, 16, 16, device="cuda", generator=generator)
+        # Fixed per-test tensors so both states see identical inputs
+        edge_vec = torch.zeros(n_edge, 3, device="cuda")
+        inv_sqrt_deg = torch.rand(n_nodes, 1, 1, device="cuda", generator=generator)
+
+        class _Cache:
+            pass
+
+        def make_cache(df):
+            cache = _Cache()
+            cache.dst = dst
+            cache.edge_vec = edge_vec
+            cache.inv_sqrt_deg = inv_sqrt_deg
+            cache.csr_cache = {}
+            cache.edge_src_gate = None
+            cache.Dt_full = df
+            return cache
+
+        module = GeometricInitialEmbedding(
+            lmax=3, channels=channels, dtype=torch.float32
+        ).cuda()
+        module.eval()
+        cotangent = None
+        calls = {"n": 0}
+        real_op = gie_zonal_scatter
+
+        def counting_op(*args, **kwargs):
+            calls["n"] += 1
+            return real_op(*args, **kwargs)
+
+        def run(bound):
+            # Counting wrapper: the assertions check which path was
+            # actually selected, not just that outputs agree (a silently
+            # reference-path run would also produce equal outputs).
+            module._triton_scatter = counting_op if bound else None
+            calls["n"] = 0
+            df = d_full.clone().requires_grad_(True)
+            rad = radial.clone().requires_grad_(True)
+            out = module(
+                n_nodes=n_nodes,
+                edge_cache=make_cache(df),
+                radial_feat=rad,
+            )
+            nonlocal cotangent
+            if cotangent is None:
+                cotangent = torch.randn(
+                    out.shape,
+                    device="cuda",
+                    generator=torch.Generator(device="cuda").manual_seed(37),
+                )
+            grads = torch.autograd.grad(out, (df, rad), cotangent)
+            return out.detach(), grads
+
+        out_ref, (gd_ref, gr_ref) = run(bound=False)
+        self.assertEqual(calls["n"], 0)
+        out_fused, (gd_fused, gr_fused) = run(bound=True)
+        self.assertEqual(calls["n"], 1)
+        torch.testing.assert_close(out_fused, out_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(gd_fused, gd_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(gr_fused, gr_ref, atol=1e-5, rtol=1e-5)
+
+        # Training keeps the reference composition even with the operator
+        # bound: its backward carries no next-derivative formula, so the
+        # dispatch must stay out of the fused path.
+        module.train()
+        calls["n"] = 0
+        dp = d_full.clone().requires_grad_(True)
+        rad = radial.clone().requires_grad_(True)
+        out_train = module(
+            n_nodes=n_nodes,
+            edge_cache=make_cache(dp),
+            radial_feat=rad,
+        )
+        gdp, grad_train = torch.autograd.grad(out_train, (dp, rad), cotangent)
+        self.assertEqual(calls["n"], 0)  # training keeps the reference path
+        torch.testing.assert_close(out_train, out_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(gdp, gd_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(grad_train, gr_ref, atol=1e-5, rtol=1e-5)

@@ -9,6 +9,9 @@ descriptor; the package-level API only exposes availability.
 from .force_assembly import (
     FORCE_ASSEMBLY_TRITON_AVAILABLE,
 )
+from .gie_scatter import (
+    GIE_SCATTER_TRITON_AVAILABLE,
+)
 from .radial_mix import (
     RADIAL_MIX_TRITON_AVAILABLE,
 )
@@ -39,8 +42,10 @@ TRITON_AVAILABLE = (
     and STACK_FP16X3_TRITON_AVAILABLE
     and WIGNER_MONOMIALS_TRITON_AVAILABLE
     and FORCE_ASSEMBLY_TRITON_AVAILABLE
+    and GIE_SCATTER_TRITON_AVAILABLE
 )
 
 __all__ = [
+    "GIE_SCATTER_TRITON_AVAILABLE",
     "TRITON_AVAILABLE",
 ]
