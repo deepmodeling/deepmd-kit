@@ -50,6 +50,7 @@ from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
     mesh_compile_supported,
     mesh_freeze_supported,
+    serialize_from_file,
 )
 
 from ..compile_utils import (
@@ -164,10 +165,18 @@ def test_energy_matches_direct_pair_sum(kernel: str) -> None:
     )
 
 
-def test_charges_read_the_atomic_parameters() -> None:
-    """The charge network reads the atomic parameters that the energy fitting reads."""
+@pytest.mark.parametrize("condition", ["aparam", "case_embd"])
+def test_charges_follow_the_fitting_conditions(condition: str) -> None:
+    """The charge network reads the atomic parameters and the case of the energy fitting.
+
+    The long-range energy is the model less the short-range model of the same
+    seeds; it changes with the atomic parameters of the atoms and with the
+    case that a multi-task model selects.
+    """
     config = _config("les", constraint=None)
-    config["fitting_net"]["numb_aparam"] = 1
+    # Two atomic parameters, or the one-hot embedding of two cases.
+    key = "numb_aparam" if condition == "aparam" else "dim_case_embd"
+    config["fitting_net"][key] = 2
     short_range_config = copy.deepcopy(config)
     short_range_config.pop("long_range")
     model = get_model(config).to(env.DEVICE).eval()
@@ -179,16 +188,19 @@ def test_charges_read_the_atomic_parameters() -> None:
             parameter.zero_()
     coord, atype = _batch(seed=7)
     long_range_energy = []
-    for value in (0.0, 1.5):
-        aparam = torch.full(
-            (*atype.shape, 1), value, dtype=torch.float64, device=env.DEVICE
-        )
-        energy = short_range(coord, atype, aparam=aparam)["energy"]
+    for value in (0, 1):
+        kwargs = {}
+        if condition == "aparam":
+            kwargs["aparam"] = torch.full(
+                (*atype.shape, 2), 1.5 * value, dtype=torch.float64, device=env.DEVICE
+            )
+        else:
+            for each in (model, short_range, neutral):
+                each.set_case_embd(value)
+        energy = short_range(coord, atype, **kwargs)["energy"]
         # Without charges the long-range model is the short-range one.
-        torch.testing.assert_close(
-            neutral(coord, atype, aparam=aparam)["energy"], energy
-        )
-        long_range_energy.append(model(coord, atype, aparam=aparam)["energy"] - energy)
+        torch.testing.assert_close(neutral(coord, atype, **kwargs)["energy"], energy)
+        long_range_energy.append(model(coord, atype, **kwargs)["energy"] - energy)
     difference = (long_range_energy[1] - long_range_energy[0]).abs()
     assert torch.all(difference > 1e-6), difference
 
@@ -848,18 +860,31 @@ def test_periodic_checkpoint_inference_matches_direct_forward(
 
 
 @pytest.mark.parametrize(
-    ("kernel", "source", "suffix"),
-    [("les", "neutral", ".pt2"), ("sog", "neutral", ".pte"), ("les", "fparam", ".pte")],
+    ("kernel", "source", "suffix", "atomic"),
+    [
+        ("les", "neutral", ".pt2", False),
+        ("sog", "neutral", ".pte", False),
+        ("les", "fparam", ".pte", False),
+        ("les", "neutral", ".pte", True),
+    ],
 )
 def test_frozen_model_matches_direct_forward(
-    tmp_path, kernel: str, source: str, suffix: str
+    tmp_path, kernel: str, source: str, suffix: str, atomic: bool
 ) -> None:
-    """A frozen model reads the pair topology as named inputs of any length."""
+    """A frozen model reads the pair topology as named inputs of any length.
+
+    With ``atomic``, the model reads atomic parameters, which reach the charge
+    network, and excludes the pairs of two types, which the deployed pair
+    topology omits.
+    """
     config = _config(kernel, constraint={"source": source, "fparam_index": 0})
     frame = {}
     if source == "fparam":
         config["fitting_net"]["numb_fparam"] = 1
         frame["fparam"] = np.array([[1.0], [-0.5], [2.0]])
+    if atomic:
+        config["fitting_net"]["numb_aparam"] = 1
+        config["pair_exclude_types"] = [[0, 1]]
     model = get_model(config).to(env.DEVICE).eval()
     frozen = tmp_path / f"long_range_{kernel}{suffix}"
     deserialize_to_file(
@@ -870,6 +895,11 @@ def test_frozen_model_matches_direct_forward(
     )
     dp = DeepPot(str(frozen), auto_batch_size=False)
     assert dp.deep_eval.metadata["topologies"] == ["all_pairs"]
+    # The archive reports its lower and its per-atom virial, which
+    # change-bias carries over.
+    recorded = serialize_from_file(str(frozen))
+    assert recorded["lower_input_kind"] == "graph"
+    assert recorded["do_atomic_virial"]
     if suffix == ".pte":
         # The pair topology follows the thirteen inputs of the graph lower.
         signature = torch.export.load(str(frozen)).graph_signature
@@ -878,6 +908,9 @@ def test_frozen_model_matches_direct_forward(
     for seed, nloc in ((7, 6), (8, 4)):
         coord, atype = _batch(seed=seed)
         coord, atype = coord[:, :nloc], atype[:, :nloc]
+        if atomic:
+            rng = np.random.default_rng(seed)
+            frame["aparam"] = rng.uniform(-1.0, 1.0, (*atype.shape, 1))
         expected = model(
             coord,
             atype,
@@ -902,18 +935,35 @@ def test_frozen_model_matches_direct_forward(
             )
 
 
-def test_change_bias_keeps_the_graph_lower(tmp_path) -> None:
-    """change-bias rewrites a frozen long-range model on its graph lower."""
+@pytest.mark.parametrize(
+    ("suffix", "recorded"), [(".pte", "graph"), (".pt2", "dpa4c_canonical")]
+)
+def test_change_bias_keeps_the_graph_lower(
+    tmp_path, monkeypatch, suffix: str, recorded: str
+) -> None:
+    """change-bias rewrites a frozen long-range model on its graph lower.
+
+    A .pt2 archive that records the compact canonical lower, a form of CUDA
+    devices, is rewritten on the lower that the host selects, the graph lower
+    for this uncompressed model on any device.
+    """
     config = _config("les")
     model = get_model(config).to(env.DEVICE).eval()
-    frozen = tmp_path / "long_range.pte"
+    frozen = tmp_path / f"long_range{suffix}"
     deserialize_to_file(
         str(frozen),
         {"model": model.serialize(), "model_def_script": config},
         lower_kind="graph",
     )
+    if recorded != "graph":
+        read = serialization.serialize_from_file
+        monkeypatch.setattr(
+            serialization,
+            "serialize_from_file",
+            lambda path: {**read(path), "lower_input_kind": recorded},
+        )
     bias = [0.5, -1.25]
-    updated = tmp_path / "long_range_updated.pte"
+    updated = tmp_path / f"long_range_updated{suffix}"
     change_bias(str(frozen), bias_value=bias, output=str(updated))
     before = DeepPot(str(frozen), auto_batch_size=False)
     after = DeepPot(str(updated), auto_batch_size=False)
@@ -1219,10 +1269,14 @@ def test_pair_graph_skips_padding() -> None:
 
 
 def _periodic_model(kernel: str, **kwargs: object) -> torch.nn.Module:
-    """A periodic model over the explicit wave numbers of every frame."""
+    """A periodic model over the explicit wave numbers of every frame, ``kspace_tolerance`` in ``kwargs``."""
+    long_range = {
+        key: kwargs.pop(key) for key in ("kspace_tolerance",) if key in kwargs
+    }
     config = _config(kernel, **kwargs)
     config["long_range"]["periodic"] = True
     config["long_range"]["k_grid_mode"] = "ragged"
+    config["long_range"].update(long_range)
     return get_model(config).to(env.DEVICE).eval()
 
 
@@ -1236,18 +1290,23 @@ def _periodic_case() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def _kspace_reference(
-    coord: np.ndarray, charge: np.ndarray, box: np.ndarray, kernel: str
+    coord: np.ndarray,
+    charge: np.ndarray,
+    box: np.ndarray,
+    kernel: str,
+    tolerance: float = 1e-8,
 ) -> float:
     """Independent k-space evaluation of the periodic long-range energy, in eV.
 
-    E = k_e [ 1/(2V) sum_{k != 0} K_hat(k) |rho(k)|^2 - K(0)/2 sum_i |q_i|^2 ].
+    E = k_e [ 1/(2V) sum_{k != 0} K_hat(k) |rho(k)|^2 - K(0)/2 sum_i |q_i|^2 ],
+    truncated where the weight of the slowest-decaying mode falls below
+    ``tolerance``, the ``kspace_tolerance`` of the module.
     """
     rec = 2.0 * np.pi * np.linalg.inv(box)  # columns g_d: k(n) = rec @ n
-    # the module's default kspace_tolerance=1e-8 sets the truncation
     if kernel == "les":
-        k_max = 2.0 * 0.8 * np.sqrt(np.log(1e8))
+        k_max = 2.0 * 0.8 * np.sqrt(np.log(1.0 / tolerance))
     else:
-        k_max = np.sqrt(2.0 * np.log(1e8)) / 0.8
+        k_max = np.sqrt(2.0 * np.log(1.0 / tolerance)) / 0.8
     n_d = np.ceil(k_max * np.linalg.norm(box, axis=1) / (2 * np.pi)).astype(int)
     grids = np.meshgrid(
         *[np.arange(-n, n + 1, dtype=float) for n in n_d], indexing="ij"
@@ -1282,16 +1341,28 @@ def _kspace_reference(
     )
 
 
+@pytest.mark.parametrize("tolerance", [None, 1e-4])
 @pytest.mark.parametrize("kernel", ["les", "sog"])
-def test_periodic_energy_matches_kspace_reference(kernel: str) -> None:
-    """With fixed charges the periodic energy is the documented k-space sum."""
-    model = _periodic_model(kernel, constraint=None)
+def test_periodic_energy_matches_kspace_reference(
+    kernel: str, tolerance: float | None
+) -> None:
+    """With fixed charges the periodic energy is the documented k-space sum.
+
+    The sum ends at the wave number of ``kspace_tolerance``, the default or a
+    configured one.
+    """
+    options = {} if tolerance is None else {"kspace_tolerance": tolerance}
+    model = _periodic_model(kernel, constraint=None, **options)
     _set_constant_charges(model, [1.0, -0.5])
     coord, atype, box = _periodic_case()
     out = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
     charge = np.zeros((6, CHANNELS[kernel]))
     charge[:, 0] = [1.0, -0.5, 1.0, -0.5, -0.5, 1.0]
-    expected = _kspace_reference(coord[0], charge, box[0], kernel)
+    expected = _kspace_reference(coord[0], charge, box[0], kernel, tolerance or 1e-8)
+    if tolerance is not None:
+        # The configured truncation differs measurably from the default one.
+        default = _kspace_reference(coord[0], charge, box[0], kernel)
+        assert abs(expected - default) > 1e-6, (expected, default)
     np.testing.assert_allclose(out["energy"].item(), expected, rtol=1e-9, atol=1e-9)
     np.testing.assert_allclose(
         out["atom_energy"].sum().item(), expected, rtol=1e-9, atol=1e-9

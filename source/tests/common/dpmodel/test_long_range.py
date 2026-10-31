@@ -137,6 +137,10 @@ def test_sog_kernel_closed_form_and_defaults() -> None:
         -(r**2) / (2 * 1.7**2)
     )
     np.testing.assert_allclose(kernel(r**2), expected, rtol=1e-12)
+    # A scalar amplitude is shared by every Gaussian.
+    shared = SOGKernel(amplitude=0.4, width=[0.8, 1.7])
+    expected = 0.4 * (np.exp(-(r**2) / (2 * 0.8**2)) + np.exp(-(r**2) / (2 * 1.7**2)))
+    np.testing.assert_allclose(shared(r**2), expected, rtol=1e-12)
     default = SOGKernel(n_gaussian=3, base_width=2.0, width_ratio=1.5)
     np.testing.assert_allclose(np.exp(default.log_width), [2.0, 3.0, 4.5])
     np.testing.assert_allclose(

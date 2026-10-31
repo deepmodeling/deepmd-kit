@@ -504,6 +504,29 @@ class TestChangeBias(unittest.TestCase):
         self.assertIn("model_def_script", updated_data)
         self.assertEqual(updated_data["model_def_script"], original_mds)
 
+    def test_change_bias_keeps_the_per_atom_virial(self) -> None:
+        """change_bias keeps the per-atom virial of a dense-lower archive."""
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(self.shared_pte)
+        self.assertEqual(data["lower_input_kind"], "nlist")
+        self.assertFalse(data["do_atomic_virial"])
+        with_virial = os.path.join(self.tmpdir, "frozen_atomic_virial.pte")
+        deserialize_to_file(
+            with_virial,
+            {"model": data["model"], "model_def_script": data["model_def_script"]},
+            do_atomic_virial=True,
+            lower_kind="nlist",
+        )
+        output_pte = os.path.join(self.tmpdir, "frozen_atomic_virial_updated.pte")
+        run_dp(f"dp --pt-expt change-bias {with_virial} -b 0.1 3.2 -o {output_pte}")
+        updated = serialize_from_file(output_pte)
+        self.assertEqual(updated["lower_input_kind"], "nlist")
+        self.assertTrue(updated["do_atomic_virial"])
+
     def test_change_bias_pt2_preserves_model_def_script(self) -> None:
         """change_bias on .pt2 should preserve model_def_script (training config)."""
         from deepmd.pt_expt.utils.serialization import (
