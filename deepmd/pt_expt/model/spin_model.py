@@ -9,6 +9,9 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+from deepmd.dpmodel.descriptor.dpa4 import (
+    DescrptDPA4,
+)
 from deepmd.dpmodel.model.spin_model import SpinModel as SpinModelDP
 from deepmd.pt_expt.common import (
     torch_module,
@@ -28,6 +31,14 @@ from .model import (
 
 @torch_module
 class SpinModel(SpinModelDP):
+    def __init__(self, backbone_model: torch.nn.Module, spin: Spin) -> None:
+        atomic_model = backbone_model.get_dp_atomic_model()
+        if atomic_model is not None and isinstance(
+            getattr(atomic_model, "descriptor", None), DescrptDPA4
+        ):
+            raise ValueError("DPA4/SeZM spin models require a native spin model.")
+        super().__init__(backbone_model=backbone_model, spin=spin)
+
     def __getattr__(self, name: str) -> Any:
         """Get attribute from the wrapped model.
 

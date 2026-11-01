@@ -78,10 +78,9 @@ unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 > descriptors. On the conservative **energy** path it is only an initial
 > neighbor-search capacity that grows on demand, so it never truncates the
 > neighbor list and you do not need to size it to the true maximum neighbor count.
-> The native spin scheme shares this energy path, so it grows on demand too; only
-> the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
-> `sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
-> the training data.
+> The native spin scheme shares this energy path, so it grows on demand too;
+> the denoising (`dens`) path caps the list at `sum(sel)`. You can also set `sel`
+> to `auto` or `auto:factor` to size it from the training data.
 
 ### Presets
 
@@ -231,23 +230,14 @@ default training path. See `examples/water/dpa4/input_dens.json` for an example.
 ### Spin
 
 DPA4/SeZM supports the DeePMD-kit spin convention through the standard
-`model.spin` block. Two schemes are available, selected by `model.spin.scheme`:
+`model.spin` block. The `native` scheme passes the per-atom spin vector into the
+descriptor as an equivariant feature, and the magnetic force is the spin
+gradient of the energy. The neighbor list and type map keep their real-system
+sizes.
 
-- `native` — the per-atom spin vector enters the descriptor as an
-  equivariant feature, and the magnetic force is the spin gradient of the
-  energy. No virtual atoms are introduced, so the neighbor list and type map
-  keep their real-system sizes.
-- `deepspin` (default) — the classical DeepSpin representation, in which each
-  magnetic atom is paired with a virtual atom displaced along its spin. It is
-  the default, so a `model.spin` block without an explicit `scheme` reproduces
-  the classical behaviour shared with every non-SeZM spin model.
-
-Both schemes train against the conservative `ener_spin` loss, share the same
+Spin models train against the conservative `ener_spin` loss, use the
 `spin` / `force_mag` data convention, and are not combined with the `dens` mode.
-Because the dataset and loss are identical, switching `scheme` does not require
-any change to the data or the loss block. Complete inputs are in
-`examples/spin/dpa4/`: `input.json` for the native scheme and
-`input-deepspin.json` for the deepspin scheme. See
+A complete input is provided in `examples/spin/dpa4/input.json`. See
 [training spin energy models](train-energy-spin.md) for the general workflow.
 
 `use_spin` accepts a per-type boolean list or, to avoid enumerating a large
@@ -294,46 +284,10 @@ the magnetic force come from a single energy gradient:
 
 where $\mathbf{s}_i$ is the input spin vector. The model does not rescale the
 spin internally, so $\mathbf{s}_i$ keeps the dataset's `spin` convention and the
-magnetic force is reported in the matching units of `force_mag` -- there is no
-`virtual_scale` factor in this scheme. The magnetic force is reported on the
-magnetic atom types only, matching the `force_mag` label. The native scheme
+magnetic force is reported in the matching units of `force_mag`, on magnetic
+atom types only, matching the `force_mag` label. The native scheme
 relies on the descriptor's angular degrees to represent the spin direction, so
 it requires `lmax >= 1` (the default).
-
-#### DeepSpin virtual-atom scheme (default)
-
-```json
-{
-  "model": {
-    "type": "dpa4",
-    "type_map": [
-      "Ni",
-      "O"
-    ],
-    "spin": {
-      "use_spin": [
-        true,
-        false
-      ],
-      "virtual_scale": [
-        0.314
-      ],
-      "scheme": "deepspin"
-    },
-    "descriptor": {
-      "sel": 120,
-      "rcut": 6.0
-    }
-  }
-}
-```
-
-The `deepspin` scheme augments each magnetic atom with a virtual atom at
-`coord + spin * virtual_scale`, which doubles the internal neighbor capacity and
-type map. `virtual_scale` is required by this scheme and ignored by the native
-scheme. The `deepspin` scheme cannot be combined with `bridging_method`: a
-magnetic atom lies inside the bridging window of its own virtual partner, so a
-bridged spin model uses the native scheme.
 
 ### Multi-task / shared fitting
 
@@ -741,11 +695,6 @@ Two different export routes produce one:
 The two are distinct ABIs consumed by different C++ paths; neither is a dense
 route, and `--lower-kind` selects between the pt_expt lowers only.
 
-Which models lose multi-rank, on either route:
-
-- **The deepspin (virtual-atom) spin scheme**, which overrides the export ABI
-  to `nlist` because it expands virtual atoms inside the graph.
-
 **Zone bridging is multi-rank capable** (including combined with native
 spin). The Source Freeze Propagation gate is a product over each node's full
 *outgoing*-edge set, which no single rank observes for ghost owners; the
@@ -799,8 +748,7 @@ configured with `spin.scheme: native` (see [Native spin
 (magnetic)](#native-spin-magnetic) below) -- can be frozen through a
 NeighborGraph-native inference path instead of the legacy dense
 neighbor-list path. Frame-level charge/spin conditioning
-(`add_chg_spin_ebd`) and zone bridging are graph-eligible too; only the
-`deepspin` virtual-atom spin scheme remains dense-only:
+(`add_chg_spin_ebd`) and zone bridging are graph-eligible too:
 
 ```bash
 dp --pt_expt freeze -o model.pt2 --lower-kind graph
@@ -814,17 +762,12 @@ it considers every neighbor within `rcut` rather than the capacity fixed by
 `sel`. For the default conservative-energy path, `sel` is already only an
 initial search capacity that grows on demand (see the note in [Minimal
 input](#minimal-input)), so graph and dense results agree there down to
-floating-point noise. Where `sel` does act as a hard cap -- the `dens`
-denoising path, or the `deepspin` virtual-atom spin scheme, both of which
-size the neighbor list to `sum(sel)` -- the graph route's larger neighbor set
-can diverge from the dense route, the same deliberate divergence documented
-for DPA-1/DPA-2.
+floating-point noise. On the `dens` denoising path, `sel` acts as a hard cap
+that sizes the neighbor list to `sum(sel)`. The graph route's larger neighbor
+set can therefore diverge from the dense route, the same deliberate divergence
+documented for DPA-1/DPA-2.
 
-A DPA4/SeZM descriptor configured with `deepspin`-scheme spin is not
-graph-eligible and always runs the dense route regardless of `--lower-kind`;
-`--lower-kind graph` on such a model raises an error at freeze time instead
-of exporting a silently-dense-only artifact. `native`-scheme spin and zone
-bridging are the opposite case: they have *no* dense route at all --
+Native spin and zone bridging have no dense route at all --
 the analytical bridging term has no dense injection site -- so they are
 always graph-frozen, `--lower-kind` notwithstanding. Charge/spin
 conditioning rides the graph lower and constrains neither. Note that a
@@ -855,15 +798,8 @@ artifact and support multi-rank LAMMPS -- see [Native spin
 the `native`-scheme JSON example) is graph-only: a native-spin DPA4/SeZM
 model has no dense (nlist) lower at all, so it is always frozen through the
 NeighborGraph path regardless of `--lower-kind`, and always runs through it
-at inference time. The `deepspin` virtual-atom scheme is unaffected and
-keeps using the dense route described in [Spin](#spin) and [Multi-GPU (MPI)
-inference](#multi-gpu-mpi-inference).
+at inference time.
 
-- **Native scheme only.** `deepspin`-scheme spin (and the general `spin`
-  virtual-atom model outside DPA4/SeZM) is dense-only; only `scheme: native`
-  is graph-eligible. `dp --pt_expt freeze --lower-kind graph` on a
-  `deepspin`-scheme model raises an error at freeze time, per the dense/graph
-  eligibility rule above.
 - **Graph route only, no dense fallback.** A native-spin descriptor has only
   the graph lower. This is not a spin-specific restriction on the CLI: every
   graph-capable DPA4/SeZM model, plain-energy included, is frozen to the
@@ -1020,10 +956,8 @@ closed over the one-hop neighbor shell.
   completed across ranks by one reverse-accumulate plus one
   forward-broadcast border exchange. See
   [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference).
-- The pt_expt graph-native inference route is unavailable only for
-  `deepspin`-scheme spin, which stays on the dense route. Charge/spin
-  conditioning, zone bridging and `native`-scheme spin are all
-  graph-eligible.
+- Charge/spin conditioning, zone bridging and native spin are all eligible
+  for the pt_expt graph-native inference route.
 - `spin.scheme: native` is graph-only (it has no dense route) and supports
   multi-rank LAMMPS: ghost node features ride `border_op` per interaction
   block and ghost spins arrive through the LAMMPS `sp` forward-comm.

@@ -18,6 +18,9 @@ from deepmd.dpmodel import (
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
 )
+from deepmd.pt.model.descriptor.sezm import (
+    DescrptSeZM,
+)
 from deepmd.pt.utils.spin import (
     concat_switch_virtual,
 )
@@ -128,6 +131,9 @@ class SpinModel(torch.nn.Module):
         backbone_model: DPAtomicModel,
         spin: Spin,
     ) -> None:
+        atomic_model = getattr(backbone_model, "atomic_model", backbone_model)
+        if isinstance(getattr(atomic_model, "descriptor", None), DescrptSeZM):
+            raise ValueError("DPA4/SeZM spin models require a native spin model.")
         super().__init__()
         self.backbone_model = backbone_model
         self.spin = spin

@@ -111,7 +111,7 @@ _EMBEDDING_DTYPE_TO_TORCH = {
 def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
     """Return whether the params describe a SeZM / DPA4 model."""
     model_type = str(model_params.get("type", "")).lower()
-    if model_type in {"sezm", "dpa4", "sezm_spin"}:
+    if model_type in {"sezm", "dpa4"}:
         return True
     # canonical bridged spelling: linear_ener over [dpa4, inner_potential],
     # realized by the pt backend as a SeZMModel
