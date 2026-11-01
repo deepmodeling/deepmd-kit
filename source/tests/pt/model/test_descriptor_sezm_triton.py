@@ -37,6 +37,7 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+import deepmd.pt.model.descriptor.sezm_nn.wignerd as wignerd_mod
 from deepmd.pt.model.descriptor.sezm_nn.indexing import (
     build_m_major_index,
     get_so3_dim_of_lmax,
@@ -44,7 +45,6 @@ from deepmd.pt.model.descriptor.sezm_nn.indexing import (
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
     DynamicRadialDegreeMixer,
 )
-import deepmd.pt.model.descriptor.sezm_nn.wignerd as wignerd_mod
 from deepmd.pt_expt.kernels.triton.sezm import (
     TRITON_AVAILABLE,
 )
@@ -2286,9 +2286,9 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         quat = torch.randn(8, 4, dtype=torch.float32, device="cpu")
         quat = quat / quat.norm(dim=-1, keepdim=True)
 
-        plain = make_fx(
-            _run, tracing_mode="symbolic", _allow_non_fake_inputs=True
-        )(quat)
+        plain = make_fx(_run, tracing_mode="symbolic", _allow_non_fake_inputs=True)(
+            quat
+        )
         self.assertIn("sezm_nn.wigner_d_assemble", plain.code)
 
         with assemble_op_suppressed_for_export():
@@ -2296,9 +2296,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                 _run, tracing_mode="symbolic", _allow_non_fake_inputs=True
             )(quat)
         self.assertNotIn("sezm_nn.wigner_d_assemble", suppressed.code)
-        torch.testing.assert_close(
-            suppressed(quat), plain(quat), atol=0.0, rtol=0.0
-        )
+        torch.testing.assert_close(suppressed(quat), plain(quat), atol=0.0, rtol=0.0)
 
     @unittest.skipUnless(
         _WIGNER_OP_REGISTERED,
@@ -2330,9 +2328,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         quat = quat / quat.norm(dim=-1, keepdim=True)
 
         with (
-            mock.patch.object(
-                wignerd_mod, "_COMPILER_IS_COMPILING", lambda: True
-            ),
+            mock.patch.object(wignerd_mod, "_COMPILER_IS_COMPILING", lambda: True),
             mock.patch.object(wignerd_mod, "_wigner_d_assemble_op", _spy),
         ):
             out = calc.forward(quat)
