@@ -2288,6 +2288,85 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
                 grads[1][i], grads[0][i], atol=1e-6 * max(s_i, 1.0), rtol=1e-5
             )
 
+    @_GPU_KERNELS
+    def test_traced_force_loss_keeps_the_unfused_path(self):
+        """Traced force loss: the backward runs as a plain compiled function.
+
+        The tracers compile the backward with grad mode disabled and hand
+        it a cotangent that is still part of the outer graph --
+        ``autograd.grad(create_graph=True)`` cannot emulate this (the
+        engine re-enables grad inside an eager double backward), so the
+        check drives the backward function directly under ``no_grad``
+        with a requiring cotangent, exactly the shape the tracer
+        executes.  The fused operator registers no next-derivative
+        formula, so a requiring cotangent must keep the unfused pair.
+        """
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        self._clear_and_restore_levels()
+        lmax, channels, n_focus, rank = 3, 32, 2, 1
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+
+        xg = x.clone().requires_grad_(True)
+        wg = wigner.clone().requires_grad_(True)
+        kg = kc.clone().requires_grad_(True)
+        out = vp._rotate_mix_op(
+            xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank, 1
+        )
+
+        holder = []
+        ctx = SimpleNamespace(
+            save_for_backward=lambda *ts: holder.append(ts),
+            # The unfused path reads the tracer's training requirements
+            # from the context (all tensor inputs require grad here).
+            needs_input_grad=(
+                True,
+                True,
+                False,
+                False,
+                True,
+                True,
+                True,
+                False,
+                False,
+                False,
+                False,
+            ),
+        )
+        vp._rotate_mix_setup_context(
+            ctx,
+            (xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank, 1),
+            out,
+        )
+        ctx.saved_tensors = holder[0]
+        cot = grad_u.clone().requires_grad_(True)
+
+        def _backward():
+            with torch.no_grad():
+                return vp._rotate_mix_backward(ctx, cot)
+
+        launches, grads = self._record_fused_backward(_backward)
+        self.assertEqual(
+            launches, 0, "a requiring cotangent must keep the unfused pair"
+        )
+        ref = torch.autograd.grad(out, [xg, wg, kg], grad_u, retain_graph=True)
+        # The backward returns one gradient per forward input: x, wigner
+        # and kc live at positions 0, 4 and 5 of the 11-tuple.
+        scale = ref[0].abs().max().item()
+        torch.testing.assert_close(
+            grads[0], ref[0], atol=1e-5 * max(scale, 1.0), rtol=1e-5
+        )
+        for got, want in ((grads[4], ref[1]), (grads[5], ref[2])):
+            s_i = want.abs().max().item()
+            torch.testing.assert_close(got, want, atol=1e-6 * max(s_i, 1.0), rtol=1e-5)
+
     def test_higher_order_backward_preserved_at_level_one(self):
         """At level 1, ``create_graph=True`` keeps the supported path.
 

@@ -4203,12 +4203,17 @@ def _rotate_mix_backward(ctx, grad_u):
     x, src, src_order, src_rowptr, wigner, kc, cb = ctx.saved_tensors
     grad_u = grad_u.contiguous()
     # ``torch.is_grad_enabled()`` is True inside this backward exactly when
-    # the backward itself is being differentiated (``create_graph=True``,
-    # e.g. force-loss training).  The fused operator registers only a fake
-    # (meta) implementation and no next-derivative formula, while the
-    # unfused backward and segment-sum operators do support the next
-    # derivative -- so higher-order callers keep the supported pair and the
-    # fused path engages only when no higher-order graph is being built.
+    # the backward itself is being differentiated eagerly
+    # (``create_graph=True``).  Traced force-loss training instead compiles
+    # the backward with grad mode disabled while handing it a cotangent
+    # that is still part of the outer graph (the tracers communicate the
+    # training requirement through the incoming gradient, not ambient
+    # mode), so a requiring cotangent equally announces a next derivative.
+    # The fused operator registers only a fake (meta) implementation and
+    # no next-derivative formula, while the unfused backward and
+    # segment-sum operators do support the next derivative -- so both
+    # higher-order signals keep the supported pair and the fused path
+    # engages only when neither is present.
     # The fused backward rides the level-1 universal-kernel contract of the
     # rotate-mix family (no tunable configuration; it strictly removes the
     # (E, D, C_wide) node-gradient round-trip).  The governing level is the
@@ -4217,7 +4222,12 @@ def _rotate_mix_backward(ctx, grad_u):
     # current train/eval mode -- so the backward retains exactly the
     # selection the forward made and never rereads the ambient environment
     # (which may have been restored between construction and evaluation).
-    if int(ctx.level) >= 1 and int(ctx.rank) <= 1 and not torch.is_grad_enabled():
+    if (
+        int(ctx.level) >= 1
+        and int(ctx.rank) <= 1
+        and not torch.is_grad_enabled()
+        and not grad_u.requires_grad
+    ):
         # Fused path: the node gradient accumulates on chip inside the
         # kernel; the (E, D, C_wide) ``gxe`` HBM round-trip never exists.
         grad_x, grad_wigner, grad_kc = _rotate_mix_bwd_fused_op(
