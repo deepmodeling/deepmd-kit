@@ -493,7 +493,6 @@ class TestSeZMModelCompile(unittest.TestCase):
         )
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
-    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_eval_compile_pins_is_inference_on_the_inference_slot(self) -> None:
         """The eval slot must lower through ``compile_fx_inner(is_inference=True)``.
 
@@ -540,6 +539,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             f"observed call kwargs: {calls}",
         )
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_cache_slots_and_eval_shape_change(self) -> None:
         """Compile cache slots should coexist while eval handles batch-size growth."""
         coord_1, atype_1, box_1, _, _, _ = self._make_tiny_frame()
