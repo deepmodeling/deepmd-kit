@@ -231,9 +231,9 @@ default training path. See `examples/water/dpa4/input_dens.json` for an example.
 
 DPA4/SeZM supports the DeePMD-kit spin convention through the standard
 `model.spin` block. The `native` scheme passes the per-atom spin vector into the
-descriptor as an equivariant feature, and the magnetic force is the spin
-gradient of the energy. The neighbor list and type map keep their real-system
-sizes.
+descriptor as an equivariant feature, and the magnetic force is the negative
+spin gradient of the energy. The neighbor list and type map keep their
+real-system sizes.
 
 Spin models train against the conservative `ener_spin` loss, use the
 `spin` / `force_mag` data convention, and are not combined with the `dens` mode.

@@ -131,8 +131,7 @@ class SpinModel(torch.nn.Module):
         backbone_model: DPAtomicModel,
         spin: Spin,
     ) -> None:
-        atomic_model = getattr(backbone_model, "atomic_model", backbone_model)
-        if isinstance(getattr(atomic_model, "descriptor", None), DescrptSeZM):
+        if any(isinstance(module, DescrptSeZM) for module in backbone_model.modules()):
             raise ValueError("DPA4/SeZM spin models require a native spin model.")
         super().__init__()
         self.backbone_model = backbone_model

@@ -5,6 +5,9 @@ import copy
 
 import pytest
 
+from deepmd.pt.model.model.dp_linear_model import (
+    LinearEnergyModel,
+)
 from deepmd.pt.model.model import (
     get_model,
     get_standard_model,
@@ -69,9 +72,36 @@ def test_native_spin_construction() -> None:
     assert config == original
 
 
-@pytest.mark.parametrize("serialized", [False, True])
-def test_spin_wrapper_requires_compatible_backbone(serialized: bool) -> None:
+@pytest.mark.parametrize(
+    "serialized, depth", [(False, 0), (False, 1), (False, 2), (True, 0)]
+)
+def test_spin_wrapper_requires_compatible_backbone(
+    serialized: bool, depth: int
+) -> None:
     backbone = get_standard_model(_config())
+    for _ in range(depth):
+        backbone = LinearEnergyModel(
+            models=[backbone.atomic_model], type_map=backbone.get_type_map()
+        )
+    spin = Spin(use_spin=[True, False], virtual_scale=0.3)
+    with pytest.raises(ValueError, match="require a native spin model"):
+        if serialized:
+            SpinEnergyModel.deserialize(
+                {
+                    "type": "spin_ener",
+                    "backbone_model": backbone.serialize(),
+                    "spin": spin.serialize(),
+                }
+            )
+        else:
+            SpinEnergyModel(backbone_model=backbone, spin=spin)
+
+
+@pytest.mark.parametrize("serialized", [False, True])
+def test_spin_wrapper_checks_hybrid_descriptors(serialized: bool) -> None:
+    config = _config()
+    config["descriptor"] = {"type": "hybrid", "list": [config["descriptor"]]}
+    backbone = get_standard_model(config)
     spin = Spin(use_spin=[True, False], virtual_scale=0.3)
     with pytest.raises(ValueError, match="require a native spin model"):
         if serialized:

@@ -32,10 +32,7 @@ from .model import (
 @torch_module
 class SpinModel(SpinModelDP):
     def __init__(self, backbone_model: torch.nn.Module, spin: Spin) -> None:
-        atomic_model = backbone_model.get_dp_atomic_model()
-        if atomic_model is not None and isinstance(
-            getattr(atomic_model, "descriptor", None), DescrptDPA4
-        ):
+        if any(isinstance(module, DescrptDPA4) for module in backbone_model.modules()):
             raise ValueError("DPA4/SeZM spin models require a native spin model.")
         super().__init__(backbone_model=backbone_model, spin=spin)
 
