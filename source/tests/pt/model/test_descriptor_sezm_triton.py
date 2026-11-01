@@ -30,6 +30,9 @@ from unittest import (
 )
 
 import torch
+from packaging.version import (
+    Version,
+)
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
@@ -41,9 +44,7 @@ from deepmd.pt.model.descriptor.sezm_nn.indexing import (
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
     DynamicRadialDegreeMixer,
 )
-from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-    _wigner_d_assemble_op as _WIGNER_ASSEMBLE_OP,
-)
+import deepmd.pt.model.descriptor.sezm_nn.wignerd as wignerd_mod
 from deepmd.pt_expt.kernels.triton.sezm import (
     TRITON_AVAILABLE,
 )
@@ -67,6 +68,7 @@ _CUDA = torch.cuda.is_available()
 # schema (torch >= 2.7); torch 2.4-2.6 have ``torch.library.custom_op`` but
 # reject a ``list[torch.Tensor]`` parameter, so tests that call the operator
 # directly gate on registration success, not on API presence.
+_WIGNER_ASSEMBLE_OP = wignerd_mod._wigner_d_assemble_op
 _WIGNER_OP_REGISTERED = _WIGNER_ASSEMBLE_OP is not None
 
 # All SeZM Triton kernels ship together (every per-module availability flag
@@ -2220,12 +2222,13 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
     def test_make_fx_trace_selects_the_assemble_op(self):
         """The fake-mode probe half: make_fx tracing picks the opaque op.
 
-        ``torch.compile`` (covered by the CUDA test below) satisfies the
-        probe through ``is_compiling``; make_fx keeps that flag False and
-        relies on the fake-mode disjunct, which this check exercises.  The
-        graph-node assertion locks in the mechanism: with the probe
-        silently false, the traced route would fall back to the raw
-        scatter and every value comparison would still pass.
+        The production eval path lowers through make_fx, whose fake
+        tensors carry the mode this check exercises (``is_compiling``
+        stays False there; under current dynamo the assembly graph-breaks
+        out of torch.compile regions, so the fake-mode disjunct is the
+        live one today).  The graph-node assertion locks in the mechanism:
+        with the probe silently false, the traced route would fall back to
+        the raw scatter and every value comparison would still pass.
         """
         from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
             WignerDCalculator,
@@ -2242,6 +2245,101 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             quat
         )
         self.assertIn("sezm_nn.wigner_d_assemble", graph.code)
+
+    @unittest.skipIf(
+        Version(torch.__version__).release < (2, 7),
+        "the schema is only accepted from torch 2.7",
+    )
+    def test_operator_registers_on_schema_capable_torch(self):
+        """A registration regression on a capable torch must fail, not skip.
+
+        The operator tests skip on ``_WIGNER_OP_REGISTERED``, so a regression
+        that silently turns the flag off would leave the suite green with
+        the traced route reverted to the scatter.  This check is gated on
+        the torch release instead of the observed flag and therefore fails
+        when registration breaks on a schema-capable torch (CI pins 2.10
+        and 2.11).
+        """
+        self.assertIsNotNone(
+            wignerd_mod._wigner_d_assemble_op,
+            "wigner_d_assemble failed to register on a schema-capable torch",
+        )
+
+    def test_export_suppression_keeps_the_eager_assembly(self):
+        """Export traces keep the scatter: AOTI archives cannot carry the op.
+
+        AOTInductor lowers a plain custom_op to a proxy-executor node
+        resolved by name in the C++ runtime, where nothing registers
+        ``sezm_nn::wigner_d_assemble`` -- an exported .pt2 built through
+        the operator fails to load.  Under the freeze seam's suppression
+        context the traced graph must carry the eager scatter instead.
+        """
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            assemble_op_suppressed_for_export,
+        )
+
+        def _run(quat):
+            return calc.forward(quat)
+
+        calc = wignerd_mod.WignerDCalculator(lmax=3, dtype=torch.float32).cpu()
+        calc.eval()
+        quat = torch.randn(8, 4, dtype=torch.float32, device="cpu")
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+
+        plain = make_fx(
+            _run, tracing_mode="symbolic", _allow_non_fake_inputs=True
+        )(quat)
+        self.assertIn("sezm_nn.wigner_d_assemble", plain.code)
+
+        with assemble_op_suppressed_for_export():
+            suppressed = make_fx(
+                _run, tracing_mode="symbolic", _allow_non_fake_inputs=True
+            )(quat)
+        self.assertNotIn("sezm_nn.wigner_d_assemble", suppressed.code)
+        torch.testing.assert_close(
+            suppressed(quat), plain(quat), atol=0.0, rtol=0.0
+        )
+
+    @unittest.skipUnless(
+        _WIGNER_OP_REGISTERED,
+        "the operator registration needs a torch that accepts its schema",
+    )
+    def test_is_compiling_half_of_the_probe_selects_the_operator(self):
+        """The ``is_compiling`` disjunct of the probe must stay live.
+
+        The fake-mode half has its own graph-node pin; this check drives
+        the other disjunct directly -- a truthy ``is_compiling`` against
+        real (non-fake) tensors routes the assembly through the operator,
+        which a dropped disjunct or a broken callable lookup silently
+        reverts to the scatter.  (Under the *current* dynamo the assembly
+        sits in a graph-break region and torch.compile leaves the flag
+        False there, so the compiled route itself does not reach this
+        disjunct yet; the mock pins the mechanism, not dynamo's region
+        placement.)
+        """
+        calls = []
+        real_op = wignerd_mod._wigner_d_assemble_op
+
+        def _spy(*args, **kwargs):
+            calls.append(1)
+            return real_op(*args, **kwargs)
+
+        calc = wignerd_mod.WignerDCalculator(lmax=3, dtype=torch.float32).cpu()
+        calc.eval()
+        quat = torch.randn(8, 4, dtype=torch.float32, device="cpu")
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+
+        with (
+            mock.patch.object(
+                wignerd_mod, "_COMPILER_IS_COMPILING", lambda: True
+            ),
+            mock.patch.object(wignerd_mod, "_wigner_d_assemble_op", _spy),
+        ):
+            out = calc.forward(quat)
+        self.assertTrue(
+            bool(calls),
+            "a truthy is_compiling must route the assembly through the operator",
+        )
 
     def test_import_and_tracing_fall_back_when_registration_fails(self):
         """Unsupported torches must import the module and stay eager.
@@ -2269,8 +2367,6 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         import subprocess
         import sys
         import textwrap
-
-        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wignerd_mod
 
         tree = pathlib.Path(wignerd_mod.__file__).resolve().parents[5]
         child = textwrap.dedent(
