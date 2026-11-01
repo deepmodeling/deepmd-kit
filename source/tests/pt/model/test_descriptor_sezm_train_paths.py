@@ -74,7 +74,13 @@ from ...common.test_mixins import (
 )
 
 TRAIN_GATES = ("DP_TRITON_TRAIN", "DP_CUDA_TRAIN")
-INFER_GATES = ("DP_TRITON_INFER", "DP_CUDA_INFER", "DP_CUTILE_INFER", "DP_CUTE_INFER")
+INFER_GATES = (
+    "DP_TRITON_INFER",
+    "DP_CUDA_INFER",
+    "DP_CUTILE_INFER",
+    "DP_CUTE_INFER",
+    "DP_GRID_LAYOUT_INFER",
+)
 
 
 def _make_descriptor(

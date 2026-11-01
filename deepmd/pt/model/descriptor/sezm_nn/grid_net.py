@@ -510,7 +510,26 @@ class GridBranch(nn.Module):
             )
             value = left_grid * right_grid  # (N|G, G|N, F, N_branches * C)
             router = torch.softmax(self.router(scalar_pair), dim=-1)  # (N, F, Nb)
-            if use_grid_layout_infer():
+            # The operand layout is decided by the projector pair actually
+            # supplied, not by the environment alone: the owning grid net
+            # passes its own bound ``_to_grid``/``_from_grid`` methods,
+            # which emit grid-major (G, N, F, ...) operands under the flag,
+            # while any other projector keeps the documented node-major
+            # (N, G, F, ...) layout this branch must not reinterpret.
+            # Identity of the bound-method pair decides unambiguously even
+            # when grid size and node count coincide.
+            owner = getattr(to_grid, "__self__", None)
+            # Bound methods compare by (instance, function), not identity:
+            # each attribute access builds a fresh object.
+            own_pair = (
+                owner is not None
+                and getattr(owner, "_to_grid", None) == to_grid
+                and (
+                    getattr(owner, "_from_grid", None) == from_grid
+                    or getattr(owner, "_from_grid_scalar", None) == from_grid
+                )
+            )
+            if use_grid_layout_infer() and own_pair:
                 # Grid-major operands from the projector (G, N, F, Nb * C):
                 # the broadcast weight aligns on the node axis and the whole
                 # combination stays grid-major for the from-grid projection.
