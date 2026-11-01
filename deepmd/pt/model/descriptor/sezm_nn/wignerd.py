@@ -11,14 +11,23 @@ from __future__ import (
 )
 
 import math
+from contextlib import (
+    contextmanager,
+)
 from itertools import (
     permutations,
     product,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
     ClassVar,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Iterator,
+    )
 
 import torch
 import torch.nn as nn
@@ -52,6 +61,26 @@ _COMPILER_IS_COMPILING = getattr(
     "is_compiling",
     None,
 )
+
+# Export traces keep the eager assembly: AOTInductor lowers a plain
+# custom_op to a proxy-executor node resolved by name in the C++ runtime,
+# where nothing registers ``sezm_nn::wigner_d_assemble`` -- an exported
+# .pt2 built through the operator fails to load.  The in-process inference
+# path lowers in the same process and resolves the operator through the
+# dispatcher, so only the freeze/export seam raises this flag.
+_assemble_op_suppressed_for_export = False
+
+
+@contextmanager
+def assemble_op_suppressed_for_export() -> Iterator[None]:
+    """Route export traces through the eager scatter instead of the operator."""
+    global _assemble_op_suppressed_for_export
+    saved = _assemble_op_suppressed_for_export
+    _assemble_op_suppressed_for_export = True
+    try:
+        yield
+    finally:
+        _assemble_op_suppressed_for_export = saved
 
 
 def _wigner_d_assemble_impl(
@@ -735,11 +764,14 @@ class WignerDCalculator(nn.Module):
                     lmin=self.poly_lmin,
                 )
 
-        # ``is_compiling`` alone is not enough here: this module is traced
-        # through make_fx fake tensors, where the flag stays False.  A fake
-        # tensor carries its mode, so probe for that instead.  On torch older
-        # than 2.3 the callable does not exist and the fake-tensor probe
-        # carries the decision alone.
+        # ``is_compiling`` alone is not enough: the production eval trace
+        # goes through make_fx fake tensors, where the flag stays False, and
+        # under current dynamo the assembly graph-breaks out of torch.compile
+        # regions (the flag is False in the fallback too).  A fake tensor
+        # carries its mode, so probe for that as well; the ``is_compiling``
+        # disjunct stays for compiled regions that enclose this code.  On
+        # torch older than 2.3 the callable does not exist and the fake-tensor
+        # probe carries the decision alone.
         compiling = (
             _COMPILER_IS_COMPILING() if _COMPILER_IS_COMPILING is not None else False
         )
@@ -760,7 +792,11 @@ class WignerDCalculator(nn.Module):
                 device=edge_quaternion.device,
             )
             D_full[:, 0, 0] = 1.0
-        elif tracing and _wigner_d_assemble_op is not None:
+        elif (
+            tracing
+            and _wigner_d_assemble_op is not None
+            and not _assemble_op_suppressed_for_export
+        ):
             D_full = _wigner_d_assemble_op(
                 all_blocks,
                 self.dim_full,
