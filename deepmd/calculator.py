@@ -67,6 +67,9 @@ def _compress_dpa4c_for_ase(model: Any) -> bool:
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         compression_ineligibility_reason,
     )
+    from deepmd.pt_expt.utils.serialization import (
+        compressed_export_unsupported_reason,
+    )
 
     parts = model.atomic_model.fused_decomposition()
     if (
@@ -76,6 +79,8 @@ def _compress_dpa4c_for_ase(model: Any) -> bool:
     ):
         return False
     reason = compression_ineligibility_reason(parts[0].descriptor)
+    if reason is None:
+        reason = compressed_export_unsupported_reason(model)
     if reason is None:
         return True
     log.warning(

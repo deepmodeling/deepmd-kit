@@ -896,17 +896,19 @@ def build_synthetic_canonical_graph_inputs(
 ) -> tuple[torch.Tensor, ...]:
     """Build compact canonical trace inputs for compressed CUDA descriptors.
 
-    ``want_spin`` appends the per-node moment at slot 8, matching
-    :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`.
-    ``want_long_range`` appends the inputs that the compact lower of a model
-    with a long-range module reads: the float64 node positions at slot 8, the
-    int64 communicator, a CPU tensor of one element, at slot 9, and the
-    float64 cells of the frames, a CPU tensor of shape ``(nf, 9)``, at slot 10.
-    ``want_border`` appends, after the moment of a native-spin model, the
-    communicator and the border plan that the compact lower of a model with
-    further message-passing blocks reads: a send list of ``border_sizes[0]``
-    int32 entries and a swap table of ``border_sizes[1]`` int32 rows on the
-    CPU, which serve a node set without halo nodes.
+    The inputs that follow the eight graph tensors are those that the compact
+    lower of the model reads, in this order: the per-node moment of a
+    native-spin model (``want_spin``), matching
+    :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`;
+    the float64 node positions of a model with a long-range module
+    (``want_long_range``); the int64 communicator, a CPU tensor of one
+    element, of a model with a long-range module or with further
+    message-passing blocks (``want_border``); the float64 cells of the frames,
+    a CPU tensor of shape ``(nf, 9)``, of a model with a long-range module;
+    and the border plan of a model with further message-passing blocks, a
+    send list of ``border_sizes[0]`` int32 entries and a swap table of
+    ``border_sizes[1]`` int32 rows on the CPU, which serve a node set without
+    halo nodes.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
@@ -964,46 +966,51 @@ def build_synthetic_canonical_graph_inputs(
         compact.source_row_ptr,
         compact.source_order,
     )
+    trailing = [] if spin is None else [spin]
+    if want_long_range:
+        # Tracing reads the shape of the positions alone; distinct values keep
+        # the sample nodes apart.
+        trailing.append(
+            0.7
+            * torch.arange(
+                3 * atype.shape[0], dtype=torch.float64, device=device
+            ).reshape(-1, 3)
+        )
+    if want_long_range or want_border:
+        # The communicator of a single domain is zero.
+        trailing.append(torch.zeros(1, dtype=torch.int64, device="cpu"))
+    if want_long_range:
+        trailing.append(
+            torch.zeros(n_node.shape[0], 9, dtype=torch.float64, device="cpu")
+        )
     if want_border:
         # Swaps of no rows that receive past the last node leave every node
         # owned.
         send_count, swap_count = border_sizes
         swaps = torch.zeros(swap_count, 5, dtype=torch.int32, device="cpu")
         swaps[:, 4] = atype.shape[0]
-        border = (
-            torch.zeros(1, dtype=torch.int64, device="cpu"),
-            torch.zeros(send_count, dtype=torch.int32, device=device),
-            swaps,
-        )
-        return (*compact_sample, *(() if spin is None else (spin,)), *border)
-    if spin is not None:
-        return (*compact_sample, spin)
-    if want_long_range:
-        # Tracing reads the shape of the positions alone; distinct values keep
-        # the sample nodes apart. The communicator of a single domain is zero.
-        coord = 0.7 * torch.arange(
-            3 * atype.shape[0], dtype=torch.float64, device=device
-        ).reshape(-1, 3)
-        communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
-        box = torch.zeros(n_node.shape[0], 9, dtype=torch.float64, device="cpu")
-        return (*compact_sample, coord, communicator, box)
-    return compact_sample
+        trailing.append(torch.zeros(send_count, dtype=torch.int32, device=device))
+        trailing.append(swaps)
+    return (*compact_sample, *trailing)
 
 
 def _build_canonical_graph_dynamic_shapes(
-    *sample_inputs: torch.Tensor,
+    *,
     is_native_spin: bool = False,
+    long_range: bool = False,
     border: bool = False,
 ) -> tuple:
     """Build dynamic node, edge and index-word axes for the compact ABI.
 
-    The trailing slots, the moments of a native-spin model, the positions,
-    the communicator and the cells of a model with a long-range module, or the
-    communicator and the border plan of a model with further message-passing
-    blocks, are present only for such models. The communicator holds one
-    address and is static; the cells follow the frame axis, and the send list
-    and the swap table of the border plan have extents of their own, which
-    may be zero.
+    The trailing slots follow the order of
+    :func:`build_synthetic_canonical_graph_inputs`: the moments of a
+    native-spin model, the positions of a model with a long-range module, the
+    communicator of such a model or of one with further message-passing
+    blocks, the cells of the former, and the border plan of the latter. The
+    communicator holds one address and is static; the positions and the
+    moments follow the node axis, the cells the frame axis, and the send list
+    and the swap table of the border plan have extents of their own, which may
+    be zero.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
     node_dim = torch.export.Dim("n_node_total", min=1)
@@ -1023,17 +1030,18 @@ def _build_canonical_graph_dynamic_shapes(
         {0: source_row_dim},
         {0: source_order_dim},
     )
+    trailing = []
+    if is_native_spin:
+        trailing.append({0: node_dim})
+    if long_range:
+        trailing.append({0: node_dim})
+    if long_range or border:
+        trailing.append(None)
+    if long_range:
+        trailing.append({0: nframes_dim})
     if border:
-        trailing = (
-            *(({0: node_dim},) if is_native_spin else ()),
-            None,
-            {0: torch.export.Dim("n_halo_send", min=0)},
-            {0: torch.export.Dim("n_halo_swap", min=0)},
-        )
-    else:
-        trailing = ({0: node_dim}, None, {0: nframes_dim})[
-            : len(sample_inputs) - len(shapes)
-        ]
+        trailing.append({0: torch.export.Dim("n_halo_send", min=0)})
+        trailing.append({0: torch.export.Dim("n_halo_swap", min=0)})
     return (*shapes, *trailing)
 
 
@@ -1951,6 +1959,40 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
     return "graph"
 
 
+def compressed_export_unsupported_reason(model: torch.nn.Module) -> str | None:
+    """Return why the compressed export of a model would be refused on the target.
+
+    The export folds the case embeddings of a compressed model and refuses
+    a DPA4C model of several blocks that the compact canonical operators of
+    the target do not serve (see
+    :func:`~deepmd.pt_expt.kernels.dpa4c.canonical.canonical_model_unsupported_reason`).
+    A freeze that compresses a model on its own initiative applies the same
+    judgment to the uncompressed model, on a copy with its case embeddings
+    folded, and keeps the uncompressed form where the judgment is a refusal.
+
+    Parameters
+    ----------
+    model
+        Uncompressed model to freeze.
+
+    Returns
+    -------
+    str or None
+        Diagnostic of the refusal, or ``None`` when the compressed archive
+        deploys on the target.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        canonical_model_unsupported_reason,
+    )
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(model.serialize())
+    _fold_case_embeddings(model)
+    return canonical_model_unsupported_reason(model, as_compressed=True)
+
+
 def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
     """Resolve ``lower_kind="auto"`` to a concrete lower-forward schema.
 
@@ -2492,30 +2534,26 @@ def _trace_and_export_impl(
                 want_border=want_border,
                 border_sizes=border_sizes,
             )
-            # The border inputs follow the graph, and the moment of a
-            # native-spin model, by name: their slots are those of the
-            # long-range inputs of the energy lower.
+            # The inputs after the graph, and the moment of a native-spin
+            # model, reach the lower by name, in the order of the samples.
             graph_count = 9 if is_native_spin else 8
-            border_inputs = (
-                dict(
-                    zip(
-                        ("communicator", "halo_send", "halo_swaps"),
-                        sample_inputs[graph_count:],
-                        strict=True,
-                    )
-                )
-                if want_border
-                else {}
+            names = (
+                *(("coord",) if want_long_range else ()),
+                *(("communicator",) if want_long_range or want_border else ()),
+                *(("box",) if want_long_range else ()),
+                *(("halo_send", "halo_swaps") if want_border else ()),
             )
             traced = model.forward_lower_canonical_graph_exportable(
-                *(sample_inputs[:graph_count] if want_border else sample_inputs),
-                **border_inputs,
+                *sample_inputs[:graph_count],
+                **dict(zip(names, sample_inputs[graph_count:], strict=True)),
                 do_atomic_virial=do_atomic_virial,
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
             dynamic_shapes = _build_canonical_graph_dynamic_shapes(
-                *sample_inputs, is_native_spin=is_native_spin, border=want_border
+                is_native_spin=is_native_spin,
+                long_range=want_long_range,
+                border=want_border,
             )
         elif with_comm_dict:
             # Load libdeepmd_op_pt.so and register border_op fake/autograd

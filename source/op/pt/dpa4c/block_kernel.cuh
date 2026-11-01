@@ -41,21 +41,15 @@ namespace deepmd_dpa4c {
 
 constexpr int kBlockThreads = 256;
 constexpr int kBlockWarps = kBlockThreads / kWarpSize;
-/// Destination rows of a block of the edge scans at most; a small system
-/// takes fewer (block_rows).
-constexpr int kBlockRows = 4;
 /// Items of the channel-contiguous amplitude order whose radial table rows a
 /// lane loads together, ahead of their evaluation (panel_radial).
 constexpr int kAmplitudeBatch = 4;
 
-/// Shared memory that one block of an edge stage may hold: the 64 KB that a
-/// block of compute capability 7.5 may opt in to, the least of the supported
-/// devices (96 KB on 7.0, 99 KB or more from 8.0 on).
+/// Shared memory that the smaller layout of an edge scan may hold, so that
+/// every supported device gives it a block: the 64 KB that a block of compute
+/// capability 7.5 may opt in to, the least of the supported devices (96 KB on
+/// 7.0, 99 KB or more from 8.0 on).
 constexpr size_t kPanelSharedLimit = 64 * 1024;
-/// Shared memory up to which an edge stage stages its edge maps: two blocks
-/// of that size share a multiprocessor of 100 KB, so the staging never costs
-/// a resident block.
-constexpr size_t kResidentSharedBudget = 49 * 1024;
 
 /// The geometry of the panels of an edge scan: the edges of a panel, the tile
 /// of edges and channels of a lane, and the resident blocks per
@@ -339,6 +333,14 @@ __device__ __forceinline__ void copy_async_wait_all() {
 #endif
 }
 
+/// Whether the copies above are asynchronous: in an image compiled for compute
+/// capability 8.0 or later. It describes device code; host code sees false.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+constexpr bool kAsyncCopy = true;
+#else
+constexpr bool kAsyncCopy = false;
+#endif
+
 /// Floats of a weight chunk that a streamed product stages at a time: rows of
 /// 1024 floats, sixteen rows of 64 columns.
 constexpr int kWeightChunkFloats = 1024;
@@ -362,28 +364,40 @@ constexpr int weight_chunks() {
          weight_chunk_rows<Columns>();
 }
 
+/// Whether the chunks of a streamed product of ``Columns`` columns move through
+/// the registers of the threads (panel_product), whose loads then hide behind
+/// the contraction of the chunk before. The chunks of 64 columns do. A chunk of
+/// 8 rows of 128 columns contracts too briefly to hide its load behind it and
+/// is copied asynchronously where the device copies asynchronously
+/// (kAsyncCopy); elsewhere a copy would load and store at once, and the
+/// registers carry the chunks of 128 columns as well.
+template <int Columns>
+constexpr bool stages_through_registers() {
+  return Columns == 64 || (Columns == 128 && !kAsyncCopy);
+}
+
 /// acc[i][j] += sum over k < Depth of operand[k][e0 + i] * weight[k][c0 + j],
 /// the operand feature-major in shared memory with row stride ``Stride`` and
-/// the weight input-major with ``Columns`` columns. A ``Resident`` weight is
-/// in shared memory. Otherwise it is in global memory and streams through
+/// the weight input-major with ``Columns`` columns. A ``Resident`` weight is in
+/// shared memory. Otherwise it is in global memory and streams through
 /// ``stage`` (weight_stage_floats) in chunks of weight_chunk_rows, which the
 /// threads of the block move cooperatively one chunk ahead of the rows the
 /// product reads, so that the latency of the moves hides behind the
-/// contraction; every thread of the block then takes part. A chunk of 16 rows
-/// of 64 columns moves through the registers of the threads, one vector each,
-/// loaded before the contraction of the chunk before and stored after it, so
-/// that the contraction reads shared memory undisturbed by asynchronous copies
-/// into it; a chunk of 8 rows of 128 columns contracts too briefly to hide
-/// the load behind it and is copied asynchronously instead. The chunks take
-/// the two buffers of the stage in turn from buffer ``First`` on. The first
-/// chunk is already on its way when ``filled``, and the stage is otherwise
-/// free on entry; given ``next``, the weight of a streamed product of the same
-/// columns and at least one chunk of depth that follows, the last chunk of the
-/// product moves the first chunk of ``next`` into the buffer after its own, so
-/// that the moves of consecutive products overlap their contractions. A full
-/// chunk is contracted in a loop of its compile-time length, whose loads the
-/// compiler issues ahead of their products. The contraction runs in ascending
-/// k with one fused multiply-add per term.
+/// contraction; every thread of the block then takes part. A chunk moves
+/// through the registers of the threads where stages_through_registers holds,
+/// one vector each, loaded before the contraction of the chunk before and
+/// stored after it, so that the load hides behind that contraction and the
+/// contraction reads shared memory undisturbed by copies into it; any other
+/// chunk is copied with copy_async16.
+/// The chunks take the two buffers of the stage in turn from buffer ``First``
+/// on. The first chunk is already on its way when ``filled``, and the stage is
+/// otherwise free on entry; given ``next``, the weight of a streamed product of
+/// the same columns and at least one chunk of depth that follows, the last
+/// chunk of the product moves the first chunk of ``next`` into the buffer after
+/// its own, so that the moves of consecutive products overlap their
+/// contractions. A full chunk is contracted in a loop of its compile-time
+/// length, whose loads the compiler issues ahead of their products. The
+/// contraction runs in ascending k with one fused multiply-add per term.
 template <int Depth,
           int Stride,
           int Columns,
@@ -420,7 +434,7 @@ __device__ __forceinline__ void panel_product(const float* operand,
   };
   if constexpr (Resident) {
     contract(weight, 0, Depth);
-  } else if constexpr (Columns == 64) {
+  } else if constexpr (stages_through_registers<Columns>()) {
     constexpr int kWeightChunk = weight_chunk_rows<Columns>();
     constexpr int Chunks = weight_chunks<Depth, Columns>();
     static_assert(kWeightChunk * Columns == 4 * kBlockThreads,
@@ -1110,28 +1124,80 @@ struct __align__(128) ScanRows {
   }
 };
 
-/// The number of rows of the block of an edge scan, zero for a block past the
-/// rows of the launch, which then retires as a whole.
-__device__ __forceinline__ int scan_row_count(const BlockArguments& block) {
+/// The destination rows per block that minimize the time of an edge scan of
+/// panels of ``Edges`` entries over ``nodes`` rows of ``entries`` entries in
+/// all, among the counts 1, 2, ..., kBlockRows of at least ``least``, the
+/// fewest on a tie. ``waves`` holds the time of the waves of every count
+/// (scan_waves). A block of ``r`` rows of ``d`` entries on average scans
+/// ``r d / Edges`` panels and, on average, half a panel more: the part of its
+/// last panel that its rows leave empty. The time is evaluated in integers, so
+/// that the host and the device choose alike. A larger count takes no more
+/// waves, of more panels each, so it wins only at smaller degrees: the choice
+/// never takes fewer rows for fewer entries.
+template <int Edges>
+__host__ __device__ inline int scan_block_rows(const ScanWaves& waves,
+                                               long nodes,
+                                               long entries,
+                                               int least) {
+  int fastest_rows = least;
+  long fastest = -1;
+  for (int choice = 0, rows = 1; choice < kBlockRowCounts;
+       ++choice, rows *= 2) {
+    if (rows < least) {
+      continue;
+    }
+    // The panels of a block in units of 1 / (2 Edges nodes).
+    const long time = waves.time[choice] * (2 * rows * entries + Edges * nodes);
+    if (fastest < 0 || time < fastest) {
+      fastest = time;
+      fastest_rows = rows;
+    }
+  }
+  return fastest_rows;
+}
+
+/// The destination rows per block of an edge scan: scan_block_rows for the
+/// entries of the graph of the scan over the rows of the whole system, among
+/// those for which the grid of the launch provides. A grid that provides for
+/// kBlockRows rows leaves no other choice.
+template <int Edges>
+__device__ __forceinline__ int device_block_rows(const BlockArguments& block) {
+  if (block.grid_rows == kBlockRows) {
+    return kBlockRows;
+  }
+  const Arguments& args = block.edges;
+  // The row pointer of a run starts at the first row of the run.
+  const long* row_ptr = args.destination_row_ptr - args.node_begin;
+  return scan_block_rows<Edges>(block.waves, args.system_node_count,
+                                row_ptr[args.system_node_count] - row_ptr[0],
+                                block.grid_rows);
+}
+
+/// The number of rows of the block of an edge scan of ``block_rows`` rows per
+/// block, zero for a block past the rows of the launch, which then retires as
+/// a whole.
+__device__ __forceinline__ int scan_row_count(const BlockArguments& block,
+                                              int block_rows) {
   const long visited = block.scan_rows != nullptr
                            ? static_cast<long>(*block.scan_row_count)
                            : block.edges.node_count;
-  const long first = static_cast<long>(blockIdx.x) * block.block_rows;
+  const long first = static_cast<long>(blockIdx.x) * block_rows;
   return static_cast<int>(
-      max(min(static_cast<long>(block.block_rows), visited - first), 0L));
+      max(min(static_cast<long>(block_rows), visited - first), 0L));
 }
 
-/// The ``count`` rows of the block of an edge scan into ``scan``, which the
-/// lanes of the first warp locate together, one row each; a barrier precedes
-/// their use.
+/// The ``count`` rows of the block of an edge scan of ``block_rows`` rows per
+/// block into ``scan``, which the lanes of the first warp locate together, one
+/// row each; a barrier precedes their use.
 __device__ __forceinline__ void locate_scan_rows(const BlockArguments& block,
+                                                 int block_rows,
                                                  int count,
                                                  ScanRows& scan) {
   if (threadIdx.x >= kWarpSize) {
     return;
   }
   const Arguments& args = block.edges;
-  const long first = static_cast<long>(blockIdx.x) * block.block_rows;
+  const long first = static_cast<long>(blockIdx.x) * block_rows;
   const int lane = threadIdx.x;
   long row = 0;
   long begin = 0;
@@ -1177,8 +1243,8 @@ struct PanelRows {
 /// the lanes of a warp, which read consecutive edges, read consecutive words.
 /// The forward holds the keys of the source of every edge; the backward reads
 /// the keys of its rows, the sources of all their entries, and holds the
-/// radial derivatives and the vectors of its edges, which the forward does not
-/// read.
+/// entry nodes, the radial derivatives and the vectors of its edges, which the
+/// forward does not read.
 template <class L>
 struct __align__(16) PanelEdges {
   using B = typename L::B;
@@ -1186,7 +1252,7 @@ struct __align__(16) PanelEdges {
   static constexpr int BackwardEdges = L::Reverse ? Edges : 1;
   static constexpr int ModeEdges = L::HasModes ? Edges : 1;
   static constexpr int KeyRows = L::Reverse ? 1 : B::KeyWidth;
-  long node[Edges];
+  long node[BackwardEdges];
   int row[Edges];
   int pair[Edges];
   int interval[Edges];
@@ -1208,6 +1274,16 @@ struct __align__(16) PanelEdges {
   float mass[B::Heads][Edges];
   PanelRows rows;
 };
+
+/// Bytes of the shared memory of an edge scan before its operand: the per-edge
+/// state of the panel, rounded up to a whole cycle of the shared-memory banks,
+/// so that the operand and every region after it start on the same banks
+/// whatever the size of that state.
+template <class L>
+constexpr size_t panel_operand_offset() {
+  constexpr size_t cycle = 128;
+  return (sizeof(PanelEdges<L>) + cycle - 1) / cycle * cycle;
+}
 
 /// Find the row segments of a panel of ``Edges`` edges from the rows of its
 /// edges, -1 past its last edge. The first warp of the block finds them, and
@@ -1550,7 +1626,9 @@ __device__ __forceinline__ void load_panel_edges(
       for (int q = 0; q < Gathered; ++q) {
         copy_async4(gathered + q * GatherStride + e, node_row + q);
       }
-      edges.node[e] = entry;
+      if constexpr (Reverse) {
+        edges.node[e] = entry;
+      }
       edges.source[e] = source;
       edges.pair[e] =
           static_cast<int>(args.atype[destination]) * args.type_count +
@@ -1600,7 +1678,9 @@ __device__ __forceinline__ void load_panel_edges(
       for (int q = 0; q < Gathered; ++q) {
         gathered[q * GatherStride + e] = 0.0f;
       }
-      edges.node[e] = 0;
+      if constexpr (Reverse) {
+        edges.node[e] = 0;
+      }
       edges.source[e] = -1;
       edges.pair[e] = 0;
       edges.interval[e] = 0;
@@ -1875,7 +1955,7 @@ __device__ __forceinline__ void stage_edge_maps(const float* record,
 template <class L, bool Resident>
 constexpr size_t block_forward_shared_bytes() {
   using B = typename L::B;
-  return sizeof(PanelEdges<L>) +
+  return panel_operand_offset<L>() +
          sizeof(float) *
              (B::Operand * L::Stride + L::ChannelGroups * B::Heads * L::Edges +
               kBlockRows * (B::GeometricWidth + B::TransportWidth) +
@@ -1883,18 +1963,17 @@ constexpr size_t block_forward_shared_bytes() {
                         : weight_stage_floats<L::Channels>()));
 }
 
-/// Whether the forward scan stages its edge maps in shared memory, which it
-/// does when they fit the budget of residency beside the panel.
-template <class L>
-constexpr bool forward_resident() {
-  return block_forward_shared_bytes<L, true>() <= kResidentSharedBudget;
-}
-
 /// The edge scan of a further block over a block of destination rows: the
 /// moments of the first block corrected by the edges inside the cutoff of the
 /// block, the transported keys, and their denominators, in the state layout
-/// of the first block.
-template <int Channels, int Lmax, bool HasModes, bool HasSpin, typename index_t>
+/// of the first block. Its products read the edge maps from shared memory when
+/// ``Resident`` and stream them otherwise, in the same order.
+template <int Channels,
+          int Lmax,
+          bool HasModes,
+          bool HasSpin,
+          typename index_t,
+          bool Resident>
 __global__ __launch_bounds__(
     kBlockThreads,
     BlockPanel<Channels, Lmax, false>::
@@ -1919,16 +1998,16 @@ __global__ __launch_bounds__(
   const int c0 = tile.c0;
   const int e0 = tile.e0;
   __shared__ ScanRows scan;
-  const int rows = scan_row_count(block);
+  const int block_rows = device_block_rows<L::Edges>(block);
+  const int rows = scan_row_count(block, block_rows);
   if (rows == 0) {
     return;
   }
-  locate_scan_rows(block, rows, scan);
+  locate_scan_rows(block, block_rows, rows, scan);
 
-  constexpr bool Resident = forward_resident<L>();
   extern __shared__ __align__(16) float block_shared[];
   auto& edges = *reinterpret_cast<PanelEdges<L>*>(block_shared);
-  float* operand = block_shared + sizeof(edges) / sizeof(float);
+  float* operand = block_shared + panel_operand_offset<L>() / sizeof(float);
   float* tau_partial = operand + B::Operand * Stride;
   auto* sums = reinterpret_cast<float (*)[Sums]>(
       tau_partial + L::ChannelGroups * B::Heads * L::Edges);
@@ -2142,7 +2221,7 @@ constexpr size_t block_backward_shared_bytes() {
   using A = BackwardPanel<L>;
   constexpr int Channels = L::Channels;
   constexpr int Stage = weight_stage_floats<Channels>();
-  return sizeof(PanelEdges<L>) +
+  return panel_operand_offset<L>() +
          sizeof(float) *
              (B::Operand * L::Stride + A::Floats +
               kBlockRows * (B::KeyWidth + B::SourceWidth + 13) +
@@ -2152,19 +2231,20 @@ constexpr size_t block_backward_shared_bytes() {
                    : (Stage > A::PartialFloats ? Stage : A::PartialFloats)));
 }
 
-/// Whether the backward scan stages its edge maps in shared memory.
-template <class L>
-constexpr bool backward_resident() {
-  return block_backward_shared_bytes<L, true>() <= kResidentSharedBudget;
-}
-
 /// The backward of a further block over a block of source rows: every entry
 /// of a row is read as the edge the row emits, the forward of the edge is
 /// recomputed from the source features of the row, and its cotangents follow
 /// from the destination cotangents of the entry's node. The row accumulates
 /// the cotangent of its source features and its share of the force and the
-/// virial; the destination share of the force lands in fixed point.
-template <int Channels, int Lmax, bool HasModes, bool HasSpin, typename index_t>
+/// virial; the destination share of the force lands in fixed point. Its
+/// products read the edge maps and their transposes from shared memory when
+/// ``Resident`` and stream them otherwise, in the same order.
+template <int Channels,
+          int Lmax,
+          bool HasModes,
+          bool HasSpin,
+          typename index_t,
+          bool Resident>
 __global__ __launch_bounds__(
     kBlockThreads,
     BlockPanel<Channels, Lmax, true>::
@@ -2193,16 +2273,16 @@ __global__ __launch_bounds__(
   const int c0 = tile.c0;
   const int e0 = tile.e0;
   __shared__ ScanRows scan;
-  const int rows = scan_row_count(block);
+  const int block_rows = device_block_rows<L::Edges>(block);
+  const int rows = scan_row_count(block, block_rows);
   if (rows == 0) {
     return;
   }
-  locate_scan_rows(block, rows, scan);
+  locate_scan_rows(block, block_rows, rows, scan);
 
-  constexpr bool Resident = backward_resident<L>();
   extern __shared__ __align__(16) float block_shared[];
   auto& edges = *reinterpret_cast<PanelEdges<L>*>(block_shared);
-  float* operand = block_shared + sizeof(edges) / sizeof(float);
+  float* operand = block_shared + panel_operand_offset<L>() / sizeof(float);
   float* panel = operand + B::Operand * Stride;
   float* radial_total = panel + A::Radial;
   float* envelope_total = panel + A::Envelope;
@@ -2722,65 +2802,175 @@ inline void check_block_status(cudaError_t status, const char* what) {
   }
 }
 
+/// The blocks of an edge scan that the device keeps resident at once: those
+/// of one multiprocessor, and the multiprocessors.
+struct ScanResidency {
+  int per_multiprocessor = 0;
+  int multiprocessors = 0;
+};
+
 /// Raise the dynamic shared memory of ``kernel`` to ``bytes`` once per kernel
-/// and device, and return the blocks of ``kernel`` that the device keeps
-/// resident at once.
-inline long resident_blocks(void (*kernel)(BlockArguments), size_t bytes) {
+/// and device, and return the residency of its blocks on the device, none
+/// where a block of the kernel cannot hold that much shared memory.
+inline ScanResidency scan_residency(void (*kernel)(BlockArguments),
+                                    size_t bytes) {
   static std::mutex mutex;
   // Keyed by the address of the kernel as an integer, which orders totally.
-  static std::map<std::pair<std::uintptr_t, int>, long> capacities;
+  static std::map<std::pair<std::uintptr_t, int>, ScanResidency> residencies;
   int device = 0;
   check_block_status(cudaGetDevice(&device), "the device query");
   const std::pair<std::uintptr_t, int> key{
       reinterpret_cast<std::uintptr_t>(kernel), device};
   const std::lock_guard<std::mutex> lock(mutex);
-  const auto known = capacities.find(key);
-  if (known != capacities.end()) {
+  const auto known = residencies.find(key);
+  if (known != residencies.end()) {
     return known->second;
   }
+  ScanResidency residency;
   check_block_status(
-      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                           static_cast<int>(bytes)),
-      "the shared memory of a further-block scan");
-  int resident = 0;
-  check_block_status(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-                         &resident, kernel, kBlockThreads, bytes),
-                     "the occupancy query of a further-block scan");
-  int multiprocessors = 0;
-  check_block_status(
-      cudaDeviceGetAttribute(&multiprocessors, cudaDevAttrMultiProcessorCount,
-                             device),
+      cudaDeviceGetAttribute(&residency.multiprocessors,
+                             cudaDevAttrMultiProcessorCount, device),
       "the multiprocessor count");
-  const long capacity = static_cast<long>(resident) * multiprocessors;
-  capacities.emplace(key, capacity);
-  return capacity;
+  int limit = 0;
+  check_block_status(
+      cudaDeviceGetAttribute(&limit, cudaDevAttrMaxSharedMemoryPerBlockOptin,
+                             device),
+      "the shared memory limit of a block");
+  cudaFuncAttributes attributes;
+  check_block_status(cudaFuncGetAttributes(&attributes, kernel),
+                     "the attribute query of a further-block scan");
+  // The static and the dynamic shared memory of a block share its limit.
+  if (attributes.sharedSizeBytes + bytes <= static_cast<size_t>(limit)) {
+    check_block_status(cudaFuncSetAttribute(
+                           kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                           static_cast<int>(bytes)),
+                       "the shared memory of a further-block scan");
+    check_block_status(
+        cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+            &residency.per_multiprocessor, kernel, kBlockThreads, bytes),
+        "the occupancy query of a further-block scan");
+  }
+  residencies.emplace(key, residency);
+  return residency;
 }
 
-/// Launch an edge scan over the run of ``arguments``. A block takes the most
-/// destination rows among kBlockRows, kBlockRows / 2, ..., 1 with which the
-/// blocks of the whole system still fill the ``capacity`` blocks the device
-/// keeps resident: fewer rows shorten the panels every block scans in turn
-/// when the system cannot fill the device, and more spread the partly filled
-/// last panel of a block over more edges otherwise. The choice follows from
-/// the node count of the whole system, so every run of a tiled system sums
-/// its rows in the same order.
-template <class Kernel>
+/// Tenths of the time of a full wave of an edge scan that a last wave of one
+/// block per multiprocessor takes. Fitted to the LAMMPS steps of the duo
+/// grades at 512 to 20,000 atoms with one, two and four rows per block on an
+/// RTX PRO 6000 (sm_120), against whose fastest counts the choice of
+/// scan_block_rows then loses 0.3% to 0.5% on average and 2.3% at most.
+constexpr long kLoneBlockTenths = 7;
+static_assert(kLoneBlockTenths >= 0 && kLoneBlockTenths <= 10,
+              "a last wave takes between nothing and a full wave, which keeps "
+              "the time of the waves monotone in the blocks");
+
+/// The time of the waves of an edge scan over ``nodes`` rows for one, two,
+/// ..., kBlockRows rows per block, for blocks of the residency ``residency``
+/// of ``k`` blocks per multiprocessor, in units of ``1 / (10 (k - 1))`` of a
+/// full wave, or of a tenth of a full wave for ``k = 1``. The blocks run in
+/// waves of the resident blocks of the device; the last wave spreads the
+/// remaining blocks over the multiprocessors and takes kLoneBlockTenths tenths
+/// of a full wave for one block per multiprocessor, linearly more for more,
+/// and the whole wave for ``k``.
+inline ScanWaves scan_waves(long nodes, const ScanResidency& residency) {
+  const long per_multiprocessor = residency.per_multiprocessor;
+  const long multiprocessors = residency.multiprocessors;
+  const long resident = per_multiprocessor * multiprocessors;
+  const long steps = per_multiprocessor > 1 ? per_multiprocessor - 1 : 1;
+  ScanWaves waves;
+  for (int choice = 0, rows = 1; choice < kBlockRowCounts;
+       ++choice, rows *= 2) {
+    const long blocks = (nodes + rows - 1) / rows;
+    const long rest = blocks % resident;
+    long time = 10 * steps * (blocks / resident);
+    if (rest > 0) {
+      const long last = (rest + multiprocessors - 1) / multiprocessors;
+      time += per_multiprocessor > 1 ? kLoneBlockTenths * steps +
+                                           (10 - kLoneBlockTenths) * (last - 1)
+                                     : 10;
+    }
+    waves.time[choice] = time;
+  }
+  return waves;
+}
+
+/// Dynamic shared memory up to which an edge scan is compiled with its edge
+/// maps resident: two blocks of that size, each with the row state of the
+/// scan (ScanRows) and the 1 KB that the device reserves for a block, fill the
+/// 228 KB of a multiprocessor of compute capability 9.0 or 10.0, the most of
+/// the supported devices. A block of resident maps beyond it keeps a
+/// multiprocessor to itself wherever it fits, where the streamed maps keep two
+/// blocks or more, so such a scan is compiled with its streamed maps alone.
+constexpr size_t kResidentSharedLimit =
+    228 * 1024 / 2 - 1024 - sizeof(ScanRows);
+
+/// A compiled layout of the edge maps of an edge scan: its kernel and the
+/// dynamic shared memory of a block.
+struct ScanLayout {
+  void (*kernel)(BlockArguments) = nullptr;
+  size_t bytes = 0;
+};
+
+/// Launch an edge scan of panels of ``Edges`` entries over the run of
+/// ``arguments``, whose blocks hold ``ResidentBytes`` of shared memory with
+/// resident edge maps and ``StreamedBytes`` with streamed ones, with the kernel
+/// that ``kernel`` returns for each (std::true_type for the resident maps). The
+/// scan is compiled with its resident maps up to kResidentSharedLimit and with
+/// its streamed maps where these hold less shared memory; the smaller layout
+/// fits a block of every supported device. Where both are compiled, the scan
+/// runs with the resident maps if the occupancy of the device keeps at least as
+/// many of their blocks on a multiprocessor as of the streamed ones, since the
+/// staged maps spare every panel the loads of the streamed weights. Both
+/// layouts sum in one order, so the layout changes a result only through the
+/// rows of a block, which follow from the residency.
+///
+/// The blocks choose their rows from the entries of the graph of the scan over
+/// the rows of the whole system, which the device alone holds
+/// (device_block_rows); the grid provides for the rows that the edge storage
+/// chooses, which holds at least as many entries, so that the blocks take as
+/// many rows or more and those past the rows of the run retire. The choice
+/// follows from the system and the device alone, so every run of a tiled
+/// system takes the same count, and runs of a multiple of kBlockRows rows group
+/// the rows as the whole system does.
+template <int Edges, size_t ResidentBytes, size_t StreamedBytes, class Kernel>
 void launch_panel_scan(Kernel kernel,
-                       size_t bytes,
                        const BlockArguments& arguments,
                        cudaStream_t stream) {
-  const long capacity = resident_blocks(kernel, bytes);
-  int rows = kBlockRows;
-  while (rows > 1 &&
-         (arguments.edges.system_node_count + rows - 1) / rows < capacity) {
-    rows /= 2;
+  constexpr bool HasResident = ResidentBytes <= kResidentSharedLimit;
+  constexpr bool HasStreamed = ResidentBytes > StreamedBytes;
+  static_assert(HasResident || HasStreamed,
+                "every scan is compiled with one layout of its edge maps");
+  static_assert(
+      (HasStreamed ? StreamedBytes : ResidentBytes) <= kPanelSharedLimit,
+      "the smaller layout of a scan fits every supported device");
+  ScanLayout layout;
+  ScanResidency residency;
+  if constexpr (HasResident) {
+    layout = {kernel(std::true_type{}), ResidentBytes};
+    residency = scan_residency(layout.kernel, layout.bytes);
   }
+  if constexpr (HasStreamed) {
+    const ScanLayout streamed{kernel(std::false_type{}), StreamedBytes};
+    const ScanResidency other = scan_residency(streamed.kernel, streamed.bytes);
+    if (!HasResident ||
+        other.per_multiprocessor > residency.per_multiprocessor) {
+      layout = streamed;
+      residency = other;
+    }
+  }
+  TORCH_CHECK(residency.per_multiprocessor > 0,
+              "dpa4c: the device keeps no block of a further-block scan of ",
+              layout.bytes, " bytes of shared memory resident");
+  const long nodes = arguments.edges.system_node_count;
   BlockArguments launched = arguments;
-  launched.block_rows = rows;
+  launched.waves = scan_waves(nodes, residency);
+  const int rows = scan_block_rows<Edges>(launched.waves, nodes,
+                                          arguments.edges.edge_count, 1);
+  launched.grid_rows = rows;
   const int blocks =
       static_cast<int>((arguments.edges.node_count + rows - 1) / rows);
   if (blocks > 0) {
-    kernel<<<blocks, kBlockThreads, bytes, stream>>>(launched);
+    layout.kernel<<<blocks, kBlockThreads, layout.bytes, stream>>>(launched);
   }
 }
 
@@ -2790,22 +2980,22 @@ void launch_block_scan(BlockStage stage,
                        cudaStream_t stream) {
   if (stage == BlockStage::Forward) {
     using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, false>;
-    constexpr size_t bytes =
-        block_forward_shared_bytes<L, forward_resident<L>()>();
-    static_assert(bytes <= kPanelSharedLimit,
-                  "the panel of the forward scan exceeds its shared memory");
-    launch_panel_scan(
-        block_forward_kernel<Channels, Lmax, HasModes, HasSpin, index_t>, bytes,
+    launch_panel_scan<L::Edges, block_forward_shared_bytes<L, true>(),
+                      block_forward_shared_bytes<L, false>()>(
+        [](auto resident) {
+          return block_forward_kernel<Channels, Lmax, HasModes, HasSpin,
+                                      index_t, decltype(resident)::value>;
+        },
         arguments, stream);
   } else {
     using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, true>;
-    constexpr size_t bytes =
-        block_backward_shared_bytes<L, backward_resident<L>()>();
-    static_assert(bytes <= kPanelSharedLimit,
-                  "the panel of the backward scan exceeds its shared memory");
-    launch_panel_scan(
-        block_backward_kernel<Channels, Lmax, HasModes, HasSpin, index_t>,
-        bytes, arguments, stream);
+    launch_panel_scan<L::Edges, block_backward_shared_bytes<L, true>(),
+                      block_backward_shared_bytes<L, false>()>(
+        [](auto resident) {
+          return block_backward_kernel<Channels, Lmax, HasModes, HasSpin,
+                                       index_t, decltype(resident)::value>;
+        },
+        arguments, stream);
   }
 }
 

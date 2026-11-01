@@ -4754,6 +4754,60 @@ def test_two_routes_besides_the_rules_are_decided_on_trains(
 
 
 @_GPU
+def test_the_route_tuner_times_the_first_block_of_several() -> None:
+    """The tuner times the routes of a model of two blocks on the operator of its first block.
+
+    The routes of a network change no further message-passing block, so the
+    bench evaluates a copy of the descriptor without its further blocks, whose
+    operator it captures, and the descriptor of the model keeps its blocks.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+
+    model = (
+        get_model(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "dpa4c",
+                    "rcut": [4.0, 3.0],
+                    "n_blocks": 2,
+                    "channels": 8,
+                    "lmax": 2,
+                    "n_radial": 8,
+                    "precision": "float32",
+                    "seed": 3,
+                },
+                "fitting_net": {
+                    "type": "ener",
+                    "neuron": [64, 64],
+                    "activation_function": "silu",
+                    "precision": "float32",
+                    "resnet_dt": False,
+                    "seed": 3,
+                },
+            }
+        )
+        .to("cpu")
+        .eval()
+    )
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    device = torch.device("cuda", torch.cuda.current_device())
+    fitting = model.atomic_model.fused_decomposition()[0].fitting_net
+    bench = fitting_routes._Bench(
+        model, device, 512, fitting, fitting.bias_atom_e[:, 0]
+    )
+    assert not bench.descriptor.has_message_passing()
+    assert model.get_descriptor().has_message_passing()
+    graphs = bench._capture(bench._inputs(512), [fitting_routes.RULES], 0)
+    assert list(graphs) == [fitting_routes.RULES]
+
+
+@_GPU
 def test_the_route_tuner_measures_a_table_that_changes_no_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -5008,6 +5062,90 @@ def test_further_blocks_match_the_uncompressed_model(
         atol=2e-4 * max(atom_virial.abs().max().item(), 1.0),
         rtol=0,
     )
+
+
+@_GPU
+@pytest.mark.parametrize(("channels", "lmax", "radial_modes"), [(32, 2, 0), (64, 3, 4)])
+def test_further_block_scans_take_their_rows_from_the_graph(
+    channels: int, lmax: int, radial_modes: int
+) -> None:
+    """Guard slots of the edge storage leave every output of a model of two blocks unchanged.
+
+    A block of an edge scan of a further block takes its number of rows from
+    the edges of the graph of the block, which set how full its panels are,
+    and the summation order of every row follows from that number. The grid of
+    the launch provides for the rows that the edge storage implies, which holds
+    at least as many slots; guard slots past the graph can make it provide for
+    fewer rows per block, and so for more blocks, which retire past the rows of
+    the scan. Clusters of 500 to 1,500 atoms, whose blocks fill a wave of the
+    device or a few, take their rows from the fill of their panels; each
+    evaluates on its own edge storage and on one of ten times as many slots,
+    and every output of the two agrees bit for bit.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, (3.0, 2.5))
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    for node_count in (500, 1000, 1500):
+        _, graph, atype = _canonical_cluster(
+            descriptor,
+            node_count=node_count,
+            side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+        )
+        storage = graph.source.shape[0]
+        outputs = [
+            dpa4c_canonical_compress_energy_force(
+                descriptor, fitting, edges, atype, fitting.bias_atom_e[:, 0]
+            )
+            for edges in (graph, _padded_storage(graph, 9 * storage))
+        ]
+        for index, (compact, padded) in enumerate(zip(*outputs, strict=True)):
+            assert torch.equal(compact, padded), (node_count, index)
+
+
+@_GPU
+@pytest.mark.parametrize(("channels", "lmax", "radial_modes"), [(32, 2, 0), (64, 3, 4)])
+def test_further_block_scans_tile_like_the_whole_system(
+    channels: int, lmax: int, radial_modes: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Node tiles of a multiple of four rows change no output of a model of two blocks.
+
+    Every run of a tiled system takes the rows per block that the edges of the
+    whole system set, and a run that starts at a multiple of four rows groups
+    its rows into blocks as the whole system does, so the panels of every
+    block, and the summation order of every row, stay those of the untiled
+    system. A cluster of 1,000 atoms, whose scans take two or four rows per
+    block, evaluates untiled and in runs of 16, 256 and 600 rows, which start
+    past the first row of the graph, and every output agrees bit for bit.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, (3.0, 2.5))
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    node_count = 1000
+    _, graph, atype = _canonical_cluster(
+        descriptor,
+        node_count=node_count,
+        side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+    )
+
+    def run() -> tuple[torch.Tensor, ...]:
+        return dpa4c_canonical_compress_energy_force(
+            descriptor, fitting, graph, atype, fitting.bias_atom_e[:, 0]
+        )
+
+    monkeypatch.setenv("DP_NODE_TILE", "0")
+    reference = run()
+    for tile in (16, 256, 600):
+        monkeypatch.setenv("DP_NODE_TILE", str(tile))
+        for index, (actual, expected) in enumerate(zip(run(), reference, strict=True)):
+            assert torch.equal(actual, expected), (tile, index)
 
 
 @_GPU

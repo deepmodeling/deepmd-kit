@@ -2423,16 +2423,6 @@ class DeepEval(DeepEvalBackend):
                 aparam_t,
                 self._make_charge_spin_input(nframes, charge_spin),
             )
-        if canonical and self.metadata.get("has_message_passing", False):
-            # Frames held whole carry no halo nodes, so the border plan of a
-            # model with further message-passing blocks has no swaps.
-            border = BorderPlan.single_domain(DEVICE)
-            model_inputs = (
-                *model_inputs,
-                border.communicator,
-                border.send_nodes,
-                border.swaps,
-            )
         topology_names = self.metadata.get("topologies", ())
         if topology_names:
             box_input = cells.reshape(nframes, 9) if cells is not None else None
@@ -2448,6 +2438,18 @@ class DeepEval(DeepEvalBackend):
                     graph.edge_vec.dtype,
                     DEVICE,
                 ),
+            )
+        if canonical and self.metadata.get("has_message_passing", False):
+            # Frames held whole carry no halo nodes, so the border plan of a
+            # model with further message-passing blocks has no swaps. The
+            # inputs of a long-range module, which the compact lower reads
+            # first, hold the communicator already.
+            border = BorderPlan.single_domain(DEVICE)
+            model_inputs = (
+                *model_inputs,
+                *(() if topology_names else (border.communicator,)),
+                border.send_nodes,
+                border.swaps,
             )
         return model_inputs, nframes, natoms
 

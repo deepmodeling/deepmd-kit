@@ -234,21 +234,18 @@ charge state: the Python interface applies the state of each call, and LAMMPS
 the one given by the `charge_spin` keyword of `pair_style deepmd`.
 
 A compressed DPA4C model frozen for a CUDA device evaluates the long-range
-term with a dedicated operator, which reads the positions of the atoms and
-the cell. It enumerates the pairs of a non-periodic system itself, so that its
-memory grows linearly with the number of atoms and its cost with their
-square, and evaluates a periodic system on the mesh of its cell. The operator
-serves the `les` kernel and the `sog` kernel of up to 32 Gaussians, with up to
-8 charge channels, B-splines of order up to 12, a charge network without
-frame or atomic parameters, and no `pair_exclude_types`. A model the
-operator does not serve, like an uncompressed one, receives the pairs or the
-mesh of each frame from the interface, so the memory of a non-periodic
-evaluation grows with the square of the number of atoms. The operator
-evaluates the long-range term together with the descriptor and both networks,
-which is faster, when the module has one charge channel and a charge network
-in `float32` with `tanh` or `silu` hidden layers whose widths are multiples of
-four and without `resnet_dt`; the defaults give such a module in a compressed
-model.
+term on the GPU: a non-periodic system with memory that grows linearly with
+the number of atoms and time that grows with their square, and a periodic
+system on the mesh of its cell. This covers the `les` kernel and the `sog`
+kernel of up to 32 Gaussians, with up to 8 charge channels, B-splines of order
+up to 12, a charge network without frame or atomic parameters, and no
+`pair_exclude_types`. Any other model, like an uncompressed one, evaluates a
+non-periodic system with memory that grows with the square of the number of
+atoms. A module with one charge channel and a charge network in `float32` with
+`tanh` or `silu` hidden layers whose widths are multiples of four and without
+`resnet_dt`, which the defaults give in a compressed model, runs faster still.
+A compressed DPA4C model with several message-passing blocks requires such a
+module on a CUDA device, on one MPI rank or on several.
 
 The following are not supported for a model with a long-range module:
 multi-rank (domain-decomposed) inference of a model that the dedicated

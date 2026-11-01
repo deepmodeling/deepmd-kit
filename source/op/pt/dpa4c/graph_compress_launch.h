@@ -47,6 +47,7 @@ struct Arguments {
   // the summation order of a row, so that every run of a tiled system takes
   // the schedule of the whole system.
   long system_node_count = 0;
+  // Slots of the edge storage, at least the edges of every row.
   long edge_count = 0;
   int lmax = 2;
   int interval_count = 0;

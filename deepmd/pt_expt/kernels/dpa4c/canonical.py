@@ -30,65 +30,38 @@ if TYPE_CHECKING:
 _cpu_library: torch.library.Library | None = None
 
 
-def canonical_model_unsupported_reason(model: Any) -> str | None:
-    """Return why a compressed DPA4C model has no compact canonical operator.
-
-    On the CUDA backend, a compressed DPA4C model whose descriptor carries
-    further message-passing blocks and whose learned part carries a long-range
-    module would take the compact canonical path, whose operators evaluate the
-    blocks and the long range each, but not yet together. Such a model must
-    not fall back to a generic lower, which would silently evaluate the
-    uncompressed equations, so the deployment reports this reason instead.
-
-    Parameters
-    ----------
-    model
-        Model to deploy.
-
-    Returns
-    -------
-    str or None
-        Diagnostic of the missing operator, or ``None`` when the compact
-        canonical path serves or declines the model on other grounds.
-    """
-    if backend_device_type() != "cuda":
-        return None
-    atomic_model = getattr(model, "atomic_model", None)
-    parts = None if atomic_model is None else atomic_model.fused_decomposition()
-    if parts is None or not parts[0].has_long_range():
-        return None
-    descriptor = parts[0].descriptor
-    if not (
-        bool(getattr(descriptor, "compress", False))
-        and getattr(descriptor, "attentions", None)
-    ):
-        return None
-    return (
-        "A compressed DPA4C model with further message-passing blocks "
-        "(`n_blocks` > 1) and a long-range module has no compact canonical "
-        "operator yet: the fused CUDA path evaluates the further blocks and "
-        "the long range each, but not together. Deploy the uncompressed "
-        "archive, or a single-block model with the long-range module."
-    )
-
-
-def canonical_model_eligible(model: Any) -> bool:
-    """Return whether a model can use the compact source-only graph ABI.
+def _canonical_ineligibility(model: Any, *, as_compressed: bool = False) -> str | None:
+    """Return the condition under which the compact canonical ABI fails a model.
 
     The compact ABI exists so that a device-resident neighbor list can reach
     the descriptor without a host round trip, which is a property of the
     CUDA / Kokkos deployment. Only that backend implements its operators, so
     a CPU target keeps the generic graph lower, whose operators it does
     implement and whose extra cost is one index tensor.
+
+    Parameters
+    ----------
+    model
+        Model to deploy.
+    as_compressed
+        Judge the model in the state that its compression leaves: the
+        descriptor compressed and the charge state of a long-range module
+        that reads one folded (see ``DPAtomicModel.enable_compression``).
+
+    Returns
+    -------
+    str or None
+        The first condition that fails, as a clause, or ``None`` when the
+        compact canonical operators serve the model.
     """
     if backend_device_type() != "cuda":
-        return False
+        return "the compact canonical operators run on CUDA devices"
     atomic_model = getattr(model, "atomic_model", None)
     # A bridged composition deploys like its learned part: the fused operator
     # evaluates the analytical pair potential in the same edge scan.
     parts = None if atomic_model is None else atomic_model.fused_decomposition()
     if parts is None:
-        return False
+        return "the model is not one DPA4C energy model"
     descriptor = parts[0].descriptor
     fitting = parts[0].fitting_net
     from deepmd.pt_expt.descriptor.dpa4c import (
@@ -96,32 +69,64 @@ def canonical_model_eligible(model: Any) -> bool:
     )
 
     if not isinstance(descriptor, DescrptDPA4C):
-        return False
-    if not bool(getattr(descriptor, "compress", False)):
-        return False
+        return "the descriptor is not DPA4C"
+    if not (as_compressed or bool(getattr(descriptor, "compress", False))):
+        return "the descriptor is not compressed"
     if getattr(descriptor, "exclude_types", None):
-        return False
+        return "the descriptor excludes type pairs"
     if getattr(atomic_model, "pair_excl", None) is not None:
-        return False
+        return "the model excludes type pairs (pair_exclude_types)"
     if getattr(atomic_model, "atom_excl", None) is not None:
-        return False
+        return "the model excludes atom types (atom_exclude_types)"
     # A latent-charge long-range module joins the pipeline through the node
     # positions and the cells, which its operator reads in place of a pair
-    # list or a mesh; that pipeline evaluates no pair potential and one block.
+    # list or a mesh; that pipeline reads no frame input and evaluates no pair
+    # potential, and further message-passing blocks on the fused long-range
+    # operator alone.
     if parts[0].has_long_range():
-        if descriptor.attentions:
-            return False
+        from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+            fused_long_range_eligible,
+        )
+        from deepmd.pt_expt.kernels.long_range import (
+            MAX_CHANNELS,
+            MAX_GAUSSIANS,
+            MAX_ORDER,
+        )
+        from deepmd.pt_expt.kernels.long_range import (
+            op_available as latent_charge_op_available,
+        )
         from deepmd.pt_expt.long_range.latent_charge import (
             LatentChargeLongRange,
         )
 
         long_range = parts[0].long_range
-        if not (
-            isinstance(long_range, LatentChargeLongRange)
-            and long_range.operator_eligible()
-            and parts[1] is None
-        ):
-            return False
+        if not isinstance(long_range, LatentChargeLongRange):
+            return "the long-range module is not a latent-charge module"
+        if not latent_charge_op_available():
+            return "the loaded library lacks the latent-charge operator"
+        if not long_range.operator_eligible():
+            return (
+                "the long-range module is not one the long-range operator "
+                f"evaluates (the les kernel or the sog kernel of up to "
+                f"{MAX_GAUSSIANS} Gaussians, up to {MAX_CHANNELS} charge "
+                f"channels, B-splines of order up to {MAX_ORDER}, and a charge "
+                "network without frame or atomic parameters)"
+            )
+        if long_range.uses_charge_spin() and not as_compressed:
+            return (
+                "the long-range module reads the charge state of each frame, "
+                "which the compression of the whole model folds"
+            )
+        if parts[1] is not None:
+            return "the model combines a long-range module with a pair potential"
+        if descriptor.attentions and not fused_long_range_eligible(long_range):
+            return (
+                "the charge network is not one the fused long-range operator, "
+                "which evaluates further message-passing blocks, reproduces "
+                "(one channel in float32 with tanh or silu hidden layers whose "
+                "widths are multiples of four, without resnet_dt), or the "
+                "loaded library lacks that operator"
+            )
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         mega_eligible,
     )
@@ -129,7 +134,74 @@ def canonical_model_eligible(model: Any) -> bool:
         fitting_eligible,
     )
 
-    return mega_eligible(descriptor) and fitting_eligible(fitting)
+    if not mega_eligible(descriptor):
+        return "the fused kernels are not compiled for the descriptor profile"
+    if not fitting_eligible(fitting):
+        return (
+            "the energy fitting is not one the fused fitting kernels reproduce "
+            "(float32 with tanh or silu hidden layers whose widths are "
+            "multiples of four, without resnet_dt, frame or atomic parameters "
+            "or a case embedding)"
+        )
+    return None
+
+
+def canonical_model_unsupported_reason(
+    model: Any, *, as_compressed: bool = False
+) -> str | None:
+    """Return why a compressed DPA4C model of several blocks cannot be deployed.
+
+    On the CUDA backend, the further message-passing blocks of a compressed
+    DPA4C descriptor are evaluated by the compact canonical operators alone;
+    the operators of a generic lower evaluate one block. Such a model must
+    not fall back to a generic lower, which would silently evaluate the
+    uncompressed equations, so the deployment reports the condition under
+    which the compact canonical operators fail it instead.
+
+    Parameters
+    ----------
+    model
+        Model to deploy.
+    as_compressed
+        Judge the model in the state that its compression leaves, as a freeze
+        does before it compresses the model (see
+        :func:`~deepmd.pt_expt.utils.serialization.compressed_export_unsupported_reason`).
+
+    Returns
+    -------
+    str or None
+        Diagnostic of the failing condition, or ``None`` when the compact
+        canonical path serves the model or the model does not need it.
+    """
+    if backend_device_type() != "cuda":
+        return None
+    atomic_model = getattr(model, "atomic_model", None)
+    parts = None if atomic_model is None else atomic_model.fused_decomposition()
+    if parts is None:
+        return None
+    descriptor = parts[0].descriptor
+    if not (
+        (as_compressed or bool(getattr(descriptor, "compress", False)))
+        and getattr(descriptor, "attentions", None)
+    ):
+        return None
+    condition = _canonical_ineligibility(model, as_compressed=as_compressed)
+    if condition is None:
+        return None
+    return (
+        "A compressed DPA4C model with further message-passing blocks "
+        "(`n_blocks` > 1) deploys on a GPU through the compact canonical "
+        f"operators alone, which do not serve this model: {condition}. "
+        "Deploy the uncompressed archive."
+    )
+
+
+def canonical_model_eligible(model: Any) -> bool:
+    """Return whether a model can use the compact source-only graph ABI.
+
+    See :func:`_canonical_ineligibility` for the conditions.
+    """
+    return _canonical_ineligibility(model) is None
 
 
 def op_available() -> bool:

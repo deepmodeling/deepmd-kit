@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import re
 from types import (
     SimpleNamespace,
 )
@@ -8,6 +9,7 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.pt_expt.kernels.dpa4c import canonical as dpa4c_canonical
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -21,6 +23,7 @@ from deepmd.pt_expt.utils.serialization import (
     _resolve_lower_kind,
     _trace_and_export,
     build_synthetic_graph_inputs,
+    compressed_export_unsupported_reason,
 )
 
 #: The compact canonical ABI and the fused spin backward are CUDA-only routes,
@@ -710,6 +713,63 @@ def test_a_multi_block_export_reads_its_border_plan(
             is torch.ops.deepmd.dpa4c_canonical_compress_energy_force.default
             for user in placeholders[name].users
         ), name
+
+
+@pytest.mark.parametrize(
+    ("change", "condition"),
+    [
+        ({"pair_exclude_types": [[0, 1]]}, "pair_exclude_types"),
+        ({"fitting_net": {"resnet_dt": True}}, "energy fitting"),
+    ],
+)
+def test_a_multi_block_model_the_canonical_operators_cannot_serve_is_refused(
+    monkeypatch: pytest.MonkeyPatch, change: dict, condition: str
+) -> None:
+    """A compressed model of several blocks is refused rather than evaluated uncompressed.
+
+    The operators of a generic lower evaluate one block, so a compressed model
+    of several blocks that the compact canonical operators of a CUDA target do
+    not serve, here one that excludes a type pair or whose energy fitting
+    takes a timestep per layer, would evaluate its descriptor through the
+    uncompressed equations there. The automatic selection of the lower
+    reports the failing condition instead, and a freeze learns it from the
+    uncompressed model. The judgment reads the configuration alone, so the
+    test targets CUDA on any device.
+    """
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    for key, value in change.items():
+        if isinstance(value, dict):
+            config[key].update(value)
+        else:
+            config[key] = value
+    model = get_model(config).to("cpu").eval()
+    pattern = f"compact canonical.*{condition}"
+    assert re.search(pattern, compressed_export_unsupported_reason(model) or "")
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    with pytest.raises(ValueError, match=pattern):
+        _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto")
+
+
+def test_a_freeze_judges_a_case_embedding_as_the_export_folds_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model of several blocks with a case embedding deploys compressed.
+
+    The export folds the case embedding of a deployed branch into the first
+    layer of its fitting, which the fused fitting kernels then reproduce, so
+    the judgment of a freeze before compression folds it too, on a copy that
+    leaves the model unchanged.
+    """
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    config["fitting_net"]["dim_case_embd"] = 2
+    model = get_model(config).to("cpu").eval()
+    model.set_case_embd(1)
+    assert compressed_export_unsupported_reason(model) is None
+    assert model.get_fitting_net().dim_case_embd == 2
 
 
 @_GPU

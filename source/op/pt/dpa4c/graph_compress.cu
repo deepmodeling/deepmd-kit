@@ -20,9 +20,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "../border_exchange.h"
@@ -30,6 +34,7 @@
 #include "../communicator.h"
 #include "../graph_ops.h"
 #include "../long_range/charge_sum.h"
+#include "../long_range/domain_exchange.h"
 #include "block_launch.h"
 #include "graph_compress.cuh"
 #include "graph_compress_launch.h"
@@ -1899,6 +1904,24 @@ void finish_energy_force(cudaStream_t stream,
 
 // === Further message-passing blocks ===
 
+/// The stream of high priority on which the operators run work beside the
+/// current stream of ``device``, the same stream on every call: the caching
+/// allocator keeps the memory that the work allocates in a pool of that
+/// stream, which every later call then reuses.
+c10::cuda::CUDAStream side_stream(c10::DeviceIndex device) {
+  static std::mutex mutex;
+  static std::map<c10::DeviceIndex, c10::cuda::CUDAStream> streams;
+  const std::lock_guard<std::mutex> lock(mutex);
+  const auto known = streams.find(device);
+  if (known != streams.end()) {
+    return known->second;
+  }
+  return streams
+      .emplace(device,
+               at::cuda::getStreamFromPool(/*isHighPriority=*/true, device))
+      .first->second;
+}
+
 /// The border plan of a node set whose halo rows the further blocks of a
 /// descriptor read (border_exchange.h), and the rows the operator evaluates;
 /// a node set without a plan evaluates every row.
@@ -2120,13 +2143,6 @@ int gate_blocks(const Arguments& args) {
   return static_cast<int>((args.node_count + kGateWarps - 1) / kGateWarps);
 }
 
-void check_gate_launch(const char* what) {
-  const cudaError_t status = cudaGetLastError();
-  TORCH_CHECK(status == cudaSuccess,
-              "dpa4c_canonical_compress_energy_force: ", what,
-              " failed: ", cudaGetErrorString(status));
-}
-
 /// The switch totals of the owned rows of ``args`` into ``totals``.
 void launch_source_gate(const Arguments& args,
                         float2* totals,
@@ -2138,7 +2154,7 @@ void launch_source_gate(const Arguments& args,
     source_gate_kernel<decltype(index)>
         <<<gate_blocks(args), kGateThreads, 0, stream>>>(args, totals);
   });
-  check_gate_launch("the switch totals of the source gate");
+  DPA4C_CHECK_LAUNCH("dpa4c switch totals of the source gate");
 }
 
 /// The slope of the switches of the owned rows of ``args`` under a source
@@ -2157,7 +2173,7 @@ void launch_gate_closure(const Arguments& args,
         <<<gate_blocks(args), kGateThreads, 0, stream>>>(
             args, totals, gate_sums, force, virial);
   });
-  check_gate_launch("the switch slope of the source gate");
+  DPA4C_CHECK_LAUNCH("dpa4c switch slope of the source gate");
 }
 
 /// The validated border plan of an energy-force evaluation. The send list,
@@ -2189,6 +2205,85 @@ HaloPlan halo_plan(const char* op,
               "frame, got ",
               frame_count, " frames");
   return {*send_nodes, *swaps, *communicator, owned};
+}
+
+/// The further message-passing blocks of a call: their records, one row per
+/// further block and none for a descriptor of one block, and the cutoff in Å
+/// of every further block.
+struct FurtherBlocks {
+  torch::Tensor records;
+  std::vector<double> cutoffs;
+
+  long count() const { return records.defined() ? records.size(0) : 0; }
+};
+
+/// The further blocks of ``blocks`` and ``block_rcut``, whose cutoffs must not
+/// rise from block to block above ``rcut``, that of the first block. Without
+/// the cutoffs, every block scans the edges of the first, whose messages
+/// beyond its own cutoff vanish with its envelope.
+FurtherBlocks further_blocks(
+    const char* op,
+    const std::optional<torch::Tensor>& blocks,
+    const std::optional<std::vector<double>>& block_rcut,
+    double rcut) {
+  FurtherBlocks further{blocks.value_or(torch::Tensor()), {}};
+  TORCH_CHECK(!further.records.defined() || further.records.dim() == 2, op,
+              ": the records of the further blocks must form a matrix, got ",
+              further.records.sizes());
+  const long count = further.count();
+  further.cutoffs = block_rcut.value_or(std::vector<double>(count, rcut));
+  TORCH_CHECK(static_cast<long>(further.cutoffs.size()) == count, op,
+              ": block_rcut must hold the cutoff of every further block, one "
+              "per record of blocks; got ",
+              further.cutoffs.size(), " cutoff(s) for ", count, " record(s)");
+  for (long b = 0; b < count; ++b) {
+    const double previous = b == 0 ? rcut : further.cutoffs[b - 1];
+    TORCH_CHECK(further.cutoffs[b] > 0.0 && further.cutoffs[b] <= previous, op,
+                ": the cutoff of further block ", b + 1,
+                " must be positive and at most ", previous,
+                " Å, that of the block before; got ", further.cutoffs[b], " Å");
+  }
+  return further;
+}
+
+/// A node buffer of a fused energy-force operator. With further blocks the
+/// runs cover the owned rows alone, so a buffer that the epilogue reads for
+/// every node starts cleared.
+torch::Tensor node_buffer(long block_count,
+                          at::IntArrayRef shape,
+                          const torch::TensorOptions& options) {
+  return block_count > 0 ? torch::zeros(shape, options)
+                         : torch::empty(shape, options);
+}
+
+/// The launch of the first block of a fused energy-force operator over the run
+/// of ``count`` rows from ``begin``, from ``payload``, the canonical payload of
+/// the whole node set: the run writes its descriptor at ``descriptor`` and its
+/// moments at ``state``, and reads the node types that the prologue of the
+/// call scanned into ``words``. The row split of its scans, which sets their
+/// summation order, follows from ``system_nodes``, the rows that the call
+/// evaluates in all, so that every run of a tiled call sums alike.
+Arguments first_block_run(Payload payload,
+                          const torch::Tensor& edge_vec,
+                          int channels,
+                          const Dimensions& widths,
+                          long system_nodes,
+                          long begin,
+                          long count,
+                          float* descriptor,
+                          float* state,
+                          EvaluationWords* words) {
+  payload.destination_row_ptr =
+      payload.destination_row_ptr.slice(0, begin, begin + count + 1);
+  payload.node_begin = begin;
+  Arguments arguments = build_arguments(payload, edge_vec, channels, widths);
+  arguments.system_node_count = system_nodes;
+  arguments.descriptor = descriptor;
+  arguments.state_out = state;
+  arguments.type_mismatch = &words->node_types.type_mismatch;
+  arguments.largest_radius = &words->node_types.largest_radius;
+  arguments.type_present = present_types(arguments, &words->node_types);
+  return arguments;
 }
 
 // === Edges of a further block ===
@@ -2420,9 +2515,25 @@ RowSplit split_rows(const EdgeGraph& graph,
   return split;
 }
 
-/// What the further blocks of a descriptor share with the run loop of
-/// dpa4c_canonical_compress_energy_force.
+/// What the descriptor of the last block feeds. ``run(begin, count, rows)``
+/// replaces the descriptor of the ``count`` owned rows from ``begin``, held at
+/// ``rows``, by its cotangent: the energy fitting reads the descriptor of a run
+/// alone, so every run completes as soon as its readout is done. ``all()``,
+/// when set, replaces the descriptor of every owned row at once instead, after
+/// the readout of the last run: the energy of a long-range module couples the
+/// charges of all nodes, so no cotangent exists before every charge does, and
+/// the moments and the transport of the last block are kept for every node
+/// until then. The descriptor is then a node buffer, whose run rows the launch
+/// of each run addresses.
+struct BlockHead {
+  std::function<void(long, long, float*)> run;
+  std::function<void()> all;
+};
+
+/// What the further blocks of a descriptor share with the run loop of the
+/// fused energy-force operator ``op``, which names it in their diagnostics.
 struct BlockPass {
+  const char* op;
   const torch::Tensor& records;
   // Cutoff in Å of the first block, that of the graph, and of every further
   // block, one per record and none above the one before.
@@ -2440,28 +2551,31 @@ struct BlockPass {
   const Dimensions& widths;
   long node_count;
   long run;
-  const FittingRuns& runs;
-  // Run buffers of the operator.
+  const BlockHead& head;
+  // The descriptor buffer of the operator, a run buffer or, under a deferred
+  // head, a node buffer, and the run buffer of the moment gradient.
   const torch::Tensor& descriptor;
   const torch::Tensor& state;
-  // Node buffers of the operator.
-  const torch::Tensor& node_type;
-  const torch::Tensor& seed;
-  const torch::Tensor& raw_energy;
+  // Node buffer of the operator.
   const torch::Tensor& spin_gradient;
   unsigned long long* force;
   cudaStream_t stream;
 };
 
-/// The descriptor of several blocks (block_launch.h) with its fitting and its
-/// force, over the owned rows of the node set in runs of ``pass.run`` rows.
+/// The descriptor of several blocks (block_launch.h) with what it feeds and
+/// its force, over the owned rows of the node set in runs of ``pass.run``
+/// rows.
 ///
 /// The forward evaluates the first block of every run, keeping its moments
 /// for the whole node set, and the node maps of the second block. Block after
 /// block, it then refreshes the source features of the halo rows and
 /// evaluates the edge scan and the readout of every run, followed by the node
-/// maps of the next block or, for the last block, by the fitting with its
-/// cotangent, the readout VJP and the destination cotangents of the block.
+/// maps of the next block or, for the last block, by the head (BlockHead),
+/// which replaces the descriptor by its cotangent, the readout VJP and the
+/// destination cotangents of the block: in the same run, or, under a deferred
+/// head, in a second pass over the runs once the head has formed the
+/// cotangent of every owned row. The launch of each run addresses the rows of
+/// the descriptor buffer that the run fills.
 /// The backward visits the blocks in reverse: it refreshes the destination
 /// cotangents of the halo rows, scans the source rows of every run, and pulls
 /// the source cotangent back through the node maps and the readout of the
@@ -2493,8 +2607,9 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
                   records.scalar_type() == torch::kFloat32 &&
                   records.dim() == 2 && records.size(1) == sizes.record &&
                   records.is_contiguous(),
-              "dpa4c_canonical_compress_energy_force: the records of the "
-              "further blocks must be a contiguous float32 matrix of ",
+              pass.op,
+              ": the records of the further blocks must be a contiguous "
+              "float32 matrix of ",
               sizes.record, " columns on the device of the graph, got ",
               records.sizes());
   const long block_count = records.size(0);
@@ -2506,8 +2621,8 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
   const cudaStream_t stream = pass.stream;
   const auto f32 = pass.descriptor.options();
   const auto i64 = f32.dtype(torch::kInt64);
-  float* const descriptor = pass.descriptor.data_ptr<float>();
   float* const state = pass.state.data_ptr<float>();
+  const bool deferred = static_cast<bool>(pass.head.all);
 
   // === Source gate ===
   // The switch totals of the owned rows, and of the halo rows from their
@@ -2558,10 +2673,9 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
   // block are exchanged, and the others, which they visit afterwards.
   const bool overlap = pass.halo.crosses_processes() && owned > 0;
   std::vector<RowSplit> splits;
-  // One side stream of high priority carries every exchange of the call.
+  // The side stream carries every exchange of the call.
   const c10::cuda::CUDAStream side =
-      overlap ? at::cuda::getStreamFromPool(/*isHighPriority=*/true,
-                                            pass.descriptor.get_device())
+      overlap ? side_stream(pass.descriptor.get_device())
               : at::cuda::getCurrentCUDAStream();
   if (overlap) {
     const long count = std::min(run, owned);
@@ -2610,11 +2724,13 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
 
   // === Node buffers ===
   // The moments of the first block and of every block before the last, and
-  // the transport of every such block, which the backward reads again.
+  // the transport of every such block, which the backward reads again; under
+  // a deferred head those of the last block as well, which its readout VJP
+  // and its destination cotangents read after the head.
+  const long kept = deferred ? block_count : block_count - 1;
   auto first_state = torch::empty({node_count, state_width}, f32);
-  auto states = torch::empty({block_count - 1, node_count, state_width}, f32);
-  auto transports =
-      torch::empty({block_count - 1, node_count, sizes.transport}, f32);
+  auto states = torch::empty({kept, node_count, state_width}, f32);
+  auto transports = torch::empty({kept, node_count, sizes.transport}, f32);
   auto sources = torch::empty({block_count, node_count, sizes.source}, f32);
   auto centers = torch::empty({block_count, node_count, kBlockHeads}, f32);
   auto divisors = torch::empty({node_count, 2}, f32);
@@ -2672,6 +2788,33 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
     }
   };
 
+  // The launch of further block ``b`` over the run of ``count`` rows from
+  // ``begin``, which writes the moments and the transport of the block to
+  // the node rows of the run, or, for the last block of a head that completes
+  // each run in turn, to run buffers.
+  const auto further_run = [&](long b, long begin, long count) {
+    Arguments edges = block_edges(b, begin, count);
+    BlockArguments block = block_arguments(edges, b);
+    const bool buffered = b + 1 == block_count && !deferred;
+    block.state_out = buffered ? state : rows(states[b], begin);
+    block.transport =
+        buffered ? transport.data_ptr<float>() : rows(transports[b], begin);
+    return std::make_pair(edges, block);
+  };
+  // The readout VJP of the last block over a run, from the cotangent that the
+  // head left in the descriptor rows of the run, and the destination
+  // cotangents of the block, which its backward reads.
+  const auto finish_last_run = [&](Arguments edges, BlockArguments block,
+                                   long begin, long count) {
+    edges.descriptor_gradient = edges.descriptor;
+    edges.state = block.state_out;
+    edges.moment_gradient = state;
+    node_backward(edges, begin, count);
+    block.moment_gradient = state;
+    block.accumulate_carried = false;
+    dispatch_block(channels, BlockStage::Cotangents, block, stream);
+  };
+
   // === Forward: the first block and the node maps of the second ===
   for (long begin = 0; begin < owned; begin += run) {
     const long count = std::min(run, owned - begin);
@@ -2679,7 +2822,7 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
     first.state_out = rows(first_state, begin);
     dispatch(channels, false, first, stream);
     BlockArguments maps = block_arguments(first, 0);
-    maps.descriptor = descriptor;
+    maps.descriptor = first.descriptor;
     dispatch_block(channels, BlockStage::Maps, maps, stream);
   }
 
@@ -2689,34 +2832,33 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
     exchange_without_runs(sources[b]);
     for (long begin = 0; begin < owned; begin += run) {
       const long count = std::min(run, owned - begin);
-      Arguments edges = block_edges(b, begin, count);
-      BlockArguments block = block_arguments(edges, b);
-      block.state_out = last ? state : rows(states[b], begin);
-      block.transport =
-          last ? transport.data_ptr<float>() : rows(transports[b], begin);
+      auto [edges, block] = further_run(b, begin, count);
       scan_run(BlockStage::Forward, block, b, begin, sources[b]);
       edges.state_out = block.state_out;
       edges.divisors = rows(divisors, begin);
       dispatch_first_stage(channels, FirstStage::Readout, edges, stream);
       if (!last) {
         BlockArguments maps = block_arguments(edges, b + 1);
-        maps.descriptor = descriptor;
+        maps.descriptor = edges.descriptor;
         dispatch_block(channels, BlockStage::Maps, maps, stream);
         continue;
       }
+      if (deferred) {
+        continue;
+      }
       // The cotangent replaces the descriptor, which the run no longer needs.
-      pass.runs.output_and_cotangent(
-          stream, begin, count, descriptor, descriptor,
-          pass.widths.output_width, pass.node_type.data_ptr<long>() + begin,
-          pass.seed.data_ptr<double>() + begin,
-          pass.raw_energy.data_ptr<double>() + begin);
-      edges.descriptor_gradient = descriptor;
-      edges.state = state;
-      edges.moment_gradient = state;
-      node_backward(edges, begin, count);
-      block.moment_gradient = state;
-      block.accumulate_carried = false;
-      dispatch_block(channels, BlockStage::Cotangents, block, stream);
+      pass.head.run(begin, count, edges.descriptor);
+      finish_last_run(edges, block, begin, count);
+    }
+    if (last && deferred) {
+      pass.head.all();
+      for (long begin = 0; begin < owned; begin += run) {
+        const long count = std::min(run, owned - begin);
+        auto [edges, block] = further_run(b, begin, count);
+        edges.state_out = block.state_out;
+        edges.divisors = rows(divisors, begin);
+        finish_last_run(edges, block, begin, count);
+      }
     }
   }
 
@@ -2741,12 +2883,12 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
       edges.state_out = rows(input, begin);
       edges.divisors = rows(divisors, begin);
       dispatch_first_stage(channels, FirstStage::Readout, edges, stream);
-      block.descriptor = descriptor;
-      block.descriptor_gradient = descriptor;
+      block.descriptor = edges.descriptor;
+      block.descriptor_gradient = edges.descriptor;
       block.keys_gradient = keys_gradient.data_ptr<float>();
       block.map_cotangent = map_cotangent.data_ptr<float>();
       dispatch_block(channels, BlockStage::MapBackward, block, stream);
-      edges.descriptor_gradient = descriptor;
+      edges.descriptor_gradient = edges.descriptor;
       edges.state = rows(input, begin);
       edges.moment_gradient = state;
       node_backward(edges, begin, count);
@@ -2824,7 +2966,7 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
 // fixed-point force totals, and marks its frame like a non-finite total (see
 // kForceFixedLimit for the scope of the check).
 //
-// Every reduction has a fixed order for a given node count and kernel
+// Every reduction has a fixed order for a given graph and kernel
 // configuration, so an evaluation is reproducible bit for bit on one device;
 // the configuration follows from the device, so another device may differ in
 // the last bits.
@@ -2901,31 +3043,9 @@ dpa4c_canonical_compress_energy_force(
   const Dimensions widths =
       profile_dimensions(channels, static_cast<int>(lmax), has_spin);
   const long frame_count = n_node.size(0);
-  // One record per further message-passing block; none for a descriptor of
-  // one block.
-  const torch::Tensor records = blocks.value_or(torch::Tensor());
-  TORCH_CHECK(!records.defined() || records.dim() == 2,
-              "dpa4c_canonical_compress_energy_force: the records of the "
-              "further blocks must form a matrix, got ",
-              records.sizes());
-  const long block_count = records.defined() ? records.size(0) : 0;
-  // Without the cutoffs of the further blocks, every block scans the edges of
-  // the first, whose messages beyond its own cutoff vanish with its envelope.
-  const std::vector<double> cutoffs =
-      block_rcut.value_or(std::vector<double>(block_count, rcut));
-  TORCH_CHECK(static_cast<long>(cutoffs.size()) == block_count,
-              "dpa4c_canonical_compress_energy_force: block_rcut must hold "
-              "the cutoff of every further block, one per record of blocks; "
-              "got ",
-              cutoffs.size(), " cutoff(s) for ", block_count, " record(s)");
-  for (long b = 0; b < block_count; ++b) {
-    const double previous = b == 0 ? rcut : cutoffs[b - 1];
-    TORCH_CHECK(cutoffs[b] > 0.0 && cutoffs[b] <= previous,
-                "dpa4c_canonical_compress_energy_force: the cutoff of further "
-                "block ",
-                b + 1, " must be positive and at most ", previous,
-                " Å, that of the block before; got ", cutoffs[b], " Å");
-  }
+  const FurtherBlocks further = further_blocks(
+      "dpa4c_canonical_compress_energy_force", blocks, block_rcut, rcut);
+  const long block_count = further.count();
   const HaloPlan halo =
       halo_plan("dpa4c_canonical_compress_energy_force", halo_send, halo_swaps,
                 communicator, node_count, frame_count, block_count);
@@ -2954,21 +3074,16 @@ dpa4c_canonical_compress_energy_force(
   // With further blocks the runs cover the owned rows alone, and every node
   // backward adds its on-site magnetic gradient, so the node buffers the
   // epilogue reads start cleared.
-  const auto node_buffer = [&](std::initializer_list<long> shape,
-                               const torch::TensorOptions& options) {
-    return block_count > 0 ? torch::zeros(shape, options)
-                           : torch::empty(shape, options);
-  };
-  auto raw_energy = node_buffer({node_count}, f64);
+  auto raw_energy = node_buffer(block_count, {node_count}, f64);
   auto seed = torch::empty({node_count}, f64);
   auto node_type = torch::empty({node_count}, i64);
   auto force_fixed = torch::empty({node_count, kForceWords}, i64);
-  auto node_virial = node_buffer({node_count, 9}, f32);
+  auto node_virial = node_buffer(block_count, {node_count, 9}, f32);
   // The on-site magnetic gradient is node local, so a run writes only its own
   // rows. The neighbour part belongs to source nodes that other runs own and
   // accumulates in fixed point like the force.
-  auto spin_gradient =
-      has_spin ? node_buffer({node_count, 3}, f32) : torch::Tensor();
+  auto spin_gradient = has_spin ? node_buffer(block_count, {node_count, 3}, f32)
+                                : torch::Tensor();
   auto spin_fixed =
       has_spin ? torch::empty({node_count, kForceWords}, i64) : torch::Tensor();
   auto edge_gradient =
@@ -3016,51 +3131,42 @@ dpa4c_canonical_compress_energy_force(
 
   auto empty_index = torch::empty({0}, source.options());
   auto empty_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
+  const Payload payload{source,
+                        empty_mask,
+                        empty_index,
+                        destination_row_ptr,
+                        node_type,
+                        table,
+                        basis_table,
+                        basis_matrix,
+                        pair_film,
+                        pair_mixing,
+                        type_embedding,
+                        readout_matrices,
+                        coupling_meta,
+                        coupling_entry,
+                        coupling_value,
+                        output_mean,
+                        output_inv_std,
+                        spin,
+                        spin_pair,
+                        spin_type,
+                        contact_radius,
+                        true,
+                        lmax,
+                        table_stride,
+                        table_max,
+                        rcut,
+                        eps,
+                        degree_floor,
+                        f_inner,
+                        f_outer};
   // The launch bundle of the first block over the run of ``count`` owned rows
-  // from ``begin``.
+  // from ``begin``, into the run buffers.
   const auto first_arguments = [&](long begin, long count) {
-    const Payload payload{
-        source,
-        empty_mask,
-        empty_index,
-        destination_row_ptr.slice(0, begin, begin + count + 1),
-        node_type,
-        table,
-        basis_table,
-        basis_matrix,
-        pair_film,
-        pair_mixing,
-        type_embedding,
-        readout_matrices,
-        coupling_meta,
-        coupling_entry,
-        coupling_value,
-        output_mean,
-        output_inv_std,
-        spin,
-        spin_pair,
-        spin_type,
-        contact_radius,
-        true,
-        lmax,
-        table_stride,
-        table_max,
-        rcut,
-        eps,
-        degree_floor,
-        f_inner,
-        f_outer,
-        begin};
-    Arguments arguments =
-        build_arguments(payload, edge_vec_float, channels, widths);
-    arguments.system_node_count = owned;
-    arguments.descriptor = descriptor.data_ptr<float>();
-    arguments.state_out = state.data_ptr<float>();
-    arguments.type_mismatch = &evaluation_words->node_types.type_mismatch;
-    arguments.largest_radius = &evaluation_words->node_types.largest_radius;
-    arguments.type_present =
-        present_types(arguments, &evaluation_words->node_types);
-    return arguments;
+    return first_block_run(payload, edge_vec_float, channels, widths, owned,
+                           begin, count, descriptor.data_ptr<float>(),
+                           state.data_ptr<float>(), evaluation_words);
   };
   // The force assembly of the edge backward of the first block over a run,
   // and the analytical pair term: the fitting forward has assigned the energy
@@ -3091,10 +3197,19 @@ dpa4c_canonical_compress_energy_force(
   torch::Tensor block_virial;
   if (block_count > 0) {
     const EdgeGraph graph{destination_row_ptr, source, edge_vec_float};
+    // The energy fitting of each run, whose cotangent replaces the descriptor.
+    const auto energy_fitting = [&](long begin, long count, float* rows) {
+      runs.output_and_cotangent(
+          stream, begin, count, rows, rows, widths.output_width,
+          node_type.data_ptr<long>() + begin, seed.data_ptr<double>() + begin,
+          raw_energy.data_ptr<double>() + begin);
+    };
+    const BlockHead head{energy_fitting, nullptr};
     const BlockPass pass{
-        records,
+        "dpa4c_canonical_compress_energy_force",
+        further.records,
         rcut,
-        cutoffs,
+        further.cutoffs,
         graph,
         halo,
         channels,
@@ -3104,12 +3219,9 @@ dpa4c_canonical_compress_energy_force(
         widths,
         node_count,
         run,
-        runs,
+        head,
         descriptor,
         state,
-        node_type,
-        seed,
-        raw_energy,
         spin_gradient,
         reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>()),
         stream};
@@ -3184,6 +3296,16 @@ dpa4c_canonical_compress_energy_force(
 // epilogue adds the energies, the forces at fixed charges and the per-node
 // virials of the long range.
 //
+// A descriptor of several message-passing blocks (``blocks`` and
+// ``block_rcut`` as in dpa4c_canonical_compress_energy_force) evaluates its
+// blocks through evaluate_further_blocks, whose last block feeds the charges,
+// the long range and the cotangent of the descriptor as one deferred head
+// over the owned nodes; the backward of the blocks then assembles the force.
+// A node set of one domain of a decomposed frame refreshes its halo rows
+// through the border plan of ``halo_send`` and ``halo_swaps``, whose messages
+// travel on the communicator of the long range, and evaluates its owned nodes
+// alone, as that operator does.
+//
 // The charge network has one channel and the layout of an eligible energy
 // fitting; its per-type bias is ``charge_bias``. ``coord``, ``total_charge``,
 // ``box``, ``coefficient``, ``communicator``, ``kernel``, ``channel``,
@@ -3257,7 +3379,11 @@ dpa4c_canonical_compress_long_range_energy_force(
     int64_t order,
     double spacing,
     std::optional<std::vector<int64_t>> fitting_routes,
-    std::optional<std::vector<int64_t>> charge_fitting_routes) {
+    std::optional<std::vector<int64_t>> charge_fitting_routes,
+    std::optional<torch::Tensor> blocks,
+    std::optional<torch::Tensor> halo_send,
+    std::optional<torch::Tensor> halo_swaps,
+    std::optional<std::vector<double>> block_rcut) {
   constexpr const char* kOp =
       "dpa4c_canonical_compress_long_range_energy_force";
   const bool atom_virial = check_energy_force_inputs(
@@ -3277,6 +3403,16 @@ dpa4c_canonical_compress_long_range_energy_force(
   const Dimensions widths = profile_dimensions(channels, static_cast<int>(lmax),
                                                /*has_spin=*/false);
   const long frame_count = n_node.size(0);
+  const FurtherBlocks further = further_blocks(kOp, blocks, block_rcut, rcut);
+  const long block_count = further.count();
+  // The halo exchange of the further blocks travels on the communicator of
+  // the long range.
+  const HaloPlan halo = halo_plan(
+      kOp, halo_send, halo_swaps,
+      halo_send.has_value() ? std::optional<torch::Tensor>(communicator)
+                            : std::nullopt,
+      node_count, frame_count, block_count);
+  const long owned = halo.owned;
   const auto f32 = edge_vec.options().dtype(torch::kFloat32);
   const auto f64 = edge_vec.options().dtype(torch::kFloat64);
   const auto i64 = edge_vec.options().dtype(torch::kInt64);
@@ -3298,16 +3434,16 @@ dpa4c_canonical_compress_long_range_energy_force(
     return {energy, atom_energy, force, virial, atom_virial_output, mask};
   }
 
-  auto raw_energy = torch::empty({node_count}, f64);
+  auto raw_energy = node_buffer(block_count, {node_count}, f64);
   auto seed = torch::empty({node_count}, f64);
   auto charged =
       torch::empty({node_count}, edge_vec.options().dtype(torch::kBool));
   auto node_type = torch::empty({node_count}, i64);
   auto force_fixed = torch::empty({node_count, kForceWords}, i64);
-  auto node_virial = torch::empty({node_count, 9}, f32);
+  auto node_virial = node_buffer(block_count, {node_count, 9}, f32);
   auto edge_gradient =
       atom_virial ? torch::empty_like(edge_vec_float) : torch::Tensor();
-  const int blocks = epilogue_blocks(node_count);
+  const int epilogue = epilogue_blocks(node_count);
   auto words =
       torch::zeros({static_cast<long>(sizeof(EvaluationWords) / sizeof(int))},
                    edge_vec.options().dtype(torch::kInt32));
@@ -3315,7 +3451,7 @@ dpa4c_canonical_compress_long_range_energy_force(
       reinterpret_cast<EvaluationWords*>(words.data_ptr<int>());
   const torch::Tensor frame_row_ptr =
       frame_count > 1 ? frame_row_pointer(n_node) : torch::Tensor();
-  energy_force_prologue_kernel<<<blocks, kEpilogueThreads, 0, stream>>>(
+  energy_force_prologue_kernel<<<epilogue, kEpilogueThreads, 0, stream>>>(
       node_count, frame_count, n_local.data_ptr<long>(),
       frame_count > 1 ? frame_row_ptr.data_ptr<long>() : nullptr,
       atype.data_ptr<long>(), node_type.data_ptr<long>(),
@@ -3340,9 +3476,15 @@ dpa4c_canonical_compress_long_range_energy_force(
               ": the charge network must have a scalar head and one bias per "
               "type, as the energy fitting has");
 
-  // === Step 1. Descriptor and moment state of every node ===
-  auto descriptor = torch::empty({node_count, widths.output_width}, f32);
-  auto state = torch::empty({node_count, widths.moment_width + 2}, f32);
+  // The descriptor of every node, and the moment state of every node or, with
+  // further blocks, which keep their moments themselves, the moment gradient
+  // of a run.
+  const long run = tile > 0 ? std::max<long>(1, std::min<long>(tile, owned))
+                            : std::max<long>(1, owned);
+  const long width = widths.output_width;
+  auto descriptor = torch::empty({node_count, width}, f32);
+  auto state = torch::empty(
+      {block_count > 0 ? run : node_count, widths.moment_width + 2}, f32);
   auto empty_index = torch::empty({0}, source.options());
   auto empty_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
   const Payload payload{source,
@@ -3374,108 +3516,208 @@ dpa4c_canonical_compress_long_range_energy_force(
                         eps,
                         degree_floor,
                         f_inner,
-                        f_outer,
-                        0};
-  Arguments arguments =
-      build_arguments(payload, edge_vec_float, channels, widths);
-  arguments.system_node_count = node_count;
-  arguments.descriptor = descriptor.data_ptr<float>();
-  arguments.state_out = state.data_ptr<float>();
-  arguments.type_mismatch = &evaluation_words->node_types.type_mismatch;
-  arguments.largest_radius = &evaluation_words->node_types.largest_radius;
-  arguments.type_present =
-      present_types(arguments, &evaluation_words->node_types);
-  dispatch(channels, false, arguments, stream);
+                        f_outer};
 
-  // === Step 2. Charges of the nodes and their descriptor Jacobian ===
-  // The charge of a node is a function of the descriptor of that node alone,
-  // so the cotangent of its descriptor through the charge network is the
-  // derivative of the energy with respect to the charge times the Jacobian
-  // row of the charge, the input cotangent of a unit seed. A run of the fused
-  // network forms the charges and those rows in one pass, before the long
-  // range forms the derivative and the energy fitting overwrites the
-  // descriptor; a run of the per-layer kernels forms its charges here and
-  // its rows from their saved pre-activations after the energy fitting.
-  const long run = tile > 0
-                       ? std::max<long>(1, std::min<long>(tile, node_count))
-                       : node_count;
-  const long width = widths.output_width;
-  const auto charge_bias_double = charge_bias.to(torch::kFloat64).contiguous();
-  const FittingNetwork charge_fitting{
-      charge_plan,   charge_ws,     charge_bs,          charge_resnets,
-      charge_w_head, charge_b_head, charge_bias_double, charge_act};
-  const FittingRuns charge_runs(stream, charge_fitting, run, node_count,
-                                std::move(charge_fitting_routes), f32, true);
-  const auto unit_seed = torch::ones({run}, f64);
-  auto raw_charge = torch::empty({node_count}, f64);
-  auto charge_jacobian = torch::empty({node_count, width}, f32);
-  for (long begin = 0; begin < node_count; begin += run) {
-    const long count = std::min(run, node_count - begin);
-    charge_runs.forward(
-        stream, begin, count, descriptor.data_ptr<float>() + begin * width,
-        charge_jacobian.data_ptr<float>() + begin * width, width,
-        node_type.data_ptr<long>() + begin, unit_seed.data_ptr<double>(),
-        raw_charge.data_ptr<double>() + begin);
+  // === Steps 2 to 4. Charges, long range and cotangent of the descriptor ===
+  // Over the owned nodes, whose descriptor rows the first step has filled.
+  deepmd::long_range::ChargeSumOutputs long_range;
+  const auto form_cotangent = [&] {
+    // === Step 2. Charges of the nodes and their descriptor Jacobian ===
+    // The charge of a node is a function of the descriptor of that node
+    // alone, so the cotangent of its descriptor through the charge network
+    // is the derivative of the energy with respect to the charge times the
+    // Jacobian row of the charge, the input cotangent of a unit seed. A run
+    // of the fused network forms the charges and those rows in one pass,
+    // before the long range forms the derivative and the energy fitting
+    // overwrites the descriptor; a run of the per-layer kernels forms its
+    // charges here and its rows from their saved pre-activations after the
+    // energy fitting.
+    const auto charge_bias_double =
+        charge_bias.to(torch::kFloat64).contiguous();
+    const FittingNetwork charge_fitting{
+        charge_plan,   charge_ws,     charge_bs,          charge_resnets,
+        charge_w_head, charge_b_head, charge_bias_double, charge_act};
+    const FittingRuns charge_runs(stream, charge_fitting, run, owned,
+                                  std::move(charge_fitting_routes), f32, true);
+    const auto unit_seed = torch::ones({run}, f64);
+    // The long range reads the charge of every node, a halo row included.
+    auto raw_charge = node_buffer(block_count, {node_count}, f64);
+    auto charge_jacobian = torch::empty({node_count, width}, f32);
+    for (long begin = 0; begin < owned; begin += run) {
+      const long count = std::min(run, owned - begin);
+      charge_runs.forward(
+          stream, begin, count, descriptor.data_ptr<float>() + begin * width,
+          charge_jacobian.data_ptr<float>() + begin * width, width,
+          node_type.data_ptr<long>() + begin, unit_seed.data_ptr<double>(),
+          raw_charge.data_ptr<double>() + begin);
+    }
+
+    // === Step 3. Long range of the charges ===
+    // The per-node virials of the charged nodes sum to the virial of each
+    // frame, which the frame totals form with those of the descriptor.
+    const auto sum_long_range = [&] {
+      long_range = deepmd::long_range::latent_charge_sum(
+          coord, raw_charge.to(torch::kFloat32).unsqueeze(1), charged, n_node,
+          total_charge, box, coefficient, communicator, kernel, channel,
+          prefactor, order, spacing);
+    };
+    // Across ranks the sum waits on the host for the device before each of
+    // its exchanges, and the device idles while the host exchanges and
+    // launches what follows. The energy fitting and the Jacobian rows read no
+    // part of the sum, so there they are enqueued first and the sum runs on
+    // the side stream, whose waits cover the charges alone; the device then
+    // evaluates the fitting while the host exchanges. The fitting occupies
+    // every multiprocessor, and the high priority of the side stream lets the
+    // kernels that prepare an exchange take the first multiprocessors that a
+    // wave of the fitting frees.
+    const bool across_ranks =
+        deepmd::long_range::domain_count(communicator) > 1;
+    if (!across_ranks) {
+      sum_long_range();
+    }
+
+    // === Step 4. Cotangent of the descriptor ===
+    // The cotangent of the energy fitting replaces the descriptor run by run;
+    // the runs of the per-layer kernels of the charge network then form their
+    // Jacobian rows, and the rows, scaled by the derivative of the energy
+    // with respect to the charges, add the cotangent of the charge network.
+    at::cuda::CUDAEvent charges_ready;
+    if (across_ranks) {
+      charges_ready.record(stream);
+    }
+    const FittingNetwork fitting{plan,   ws,     bs,          resnets,
+                                 w_head, b_head, bias_atom_e, act};
+    const FittingRuns runs(stream, fitting, run, owned,
+                           std::move(fitting_routes), f32);
+    for (long begin = 0; begin < owned; begin += run) {
+      const long count = std::min(run, owned - begin);
+      float* const run_descriptor =
+          descriptor.data_ptr<float>() + begin * width;
+      runs.output_and_cotangent(
+          stream, begin, count, run_descriptor, run_descriptor, width,
+          node_type.data_ptr<long>() + begin, seed.data_ptr<double>() + begin,
+          raw_energy.data_ptr<double>() + begin);
+    }
+    for (long begin = 0; begin < owned; begin += run) {
+      const long count = std::min(run, owned - begin);
+      charge_runs.backward(stream, begin, count, unit_seed.data_ptr<double>(),
+                           charge_jacobian.data_ptr<float>() + begin * width);
+    }
+    if (across_ranks) {
+      const c10::cuda::CUDAStream side = side_stream(descriptor.get_device());
+      charges_ready.block(side);
+      {
+        const c10::cuda::CUDAStreamGuard guard(side);
+        sum_long_range();
+      }
+      // The outputs of the sum are read on the current stream, so their
+      // memory is reused only after that stream has read them.
+      for (const torch::Tensor& output :
+           {std::get<0>(long_range), std::get<1>(long_range),
+            std::get<2>(long_range), std::get<3>(long_range),
+            std::get<4>(long_range)}) {
+        output.record_stream(stream);
+      }
+      at::cuda::CUDAEvent summed;
+      summed.record(side);
+      summed.block(stream);
+    }
+    const torch::Tensor& charge_gradient = std::get<1>(long_range);
+    descriptor.narrow(0, 0, owned)
+        .addcmul_(charge_jacobian.narrow(0, 0, owned),
+                  charge_gradient.narrow(0, 0, owned));
+  };
+
+  torch::Tensor block_virial;
+  if (block_count > 0) {
+    // === Steps 1 and 5 over the blocks ===
+    // The launch of the first block over a run fills the descriptor rows of
+    // the run, which the head reads with those of every other owned node.
+    const auto first_arguments = [&](long begin, long count) {
+      return first_block_run(payload, edge_vec_float, channels, widths, owned,
+                             begin, count,
+                             descriptor.data_ptr<float>() + begin * width,
+                             state.data_ptr<float>(), evaluation_words);
+    };
+    // The force assembly of the edge backward of the first block over a run.
+    // Only the final run reaches the reserved edge slots; its row pointer ends
+    // at the last physical edge, which is exactly where the padding begins.
+    const auto attach_force = [&](Arguments& arguments, long begin,
+                                  long count) {
+      arguments.force = reinterpret_cast<unsigned long long*>(
+          force_fixed.data_ptr<int64_t>());
+      arguments.node_virial = node_virial.data_ptr<float>() + begin * 9;
+      arguments.edge_gradient =
+          atom_virial ? edge_gradient.data_ptr<float>() : nullptr;
+      arguments.clear_padding = begin + count == owned;
+    };
+    const EdgeGraph graph{destination_row_ptr, source, edge_vec_float};
+    const BlockHead head{nullptr, form_cotangent};
+    const torch::Tensor no_spin_gradient;
+    const BlockPass pass{
+        kOp,
+        further.records,
+        rcut,
+        further.cutoffs,
+        graph,
+        halo,
+        channels,
+        static_cast<int>(lmax),
+        /*has_spin=*/false,
+        f_outer > f_inner,
+        widths,
+        node_count,
+        run,
+        head,
+        descriptor,
+        state,
+        no_spin_gradient,
+        reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>()),
+        stream};
+    block_virial = evaluate_further_blocks(pass, first_arguments, attach_force);
+  } else {
+    // === Step 1. Descriptor and moment state of every node ===
+    Arguments arguments =
+        first_block_run(payload, edge_vec_float, channels, widths, node_count,
+                        0, node_count, descriptor.data_ptr<float>(),
+                        state.data_ptr<float>(), evaluation_words);
+    dispatch(channels, false, arguments, stream);
+
+    form_cotangent();
+
+    // === Step 5. Descriptor backward and force assembly ===
+    arguments.descriptor_gradient = descriptor.data_ptr<float>();
+    arguments.state = state.data_ptr<float>();
+    arguments.moment_gradient = state.data_ptr<float>();
+    arguments.force =
+        reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>());
+    arguments.node_virial = node_virial.data_ptr<float>();
+    arguments.edge_gradient =
+        atom_virial ? edge_gradient.data_ptr<float>() : nullptr;
+    arguments.clear_padding = true;
+    dispatch(channels, true, arguments, stream);
   }
-
-  // === Step 3. Long range of the charges ===
-  // The per-node virials of the charged nodes sum to the virial of each frame,
-  // which the frame totals form with those of the descriptor.
-  const auto long_range = deepmd::long_range::latent_charge_sum(
-      coord, raw_charge.to(torch::kFloat32).unsqueeze(1), charged, n_node,
-      total_charge, box, coefficient, communicator, kernel, channel, prefactor,
-      order, spacing);
-  const torch::Tensor& long_range_energy = std::get<0>(long_range);
-  const torch::Tensor& charge_gradient = std::get<1>(long_range);
-  const torch::Tensor& long_range_force = std::get<2>(long_range);
-  const torch::Tensor& long_range_atom_virial = std::get<3>(long_range);
-
-  // === Step 4. Cotangent of the descriptor ===
-  // The cotangent of the energy fitting replaces the descriptor run by run;
-  // the runs of the per-layer kernels of the charge network then form their
-  // Jacobian rows, and the rows, scaled by the derivative of the energy with
-  // respect to the charges, add the cotangent of the charge network.
-  const FittingNetwork fitting{plan,   ws,     bs,          resnets,
-                               w_head, b_head, bias_atom_e, act};
-  const FittingRuns runs(stream, fitting, run, node_count,
-                         std::move(fitting_routes), f32);
-  for (long begin = 0; begin < node_count; begin += run) {
-    const long count = std::min(run, node_count - begin);
-    float* const run_descriptor = descriptor.data_ptr<float>() + begin * width;
-    runs.output_and_cotangent(
-        stream, begin, count, run_descriptor, run_descriptor, width,
-        node_type.data_ptr<long>() + begin, seed.data_ptr<double>() + begin,
-        raw_energy.data_ptr<double>() + begin);
-  }
-  for (long begin = 0; begin < node_count; begin += run) {
-    const long count = std::min(run, node_count - begin);
-    charge_runs.backward(stream, begin, count, unit_seed.data_ptr<double>(),
-                         charge_jacobian.data_ptr<float>() + begin * width);
-  }
-  descriptor.addcmul_(charge_jacobian, charge_gradient);
-
-  // === Step 5. Descriptor backward and force assembly ===
-  arguments.descriptor_gradient = descriptor.data_ptr<float>();
-  arguments.state = state.data_ptr<float>();
-  arguments.moment_gradient = state.data_ptr<float>();
-  arguments.force =
-      reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>());
-  arguments.node_virial = node_virial.data_ptr<float>();
-  arguments.edge_gradient =
-      atom_virial ? edge_gradient.data_ptr<float>() : nullptr;
-  arguments.clear_padding = true;
-  dispatch(channels, true, arguments, stream);
 
   // === Step 6. Node results and frame totals ===
+  // The further blocks attribute the virial of every edge to the node that
+  // emits it, its source, which is how the per-atom virial attributes it, so
+  // the frame virial and the per-atom virial take it as it is.
+  if (block_virial.defined()) {
+    node_virial.add_(block_virial);
+  }
   const EpilogueInputs step{n_node, frame_row_ptr, force_fixed,     raw_energy,
                             seed,   node_virial,   evaluation_words};
   const SourceVirialTerms source_terms{edge_gradient, edge_vec_float,
                                        source_row_ptr, source_order};
-  const LongRangeTerms long_range_terms{long_range_energy, long_range_force,
-                                        long_range_atom_virial};
-  finish_energy_force(stream, node_count, blocks, step, nullptr,
+  const LongRangeTerms long_range_terms{std::get<0>(long_range),
+                                        std::get<2>(long_range),
+                                        std::get<3>(long_range)};
+  finish_energy_force(stream, node_count, epilogue, step, nullptr,
                       atom_virial ? &source_terms : nullptr, &long_range_terms,
                       energy, atom_energy, force, virial, atom_virial_output);
+  if (block_virial.defined() && atom_virial) {
+    atom_virial_output.add_(block_virial.reshape({node_count, 3, 3}));
+  }
   return {energy, atom_energy, force, virial, atom_virial_output, mask};
 }
 

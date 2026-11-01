@@ -5,9 +5,12 @@
 //
 // With an MPI library that reads device memory (MPIX_Query_cuda_support), the
 // rows travel between device buffers once the current stream has finished
-// writing them; otherwise they are staged through pinned host buffers. Either
-// way the host waits for the device once per exchange, before MPI reads the
-// data; the results return to the device without a further wait.
+// writing them, those of a gather as one point-to-point message between every
+// pair of ranks, which the library transfers between the device buffers of
+// the two ranks; otherwise they are staged through pinned host buffers, which
+// a collective gathers. Either way the host waits for the device once per
+// exchange, before MPI reads the data; the results return to the device
+// without a further wait.
 
 #include "domain_exchange.h"
 
@@ -24,6 +27,12 @@ namespace long_range {
 
 /// The operator that names an exchange in its diagnostics.
 constexpr const char* kOperator = "latent_charge_sum";
+
+#ifdef USE_MPI
+/// Tag of the rows of a gather. Messages between two ranks are received in
+/// the order they are sent, so one tag serves every gather.
+constexpr int kGatherTag = 0x4c52;
+#endif
 
 int domain_count(const torch::Tensor& communicator) {
   if (communicator_address(communicator, kOperator) == 0) {
@@ -74,10 +83,29 @@ std::pair<torch::Tensor, std::int64_t> gather_domain_rows(
   const int send_count = static_cast<int>(local * width);
   auto gathered = torch::empty({total, width}, rows.options());
   if (mpi_reads_device_memory()) {
+    // Every rank sends its rows to every other rank and receives theirs into
+    // their place; a rank of no rows sends nothing, which every rank knows
+    // from the counts. MPI reads the rows of the device once the stream has
+    // written them.
+    gathered.narrow(0, offset, local).copy_(rows);
     at::cuda::getCurrentCUDAStream().synchronize();
-    MPI_Allgatherv(rows.data_ptr<double>(), send_count, MPI_DOUBLE,
-                   gathered.data_ptr<double>(), receive_counts.data(),
-                   displacements.data(), MPI_DOUBLE, comm);
+    std::vector<MPI_Request> requests;
+    requests.reserve(2 * static_cast<std::size_t>(size));
+    for (int r = 0; r < size; ++r) {
+      if (r != rank && receive_counts[r] > 0) {
+        MPI_Irecv(gathered.data_ptr<double>() + displacements[r],
+                  receive_counts[r], MPI_DOUBLE, r, kGatherTag, comm,
+                  &requests.emplace_back());
+      }
+    }
+    for (int r = 0; r < size && send_count > 0; ++r) {
+      if (r != rank) {
+        MPI_Isend(rows.data_ptr<double>(), send_count, MPI_DOUBLE, r,
+                  kGatherTag, comm, &requests.emplace_back());
+      }
+    }
+    MPI_Waitall(static_cast<int>(requests.size()), requests.data(),
+                MPI_STATUSES_IGNORE);
   } else {
     const auto host = rows.options().device(torch::kCPU).pinned_memory(true);
     auto host_rows = torch::empty({local, width}, host);

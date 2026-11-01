@@ -137,6 +137,21 @@ struct BlockProfile {
   static constexpr int Width = output_offset(Lmax + 1);
 };
 
+/// Destination rows of a block of the edge scans at most, and the numbers of
+/// rows that a block may take, the powers of two up to it (scan_block_rows in
+/// block_kernel.cuh).
+constexpr int kBlockRows = 4;
+constexpr int kBlockRowCounts = 3;
+static_assert(kBlockRows == 1 << (kBlockRowCounts - 1),
+              "a block takes the powers of two up to kBlockRows rows");
+
+/// The time of the waves of the blocks of an edge scan over the rows of the
+/// whole system for one, two, ..., kBlockRows rows per block, in a unit of
+/// the scan (scan_waves in block_kernel.cuh).
+struct ScanWaves {
+  long time[kBlockRowCounts] = {};
+};
+
 /// Arguments of one stage of a further block over one run of nodes.
 ///
 /// ``edges`` carries the graph and the radial representation of the first
@@ -149,9 +164,11 @@ struct BlockArguments {
   Arguments edges;
   /// Record of the block, BlockProfile layout.
   const float* record = nullptr;
-  /// Destination rows of a block of the edge scans, which their launch
-  /// chooses from the node count of the whole system.
-  int block_rows = 0;
+  /// Destination rows per block of the edge scans for which the grid of a
+  /// launch provides; the blocks take as many or more (scan_block_rows).
+  int grid_rows = 0;
+  /// Waves of the blocks of an edge scan, from which they choose their rows.
+  ScanWaves waves;
   /// Rows of the run that the edge scans visit, ascending, and their number,
   /// both in device memory; null for every row of the run. The grid of a
   /// launch covers every row of the run, and its blocks past the visited rows
