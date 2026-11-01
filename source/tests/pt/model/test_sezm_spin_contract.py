@@ -5,12 +5,12 @@ import copy
 
 import pytest
 
-from deepmd.pt.model.model.dp_linear_model import (
-    LinearEnergyModel,
-)
 from deepmd.pt.model.model import (
     get_model,
     get_standard_model,
+)
+from deepmd.pt.model.model.dp_linear_model import (
+    LinearEnergyModel,
 )
 from deepmd.pt.model.model.sezm_native_spin_model import (
     SeZMNativeSpinModel,
