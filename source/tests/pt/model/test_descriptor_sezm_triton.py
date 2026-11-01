@@ -2089,6 +2089,51 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
 
         self.addCleanup(restore)
 
+    def test_packed_gate_requires_uniform_degree(self):
+        """A decreasing ``l_schedule`` must keep the dense surfaces.
+
+        The cache builds a single band at ``mp_init_lmax`` (the largest
+        degree), while every consumer kernel derives its per-edge stride and
+        its ``m = -1 / +1`` group offsets from the block's own degree; a
+        smaller-degree block would read the wrong slots out of a wider
+        stride.  The gate therefore demands a uniform degree.
+        """
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        self._with_levels("2", "0")
+
+        def _block(lmax):
+            return SimpleNamespace(
+                so2_conv=self._conv(
+                    lmax=lmax,
+                    _triton_value_path=object(),
+                    _flash_atten_fn=object(),
+                )
+            )
+
+        def _ok(schedule, mp_lmax):
+            descriptor = SimpleNamespace(
+                _blocks_have_so2_conv=True,
+                training=False,
+                mp_init_lmax=mp_lmax,
+                blocks=[_block(lmax) for lmax in schedule],
+            )
+            return DescrptSeZM._packed_wigner_ok(descriptor)
+
+        self.assertTrue(_ok([3, 3], 3))
+        self.assertFalse(
+            _ok([3, 2], 3), "a pyramid schedule must keep the dense surfaces"
+        )
+        self.assertFalse(
+            _ok([3, 3], 2), "the band degree must match every consumer block"
+        )
+
     def test_gate_matrix(self):
         from deepmd.pt.model.descriptor.sezm import (
             block_supports_packed_wigner,
@@ -2427,6 +2472,129 @@ class TestSeZMWignerBandOp(unittest.TestCase):
         fused = calc.forward_band_fused(quat)
         plain = calc.forward_band(quat)
         self.assertTrue(torch.equal(fused, plain))
+
+    def test_module_imports_and_falls_back_when_triton_op_is_absent(self):
+        """Torch < 2.6 lacks ``torch.library.triton_op``; import must survive.
+
+        Every user of ``deepmd.pt`` imports this module, so the registration
+        is optional by contract.  A child process removes the API for the
+        module's re-execution (a real 2.1-2.5 interpreter behaves the same
+        way), then checks the operator stays unregistered, the calculator
+        reports the fused route as unsupported, and the public entry returns
+        the eager composition's values.
+        """
+        import pathlib
+        import subprocess
+        import sys
+        import textwrap
+
+        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wignerd_mod
+
+        tree = pathlib.Path(wignerd_mod.__file__).resolve().parents[5]
+        child = textwrap.dedent(
+            """
+            import pathlib
+            import sys
+
+            tree = pathlib.Path(sys.argv[1])
+            sys.meta_path = [
+                f
+                for f in sys.meta_path
+                if "editable"
+                not in (type(f).__module__ + "." + type(f).__name__).lower()
+                and "editable" not in getattr(f, "__name__", "").lower()
+            ]
+            sys.path.insert(0, str(tree))
+            import importlib
+
+            import torch
+            import torch.distributed._functional_collectives  # noqa: F401
+
+            import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
+
+            saved = getattr(torch.library, "triton_op", None)
+            assert saved is not None, "control: torch >= 2.6 provides the API"
+            del torch.library.triton_op
+            wd = importlib.reload(wd)
+            torch.library.triton_op = saved
+
+            assert wd._wigner_band_op is None, "fallback: op stays out"
+
+            calc = wd.WignerDCalculator(lmax=1, dtype=torch.float32).cpu()
+            calc.eval()
+            assert not calc.band_op_supported()
+
+            quat = torch.randn(8, 4, dtype=torch.float32, device="cpu")
+            quat = quat / quat.norm(dim=-1, keepdim=True)
+            plain = calc.forward_band(quat)
+            eager = wd.wigner_band_op(
+                quat, calc.l1_perm, calc.l1_sign_outer, None, None, [], [], 1
+            )
+            assert torch.allclose(plain, eager, atol=1e-6, rtol=1e-6), (
+                "the public entry must keep the composition values"
+            )
+            print("no-triton-op-ok")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", child, str(tree)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"no-triton_op child failed:\n{result.stdout}\n{result.stderr}",
+        )
+        self.assertIn("no-triton-op-ok", result.stdout)
+
+    @_GPU_KERNELS
+    def test_second_order_through_band_matches_composition_l1(self):
+        """Lmax == 1 isolates the rotation-matrix term of the backward.
+
+        The monomial degrees carry their own registered second order; the
+        l = 1 rows used to be differentiated against a detached leaf with
+        ``create_graph=False``, silently dropping the term from any second
+        derivative.  With lmax == 1 the whole backward is that term, so a
+        mismatch here is exactly the dropped contribution.
+        """
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            quaternion_normalize,
+            wigner_band_op,
+        )
+
+        calc = self._make_calc(1)
+        quat = torch.randn(64, 4, device="cuda")
+        quat = (quat / quat.norm(dim=-1, keepdim=True)).requires_grad_(True)
+        cotangent = torch.randn(64, 3 * 4 - 2, device="cuda")
+
+        # lmax == 1 builds no monomial tables; the operator ignores the
+        # degree >= 2 arguments for this degree.
+        band = wigner_band_op(
+            quaternion_normalize(quat, eps=calc.eps),
+            calc.l1_perm,
+            calc.l1_sign_outer,
+            None,
+            None,
+            [],
+            [],
+            1,
+        )
+        first = torch.autograd.grad(band, quat, cotangent, create_graph=True)[0]
+        v = torch.randn_like(first)
+        second_op = torch.autograd.grad(first, quat, v, create_graph=True)[0]
+
+        quat_ref = quat.detach().clone().requires_grad_(True)
+        band_ref = calc.forward_band(quat_ref)
+        first_ref = torch.autograd.grad(
+            band_ref, quat_ref, cotangent, create_graph=True
+        )[0]
+        second_ref = torch.autograd.grad(first_ref, quat_ref, v)[0]
+
+        torch.testing.assert_close(first, first_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(second_op, second_ref, atol=1e-4, rtol=1e-4)
+        self.assertGreater(float(second_op.abs().max()), 0.0)
 
     def test_band_rejects_lmax_at_poly_lmin(self):
         """`lmax >= poly_lmin` has no per-degree ladder below the tail."""

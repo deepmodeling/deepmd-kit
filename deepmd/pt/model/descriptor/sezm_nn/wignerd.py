@@ -723,7 +723,8 @@ class WignerDCalculator(nn.Module):
         kernels); anything else keeps the plain composition.
         """
         return (
-            self.lmax in (1, 2, 3)
+            _wigner_band_op is not None
+            and self.lmax in (1, 2, 3)
             and not self.training
             and bool(getattr(self, "_use_triton_monomials", False))
             and "exp_l2" in getattr(self, "_monomial_exponents_flat", {})
@@ -2136,24 +2137,31 @@ def _wigner_band_impl(
     return torch.cat(m0_rows + mm_rows + mp_rows, dim=1).contiguous()
 
 
-_wigner_band_op = torch.library.triton_op("sezm_triton::wigner_band", mutates_args=())(
-    _wigner_band_impl
-)
+# Every user of ``deepmd.pt`` imports this module, so the registration must
+# be optional: ``torch.library.triton_op`` arrived in torch 2.6 and
+# ``register_autograd`` in 2.4, while the package documents torch >= 2.1.
+# The eager band composition serves the releases that reject (or lack) the
+# registration, exactly like the sibling assemble operator above.
+try:
+    _wigner_band_op = torch.library.triton_op(
+        "sezm_triton::wigner_band", mutates_args=()
+    )(_wigner_band_impl)
 
-
-@_wigner_band_op.register_fake
-def _(
-    quat: torch.Tensor,
-    l1_perm: torch.Tensor,
-    l1_sign: torch.Tensor,
-    coeff_l2: torch.Tensor,
-    c_l3: torch.Tensor,
-    exp_l2: list[int],
-    exp_l3: list[int],
-    lmax: int,
-) -> torch.Tensor:
-    dim = (lmax + 1) ** 2
-    return quat.new_empty((quat.shape[0], 3 * dim - 2))
+    @_wigner_band_op.register_fake
+    def _(
+        quat: torch.Tensor,
+        l1_perm: torch.Tensor,
+        l1_sign: torch.Tensor,
+        coeff_l2: torch.Tensor,
+        c_l3: torch.Tensor,
+        exp_l2: list[int],
+        exp_l3: list[int],
+        lmax: int,
+    ) -> torch.Tensor:
+        dim = (lmax + 1) ** 2
+        return quat.new_empty((quat.shape[0], 3 * dim - 2))
+except Exception:
+    _wigner_band_op = None
 
 
 def _wigner_band_setup_context(
@@ -2225,7 +2233,12 @@ def _wigner_band_backward(ctx: Any, grad_band: torch.Tensor) -> tuple:
         g_mono = torch.matmul(g3, c_l3[2 * width : 5 * width, :])
         grad_quat = grad_quat + _monomials_bwd_op(g_mono, quat, ctx.exp_l3, 6)
     with torch.enable_grad():
-        q = quat.detach().requires_grad_(True)
+        # Keep the saved quat in the graph when it can receive a second
+        # derivative (eval backwards with position-coupled quaternions);
+        # otherwise differentiate against a detached leaf.  create_graph
+        # mirrors the sibling monomial backward so the term survives a
+        # second differentiation instead of silently dropping out.
+        q = quat if quat.requires_grad else quat.detach().requires_grad_(True)
         if lmax >= 1:
             # rows (0, 1, 2) of the l=1 block come from the three groups
             g1 = torch.cat(
@@ -2238,15 +2251,21 @@ def _wigner_band_backward(ctx: Any, grad_band: torch.Tensor) -> tuple:
             ).view(-1, 3, 3)
             rot = quaternion_to_rotation_matrix(q)
             block1 = rot.index_select(-2, l1_perm).index_select(-1, l1_perm) * l1_sign
-            grad_quat = grad_quat + torch.autograd.grad(block1, q, g1)[0]
+            grad_quat = (
+                grad_quat
+                + torch.autograd.grad(
+                    block1, q, g1, create_graph=torch.is_grad_enabled()
+                )[0]
+            )
     return (grad_quat, None, None, None, None, None, None, None)
 
 
-torch.library.register_autograd(
-    "sezm_triton::wigner_band",
-    _wigner_band_backward,
-    setup_context=_wigner_band_setup_context,
-)
+if _wigner_band_op is not None:
+    torch.library.register_autograd(
+        "sezm_triton::wigner_band",
+        _wigner_band_backward,
+        setup_context=_wigner_band_setup_context,
+    )
 
 
 def wigner_band_op(
@@ -2290,4 +2309,10 @@ def wigner_band_op(
     torch.Tensor
         Band tensor with shape ``(E, 3 * (lmax + 1)**2 - 2)``.
     """
+    if _wigner_band_op is None:
+        # Releases without the op boundary run the same math as a plain
+        # composition; autograd differentiates through it natively.
+        return _wigner_band_impl(
+            quat, l1_perm, l1_sign, coeff_l2, c_l3, exp_l2, exp_l3, lmax
+        )
     return _wigner_band_op(quat, l1_perm, l1_sign, coeff_l2, c_l3, exp_l2, exp_l3, lmax)

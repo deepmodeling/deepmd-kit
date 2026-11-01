@@ -2130,6 +2130,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         """Every block's currently selected consumers address the band."""
         if not self._blocks_have_so2_conv:
             return False
+        # The cache builds a single band at ``mp_init_lmax`` (``l_schedule[0]``,
+        # the largest degree), while every consumer kernel derives its
+        # per-edge stride and its ``m = -1 / +1`` group offsets from the
+        # block's own degree.  A decreasing schedule would read a narrower
+        # band out of a wider stride, so anything but a uniform degree keeps
+        # the dense surfaces.
+        if any(int(block.so2_conv.lmax) != self.mp_init_lmax for block in self.blocks):
+            return False
         return all(
             block_supports_packed_wigner(block.so2_conv, self.training)
             for block in self.blocks
