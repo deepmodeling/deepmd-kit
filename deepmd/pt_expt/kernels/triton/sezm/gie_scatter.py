@@ -136,7 +136,10 @@ if GIE_SCATTER_TRITON_AVAILABLE:
         BC: tl.constexpr,
     ):
         # tl.arange needs a power-of-two extent, so channels ride a padded block
-        n = tl.program_id(0)
+        # The node id must be 64-bit before the row-base multiply: program ids
+        # are int32, and n * (N_ROW + 1) * C wraps past ~2**31/512 nodes,
+        # sending the row stores outside the output buffer.
+        n = tl.program_id(0).to(tl.int64)
         start = tl.load(row_ptr_ptr + n).to(tl.int64)
         end = tl.load(row_ptr_ptr + n + 1).to(tl.int64)
         offs_c = tl.arange(0, BC)

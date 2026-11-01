@@ -2212,6 +2212,55 @@ class TestSeZMGieScatter(unittest.TestCase):
             grads["fused"][1], grads["reference"][1], atol=1e-5, rtol=1e-5
         )
 
+    @_GPU_KERNELS
+    def test_forward_row_base_survives_past_int32(self):
+        """The row base is 64-bit: nodes past 2**31/(rows*C) must not wrap.
+
+        At the wrap scale the output itself is ~8 GiB, so the check is
+        gated on free VRAM.  The buffer is pre-dirtied with NaN through the
+        caching allocator (fill, free, let the operator's allocation reuse
+        the block): every node program writes its full 16-row block, so any
+        surviving NaN marks a row whose stores landed outside the buffer --
+        exactly what an int32 row base does past the threshold.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        free, _total = torch.cuda.mem_get_info()
+        channels = 32
+        row_elems = 16 * channels  # (N_ROW + 1) * C at the lmax == 3 gate
+        n_nodes = 2**31 // row_elems + 16
+        need_bytes = n_nodes * row_elems * 4
+        if free < need_bytes + (2 << 30):
+            self.skipTest(f"needs ~{need_bytes >> 30} GiB free VRAM")
+
+        generator = torch.Generator(device="cuda").manual_seed(19)
+        n_edge = 8
+        zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
+        radial = torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+        dst = torch.zeros(n_edge, dtype=torch.int64, device="cuda")
+        order = torch.arange(n_edge, dtype=torch.int64, device="cuda")
+        row_ptr = torch.full((n_nodes + 1,), n_edge, dtype=torch.int64, device="cuda")
+        row_ptr[0] = 0
+
+        dirty = torch.full((n_nodes, 16, channels), float("nan"), device="cuda")
+        del dirty
+        out = gie_zonal_scatter(zonal, radial, dst, order, row_ptr, n_nodes, 3)
+
+        self.assertFalse(torch.isnan(out).any().item(), "unwritten row detected")
+        slot_of_row = torch.repeat_interleave(
+            torch.arange(3, device="cuda"),
+            torch.tensor([3, 5, 7], device="cuda"),
+        )
+        manual = (zonal.unsqueeze(-1) * radial[:, slot_of_row]).sum(0)
+        torch.testing.assert_close(out[0, 1:, :], manual, atol=1e-5, rtol=1e-5)
+        for probe in (2**31 // row_elems, n_nodes - 1):
+            with self.subTest(node=probe):
+                self.assertEqual(float(out[probe].abs().max()), 0.0)
+        del out
+        torch.cuda.empty_cache()
+
     def test_reference_cpu_matches_manual(self):
         """CPU reference equals a hand-written sequential accumulation."""
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
