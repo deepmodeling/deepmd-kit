@@ -160,6 +160,20 @@ def cuda_train_enabled() -> bool:
     return os.environ.get("DP_CUDA_TRAIN", "0").strip().lower() in _INFER_TRUE
 
 
+def use_zonal_fused_infer() -> bool:
+    """Return whether the fused zonal scatter runs outside the CUDA suite.
+
+    The operator normally rides the cumulative ``DP_CUDA_INFER`` level-1
+    suite. That suite is all-or-nothing: on a model whose other segments
+    already have tuned fast paths, the suite's remaining operators can
+    regress more than the zonal scatter gains, which makes the scatter
+    unreachable in practice. This flag enables the scatter alone, so its
+    net effect is measured (and used) independently of the suite. Read at
+    model construction time like the suite level itself.
+    """
+    return os.environ.get("DP_ZONAL_FUSED_INFER", "0").strip().lower() in _INFER_TRUE
+
+
 CUDA_INFER_LEVELS = (0, 1, 2)
 
 

@@ -37,6 +37,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    use_zonal_fused_infer,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -216,7 +217,9 @@ class GeometricInitialEmbedding(nn.Module):
         # ``None`` keeps the runtime ``zonal_coupling.is_cuda`` dispatch; the
         # freeze pins it to the AOTI target because tracing always runs on CPU.
         self._force_fused_scatter: bool | None = None
-        if cuda_infer_level() >= 1 and self.dtype is torch.float32:
+        if (
+            cuda_infer_level() >= 1 or use_zonal_fused_infer()
+        ) and self.dtype is torch.float32:
             from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
                 op_available,
                 supported,
