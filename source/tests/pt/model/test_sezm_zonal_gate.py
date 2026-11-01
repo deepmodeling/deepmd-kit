@@ -54,11 +54,11 @@ class TestSeZMZonalStandaloneGate(unittest.TestCase):
         self.assertFalse(emb._cuda_scatter)
 
     def test_standalone_flag_binds_without_the_suite(self):
+        import os
+
         from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
             op_available,
         )
-
-        import os
 
         os.environ["DP_ZONAL_FUSED_INFER"] = "1"
         emb = _seeded_embedding()
@@ -68,11 +68,11 @@ class TestSeZMZonalStandaloneGate(unittest.TestCase):
             self.skipTest("compiled zonal scatter operator unavailable")
 
     def test_suite_still_binds(self):
+        import os
+
         from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
             op_available,
         )
-
-        import os
 
         os.environ["DP_CUDA_INFER"] = "1"
         emb = _seeded_embedding()
