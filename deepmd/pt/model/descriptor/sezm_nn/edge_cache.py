@@ -12,7 +12,6 @@ from __future__ import (
 )
 
 import logging
-
 import math
 from collections.abc import (
     Callable,
