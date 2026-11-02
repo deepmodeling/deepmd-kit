@@ -606,6 +606,9 @@ class TestCompositionDefaultsRequireAgreement:
         def get_default_chg_spin(self):
             return None
 
+        def has_long_range(self) -> bool:
+            return False
+
     def _compose(self, children):
         return LinearEnergyAtomicModel(children, type_map=["Ni", "O"], weights="sum")
 

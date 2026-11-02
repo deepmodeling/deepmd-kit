@@ -178,6 +178,11 @@ double PairDeepMD::eval_energy_with_fparam(
   dbox[7] = domain->h[3] / dist_unit_cvt_factor;  // zy
   dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
   dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
+  // A long-range module reads the cell of a periodic system only; the empty
+  // box marks a non-periodic one.
+  if (long_range && domain->nonperiodic) {
+    dbox.clear();
+  }
 
   // get coord
   for (int ii = 0; ii < nall; ++ii) {
@@ -297,6 +302,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
   dbox[7] = domain->h[3] / dist_unit_cvt_factor;  // zy
   dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
   dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
+  // A long-range module reads the cell of a periodic system only; the empty
+  // box marks a non-periodic one.
+  if (long_range && domain->nonperiodic) {
+    dbox.clear();
+  }
 
   // get coord
   for (int ii = 0; ii < nall; ++ii) {
@@ -966,6 +976,36 @@ void PairDeepMD::settings(int narg, char** arg) {
   all_force.resize(numb_models);
 }
 
+void PairDeepMD::init_style() {
+  PairDeepBaseModel::init_style();
+  // A long-range module sums over every pair of atoms of a non-periodic
+  // system, or over the images of the cell of a system periodic in every
+  // dimension; the atoms of the other ranks reach it through the
+  // communicator. The model checks which of the two its module serves.
+  long_range = numb_models > 1 ? deep_pot_model_devi.has_long_range()
+                               : deep_pot.has_long_range();
+  const int periodic_dimensions =
+      domain->xperiodic + domain->yperiodic + domain->zperiodic;
+  if (long_range && periodic_dimensions != 0 && periodic_dimensions != 3) {
+    error->all(FLERR,
+               "pair style deepmd: a model with a long-range module evaluates "
+               "a system periodic in every dimension or in none; use p in "
+               "every dimension, or f, s or m in every dimension.");
+  }
+  // A non-periodic system reaches an ensemble that holds a long-range module
+  // without a cell, which only models with such a module accept. The steps
+  // without a model deviation evaluate the first model alone; the model
+  // deviation checks every model at the steps that evaluate them all.
+  if (numb_models > 1 && long_range && periodic_dimensions == 0 &&
+      !deep_pot.has_long_range()) {
+    error->all(FLERR,
+               "pair style deepmd: an ensemble that holds a model with a "
+               "long-range module evaluates a non-periodic system only when "
+               "every model carries one; use models with long-range modules "
+               "throughout, or a periodic system.");
+  }
+}
+
 /* ----------------------------------------------------------------------
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
@@ -1077,24 +1117,6 @@ void PairDeepMD::coeff(int narg, char** arg) {
         error->warning(FLERR, warning_msg);
       }
     }
-  }
-}
-
-/* ---------------------------------------------------------------------- */
-
-void PairDeepMD::init_style() {
-  PairDeepBaseModel::init_style();
-  // A long-range module sums over every pair of atoms of the system, to which
-  // a periodic box would add the periodic images.
-  const bool long_range = numb_models > 1 ? deep_pot_model_devi.has_long_range()
-                                          : deep_pot.has_long_range();
-  if (long_range &&
-      (domain->xperiodic || domain->yperiodic || domain->zperiodic)) {
-    error->all(FLERR,
-               "pair style {}: a model with a long-range module evaluates a "
-               "complete non-periodic system; use a non-periodic boundary (f, "
-               "s or m) in every dimension.",
-               force->pair_style);
   }
 }
 

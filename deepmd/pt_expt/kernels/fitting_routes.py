@@ -53,6 +53,12 @@ trains, as on a V100 at its 300 W limit, where the gain on trains rises towards
 that of the alternating replays as the device idles more. On these compositions
 a route that the measurement selects is therefore not slower than the rules at
 a load in between, beyond the tie and the noise of the measurements.
+
+A latent-charge long-range module evaluated by the fused long-range operator
+runs its charge network through the same routes, by a table of its own. The
+measurement times that network in place of the energy fitting of the fused
+operator without a module, which runs the same kernels on runs of the same
+sizes; a charge network of the key of the energy fitting shares its table.
 """
 
 from __future__ import (
@@ -155,7 +161,8 @@ def network_key(fitting: Any) -> tuple | None:
     Parameters
     ----------
     fitting : Any
-        The pt_expt energy fitting network.
+        The pt_expt fitting network: an energy fitting or the charge network
+        of a long-range module.
 
     Returns
     -------
@@ -196,7 +203,8 @@ def fitting_routes(fitting: Any) -> list[int]:
     Parameters
     ----------
     fitting : Any
-        The pt_expt energy fitting network.
+        The pt_expt fitting network: an energy fitting or the charge network
+        of a long-range module.
 
     Returns
     -------
@@ -274,7 +282,10 @@ def _bulk_graph(rcut: float, node_count: int, device: torch.device) -> Any:
 class _Bench:
     """Times the fused operator of one model on synthetic bulk systems.
 
-    The bench keeps four counters, which :func:`tune_fitting_routes` logs:
+    The operator is that without a long-range module, with the descriptor of
+    the model and the network ``fitting`` with its atomic bias ``atom_bias``,
+    the energy fitting or a charge network, in place of the energy fitting.
+    The bench keeps four counters, which :func:`_tune_network` logs:
 
     - ``samples``, the samples of run sizes that it times, those of the
       bisections of bands included;
@@ -287,17 +298,20 @@ class _Bench:
       those of the trains, their lead-ins included.
     """
 
-    def __init__(self, model: Any, device: torch.device, largest: int) -> None:
+    def __init__(
+        self,
+        model: Any,
+        device: torch.device,
+        largest: int,
+        fitting: Any,
+        atom_bias: torch.Tensor,
+    ) -> None:
         import copy
-
-        from deepmd.pt_expt.model.make_model import (
-            fused_atom_bias,
-        )
 
         learned, pair_potential = model.atomic_model.fused_decomposition()
         self.descriptor = copy.deepcopy(learned.descriptor).to(device).eval()
-        self.fitting = copy.deepcopy(learned.fitting_net).to(device).eval()
-        self.atom_bias = fused_atom_bias(model.atomic_model, learned).to(device)
+        self.fitting = copy.deepcopy(fitting).to(device).eval()
+        self.atom_bias = atom_bias.to(device)
         self.pair_table = (
             None if pair_potential is None else pair_potential.pair_table.to(device)
         )
@@ -662,38 +676,42 @@ def _measure(
     return [high for high, _ in merged[:-1]], [choice for _, choice in merged]
 
 
-def tune_fitting_routes(
-    model: torch.nn.Module, level: int, device: torch.device
-) -> None:
-    """Measure the fitting routes of a compressed DPA4C model on ``device``.
+def _measured_networks(model: torch.nn.Module) -> list[tuple[Any, torch.Tensor]]:
+    """Return the networks whose routes the fused operators of a model take.
 
-    A no-op for a model that does not take the fused energy-force operator of
-    compressed DPA4C, and for a network and device whose table is already
-    measured in this process.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-        The model about to be frozen.
-    level : int
-        The ``DP_TRITON_INFER`` level, which the measurement does not read.
-    device : torch.device
-        The CUDA device the frozen model is compiled for.
+    They are the energy fitting with its combined atomic bias and, for a
+    long-range module that the fused long-range operator evaluates, its
+    charge network with its per-type bias.
     """
-    del level
-    from deepmd.pt_expt.kernels.dpa4c.canonical import (
-        canonical_model_eligible,
-        op_available,
+    from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+        fused_long_range_eligible,
     )
+    from deepmd.pt_expt.model.make_model import (
+        fused_atom_bias,
+    )
+
+    learned, _ = model.atomic_model.fused_decomposition()
+    networks = [(learned.fitting_net, fused_atom_bias(model.atomic_model, learned))]
+    if learned.has_long_range() and fused_long_range_eligible(learned.long_range):
+        charge_net = learned.long_range.charge_net
+        networks.append((charge_net, charge_net.bias_atom_e[:, 0].detach()))
+    return networks
+
+
+def _tune_network(
+    model: torch.nn.Module, fitting: Any, atom_bias: torch.Tensor, device: torch.device
+) -> None:
+    """Measure the routes of one network of ``model`` on ``device``.
+
+    A no-op for a network and device whose table is already measured in this
+    process, and for a width of which no fused shape runs on the device.
+    """
     from deepmd.pt_expt.kernels.graph_fitting import (
         fitting_operator_arguments,
         node_tile,
     )
 
-    if not op_available() or not canonical_model_eligible(model):
-        return
-    learned, _ = model.atomic_model.fused_decomposition()
-    key = network_key(learned.fitting_net)
+    key = network_key(fitting)
     if key is None:
         return
     fingerprint = _fingerprint(device)
@@ -716,7 +734,7 @@ def tune_fitting_routes(
     # of the freeze current; the search launched on another device than that
     # of its positions would read them out of bounds.
     with torch.cuda.device(device), torch.no_grad():
-        bench = _Bench(model, device, largest)
+        bench = _Bench(model, device, largest, fitting, atom_bias)
         network = fitting_operator_arguments(bench.fitting)
         bounds, choices = _measure(bench, list(network.weights), largest)
     table = (ROUTE_TABLE_MAGIC, *fingerprint, len(choices), *bounds, *choices)
@@ -725,7 +743,7 @@ def tune_fitting_routes(
         "Measured the fitting routes of hidden width %d on %s in %.1f s "
         "(%d samples, %d of them checked on trains of one route and %d of "
         "these overturned, %d replays): %d intervals, bounds %s, choices %s",
-        int(network.weights[0].shape[1]),
+        width,
         torch.cuda.get_device_name(device),
         time.perf_counter() - start,
         bench.samples,
@@ -736,6 +754,37 @@ def tune_fitting_routes(
         bounds,
         choices,
     )
+
+
+def tune_fitting_routes(
+    model: torch.nn.Module, level: int, device: torch.device
+) -> None:
+    """Measure the fitting routes of a compressed DPA4C model on ``device``.
+
+    The routes of the energy fitting and, for a long-range module that the
+    fused long-range operator evaluates, of its charge network are measured
+    one network at a time. A no-op for a model that does not take the fused
+    energy-force operator of compressed DPA4C.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model about to be frozen.
+    level : int
+        The ``DP_TRITON_INFER`` level, which the measurement does not read.
+    device : torch.device
+        The CUDA device the frozen model is compiled for.
+    """
+    del level
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        canonical_model_eligible,
+        op_available,
+    )
+
+    if not op_available() or not canonical_model_eligible(model):
+        return
+    for fitting, atom_bias in _measured_networks(model):
+        _tune_network(model, fitting, atom_bias, device)
 
 
 register_autotuner(

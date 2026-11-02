@@ -73,3 +73,5 @@ class DPModelCommon:
             The lazy sampled function to get data frames from different data systems.
         """
         self.get_fitting_net().compute_input_stats(sampled_func)
+        if self.atomic_model.has_long_range():
+            self.atomic_model.long_range.compute_input_stats(sampled_func)

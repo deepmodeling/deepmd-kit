@@ -537,8 +537,8 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
           atom_energy, force, total_virial, atom_virial, atype, source,
           deepmd::canonical_index_width(nodes), edge_vec, destination_row_ptr,
           source_row_ptr, source_order,
-          /*d_coord=*/nullptr, /*world=*/nullptr, natoms, nodes, edge_storage,
-          stream);
+          /*d_coord=*/nullptr, /*world=*/nullptr, /*box=*/nullptr, natoms,
+          nodes, edge_storage, stream);
     }
   }
 

@@ -90,7 +90,6 @@ from .dpa4c_nn import (
     OrderedPairFiLM,
     SpinChannels,
     build_angular_basis,
-    build_moment_indices,
     canonicalize_charge_spin,
     degree_offsets,
     derive_bispectrum_ranks,
@@ -467,12 +466,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
 
         # === Step 4. Lay out the flat moment payload ===
         # Degree zero owns the leading `channels` entries of the flat layout,
-        # so the non-scalar block is exactly its complement and needs no
-        # separate degree index. The spin families, when present, are appended
-        # after the geometric degrees, leaving every geometric offset intact.
-        channel_index, harmonic_index = build_moment_indices(self.degree_channels)
-        self.angular_channel_index = channel_index[self.channels :]
-        self.angular_harmonic_index = harmonic_index[self.channels :]
+        # and every higher degree follows in its own harmonic-major block. The
+        # spin families, when present, are appended after the geometric
+        # degrees, leaving every geometric offset intact.
         self.degree_offsets = degree_offsets(self.degree_channels)
 
         # === Step 5. Initialize the output calibration state ===
@@ -1152,30 +1148,30 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         )
 
         xp = array_api_compat.array_namespace(amplitude)
-        device = array_api_compat.device(amplitude)
-        channel_index = xp_asarray_nodetach(
-            xp,
-            self.angular_channel_index,
-            device=device,
-        )
-        harmonic_index = xp_asarray_nodetach(
-            xp,
-            self.angular_harmonic_index,
-            device=device,
-        )
+        n_edge = amplitude.shape[0]
 
         # Payload layout: [chi^2, chi^4, degree zero (C_0), degrees one and
         # above (S - C_0)]. Degree zero is the whole edge amplitude under its
-        # single envelope, while the non-scalar block gathers an amplitude and
-        # a harmonic per flat moment coordinate and carries a second envelope.
+        # single envelope. Degree l is the outer product of its 2l + 1
+        # harmonics with the leading C_l channels of the amplitude, laid out
+        # harmonic-major and carrying a second envelope. The products are
+        # formed by broadcasting, so their backward reduces over the
+        # broadcast axes.
+        angular = [
+            xp.reshape(
+                basis[:, degree * degree : (degree + 1) * (degree + 1), None]
+                * amplitude[:, None, :width],
+                (n_edge, (2 * degree + 1) * width),
+            )
+            for degree, width in enumerate(self.degree_channels)
+            if degree > 0
+        ]
         envelope_squared = envelope * envelope
         parts = [
             envelope_squared[:, None],
             (envelope_squared * envelope_squared)[:, None],
             amplitude,
-            xp.take(amplitude, channel_index, axis=1)
-            * xp.take(basis, harmonic_index, axis=1)
-            * envelope[:, None],
+            xp.concat(angular, axis=1) * envelope[:, None],
         ]
         if spin_payload is not None:
             parts.append(spin_payload)
