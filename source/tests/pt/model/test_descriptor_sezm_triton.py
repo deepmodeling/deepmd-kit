@@ -23,6 +23,7 @@ reference:
 """
 
 import math
+import os
 import typing
 import unittest
 from unittest import (
@@ -2450,34 +2451,154 @@ class TestSeZMGieScatter(unittest.TestCase):
         torch.testing.assert_close(gr[:, :, :channels], ref_gr, atol=1e-5, rtol=1e-5)
 
     @_GPU_KERNELS
-    def test_compile_matches_eager(self):
-        """The compiled path must match eager (guards the launch-grid trap)."""
+    def test_compile_matches_eager_across_node_counts(self):
+        """The compiled path matches eager and re-runs at a second shape.
+
+        The launch grid is derived from ``row_ptr`` inside the operator's
+        Python wrapper, so the trap this guards on only appears when a
+        compiled graph is re-run at a different node count: the callable
+        is compiled at one shape and re-run at another.  A capture backend
+        first asserts the operator is actually captured (a silent graph
+        break would run eager and keep every value comparison green), and
+        the value runs use ``fullgraph=True`` for the same reason.
+        """
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
             gie_zonal_scatter,
         )
 
         generator = torch.Generator(device="cuda").manual_seed(11)
-        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
-            4096, 128, generator, view_radial=True
+        shapes = ((4096, 128), (5000, 131))
+        cases = []
+        for n_edge, n_nodes in shapes:
+            zonal, radial, dst, order, row_ptr, _parent = self._make_case(
+                n_edge, n_nodes, generator, view_radial=True
+            )
+            cases.append((zonal, radial, dst, order, row_ptr, n_nodes))
+
+        def fn(z, r, dst_, order_, row_ptr_, n_nodes_):
+            return gie_zonal_scatter(z, r, dst_, order_, row_ptr_, n_nodes_, 3)
+
+        graphs = []
+
+        def _capture(gm, example_inputs):
+            graphs.append(gm)
+            return gm.forward
+
+        first = cases[0]
+        torch.compile(fn, backend=_capture, dynamic=True)(*first[:2], *first[2:])
+        self.assertTrue(
+            any("gie_zonal_scatter" in g.code for g in graphs),
+            "the compiled graph must capture the operator node",
         )
 
-        def fn(z, r):
-            return gie_zonal_scatter(z, r, dst, order, row_ptr, 128, 3)
+        compiled = torch.compile(fn, dynamic=True, fullgraph=True)
+        for zonal, radial, dst, order, row_ptr, n_nodes in cases:
+            with self.subTest(n_nodes=n_nodes):
+                z_e = zonal.clone().requires_grad_(True)
+                r_e = radial.clone().requires_grad_(True)
+                out_e = fn(z_e, r_e, dst, order, row_ptr, n_nodes)
+                cotangent = torch.randn_like(out_e)
+                g_e = torch.autograd.grad(out_e, (z_e, r_e), cotangent)
 
-        z_e = zonal.clone().requires_grad_(True)
-        r_e = radial.clone().requires_grad_(True)
-        out_e = fn(z_e, r_e)
-        cotangent = torch.randn_like(out_e)
-        g_e = torch.autograd.grad(out_e, (z_e, r_e), cotangent)
+                z_c = zonal.clone().requires_grad_(True)
+                r_c = radial.clone().requires_grad_(True)
+                out_c = compiled(z_c, r_c, dst, order, row_ptr, n_nodes)
+                g_c = torch.autograd.grad(out_c, (z_c, r_c), cotangent)
 
-        z_c = zonal.clone().requires_grad_(True)
-        r_c = radial.clone().requires_grad_(True)
-        out_c = torch.compile(fn)(z_c, r_c)
-        g_c = torch.autograd.grad(out_c, (z_c, r_c), cotangent)
+                torch.testing.assert_close(out_c, out_e, atol=1e-6, rtol=1e-6)
+                torch.testing.assert_close(g_c[0], g_e[0], atol=1e-6, rtol=1e-6)
+                torch.testing.assert_close(g_c[1], g_e[1], atol=1e-6, rtol=1e-6)
 
-        torch.testing.assert_close(out_c, out_e, atol=1e-6, rtol=1e-6)
-        torch.testing.assert_close(g_c[0], g_e[0], atol=1e-6, rtol=1e-6)
-        torch.testing.assert_close(g_c[1], g_e[1], atol=1e-6, rtol=1e-6)
+    @_GPU_KERNELS
+    def test_constructor_binds_the_fused_scatter_only_on_the_supported_ladder(
+        self,
+    ):
+        """The binding conditions themselves, not the post-hoc override.
+
+        Level >= 1 with fp32 and lmax == 3 binds the fused entry; level 0,
+        a wider dtype or a different ladder degree never does.
+        """
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            bound = GeometricInitialEmbedding(
+                lmax=3, channels=32, dtype=torch.float32
+            ).cuda()
+            self.assertIs(bound._triton_scatter, gie_zonal_scatter)
+
+            wider = GeometricInitialEmbedding(
+                lmax=3, channels=32, dtype=torch.float64
+            ).cuda()
+            other_ladder = GeometricInitialEmbedding(
+                lmax=2, channels=32, dtype=torch.float32
+            ).cuda()
+        self.assertIsNone(wider._triton_scatter, "fp64 must not bind")
+        self.assertIsNone(other_ladder._triton_scatter, "lmax != 3 must not bind")
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "0"}, clear=False):
+            off = GeometricInitialEmbedding(
+                lmax=3, channels=32, dtype=torch.float32
+            ).cuda()
+        self.assertIsNone(off._triton_scatter, "level 0 must not bind")
+
+    @_GPU_KERNELS
+    def test_cpu_tensors_never_enter_the_triton_scatter(self):
+        """A CUDA host may still run device-qualified CPU inference.
+
+        The constructor binds on host availability, but CPU operands must
+        keep the module's own reference composition: the operator's
+        internal fallback builds data-dependent shapes that break compiled
+        CPU graphs, and the kernel cannot run on CPU tensors at all.
+        """
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding,
+        )
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            module = GeometricInitialEmbedding(
+                lmax=3, channels=32, dtype=torch.float32
+            ).cpu()
+        module.eval()
+        self.assertIsNotNone(module._triton_scatter, "precondition: bound on host")
+
+        calls = []
+        real = module._triton_scatter
+        module._triton_scatter = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
+
+        n_edge, n_nodes = 257, 9
+        generator = torch.Generator(device="cpu").manual_seed(17)
+        dst = torch.randint(0, n_nodes, (n_edge,), generator=generator, device="cpu")
+        d_full = torch.randn(n_edge, 16, 16, generator=generator, device="cpu")
+        radial = torch.randn(n_edge, 3, 32, generator=generator, device="cpu")
+
+        class _Cache:
+            pass
+
+        cache = _Cache()
+        cache.dst = dst
+        cache.edge_vec = torch.zeros(n_edge, 3, device="cpu")
+        cache.inv_sqrt_deg = torch.rand(
+            n_nodes, 1, 1, generator=generator, device="cpu"
+        )
+        cache.csr_cache = {}
+        cache.edge_src_gate = None
+        cache.Dt_full = d_full
+
+        out_bound = module.forward(
+            n_nodes=n_nodes, edge_cache=cache, radial_feat=radial
+        )
+        self.assertEqual(calls, [], "CPU operands must not reach the operator")
+
+        module._triton_scatter = None
+        out_reference = module.forward(
+            n_nodes=n_nodes, edge_cache=cache, radial_feat=radial
+        )
+        torch.testing.assert_close(out_bound, out_reference, atol=0.0, rtol=0.0)
 
     @_GPU_KERNELS
     def test_embedding_dispatch_two_state(self):

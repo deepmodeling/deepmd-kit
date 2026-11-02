@@ -329,7 +329,16 @@ class GeometricInitialEmbedding(nn.Module):
         # itself.
         if spin_l1_message is None and edge_cache.csr_cache is not None:
             cuda_selected = self._can_fuse_scatter(zonal_coupling)
-            triton_selected = self._triton_scatter is not None and not self.training
+            # The Triton operator serves the same CUDA-only contract: the
+            # constructor binds on host availability, but a GPU host may
+            # still run this forward on CPU tensors (device-qualified
+            # inference), and the operator's internal fallback builds
+            # data-dependent shapes that break compiled CPU graphs.
+            triton_selected = (
+                self._triton_scatter is not None
+                and not self.training
+                and zonal_coupling.is_cuda
+            )
             if cuda_selected or triton_selected:
                 from .edge_cache import (
                     cached_edge_csr,

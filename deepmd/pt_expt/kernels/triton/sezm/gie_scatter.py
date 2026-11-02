@@ -229,9 +229,12 @@ if GIE_SCATTER_TRITON_AVAILABLE:
         BLOCK_E: tl.constexpr,
         BC: tl.constexpr,
     ):
-        # tl.arange needs a power-of-two extent, so channels ride a padded block
-        pid = tl.program_id(0)
-        offs_e = (pid * BLOCK_E + tl.arange(0, BLOCK_E)).to(tl.int64)
+        # tl.arange needs a power-of-two extent, so channels ride a padded
+        # block.  The program id is int32 and must be widened before the
+        # block multiply: at pid = 2**31 / BLOCK_E the product wraps negative,
+        # and the upper-bound-only edge mask lets the wrapped offsets through.
+        pid = tl.program_id(0).to(tl.int64)
+        offs_e = pid * BLOCK_E + tl.arange(0, BLOCK_E)
         mask_e = offs_e < n_edge
         offs_c = tl.arange(0, BC)
         cmask = offs_c < C
