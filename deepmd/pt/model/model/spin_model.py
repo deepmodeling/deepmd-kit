@@ -131,6 +131,7 @@ class SpinModel(torch.nn.Module):
         backbone_model: DPAtomicModel,
         spin: Spin,
     ) -> None:
+        """Initialize a spin wrapper around a compatible backbone."""
         if any(isinstance(module, DescrptSeZM) for module in backbone_model.modules()):
             raise ValueError("DPA4/SeZM spin models require a native spin model.")
         super().__init__()

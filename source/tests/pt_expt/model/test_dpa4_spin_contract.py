@@ -46,14 +46,14 @@ def _config() -> dict:
 @pytest.mark.parametrize("descriptor_type", ["dpa4", "DPA4", "sezm", "SeZM"])
 @pytest.mark.parametrize("model_type", [None, "standard"])
 @pytest.mark.parametrize("scheme", [None, "invalid"])
-def test_standard_spin_requires_native_scheme(
+def test_standard_spin_requires_compatible_backbone(
     descriptor_type: str, model_type: str | None, scheme: str | None
 ) -> None:
     config = _config()
     config["descriptor"]["type"] = descriptor_type
     if model_type is not None:
         config["type"] = model_type
-    config["spin"] = {"use_spin": [True, False]}
+    config["spin"] = {"use_spin": [True, False], "virtual_scale": 0.3}
     if scheme is not None:
         config["spin"]["scheme"] = scheme
     with pytest.raises(ValueError, match=r"require.*native"):

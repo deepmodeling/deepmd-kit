@@ -166,17 +166,6 @@ def _normalize_spin_use_spin(model_params: dict) -> None:
 
 
 def get_spin_model(model_params: dict) -> SpinModel:
-    from deepmd.pt.model.descriptor.sezm import (
-        DescrptSeZM,
-    )
-
-    descriptor_class = BaseDescriptor.get_class_by_type(
-        model_params["descriptor"]["type"]
-    )
-    if issubclass(descriptor_class, DescrptSeZM):
-        raise ValueError(
-            "DPA4/SeZM spin models require model.type='dpa4' and native spin."
-        )
     model_params = copy.deepcopy(model_params)
     if model_params["spin"].get("allow_missing_label", False):
         raise ValueError(

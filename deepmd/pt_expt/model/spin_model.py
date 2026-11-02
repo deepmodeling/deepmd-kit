@@ -32,6 +32,7 @@ from .model import (
 @torch_module
 class SpinModel(SpinModelDP):
     def __init__(self, backbone_model: torch.nn.Module, spin: Spin) -> None:
+        """Initialize a spin wrapper around a compatible backbone."""
         if any(isinstance(module, DescrptDPA4) for module in backbone_model.modules()):
             raise ValueError("DPA4/SeZM spin models require a native spin model.")
         super().__init__(backbone_model=backbone_model, spin=spin)

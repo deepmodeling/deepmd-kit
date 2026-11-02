@@ -371,13 +371,6 @@ def get_spin_model(data: dict) -> SpinEnergyModel:
     type map and descriptor sel for virtual spin atoms, then wraps the
     backbone EnergyModel as a :class:`SpinEnergyModel`.
     """
-    from deepmd.dpmodel.descriptor.dpa4 import (
-        DescrptDPA4,
-    )
-
-    descriptor_class = BaseDescriptor.get_class_by_type(data["descriptor"]["type"])
-    if issubclass(descriptor_class, DescrptDPA4):
-        raise ValueError("DPA4/SeZM spin models require model.spin.scheme='native'.")
     return get_spin_model_from_factory(
         data,
         standard_model_factory=get_standard_model,
