@@ -36,7 +36,7 @@ jobs:
             platform_id: macosx_x86_64
             dp_variant: cpu
           # macos-arm64
-          - os: macos-14
+          - os: macos-15
             python: 311
             platform_id: macosx_arm64
             dp_variant: cpu
