@@ -17,11 +17,9 @@ import torch
 
 from deepmd.dpmodel.descriptor.unimol import (
     UNIMOL_ELEMENTS,
-)
-from deepmd.dpmodel.descriptor.unimol import DescrptUniMol as DescrptUniMolDP
-from deepmd.dpmodel.descriptor.unimol import (
     unimol_vocabulary,
 )
+from deepmd.dpmodel.descriptor.unimol import DescrptUniMol as DescrptUniMolDP
 from deepmd.dpmodel.fitting.unimol_pretrain import (
     UniMolPretrainFitting as UniMolPretrainFittingDP,
 )

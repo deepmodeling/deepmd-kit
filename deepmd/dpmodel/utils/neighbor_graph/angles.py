@@ -17,7 +17,9 @@ from typing import (
 import array_api_compat
 
 if TYPE_CHECKING:
-    from deepmd.dpmodel.array_api import Array
+    from deepmd.dpmodel.array_api import (
+        Array,
+    )
 
 import dataclasses
 
