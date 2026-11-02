@@ -1057,6 +1057,8 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         # Native spin keeps the real-system type map and count.
         self.assertEqual(metadata["type_map"], params["type_map"])
         self.assertEqual(metadata["ntypes"], len(params["type_map"]))
+        self.assertEqual(metadata["sel"], params["descriptor"]["sel"])
+        self.assertEqual(metadata["nnei"], sum(params["descriptor"]["sel"]))
         self.assertEqual(metadata["use_spin"], params["spin"]["use_spin"])
         self.assertEqual(metadata["ntypes_spin"], 1)
         # The magnetic force and spin mask are still exported.

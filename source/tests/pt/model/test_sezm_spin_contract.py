@@ -72,6 +72,8 @@ def test_native_spin_construction() -> None:
     model = get_model(config)
     assert isinstance(model, SeZMNativeSpinModel)
     assert model.get_type_map() == ["Ni", "O"]
+    assert model.get_sel() == [config["descriptor"]["sel"]]
+    assert model.get_nnei() == config["descriptor"]["sel"]
     assert config == original
 
 
