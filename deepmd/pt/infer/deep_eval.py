@@ -1381,14 +1381,27 @@ class DeepEval(DeepEvalBackend):
             if charge_spin is not None
             else None
         )
-        out = model.forward_embedding(
-            coord_input,
-            type_input,
-            box=box_input,
-            fparam=fparam_input,
-            aparam=aparam_input,
-            charge_spin=charge_spin_input,
-        )
+        # The packed-Wigner admission gate (and any other inference
+        # contract that treats parameters as constants) matches the frozen
+        # context the energy/force entry runs in; hold the same contract
+        # here so this no-grad path does not silently fall back to a
+        # heavier layout.
+        params = tuple(model.parameters())
+        saved_requires_grad = tuple(p.requires_grad for p in params)
+        for p in params:
+            p.requires_grad_(False)
+        try:
+            out = model.forward_embedding(
+                coord_input,
+                type_input,
+                box=box_input,
+                fparam=fparam_input,
+                aparam=aparam_input,
+                charge_spin=charge_spin_input,
+            )
+        finally:
+            for p, flag in zip(params, saved_requires_grad, strict=True):
+                p.requires_grad_(flag)
 
         def cast_output(value: torch.Tensor) -> np.ndarray:
             value = value.detach()

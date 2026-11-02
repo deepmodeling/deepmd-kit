@@ -11,6 +11,8 @@ from __future__ import (
     annotations,
 )
 
+import logging
+
 import math
 from collections.abc import (
     Callable,
@@ -131,6 +133,10 @@ class EdgeFeatureCache(NamedTuple):
     edge_quat: torch.Tensor | None = None
     node_gate: torch.Tensor | None = None
     D_packed: torch.Tensor | None = None
+
+
+_warned_packed_inert = False
+log = logging.getLogger(__name__)
 
 
 def cached_edge_csr(
@@ -746,6 +752,21 @@ def _build_edge_wigner(
         # materialized. Reference paths that need the dense layout must not
         # enable the flag.
         return None, None, edge_quat, calc.forward_band_fused(edge_quat)
+    if use_packed_d_infer() and packed_wigner:
+        global _warned_packed_inert
+        if not _warned_packed_inert:
+            # The admission gate said yes but the resolved calculator cannot
+            # produce the band -- typically ``DP_CUDA_INFER`` selected the
+            # CUDA Wigner path (no ``forward_band``), or the ladder degree
+            # exceeds the band support.  Dense surfaces are built instead;
+            # say so once instead of leaving the flag silently inert.
+            _warned_packed_inert = True
+            log.warning(
+                "DP_PACKED_D_INFER is set and the blocks admit the banded "
+                "layout, but the resolved Wigner calculator cannot produce "
+                "it (a CUDA inference calculator or an unsupported degree); "
+                "building dense Wigner surfaces."
+            )
     D_full, Dt_full = wigner_calc(edge_quat)
     return D_full, Dt_full, edge_quat, None
 

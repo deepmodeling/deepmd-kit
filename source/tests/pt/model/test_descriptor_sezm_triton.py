@@ -2135,6 +2135,10 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
         )
 
     def test_gate_matrix(self):
+        from types import (
+            SimpleNamespace,
+        )
+
         from deepmd.pt.model.descriptor.sezm import (
             block_supports_packed_wigner,
         )
@@ -2175,9 +2179,6 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
         # An eval-mode backward against trainable channel-basis parameters
         # keeps the dense layout: the basis-grad helper is dense-only, and
         # ``.eval()`` does not freeze parameters.
-        from types import (
-            SimpleNamespace,
-        )
 
         self.assertFalse(
             block_supports_packed_wigner(
@@ -2595,6 +2596,89 @@ class TestSeZMWignerBandOp(unittest.TestCase):
         torch.testing.assert_close(first, first_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(second_op, second_ref, atol=1e-4, rtol=1e-4)
         self.assertGreater(float(second_op.abs().max()), 0.0)
+
+    @_GPU_KERNELS
+    def test_forward_band_fused_routes_through_the_operator(self):
+        """The production wiring: ``forward_band_fused`` picks the operator.
+
+        The operator-level tests call ``wigner_band_op`` with a hand-built
+        argument list, and the fallback test runs in training mode; neither
+        exercises the call site production actually takes.  Under the
+        supported ladder (eval, CUDA, Triton monomials at level >= 1) the
+        fused entry must reach the registered operator with the
+        calculator's own tables and match the plain composition.
+        """
+        from unittest import (
+            mock,
+        )
+
+        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
+
+        calc = self._make_calc(3)
+        quat = torch.randn(32, 4, device="cuda")
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+
+        calls = []
+        real = wd.wigner_band_op
+
+        def _spy(*args, **kwargs):
+            calls.append(args)
+            return real(*args, **kwargs)
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            self.assertTrue(calc.band_op_supported())
+            with mock.patch.object(wd, "wigner_band_op", _spy):
+                fused = calc.forward_band_fused(quat)
+        self.assertEqual(len(calls), 1, "the fused entry must call the operator")
+        torch.testing.assert_close(fused, calc.forward_band(quat), atol=0.0, rtol=0.0)
+
+    def test_packed_flag_warns_once_when_the_calculator_cannot_band(self):
+        """A set-but-inert ``DP_PACKED_D_INFER`` says so instead of silence."""
+        from unittest import (
+            mock,
+        )
+
+        import deepmd.pt.model.descriptor.sezm_nn.edge_cache as ec
+
+        edge_vec = torch.tensor(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], device="cpu"
+        )
+        edge_len = torch.ones(3, device="cpu")
+        dense_out = (
+            torch.randn(3, 2, 2, device="cpu"),
+            torch.randn(3, 2, 2, device="cpu"),
+        )
+
+        class _DenseCalc:
+            # A CUDA-inference-style calculator: no forward_band at all.
+            def __call__(self, q):
+                return dense_out
+
+        calc = _DenseCalc()
+
+        def run():
+            return ec._build_edge_wigner(
+                edge_vec=edge_vec,
+                edge_len=edge_len,
+                eps=1e-12,
+                random_gamma=False,
+                wigner_calc=calc,
+                build_full=True,
+                packed_wigner=True,
+            )
+
+        with (
+            mock.patch.dict(os.environ, {"DP_PACKED_D_INFER": "1"}, clear=False),
+            mock.patch.object(ec, "_warned_packed_inert", False),
+        ):
+            with self.assertLogs(
+                "deepmd.pt.model.descriptor.sezm_nn.edge_cache", level="WARNING"
+            ) as logged:
+                run()
+            # second call stays silent: the warning fires once
+            run()
+        self.assertEqual(len(logged.records), 1)
+        self.assertIn("DP_PACKED_D_INFER", logged.records[0].getMessage())
 
     def test_band_rejects_lmax_at_poly_lmin(self):
         """`lmax >= poly_lmin` has no per-degree ladder below the tail."""

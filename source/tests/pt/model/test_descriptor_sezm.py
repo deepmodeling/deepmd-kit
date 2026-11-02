@@ -3171,6 +3171,73 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
             "radial_so2_rank": 2,
         }
 
+    def test_flag_on_builds_band_through_the_model_entry(self):
+        """The ``forward_with_edges`` entry also carries the banded storage.
+
+        The nlist-based test drives ``DescrptSeZM.forward``; the SeZM model
+        itself evaluates through ``forward_with_edges`` and its
+        ``build_edge_cache_from_edges`` path, which must admit the band
+        under the same gate.
+        """
+        import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
+
+        saved_flag = os.environ.get("DP_PACKED_D_INFER")
+        saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_PACKED_D_INFER"] = "1"
+        os.environ["DP_TRITON_INFER"] = "2"
+
+        def restore():
+            for key, old in (
+                ("DP_PACKED_D_INFER", saved_flag),
+                ("DP_TRITON_INFER", saved_level),
+            ):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+        self.addCleanup(restore)
+
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [0.0, 0.0, 1.5]]], dtype=torch.float32, device="cuda"
+        )
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device="cuda")
+        edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long, device="cuda")
+        edge_vec = torch.tensor(
+            [[0.0, 0.0, 1.5], [0.0, 0.0, -1.5]], dtype=torch.float32, device="cuda"
+        )
+        edge_mask = torch.ones(2, dtype=torch.bool, device="cuda")
+
+        records = []
+        real_build = edge_cache_mod._build_edge_wigner
+
+        def spy(*args, **kwargs):
+            built = real_build(*args, **kwargs)
+            records.append(tuple(None if t is None else tuple(t.shape) for t in built))
+            return built
+
+        model = DescrptSeZM(**self._kwargs()).cuda()
+        model.eval()
+        for block in model.blocks:
+            mixer = getattr(block.so2_conv, "radial_degree_mixer", None)
+            if mixer is not None and getattr(mixer, "channel_basis", None) is not None:
+                mixer.channel_basis.requires_grad_(False)
+
+        with mock.patch.object(edge_cache_mod, "_build_edge_wigner", spy):
+            with torch.no_grad():
+                model.forward_with_edges(
+                    extended_coord=coord,
+                    extended_atype=atype,
+                    edge_index=edge_index,
+                    edge_vec=edge_vec,
+                    edge_mask=edge_mask,
+                )
+        d_dense, dt_dense, _quat, d_packed = records[-1]
+        self.assertIsNone(d_dense)
+        self.assertIsNone(dt_dense)
+        self.assertIsNotNone(d_packed, "the with-edges entry must build the band")
+        self.assertEqual(d_packed, (2, 10))
+
     def test_flag_on_builds_band_and_matches_dense(self):
         import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
 
