@@ -177,12 +177,14 @@ class S2GridProjector(BaseGridProjector):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         mmax: int | None = None,
         precision: str = DEFAULT_PRECISION,
         grid_resolution_list: list[int] | None = None,
         coefficient_layout: str = "packed",
         grid_method: str = "e3nn",
     ) -> None:
+        self.parity = bool(parity)
         lmax_i = int(lmax)
         mmax_i = int(lmax_i if mmax is None else mmax)
         self.grid_method = str(grid_method).lower()
@@ -240,7 +242,24 @@ class S2GridProjector(BaseGridProjector):
     ) -> tuple[np.ndarray, np.ndarray]:
         if self.grid_method == "lebedev":
             return self._build_lebedev_projection_mats(coeff_index)
-        return self._build_e3nn_projection_mats(coeff_index)
+        to_grid, from_grid = self._build_e3nn_projection_mats(coeff_index)
+        if (
+            self.parity
+            and self.phi_resolution % 2 == 0
+            and self.theta_resolution % 2 == 0
+        ):
+            # Paired antipodal samples have equal quadrature weights. Enforce
+            # their fixed harmonic parity before constructing backend buffers.
+            alpha = np.arange(self.phi_resolution, dtype=np.int64)
+            beta = np.arange(self.theta_resolution, dtype=np.int64)
+            antipode = (
+                (self.theta_resolution - 1 - beta[:, None]) * self.phi_resolution
+                + (alpha[None, :] + self.phi_resolution // 2) % self.phi_resolution
+            ).reshape(-1)
+            sign = np.asarray([(-1) ** math.isqrt(int(index)) for index in coeff_index])
+            to_grid = 0.5 * (to_grid + to_grid[antipode] * sign[None, :])
+            from_grid = 0.5 * (from_grid + from_grid[:, antipode] * sign[:, None])
+        return to_grid, from_grid
 
     def _build_e3nn_projection_mats(
         self,
@@ -351,6 +370,7 @@ class S2GridProjector(BaseGridProjector):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "mmax": self.mmax,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
                 "grid_resolution_list": self.grid_resolution_list,

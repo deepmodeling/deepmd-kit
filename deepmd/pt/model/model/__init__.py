@@ -47,6 +47,8 @@ from deepmd.utils.bridging import (
 from deepmd.utils.spin import (
     Spin,
     env_protection_descriptors,
+    is_native_spin_scheme,
+    parse_spin_scheme,
 )
 
 from .density_model import (
@@ -613,8 +615,12 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
     type map, neighbor selection and type count stay at the real-system sizes;
     only the descriptor gains the spin-embedding branch.
     """
-    if str(model_params.get("spin", {}).get("scheme", "")).lower() != "native":
-        raise ValueError("DPA4/SeZM spin models require model.spin.scheme='native'.")
+    scheme = model_params.get("spin", {}).get("scheme", "deepspin")
+    if not is_native_spin_scheme(scheme):
+        raise ValueError(
+            "DPA4/SeZM spin models require model.spin.scheme='native' "
+            "('native:orbit' or 'native:exchange' select the mode)."
+        )
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     model_params.setdefault("descriptor", {})
@@ -632,6 +638,7 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
     model_params["descriptor"]["ntypes"] = ntypes
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
     model_params["descriptor"]["use_spin"] = use_spin
+    model_params["descriptor"]["spin_mode"] = parse_spin_scheme(scheme)
 
     pair_exclude_types = _reconcile_sezm_pair_exclude_types(model_params)
     model_params["pair_exclude_types"] = pair_exclude_types

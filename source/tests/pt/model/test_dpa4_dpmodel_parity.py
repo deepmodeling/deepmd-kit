@@ -4232,18 +4232,9 @@ class TestDescriptorParity:
         self._assert_descr_parity(pt_mod, dp_mod)
 
     def test_descriptor_native_spin(self) -> None:
-        # Native per-atom spin: ``use_spin`` conditions the l=0 type features on
-        # the per-type spin magnitude and injects an l=1 direction feature (needs
-        # a node degree >= 1, satisfied by lmax=3). Parity is checked with a real
-        # spin tensor and with spin=None, and spin=None is pinned to reproduce the
-        # genuine no-spin descriptor exactly on both backends.
-        from deepmd.dpmodel.descriptor.dpa4 import (
-            DescrptDPA4,
-        )
-        from deepmd.pt.model.descriptor.sezm import (
-            DescrptSeZM,
-        )
-
+        # Time-even on-site and pair features agree across backends. Omitting
+        # the optional descriptor input retains the native parity-constrained
+        # geometry and is equivalent to supplying zero moments.
         use_spin = [True, False, False]  # ntypes==3; type 0 is spin-active
         pt_mod, dp_mod, _ = self._build_descr_pair(use_spin=use_spin)
         inp = self._inputs()
@@ -4287,24 +4278,9 @@ class TestDescriptorParity:
         d_n = np.asarray(out_dp_n[0])
         assert np.abs(d_s - d_n).max() > 1e-3
 
-        # spin=None reproduces the genuine no-spin descriptor: copy the shared
-        # (non-spin) weights into a use_spin=None twin and check the l=0 output is
-        # bit-identical to the use_spin model evaluated with spin=None.
-        kwargs = self._descr_kwargs()
-        pt_nospin = DescrptSeZM(**kwargs, use_spin=None).double().eval()
-        sd_spin = pt_mod.state_dict()
-        pt_nospin.load_state_dict(
-            {k: sd_spin[k].clone() for k in pt_nospin.state_dict()}
-        )
-        dp_nospin = DescrptDPA4.deserialize(pt_nospin.serialize())
-        d_ns = np.asarray(
-            dp_nospin.call(coord.reshape(nf, -1), atype_ext, nlist, mapping=mp)[0]
-        )
-        np.testing.assert_array_equal(d_n, d_ns)
-        p_ns = pt_nospin(
-            to_pt(coord), to_pt(atype_ext), to_pt(nlist), mapping=to_pt(mp)
-        )[0]
-        assert_parity(d_ns, p_ns, rtol=1e-10, atol=1e-12)
+        out_dp_zero, out_pt_zero = _call(np.zeros_like(spin))
+        np.testing.assert_array_equal(out_dp_n[0], out_dp_zero[0])
+        torch.testing.assert_close(out_pt_n[0], out_pt_zero[0], atol=1e-12, rtol=1e-10)
 
     @pytest.mark.parametrize(
         "so3_readout", ["none", "mlp"]

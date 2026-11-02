@@ -43,8 +43,11 @@ def get_native_spin_finetune_state(
     of analytical bridging. Output biases and scales belong to the target's
     subsequent statistics pass; spin-only parameters keep their constructor
     values, while target data calibrates spin-only input statistics afterward.
-    Descriptor-specific transfer rules preserve the geometric function while
-    leaving a nonzero gradient into the initially closed spin routes.
+    The spin contribution starts at zero while retaining a trainable path
+    through the spin-specific parameters. DPA4 projects geometric couplings
+    onto spatially even operators; a general SO(3) source therefore requires
+    fine-tuning after the projection. DPA4C preserves the pretrained
+    geometric function.
 
     Parameters
     ----------
@@ -160,9 +163,41 @@ def _expanded_dpa4_state(
     *,
     random_fitting: bool,
 ) -> dict[str, torch.Tensor]:
-    # DPA4 injects zero-initialized additive spin routes without widening the
-    # geometric descriptor or its fitting input.
-    return {}
+    # The target uses the reflection-even part of each local SO(2) map.
+    # SO(2) stores [A, B] per focus, whereas O(2) stores A alone. Projecting
+    # a spin-free source preserves its allowed weights, but its energy can
+    # change because reflection-odd couplings are outside the target space.
+    expanded = {}
+    source_state = source.state_dict()
+    target_state = target.state_dict()
+    for name, module in target.descriptor.named_modules():
+        if not getattr(module, "parity", False):
+            continue
+        # Ordinary checkpoints retain their archived geometric constants.
+        # Only spin conversion replaces parity-dependent constants by the
+        # target's operators; they are not learned source parameters.
+        for field in ("to_grid_mat", "from_grid_mat", "right_mult_proj"):
+            key = f"descriptor.{name}.{field}"
+            if key in source_state and key in target_state:
+                expanded[key] = target_state[key].detach().clone()
+        if not hasattr(module, "weight_m"):
+            continue
+        source_module = source.descriptor.get_submodule(name)
+        for index, weight in enumerate(source_module.weight_m):
+            target_weight = module.weight_m[index]
+            if weight.shape == target_weight.shape:
+                continue
+            ni, folded = target_weight.shape
+            nf = module.n_focus
+            no = folded // nf
+            _check_shape(name, (ni, nf * 2 * no), weight.shape)
+            expanded[f"descriptor.{name}.weight_m.{index}"] = (
+                weight.reshape(ni, nf, 2 * no)[:, :, :no]
+                .reshape(ni, folded)
+                .detach()
+                .clone()
+            )
+    return expanded
 
 
 @_expanded_spin_state.register(DescrptDPA4C)

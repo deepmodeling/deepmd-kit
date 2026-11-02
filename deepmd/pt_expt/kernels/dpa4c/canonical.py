@@ -278,7 +278,6 @@ def _forward_fake(
         coupling_entry,
         coupling_value,
         output_mean,
-        output_inv_std,
         spin_pair,
         spin_type,
         contact_radius,
@@ -295,7 +294,10 @@ def _forward_fake(
     )
 
     profile = descriptor_profile(
-        int(type_embedding.shape[1]), int(lmax), spin.ndim == 2
+        int(type_embedding.shape[1]),
+        int(lmax),
+        spin.ndim == 2,
+        output_width=output_inv_std.numel(),
     )
     nodes = atype.shape[0]
     descriptor = edge_vec.new_empty(nodes, profile.output_width, dtype=torch.float32)

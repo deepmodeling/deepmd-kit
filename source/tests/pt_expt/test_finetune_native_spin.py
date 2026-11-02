@@ -137,7 +137,7 @@ def _inputs() -> dict[str, torch.Tensor]:
 
 @pytest.mark.parametrize("backend, descriptor", _BACKENDS)
 @pytest.mark.parametrize("bridged", [False, True])
-def test_spin_free_transfer_preserves_function_and_trains_spin(
+def test_spin_free_transfer_projects_geometry_and_trains_spin(
     backend: str, descriptor: str, bridged: bool
 ) -> None:
     source = _pretrained(backend, _config(descriptor, False, bridged))
@@ -145,6 +145,16 @@ def test_spin_free_transfer_preserves_function_and_trains_spin(
     target.load_state_dict(get_native_spin_finetune_state(target, source))
     inputs = _inputs()
     spin = inputs.pop("spin")
+    if descriptor == "dpa4":
+        # Compare to the source's reflection-even operators. The discarded
+        # imaginary SO(2) blocks cannot be retained by an O(3) target.
+        with torch.no_grad():
+            for module in _learned(source).descriptor.modules():
+                if not hasattr(module, "weight_m"):
+                    continue
+                for weight in module.weight_m:
+                    view = weight.reshape(weight.shape[0], module.n_focus, -1)
+                    view[:, :, view.shape[2] // 2 :] = 0.0
     expected = source(**inputs, do_atomic_virial=True)
     assert expected["force"].abs().max() > 1e-8
     for scale in (0.0, 1.0, 2.0):
@@ -750,6 +760,14 @@ def _run_spin_free_native_finetune_cli(
     target_config["fitting_net"]["type"] = fitting_type
     if auto_width:
         target_config["fitting_net"].pop("neuron")
+    expected_bias_sum = torch.tensor(1.75, dtype=torch.float64, device=DEVICE)
+    if descriptor == "dpa4" and not bridged and mode != "random":
+        projected = _build(backend, target_config)
+        projected.load_state_dict(get_native_spin_finetune_state(projected, source))
+        projected_energy = projected(**inputs, spin=spin)["energy"]
+        expected_bias_sum = expected_bias_sum + (
+            expected["energy"] - projected_energy
+        ).detach().reshape(())
     options = []
     if mode == "random":
         initial_fitting = dict(
@@ -864,8 +882,48 @@ def _run_spin_free_native_finetune_cli(
     else:
         torch.testing.assert_close(
             2.0 * bias[0] + bias[1],
-            torch.tensor(1.75, dtype=torch.float64, device=DEVICE),
+            expected_bias_sum,
             rtol=1e-11,
             atol=1e-11,
         )
     assert trained(**inputs, spin=spin)["force_mag"].abs().max() > 1e-10
+
+
+@pytest.mark.parametrize("descriptor", ["dpa4", "dpa4c"])
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+def test_pretrain_script_keeps_target_spin_symmetry(
+    descriptor: str, spin_mode: str
+) -> None:
+    """Spin-free architecture inheritance preserves the target magnetic symmetry."""
+    source = _config(descriptor, False)
+    target = _config(descriptor, True)
+    target["spin"]["scheme"] = f"native:{spin_mode}"
+    result, rules = FinetuneRuleBuilder(
+        source, target, change_model_params=True
+    ).build()
+    assert rules["Default"].convert_to_native_spin
+    assert result["spin"]["scheme"] == f"native:{spin_mode}"
+    assert "spin_mode" not in result["descriptor"]
+
+
+@pytest.mark.parametrize("edge_cartesian", [False, True])
+def test_dpa4_transfer_uses_target_parity_constants(edge_cartesian: bool) -> None:
+    """Native conversion retains the target's spatially even geometry operators."""
+    source_config = _config("dpa4", False)
+    target_config = _config("dpa4", True)
+    for config in (source_config, target_config):
+        config["descriptor"].update(
+            edge_cartesian=edge_cartesian, lebedev_quadrature=False
+        )
+    source = _pretrained("pt_expt", source_config)
+    target = _build("pt_expt", target_config)
+    before = {
+        key: value.clone()
+        for key, value in target.state_dict().items()
+        if key.endswith(("to_grid_mat", "from_grid_mat", "right_mult_proj"))
+    }
+    assert before
+    target.load_state_dict(get_native_spin_finetune_state(target, source))
+    after = target.state_dict()
+    for key, value in before.items():
+        torch.testing.assert_close(after[key], value, atol=0, rtol=0)

@@ -639,6 +639,7 @@ class BaseGridNet(nn.Module):
         self,
         *,
         projector: BaseGridProjector,
+        parity: bool = False,
         channels: int,
         n_focus: int,
         mode: GridNetMode,
@@ -655,7 +656,32 @@ class BaseGridNet(nn.Module):
     ) -> None:
         super().__init__()
         self.projector = projector.to(device=env.DEVICE)
+        self.parity = bool(parity)
+        # Antipodally closed sphere grids already intertwine inversion by a
+        # permutation of points with equal quadrature weights. Their pointwise
+        # operations need no second evaluation. SO(3) grids and custom sphere
+        # grids without paired samples require the discrete projection.
+        self._project_inversion = self.parity and (
+            isinstance(projector, SO3GridProjector)
+            or (
+                projector.grid_method == "e3nn"
+                and (
+                    projector.phi_resolution % 2 != 0
+                    or projector.theta_resolution % 2 != 0
+                )
+            )
+        )
         self.lmax = int(projector.lmax)
+        degree_index = _build_frame_degree_index(
+            lmax=self.lmax,
+            mmax=projector.mmax,
+            coefficient_layout=projector.coefficient_layout,
+        )
+        self.register_buffer(
+            "_inversion_sign",
+            (1 - 2 * (degree_index % 2)).to(dtype=dtype),
+            persistent=False,
+        )
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.n_frames = int(projector.n_frames)
@@ -842,7 +868,33 @@ class BaseGridNet(nn.Module):
             return self._slice_scalar_layout(self.forward(query, context))
         return self._forward(query, context, scalar_only=True)
 
+    def _reflect(self, value: torch.Tensor) -> torch.Tensor:
+        canonical, shape_info = self._to_ndfc(value)
+        return self._restore_layout(
+            canonical * self._inversion_sign[None, :, None, None], shape_info
+        )
+
     def _forward(
+        self, query: torch.Tensor, context: torch.Tensor | None, *, scalar_only: bool
+    ) -> torch.Tensor:
+        output = self._forward_unrestricted(query, context, scalar_only=scalar_only)
+        # Haar scalar contractions pair equal angular degrees, so the two
+        # inversion signs cancel before the channel maps and scalar gates.
+        if not self._project_inversion or (
+            scalar_only and self._scalar_product_weight is not None
+        ):
+            return output
+        # Project this local angular operation onto the inversion-equivariant
+        # subspace. Wigner-D grids parameterize SO(3), so their nonlinear
+        # products need this independent discrete-group projection.
+        reflected = self._forward_unrestricted(
+            self._reflect(query),
+            None if context is None else self._reflect(context),
+            scalar_only=scalar_only,
+        )
+        return 0.5 * (output + (reflected if scalar_only else self._reflect(reflected)))
+
+    def _forward_unrestricted(
         self,
         query: torch.Tensor,
         context: torch.Tensor | None,
@@ -1040,14 +1092,13 @@ class BaseGridNet(nn.Module):
         The grid field is 39 times larger than its coefficient operand at the
         production SO(3) shape, so keeping it off device memory is worth a
         dedicated kernel. Returns ``None`` when the fused operator does not
-        serve this shape, and the caller keeps the projector composition.
+        serve the operand shape or precision, and the caller keeps the projector
+        composition.
 
         Parameters
         ----------
         left, right : torch.Tensor
             Coefficient operands with shape (N, D, F, n_frames * C).
-        right : torch.Tensor
-            Second coefficient operand, same shape as ``left``.
 
         Returns
         -------
@@ -1073,6 +1124,8 @@ class BaseGridNet(nn.Module):
                 self.n_frames,
             )
         if self._grid_pair_fn is None or left.shape[2] != 1:
+            return None
+        if left.dtype != torch.float32 or right.dtype != torch.float32:
             return None
         n_batch, coeff_dim = left.shape[0], left.shape[1]
         flat_p = coeff_dim * self.n_frames
@@ -1218,6 +1271,7 @@ class S2GridNet(BaseGridNet):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         mmax: int | None = None,
         channels: int,
         n_focus: int = 1,
@@ -1235,6 +1289,7 @@ class S2GridNet(BaseGridNet):
         seed: int | list[int] | None = None,
     ) -> None:
         projector = S2GridProjector(
+            parity=parity,
             lmax=lmax,
             mmax=mmax,
             dtype=dtype,
@@ -1246,6 +1301,7 @@ class S2GridNet(BaseGridNet):
         self.grid_method = projector.grid_method
         super().__init__(
             projector=projector,
+            parity=parity,
             channels=channels,
             n_focus=n_focus,
             mode=mode,
@@ -1267,6 +1323,7 @@ class SO3GridNet(BaseGridNet):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         mmax: int | None = None,
         kmax: int = 1,
         channels: int,
@@ -1320,6 +1377,7 @@ class SO3GridNet(BaseGridNet):
             )
         super().__init__(
             projector=projector,
+            parity=parity,
             channels=channels,
             n_focus=n_focus,
             mode=mode,

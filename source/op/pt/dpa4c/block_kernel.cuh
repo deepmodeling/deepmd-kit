@@ -100,14 +100,14 @@ struct BlockPanel<128, Lmax, Reverse> : ScanShape<32, 4, 4, Reverse> {};
 /// direction of the scan, and its panel geometry (BlockPanel). ``Reverse``
 /// marks the backward, which reads every entry of a row as the edge the row
 /// emits.
-template <int ChannelCount, int Degree, bool Spin, bool Modes, bool Backward>
+template <int ChannelCount, int Degree, int Spin, bool Modes, bool Backward>
 struct PanelLayout {
   static constexpr int Channels = ChannelCount;
   static constexpr int Lmax = Degree;
-  static constexpr bool HasSpin = Spin;
+  static constexpr int SpinMode = Spin;
   static constexpr bool HasModes = Modes;
   static constexpr bool Reverse = Backward;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   using S = BlockPanel<Channels, Lmax, Reverse>;
   static constexpr int Edges = S::Edges;
   static_assert(Edges == kWarpSize || Edges == 2 * kWarpSize,
@@ -637,15 +637,15 @@ struct SaturatedStager : deepmd_gemm::InputStager<NodeTile, Vector> {
 
 /// The accumulators of the node input layer of the tile of a CTA, pre - b,
 /// for the column tile at ``tile.col0``.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __device__ __forceinline__ void node_input_layer(
     const BlockArguments& block,
     const deepmd_gemm::TileIndex& tile,
     const deepmd_gemm::LaneOrigin& origin,
     deepmd_gemm::GemmStorage<NodeTile>& smem,
     deepmd_gemm::Accumulators<NodeTile>& acc) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   SaturatedStager<P::OutputWidth % 4 == 0> a(
       block.descriptor, tile.row0, block.edges.node_count, P::OutputWidth,
       __ldg(block.record + 1));
@@ -685,12 +685,12 @@ __device__ __forceinline__ void store_gate(
 /// and, in the CTA of the first column tile, the encoded state, the saturated
 /// keys of the moments of block k - 1 and the divisor columns of the
 /// descriptor, which every further block carries.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(
     NodeTile::threads,
     NodeTile::min_blocks) void block_maps_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   const float* record = block.record;
   __shared__ __align__(16) deepmd_gemm::GemmStorage<NodeTile> smem;
@@ -698,7 +698,7 @@ __global__ __launch_bounds__(
   const deepmd_gemm::TileIndex tile =
       deepmd_gemm::tile_index<NodeTile>(B::NodeWidth);
   deepmd_gemm::Accumulators<NodeTile> acc;
-  node_input_layer<Channels, Lmax, HasSpin>(block, tile, origin, smem, acc);
+  node_input_layer<Channels, Lmax, SpinMode>(block, tile, origin, smem, acc);
 
   // === Hidden-layer term and null-mass logits ===
 #pragma unroll
@@ -794,13 +794,13 @@ __global__ __launch_bounds__(
 /// state cotangent back onto its gate and value, which the first column tile
 /// of the layer recomputes; the hidden-layer term and the null-mass logits
 /// pass theirs through.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(
     NodeTile::threads,
     NodeTile::min_blocks) void block_map_cotangent_kernel(BlockArguments
                                                               block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   const float* record = block.record;
   __shared__ __align__(16) deepmd_gemm::GemmStorage<NodeTile> smem;
@@ -808,7 +808,7 @@ __global__ __launch_bounds__(
   const deepmd_gemm::TileIndex tile =
       deepmd_gemm::tile_index<NodeTile>(NodeTile::cols);
   deepmd_gemm::Accumulators<NodeTile> acc;
-  node_input_layer<Channels, Lmax, HasSpin>(block, tile, origin, smem, acc);
+  node_input_layer<Channels, Lmax, SpinMode>(block, tile, origin, smem, acc);
   auto* gate = reinterpret_cast<float (*)[B::NodeHidden]>(&smem.a[0][0][0]);
   auto* d_product = reinterpret_cast<float (*)[B::StateHidden]>(
       &smem.a[0][0][0] + NodeTile::rows * B::NodeHidden);
@@ -953,12 +953,12 @@ __global__ __launch_bounds__(
 /// layer contracted with the transpose of the layer, times the slope of the
 /// saturation, into ``descriptor_gradient``, which may take the place of
 /// ``descriptor``.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(
     NodeTile::threads,
     NodeTile::min_blocks) void block_map_input_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   __shared__ __align__(16) deepmd_gemm::GemmStorage<NodeTile> smem;
   const deepmd_gemm::LaneOrigin origin = deepmd_gemm::lane_origin<NodeTile>();
@@ -1000,11 +1000,11 @@ __global__ __launch_bounds__(
 /// cotangents that the edges of block k read, the cotangent of the null-mass
 /// logits, and the moment gradient carried back to the first block. One warp
 /// owns one node.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(kBlockThreads) void block_cotangent_kernel(
     BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   const float* record = block.record;
   const int lane = threadIdx.x % kWarpSize;
@@ -1971,15 +1971,15 @@ constexpr size_t block_forward_shared_bytes() {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           typename index_t,
           bool Resident>
 __global__ __launch_bounds__(
     kBlockThreads,
     BlockPanel<Channels, Lmax, false>::
         MinBlocks) void block_forward_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, false>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, false>;
   using B = typename L::B;
   using R = RadialPanel<L>;
   constexpr int TE = L::TE;
@@ -2242,15 +2242,15 @@ constexpr size_t block_backward_shared_bytes() {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           typename index_t,
           bool Resident>
 __global__ __launch_bounds__(
     kBlockThreads,
     BlockPanel<Channels, Lmax, true>::
         MinBlocks) void block_backward_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, true>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, true>;
   using B = typename L::B;
   using A = BackwardPanel<L>;
   using R = RadialPanel<L>;
@@ -2974,37 +2974,37 @@ void launch_panel_scan(Kernel kernel,
   }
 }
 
-template <int Channels, int Lmax, bool HasModes, bool HasSpin, typename index_t>
+template <int Channels, int Lmax, bool HasModes, int SpinMode, typename index_t>
 void launch_block_scan(BlockStage stage,
                        const BlockArguments& arguments,
                        cudaStream_t stream) {
   if (stage == BlockStage::Forward) {
-    using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, false>;
+    using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, false>;
     launch_panel_scan<L::Edges, block_forward_shared_bytes<L, true>(),
                       block_forward_shared_bytes<L, false>()>(
         [](auto resident) {
-          return block_forward_kernel<Channels, Lmax, HasModes, HasSpin,
+          return block_forward_kernel<Channels, Lmax, HasModes, SpinMode,
                                       index_t, decltype(resident)::value>;
         },
         arguments, stream);
   } else {
-    using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, true>;
+    using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, true>;
     launch_panel_scan<L::Edges, block_backward_shared_bytes<L, true>(),
                       block_backward_shared_bytes<L, false>()>(
         [](auto resident) {
-          return block_backward_kernel<Channels, Lmax, HasModes, HasSpin,
+          return block_backward_kernel<Channels, Lmax, HasModes, SpinMode,
                                        index_t, decltype(resident)::value>;
         },
         arguments, stream);
   }
 }
 
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 void launch_block_nodes(BlockStage stage,
                         const BlockArguments& arguments,
                         cudaStream_t stream) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const long count = arguments.edges.node_count;
   if (count == 0) {
     return;
@@ -3017,18 +3017,18 @@ void launch_block_nodes(BlockStage stage,
   };
   switch (stage) {
     case BlockStage::Maps:
-      block_maps_kernel<Channels, Lmax, HasSpin>
+      block_maps_kernel<Channels, Lmax, SpinMode>
           <<<tiles(B::NodeWidth), NodeTile::threads, 0, stream>>>(arguments);
       return;
     case BlockStage::MapBackward:
-      block_map_cotangent_kernel<Channels, Lmax, HasSpin>
+      block_map_cotangent_kernel<Channels, Lmax, SpinMode>
           <<<tiles(NodeTile::cols), NodeTile::threads, 0, stream>>>(arguments);
-      block_map_input_kernel<Channels, Lmax, HasSpin>
+      block_map_input_kernel<Channels, Lmax, SpinMode>
           <<<tiles(P::OutputWidth), NodeTile::threads, 0, stream>>>(arguments);
       return;
     case BlockStage::Cotangents: {
       constexpr int Warps = kBlockThreads / kWarpSize;
-      block_cotangent_kernel<Channels, Lmax, HasSpin>
+      block_cotangent_kernel<Channels, Lmax, SpinMode>
           <<<static_cast<int>((count + Warps - 1) / Warps), kBlockThreads, 0,
              stream>>>(arguments);
       return;
@@ -3048,24 +3048,27 @@ void launch_block(BlockStage stage,
   const bool wide = args.index_kind == IndexKind::Bits64;
   const auto dispatch = [&](auto modes, auto spin) {
     constexpr bool HasModes = decltype(modes)::value;
-    constexpr bool HasSpin = decltype(spin)::value;
+    constexpr int SpinMode = decltype(spin)::value;
     if (!scan) {
-      launch_block_nodes<Channels, Lmax, HasSpin>(stage, arguments, stream);
+      launch_block_nodes<Channels, Lmax, SpinMode>(stage, arguments, stream);
     } else if (wide) {
-      launch_block_scan<Channels, Lmax, HasModes, HasSpin, long>(
+      launch_block_scan<Channels, Lmax, HasModes, SpinMode, long>(
           stage, arguments, stream);
     } else {
-      launch_block_scan<Channels, Lmax, HasModes, HasSpin, std::uint32_t>(
+      launch_block_scan<Channels, Lmax, HasModes, SpinMode, std::uint32_t>(
           stage, arguments, stream);
     }
   };
   const bool modes = args.radial_modes > 0;
-  if (args.has_spin) {
-    modes ? dispatch(std::true_type{}, std::true_type{})
-          : dispatch(std::false_type{}, std::true_type{});
+  if (args.spin_mode == 2) {
+    modes ? dispatch(std::true_type{}, std::integral_constant<int, 2>{})
+          : dispatch(std::false_type{}, std::integral_constant<int, 2>{});
+  } else if (args.spin_mode == 1) {
+    modes ? dispatch(std::true_type{}, std::integral_constant<int, 1>{})
+          : dispatch(std::false_type{}, std::integral_constant<int, 1>{});
   } else {
-    modes ? dispatch(std::true_type{}, std::false_type{})
-          : dispatch(std::false_type{}, std::false_type{});
+    modes ? dispatch(std::true_type{}, std::integral_constant<int, 0>{})
+          : dispatch(std::false_type{}, std::integral_constant<int, 0>{});
   }
 }
 

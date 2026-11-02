@@ -799,12 +799,17 @@ class BaseGridNet(NativeOP):
     is the key/value or second product branch.
     """
 
-    CONFIG_DERIVED_ARRAYS = ("_from_grid_t", "_scalar_product_weight")
+    CONFIG_DERIVED_ARRAYS = (
+        "_from_grid_t",
+        "_scalar_product_weight",
+        "_inversion_sign",
+    )
 
     def __init__(
         self,
         *,
         projector: BaseGridProjector,
+        parity: bool = False,
         channels: int,
         n_focus: int,
         mode: GridNetMode,
@@ -820,7 +825,30 @@ class BaseGridNet(NativeOP):
         seed: int | list[int] | None = None,
     ) -> None:
         self.projector = projector
+        self.parity = bool(parity)
+        # Antipodally closed sphere grids already intertwine inversion by a
+        # permutation of points with equal quadrature weights. Their pointwise
+        # operations need no second evaluation. SO(3) grids and custom sphere
+        # grids without paired samples require the discrete projection.
+        self._project_inversion = self.parity and (
+            isinstance(projector, SO3GridProjector)
+            or (
+                projector.grid_method == "e3nn"
+                and (
+                    projector.phi_resolution % 2 != 0
+                    or projector.theta_resolution % 2 != 0
+                )
+            )
+        )
         self.lmax = int(projector.lmax)
+        degree_index = _build_frame_degree_index(
+            lmax=self.lmax,
+            mmax=projector.mmax,
+            coefficient_layout=projector.coefficient_layout,
+        )
+        self._inversion_sign = (1 - 2 * (degree_index % 2)).astype(
+            PRECISION_DICT[precision.lower()]
+        )
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.n_frames = int(projector.n_frames)
@@ -958,7 +986,32 @@ class BaseGridNet(NativeOP):
             return self._slice_scalar_layout(self.call(query, context))
         return self._forward(query, context, scalar_only=True)
 
-    def _forward(
+    def _reflect(self, value: Any) -> Any:
+        xp = array_api_compat.array_namespace(value)
+        sign = xp_asarray_nodetach(
+            xp, self._inversion_sign, device=array_api_compat.device(value)
+        )
+        canonical, shape_info = self._to_ndfc(value)
+        return self._restore_layout(canonical * sign[None, :, None, None], shape_info)
+
+    def _forward(self, query: Any, context: Any, *, scalar_only: bool) -> Any:
+        output = self._forward_unrestricted(query, context, scalar_only=scalar_only)
+        # Haar scalar contractions pair equal angular degrees, so the two
+        # inversion signs cancel before the channel maps and scalar gates.
+        if not self._project_inversion or (
+            scalar_only and self._scalar_product_weight is not None
+        ):
+            return output
+        # SO(3) grid products are projected onto the inversion-equivariant
+        # subspace locally, using the fixed harmonic parity of every degree.
+        reflected = self._forward_unrestricted(
+            self._reflect(query),
+            None if context is None else self._reflect(context),
+            scalar_only=scalar_only,
+        )
+        return 0.5 * (output + (reflected if scalar_only else self._reflect(reflected)))
+
+    def _forward_unrestricted(
         self,
         query: Any,
         context: Any,
@@ -1205,7 +1258,8 @@ class BaseGridNet(NativeOP):
         The grid field is 39 times larger than its coefficient operand at the
         production SO(3) shape, so keeping it off device memory is worth a
         dedicated kernel. Returns ``None`` when the fused operator does not
-        serve this shape, and the caller keeps the projector composition.
+        serve the operand shape or precision, and the caller keeps the projector
+        composition.
 
         Parameters
         ----------
@@ -1236,9 +1290,11 @@ class BaseGridNet(NativeOP):
             )
         if self._grid_pair_fn is None or left.shape[2] != 1:
             return None
+        xp = array_api_compat.array_namespace(left, right)
+        if left.dtype != xp.float32 or right.dtype != xp.float32:
+            return None
         n_batch, coeff_dim = left.shape[0], left.shape[1]
         flat_p = coeff_dim * self.n_frames
-        xp = array_api_compat.array_namespace(left, right)
         out = self._grid_pair_fn(
             xp.reshape(left, (n_batch, flat_p, c_wide)),
             xp.reshape(right, (n_batch, flat_p, c_wide)),
@@ -1471,6 +1527,7 @@ class S2GridNet(BaseGridNet):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         mmax: int | None = None,
         channels: int,
         n_focus: int = 1,
@@ -1488,6 +1545,7 @@ class S2GridNet(BaseGridNet):
         seed: int | list[int] | None = None,
     ) -> None:
         projector = S2GridProjector(
+            parity=parity,
             lmax=lmax,
             mmax=mmax,
             precision=precision,
@@ -1500,6 +1558,7 @@ class S2GridNet(BaseGridNet):
         self.grid_branches = int(grid_branches)
         super().__init__(
             projector=projector,
+            parity=parity,
             channels=channels,
             n_focus=n_focus,
             mode=mode,
@@ -1520,6 +1579,7 @@ class S2GridNet(BaseGridNet):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "mmax": self.projector.mmax,
                 "channels": self.channels,
                 "n_focus": self.n_focus,
@@ -1561,6 +1621,7 @@ class SO3GridNet(BaseGridNet):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         mmax: int | None = None,
         kmax: int = 1,
         channels: int,
@@ -1615,6 +1676,7 @@ class SO3GridNet(BaseGridNet):
             )
         super().__init__(
             projector=projector,
+            parity=parity,
             channels=channels,
             n_focus=n_focus,
             mode=mode,
@@ -1637,6 +1699,7 @@ class SO3GridNet(BaseGridNet):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "mmax": self.projector.mmax,
                 "kmax": self.kmax,
                 "channels": self.channels,

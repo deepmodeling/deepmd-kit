@@ -55,9 +55,9 @@ constexpr int aligned_floats(int count) { return (count + 3) / 4 * 4; }
 
 /// Widths of a further block and the offsets of the sections of its record,
 /// mirroring ``block_layout`` of deepmd/pt_expt/kernels/dpa4c/attention.py.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 struct BlockProfile {
-  using P = Profile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   static constexpr int Heads = kBlockHeads;
   static constexpr int StateHidden = kBlockStateHidden;
   /// Non-scalar harmonic components, those of the keys of a node.

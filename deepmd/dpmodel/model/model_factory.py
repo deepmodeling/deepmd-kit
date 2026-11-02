@@ -17,6 +17,7 @@ from deepmd.utils.bridging import (
 from deepmd.utils.spin import (
     Spin,
     env_protection_descriptors,
+    is_native_spin_scheme,
 )
 
 ModelBuilder = Callable[[dict], Any]
@@ -555,7 +556,7 @@ def get_model(
     model_type = data.get("type", "standard")
     if model_type == "standard":
         if "spin" in data:
-            if str(data["spin"].get("scheme", "deepspin")) == "native":
+            if is_native_spin_scheme(data["spin"].get("scheme", "deepspin")):
                 if native_spin_model_factory is None:
                     raise NotImplementedError(
                         "Native spin model is not implemented yet."

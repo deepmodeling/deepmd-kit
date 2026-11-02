@@ -218,6 +218,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         given, the descriptor conditions on a per-node spin vector and
         declares :meth:`supports_native_spin`. ``None`` reproduces the
         spin-free descriptor exactly.
+    spin_mode
+        ``orbit`` includes symmetric spin-orbit couplings. ``exchange``
+        preserves independent rotations of the moments and the lattice.
     add_chg_spin_ebd
         Whether to condition on the frame-level total charge and spin
         multiplicity. This is unrelated to ``use_spin``, which carries a
@@ -315,6 +318,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         use_spin: list[bool] | None = None,
+        spin_mode: str = "orbit",
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
         spin: None = None,
@@ -384,6 +388,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.type_map = type_map
         self.seed = seed
         self.use_spin = None if use_spin is None else [bool(flag) for flag in use_spin]
+        self.spin_mode = spin_mode
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
         self.default_chg_spin = default_chg_spin
         # The spin branch reads the leading channels of the shared radial map,
@@ -490,6 +495,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 self.ntypes,
                 self.degree_channels,
                 self.use_spin,
+                spin_mode=self.spin_mode,
                 precision=self.precision,
                 trainable=self.trainable,
                 seed=child_seed(seed, 5),
@@ -1753,6 +1759,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             self.trainable,
             None if self.type_map is None else tuple(self.type_map),
             None if self.use_spin is None else tuple(self.use_spin),
+            self.spin_mode,
             self.add_chg_spin_ebd,
             np.dtype(PRECISION_DICT[self.precision]).name,
         )
@@ -2189,6 +2196,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "type_map": self.type_map,
             "seed": self.seed,
             "use_spin": self.use_spin,
+            "spin_mode": self.spin_mode,
             "add_chg_spin_ebd": self.add_chg_spin_ebd,
             "default_chg_spin": self.default_chg_spin,
             "spin": None,

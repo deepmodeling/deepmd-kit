@@ -270,17 +270,19 @@ def test_canonical_matches_sugar_serialize() -> None:
     assert _strip_arrays(d_canon) == _strip_arrays(d_sugar)
 
 
-def test_canonical_native_spin_composition() -> None:
+@pytest.mark.parametrize("scheme", ["native:orbit", "native:exchange"])
+def test_canonical_native_spin_composition(scheme: str) -> None:
     """A top-level native-spin section wraps the canonical composition."""
     from deepmd.pt_expt.model.native_spin_model import (
         NativeSpinEnergyModel,
     )
 
     cfg = _canonical_config()
-    cfg["spin"] = {"scheme": "native", "use_spin": [True, False]}
+    cfg["spin"] = {"scheme": scheme, "use_spin": [True, False]}
     model = get_model(cfg)
     assert isinstance(model, NativeSpinEnergyModel)
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+    assert model.atomic_model.models[0].descriptor.spin_mode == scheme.split(":")[1]
 
 
 def test_canonical_requires_sum_weights() -> None:

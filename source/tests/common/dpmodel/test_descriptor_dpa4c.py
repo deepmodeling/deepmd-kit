@@ -2440,3 +2440,82 @@ def test_virtual_atom_spin_scheme_is_refused() -> None:
                 "fitting_net": {"neuron": [8, 8], "seed": 1},
             }
         )
+
+
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+def test_native_spin_modes_preserve_signed_exchange(spin_mode: str) -> None:
+    descriptor = make_spin_descriptor(spin_mode=spin_mode)
+    coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.2, 0.3]]])
+    atype = np.zeros((1, 2), dtype=np.int64)
+    graph = neighbor_graph.build_neighbor_graph(
+        coord, atype, None, descriptor.get_rcut()
+    )
+    spin = np.array([[0.3, 0.4, 0.5], [0.3, 0.4, 0.5]])
+    parallel = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    spin[1] *= -1.0
+    antiparallel = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    # The first off-diagonal vector Gram is linear in the signed pair exchange.
+    exchange_index = descriptor.readout.get_dim_out() + 1
+    assert np.max(np.abs(parallel[:, exchange_index])) > 1e-8
+    np.testing.assert_allclose(
+        antiparallel[:, exchange_index], -parallel[:, exchange_index], atol=1e-12
+    )
+    restored = DescrptDPA4C.deserialize(descriptor.serialize())
+    assert restored.spin_mode == spin_mode
+    np.testing.assert_array_equal(
+        restored.call_graph(graph, atype.reshape(-1), spin=spin)[0], antiparallel
+    )
+
+
+def test_exchange_mode_has_independent_spin_rotations() -> None:
+    descriptor = make_spin_descriptor(spin_mode="exchange", rcut=[3.0, 2.5], n_blocks=2)
+    randomize_attentions(descriptor)
+    rng = np.random.default_rng(71)
+    spin = rng.normal(size=(SPIN_ATYPE.size, 3))
+    graph = neighbor_graph.build_neighbor_graph(
+        SPIN_COORD, SPIN_ATYPE, None, descriptor.get_rcut()
+    )
+    rotation, _ = np.linalg.qr(rng.normal(size=(3, 3)))
+    reference = descriptor.call_graph(graph, SPIN_ATYPE.reshape(-1), spin=spin)[0]
+    rotated = descriptor.call_graph(
+        graph, SPIN_ATYPE.reshape(-1), spin=spin @ rotation.T
+    )[0]
+    np.testing.assert_allclose(rotated, reference, atol=1e-12)
+    np.testing.assert_array_equal(
+        descriptor.call_graph(graph, SPIN_ATYPE.reshape(-1), spin=-spin)[0], reference
+    )
+    orbit = make_spin_descriptor(spin_mode="orbit")
+    assert descriptor.spin.edge_width < orbit.spin.edge_width
+    assert descriptor.spin.get_dim_out() < orbit.spin.get_dim_out()
+
+
+def test_projected_spin_gram_contains_collective_antisymmetric_exchange() -> None:
+    channels = SpinChannels(1, [1, 1, 1], [True], spin_mode="orbit", seed=7)
+    spin = np.array([[0.2, 0.7, -0.1], [-0.3, 0.1, 0.8]])
+    direction = np.array([[1.0, 0.0, 0.0], [0.6, 0.8, 0.0]])
+    atype = np.zeros(2, dtype=np.int64)
+    source = np.arange(2, dtype=np.int64)
+
+    def cross_neighbor_gram(moment: np.ndarray) -> float:
+        payload = channels.edge_payload(
+            moment,
+            atype,
+            source,
+            direction,
+            np.ones((2, 1)),
+            np.ones(2),
+            np.ones((2, 1)),
+            np.zeros((2, 1)),
+        )
+        # The projected family follows M0, Mw and the vector family.
+        projected = payload[:, 5:8]
+        return float(np.sum(np.sum(projected, axis=0) ** 2) - np.sum(projected**2))
+
+    antisymmetric = cross_neighbor_gram(spin) - cross_neighbor_gram(spin[::-1])
+    expected = (
+        2.0
+        * np.dot(direction[0], direction[1])
+        * np.dot(np.cross(direction[0], direction[1]), np.cross(spin[0], spin[1]))
+    )
+    assert abs(expected) > 1e-3
+    np.testing.assert_allclose(antisymmetric, expected, atol=1e-14)

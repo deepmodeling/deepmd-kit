@@ -161,6 +161,7 @@ _LOW_RANK_SLOPE_LENGTH = 1.0
 # Width of the low-rank expansion per channel count, mirroring
 # ``low_rank_basis`` on the device side; absent widths admit none.
 _LOW_RANK_BASIS = {64: 32, 128: 32}
+_NATIVE_LOW_RANK_BASIS = {128: 64}
 
 # Mode profiles a folded single-type scan carries, mirroring ``kFoldedModes``
 # on the device side. A descriptor with more modes scans unfolded and never
@@ -223,7 +224,7 @@ def mega_eligible(descriptor: Any) -> bool:
     """Return whether the descriptor has a compiled fp32 specialization.
 
     Native spin is a compiled variant of the same kernels rather than a
-    separate operator, and every spin width follows from the channel count, so
+    separate operator, and spin widths follow the channel profile and symmetry, so
     a spin-conditioned descriptor is eligible on exactly the conditions a
     spin-free one is. The further message-passing blocks read the widths of
     the first one, so any depth is eligible. Each condition below is a width
@@ -329,10 +330,13 @@ def descriptor_profile(
     channels: int,
     lmax: int,
     has_spin: bool = False,
+    spin_mode: str = "orbit",
+    *,
+    output_width: int | None = None,
 ) -> DescriptorProfile:
     """Derive every compiled width from the structural parameters.
 
-    The widths mirror ``Profile<Channels, Lmax, HasSpin>`` on the device side,
+    The widths mirror ``Profile<Channels, Lmax, SpinMode>`` on the device side,
     so a mismatch is caught by the operator's own shape validation rather than
     producing a silently misread buffer.
 
@@ -343,8 +347,12 @@ def descriptor_profile(
     lmax
         Maximum angular degree.
     has_spin
-        Whether the native spin families are present. Their width is derived
-        from the degree profile, so presence is the whole choice.
+        Whether the native spin families are present.
+    spin_mode
+        Spin symmetry, either ``orbit`` or ``exchange``.
+    output_width
+        Calibration width that determines the spin symmetry when reading an
+        operator payload. The operator validates the complete layout.
 
     Returns
     -------
@@ -362,18 +370,36 @@ def descriptor_profile(
     gram_base = degree_channels[0]
     bispectrum_base = gram_base + gram_total
     spin_channels = derive_spin_channels(degree_channels) if has_spin else 0
+    if has_spin and output_width is not None:
+        orbit_vector = 1 + 2 * spin_channels
+        orbit_dim = (
+            orbit_vector * (orbit_vector + 1) // 2
+            + 2
+            + 2 * degree_channels[2]
+            + 2 * spin_channels
+        )
+        geometric_width = (
+            bispectrum_base
+            + bispectrum_dim
+            + ranks[0] * ranks[1]
+            + 2
+            + degree_channels[0]
+        )
+        spin_mode = (
+            "orbit" if output_width == geometric_width + orbit_dim else "exchange"
+        )
+    orbit = spin_mode == "orbit"
     if has_spin:
         # Reduced families, then the node-local on-site vector and quadrupole.
-        moment_width += 8 * spin_channels + 5 + 8
+        moment_width += (8 if orbit else 5) * spin_channels + 5 + 8
         # The joint degree-one spin block holds the on-site moment beside the
-        # isotropic and the bond-projected neighbor channels, so its Gram is
-        # the upper triangle of a ``1 + 2 C_s`` block. The quadrupole Gram
-        # drops only its on-site self-term.
-        vector_width = 1 + 2 * spin_channels
+        # isotropic neighbor channels and, in orbit mode, the bond-projected
+        # channels. The quadrupole Gram drops only its on-site self-term.
+        vector_width = 1 + (2 if orbit else 1) * spin_channels
         spin_dim = (
             vector_width * (vector_width + 1) // 2
             + 2
-            + 2 * degree_channels[2]
+            + (2 * degree_channels[2] if orbit else 0)
             + 2 * spin_channels
         )
     else:
@@ -399,8 +425,10 @@ def descriptor_profile(
         bispectrum_base=bispectrum_base,
         spin_channels=spin_channels,
         spin_width=spin_dim,
-        # The spin branch never scans folded, so it carries no expansion.
-        basis=0 if has_spin else _LOW_RANK_BASIS.get(int(channels), 0),
+        spin_mode=spin_mode,
+        basis=(_NATIVE_LOW_RANK_BASIS if has_spin else _LOW_RANK_BASIS).get(
+            int(channels), 0
+        ),
     )
 
 
@@ -814,6 +842,7 @@ def build_low_rank_table(
         descriptor.channels,
         descriptor.lmax,
         descriptor.spin is not None,
+        descriptor.spin_mode,
     )
 
     def empty() -> tuple[torch.Tensor, torch.Tensor]:
@@ -923,6 +952,7 @@ def build_compression_artifacts(
         descriptor.channels,
         descriptor.lmax,
         descriptor.spin is not None,
+        descriptor.spin_mode,
     )
     knots = _radial_knots(descriptor, stride)
     table, info = build_radial_table(descriptor, stride, knots=knots)
@@ -1540,7 +1570,10 @@ def _reference_descriptor(
     channels = type_embedding.shape[1]
     type_count = type_embedding.shape[0]
     has_spin = spin is not None and spin.ndim == 2
-    profile = descriptor_profile(int(channels), int(lmax), has_spin)
+    profile = descriptor_profile(
+        int(channels), int(lmax), has_spin, output_width=output_inv_std.numel()
+    )
+    orbit = profile.spin_mode == "orbit"
     radial_modes = 0 if pair_mixing.numel() == 0 else int(pair_mixing.shape[2])
 
     # === Step 1. Build the masked edge geometry ===
@@ -1652,6 +1685,7 @@ def _reference_descriptor(
             envelope,
             angular_norm,
             node_count,
+            orbit,
         )
     center_type_embedding = type_embedding[atype]
 
@@ -1725,14 +1759,14 @@ def _reference_descriptor(
                 # times the square of the vector block's own on-site
                 # self-term.
                 _half_gram(spin_tensor)[:, 1:],
-                # Cross Gram against the unaligned geometric degree-two
-                # moments. Both factors carry even spin order, so the product
-                # is admissible; with a unit direction it evaluates to the
-                # single-ion anisotropy sum over neighbors.
-                (spin_tensor.transpose(1, 2) @ moments[2]).flatten(start_dim=1),
-                magnitude,
-                coordination,
             ]
+            if orbit:
+                # The orbit cross Gram couples spin quadrupoles to the
+                # unaligned geometric degree-two moments.
+                spin_blocks.append(
+                    (spin_tensor.transpose(1, 2) @ moments[2]).flatten(start_dim=1)
+                )
+            spin_blocks.extend([magnitude, coordination])
 
         # === Assemble and calibrate the invariant output ===
         quartic = (tensor_vector * tensor_vector).sum(dim=-1).flatten(start_dim=1)
@@ -1789,6 +1823,7 @@ def _reference_spin_moments(
     envelope: torch.Tensor,
     angular_norm: torch.Tensor,
     node_count: int,
+    orbit: bool,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     r"""Reduce the native spin families into their four moment blocks.
 
@@ -1805,8 +1840,8 @@ def _reference_spin_moments(
 
     whose squared envelope matches the weight of every non-scalar geometric
     moment. The reduced families therefore share the angular normalizer and
-    need no neighborhood mass of their own. The bond-projected family is the
-    one that reads the edge direction, and through it the spin branch
+    need no neighborhood mass of their own. In orbit mode the bond-projected
+    family reads the edge direction, and through it the spin branch
     contributes to the coordinate gradient angularly as well as radially.
 
     The on-site channel leads each non-scalar block and is node local: it is
@@ -1843,6 +1878,8 @@ def _reference_spin_moments(
         Reciprocal angular divisor with shape ``(N, 1, 1)``.
     node_count
         Number of nodes ``N``.
+    orbit
+        Whether to include the bond-projected neighbor channels.
 
     Returns
     -------
@@ -1851,7 +1888,8 @@ def _reference_spin_moments(
     coordination
         Magnetic effective coordination with shape ``(N, C_s)``.
     vector
-        Joint degree-one spin block with shape ``(N, 3, 1 + 2 C_s)``, holding
+        Joint degree-one spin block, with width ``1 + 2 C_s`` in orbit mode
+        and ``1 + C_s`` in exchange mode, holding
         the on-site moment, the isotropic neighbor channels and the
         bond-projected neighbor channels in that order.
     tensor
@@ -1869,23 +1907,24 @@ def _reference_spin_moments(
     # vector so that the block Gram turns it into the bond-resolved
     # invariants. The masked envelope already zeroes excluded edges, so the
     # unmasked direction cannot leak through the amplitude.
-    bond = direction * (neighbor * direction).sum(dim=-1, keepdim=True)
+    bond = (
+        direction * (neighbor * direction).sum(dim=-1, keepdim=True) if orbit else None
+    )
 
     # Payload layout: [M0, Mw, V_neighbor, P_neighbor, Q_neighbor] with the
     # harmonic component as the outer axis of each non-scalar family, matching
     # the geometric moment convention. The magnetic coordination reads the bare
     # neighbor gate because it counts neighbors that carry a moment rather
     # than the moments themselves, and is therefore nonzero at vanishing spin.
-    payload = torch.cat(
-        [
-            weight * (neighbor * neighbor).sum(dim=-1, keepdim=True),
-            weight * weights[source, 1:2],
-            (neighbor[:, :, None] * weight[:, None, :]).flatten(start_dim=1),
-            (bond[:, :, None] * weight[:, None, :]).flatten(start_dim=1),
-            build_angular_basis(neighbor, 2)[:, 4:9] * weight[:, :1],
-        ],
-        dim=-1,
-    )
+    families = [
+        weight * (neighbor * neighbor).sum(dim=-1, keepdim=True),
+        weight * weights[source, 1:2],
+        (neighbor[:, :, None] * weight[:, None, :]).flatten(start_dim=1),
+    ]
+    if orbit:
+        families.append((bond[:, :, None] * weight[:, None, :]).flatten(start_dim=1))
+    families.append(build_angular_basis(neighbor, 2)[:, 4:9] * weight[:, :1])
+    payload = torch.cat(families, dim=-1)
     reduced = (
         torch.zeros(
             node_count,
@@ -1898,29 +1937,24 @@ def _reference_spin_moments(
 
     onsite_vector = conditioned * weights[:, 2:3]
     onsite_tensor = build_angular_basis(conditioned, 2)[:, 4:9] * weights[:, 3:4]
+    vectors = [
+        onsite_vector[:, :, None],
+        reduced[:, 2 * spin_channels : 5 * spin_channels].reshape(-1, 3, spin_channels),
+    ]
+    if orbit:
+        vectors.append(
+            reduced[:, 5 * spin_channels : 8 * spin_channels].reshape(
+                -1, 3, spin_channels
+            )
+        )
     return (
         reduced[:, :spin_channels],
         reduced[:, spin_channels : 2 * spin_channels],
-        torch.cat(
-            [
-                onsite_vector[:, :, None],
-                reduced[:, 2 * spin_channels : 5 * spin_channels].reshape(
-                    -1,
-                    3,
-                    spin_channels,
-                ),
-                reduced[:, 5 * spin_channels : 8 * spin_channels].reshape(
-                    -1,
-                    3,
-                    spin_channels,
-                ),
-            ],
-            dim=-1,
-        ),
+        torch.cat(vectors, dim=-1),
         torch.cat(
             [
                 onsite_tensor[:, :, None],
-                reduced[:, 8 * spin_channels :, None],
+                reduced[:, (8 if orbit else 5) * spin_channels :, None],
             ],
             dim=-1,
         ),
@@ -2060,6 +2094,7 @@ def _reference_forward(
         int(args[9].shape[1]),
         int(args[21]),
         args[16].ndim == 2,
+        output_width=args[15].numel(),
     )
     state = torch.zeros(
         descriptor.shape[0],
@@ -2118,7 +2153,6 @@ def _forward_fake(
         coupling_entry,
         coupling_value,
         output_mean,
-        output_inv_std,
         spin_pair,
         spin_type,
         contact_radius,
@@ -2132,7 +2166,10 @@ def _forward_fake(
         f_outer,
     )
     profile = descriptor_profile(
-        int(type_embedding.shape[1]), int(lmax), spin.ndim == 2
+        int(type_embedding.shape[1]),
+        int(lmax),
+        spin.ndim == 2,
+        output_width=output_inv_std.numel(),
     )
     descriptor = torch.empty(
         atype.shape[0],

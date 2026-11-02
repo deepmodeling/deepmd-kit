@@ -1028,7 +1028,7 @@ __device__ __forceinline__ float readout_weight(const float* matrices,
                                                 int row,
                                                 int column) {
   // Geometric widths only: the readout table has no spin block.
-  using P = Profile<Channels, Lmax, false>;
+  using P = Profile<Channels, Lmax, 0>;
   return __ldg(matrices + (static_cast<long>(matrix) * P::C1 + row) * P::C1 +
                column);
 }
@@ -1043,7 +1043,7 @@ __device__ __forceinline__ float probe_value(const float* probes,
                                              int component,
                                              int rank_index) {
   // Geometric widths only: the probe layout has no spin block.
-  using P = Profile<Channels, Lmax, false>;
+  using P = Profile<Channels, Lmax, 0>;
   if (degree == 1) {
     return probes[component * P::K1 + rank_index];
   }

@@ -395,15 +395,17 @@ class TestNativeSpinCapabilityOnAtomicModel:
         # inherits the concrete base default -- no descriptor, no spin input
         assert zbl.supports_native_spin() is False
 
-    def test_composition_is_capable_when_any_child_is(self) -> None:
+    @pytest.mark.parametrize("scheme", ["native:orbit", "native:exchange"])
+    def test_composition_is_capable_when_any_child_is(self, scheme: str) -> None:
         """ANY, not ALL: analytical children accept and ignore ``spin``."""
         learned = get_model(
             {
                 **copy.deepcopy(ZBL_CONFIG),
-                "spin": {"use_spin": [True, False], "scheme": "native"},
+                "spin": {"use_spin": [True, False], "scheme": scheme},
             }
         ).atomic_model
         assert learned.supports_native_spin() is True
+        assert learned.models[0].descriptor.spin_mode == scheme.split(":")[1]
         kinds = [type(c).__name__ for c in learned.models]
         assert kinds[1] == "InnerPotentialAtomicModel", kinds
         # ... and the spin-free analytical child alone is not capable

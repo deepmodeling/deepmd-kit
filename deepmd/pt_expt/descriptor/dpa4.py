@@ -135,12 +135,6 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     ),
     # dpa4_nn.embedding
     "SeZMTypeEmbedding": ("adam_type_embedding",),
-    # dpa4_nn.embedding (native spin): these are nn.Parameter in pt but land as
-    # numpy->buffer in dpmodel; mag_layer1/2 are NativeLayer and auto-promote,
-    # and _promote_trainable skips a missing buffer, so no-spin configs (where
-    # spin_scale is absent) stay safe.
-    "SpinEmbedding": ("adam_spin_vec_weight", "adam_spin_nbr_weight"),
-    "EnvironmentInitialEmbedding": ("spin_scale",),
     # dpa4_nn.attn_res
     "DepthAttnRes": ("adamw_pseudo_query",),
     # dpa4_nn.grid_net (residual_scale is None when disabled; _promote_trainable
@@ -273,7 +267,7 @@ class DescrptDPA4(DescrptDPA4DP):
         # Persisted descriptor version, for the same reason: pt_expt rebuilds
         # the module from config before loading, so without a buffer every
         # checkpoint would come back claiming the semantics of the running
-        # code and silently skip ``_migrate_variables``.
+        # code and silently skip ``_migrate_version``.
         torch.nn.Module.register_buffer(
             self,
             "version_tensor",
@@ -426,9 +420,7 @@ class DescrptDPA4(DescrptDPA4DP):
         if version_key not in state_dict:
             state_dict[version_key] = self.version_tensor.new_tensor(1.1)
         state_dict[version_key] = self.version_tensor.new_tensor(
-            self._migrate_variables(
-                state_dict, float(state_dict[version_key].item()), prefix
-            )
+            self._migrate_version(float(state_dict[version_key].item()))
         )
 
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)

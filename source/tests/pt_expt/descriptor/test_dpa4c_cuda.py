@@ -1293,7 +1293,10 @@ def _row_split_sweep_in_process(
     and with atoms that cycle through ``types`` of a descriptor of nine types,
     run until every edge scan takes one warp per row. A positive ``rank``
     confines the scalar-only channels to the span of that many functions, so
-    that the compression adopts the low-rank table. Returns, per system, its
+    that the compression adopts the low-rank table. A native-spin profile with
+    a low-rank basis carries one of more functions than the radial network of
+    these descriptors spans, so its compression adopts the table at any rank.
+    Returns, per system, its
     atom count and the sorted direction, scan and warps per row of every edge
     scan that ran (see `_edge_scans`).
     """
@@ -1307,7 +1310,8 @@ def _row_split_sweep_in_process(
     if rank:
         _restrict_scalar_rank(descriptor, rank=rank)
     artifacts = build_compression_artifacts(descriptor)
-    assert (artifacts["basis_table"].numel() > 0) is bool(rank)
+    native_basis = spin and descriptor_profile(channels, lmax, has_spin=True).basis
+    assert (artifacts["basis_table"].numel() > 0) is bool(rank or native_basis)
     descriptor._set_compression(artifacts)
     sweep = []
     for node_count in _SWEEP_NODE_COUNTS:
@@ -1981,18 +1985,29 @@ def test_int32_edge_indices() -> None:
 @pytest.mark.parametrize("windowed", [False, True])
 @pytest.mark.parametrize("channels", [8, 64, 128])
 @pytest.mark.parametrize("index_dtype", [torch.int64, torch.uint32])
+@pytest.mark.parametrize("spin_mode", [None, "orbit", "exchange"])
 def test_compact_canonical_parity(
     channels: int,
     index_dtype: torch.dtype,
     windowed: bool,
+    spin_mode: str | None,
 ) -> None:
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         ensure_registered as ensure_canonical_registered,
     )
 
-    descriptor = _build_descriptor(channels, **(_WINDOW if windowed else {}))
+    descriptor = (
+        _build_descriptor(channels, **(_WINDOW if windowed else {}))
+        if spin_mode is None
+        else _build_spin_descriptor(
+            channels, spin_mode=spin_mode, **(_WINDOW if windowed else {})
+        )
+    )
     graph, atype = _build_graph(descriptor, canonical=True)
     arguments = _arguments(descriptor, graph, atype)
+    if spin_mode is not None:
+        moment = torch.randn(atype.shape[0], 3, device="cuda")
+        arguments = _with_spin(arguments, moment)
     ensure_canonical_registered()
     generic_output, generic_state = torch.ops.deepmd.dpa4c_graph_compress(
         graph.edge_vec,
@@ -2162,10 +2177,17 @@ class _ExportModule(torch.nn.Module):
 
 
 @_GPU
-def test_torch_export() -> None:
-    descriptor = _build_descriptor(8)
+@pytest.mark.parametrize("spin_mode", [None, "orbit", "exchange"])
+def test_torch_export(spin_mode: str | None) -> None:
+    descriptor = (
+        _build_descriptor(8)
+        if spin_mode is None
+        else _build_spin_descriptor(8, spin_mode=spin_mode)
+    )
     graph, atype = _build_graph(descriptor, canonical=False)
     arguments = _arguments(descriptor, graph, atype)
+    if spin_mode is not None:
+        arguments = _with_spin(arguments, torch.randn(atype.shape[0], 3, device="cuda"))
     module = _ExportModule().cuda().eval()
     exported = torch.export.export(
         module,
@@ -2422,9 +2444,11 @@ def test_single_type_systems_take_the_folded_scans(
     differ from the pairwise and the slotted ones in the last bits. Eight
     modes exceed what the folded and the slotted scans carry: that profile
     scans pairwise either way, and its forces agree bit for bit. A
-    spin-conditioned profile has no single-type scan and scans both systems
-    alike, pairwise or slotted, and its forces and magnetic forces agree bit
-    for bit; its atoms are of type 0, which carries the spin branch.
+    spin-conditioned profile folds a single-type system only on its low-rank
+    table, which its compression adopts at 128 channels; otherwise it scans
+    both systems alike, pairwise or slotted, and its forces and magnetic
+    forces agree bit for bit. Its atoms are of type 0, which carries the spin
+    branch.
     """
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         dpa4c_canonical_compress_energy_force,
@@ -2435,7 +2459,8 @@ def test_single_type_systems_take_the_folded_scans(
 
     build = _build_spin_descriptor if spin else _build_descriptor
     descriptor = build(channels, lmax, radial_modes)
-    descriptor._set_compression(build_compression_artifacts(descriptor))
+    artifacts = build_compression_artifacts(descriptor)
+    descriptor._set_compression(artifacts)
     neighbor_graph, atype = _build_graph(
         descriptor, canonical=True, node_count=40, single_type=True
     )
@@ -2483,10 +2508,17 @@ def test_single_type_systems_take_the_folded_scans(
     )
     assert not paired[2][nodes:].any()
     assert not single[2][nodes:].any()
-    folded = folds and not spin
+    folded = folds and (not spin or artifacts["basis_table"].numel() > 0)
     assert torch.equal(paired[2][:nodes], single[2][:nodes]) is not folded
     if spin:
-        assert torch.equal(paired[5][:nodes], single[5][:nodes])
+        magnetic_scale = max(single[5].abs().max().item(), 1.0)
+        torch.testing.assert_close(
+            paired[5][:nodes],
+            single[5][:nodes],
+            atol=2e-5 * magnetic_scale,
+            rtol=2e-5,
+        )
+        assert torch.equal(paired[5][:nodes], single[5][:nodes]) is not folded
 
 
 @_GPU
@@ -2494,22 +2526,26 @@ def test_single_type_systems_take_the_folded_scans(
     ("channels", "lmax", "radial_modes", "bridged"),
     [(32, 2, 0, False), (64, 2, 0, True), (64, 3, 4, False), (128, 3, 4, True)],
 )
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_single_type_spin_canonical_matches_the_reference(
     channels: int,
     lmax: int,
     radial_modes: int,
     bridged: bool,
     monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
 ) -> None:
     """A single-type spin system matches the CPU reference of the fused operator.
 
-    A spin-conditioned descriptor has no single-type scan: its single-type
-    system takes the slotted scans of a profile with radial modes, and the
-    pairwise scans of any other; energy, force, virial and magnetic force
+    A certified native basis serves a single-type system through its folded
+    geometry scan. Without a basis, radial-mode profiles use mode slots and
+    the other profiles scan pairwise; energy, force, virial and magnetic force
     follow the reference.
     """
     window = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.3} if bridged else {}
-    descriptor = _build_spin_descriptor(channels, lmax, radial_modes, **window)
+    descriptor = _build_spin_descriptor(
+        channels, lmax, radial_modes, spin_mode=spin_mode, **window
+    )
     descriptor._set_compression(build_compression_artifacts(descriptor))
     _check_canonical_against_reference(descriptor, bridged, monkeypatch)
 
@@ -3140,6 +3176,7 @@ def _build_spin_descriptor(
     device: str = "cuda",
     type_map: Sequence[str] = tuple(_TYPE_MAP),
     rcut: float = 3.0,
+    spin_mode: str = "orbit",
     **window: float,
 ) -> DescrptDPA4C:
     """Return a spin-conditioned descriptor with a non-unit reference moment.
@@ -3164,6 +3201,7 @@ def _build_spin_descriptor(
             seed=17,
             type_map=list(type_map),
             use_spin=[True] + [False] * (len(type_map) - 1),
+            spin_mode=spin_mode,
             **window,
         )
         .to(device)
@@ -3199,9 +3237,10 @@ def _empty_graph(device: str) -> tuple[NeighborGraph, torch.Tensor]:
     )
 
 
-def test_empty_native_spin_cpu_profile_preserves_spin_contract() -> None:
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_empty_native_spin_cpu_profile_preserves_spin_contract(spin_mode: str) -> None:
     """The CPU reference keeps the native-spin state width at zero nodes."""
-    descriptor = _build_spin_descriptor(8, device="cpu")
+    descriptor = _build_spin_descriptor(8, device="cpu", spin_mode=spin_mode)
     graph, atype = _empty_graph("cpu")
     arguments = _with_spin(
         _arguments(descriptor, graph, atype),
@@ -3210,15 +3249,18 @@ def test_empty_native_spin_cpu_profile_preserves_spin_contract() -> None:
 
     output, state = _reference_forward(graph.edge_vec, *arguments)
 
-    profile = descriptor_profile(8, 2, True)
+    profile = descriptor_profile(8, 2, True, spin_mode)
     assert output.shape == (0, profile.output_width)
     assert state.shape == (0, profile.state_width)
 
 
 @_GPU
-def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_empty_native_spin_cuda_backward_preserves_spin_contract(
+    spin_mode: str,
+) -> None:
     """The CUDA backward distinguishes present spin from its empty axis."""
-    descriptor = _build_spin_descriptor(8)
+    descriptor = _build_spin_descriptor(8, spin_mode=spin_mode)
     graph, atype = _empty_graph("cuda")
     arguments = _with_spin(
         _arguments(descriptor, graph, atype),
@@ -3228,6 +3270,10 @@ def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
         graph.edge_vec,
         *arguments,
     )
+
+    profile = descriptor_profile(8, 2, True, spin_mode)
+    assert output.shape == (0, profile.output_width)
+    assert state.shape == (0, profile.state_width)
 
     edge_gradient, spin_gradient, edge_spin_gradient = _descriptor_backward(
         torch.empty_like(output),
@@ -3248,8 +3294,10 @@ def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
 )
 @pytest.mark.parametrize("windowed", [False, True])
 @pytest.mark.parametrize("single_type", [False, True])
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_spin_compressed_matches_portable(
     monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
     channels: int,
     lmax: int,
     radial_modes: int,
@@ -3269,7 +3317,11 @@ def test_spin_compressed_matches_portable(
     types.
     """
     descriptor = _build_spin_descriptor(
-        channels, lmax, radial_modes, **(_WINDOW if windowed else {})
+        channels,
+        lmax,
+        radial_modes,
+        spin_mode=spin_mode,
+        **(_WINDOW if windowed else {}),
     )
     assert mega_eligible(descriptor)
     graph, atype = _build_graph(descriptor, canonical=True)
@@ -3348,6 +3400,7 @@ def test_spin_compressed_matches_portable(
     ],
 )
 @pytest.mark.parametrize("system", ["unsplit", "coscheduled"])
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_spin_slotted_scans_match_the_portable_equations(
     monkeypatch: pytest.MonkeyPatch,
     channels: int,
@@ -3356,6 +3409,7 @@ def test_spin_slotted_scans_match_the_portable_equations(
     type_count: int,
     windowed: bool,
     system: str,
+    spin_mode: str,
 ) -> None:
     """The slotted spin scans follow the portable equations.
 
@@ -3382,6 +3436,7 @@ def test_spin_slotted_scans_match_the_portable_equations(
         lmax,
         radial_modes,
         type_map=_WIDE_TYPE_MAP[: max(type_count, 4)],
+        spin_mode=spin_mode,
         **(_WINDOW if windowed else {}),
     )
     graph, atype = _build_graph(
@@ -3525,8 +3580,10 @@ def test_spin_systems_of_a_few_types_take_the_slotted_scans(
 
 @_GPU
 @pytest.mark.parametrize("family", ["neighbour", "onsite"])
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_spin_magnetic_force_splits_into_onsite_and_neighbour(
     monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
     family: str,
 ) -> None:
     """Each half of the magnetic force is correct on its own.
@@ -3536,7 +3593,7 @@ def test_spin_magnetic_force_splits_into_onsite_and_neighbour(
     independently. Silencing one at a time keeps a fault in either from being
     masked by the other's magnitude.
     """
-    descriptor = _build_spin_descriptor(16)
+    descriptor = _build_spin_descriptor(16, spin_mode=spin_mode)
     with torch.no_grad():
         if family == "neighbour":
             descriptor.spin.adam_spin_vector_weight.zero_()
@@ -4947,7 +5004,7 @@ def _build_block_descriptor(
     lmax: int,
     radial_modes: int,
     rcut: Sequence[float],
-    spin: bool = False,
+    spin_mode: str | None = None,
     **window: float,
 ) -> DescrptDPA4C:
     """Return an fp32 descriptor of ``len(rcut)`` blocks with active further blocks.
@@ -4957,9 +5014,16 @@ def _build_block_descriptor(
     holds the fractions of a bridging window. The descriptor is not
     compressed.
     """
-    builder = _build_spin_descriptor if spin else _build_descriptor
+    builder = _build_spin_descriptor if spin_mode is not None else _build_descriptor
+    spin_arguments = {} if spin_mode is None else {"spin_mode": spin_mode}
     descriptor = builder(
-        channels, lmax, radial_modes, rcut=list(rcut), n_blocks=len(rcut), **window
+        channels,
+        lmax,
+        radial_modes,
+        rcut=list(rcut),
+        n_blocks=len(rcut),
+        **spin_arguments,
+        **window,
     )
     _activate_blocks(descriptor)
     return descriptor
@@ -5191,20 +5255,25 @@ def test_further_block_scans_tile_like_the_whole_system(
 
 @_GPU
 @pytest.mark.parametrize(
-    ("channels", "lmax", "radial_modes", "rcut", "spin", "windowed"),
+    ("channels", "lmax", "radial_modes", "rcut", "spin_mode", "windowed"),
     [
-        (8, 2, 0, (3.0, 3.0), False, False),
-        (16, 3, 4, (3.0, 2.5), False, False),
-        (32, 2, 0, (3.0, 2.5), False, False),
-        (64, 2, 0, (3.0, 3.0), False, False),
-        (64, 3, 4, (3.0, 2.5), False, False),
-        (128, 3, 4, (3.0, 2.5), False, False),
-        (16, 4, 2, (3.0, 2.5, 2.0), False, False),
-        (32, 2, 0, (3.0, 2.6), True, False),
-        (8, 2, 0, (3.0, 3.0), False, True),
-        (64, 3, 4, (3.0, 2.5), False, True),
-        (16, 4, 2, (3.0, 2.5, 2.0), False, True),
-        (32, 2, 0, (3.0, 2.6), True, True),
+        (8, 2, 0, (3.0, 3.0), None, False),
+        (16, 3, 4, (3.0, 2.5), None, False),
+        (32, 2, 0, (3.0, 2.5), None, False),
+        (64, 2, 0, (3.0, 3.0), None, False),
+        (64, 3, 4, (3.0, 2.5), None, False),
+        (128, 3, 4, (3.0, 2.5), None, False),
+        (16, 4, 2, (3.0, 2.5, 2.0), None, False),
+        (32, 2, 0, (3.0, 2.6), "orbit", False),
+        (8, 2, 0, (3.0, 3.0), None, True),
+        (64, 3, 4, (3.0, 2.5), None, True),
+        (16, 4, 2, (3.0, 2.5, 2.0), None, True),
+        (32, 2, 0, (3.0, 2.6), "orbit", True),
+        (32, 2, 0, (3.0, 2.6), "exchange", False),
+        (64, 3, 4, (3.0, 2.5), "exchange", True),
+        (16, 4, 2, (3.0, 2.5, 2.0), "exchange", False),
+        (128, 3, 4, (3.0, 2.6, 2.2), "orbit", False),
+        (128, 3, 4, (3.0, 2.6, 2.2), "exchange", True),
     ],
 )
 def test_further_blocks_match_the_reference(
@@ -5212,7 +5281,7 @@ def test_further_blocks_match_the_reference(
     lmax: int,
     radial_modes: int,
     rcut: tuple[float, ...],
-    spin: bool,
+    spin_mode: str | None,
     windowed: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -5226,7 +5295,7 @@ def test_further_blocks_match_the_reference(
     of the window.
     """
     descriptor = _build_block_descriptor(
-        channels, lmax, radial_modes, rcut, spin, **(_WINDOW if windowed else {})
+        channels, lmax, radial_modes, rcut, spin_mode, **(_WINDOW if windowed else {})
     )
     descriptor._set_compression(build_compression_artifacts(descriptor))
     _check_canonical_against_reference(
@@ -5351,11 +5420,11 @@ def _border_images(
 
 @_GPU
 @pytest.mark.parametrize(
-    ("channels", "lmax", "radial_modes", "rcut", "spin"),
+    ("channels", "lmax", "radial_modes", "rcut", "spin_mode"),
     [
-        (32, 2, 0, (3.0, 3.0), False),
-        (64, 3, 4, (3.0, 2.5), False),
-        (32, 2, 0, (3.0, 2.6), True),
+        (32, 2, 0, (3.0, 3.0), None),
+        (64, 3, 4, (3.0, 2.5), None),
+        (32, 2, 0, (3.0, 2.6), "orbit"),
     ],
 )
 @pytest.mark.parametrize("swaps", ["self", "lammps", "lammps-crossing"])
@@ -5365,7 +5434,7 @@ def test_halo_rows_match_the_folded_frame(
     lmax: int,
     radial_modes: int,
     rcut: tuple[float, ...],
-    spin: bool,
+    spin_mode: str | None,
     swaps: str,
     windowed: bool,
     monkeypatch: pytest.MonkeyPatch,
@@ -5401,7 +5470,7 @@ def test_halo_rows_match_the_folded_frame(
         pytest.skip("an operator library with MPI reads the communicator")
     owned, side = 48, 7.0
     descriptor = _build_block_descriptor(
-        channels, lmax, radial_modes, rcut, spin, **(_WINDOW if windowed else {})
+        channels, lmax, radial_modes, rcut, spin_mode, **(_WINDOW if windowed else {})
     )
     descriptor._set_compression(build_compression_artifacts(descriptor))
     fitting = _energy_fitting(descriptor)
@@ -5444,7 +5513,7 @@ def test_halo_rows_match_the_folded_frame(
         )
     assert points.shape[0] > owned
     moment = halo_moment = None
-    if spin:
+    if spin_mode is not None:
         moment = torch.randn(owned, 3, device="cuda", generator=generator)
         halo_moment = moment[owner]
     operator = torch.ops.deepmd.dpa4c_canonical_compress_energy_force
@@ -5475,3 +5544,113 @@ def test_halo_rows_match_the_folded_frame(
             _fold_halo(operator(*[_to_cpu(a) for a in arguments]), owner, owned),
             reference,
         )
+
+
+@_GPU
+def test_exchange_spin_rotates_independently_and_matches_finite_difference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exchange invariants and their VJP respect independent spin rotations."""
+    descriptor = _build_spin_descriptor(32, spin_mode="exchange")
+    graph, atype = _build_graph(descriptor, canonical=True)
+    generator = torch.Generator(device="cuda").manual_seed(111)
+    spin = torch.randn(atype.shape[0], 3, generator=generator, device="cuda")
+    rotation, _ = torch.linalg.qr(torch.randn(3, 3, generator=generator, device="cuda"))
+    descriptor.enable_compression(0.5)
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+
+    profile = descriptor_profile(32, 2, True, "exchange")
+
+    def evaluate(moment: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        moment = moment.detach().requires_grad_(True)
+        output, _ = descriptor.call_graph(graph, atype, spin=moment)
+        return output, torch.autograd.grad(
+            output[:, profile.spin_slice].double().sum(), moment
+        )[0]
+
+    output, gradient = evaluate(spin)
+    rotated_output, rotated_gradient = evaluate(spin @ rotation)
+    torch.testing.assert_close(rotated_output, output, atol=3e-5, rtol=3e-5)
+    torch.testing.assert_close(
+        rotated_gradient, gradient @ rotation, atol=3e-5, rtol=1e-4
+    )
+    direction = torch.randn(spin.shape, generator=generator, device="cuda")
+    direction /= torch.linalg.vector_norm(direction)
+    step = 2e-3
+    plus = evaluate(spin + step * direction)[0][:, profile.spin_slice].double().sum()
+    minus = evaluate(spin - step * direction)[0][:, profile.spin_slice].double().sum()
+    torch.testing.assert_close(
+        (plus - minus) / (2 * step),
+        (gradient.double() * direction).sum(),
+        atol=2e-3,
+        rtol=2e-3,
+    )
+
+
+@_GPU
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+@pytest.mark.parametrize("single_type", [False, True])
+@pytest.mark.parametrize("with_basis", [False, True])
+def test_native_certified_basis_preserves_descriptor_and_vjp(
+    monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
+    single_type: bool,
+    with_basis: bool,
+) -> None:
+    """Certified native geometry and its raw-table route retain the same VJP."""
+    descriptor = _build_spin_descriptor(128, 3, 4, spin_mode=spin_mode)
+    _restrict_scalar_rank(descriptor, rank=8)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    if single_type:
+        atype = torch.zeros_like(atype)
+    generator = torch.Generator(device="cuda").manual_seed(11)
+    spin = torch.randn(atype.shape[0], 3, generator=generator, device="cuda")
+
+    def evaluate() -> tuple[torch.Tensor, ...]:
+        moment = spin.detach().clone().requires_grad_(True)
+        edge = graph.edge_vec.detach().clone().requires_grad_(True)
+        output, _ = descriptor.call_graph(
+            dataclasses.replace(graph, edge_vec=edge), atype, spin=moment
+        )
+        cotangent = torch.linspace(
+            -0.7, 1.3, output.numel(), dtype=output.dtype, device=output.device
+        ).reshape_as(output)
+        gradients = torch.autograd.grad((output * cotangent).sum(), (edge, moment))
+        return output, *gradients
+
+    expected = evaluate()
+    descriptor.enable_compression(0.5)
+    assert descriptor.compress_basis_matrix.shape == (64, 112)
+    if not with_basis:
+        empty = descriptor.compress_basis_table.new_empty(0)
+        descriptor._store_compression_buffer("basis_table", empty)
+        descriptor._store_compression_buffer("basis_matrix", empty.clone())
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    actual = evaluate()
+    for value, reference, (atol, rtol) in zip(
+        actual, expected, [(3e-5, 3e-5), (8e-6, 1e-4), (8e-6, 1e-4)], strict=True
+    ):
+        _assert_close_at_scale(value, reference, atol=atol, rtol=rtol)
+
+
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_native_basis_rejects_independent_radial_channels(spin_mode: str) -> None:
+    """A native basis rejects a scalar family with more independent functions."""
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        build_low_rank_table,
+    )
+
+    descriptor = _build_spin_descriptor(128, 3, device="cpu", spin_mode=spin_mode)
+    assert descriptor_profile(128, 3, True, spin_mode).basis == 64
+    stride = 0.002
+    radius = torch.arange(1501, dtype=torch.float64)[:, None] * stride
+    frequency = torch.arange(1, 129, dtype=torch.float64)[None, :] * (
+        2 * math.pi / descriptor.rcut
+    )
+    values = torch.sin(radius * frequency)
+    first = frequency * torch.cos(radius * frequency)
+    second = -frequency * frequency * values
+    table, matrix = build_low_rank_table(
+        descriptor, stride, knots=(values, first, second)
+    )
+    assert table.numel() == matrix.numel() == 0

@@ -190,7 +190,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         apply environment matrix FiLM conditioning on l=0 features using 4D
         `[s, s*r_hat]` representation, and enable the non-scalar geometric
         initial embedding when `l_schedule[0] + extra_node_l > 0`. If False, the initial state
-        contains only atom-local scalar features before message passing. FiLM
+        contains only atom-local scalar features before message passing.
+        Native spin requires True to retain neighbor spin correlations. FiLM
         deltas are normalized and scaled with learnable strengths initialized
         to small values. Internal dimensions are derived from `channels`:
         `embed_dim=min(channels, 128)`,
@@ -533,6 +534,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
         use_spin: list[bool] | None = None,
+        spin_mode: str = "orbit",
     ) -> None:
         super().__init__()
 
@@ -688,10 +690,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         )
 
         # === Native per-atom spin embedding ===
-        # The spin vector enters the descriptor as an l=0 magnitude scalar plus
-        # an l=1 direction feature (see ``SpinEmbedding``). Providing per-type
-        # ``use_spin`` flags enables the native spin embedding.
+        # Moments enter through time-even on-site and pair scalars. Per-type
+        # ``use_spin`` flags enable the native spin embedding.
         self.use_spin = None if use_spin is None else [bool(x) for x in use_spin]
+        self.spin_mode = spin_mode
+        if spin_mode not in {"exchange", "orbit"}:
+            raise ValueError("`spin_mode` must be exchange or orbit")
 
         # === Zone bridging: InnerClamp + Source Freeze Propagation Gate ===
         # Both the geometry clamp (``InnerClamp``) and the message-passing
@@ -753,6 +757,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Env seed parameters ===
         self.use_env_seed = bool(use_env_seed)
+        if self.use_spin is not None and not self.use_env_seed:
+            raise ValueError(
+                "Native spin requires use_env_seed=True for neighbor spin correlations."
+            )
         self.env_seed_embed_dim = min(self.channels, 128)
         self.env_seed_type_dim = min(32, max(8, self.channels // 4))
         axis_dim = 4 if self.env_seed_embed_dim < 64 else 8
@@ -887,25 +895,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             self.charge_spin_embedding = None
 
         if self.use_spin is not None:
-            if self.node_init_lmax < 1:
-                raise ValueError(
-                    "`use_spin` requires a node degree >= 1 "
-                    "(lmax + extra_node_l) to host the l=1 spin feature."
-                )
             self.spin_embedding: SpinEmbedding | None = SpinEmbedding(
                 ntypes=self.ntypes,
                 channels=self.channels,
+                n_radial=self.n_radial,
+                spin_mode=self.spin_mode,
                 use_spin=self.use_spin,
                 activation_function=self.activation_function,
                 dtype=self.compute_dtype,  # force fp32+
                 seed=seed_spin_embedding,
                 trainable=self.trainable,
-            )
-            # Packed rows hosting the l=1 spin coefficients (m = -1, 0, +1).
-            self.register_buffer(
-                "_spin_l1_rows",
-                torch.arange(1, 4, dtype=torch.long, device=self.device),
-                persistent=False,
             )
         else:
             self.spin_embedding = None
@@ -1057,6 +1056,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             k_b = min(self.kmax, l_b)
             blocks.append(
                 SeZMInteractionBlock(
+                    parity=self.use_spin is not None,
                     lmax=l_b,
                     node_lmax=node_l_b,
                     mmax=m_b,
@@ -1198,8 +1198,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             "mlp_bias": self.mlp_bias,
             "trainable": self.trainable,
         }
+        # Intermediate tensors preserve native parity; the final Haar scalar
+        # readout pairs equal degrees and is intrinsically inversion-even.
         self.readout_pre_layers = nn.ModuleList(
-            EquivariantFFN(**readout_ffn_kwargs, seed=child_seed(seed_out, layer_index))
+            EquivariantFFN(
+                **readout_ffn_kwargs,
+                parity=self.use_spin is not None,
+                seed=child_seed(seed_out, layer_index),
+            )
             for layer_index in range(self.readout_layers - 1)
         )
         self.output_ffn = EquivariantFFN(**readout_ffn_kwargs, seed=seed_out)
@@ -1395,11 +1401,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     nloc=nloc,
                 )
 
-            # Native spin: condition the l=0 type features on the spin magnitude
-            # and hold the l=1 direction coefficients for the backbone seed.
-            spin_vec = None
+            # Native spin conditions the scalar type features on moment magnitude.
             if self.spin_embedding is not None and spin is not None:
-                type_ebed, spin_vec = self._apply_spin_embedding(
+                type_ebed = self._apply_spin_embedding(
                     type_ebed, spin, atype_loc.reshape(-1), n_nodes=n_nodes
                 )
 
@@ -1427,6 +1431,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
+            )
+
+        if self.spin_embedding is not None and spin is not None:
+            edge_cache = edge_cache._replace(
+                edge_rbf=edge_cache.edge_rbf
+                + self.spin_embedding.edge_features(
+                    spin.reshape(n_nodes, 3), atype_loc.reshape(-1), edge_cache
+                )
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1474,33 +1486,17 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x = type_ebed.new_zeros(n_nodes, ebed_dim_0, 1, self.channels)  # (N, D, 1, C)
         x[:, 0, 0, :] = x0_out
 
-        # === Step 8. Geometric Initial Embedding (+ neighbor spin l=1) ===
+        # === Step 8. Geometric Initial Embedding ===
         with nvtx_range("gie"):
             if self.use_gie:
                 # GIE only needs l>=1, slice radial_feat[:, 1:, :]
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
-                spin_l1_message = (
-                    self.spin_embedding.edge_l1(
-                        spin.reshape(n_nodes, 3),
-                        atype_loc.reshape(-1),
-                        edge_cache,
-                    )
-                    if (self.spin_embedding is not None and spin is not None)
-                    else None
-                )
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
                     zonal_coupling=zonal_coupling,
-                    spin_l1_message=spin_l1_message,
                 ).unsqueeze(2)
-
-        # === Step 9. Add the on-site native spin l=1 to the backbone ===
-        # The neighbor-spin l=1 is aggregated inside GIE (degree-normalized like
-        # the geometry); the atom's own spin direction is added here, un-normalized.
-        if spin_vec is not None:
-            x = x.index_add(1, self._spin_l1_rows, spin_vec.unsqueeze(2))
 
         # === Step 10. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
@@ -1688,11 +1684,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 )
             n_nodes = type_ebed.shape[0]
 
-            # Native spin: condition the l=0 type features on the spin magnitude
-            # and hold the l=1 direction coefficients for the backbone seed.
-            spin_vec = None
+            # Native spin conditions the scalar type features on moment magnitude.
             if self.spin_embedding is not None and spin is not None:
-                type_ebed, spin_vec = self._apply_spin_embedding(
+                type_ebed = self._apply_spin_embedding(
                     type_ebed, spin, atype_flat, n_nodes=n_nodes
                 )
 
@@ -1746,6 +1740,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 node_partial_exchange=node_partial_exchange,
             )
 
+        if self.spin_embedding is not None and spin is not None:
+            edge_cache = edge_cache._replace(
+                edge_rbf=edge_cache.edge_rbf
+                + self.spin_embedding.edge_features(
+                    spin.reshape(n_nodes, 3), atype_flat, edge_cache
+                )
+            )
+
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
         x0 = type_ebed  # (N, C)
         x0_out = x0  # (N, C)
@@ -1789,30 +1791,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x = type_ebed.new_zeros(n_nodes, ebed_dim_0, 1, self.channels)  # (N, D, 1, C)
         x[:, 0, 0, :] = x0_out
 
-        # === Step 7. Geometric Initial Embedding (+ neighbor spin l=1) ===
+        # === Step 7. Geometric Initial Embedding ===
         with nvtx_range("gie"):
             if self.use_gie:
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
-                spin_l1_message = (
-                    self.spin_embedding.edge_l1(
-                        spin.reshape(n_nodes, 3), atype_flat, edge_cache
-                    )
-                    if (self.spin_embedding is not None and spin is not None)
-                    else None
-                )
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
                     zonal_coupling=zonal_coupling,
-                    spin_l1_message=spin_l1_message,
                 ).unsqueeze(2)
-
-        # === Step 8. Add the on-site native spin l=1 to the backbone ===
-        # The neighbor-spin l=1 is aggregated inside GIE; the
-        # atom's own spin direction is added here, un-normalized.
-        if spin_vec is not None:
-            x = x.index_add(1, self._spin_l1_rows, spin_vec.unsqueeze(2))
 
         # === Step 9. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
@@ -2200,36 +2188,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         atype_flat: torch.Tensor,
         *,
         n_nodes: int,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Inject the per-atom spin embedding into the node features.
-
-        The l=0 magnitude scalar is added to the flattened type embedding so it
-        propagates into the scalar backbone, the per-edge type features, and
-        every block's radial features (exactly like the type embedding). The l=1
-        direction coefficients are returned for the caller to add to the
-        equivariant backbone after the geometric initial embedding.
-
-        Parameters
-        ----------
-        type_ebed
-            Flattened type embedding with shape (N, channels).
-        spin
-            Per-atom spin vectors with shape (nf, nloc, 3) or (N, 3).
-        atype_flat
-            Flattened local atom types with shape (N,).
-        n_nodes
-            Number of local nodes ``N = nf * nloc``.
-
-        Returns
-        -------
-        tuple[torch.Tensor, torch.Tensor]
-            The l=0-conditioned type embedding with shape (N, channels) and the
-            packed l=1 direction coefficients with shape (N, 3, channels).
-        """
-        scalar, vector = self.spin_embedding(spin.reshape(n_nodes, 3), atype_flat)
-        type_ebed = type_ebed + scalar.to(dtype=type_ebed.dtype)
-        return type_ebed, vector
+    ) -> torch.Tensor:
+        """Add time-even moment magnitude features to the scalar type state."""
+        scalar = self.spin_embedding(spin.reshape(n_nodes, 3), atype_flat)
+        return type_ebed + scalar.to(dtype=type_ebed.dtype)
 
     def _edge_type_keep_mask(
         self,
@@ -2877,6 +2839,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
                 "use_spin": self.use_spin,
+                "spin_mode": self.spin_mode,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
             "env_mat": DPEnvMat(self.rcut, self.rcut, self.eps).serialize(),
@@ -2947,76 +2910,18 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         local_jdata_cpy["sel"] = sel[0]
         return local_jdata_cpy, min_nbor_dist
 
-    def _migrate_variables(
-        self,
-        variables: dict[str, torch.Tensor],
-        version: float,
-        prefix: str = "",
-    ) -> float:
-        """Rewrite stored state whose meaning changed since ``version``.
+    def _migrate_version(self, version: float) -> float:
+        """Validate bridging semantics and update an unbridged record version.
 
-        Operates on the incoming ``state_dict``, BEFORE anything is assigned
-        to a module: ``load_state_dict`` restores a module's own buffers
-        before descending into its children, so a migration applied to live
-        attributes would rewrite values the child load is about to
-        overwrite. Both checkpoints and portable records pass through this
-        migration. A bridged receiving descriptor rejects legacy states before
-        its tensors are restored. Other differences that no rewrite
-        can absorb stay forward-time branches on :attr:`version`, so a
-        migrated descriptor never changes its own math.
-
-        Version 1.2 moved the env-seed spin gate from the spin coordinate to
-        the resulting environment quadratic form. For an active-spin model,
-        squaring the stored amplitude preserves the represented function.
-        Legacy native-spin models with no magnetic types instead carry
-        dormant, unconstrained spin-route values; those output-controlling
-        values are canonicalized to the zero function before the routes can
-        be activated by fine-tuning. Versions below 1.1 predate the
-        native-spin route and retain their original forward semantics.
-
-        Version 1.3 changes only bridging. A version-1.2 state loaded into an
-        unbridged descriptor adopts the current record version without changing
-        its function. A bridged receiving descriptor rejects every pre-1.3 state:
-        state dictionaries do not identify the source's bridging configuration.
-        Fine-tuning first loads a compatible plain checkpoint into its original
-        unbridged model, migrates it, then transfers the state to the bridged
-        target. Legacy bridged checkpoints cannot be migrated this way.
-
-        Parameters
-        ----------
-        variables
-            Stored state keyed by ``state_dict`` name, mutated in place.
-        version
-            Version the state was written at.
-        prefix
-            Key prefix of this descriptor within ``variables``.
-
-        Returns
-        -------
-        float
-            Version the state expresses after migration.
+        Records before 1.1 retain their forward semantics. An unbridged record
+        from 1.1 onward adopts the current bridging record version without a
+        parameter transformation. Bridged records require the current window
+        semantics because their stored function cannot be migrated.
         """
         check_bridging_record_version(
             {"inner_clamp_f_inner": self.bridging_f_inner}, version
         )
-        if 1.1 <= version < 1.2:
-            gate_key = prefix + "env_seed_embedding.spin_scale"
-            if self.use_spin is not None and not any(self.use_spin):
-                dormant_keys = (
-                    "spin_embedding.mag_layer2.matrix",
-                    "spin_embedding.adam_spin_vec_weight",
-                    "spin_embedding.adam_spin_nbr_weight",
-                    "env_seed_embedding.spin_scale",
-                )
-                for name in dormant_keys:
-                    key = prefix + name
-                    if key in variables:
-                        variables[key] = torch.zeros_like(variables[key])
-            elif gate_key in variables:
-                variables[gate_key] = variables[gate_key] ** 2
-            version = 1.2
-
-        if 1.2 <= version < BRIDGING_RECORD_VERSION:
+        if 1.1 <= version < BRIDGING_RECORD_VERSION:
             return BRIDGING_RECORD_VERSION
         return version
 
@@ -3067,9 +2972,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 3. Bring the incoming state up to the current semantics ===
         state_dict[version_key] = self.version_tensor.new_tensor(
-            self._migrate_variables(
-                state_dict, float(state_dict[version_key].item()), prefix
-            )
+            self._migrate_version(float(state_dict[version_key].item()))
         )
 
         # === Step 4. Drop transient descriptor state rebuilt at construction ===

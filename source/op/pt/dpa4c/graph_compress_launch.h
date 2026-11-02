@@ -90,9 +90,9 @@ struct Arguments {
   // bridged specializations evaluate either.
   bool bridged = false;
   bool canonical = false;
-  // Whether the native spin branch is active. The neighbour spin width is
-  // derived from the degree profile, so presence is the whole runtime choice.
-  bool has_spin = false;
+  // Native-spin symmetry: zero without spin, one for orbit, two for exchange.
+  // The channel width follows the degree profile.
+  std::uint8_t spin_mode = 0;
   IndexKind index_kind = IndexKind::Bits64;
 
   const void* edge_index = nullptr;
@@ -294,8 +294,11 @@ constexpr int degree_two_width(int channels) {
 // Narrower profiles have too few scalar-only channels for an expansion
 // to save reads. The compression adopts the basis only when it reproduces the
 // channels of the descriptor at hand, so a model of higher rank keeps the
-// direct scan.
-constexpr int low_rank_basis(int channels) {
+// direct scan. The wider native basis serves single-type geometry alone.
+constexpr int low_rank_basis(int channels, int spin_mode = 0) {
+  if (spin_mode) {
+    return channels == 128 ? 64 : 0;
+  }
   return channels == 64 || channels == 128 ? 32 : 0;
 }
 
@@ -462,41 +465,43 @@ struct Lockstep {
 /// rows of one block.
 constexpr float kLockstepWindow = 4.0f;
 
-// ``HasSpin`` is deliberately without a default. It changes the moment
+// ``SpinMode`` is zero without spin, one for orbit and two for exchange.
+// It is deliberately without a default because it changes the moment
 // layout and the descriptor width, so an instantiation that omits it would
 // silently read a spin-free layout out of a spin-conditioned buffer.
 // ``NodeLanes`` overrides the node-group width; zero selects the narrow
 // candidate. Only the node kernels instantiate the override, so the edge
 // kernels and every existing use of ``Profile`` are unaffected.
-template <int Channels, int Lmax, bool HasSpin, int NodeLanes = 0>
+template <int Channels, int Lmax, int SpinMode, int NodeLanes = 0>
 struct Profile {
+  static constexpr bool HasOrbit = SpinMode == 1;
   static constexpr int C0 = Channels;
   static constexpr int C1 = degree_one_width(Channels);
   static constexpr int C2 = degree_two_width(Channels);
   static constexpr int K1 = C2;
   static constexpr int K2 = 2;
-  // Width of the low-rank expansion of the scalar-only channels, zero for a
-  // profile whose single-type scan reads the channels directly. The spin
-  // branch never folds, so a spin-conditioned profile carries none.
-  static constexpr int Basis = HasSpin ? 0 : low_rank_basis(Channels);
+  // Capacity of the certified scalar-only expansion. Native channels stay
+  // in the degree-one prefix and retain their edge-local amplitudes.
+  static constexpr int Basis = low_rank_basis(Channels, SpinMode);
 
   // === Native spin widths ===
-  // The neighbour spin width is derived from the degree-two width, so the
-  // presence of the branch is the only new compile-time degree of freedom and
-  // the instantiation matrix doubles rather than growing by a factor of four.
-  static constexpr int Cs = HasSpin ? C2 : 0;
+  // The neighbour spin width follows the degree-two width. Exchange omits
+  // the bond-projected vector family and the geometric quadrupole cross Gram.
+  static constexpr int Cs = SpinMode ? C2 : 0;
   // Reduced families: neighbour moment magnitude, magnetic coordination, the
   // isotropic neighbour spin vector, the bond-projected neighbour spin vector,
   // and the single neighbour spin quadrupole.
-  static constexpr int SpinEdgeWidth = HasSpin ? 8 * Cs + 5 : 0;
+  static constexpr int SpinEdgeWidth =
+      SpinMode ? (HasOrbit ? 8 : 5) * Cs + 5 : 0;
   // Node-local on-site vector and quadrupole, written outside the division.
-  static constexpr int SpinNodeWidth = HasSpin ? 8 : 0;
+  static constexpr int SpinNodeWidth = SpinMode ? 8 : 0;
   static constexpr int SpinMomentWidth = SpinEdgeWidth + SpinNodeWidth;
   // Channel width of the joint degree-one spin block: the on-site moment, the
   // isotropic neighbour channels and the bond-projected neighbour channels.
   // The two neighbour families share one grading, so one Gram over the joint
   // block emits every admissible degree-one spin invariant.
-  static constexpr int SpinVectorWidth = HasSpin ? 1 + 2 * Cs : 0;
+  static constexpr int SpinVectorWidth =
+      SpinMode ? 1 + (HasOrbit ? 2 : 1) * Cs : 0;
 
   // Flat moment layout: degree zero, degree one, degree two, the
   // single-channel high degrees in increasing order, then the spin families.
@@ -508,13 +513,13 @@ struct Profile {
   static constexpr int High4 = Lmax >= 4 ? 9 : 0;
   static constexpr int HighCount = High3 + High4;
   static constexpr int SpinOffset = HighOffset + HighCount;
-  static constexpr int SpinMagnitude = SpinOffset;               // Cs
-  static constexpr int SpinCoordination = SpinMagnitude + Cs;    // Cs
-  static constexpr int SpinVector = SpinCoordination + Cs;       // 3 * Cs
-  static constexpr int SpinBond = SpinVector + 3 * Cs;           // 3 * Cs
-  static constexpr int SpinTensor = SpinBond + 3 * Cs;           // 5
-  static constexpr int SpinOnsiteVector = SpinTensor + 5;        // 3
-  static constexpr int SpinOnsiteTensor = SpinOnsiteVector + 3;  // 5
+  static constexpr int SpinMagnitude = SpinOffset;             // Cs
+  static constexpr int SpinCoordination = SpinMagnitude + Cs;  // Cs
+  static constexpr int SpinVector = SpinCoordination + Cs;     // 3 * Cs
+  static constexpr int SpinBond = SpinVector + 3 * Cs;         // 3 * Cs
+  static constexpr int SpinTensor = SpinBond + (HasOrbit ? 3 * Cs : 0);  // 5
+  static constexpr int SpinOnsiteVector = SpinTensor + 5;                // 3
+  static constexpr int SpinOnsiteTensor = SpinOnsiteVector + 3;          // 5
   static constexpr int MomentWidth = SpinOffset + SpinMomentWidth;
   static constexpr int StateWidth = MomentWidth + 2;
 
@@ -544,9 +549,9 @@ struct Profile {
   // on-site self-term, which the identity |B_2(s)|^2 = |s|^4 makes a per-type
   // constant times the square of the vector block's on-site self-term.
   static constexpr int SpinGramVector =
-      HasSpin ? triangular(SpinVectorWidth) : 0;
-  static constexpr int SpinGramTensor = HasSpin ? 2 : 0;
-  static constexpr int SpinCross = HasSpin ? 2 * C2 : 0;
+      SpinMode ? triangular(SpinVectorWidth) : 0;
+  static constexpr int SpinGramTensor = SpinMode ? 2 : 0;
+  static constexpr int SpinCross = HasOrbit ? 2 * C2 : 0;
   static constexpr int SpinDim =
       SpinGramVector + SpinGramTensor + SpinCross + 2 * Cs;
   static constexpr int OutputSpinGramVector = OutputQuartic + Quartic;
@@ -567,9 +572,9 @@ struct Profile {
   // measured widening lost more to the reduced edge concurrency than it
   // recovered in register pressure.
   static constexpr int ForwardEdgeWidth =
-      HasSpin ? EdgeMap<Channels>::SpinForward : EdgeMap<Channels>::Forward;
+      SpinMode ? EdgeMap<Channels>::SpinForward : EdgeMap<Channels>::Forward;
   static constexpr int BackwardEdgeWidth =
-      HasSpin ? EdgeMap<Channels>::SpinBackward : EdgeMap<Channels>::Backward;
+      SpinMode ? EdgeMap<Channels>::SpinBackward : EdgeMap<Channels>::Backward;
   static constexpr int NodeWidth =
       NodeLanes != 0 ? NodeLanes : kNodeLanesNarrow;
   static constexpr int NodeGroups = kWarpSize / NodeWidth;
@@ -584,7 +589,7 @@ struct Profile {
 /// the cost of occupancy. Zero sets no budget and leaves the register count to
 /// the compiler. The comments below count one-warp blocks, which a
 /// multiprocessor holds as many of as its block limit allows.
-template <int Channels, int Lmax, bool HasModes, bool HasSpin, bool Backward>
+template <int Channels, int Lmax, bool HasModes, int SpinMode, bool Backward>
 constexpr int edge_resident_blocks() {
 #if defined(__CUDA_ARCH__) && \
     (__CUDA_ARCH__ == 890 || (__CUDA_ARCH__ >= 1200 && __CUDA_ARCH__ < 1300))
@@ -604,7 +609,7 @@ constexpr int edge_resident_blocks() {
   // others, whose geometric state at degree three or whose spin payload on
   // lanes that own few channels exceeds eighty registers, run fastest on the
   // compiler's own count.
-  if (HasSpin) {
+  if (SpinMode) {
     return Lmax == 2 && (!Backward || Channels >= 64) ? 24 : 0;
   }
   return HasModes && Channels >= 64 ? 24 : 0;
@@ -637,7 +642,7 @@ constexpr int edge_resident_blocks() {
   // three serve the generic graph path and the LAMMPS systems of more than
   // eight node types; unmeasured on 7.0, they keep the thirty-two blocks of the
   // architectures without a branch of their own.
-  if (HasSpin) {
+  if (SpinMode) {
     return Lmax == 2 ? (!Backward || Channels >= 64 ? 24 : 0) : 32;
   }
   return 24;
@@ -659,7 +664,7 @@ constexpr int edge_resident_blocks() {
   // at twenty-four blocks. The degree-three spin kernels keep thirty-two
   // blocks; a system of at most eight types scans them slotted, so no
   // production path has measured them.
-  if (HasSpin) {
+  if (SpinMode) {
     return Lmax == 2 ? (Backward ? 0 : 24) : 32;
   }
   return Backward && Channels == 8 ? 24 : 32;

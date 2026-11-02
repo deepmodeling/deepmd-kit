@@ -1155,113 +1155,56 @@ class TestDescrptSeZM(_SeZMTestCase):
 class TestSeZMSpinEmbedding(_SeZMTestCase):
     """Test the native per-atom spin embedding and its descriptor injection."""
 
-    def test_cart_to_l1_intertwines_wigner_rotation(self) -> None:
-        """The l=1 spin map must rotate with the descriptor's Wigner-D block."""
+    def test_time_even_pair_features_and_signed_exchange(self) -> None:
+        """Global reversal preserves the features; a local reversal retains exchange sign."""
         dtype = torch.float64
-        module = SpinEmbedding(
-            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=1
-        ).to(self.device)
-        cart_to_l1 = module.cart_to_l1
-        # cart_to_l1 == sqrt(2) * S with S the unit l=1 basis of WignerDCalculator.
-        expected = math.sqrt(2.0) * torch.tensor(
-            [[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]],
+        atype = torch.tensor([0, 0, 1], device=self.device)
+        spin = torch.tensor(
+            [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]],
             dtype=dtype,
             device=self.device,
         )
-        torch.testing.assert_close(cart_to_l1, expected, atol=1e-12, rtol=1e-12)
-
-        quat = _random_quaternion(5, device=self.device, dtype=dtype)
-        rot = quaternion_to_rotation_matrix(quat)  # (5, 3, 3)
-        wigner = WignerDCalculator(lmax=1, dtype=dtype).to(self.device)
-        d_full, _ = wigner(quat)
-        d1 = d_full[:, 1:4, 1:4]  # (5, 3, 3)
-        vec = torch.randn(5, 3, dtype=dtype, device=self.device)
-        # cart_to_l1(R v) == D1 (cart_to_l1 v)
-        lhs = torch.einsum(
-            "dk,bk->bd", cart_to_l1, torch.einsum("bij,bj->bi", rot, vec)
+        edge = SimpleNamespace(
+            src=torch.tensor([1, 2], device=self.device),
+            dst=torch.tensor([0, 2], device=self.device),
+            edge_vec=torch.tensor(
+                [[1.0, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=dtype, device=self.device
+            ),
+            edge_env=torch.ones(2, 1, dtype=dtype, device=self.device),
         )
-        rhs = torch.einsum("bij,bj->bi", d1, torch.einsum("dk,bk->bd", cart_to_l1, vec))
-        torch.testing.assert_close(lhs, rhs, atol=1e-10, rtol=1e-10)
-
-    def test_spin_embedding_smooth_and_masked(self) -> None:
-        """l=1 is linear in spin (zero at s=0); non-magnetic types are gated off."""
-        dtype = torch.float64
         module = SpinEmbedding(
-            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=2
+            ntypes=2,
+            channels=4,
+            n_radial=3,
+            use_spin=[True, False],
+            spin_mode="exchange",
+            dtype=dtype,
+            seed=2,
         ).to(self.device)
-        atype = torch.tensor([0, 0, 1], device=self.device)
-        spin = torch.randn(3, 3, dtype=dtype, device=self.device)
-
-        # Linear in spin: vector(0) == 0 and vector(2 s) == 2 vector(s).
-        zero_scalar, zero_vec = module(torch.zeros_like(spin), atype)
-        self.assertTrue(torch.allclose(zero_vec, torch.zeros_like(zero_vec)))
-        _, vec1 = module(spin, atype)
-        _, vec2 = module(2.0 * spin, atype)
-        torch.testing.assert_close(vec2, 2.0 * vec1, atol=1e-12, rtol=1e-12)
-
-        # Non-magnetic type (index 1) is gated to exactly zero on both branches.
-        scalar, vector = module(spin, atype)
-        self.assertTrue(torch.allclose(scalar[2], torch.zeros_like(scalar[2])))
-        self.assertTrue(torch.allclose(vector[2], torch.zeros_like(vector[2])))
-
-        # The l=0 magnitude branch is smooth at s=0: its spin gradient vanishes.
-        spin_leaf = torch.zeros(2, 3, dtype=dtype, device=self.device).requires_grad_(
-            True
-        )
-        scalar0, _ = module(spin_leaf, torch.tensor([0, 0], device=self.device))
-        (grad,) = torch.autograd.grad(scalar0.sum(), spin_leaf)
-        self.assertTrue(torch.allclose(grad, torch.zeros_like(grad), atol=1e-12))
-
-    def test_edge_l1_equivariance_and_masking(self) -> None:
-        """The per-edge neighbor-spin l=1 message rotates as l=1, is linear and masked."""
-        dtype = torch.float64
-        module = SpinEmbedding(
-            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=3
-        ).to(self.device)
-        # Perturb the per-type neighbor weight off zero so the map is non-trivial.
         with torch.no_grad():
-            module.adam_spin_nbr_weight.copy_(
-                torch.randn_like(module.adam_spin_nbr_weight)
+            module.pair_layer.matrix.copy_(
+                torch.eye(3, dtype=dtype, device=self.device)
             )
-        atype = torch.tensor([0, 0, 1], device=self.device)  # node 2 is non-magnetic
-        # Edges 0, 1 have magnetic sources; edge 2's source (node 2) is not.
-        src = torch.tensor([0, 1, 2], dtype=torch.long, device=self.device)
-        edge_cache = SimpleNamespace(
-            src=src,
-            edge_env=torch.rand(3, 1, dtype=dtype, device=self.device) + 0.1,
+        pair = module.edge_features(spin, atype, edge)
+        torch.testing.assert_close(pair[0], spin.new_tensor([1.0, 4.0, 2.0]))
+        torch.testing.assert_close(pair[1], torch.zeros_like(pair[1]))
+        torch.testing.assert_close(module.edge_features(-spin, atype, edge), pair)
+        flipped = spin.clone()
+        flipped[1] *= -1
+        torch.testing.assert_close(
+            module.edge_features(flipped, atype, edge)[0],
+            spin.new_tensor([1.0, 4.0, -2.0]),
         )
-        spin = torch.randn(3, 3, dtype=dtype, device=self.device)
-
-        msg = module.edge_l1(spin, atype, edge_cache)  # (E, 3, C)
-        self.assertEqual(msg.shape, (3, 3, module.channels))
-
-        # Linear in spin: zero at s=0 and homogeneous of degree one.
-        zero = module.edge_l1(torch.zeros_like(spin), atype, edge_cache)
-        self.assertTrue(torch.allclose(zero, torch.zeros_like(zero)))
-        msg2 = module.edge_l1(2.0 * spin, atype, edge_cache)
-        torch.testing.assert_close(msg2, 2.0 * msg, atol=1e-12, rtol=1e-12)
-
-        # The non-magnetic source (edge 2) contributes exactly zero.
-        torch.testing.assert_close(msg[2], torch.zeros_like(msg[2]))
-        self.assertGreater(msg[0].abs().max().item(), 0.0)
-
-        # l=1 equivariance: rotating the spin rotates each edge message by D^1(R),
-        # the packed Wigner-D block conjugate to cart_to_l1.
-        quat = _random_quaternion(1, device=self.device, dtype=dtype)
-        rot = quaternion_to_rotation_matrix(quat)[0]  # (3, 3)
-        d1 = module.cart_to_l1 @ rot @ torch.linalg.inv(module.cart_to_l1)
-        msg_rot = module.edge_l1(
-            torch.einsum("ij,nj->ni", rot, spin), atype, edge_cache
+        zero = torch.zeros_like(spin, requires_grad=True)
+        (grad,) = torch.autograd.grad(
+            module.edge_features(zero, atype, edge).sum(), zero
         )
-        expected = torch.einsum("de,nec->ndc", d1, msg)
-        torch.testing.assert_close(msg_rot, expected, atol=1e-10, rtol=1e-10)
+        torch.testing.assert_close(grad, torch.zeros_like(grad), atol=0.0, rtol=0.0)
 
     def test_descriptor_spin_joint_rotation_invariance(self) -> None:
         """The scalar descriptor is invariant under a joint rotation of geometry and spin.
 
-        Covers both spin injection routes by toggling ``use_env_seed``: the
-        env-seed branch adds the neighbor spin to the environment matrix, while
-        the backbone branch carries the on-site and neighbor-aggregated l=1.
+        Covers on-site, pair and neighbor spin conditioning.
         """
         dtype = torch.float64
         coord, atype, edge_index, edge_vec, edge_mask = _spin_edge_system(
@@ -1272,57 +1215,55 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
         quat = _random_quaternion(1, device=self.device, dtype=dtype)
         rot = quaternion_to_rotation_matrix(quat)[0]  # (3, 3)
 
-        for use_env_seed in (False, True):
-            with self.subTest(use_env_seed=use_env_seed):
-                model = DescrptSeZM(
-                    **_descriptor_kwargs(
-                        precision="float64",
-                        use_spin=[True, False],
-                        use_env_seed=use_env_seed,
-                        seed=7,
-                    )
-                )
-                # Perturb away from the near-identity initialization so the
-                # rotation check exercises a non-trivial spin-dependent
-                # descriptor (env-seed output_proj is otherwise zero-init).
-                torch.manual_seed(0)
-                with torch.no_grad():
-                    for p in model.parameters():
-                        p.copy_(torch.randn_like(p) * 0.1)
-                model.eval()
+        model = DescrptSeZM(
+            **_descriptor_kwargs(
+                precision="float64",
+                use_spin=[True, False],
+                use_env_seed=True,
+                seed=7,
+            )
+        )
+        # Perturb away from the near-identity initialization so the
+        # rotation check exercises a non-trivial spin-dependent
+        # descriptor (env-seed output_proj is otherwise zero-init).
+        torch.manual_seed(0)
+        with torch.no_grad():
+            for p in model.parameters():
+                p.copy_(torch.randn_like(p) * 0.1)
+        model.eval()
 
-                desc, _, _, _ = model.forward_with_edges(
-                    extended_coord=coord,
-                    extended_atype=atype,
-                    edge_index=edge_index,
-                    edge_vec=edge_vec,
-                    edge_mask=edge_mask,
-                    spin=spin,
-                )
-                desc_rot, _, _, _ = model.forward_with_edges(
-                    extended_coord=coord,
-                    extended_atype=atype,
-                    edge_index=edge_index,
-                    edge_vec=torch.einsum("ij,ej->ei", rot, edge_vec),
-                    edge_mask=edge_mask,
-                    spin=torch.einsum("ij,nkj->nki", rot, spin),
-                )
-                torch.testing.assert_close(desc, desc_rot, atol=1e-9, rtol=1e-9)
+        desc, _, _, _ = model.forward_with_edges(
+            extended_coord=coord,
+            extended_atype=atype,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+            spin=spin,
+        )
+        desc_rot, _, _, _ = model.forward_with_edges(
+            extended_coord=coord,
+            extended_atype=atype,
+            edge_index=edge_index,
+            edge_vec=torch.einsum("ij,ej->ei", rot, edge_vec),
+            edge_mask=edge_mask,
+            spin=torch.einsum("ij,nkj->nki", rot, spin),
+        )
+        torch.testing.assert_close(desc, desc_rot, atol=1e-9, rtol=1e-9)
 
-                # Spin actually changes the descriptor (injection is not a no-op).
-                desc_zero, _, _, _ = model.forward_with_edges(
-                    extended_coord=coord,
-                    extended_atype=atype,
-                    edge_index=edge_index,
-                    edge_vec=edge_vec,
-                    edge_mask=edge_mask,
-                    spin=torch.zeros_like(spin),
-                )
-                self.assertFalse(torch.allclose(desc, desc_zero, atol=1e-6))
+        # Spin actually changes the descriptor (injection is not a no-op).
+        desc_zero, _, _, _ = model.forward_with_edges(
+            extended_coord=coord,
+            extended_atype=atype,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+            spin=torch.zeros_like(spin),
+        )
+        self.assertFalse(torch.allclose(desc, desc_zero, atol=1e-6))
 
 
-class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
-    """The env-seed spin gate: placement, zero point and version migration."""
+class TestSeZMEnvSeedSpinProjection(_SeZMTestCase):
+    """The independent spin projection has a trainable zero initialization."""
 
     def _kwargs(self) -> dict:
         """Config of a spin descriptor with the env-seed route enabled."""
@@ -1337,16 +1278,15 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
         """A spin descriptor with non-route weights moved off initialization.
 
         The env-seed output projection is zero-initialized, so an unperturbed
-        descriptor is insensitive to the environment matrix. The four
-        output-controlling spin routes stay at zero so the tests exercise the
-        same starting point used by a fresh or migrated spin-free model.
+        descriptor is insensitive to the environment matrix. The
+        spin output projections stay at zero so the tests exercise the
+        initialization used by a fresh native-spin model.
         """
         model = DescrptSeZM(**self._kwargs())
         spin_routes = {
             "spin_embedding.mag_layer2.matrix",
-            "spin_embedding.adam_spin_vec_weight",
-            "spin_embedding.adam_spin_nbr_weight",
-            "env_seed_embedding.spin_scale",
+            "spin_embedding.pair_layer.matrix",
+            "env_seed_embedding.spin_output_proj.matrix",
         }
         torch.manual_seed(0)
         with torch.no_grad():
@@ -1372,122 +1312,15 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
             "edge_mask": edge_mask,
         }, spin
 
-    def test_zero_gate_receives_a_gradient(self) -> None:
-        """A zero gate is a starting point, not a fixed point.
-
-        The gate multiplies the spin block of the environment matrix after
-        the quadratic form, so the descriptor is LINEAR in it and its
-        gradient at zero is that block. A pre-quadratic amplitude would carry
-        a gradient proportional to itself and could never leave zero, which
-        is why the gate sits where it does.
-        """
+    def test_zero_projection_receives_a_gradient(self) -> None:
+        """The zero projection receives gradients from nonzero spin statistics."""
         model = self._descriptor()
         kwargs, spin = self._inputs()
         desc, _, _, _ = model.forward_with_edges(**kwargs, spin=spin)
         desc.sum().backward()
-        gate_grad = model.env_seed_embedding.spin_scale.grad
-        self.assertIsNotNone(gate_grad)
-        self.assertGreater(float(gate_grad.abs().max()), 1e-8)
-
-    def test_gate_placement_differs_from_the_legacy_one_by_a_square(self) -> None:
-        """The version-1.2 gate ``a**2`` is the version-1.1 amplitude ``a``.
-
-        The amplitude scaled the neighbor-spin channel, which enters the
-        environment matrix linearly, so the legacy forward is reproduced by a
-        unit gate on a spin scaled by ``a``. With the remaining spin routes
-        reset, the env-seed gate is the only difference between the two.
-        """
-        model = self._descriptor()
-        kwargs, spin = self._inputs()
-        amplitude = 2.0
-        with torch.no_grad():
-            model.env_seed_embedding.spin_scale.fill_(amplitude**2)
-        migrated, _, _, _ = model.forward_with_edges(**kwargs, spin=spin)
-        with torch.no_grad():
-            model.env_seed_embedding.spin_scale.fill_(1.0)
-        legacy, _, _, _ = model.forward_with_edges(**kwargs, spin=amplitude * spin)
-        torch.testing.assert_close(migrated, legacy, atol=1e-12, rtol=1e-12)
-
-    def test_loading_a_legacy_state_squares_the_gate(self) -> None:
-        """A version-1.1 state is retagged 1.2 with its gate squared.
-
-        The gate is a CHILD parameter, so the migration has to rewrite the
-        incoming state: the descriptor's own buffers load before torch
-        descends into ``env_seed_embedding``, and a migration applied to the
-        live parameter would be overwritten by that descent.
-        """
-        state = self._descriptor().state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        state["env_seed_embedding.spin_scale"] = torch.full_like(
-            state["env_seed_embedding.spin_scale"], 2.0
-        )
-        model = DescrptSeZM(**self._kwargs())
-        model.load_state_dict(state)
-        torch.testing.assert_close(
-            model.env_seed_embedding.spin_scale.detach(),
-            torch.full_like(model.env_seed_embedding.spin_scale, 4.0),
-        )
-        self.assertEqual(model.version, 1.3)
-        self.assertEqual(float(model.version_tensor.item()), 1.3)
-
-    def test_loading_legacy_spin_free_state_zeros_dormant_routes(self) -> None:
-        kwargs = {**self._kwargs(), "use_spin": [False, False]}
-        state = DescrptSeZM(**kwargs).state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        dormant_keys = (
-            "spin_embedding.mag_layer2.matrix",
-            "spin_embedding.adam_spin_vec_weight",
-            "spin_embedding.adam_spin_nbr_weight",
-            "env_seed_embedding.spin_scale",
-        )
-        for key in dormant_keys:
-            state[key] = torch.full_like(state[key], 3.0)
-        state["spin_embedding.mag_layer1.matrix"] = torch.full_like(
-            state["spin_embedding.mag_layer1.matrix"], 5.0
-        )
-
-        model = DescrptSeZM(**kwargs)
-        model.load_state_dict(state)
-
-        migrated = model.state_dict()
-        for key in dormant_keys:
-            torch.testing.assert_close(migrated[key], torch.zeros_like(migrated[key]))
-        torch.testing.assert_close(
-            migrated["spin_embedding.mag_layer1.matrix"],
-            torch.full_like(migrated["spin_embedding.mag_layer1.matrix"], 5.0),
-        )
-        self.assertEqual(model.version, 1.3)
-
-    def test_a_migrated_state_is_migrated_only_once(self) -> None:
-        """A migrated descriptor advertises its current format; a reload is inert."""
-        state = self._descriptor().state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        state["env_seed_embedding.spin_scale"] = torch.full_like(
-            state["env_seed_embedding.spin_scale"], 2.0
-        )
-        migrated = DescrptSeZM(**self._kwargs())
-        migrated.load_state_dict(state)
-        reloaded = DescrptSeZM(**self._kwargs())
-        reloaded.load_state_dict(migrated.state_dict())
-        torch.testing.assert_close(
-            reloaded.env_seed_embedding.spin_scale.detach(),
-            torch.full_like(reloaded.env_seed_embedding.spin_scale, 4.0),
-        )
-        self.assertEqual(reloaded.version, 1.3)
-
-    def test_serialize_roundtrip_migrates_a_legacy_payload(self) -> None:
-        """The dp-format path shares the rule with the state-dict path."""
-        data = self._descriptor().serialize()
-        data["@version"] = 1.1
-        data["@variables"]["env_seed_embedding.spin_scale"] = (
-            0.0 * data["@variables"]["env_seed_embedding.spin_scale"] + 3.0
-        )
-        model = DescrptSeZM.deserialize(data)
-        torch.testing.assert_close(
-            model.env_seed_embedding.spin_scale.detach(),
-            torch.full_like(model.env_seed_embedding.spin_scale, 9.0),
-        )
-        self.assertEqual(model.version, 1.3)
+        projection_grad = model.env_seed_embedding.spin_output_proj.matrix.grad
+        self.assertIsNotNone(projection_grad)
+        self.assertGreater(float(projection_grad.abs().max()), 1e-8)
 
 
 class TestBuildEdgeQuaternion(_SeZMTestCase):

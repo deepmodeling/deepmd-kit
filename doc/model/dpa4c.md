@@ -589,9 +589,21 @@ The spin part of the descriptor has no options of its own; its width follows
 
 ### Enabling native spin
 
-Native spin is requested at the model level, not on the descriptor. The
-`use_spin` list marks the magnetic types, either as booleans over the type map
-or by element name:
+Native spin is requested at the model level, not on the descriptor. Set
+`model.spin.scheme` according to the training data:
+
+| Scheme            | Use                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `native:orbit`    | Data with spin-orbit coupling (SOC). The energy can depend on moment directions relative to the lattice.     |
+| `native:exchange` | Data without SOC. Rotating all moments together while holding the lattice fixed leaves the energy unchanged. |
+| `native`          | Shorthand for `native:orbit`.                                                                                |
+
+Both modes describe energies without an external magnetic field, and reversing
+all moments leaves the energy unchanged. DPA4C does not support the `deepspin`
+virtual-atom scheme.
+
+The `use_spin` list marks the magnetic types, either as booleans over the type
+map or by element name:
 
 ```json
 {

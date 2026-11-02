@@ -982,3 +982,157 @@ class TestDPA4CSpin:
             2,
         )
         assert single.compress_spin_type.shape == (single.ntypes + 1, 4)
+
+
+def test_exchange_mode_spin_rotation_and_magnetic_gradient() -> None:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+
+    descriptor = DescrptDPA4C(
+        rcut=3.0,
+        ntypes=1,
+        channels=8,
+        lmax=2,
+        n_radial=4,
+        precision="float64",
+        seed=23,
+        use_spin=[True],
+        spin_mode="exchange",
+    ).to(env.DEVICE)
+    with torch.no_grad():
+        descriptor.spin.spin_gate.fill_(1.0)
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.0, 0.2, 0.3], [0.1, 1.1, -0.4]]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    atype = torch.zeros((1, 3), dtype=torch.int64, device=env.DEVICE)
+    graph = build_neighbor_graph(coord, atype, None, descriptor.get_rcut())
+    spin = torch.tensor(
+        [[0.3, 0.4, 0.5], [-0.5, 0.1, 0.6], [0.2, -0.3, 0.1]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+        requires_grad=True,
+    )
+    rotation = torch.tensor(
+        [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    output = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    gradient = torch.autograd.grad(output.sum(), spin)[0]
+    rotated_spin = (spin.detach() @ rotation.T).requires_grad_()
+    rotated = descriptor.call_graph(graph, atype.reshape(-1), spin=rotated_spin)[0]
+    rotated_gradient = torch.autograd.grad(rotated.sum(), rotated_spin)[0]
+    torch.testing.assert_close(rotated, output, atol=1e-12, rtol=1e-12)
+    torch.testing.assert_close(
+        rotated_gradient, gradient @ rotation.T, atol=1e-12, rtol=1e-12
+    )
+    assert gradient.abs().max() > 1e-8
+
+
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+def test_tetrahedral_spin_quadrupole_distinguishes_zero_total_moments(
+    spin_mode: str,
+) -> None:
+    """Neighbour quadrupoles distinguish equal-magnitude compensated moments."""
+    from deepmd.dpmodel.model.base_model import (
+        BaseModel,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+    from deepmd.pt_expt.model import (
+        get_model,
+    )
+
+    from ...dpa4_fixtures import (
+        tetrahedral_spin_configurations,
+    )
+
+    coord, atype, spin_a, spin_b = tetrahedral_spin_configurations()
+    model = (
+        get_model(
+            {
+                "type_map": ["Fe", "C"],
+                "descriptor": {
+                    "type": "dpa4c",
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "lmax": 2,
+                    "n_radial": 4,
+                    "precision": "float64",
+                    "seed": 17,
+                },
+                "fitting_net": {
+                    "type": "ener",
+                    "neuron": [8],
+                    "precision": "float64",
+                    "seed": 19,
+                },
+                "spin": {"scheme": f"native:{spin_mode}", "use_spin": [True, False]},
+            }
+        )
+        .to("cpu")
+        .eval()
+    )
+    generator = torch.Generator().manual_seed(37)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.1
+                * torch.randn(
+                    parameter.shape,
+                    generator=generator,
+                    dtype=parameter.dtype,
+                )
+            )
+        model.atomic_model.descriptor.spin.spin_gate.fill_(1.0)
+    portable = BaseModel.deserialize(model.serialize())
+    descriptor = model.atomic_model.descriptor
+    portable_descriptor = portable.atomic_model.descriptor
+    torch_coord = torch.from_numpy(coord)
+    torch_atype = torch.from_numpy(atype)
+    graph = build_neighbor_graph(coord, atype, None, 4.0)
+    torch_graph = build_neighbor_graph(torch_coord, torch_atype, None, 4.0)
+    assert np.count_nonzero(graph.edge_mask) == 8
+
+    outputs = []
+    energies = []
+    for spin in (spin_a, spin_b):
+        output = portable_descriptor.call_graph(
+            graph,
+            atype.reshape(-1),
+            spin=spin.reshape(-1, 3),
+        )[0]
+        torch_spin = torch.from_numpy(spin)
+        torch_output = descriptor.call_graph(
+            torch_graph,
+            torch_atype.reshape(-1),
+            spin=torch_spin.reshape(-1, 3),
+        )[0]
+        np.testing.assert_allclose(torch_output.detach().numpy(), output, atol=1e-12)
+        energy = portable.call(coord, atype, spin)["energy"]
+        torch_energy = model(torch_coord, torch_atype, spin=torch_spin)["energy"]
+        np.testing.assert_allclose(torch_energy.detach().numpy(), energy, atol=1e-12)
+        outputs.append(output)
+        energies.append(energy)
+
+    # The retained neighbour self-Gram follows the on-site/neighbour cross
+    # Gram. Its equal radial weights give 4 rho^2 and 16 rho^2, respectively.
+    quadrupole_self = (
+        descriptor.readout.get_dim_out()
+        + descriptor.spin.vector_gram_index.shape[0]
+        + 1
+    )
+    assert outputs[0][0, quadrupole_self] > 1e-8
+    np.testing.assert_allclose(
+        outputs[1][0, quadrupole_self],
+        4.0 * outputs[0][0, quadrupole_self],
+        atol=1e-12,
+        rtol=1e-12,
+    )
+    assert np.max(np.abs(outputs[0][0] - outputs[1][0])) > 1e-8
+    np.testing.assert_allclose(outputs[0][1:], outputs[1][1:], atol=1e-12, rtol=0)
+    assert np.max(np.abs(energies[0] - energies[1])) > 1e-8

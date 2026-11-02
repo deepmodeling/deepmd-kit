@@ -40,6 +40,7 @@ from deepmd.utils.bridging import (
 from deepmd.utils.spin import (
     Spin,
     normalize_spin_use_spin,
+    parse_spin_scheme,
 )
 
 _model_factory = BackendModelFactory(
@@ -112,7 +113,8 @@ def get_linear_model(data: dict) -> BaseModel:
     spin = None
     if "spin" in data:
         spin_cfg = data.pop("spin")
-        if str(spin_cfg.get("scheme", "deepspin")) != "native":
+        spin_mode = parse_spin_scheme(spin_cfg.get("scheme", "deepspin"))
+        if spin_mode is None:
             raise NotImplementedError(
                 "Spin linear_ener models support only spin scheme 'native'."
             )
@@ -125,6 +127,7 @@ def get_linear_model(data: dict) -> BaseModel:
         for sub in data["models"]:
             if "descriptor" in sub:
                 sub["descriptor"]["use_spin"] = use_spin
+                sub["descriptor"]["spin_mode"] = spin_mode
     composed = _model_factory.get_linear_atomic_model(data)
     if spin is not None:
         if not composed.supports_native_spin():
@@ -187,6 +190,9 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     )
     data.setdefault("descriptor", {})
     data["descriptor"]["use_spin"] = use_spin
+    data["descriptor"]["spin_mode"] = parse_spin_scheme(
+        spin_cfg.get("scheme", "deepspin")
+    )
     try:
         backbone_model = get_standard_model(data)
     except TypeError as err:

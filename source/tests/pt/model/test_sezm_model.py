@@ -1858,7 +1858,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         return coord, atype, spin, box
 
     def test_spin_routes_initialize_to_zero(self) -> None:
-        """Fresh native-spin models start from the spin-free function."""
+        """Fresh native-spin models initialize their spin corrections to zero."""
         model = self._build_model(randomize=False)
         descriptor = model.atomic_model.descriptor
         spin_embedding = descriptor.spin_embedding
@@ -1867,28 +1867,19 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         self.assertIsNotNone(spin_embedding)
         self.assertIsNotNone(env_seed_embedding)
         self.assertTrue(torch.all(spin_embedding.mag_layer2.matrix == 0.0))
-        self.assertTrue(torch.all(spin_embedding.adam_spin_vec_weight == 0.0))
-        self.assertTrue(torch.all(spin_embedding.adam_spin_nbr_weight == 0.0))
-        self.assertTrue(torch.all(env_seed_embedding.spin_scale == 0.0))
+        self.assertTrue(torch.all(spin_embedding.pair_layer.matrix == 0.0))
+        self.assertTrue(torch.all(env_seed_embedding.spin_output_proj.matrix == 0.0))
 
-    def test_migrated_spin_routes_are_trainable_after_activation(self) -> None:
-        """Mirror the production two-stage native-spin fine-tune load.
-
-        The trainer first rebuilds the pretrained all-false model and loads the
-        legacy checkpoint into it, allowing version migration to canonicalize
-        dormant spin routes. It then transfers that migrated state into the
-        magnetic target. Loading directly into the target would lose the source
-        configuration needed to distinguish dormant routes from trained ones.
-        """
-        legacy = self._build_model(use_spin=[False, False], randomize=True)
-        legacy_state = legacy.state_dict()
-        version_key = "atomic_model.descriptor.version_tensor"
-        legacy_state[version_key] = torch.full_like(legacy_state[version_key], 1.1)
-        migrated = self._build_model(use_spin=[False, False], randomize=False)
-        migrated.load_state_dict(legacy_state)
-
+    def test_spin_routes_are_trainable_after_activation(self) -> None:
+        """A native pretrain with closed spin routes can learn after activation."""
+        pretrained = self._build_model(use_spin=[False, False], randomize=True)
+        descriptor = pretrained.atomic_model.descriptor
+        with torch.no_grad():
+            descriptor.spin_embedding.mag_layer2.matrix.zero_()
+            descriptor.spin_embedding.pair_layer.matrix.zero_()
+            descriptor.env_seed_embedding.spin_output_proj.matrix.zero_()
         model = self._build_model(use_spin=[True, False], randomize=False)
-        model.load_state_dict(migrated.state_dict())
+        model.load_state_dict(pretrained.state_dict())
         coord, atype, spin, box = self._frame()
 
         model.train()
@@ -1899,9 +1890,8 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         env_seed_embedding = descriptor.env_seed_embedding
         gradients = {
             "magnitude": spin_embedding.mag_layer2.matrix.grad,
-            "onsite_l1": spin_embedding.adam_spin_vec_weight.grad,
-            "neighbor_l1": spin_embedding.adam_spin_nbr_weight.grad,
-            "env_seed": env_seed_embedding.spin_scale.grad,
+            "pair": spin_embedding.pair_layer.matrix.grad,
+            "env_seed": env_seed_embedding.spin_output_proj.matrix.grad,
         }
         for name, gradient in gradients.items():
             self.assertIsNotNone(gradient, f"{name} has no gradient")
@@ -2230,7 +2220,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
                     "n_radial": 3,
                     "l_schedule": [1, 0],
                     "mmax": 1,
-                    "use_env_seed": False,
+                    "use_env_seed": True,
                     "random_gamma": False,
                     "precision": "float64",
                 },

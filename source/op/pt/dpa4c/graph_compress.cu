@@ -68,25 +68,27 @@ struct Dimensions {
   int coupling_records;
   int spin_channels;
   int basis;
+  int spin_mode;
 };
 
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 Dimensions dimensions_of() {
-  using P = Profile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   return {P::MomentWidth, P::OutputWidth,
           P::C1,          deepmd_dpa4c::coupling_record_count(Lmax),
-          P::Cs,          P::Basis};
+          P::Cs,          P::Basis,
+          SpinMode};
 }
 
-template <int Channels, bool HasSpin>
+template <int Channels, int SpinMode>
 Dimensions dimensions_for(int lmax) {
   switch (lmax) {
     case 2:
-      return dimensions_of<Channels, 2, HasSpin>();
+      return dimensions_of<Channels, 2, SpinMode>();
     case 3:
-      return dimensions_of<Channels, 3, HasSpin>();
+      return dimensions_of<Channels, 3, SpinMode>();
     case 4:
-      return dimensions_of<Channels, 4, HasSpin>();
+      return dimensions_of<Channels, 4, SpinMode>();
     default:
       TORCH_CHECK(false, "dpa4c_graph_compress: unsupported lmax ", lmax);
   }
@@ -100,11 +102,20 @@ bool prefetches_bonds(long bytes) {
   return bytes > at::cuda::getCurrentDeviceProperties()->l2CacheSize;
 }
 
-Dimensions profile_dimensions(int channels, int lmax, bool has_spin) {
-#define DPA4C_DIMENSIONS(width)                           \
-  if (channels == width) {                                \
-    return has_spin ? dimensions_for<width, true>(lmax)   \
-                    : dimensions_for<width, false>(lmax); \
+Dimensions profile_dimensions(int channels,
+                              int lmax,
+                              bool has_spin,
+                              long output_width = 0) {
+#define DPA4C_DIMENSIONS(width)                                     \
+  if (channels == width) {                                          \
+    if (!has_spin) return dimensions_for<width, 0>(lmax);           \
+    const Dimensions orbit = dimensions_for<width, 1>(lmax);        \
+    if (output_width == orbit.output_width) return orbit;           \
+    const Dimensions exchange = dimensions_for<width, 2>(lmax);     \
+    TORCH_CHECK(output_width == exchange.output_width,              \
+                "dpa4c_graph_compress: invalid spin output width ", \
+                output_width);                                      \
+    return exchange;                                                \
   }
   DPA4C_FOR_EACH_CHANNEL(DPA4C_DIMENSIONS)
 #undef DPA4C_DIMENSIONS
@@ -240,32 +251,33 @@ struct BlockWidths {
   int record;
 };
 
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 BlockWidths block_widths_of() {
-  using B = deepmd_dpa4c::BlockProfile<Channels, Lmax, HasSpin>;
+  using B = deepmd_dpa4c::BlockProfile<Channels, Lmax, SpinMode>;
   return {B::SourceWidth, B::CotangentWidth, B::TransportWidth, B::NodeWidth,
           B::Width};
 }
 
-template <int Channels, bool HasSpin>
+template <int Channels, int SpinMode>
 BlockWidths block_widths_for(int lmax) {
   switch (lmax) {
     case 2:
-      return block_widths_of<Channels, 2, HasSpin>();
+      return block_widths_of<Channels, 2, SpinMode>();
     case 3:
-      return block_widths_of<Channels, 3, HasSpin>();
+      return block_widths_of<Channels, 3, SpinMode>();
     case 4:
-      return block_widths_of<Channels, 4, HasSpin>();
+      return block_widths_of<Channels, 4, SpinMode>();
     default:
       TORCH_CHECK(false, "dpa4c_graph_compress: unsupported lmax ", lmax);
   }
 }
 
-BlockWidths block_widths(int channels, int lmax, bool has_spin) {
-#define DPA4C_WIDTHS(width)                                 \
-  if (channels == width) {                                  \
-    return has_spin ? block_widths_for<width, true>(lmax)   \
-                    : block_widths_for<width, false>(lmax); \
+BlockWidths block_widths(int channels, int lmax, int spin_mode) {
+#define DPA4C_WIDTHS(width)                                      \
+  if (channels == width) {                                       \
+    if (spin_mode == 2) return block_widths_for<width, 2>(lmax); \
+    if (spin_mode == 1) return block_widths_for<width, 1>(lmax); \
+    return block_widths_for<width, 0>(lmax);                     \
   }
   DPA4C_FOR_EACH_CHANNEL(DPA4C_WIDTHS)
 #undef DPA4C_WIDTHS
@@ -541,7 +553,7 @@ Arguments build_arguments(const Payload& payload,
   }
 
   Arguments arguments;
-  arguments.has_spin = has_spin;
+  arguments.spin_mode = widths.spin_mode;
   arguments.spin = has_spin ? payload.spin.data_ptr<float>() : nullptr;
   arguments.spin_pair =
       has_spin ? payload.spin_pair.data_ptr<float>() : nullptr;
@@ -816,7 +828,8 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
               "different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
   const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax), spin.dim() == 2);
+      profile_dimensions(channels, static_cast<int>(lmax), spin.dim() == 2,
+                         output_inv_std.numel());
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_graph_compress: edge_vec must be a CUDA tensor");
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
@@ -894,8 +907,8 @@ dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
       "dpa4c_graph_compress_backward: atype and destination_row_ptr describe "
       "different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
-  const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax), has_spin);
+  const Dimensions widths = profile_dimensions(
+      channels, static_cast<int>(lmax), has_spin, output_inv_std.numel());
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_graph_compress_backward: edge_vec must be a CUDA tensor");
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
@@ -2627,7 +2640,7 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
                                       const FirstArguments& launch_arguments,
                                       const AttachForce& attach_force) {
   const BlockWidths sizes =
-      block_widths(pass.channels, pass.lmax, pass.has_spin);
+      block_widths(pass.channels, pass.lmax, pass.widths.spin_mode);
   const torch::Tensor& records = pass.records;
   TORCH_CHECK(records.device() == pass.descriptor.device() &&
                   records.scalar_type() == torch::kFloat32 &&
@@ -3066,8 +3079,8 @@ dpa4c_canonical_compress_energy_force(
   const long node_count = atype.size(0);
   const int channels = static_cast<int>(type_embedding.size(1));
   const bool has_spin = spin.dim() == 2;
-  const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax), has_spin);
+  const Dimensions widths = profile_dimensions(
+      channels, static_cast<int>(lmax), has_spin, output_inv_std.numel());
   const long frame_count = n_node.size(0);
   const FurtherBlocks further = further_blocks(
       "dpa4c_canonical_compress_energy_force", blocks, block_rcut, rcut);
