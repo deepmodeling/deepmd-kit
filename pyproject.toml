@@ -266,6 +266,9 @@ test-command = [
     "python -m deepmd -h",
     """python -c "import deepmd.tf;import deepmd.pt;import deepmd.pd" """,
     "dp -h",
+    # Wheel tests run in an installed environment: validate forced-in guide files.
+    "dp skills list",
+    "dp skills read deepmd-train",
     "dp_ipi",
     "pytest {project}/source/tests/common/test_lammps.py"
 ]
