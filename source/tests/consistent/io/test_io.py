@@ -184,7 +184,7 @@ class IOTest:
             # Paddle is absent from the loop above because its frozen .json
             # reader rejects fparam/aparam. A dedicated adapter test executes
             # its normalization path without relying on that frozen format.
-            if deep_eval.get_dim_fparam() > 0 and deep_eval.get_dim_aparam() > 0:
+            if deep_eval.get_dim_fparam() > 0 or deep_eval.get_dim_aparam() > 0:
                 self._assert_backend_parameter_shorthand(model_file, deep_eval)
             ret = deep_eval.eval(
                 self.coords,
@@ -261,40 +261,36 @@ class IOTest:
         atom_types = np.repeat(self.atype, nframes, axis=0)
         dim_fparam = deep_eval.get_dim_fparam()
         dim_aparam = deep_eval.get_dim_aparam()
-        fparam_shared = np.linspace(0.25, -0.5, dim_fparam)
-        aparam_per_atom = np.linspace(0.1, 0.9, natoms * dim_aparam).reshape(
-            natoms, dim_aparam
-        )
-        fparam_full = np.tile(fparam_shared, (nframes, 1))
-        aparam_full = np.tile(aparam_per_atom, (nframes, 1, 1))
-        fparam_per_frame = np.stack((fparam_shared, fparam_shared + 0.375))
-        aparam_per_frame = np.stack((aparam_per_atom, aparam_per_atom + 0.2))
-        aparam_all_atoms = np.linspace(-0.3, 0.4, dim_aparam)
+        shared_params = {}
+        full_params = {}
+        frame_params = {}
+        if dim_fparam:
+            fparam_shared = np.linspace(0.25, -0.5, dim_fparam)
+            shared_params["fparam"] = fparam_shared.tolist()
+            full_params["fparam"] = np.tile(fparam_shared, (nframes, 1))
+            frame_params["fparam"] = np.stack((fparam_shared, fparam_shared + 0.375))
+        if dim_aparam:
+            aparam_per_atom = np.linspace(0.1, 0.9, natoms * dim_aparam).reshape(
+                natoms, dim_aparam
+            )
+            shared_params["aparam"] = aparam_per_atom
+            full_params["aparam"] = np.tile(aparam_per_atom, (nframes, 1, 1))
+            frame_params["aparam"] = np.stack((aparam_per_atom, aparam_per_atom + 0.2))
+        all_atom_params = frame_params.copy()
+        all_atom_full_params = frame_params.copy()
+        if dim_aparam:
+            aparam_all_atoms = np.linspace(-0.3, 0.4, dim_aparam)
+            all_atom_params["aparam"] = aparam_all_atoms
+            all_atom_full_params["aparam"] = np.tile(
+                aparam_all_atoms, (nframes, natoms, 1)
+            )
 
         cases = (
-            (
-                fparam_shared.tolist(),
-                aparam_per_atom,
-                fparam_full,
-                aparam_full,
-                "shared-frame-and-per-atom",
-            ),
-            (
-                fparam_per_frame,
-                aparam_all_atoms,
-                fparam_per_frame,
-                np.tile(aparam_all_atoms, (nframes, natoms, 1)),
-                "shared-all-atoms",
-            ),
-            (
-                fparam_per_frame,
-                aparam_per_frame,
-                fparam_per_frame,
-                aparam_per_frame,
-                "full-frame-major",
-            ),
+            (shared_params, full_params, "shared-frame-and-per-atom"),
+            (all_atom_params, all_atom_full_params, "shared-all-atoms"),
+            (frame_params, frame_params, "full-frame-major"),
         )
-        for fparam, aparam, full_fparam, full_aparam, case_name in cases:
+        for params, explicit_params, case_name in cases:
             # Run the shorthand/full input first on a fresh auto-batcher so a
             # GPU runner cannot grow the batch size on a preceding reference
             # call and silently stop exercising the split path.
@@ -303,22 +299,18 @@ class IOTest:
                 coords,
                 boxes,
                 atom_types,
-                fparam=fparam,
-                aparam=aparam,
+                **params,
             )
             reference_backend = DeepEval(model_file, auto_batch_size=False).deep_eval
             expected = reference_backend.eval(
                 coords,
                 boxes,
                 atom_types,
-                fparam=full_fparam,
-                aparam=full_aparam,
+                **explicit_params,
             )
             self.assertEqual(actual.keys(), expected.keys())
-            # The frame-major expansion must preserve per-frame parameter
-            # variation.  Without this, a degenerate expansion that reuses one
-            # frame's parameters for every frame would also make the reference
-            # degenerate, so the allclose comparison alone could not catch it.
+            # Distinct frame inputs must survive batching. Parameter
+            # sensitivity is checked separately below at fixed geometry.
             frame_key = next(
                 (key for key in ("energy_redu", "energy") if key in actual), None
             )
@@ -327,7 +319,7 @@ class IOTest:
             self.assertEqual(frame_values.shape[0], 2)
             self.assertFalse(
                 np.allclose(frame_values[0], frame_values[1]),
-                msg=f"backend-direct {case_name} params collapsed across frames",
+                msg=f"backend-direct {case_name} outputs collapsed across frames",
             )
             for name in actual:
                 np.testing.assert_allclose(
@@ -337,6 +329,20 @@ class IOTest:
                     atol=1e-10,
                     equal_nan=True,
                     err_msg=f"backend-direct {case_name} output {name}",
+                )
+
+        # Each declared parameter must affect the energy at fixed geometry.
+        backend = DeepEval(model_file, auto_batch_size=False).deep_eval
+        baseline = backend.eval(self.coords, self.box, self.atype, **shared_params)
+        for parameter, value in shared_params.items():
+            with self.subTest(parameter=parameter, model_file=model_file):
+                changed_params = {**shared_params, parameter: np.asarray(value) + 0.5}
+                changed = backend.eval(
+                    self.coords, self.box, self.atype, **changed_params
+                )
+                self.assertFalse(
+                    np.allclose(baseline[frame_key], changed[frame_key]),
+                    msg=f"backend-direct energy ignores {parameter}",
                 )
 
 
@@ -384,6 +390,9 @@ class TestDeepPot(unittest.TestCase, IOTest):
 
 
 class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
+    numb_fparam: ClassVar[int] = 2
+    numb_aparam: ClassVar[int] = 2
+
     def setUp(self) -> None:
         model_def_script = {
             "type_map": ["O", "H"],
@@ -412,8 +421,8 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
                 "precision": "float64",
                 "atom_ener": [],
                 "seed": 1,
-                "numb_fparam": 2,
-                "numb_aparam": 2,
+                "numb_fparam": self.numb_fparam,
+                "numb_aparam": self.numb_aparam,
             },
         }
         model = get_model(copy.deepcopy(model_def_script))
@@ -426,6 +435,14 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
 
     def tearDown(self) -> None:
         IOTest.tearDown(self)
+
+
+class TestDeepPotFparamOnly(TestDeepPotFparamAparam):
+    numb_aparam = 0
+
+
+class TestDeepPotAparamOnly(TestDeepPotFparamAparam):
+    numb_fparam = 0
 
 
 @unittest.skipIf(
