@@ -51,7 +51,7 @@ class TestShapeStablePolicyProcess(unittest.TestCase):
             timeout=180,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Ran 4 tests", result.stderr)
+        self.assertIn("Ran 5 tests", result.stderr)
         self.assertNotIn("skipped", result.stderr)
 
 
@@ -107,13 +107,22 @@ class TestShapeStableFitting(unittest.TestCase):
 
     def test_batch_rows_and_backward_are_identical(self):
         for activation in (0, 1):
-            single = self.evaluate(self.x[:268], self.types[:268], activation)
+            single = self.evaluate(self.x, self.types, activation)
             for repetitions in (1, 2, 4, 8, 16):
                 x = self.x.repeat(repetitions, 1)
                 types = self.types.repeat(repetitions)
                 full = self.evaluate(x, types, activation)
                 for expected, actual in zip(single, full, strict=True):
-                    torch.testing.assert_close(actual[:268], expected, atol=0, rtol=0)
+                    # Check every repeated block, including the final partial
+                    # GEMM tile, not only the leading rows of the result.
+                    torch.testing.assert_close(
+                        actual.reshape(repetitions, *expected.shape),
+                        expected.unsqueeze(0).expand(
+                            repetitions, *expected.shape
+                        ),
+                        atol=0,
+                        rtol=0,
+                    )
 
     def test_independent_streams_and_host_threads(self):
         expected = self.evaluate(self.x, self.types)
@@ -128,6 +137,23 @@ class TestShapeStableFitting(unittest.TestCase):
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             outputs = list(pool.map(worker, range(4)))
+        for output in outputs:
+            for reference, value in zip(expected, output, strict=True):
+                torch.testing.assert_close(reference, value, atol=0, rtol=0)
+
+    def test_concurrent_streams_on_one_host_thread(self):
+        # Launch both streams before synchronizing either. Unlike worker
+        # threads, this exercises the stream dimension of the thread-local
+        # GEMM context key and its private scratch workspace.
+        expected = self.evaluate(self.x, self.types)
+        torch.cuda.synchronize()
+        streams = [torch.cuda.Stream() for _ in range(2)]
+        outputs = []
+        for stream in streams:
+            with torch.cuda.stream(stream):
+                outputs.append(self.evaluate(self.x, self.types))
+        for stream in streams:
+            stream.synchronize()
         for output in outputs:
             for reference, value in zip(expected, output, strict=True):
                 torch.testing.assert_close(reference, value, atol=0, rtol=0)
