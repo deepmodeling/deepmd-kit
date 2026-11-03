@@ -5,10 +5,13 @@ if [ "$DP_VARIANT" = "cuda" ]; then
 elif [ "$DP_VARIANT" = "rocm" ]; then
 	CUDA_ARGS="-DUSE_ROCM_TOOLKIT=TRUE"
 fi
+# These selectors are mutually exclusive, but CMake caches them between
+# builds. Remove the stale selector, and keep an explicit source path as one
+# argument so valid paths containing spaces are not split by the shell.
 if [ -n "${LAMMPS_SOURCE_ROOT:-}" ]; then
-	LAMMPS_ARGS="-D LAMMPS_SOURCE_ROOT=${LAMMPS_SOURCE_ROOT}"
+	set -- -ULAMMPS_VERSION "-DLAMMPS_SOURCE_ROOT=${LAMMPS_SOURCE_ROOT}"
 else
-	LAMMPS_ARGS="-D LAMMPS_VERSION=stable_22Jul2025_update2"
+	set -- -ULAMMPS_SOURCE_ROOT "-DLAMMPS_VERSION=stable_22Jul2025_update2"
 fi
 #------------------
 
@@ -31,7 +34,7 @@ cmake -D ENABLE_TENSORFLOW=ON \
 	-D USE_TF_PYTHON_LIBS=TRUE \
 	-D USE_PT_PYTHON_LIBS=TRUE \
 	${CUDA_ARGS} \
-	${LAMMPS_ARGS} \
+	"$@" \
 	${CMAKE_ARGS:-} \
 	..
 cmake --build . -j${NPROC}
