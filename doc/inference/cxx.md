@@ -62,6 +62,7 @@ The backend plugin search order is:
 
 If the requested plugin or its backend runtime cannot be loaded, only that backend fails with a `Unable to load ... backend plugin` error.
 Other backends can still run as long as their own plugins and runtime libraries are available.
+Install the plugins from the same build as `libdeepmd_cc`. The entry points a plugin exports carry the version of the backend interface it was built against, so `libdeepmd_cc` finds none of them in a plugin of another interface version, and that backend fails to load in the same way.
 This also allows a no-backend `libdeepmd_cc` or `libdeepmd_c` build; install or copy the backend plugin next to the library, or set {envvar}`DP_BACKEND_PLUGIN_PATH`, before loading a model that uses that backend.
 Build instructions for this layout are in [Install DeePMD-kit's C++ interface](../install/install-from-source.md#install-deepmd-kits-c-interface).
 

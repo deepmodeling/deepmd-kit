@@ -9,6 +9,7 @@ rank, and the two topology forms -- is covered, because each selects a
 different compiled body or a different addressing mode.
 """
 
+import math
 from typing import (
     Any,
 )
@@ -27,8 +28,12 @@ from deepmd.pt_expt.descriptor.dpa4c import (
     DescrptDPA4C,
 )
 from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+    _portable_inputs,
+    _radial_knots,
     _reference_descriptor,
     build_compression_artifacts,
+    build_low_rank_table,
+    build_radial_table,
     contact_radius_input,
     descriptor_profile,
     ensure_registered,
@@ -173,6 +178,8 @@ def _arguments(descriptor: DescrptDPA4C, graph, atype: torch.Tensor) -> tuple:
         graph.destination_row_ptr,
         atype,
         artifacts["data"],
+        artifacts["basis_table"],
+        artifacts["basis_matrix"],
         artifacts["pair_film"],
         artifacts["pair_mixing"],
         artifacts["type_embedding"],
@@ -208,8 +215,13 @@ def _descriptor_backward(
 
 
 def _spin_free(arguments: tuple) -> tuple:
-    """Drop the native spin block, which the CPU kernel does not implement."""
-    return (*arguments[:15], *arguments[18:])
+    """Drop the low-rank table and the native spin block for the CPU reference.
+
+    The reference reads the radial table itself, and the CPU kernel implements
+    no spin.
+    """
+    portable = _portable_inputs(arguments)
+    return (*portable[:15], *portable[18:])
 
 
 def _check_parity(descriptor: DescrptDPA4C, canonical: bool) -> None:
@@ -660,3 +672,139 @@ def test_empty_graph_produces_the_isolated_atom_descriptor() -> None:
     assert torch.isfinite(state).all()
     torch.testing.assert_close(state[:, 0], torch.full_like(state[:, 0], 0.5))
     torch.testing.assert_close(state[:, 1], torch.full_like(state[:, 1], 0.5))
+
+
+def _restrict_scalar_rank(descriptor: DescrptDPA4C, rank: int) -> None:
+    """Confine the scalar-only radial channels to a span of ``rank`` functions.
+
+    The radial map is the bias-free output layer applied to a shared hidden
+    state, so replacing the output columns from ``C1`` on by combinations of
+    ``rank`` of them confines those channels to the span of ``rank`` functions
+    at every distance.
+    """
+    first = descriptor_profile(descriptor.channels, descriptor.lmax).degree_channels[1]
+    weight = descriptor.radial_embedding.layers[-1].w
+    generator = torch.Generator(device=weight.device).manual_seed(31)
+    mixing = torch.randn(
+        rank,
+        descriptor.channels - first,
+        generator=generator,
+        device=weight.device,
+        dtype=weight.dtype,
+    ) / math.sqrt(rank)
+    with torch.no_grad():
+        weight[:, first:] = weight[:, first : first + rank] @ mixing
+
+
+def _channel_coefficients(table: torch.Tensor, width: int) -> torch.Tensor:
+    """Return the quintic coefficients of a table with shape ``(S, width, 6)``.
+
+    A table row holds the leading four coefficients of every channel, then the
+    trailing two.
+    """
+    quartets = table[:, : 4 * width].reshape(table.shape[0], width, 4)
+    pairs = table[:, 4 * width :].reshape(table.shape[0], width, 2)
+    return torch.cat([quartets, pairs], dim=-1)
+
+
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes"),
+    [(64, 2, 0), (64, 3, 4), (128, 3, 4)],
+)
+def test_low_rank_table_reconstructs_the_radial_table(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+) -> None:
+    """The low-rank basis and its expansion reproduce the scalar-only channels.
+
+    The quintic coefficients are linear in the knot data, so the expansion of
+    the basis coefficients reproduces the coefficients of every scalar-only
+    channel of the radial table up to the rounding of their fp32 storage, and
+    the degree-one channels and the mode profiles are tabulated unchanged.
+    """
+    descriptor = _build_descriptor(channels, lmax, radial_modes)
+    _restrict_scalar_rank(descriptor, rank=8)
+    basis_table, basis_matrix = build_low_rank_table(descriptor)
+    direct, _info = build_radial_table(descriptor)
+    first = descriptor_profile(channels, lmax).degree_channels[1]
+    basis = basis_matrix.shape[0]
+    assert basis_matrix.shape == (32, channels - first)
+    direct_coefficients = _channel_coefficients(
+        direct.double(), channels + radial_modes
+    )
+    basis_coefficients = _channel_coefficients(
+        basis_table.double(), first + basis + radial_modes
+    )
+    assert torch.equal(basis_coefficients[:, :first], direct_coefficients[:, :first])
+    assert torch.equal(
+        basis_coefficients[:, first + basis :], direct_coefficients[:, channels:]
+    )
+    expanded = torch.einsum(
+        "skj,kc->scj",
+        basis_coefficients[:, first : first + basis],
+        basis_matrix.double(),
+    )
+    scalar = direct_coefficients[:, first:channels]
+    scale = scalar.abs().amax(dim=0, keepdim=True).clamp_min(1e-30)
+    torch.testing.assert_close(expanded / scale, scalar / scale, atol=1e-5, rtol=0)
+
+
+@pytest.mark.parametrize("channels", [64, 128])
+def test_full_rank_radial_map_keeps_the_direct_table(channels: int) -> None:
+    """A radial map whose scalar-only channels exceed the basis keeps none.
+
+    The knot data of the scalar-only channels is replaced by independent
+    random samples, which span as many functions as there are such channels,
+    more than the basis holds, so the compression leaves both low-rank
+    artifacts empty and the single-type scans read the radial table.
+    """
+    descriptor = _build_descriptor(channels)
+    first = descriptor_profile(channels, descriptor.lmax).degree_channels[1]
+    generator = torch.Generator().manual_seed(7)
+
+    def full_rank(knot_data: torch.Tensor) -> torch.Tensor:
+        knot_data = knot_data.clone()
+        knot_data[:, first:channels] = torch.randn(
+            knot_data.shape[0],
+            channels - first,
+            dtype=knot_data.dtype,
+            generator=generator,
+        )
+        return knot_data
+
+    knots = tuple(full_rank(data) for data in _radial_knots(descriptor, 0.002))
+    basis_table, basis_matrix = build_low_rank_table(descriptor, knots=knots)
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0
+
+
+def test_coarse_knots_keep_the_direct_table() -> None:
+    """Knots too few to determine the basis leave the direct table in place.
+
+    A stride so coarse that the knots give no more samples than the basis has
+    functions would let any channels pass the reproduction check, so no basis
+    is adopted, while the same descriptor adopts one at the default stride.
+    """
+    descriptor = _build_descriptor(64)
+    _restrict_scalar_rank(descriptor, rank=8)
+    assert build_low_rank_table(descriptor)[1].shape[0] == 32
+    basis_table, basis_matrix = build_low_rank_table(
+        descriptor, stride=descriptor.rcut / 8
+    )
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0
+
+
+def test_unfolded_mode_counts_keep_the_direct_table() -> None:
+    """A descriptor with more modes than the folded scans carry keeps none.
+
+    Its single-type scans read the ordered pair of every edge, so they never
+    read a low-rank table, which compression therefore does not build even
+    for scalar-only channels of low rank.
+    """
+    descriptor = _build_descriptor(64, radial_modes=8)
+    _restrict_scalar_rank(descriptor, rank=8)
+    basis_table, basis_matrix = build_low_rank_table(descriptor)
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0
