@@ -46,6 +46,7 @@ class PairDeepMD : public PairDeepBaseModel {
   ~PairDeepMD() override;
   void settings(int, char**) override;
   void coeff(int, char**) override;
+  void init_style() override;
   void compute(int, int) override;
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
@@ -58,6 +59,9 @@ class PairDeepMD : public PairDeepBaseModel {
   // geometry fields are unused) for the device-resident message-passing path,
   // where ghost features are exchanged across ranks inside the forward pass.
   deepmd_compat::InputNlist make_comm_nlist();
+  // The model carries a long-range module, which reads the cell of a
+  // periodic system and no cell for a non-periodic one.
+  bool long_range = false;
 
  private:
   CommBrickDeepMD* commdata_;

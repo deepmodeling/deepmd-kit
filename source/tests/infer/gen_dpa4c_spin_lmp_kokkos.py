@@ -84,7 +84,8 @@ def _check_metadata(path: str) -> None:
         "dim_aparam": 0,
         "dim_chg_spin": 0,
         "lower_input_kind": "dpa4c_canonical",
-        "canonical_index_dtype": "uint32",
+        "canonical_index_dtype": "auto",
+        "canonical_index_storage": "byte_words",
         "graph_edge_dtype": "float32",
     }
     for key, value in expected.items():

@@ -411,6 +411,9 @@ void run_scan(ScanFunction scan,
                    });
 }
 
+// The CPU scans read the radial table directly. The low-rank table that the
+// CUDA single-type scan reads instead belongs to the shared schema and is
+// accepted unused.
 std::tuple<torch::Tensor, torch::Tensor> forward(
     torch::Tensor edge_vec,
     torch::Tensor edge_index,
@@ -419,6 +422,8 @@ std::tuple<torch::Tensor, torch::Tensor> forward(
     torch::Tensor destination_row_ptr,
     torch::Tensor atype,
     torch::Tensor table,
+    torch::Tensor /*basis_table*/,
+    torch::Tensor /*basis_matrix*/,
     torch::Tensor pair_film,
     torch::Tensor pair_mixing,
     torch::Tensor type_embedding,
@@ -478,6 +483,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> backward(
     torch::Tensor destination_row_ptr,
     torch::Tensor atype,
     torch::Tensor table,
+    torch::Tensor /*basis_table*/,
+    torch::Tensor /*basis_matrix*/,
     torch::Tensor pair_film,
     torch::Tensor pair_mixing,
     torch::Tensor type_embedding,

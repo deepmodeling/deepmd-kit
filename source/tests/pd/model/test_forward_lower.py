@@ -26,8 +26,6 @@ from .test_permutation import (  # model_dpau,
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
-    model_spin,
-    model_zbl,
 )
 
 dtype = paddle.float64
@@ -157,48 +155,6 @@ class TestEnergyModelDPA2(unittest.TestCase, ForwardLowerTest):
     def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_dpa2)
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelZBL(unittest.TestCase, ForwardLowerTest):
-    def setUp(self) -> None:
-        self.prec = 1e-10
-        model_params = copy.deepcopy(model_zbl)
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelSpinSeA(unittest.TestCase, ForwardLowerTest):
-    def setUp(self) -> None:
-        self.prec = 1e-10
-        model_params = copy.deepcopy(model_spin)
-        self.test_spin = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
-    def setUp(self) -> None:
-        self.prec = 1e-10
-        model_params = copy.deepcopy(model_spin)
-        model_params["descriptor"] = copy.deepcopy(model_dpa1)["descriptor"]
-        # double sel for virtual atoms to avoid large error
-        model_params["descriptor"]["sel"] *= 2
-        self.test_spin = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelSpinDPA2(unittest.TestCase, ForwardLowerTest):
-    def setUp(self) -> None:
-        self.prec = 1e-10
-        model_params = copy.deepcopy(model_spin)
-        model_params["descriptor"] = copy.deepcopy(model_dpa2)["descriptor"]
-        # double sel for virtual atoms to avoid large error
-        model_params["descriptor"]["repinit"]["nsel"] *= 2
-        model_params["descriptor"]["repformer"]["nsel"] *= 2
-        self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
