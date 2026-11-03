@@ -187,12 +187,12 @@ pin_tensorflow_gpu = [
 pin_pytorch_cpu = [
   # https://github.com/pytorch/pytorch/issues/114602
   # macos x86 has been deprecated
-  # Python 3.10 is not supported by torch 2.15; keep its older pin.
-  # torch 2.15 includes the AOTInductor C++ int_array declaration fixes:
+  # Keep the established Python 3.10 pin; use 2.13 for newer CPU tests.
+  # torch 2.13 includes the AOTInductor int_array cache fix for bound methods:
   # https://github.com/pytorch/pytorch/pull/178147
-  # https://github.com/pytorch/pytorch/pull/193621
+  # vesin-torch 0.6.2 requires torch<2.15.
   "torch==2.11.0; python_version<'3.11' and (platform_machine!='x86_64' or platform_system != 'Darwin')",
-  "torch==2.15.0; python_version>='3.11' and (platform_machine!='x86_64' or platform_system != 'Darwin')",
+  "torch==2.13.0; python_version>='3.11' and (platform_machine!='x86_64' or platform_system != 'Darwin')",
   "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_pytorch_gpu = [
