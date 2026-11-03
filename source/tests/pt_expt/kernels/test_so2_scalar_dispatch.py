@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Scalar capture must be selected and consumed, not merely numerically valid."""
 
-from types import SimpleNamespace
-from unittest.mock import patch
+from types import (
+    SimpleNamespace,
+)
+from unittest.mock import (
+    patch,
+)
 
 import pytest
 import torch
@@ -89,11 +93,15 @@ def test_cpu_scalar_layout_and_vjp(edges):
 def test_value_path_dispatch(monkeypatch, strict_environment, backend, capture):
     """Exercise the production callable and prove the competition data source."""
     if backend == "pt":
-        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+            SO2Convolution,
+        )
 
         precision = {"dtype": torch.float32}
     else:
-        from deepmd.pt_expt.descriptor.dpa4_nn.so2 import SO2Convolution
+        from deepmd.pt_expt.descriptor.dpa4_nn.so2 import (
+            SO2Convolution,
+        )
 
         precision = {"precision": "float32"}
     conv = (
@@ -187,7 +195,9 @@ def _model_params():
 @GPU
 def test_model_capture_on_off(monkeypatch, strict_environment):
     """A real frozen model preserves outputs and executes scalar capture."""
-    from deepmd.pt.model.model import get_model
+    from deepmd.pt.model.model import (
+        get_model,
+    )
 
     model = get_model(_model_params()).to("cuda").eval()
     model.requires_grad_(False)
@@ -227,11 +237,21 @@ def test_export_dispatch(
     Stop at the export boundary, avoiding compiler/toolchain dependencies in
     this routing regression. Full AOTI package inference is benchmarked separately.
     """
-    from deepmd.pt.entrypoints import freeze_pt2
-    from deepmd.pt.model.model import get_model
-    from deepmd.pt.train.wrapper import ModelWrapper
-    from deepmd.pt_expt.kernels import autotune
-    from deepmd.pt_expt.utils.serialization import _trace_and_export_impl
+    from deepmd.pt.entrypoints import (
+        freeze_pt2,
+    )
+    from deepmd.pt.model.model import (
+        get_model,
+    )
+    from deepmd.pt.train.wrapper import (
+        ModelWrapper,
+    )
+    from deepmd.pt_expt.kernels import (
+        autotune,
+    )
+    from deepmd.pt_expt.utils.serialization import (
+        _trace_and_export_impl,
+    )
 
     monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", str(int(capture)))
     monkeypatch.setattr(freeze_pt2, "_tune_triton_configs", lambda *args: None)

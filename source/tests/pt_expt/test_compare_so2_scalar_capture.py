@@ -3,7 +3,9 @@
 
 import pytest
 
-from .compare_so2_scalar_capture import validate_identity
+from .compare_so2_scalar_capture import (
+    validate_identity,
+)
 
 
 @pytest.mark.parametrize("key", ["model_sha256", "input_sha256"])
