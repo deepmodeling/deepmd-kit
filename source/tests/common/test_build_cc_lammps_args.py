@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import (
@@ -12,6 +13,7 @@ from pathlib import (
 )
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "build_cc.sh uses GNU coreutils")
 class TestBuildCCLammpsArgs(unittest.TestCase):
     def _configure_args(self, source_root=None):
         with tempfile.TemporaryDirectory() as tmp:
@@ -44,6 +46,8 @@ class TestBuildCCLammpsArgs(unittest.TestCase):
                 "INSTALL_PREFIX": str(root / "install"),
                 "LAMMPS_SOURCE_ROOT": source_root or "",
                 "DP_VARIANT": "",
+                "CMAKE_ARGS": "",
+                "CUDA_ARGS": "",
             }
             subprocess.run(
                 ["bash", str(install_dir / "build_cc.sh")],
@@ -69,7 +73,7 @@ class TestBuildCCLammpsArgs(unittest.TestCase):
         self.assertIn("-DLAMMPS_VERSION=stable_22Jul2025_update2", args)
 
     @unittest.skipUnless(shutil.which("cmake"), "requires CMake")
-    def test_cmake_reused_build_switches_to_explicit_source(self):
+    def test_cmake_reused_build_switches_between_selectors(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "CMakeLists.txt").write_text(
@@ -103,6 +107,22 @@ class TestBuildCCLammpsArgs(unittest.TestCase):
             )
             self.assertEqual((build / "selected.txt").read_text(), "source")
             self.assertNotIn("LAMMPS_VERSION:", (build / "CMakeCache.txt").read_text())
+
+            default_args = self._configure_args()
+            selectors = [
+                value
+                for value in default_args
+                if value.startswith("-ULAMMPS_") or value.startswith("-DLAMMPS_")
+            ]
+            subprocess.run(
+                ["cmake", "-S", str(root), "-B", str(build), *selectors],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual((build / "selected.txt").read_text(), "version")
+            self.assertNotIn(
+                "LAMMPS_SOURCE_ROOT:", (build / "CMakeCache.txt").read_text()
+            )
 
 
 if __name__ == "__main__":
