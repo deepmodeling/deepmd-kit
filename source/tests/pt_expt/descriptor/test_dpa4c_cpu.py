@@ -37,6 +37,7 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     compressed_operator_arguments,
     contact_radius_input,
     descriptor_profile,
+    dpa4c_graph_compress,
     ensure_registered,
     op_available,
 )
@@ -798,6 +799,43 @@ def test_loaded_compression_tables_replace_prepared_tables(
         assert (after - before).abs().max() > 1.0e-3
 
 
+@_CPU
+@pytest.mark.parametrize("assign", [False, True])
+@pytest.mark.parametrize("partial", [False, True])
+def test_loaded_compression_metadata_reaches_the_kernel(
+    assign: bool, partial: bool
+) -> None:
+    """A same-shaped replacement table must use its own radial stride."""
+    descriptor = _build_descriptor(16, radial_modes=2, **_WINDOW)
+    replacement = _build_descriptor(16, radial_modes=2, **_WINDOW)
+    # Both valid strides need twelve rows, so an ordinary state load can
+    # replace the coefficients without changing the buffer's shape.
+    descriptor.enable_compression(0.5, table_stride_1=0.25)
+    replacement.enable_compression(0.5, table_stride_1=0.26)
+    assert descriptor.compress_data.shape == replacement.compress_data.shape
+    graph, atype = _build_graph(descriptor, canonical=True)
+    expected = dpa4c_graph_compress(replacement, graph, atype)
+    dpa4c_graph_compress(descriptor, graph, atype)
+    window = descriptor._compression_scalars[-2:]
+
+    # A parent exercises the state-key prefix for full and partial loads.
+    parent = torch.nn.ModuleList([descriptor])
+    state = torch.nn.ModuleList([replacement]).state_dict()
+    if partial:
+        state = {
+            name: value
+            for name, value in state.items()
+            if name in ("0.compress_data", "0.compress_info")
+        }
+    parent.load_state_dict(state, assign=assign, strict=not partial)
+    output = dpa4c_graph_compress(descriptor, graph, atype)
+    torch.testing.assert_close(output, expected, atol=0, rtol=0)
+    assert descriptor._compression_scalars == (
+        *replacement.compress_info.tolist(),
+        *window,
+    )
+
+
 @pytest.mark.parametrize("assign", [False, True])
 def test_compression_state_can_load_after_inference_mode(assign: bool) -> None:
     """An inference-mode load must not prevent a later ordinary state load."""
@@ -805,6 +843,9 @@ def test_compression_state_can_load_after_inference_mode(assign: bool) -> None:
     descriptor.enable_compression(0.5, table_stride_1=0.01)
     # Load through a parent to exercise the descriptor's state-key prefix.
     parent = torch.nn.ModuleList([descriptor])
+    # Keep the input ordinary to isolate whether rebinding under the caller's
+    # inference mode creates buffers that the next ordinary load cannot update.
+    # Loading inference tensors themselves is covered by the cache tests above.
     state = {name: value.clone() for name, value in parent.state_dict().items()}
     with torch.inference_mode():
         parent.load_state_dict(state, assign=assign)

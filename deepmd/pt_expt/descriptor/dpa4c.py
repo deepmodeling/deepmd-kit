@@ -182,6 +182,14 @@ class DescrptDPA4C(DescrptDPA4CDP):
                 value = self._buffers.get(name)
                 if prefix + name in state_dict and value is not None:
                     self._buffers[name] = value.clone()
+        # The kernels receive metadata as Python scalars, so loading its
+        # buffer must refresh those values while keeping the configured window.
+        info = self._buffers.get("compress_info")
+        if prefix + "compress_info" in state_dict and info is not None:
+            self._compression_scalars = (
+                *(float(value) for value in info.detach().cpu().tolist()),
+                *self._compression_scalars[info.numel() :],
+            )
 
     def call_graph(
         self,
