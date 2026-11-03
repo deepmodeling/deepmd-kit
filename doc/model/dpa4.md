@@ -575,7 +575,9 @@ live for competition backward. It does not change model weights or precision.
 The option defaults off and currently selects only evaluation with level `2`,
 CUDA float32, `lmax=3`, two focuses, 32 channels per focus and focus competition.
 Other layouts and training retain the original path. Set it before compilation
-or export; existing `.pt2` artifacts must be regenerated. This is a
+or export; existing `.pt2` artifacts must be regenerated. Both PT freeze and
+the `pt_expt` exporter select this branch from the CUDA deployment target,
+even though tracing runs on CPU. CPU targets retain the original path. This is a
 capacity optimization: the extra scalar store need not reduce latency.
 The manual full-API benchmark is
 `source/tests/pt_expt/benchmark_so2_scalar_capture.py` (`--help` lists inputs).

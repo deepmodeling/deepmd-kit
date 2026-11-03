@@ -48,23 +48,38 @@ def compare(candidate, reference):
     return fields
 
 
+def validate_identity(result, reference, manifest, reference_manifest):
+    """Reject cross-checkpoint or cross-input comparisons before scoring."""
+    for key, left, right in (
+        ("input_sha256", result, reference),
+        ("model_sha256", manifest, reference_manifest),
+    ):
+        if not left.get(key) or left[key] != right.get(key):
+            raise ValueError(f"Comparison requires matching {key}")
+
+
 def main():
+    """Load benchmark routes and report compatible repeated comparisons."""
     parser = argparse.ArgumentParser(description=__doc__)
     for route in ("torch", "base", "candidate"):
         parser.add_argument(f"--{route}", type=Path, required=True)
     args = parser.parse_args()
-    results, arrays, out = {}, {}, {}
+    results, arrays, out, manifests = {}, {}, {}, {}
     for route, path in vars(args).items():
         results[route] = json.loads((path / "result.json").read_text())
         out[route] = {"status": results[route]["status"]}
         if results[route]["status"] == "completed":
+            manifests[route] = json.loads((path / "manifest.json").read_text())
             arrays[route] = dict(np.load(path / "outputs.npz"))
             out[route]["repeat"] = compare(arrays[route], arrays[route])
     for route in arrays:
         for reference in ("torch", "base"):
             if route != reference and reference in arrays:
-                assert (
-                    results[route]["input_sha256"] == results[reference]["input_sha256"]
+                validate_identity(
+                    results[route],
+                    results[reference],
+                    manifests[route],
+                    manifests[reference],
                 )
                 out[route][f"vs_{reference}"] = compare(
                     arrays[route], arrays[reference]

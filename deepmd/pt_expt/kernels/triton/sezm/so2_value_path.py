@@ -2557,7 +2557,16 @@ def _rotate_mix_scalar_impl(
     row = (3 * int(lmax) + 1) * focus_dim
     if not _use_triton(x):
         u = _rotate_mix_reference(x, src, wigner, kc, cb, lmax, n_focus, rank)
-        return u, u[:, :, :focus_dim].permute(1, 0, 2).clone()
+        # CPU export tracing must describe the same independent, padded
+        # scalar storage as the CUDA implementation.
+        scalar = torch.empty_strided(
+            (n_edge, n_focus, focus_dim),
+            (2 * focus_dim, n_edge * 2 * focus_dim, 1),
+            device=x.device,
+            dtype=x.dtype,
+        )
+        scalar.copy_(u[:, :, :focus_dim].permute(1, 0, 2))
+        return u, scalar
     u = torch.empty(n_focus, n_edge, row, device=x.device, dtype=x.dtype)
     pitch = 2 * focus_dim
     scalar = torch.empty_strided(
@@ -3719,6 +3728,24 @@ _gated_act_op = torch.library.triton_op("sezm_triton::gated_act", mutates_args=(
 _gated_act_bwd_op = torch.library.triton_op(
     "sezm_triton::gated_act_bwd", mutates_args=()
 )(_gated_act_bwd_impl)
+
+
+@_rotate_mix_scalar_op.register_fake
+def _rotate_mix_scalar_fake(
+    x, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank
+):
+    """Describe both outputs without specializing symbolic edges in einsum."""
+    focus_dim = x.shape[2] // n_focus
+    n_edge = src.shape[0]
+    return (
+        x.new_empty((n_focus, n_edge, (3 * lmax + 1) * focus_dim)),
+        torch.empty_strided(
+            (n_edge, n_focus, focus_dim),
+            (2 * focus_dim, n_edge * 2 * focus_dim, 1),
+            device=x.device,
+            dtype=x.dtype,
+        ),
+    )
 
 
 @_rotate_mix_op.register_fake
@@ -5292,7 +5319,8 @@ def _save_competition_scalar(conv: SO2Convolution, x: Tensor) -> bool:
         and conv.so2_focus_dim == 32
         and conv.focus_compete
         and x.dtype == torch.float32
-        and x.is_cuda
+        # Export traces CPU inputs before moving the graph to its target.
+        and (x.is_cuda or getattr(conv, "_force_scalar_capture_cuda_target", False))
     )
 
 
