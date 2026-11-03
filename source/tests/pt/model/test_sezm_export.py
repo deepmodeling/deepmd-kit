@@ -138,18 +138,6 @@ _SKIP_OFF_COMPILE_TORCH_REASON = (
 )
 
 
-def _tiny_sezm_spin_model_params() -> dict:
-    """Minimal fp64 SeZM spin config for freeze routing tests."""
-    params = copy.deepcopy(_tiny_sezm_model_params())
-    params["type_map"] = ["O", "H"]
-    params["spin"] = {
-        "use_spin": [True, False],
-        "virtual_scale": 0.2,
-        "scheme": "deepspin",
-    }
-    return params
-
-
 def _build_tiny_sezm_model() -> torch.nn.Module:
     """Fresh tiny SeZM model on CPU, in eval mode."""
     model = get_model(_tiny_sezm_model_params())
@@ -1032,55 +1020,13 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         self.assertEqual(model_def["type"], "dpa4")
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
-    def test_freeze_accepts_spin_checkpoint_metadata(self) -> None:
-        """SeZM spin checkpoints should export a spin-compatible pt2 contract."""
-
-        def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
-            with zipfile.ZipFile(package_path, "w") as zf:
-                zf.writestr("model/data.pkl", b"")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            params = _tiny_sezm_spin_model_params()
-            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
-            out = tmp_path / "spin.pt2"
-
-            with mock.patch(
-                "torch._inductor.aoti_compile_and_package",
-                side_effect=fake_compile,
-            ):
-                freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
-
-            with zipfile.ZipFile(str(out), "r") as zf:
-                names = zf.namelist()
-                metadata = json.loads(
-                    zf.read("model/extra/metadata.json").decode("utf-8")
-                )
-
-        self.assertTrue(metadata["is_spin"])
-        self.assertEqual(metadata["lower_input_kind"], "nlist")
-        self.assertEqual(metadata["type_map"], params["type_map"])
-        self.assertEqual(metadata["ntypes"], len(params["type_map"]))
-        self.assertEqual(metadata["dim_chg_spin"], 0)
-        self.assertIsNone(metadata["default_chg_spin"])
-        self.assertEqual(metadata["use_spin"], params["spin"]["use_spin"])
-        self.assertEqual(metadata["ntypes_spin"], 1)
-        self.assertIn("energy_derv_r_mag", metadata["output_keys"])
-        self.assertIn("energy_derv_c_redu", metadata["output_keys"])
-        # Spin uses the nlist lower interface; the edge-based with-comm artifact
-        # does not apply, so multi-rank inference fails fast in C++.
-        self.assertFalse(metadata["has_comm_artifact"])
-        self.assertNotIn("model/extra/forward_lower_with_comm.pt2", names)
-
-    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_native_spin_checkpoint_metadata(self) -> None:
         """Native-spin checkpoints export the energy edge contract plus spin.
 
         The native scheme reuses the ``edge_vec`` lower ABI; the per-local-atom
         spin is the only extra input, so the C++ backend builds the edge schema
         exactly as for a non-spin model. The magnetic force and spin mask are
-        still emitted, and the type map / ntypes stay at the real-system sizes
-        (no virtual atoms).
+        still emitted, and the type map / ntypes stay at the real-system sizes.
         """
 
         def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
@@ -1106,12 +1052,13 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                 )
 
         self.assertTrue(metadata["is_spin"])
-        # Native spin shares the energy edge ABI; only the deepspin scheme keeps
-        # the nlist contract.
+        # Native spin shares the energy edge ABI.
         self.assertEqual(metadata["lower_input_kind"], "edge_vec")
-        # Native spin keeps the real-system type map and count (no virtual atoms).
+        # Native spin keeps the real-system type map and count.
         self.assertEqual(metadata["type_map"], params["type_map"])
         self.assertEqual(metadata["ntypes"], len(params["type_map"]))
+        self.assertEqual(metadata["sel"], params["descriptor"]["sel"])
+        self.assertEqual(metadata["nnei"], sum(params["descriptor"]["sel"]))
         self.assertEqual(metadata["use_spin"], params["spin"]["use_spin"])
         self.assertEqual(metadata["ntypes_spin"], 1)
         # The magnetic force and spin mask are still exported.

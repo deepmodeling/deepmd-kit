@@ -89,7 +89,7 @@ Pipeline for one training batch
               '-- communicate_extended_output
 
 Subsequent batches look up the cached callable at the same
-``(training, has_coord_corr)`` slot of ``compiled_core_compute_cache``.
+``training`` slot of ``compiled_core_compute_cache``.
 Each slot is retained independently, so train <-> eval toggles around every
 ``disp_freq`` / full-validation checkpoint reuse the other slot's compile
 product instead of evicting it (NOTE 7).
@@ -290,15 +290,13 @@ both graphs.  The options are:
 NOTE 7 -- Multi-slot compile cache key
 --------------------------------------
 
-The key is ``(training, has_coord_corr)``:
+The key is ``training``:
 
 * ``self.training`` switches ``create_graph`` in ``edge_energy_deriv`` --
   it toggles the entire second-derivative branch on or off.
-* ``has_coord_corr`` selects the spin-virial correction branch, changing the
-  compiled callable arity from six tensor inputs to seven.
 
 No single compiled graph can serve both variants, so the cache is a
-``dict[tuple[bool, bool], Callable]`` named
+``dict[bool, Callable]`` named
 ``compiled_core_compute_cache``.  A single-slot
 cache would have to evict on every flip, which turns the normal
 training-loop pattern -- ``train -> eval at every disp_freq -> train``
@@ -539,7 +537,7 @@ apply_global_compile_patches()
 # ---------------------------------------------------------------------------
 # Multi-task compile sharing
 # ---------------------------------------------------------------------------
-# Maps (structure_key..., training, has_coord_corr) to the compiled callable.
+# Maps (structure_key..., training) to the compiled callable.
 # Tasks whose descriptor and fitting parameters share the same Python-object
 # identity after ``share_params(level=0)`` reuse one compiled graph, avoiding
 # N x compile-cache growth and duplicated DDP graph boundaries.
@@ -681,12 +679,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         self.lora_config: dict[str, Any] | None = None if lora is None else dict(lora)
         self._dens_compiled = False
         self._core_compute_pending_compile_t0: float | None = None
-        self._core_compute_pending_compile_key: tuple[bool, bool] | None = None
+        self._core_compute_pending_compile_key: bool | None = None
         self._dens_pending_compile_t0: float | None = None
         # Store compiled callables outside the nn.Module tree so that
         # FSDP2 / DDP do not shard or sync its duplicated parameters.
         # ``compiled_core_compute_cache`` is keyed on
-        # ``(training, has_coord_corr)`` so every graph topology has its own
+        # ``training`` so every graph topology has its own
         # slot; flipping between train and eval for validation -- regular,
         # full, or EMA full -- therefore reuses cached compile products
         # instead of evicting the other mode.
@@ -1036,7 +1034,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         extended_atype: torch.Tensor | None = None,
-        extended_coord_corr: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
         spin: torch.Tensor | None = None,
         input_prec: torch.dtype | None = None,
@@ -1078,12 +1075,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             device=coord.device, dtype=torch.long
         )
         edge_mask = edge_mask.to(device=coord.device, dtype=torch.bool)
-        if extended_coord_corr is not None:
-            extended_coord_corr = extended_coord_corr.to(
-                device=coord.device, dtype=coord.dtype
-            )
-            if extended_coord_corr.ndim == 2:
-                extended_coord_corr = extended_coord_corr.reshape(atype.shape[0], -1, 3)
         if spin is not None:
             spin = spin.to(device=coord.device, dtype=coord.dtype)
         nf = atype.shape[0]
@@ -1115,10 +1106,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     dtype=coord.dtype,
                     device=coord.device,
                 )
-                has_coord_corr = extended_coord_corr is not None
                 if embedding_only:
                     # Eval-only graph: a single slot, with no
-                    # (training, coord_corr) key and no cross-task sharing.
+                    # training key and no cross-task sharing.
                     if self.compiled_embedding is None:
                         self.trace_and_compile(
                             coord,
@@ -1136,7 +1126,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     compiled_core_compute = self.compiled_embedding
                     task_buf_order = self._embedding_task_buf_order
                 else:
-                    cache_key = (bool(self.training), has_coord_corr)
+                    cache_key = bool(self.training)
                     if cache_key not in self.compiled_core_compute_cache:
                         self.trace_and_compile(
                             coord,
@@ -1148,7 +1138,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                             fp,
                             ap,
                             charge_spin,
-                            extended_coord_corr=extended_coord_corr,
                             spin=spin,
                         )
                     compiled_core_compute = self.compiled_core_compute_cache[cache_key]
@@ -1171,19 +1160,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                             spin,
                             *task_buf_vals,
                         )
-                    elif extended_coord_corr is None:
-                        model_predict = compiled_core_compute(
-                            coord,
-                            atype,
-                            edge_index,
-                            edge_vec,
-                            edge_scatter_index,
-                            edge_mask,
-                            fp,
-                            ap,
-                            charge_spin,
-                            *task_buf_vals,
-                        )
                     else:
                         model_predict = compiled_core_compute(
                             coord,
@@ -1195,7 +1171,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                             fp,
                             ap,
                             charge_spin,
-                            extended_coord_corr,
                             *task_buf_vals,
                         )
                 if (
@@ -1205,9 +1180,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()
                     log.info(
-                        "SeZM: finished compiling (mode=%s, coord_corr=%s) in %.2fs",
+                        "SeZM: finished compiling (mode=%s) in %.2fs",
                         "train" if self.training else "eval",
-                        has_coord_corr,
                         time.perf_counter() - self._core_compute_pending_compile_t0,
                         extra={"rank_scope": "all"},
                     )
@@ -1227,7 +1201,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         charge_spin=charge_spin,
                         comm_dict=comm_dict,
                         extended_atype=extended_atype,
-                        extended_coord_corr=extended_coord_corr,
                         spin=spin,
                         embedding_only=embedding_only,
                         atomic_output_only=atomic_output_only,
@@ -1373,7 +1346,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         charge_spin: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         extended_atype: torch.Tensor | None = None,
-        extended_coord_corr: torch.Tensor | None = None,
         spin: torch.Tensor | None = None,
         embedding_only: bool = False,
         conservative: bool = True,
@@ -1415,9 +1387,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Extended atom types with shape ``(nf, nall)``. Required when
             ``comm_dict`` is provided so the descriptor can embed ghost types;
             unused otherwise.
-        extended_coord_corr
-            Coordinates correction for virial with shape ``(nf, nscatter, 3)`` or
-            ``None``.
         spin
             Optional per-atom spin vectors with shape ``(nf, nloc, 3)`` for the
             native spin scheme. When provided on the conservative path, the
@@ -1606,7 +1575,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 coord,
                 create_graph=False,
                 mask=fit_ret["mask"],
-                extended_coord_corr=extended_coord_corr,
             )
 
         # === Step 6. Force / virial via edge-force scatter ===
@@ -1630,7 +1598,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 nf,
                 nscatter,
                 create_graph=self.training,
-                extended_coord_corr=extended_coord_corr,
                 spin_leaf=spin,
             )
         )
@@ -1879,7 +1846,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         fp: torch.Tensor,
         ap: torch.Tensor,
         charge_spin: torch.Tensor,
-        extended_coord_corr: torch.Tensor | None = None,
         spin: torch.Tensor | None = None,
         embedding_only: bool = False,
     ) -> None:
@@ -1901,7 +1867,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         )
 
         mode = "train" if self.training else "eval"
-        has_coord_corr = extended_coord_corr is not None
         _compile_t0 = time.perf_counter()
 
         # --- Check module-level shared cache first ---
@@ -1909,24 +1874,22 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # should share one compiled graph.  If a sibling task already compiled,
         # populate this instance's per-instance caches and return immediately.
         structure_key = _sezm_structure_key(self)
-        cache_key = (bool(self.training), has_coord_corr)
-        full_cache_key = structure_key + cache_key
+        cache_key = bool(self.training)
+        full_cache_key = (*structure_key, cache_key)
         if not embedding_only and full_cache_key in _SEZM_COMPILE_CACHE:
             self.compiled_core_compute_cache[cache_key] = _SEZM_COMPILE_CACHE[
                 full_cache_key
             ]
             self._task_buf_order_cache[cache_key] = _SEZM_TASK_BUF_ORDER[structure_key]
             log.debug(
-                "SeZM: reusing shared compiled graph (mode=%s, coord_corr=%s)",
+                "SeZM: reusing shared compiled graph (mode=%s)",
                 mode,
-                has_coord_corr,
             )
             return
 
         log.info(
-            "SeZM: start tracing and compiling (mode=%s, coord_corr=%s)",
+            "SeZM: start tracing and compiling (mode=%s)",
             mode,
-            has_coord_corr,
             extra={"rank_scope": "all"},
         )
 
@@ -2043,7 +2006,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 finally:
                     _restore_task_bufs(_saved)
 
-        elif extended_coord_corr is None:
+        else:
 
             def compute_fn(
                 coord: torch.Tensor,
@@ -2069,42 +2032,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         fparam=fp,
                         aparam=ap,
                         charge_spin=charge_spin,
-                        embedding_only=embedding_only,
-                    )
-                finally:
-                    _restore_task_bufs(_saved)
-
-        else:
-
-            def compute_fn(  # type: ignore[misc]
-                coord: torch.Tensor,
-                atype: torch.Tensor,
-                edge_index: torch.Tensor,
-                edge_vec: torch.Tensor,
-                edge_scatter_index: torch.Tensor,
-                edge_mask: torch.Tensor,
-                fp: torch.Tensor,
-                ap: torch.Tensor,
-                charge_spin: torch.Tensor,
-                extended_coord_corr: torch.Tensor,
-                *task_buf_vals: torch.Tensor,
-            ) -> dict[str, torch.Tensor]:
-                # NOTE: Spin virial uses a coordinate correction derived from the
-                # virtual-atom displacement.  Keeping it as a tensor input lets the
-                # compiled graph stay reusable across frames.
-                _saved = _patch_task_bufs(task_buf_vals)
-                try:
-                    return self.core_compute(
-                        _prepare_coord_for_trace(coord),
-                        atype,
-                        edge_index,
-                        edge_vec,
-                        edge_scatter_index,
-                        edge_mask,
-                        fparam=fp,
-                        aparam=ap,
-                        charge_spin=charge_spin,
-                        extended_coord_corr=extended_coord_corr,
                         embedding_only=embedding_only,
                     )
                 finally:
@@ -2180,10 +2107,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             spin_for_trace = trace_pad_dim(spin[:1], 0, trace_nf)
             spin_for_trace = trace_pad_dim(spin_for_trace, 1, trace_nloc)
             trace_args.append(spin_for_trace)
-        elif extended_coord_corr is not None:
-            corr_for_trace = trace_pad_dim(extended_coord_corr[:1], 0, trace_nf)
-            corr_for_trace = trace_pad_dim(corr_for_trace, 1, trace_nscatter)
-            trace_args.append(corr_for_trace)
         # Append task-buffer values last so they map to the *task_buf_vals
         # varargs in compute_fn.  Their shapes are static (they don't vary
         # batch-to-batch), so passing the actual tensors is correct; make_fx
@@ -2264,7 +2187,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # from parameter discovery (FSDP2/DDP would otherwise shard or
         # synchronise the wrapper's duplicated flat parameter views and
         # silently corrupt training).  The cache is keyed on
-        # ``(training, has_coord_corr)`` so that distinct graph topologies
+        # ``training`` so that distinct graph topologies
         # coexist without evicting each other on every ``model.eval()`` /
         # ``model.train()`` switch.
         # NOTE: ``dynamic=True`` emits a single kernel per traced
@@ -2759,11 +2682,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         box: Float[Tensor, "nf 9"] | None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Build the historical extended-coordinate representation.
+        Build the extended-coordinate representation.
 
         This helper is retained for modes whose physical preprocessing still
-        requires explicit extended atoms, such as the denoising path and the spin
-        virtual-atom transform.  The conservative SeZM energy path converts the
+        requires explicit extended atoms, such as the denoising path.
+        The conservative SeZM energy path converts the
         result to :class:`EdgeNeighborList` before entering ``core_compute``.
 
         Returns the :class:`~deepmd.dpmodel.utils.neighbor_list.NeighborList`
@@ -3136,9 +3059,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         are completed across ranks (``_gate_partial_exchange``) and the
         analytical ZBL injection reads extended types, so the parallel path
         reproduces the folded one. The native spin scheme reuses the
-        edge_vec interface and therefore participates; only the deepspin
-        (virtual-atom) scheme uses the nlist interface and is excluded by
-        the freeze entry point's edge_vec gate.
+        edge_vec interface and therefore participates.
         """
         descriptor = self.atomic_model.descriptor
         return bool(descriptor.supports_edge_parallel())
@@ -3150,10 +3071,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         (``coord``, ``atype``, ``edge_index``, ``edge_vec``,
         ``edge_scatter_index``, ``edge_mask``) and the neighbor topology is
         built on the C++ side, matching :class:`DeepPotPTExpt`. The native
-        spin scheme reuses this ABI with one extra per-local-atom spin input;
-        only the deepspin (virtual-atom) scheme overrides it to ``"nlist"``
-        because it expands virtual atoms inside the graph from the extended
-        neighbor list.
+        spin scheme reuses this ABI with one extra per-local-atom spin input.
         """
         return "edge_vec"
 
