@@ -1,5 +1,7 @@
 
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#include <type_traits>
+
 #include "custom_op.h"
 #include "tabulate.h"
 
@@ -162,6 +164,19 @@ REGISTER_OP("TabulateFusionSeRGradGrad")
     .Input("descriptor: T")
     .Output("dz_dy: T");
 
+template <typename Device>
+static deepmd::tf_compat::Status validate_gpu_last_layer_size(
+    const int last_layer_size) {
+  // GPU tabulation kernels use this dimension either as the block size or to
+  // size dynamic shared memory, so reject invalid models before any launch.
+  if (std::is_same<Device, GPUDevice>::value &&
+      (last_layer_size <= 0 || last_layer_size > 1024)) {
+    return deepmd::tf_compat::InvalidArgument(
+        "last_layer_size must be between 1 and 1024 for GPU tabulation");
+  }
+  return deepmd::tf_compat::Status();
+}
+
 template <typename Device, typename FPTYPE>
 class TabulateFusionSeAOp : public OpKernel {
  public:
@@ -189,6 +204,8 @@ class TabulateFusionSeAOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (em_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(4);  // be careful here;
@@ -248,6 +265,9 @@ class TabulateFusionSeAGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dy_dem_x_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -273,7 +293,6 @@ class TabulateFusionSeAGradOp : public OpKernel {
     const FPTYPE* dy = dy_tensor.flat<FPTYPE>().data();
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -314,6 +333,9 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -333,7 +355,6 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
     const FPTYPE* dz_dy_dtwo = nullptr;
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -341,10 +362,6 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
           dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
           dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-      OP_REQUIRES(context, (last_layer_size <= 1024),
-                  deepmd::tf_compat::InvalidArgument(
-                      "In the process of model compression, the size of the "
-                      "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_grad_cpu(
           dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
@@ -388,6 +405,8 @@ class TabulateFusionSeAttenOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
     OP_REQUIRES(context, (two_embed_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(4);  // be careful here;
@@ -453,6 +472,9 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dy_dem_x_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -482,7 +504,6 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
     const FPTYPE* dy = dy_tensor.flat<FPTYPE>().data();
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -531,6 +552,9 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -550,7 +574,6 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
     const FPTYPE* dz_dy_dtwo = dz_dy_dtwo_tensor.flat<FPTYPE>().data();
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -558,10 +581,6 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
           dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
           dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-      OP_REQUIRES(context, (last_layer_size <= 1024),
-                  deepmd::tf_compat::InvalidArgument(
-                      "In the process of model compression, the size of the "
-                      "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_grad_cpu(
           dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
@@ -603,6 +622,8 @@ class TabulateFusionSeTOp : public OpKernel {
     OP_REQUIRES(
         context, (em_tensor.shape().dims() == 3),
         deepmd::tf_compat::InvalidArgument("Dim of em_tensor should be 3"));
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(last_layer_size);
@@ -661,6 +682,9 @@ class TabulateFusionSeTGradOp : public OpKernel {
     OP_REQUIRES(
         context, (dy_tensor.shape().dims() == 2),
         deepmd::tf_compat::InvalidArgument("Dim of dy_tensor should be 2"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(1);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dy_dem_x_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -684,7 +708,6 @@ class TabulateFusionSeTGradOp : public OpKernel {
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei_i = em_tensor.shape().dim_size(1);
     const int nnei_j = em_tensor.shape().dim_size(2);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(1);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -723,6 +746,9 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(1);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -741,7 +767,6 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei_i = em_tensor.shape().dim_size(1);
     const int nnei_j = em_tensor.shape().dim_size(2);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(1);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -749,10 +774,6 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
           nnei_i, nnei_j, last_layer_size);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-      OP_REQUIRES(context, (last_layer_size <= 1024),
-                  deepmd::tf_compat::InvalidArgument(
-                      "In the process of model compression, the size of the "
-                      "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_t_grad_grad_cpu(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
@@ -787,6 +808,8 @@ class TabulateFusionSeROp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 2"));
     OP_REQUIRES(context, (em_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(em_tensor.shape().dim_size(1));  // be careful here;
@@ -842,6 +865,9 @@ class TabulateFusionSeRGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dy_dem_tensor = NULL;
     OP_REQUIRES_OK(context,
@@ -858,7 +884,6 @@ class TabulateFusionSeRGradOp : public OpKernel {
     const FPTYPE* dy = dy_tensor.flat<FPTYPE>().data();
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -891,6 +916,9 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    OP_REQUIRES_OK(context,
+                   validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -906,17 +934,12 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
     const FPTYPE* dz_dy_dem = dz_dy_dem_tensor.flat<FPTYPE>().data();
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_r_grad_grad_gpu(
           dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-      OP_REQUIRES(context, (last_layer_size <= 1024),
-                  deepmd::tf_compat::InvalidArgument(
-                      "In the process of model compression, the size of the "
-                      "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_r_grad_grad_cpu(
           dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
