@@ -7,6 +7,9 @@ from copy import (
 from datetime import (
     timedelta,
 )
+from functools import (
+    partial,
+)
 from pathlib import (
     Path,
 )
@@ -17,6 +20,7 @@ from unittest.mock import (
     patch,
 )
 
+import numpy as np
 import pytest
 import torch
 import torch.distributed as dist
@@ -62,6 +66,11 @@ def _make_trainer(backend, directory, *, rank=0, stage=0, distributed=False):
     trainer = trainer_class.__new__(trainer_class)
     trainer.rank = rank
     trainer.is_distributed = distributed
+    if backend == "pt_expt":
+        trainer.training_data_by_task = {}
+        trainer._configured_data_seed = None
+        trainer._task_rng = np.random.default_rng(0)
+        trainer.world_size = dist.get_world_size() if distributed else 1
     trainer.sharding = ShardingPolicy(stage=stage)
     trainer.model = torch.nn.Linear(2, 1, device="cpu")
     with torch.no_grad():
@@ -124,6 +133,11 @@ def _best_writer(trainer, ema):
 
 
 def _validate(trainer, validator, *, step, metric, ema=False):
+    save_checkpoint = _best_writer(trainer, ema)
+    if isinstance(trainer, PTExptTrainer) and not ema:
+        save_checkpoint = partial(
+            save_checkpoint, data_progress=trainer._collect_data_progress()
+        )
     with patch.object(
         validator, "evaluate_all_systems", return_value={validator.metric_key: metric}
     ):
@@ -131,7 +145,7 @@ def _validate(trainer, validator, *, step, metric, ema=False):
             step_id=step,
             display_step=step,
             lr=1e-3,
-            save_checkpoint=_best_writer(trainer, ema),
+            save_checkpoint=save_checkpoint,
             prepare_checkpoint=trainer.ensure_finite_gradients_for_checkpoint,
         )
 

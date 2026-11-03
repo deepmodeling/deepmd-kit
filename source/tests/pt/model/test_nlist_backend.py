@@ -5,11 +5,16 @@ The pt model is reconstructed eagerly in ``DeepEval`` and evaluated via
 ``forward_common_lower`` when an O(N) neighbor-list strategy is selected.  Each
 strategy (``vesin``, ``nv``) must give results identical to the native dense
 builder, and the ``nlist_backend`` choice must dispatch / validate correctly.
-Strategy tests are skipped when the backend (or, for ``nv``, a CUDA device) is
-unavailable.
+Strategy tests are skipped when the backend is unavailable.
 """
 
 import copy
+from pathlib import (
+    Path,
+)
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import pytest
@@ -24,6 +29,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
+from deepmd.pt.utils.env import (
+    DEVICE,
+)
 from deepmd.pt.utils.nv_nlist import (
     NvNeighborList,
     is_nv_available,
@@ -33,14 +41,17 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
     is_vesin_torch_available,
 )
 
+from ...common.sezm_config import (
+    _tiny_sezm_model_params,
+)
+
 # Each O(N) strategy: (backend name, builder class, availability skip mark).
 _BACKEND_MARKS = {
     "vesin": pytest.mark.skipif(
         not is_vesin_torch_available(), reason="vesin.torch is not installed"
     ),
     "nv": pytest.mark.skipif(
-        not (is_nv_available() and torch.cuda.is_available()),
-        reason="nvalchemiops CUDA neighbor list unavailable",
+        not is_nv_available(), reason="nvalchemiops neighbor list unavailable"
     ),
 }
 _BUILDER_CLS = {"vesin": VesinNeighborList, "nv": NvNeighborList}
@@ -143,6 +154,31 @@ def test_invalid_backend_raises(pt_files) -> None:
         DeepPot(pt_files["se_e2_a"], nlist_backend="bogus")
 
 
+@pytest.mark.parametrize(
+    ("method", "backend", "message"),
+    [
+        ("dense", "auto", "PT SeZM/DPA4 supports neighbor_graph_method"),
+        ("vesin", "native", "Select only one"),
+    ],
+)
+def test_self_built_neighbor_options_rejected(
+    tmp_path: Path, method: str, backend: str, message: str
+) -> None:
+    path = str(tmp_path / "sezm.pt")
+    _save_pt(_tiny_sezm_model_params(), path)
+    with pytest.raises(ValueError, match=message):
+        DeepPot(path, neighbor_graph_method=method, nlist_backend=backend)
+
+
+def test_neighbor_graph_method_rejected_for_dense_model(
+    pt_files: dict[str, str],
+) -> None:
+    with pytest.raises(
+        ValueError, match="neighbor_graph_method applies to PT SeZM/DPA4"
+    ):
+        DeepPot(pt_files["se_e2_a"], neighbor_graph_method="vesin")
+
+
 def test_native_uses_no_strategy(pt_files) -> None:
     dp = DeepPot(pt_files["se_e2_a"], nlist_backend="native")
     assert dp.deep_eval._nlist_builder is None
@@ -155,10 +191,57 @@ def test_explicit_backend_selects_builder(pt_files, backend: str) -> None:
 
 
 @_BACKEND_MARKS["vesin"]
-def test_auto_prefers_vesin(pt_files) -> None:
-    # auto picks the first available O(N) builder; vesin is preferred.
-    builder = DeepPot(pt_files["se_e2_a"]).deep_eval._nlist_builder
-    assert isinstance(builder, VesinNeighborList)
+@pytest.mark.parametrize("nframes", [1, 3])
+def test_auto_selects_backend_from_frame_count(
+    pt_files: dict[str, str], nframes: int
+) -> None:
+    coords, atype, boxes = _multiframe_system(nframes)
+    dp = DeepPot(pt_files["se_e2_a"], auto_batch_size=False)
+    with (
+        mock.patch.object(
+            VesinNeighborList,
+            "build",
+            autospec=True,
+            side_effect=VesinNeighborList.build,
+        ) as vesin_build,
+        mock.patch.object(
+            NvNeighborList, "build", autospec=True, side_effect=NvNeighborList.build
+        ) as nv_build,
+    ):
+        dp.eval(coords, boxes, atype)
+
+    if nframes > 1 and is_nv_available():
+        nv_build.assert_called_once()
+        vesin_build.assert_not_called()
+    else:
+        vesin_build.assert_called_once()
+        nv_build.assert_not_called()
+
+
+@pytest.mark.parametrize("backend", STRATEGIES)
+@pytest.mark.parametrize("option", ["nlist_backend", "neighbor_graph_method"])
+def test_self_built_model_uses_inference_strategy(
+    tmp_path: Path, backend: str, option: str
+) -> None:
+    path = str(tmp_path / "sezm.pt")
+    _save_pt(_tiny_sezm_model_params(), path)
+    dp = DeepPot(path, auto_batch_size=False, **{option: backend})
+    model = dp.deep_eval.dp.model["Default"]
+    builder = model._inference_neighbor_list
+    assert isinstance(builder, _BUILDER_CLS[backend])
+    coords = np.array([[[0.0, 0.0, 0.0], [0.9, 0.0, 0.0], [0.0, 1.1, 0.0]]])
+    atype = np.array([0, 1, 0])
+    with mock.patch.object(builder, "build", wraps=builder.build) as build:
+        dp.eval(coords, None, atype)
+        build.assert_called_once()
+        assert model._get_neighbor_builder() is builder
+        model.train()
+        model.build_neighbor_list(
+            torch.as_tensor(coords, dtype=torch.float64, device=DEVICE),
+            torch.as_tensor(atype.reshape(1, -1), device=DEVICE),
+            None,
+        )
+        build.assert_called_once()
 
 
 def test_self_built_model_forces_native(pt_files, monkeypatch) -> None:

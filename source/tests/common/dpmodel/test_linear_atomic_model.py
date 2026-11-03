@@ -47,6 +47,9 @@ class _RecordingAtomicModel:
     def get_dim_aparam(self) -> int:
         return 0
 
+    def has_long_range(self) -> bool:
+        return False
+
     def change_type_map(
         self,
         type_map: list[str],

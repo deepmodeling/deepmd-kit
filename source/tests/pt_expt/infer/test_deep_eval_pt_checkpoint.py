@@ -357,7 +357,7 @@ class TestPtExptLoadPt(unittest.TestCase):
             output_def,
             nlist_backend="native",
         )
-        with self.assertRaisesRegex(ValueError, "only applies to graph-routed"):
+        with self.assertRaisesRegex(ValueError, "only applies to graph or edge-vector"):
             PtExptDeepEval(
                 self.pt_path,
                 output_def,
@@ -422,6 +422,93 @@ class TestPtExptLoadPt(unittest.TestCase):
 class TestNeighborGraphMethodResolution(unittest.TestCase):
     """Auto graph-builder selection must cover each host policy explicitly."""
 
+    def test_auto_nlist_strategy_uses_frame_count(self) -> None:
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        cases = (
+            ("cuda", 1, True, True, "vesin"),
+            ("cuda", 4, True, True, "nv"),
+            ("cuda", 1, True, False, "nv"),
+            ("cuda", 4, False, True, "vesin"),
+            ("cpu", 1, True, True, "vesin"),
+            ("cpu", 4, True, True, "nv"),
+            ("cuda", 1, False, False, None),
+            ("cpu", 1, False, True, "vesin"),
+            ("cpu", 1, True, False, "nv"),
+            ("cpu", 1, False, False, None),
+        )
+        for device, nf, nv_available, vesin_available, expected in cases:
+            with self.subTest(device=device, nf=nf, expected=expected):
+                coord = mock.Mock(device=torch.device(device))
+                atype = np.zeros((nf, 2), dtype=np.int64)
+                with (
+                    mock.patch.object(
+                        auto_neighbor_list, "is_nv_available", return_value=nv_available
+                    ),
+                    mock.patch.object(
+                        auto_neighbor_list,
+                        "is_vesin_torch_available",
+                        return_value=vesin_available,
+                    ),
+                ):
+                    builder = auto_neighbor_list.make_neighbor_list(
+                        "auto", coord.device, skin=1.0
+                    )
+                    if expected is None:
+                        self.assertIsNone(builder)
+                        continue
+                    with (
+                        mock.patch.object(
+                            builder._vesin, "build", return_value="vesin"
+                        ),
+                        mock.patch.object(builder._nv, "build", return_value="nv"),
+                    ):
+                        actual = builder.build(coord, atype, None, 3.0, [4])
+                self.assertEqual(actual, expected)
+
+    def test_native_edge_strategy_uses_frame_count(self) -> None:
+        """Native edge inputs use the shared carry-all strategy on every host."""
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        for device, nf, expected in (
+            ("cpu", 1, "vesin"),
+            ("cpu", 4, "nv"),
+            ("cuda", 1, "nv"),
+            ("cuda", 4, "nv"),
+        ):
+            with (
+                self.subTest(device=device, nf=nf),
+                mock.patch.object(
+                    auto_neighbor_list, "is_nv_available", return_value=True
+                ),
+                mock.patch.object(
+                    auto_neighbor_list, "is_vesin_torch_available", return_value=True
+                ),
+                mock.patch.object(
+                    auto_neighbor_list.VesinNeighborList, "build", return_value="vesin"
+                ) as vesin_build,
+                mock.patch.object(
+                    auto_neighbor_list.NvNeighborList, "build", return_value="nv"
+                ) as nv_build,
+            ):
+                coord = mock.Mock(device=torch.device(device))
+                atype = np.zeros((nf, 2), dtype=np.int64)
+                builder = auto_neighbor_list.make_neighbor_list(
+                    "native", coord.device, return_mode="edges"
+                )
+                actual = builder.build(
+                    coord, atype, None, 3.0, [1], return_mode="edges"
+                )
+                selected = vesin_build if expected == "vesin" else nv_build
+                selected.assert_called_once_with(
+                    coord, atype, None, 3.0, [1], return_mode="edges", pair_excl=None
+                )
+                self.assertEqual(actual, expected)
+
     def test_explicit_resolution(self) -> None:
         """Every implemented graph builder is accepted without rewriting."""
         for method in ("dense", "ase", "cell", "vesin", "nv"):
@@ -450,7 +537,8 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
             ("cpu", False, False, True, 1, "vesin", False),
             ("cpu", False, False, True, 4, "dense", False),
             ("cpu", False, False, False, 1, "dense", False),
-            ("cuda", True, True, True, 1, "nv", False),
+            ("cuda", True, True, True, 1, "vesin", False),
+            ("cuda", True, True, False, 1, "nv", False),
             ("cuda", True, True, True, 4, "nv", False),
             ("cuda", False, True, True, 1, "vesin", False),
             ("cuda", False, True, True, 4, "dense", True),

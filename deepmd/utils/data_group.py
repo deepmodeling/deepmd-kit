@@ -6,6 +6,9 @@ from __future__ import (
 )
 
 import logging
+from copy import (
+    deepcopy,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -204,6 +207,71 @@ class GroupedDataSystem:
         index = int(np.searchsorted(cdf, self._rng.random(), side="right"))
         self._remaining -= 1
         return self._batch_context(self.children[index].get_batch(), index)
+
+    def _sampling_config(self) -> dict[str, Any]:
+        return {
+            "probabilities": [
+                None if value is None else float(value)
+                for value in self._assigned_probabilities
+            ],
+            "uniform": self._uniform,
+        }
+
+    def state_dict(self) -> dict[str, Any]:
+        """Save this node's selection stream and each child's logical cursor."""
+        return {
+            "version": 1,
+            "config": self._sampling_config(),
+            "rng": deepcopy(self._rng.bit_generator.state),
+            "remaining": self._remaining,
+            "pass_length": self._pass_length,
+            "probabilities": (
+                self.component_probabilities.tolist() if self._remaining else None
+            ),
+            "children": [child.state_dict() for child in self.children],
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore the hierarchy without drawing batches or decoding frames."""
+        if state.get("version") != 1:
+            raise ValueError("Unsupported grouped-data progress version")
+        if state.get("config") != self._sampling_config():
+            raise ValueError("Grouped data progress has different sampling settings")
+        children = state.get("children")
+        if not isinstance(children, list) or len(children) != len(self.children):
+            raise ValueError("Grouped data progress has different children")
+        for key in ("remaining", "pass_length"):
+            if type(state.get(key)) is not int or state[key] < 0:
+                raise ValueError(f"Grouped data progress {key} must be non-negative")
+        if state["remaining"] > state["pass_length"]:
+            raise ValueError("Grouped data progress exceeds its pass length")
+        probabilities = state.get("probabilities")
+        if probabilities is not None:
+            probabilities = np.asarray(probabilities, dtype=np.float64)
+            if (
+                probabilities.shape != (len(self.children),)
+                or not np.all(np.isfinite(probabilities))
+                or np.any(probabilities < 0)
+                or not np.isclose(probabilities.sum(), 1.0, rtol=1e-12, atol=0)
+            ):
+                raise ValueError("Grouped data progress has invalid probabilities")
+        elif state["remaining"]:
+            raise ValueError(
+                "Grouped data progress is missing active-pass probabilities"
+            )
+        if "rng" not in state:
+            raise ValueError("Grouped data progress is missing its selection RNG")
+        rng = np.random.default_rng(0)
+        rng.bit_generator.state = state["rng"]
+        for child, progress in zip(self.children, children, strict=True):
+            child.load_state_dict(progress)
+        self._rng = rng
+        self._remaining = state["remaining"]
+        self._pass_length = state["pass_length"]
+        self._probabilities = probabilities
+        self._cdf = None if probabilities is None else np.cumsum(probabilities)
+        if self._cdf is not None:
+            self._cdf[-1] = 1.0
 
     def _reader_pass_length(self) -> int:
         return compute_total_numb_batch(

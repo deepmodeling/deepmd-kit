@@ -34,6 +34,7 @@ from deepmd.pt_expt.train import (
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     min_pair_dist_requirement,
 )
@@ -143,6 +144,9 @@ def get_trainer(
     is_distributed = dist.is_available() and dist.is_initialized()
     rank = dist.get_rank() if is_distributed else 0
     world_size = dist.get_world_size() if is_distributed else 1
+    if data_seed is not None:
+        seed32 = data_seed % (2**32)
+        dp_random.seed([rank, seed32] if is_distributed else seed32)
 
     def factory(
         task_config: TrainingTaskConfig,
@@ -476,6 +480,9 @@ def freeze(
     output: str = "frozen_model",
     head: str | None = None,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
+    compress: bool = False,
 ) -> None:
     """Freeze a pt_expt checkpoint into a .pte/.pt2 exported model.
 
@@ -506,6 +513,14 @@ def freeze(
         graph lower, so ``lower_kind`` is resolved to ``"graph"`` for it
         regardless of the requested value -- before the export ABI and the
         default output suffix are selected.
+    with_comm : bool, optional
+        Include a communication artifact for models with cross-rank message
+        passing, by default True. Disable for single-process inference.
+    compress : bool, optional
+        Compress the loaded model before export, by default False. Uses the
+        default settings of ``dp compress`` and selects the accelerated graph
+        schema for eligible ``.pt2`` models without compiling an intermediate
+        artifact.
     """
     import torch
 
@@ -616,12 +631,26 @@ def freeze(
             )
         do_atomic_virial = True
 
+    if compress:
+        from deepmd.pt_expt.entrypoints.compress import (
+            compress_model,
+        )
+
+        compress_model(
+            m,
+            output,
+            model_def_script=single_model_params,
+            with_comm=with_comm,
+        )
+        return
+
     model_dict_serialized = m.serialize()
     deserialize_to_file(
         output,
         {"model": model_dict_serialized, "model_def_script": single_model_params},
         do_atomic_virial=do_atomic_virial,
         lower_kind=lower_kind,
+        with_comm=with_comm,
     )
     log.info("Saved frozen model to %s (lower_kind=%s)", output, lower_kind)
 
@@ -822,8 +851,19 @@ def change_bias(
             )
         )
         model_dict = model_to_change.serialize()
+        # The updated archive keeps the lower and the per-atom virial of the
+        # input archive, so that only the bias changes. A compact canonical
+        # lower serves CUDA devices alone and is selected anew for the host,
+        # as compression selects it: it stays on a CUDA device, and a host
+        # without one exports the graph lower.
+        lower_kind = pte_data["lower_input_kind"]
+        if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
+            lower_kind = "auto"
         deserialize_to_file(
-            output_path, {"model": model_dict, "model_def_script": model_params}
+            output_path,
+            {"model": model_dict, "model_def_script": model_params},
+            do_atomic_virial=pte_data["do_atomic_virial"],
+            lower_kind=lower_kind,
         )
     log.info(f"Saved model to {output_path}")
 
@@ -893,6 +933,7 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             output=FLAGS.output,
             head=FLAGS.head,
             lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
+            compress=getattr(FLAGS, "compress", False),
         )
     elif FLAGS.command == "change-bias":
         change_bias(

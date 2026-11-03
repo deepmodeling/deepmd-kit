@@ -2,12 +2,16 @@
 //
 // Device templates for the compressed degree-wise DPA4C descriptor.
 //
-// One warp owns one destination node. The forward scan evaluates the
-// tabulated radial branch and its shared mode profiles, applies the ordered
-// PairFiLM amplitude, and reduces both envelope masses together with every
-// degree-wise moment in a single pass over the destination CSR row. The
-// analytical backward runs one node-readout VJP followed by one edge
-// recomputation scan that reproduces the amplitude instead of storing it.
+// A destination row is scanned by one warp, by several warps of one block in
+// a system too small to fill the device, or in bond-length windows by the
+// warps of a co-scheduled block (graph_compress_kernel.cuh). The forward scan
+// evaluates the tabulated radial branch and its shared mode profiles, applies
+// the ordered PairFiLM amplitude -- per edge, or once per node in the folded
+// scans of a single-type system -- and reduces both envelope masses together
+// with every degree-wise moment over the destination CSR row; the readout
+// follows as a launch of its own. The analytical backward runs one
+// node-readout VJP followed by one edge recomputation scan that reproduces
+// the amplitude instead of storing it.
 //
 // Degrees one and two carry the wide channel blocks and are contracted in
 // closed form. Degrees three and four carry a single channel each, so their
@@ -75,6 +79,42 @@ __device__ __forceinline__ float subwarp_sum(float value, unsigned mask) {
     value += __shfl_down_sync(mask, value, offset, Width);
   }
   return value;
+}
+
+/// Butterfly sum over one edge group, which leaves the total on every lane.
+/// The leading lane forms the same expression as `subwarp_sum`.
+template <int Width>
+__device__ __forceinline__ float subwarp_allsum(float value, unsigned mask) {
+#pragma unroll
+  for (int offset = Width / 2; offset > 0; offset >>= 1) {
+    value += __shfl_xor_sync(mask, value, offset, Width);
+  }
+  return value;
+}
+
+/// Fixed-point image of one force contribution, as the unsigned word that an
+/// integer atomic adds with two's-complement wraparound.
+__device__ __forceinline__ unsigned long long fixed_point(float value) {
+  return static_cast<unsigned long long>(
+      __float2ll_rn(value * kForceFixedScale));
+}
+
+/// Set the range word of the node whose fixed-point totals start at ``words``
+/// when ``value`` reaches kForceFixedLimit in magnitude; see kForceFixedLimit
+/// for the scope of the check.
+__device__ __forceinline__ void check_force_range(float value,
+                                                  unsigned long long* words) {
+  if (fabsf(value) >= kForceFixedLimit) {
+    atomicOr(words + kForceRangeWord, 1ull);
+  }
+}
+
+/// Component ``component`` of a Cartesian vector held in registers, chosen by
+/// selects rather than by a runtime index, which would move the vector to
+/// local memory.
+__device__ __forceinline__ float vector_component(const float (&vector)[3],
+                                                  int component) {
+  return component == 0 ? vector[0] : (component == 1 ? vector[1] : vector[2]);
 }
 
 template <bool Canonical, typename index_t>
@@ -354,11 +394,27 @@ struct EdgeGeometry {
   long source;
 };
 
+/// Length from which no bond of the row of a centre with radius
+/// `center_radius` lies inside its bridging window, or positive infinity when
+/// the launch carries no largest radius (see `Arguments::largest_radius`). The
+/// window test of a pair compares the bond with the outer fraction of the sum
+/// of the two radii, and the rounded sum and product are monotonic in the
+/// radius they take, so a bond at least this long fails the test for every
+/// source type.
+__device__ __forceinline__ float window_bound(const Arguments& args,
+                                              float center_radius) {
+  return args.largest_radius != nullptr
+             ? args.f_outer * (center_radius + __ldg(args.largest_radius))
+             : __int_as_float(0x7f800000);
+}
+
 // The length scale of a pair is the sum of the two per-element radii. The
-// centre contributes a block constant, so only the source radius is indexed
+// centre contributes a node constant, so only the source radius is indexed
 // per edge; `EdgeGeometry` keeps the source type, from which the backward
 // recovers the same sum, given that constant, at the cost of one further load
-// and one add.
+// and one add. The radius is read only for a bond shorter than the
+// `window_bound` of the row, so the table position of every longer bond
+// depends on its length alone, as in a model without a window.
 template <bool Bridged>
 __device__ __forceinline__ EdgeGeometry
 load_geometry(long edge,
@@ -369,6 +425,7 @@ load_geometry(long edge,
               float f_outer,
               float inverse_f_width,
               float center_radius,
+              float bound,
               const float* contact_radius,
               float eps,
               const float* edge_vec) {
@@ -387,13 +444,16 @@ load_geometry(long edge,
   geometry.seen = geometry.radius;
   geometry.envelope = c3_envelope(geometry.radius, rcut);
   if constexpr (Bridged) {
-    const float contact =
-        center_radius + __ldg(contact_radius + geometry.source_type);
-    if (geometry.radius < f_outer * contact) {
-      const float t = window_parameter(__fdividef(geometry.radius, contact),
-                                       f_inner, inverse_f_width);
-      geometry.seen = clamped_length(t, contact, f_inner, f_outer);
-      geometry.envelope = c3_envelope(geometry.seen, rcut) * bridging_switch(t);
+    if (geometry.radius < bound) {
+      const float contact =
+          center_radius + __ldg(contact_radius + geometry.source_type);
+      if (geometry.radius < f_outer * contact) {
+        const float t = window_parameter(__fdividef(geometry.radius, contact),
+                                         f_inner, inverse_f_width);
+        geometry.seen = clamped_length(t, contact, f_inner, f_outer);
+        geometry.envelope =
+            c3_envelope(geometry.seen, rcut) * bridging_switch(t);
+      }
     }
   }
   return geometry;
@@ -416,22 +476,26 @@ template <bool Bridged>
 __device__ __forceinline__ float radial_chain(const EdgeGeometry& geometry,
                                               const Arguments& args,
                                               float center_radius,
+                                              float bound,
                                               float table_gradient,
                                               float envelope_gradient) {
   if constexpr (Bridged) {
-    const float contact =
-        center_radius + __ldg(args.contact_radius + geometry.source_type);
-    if (geometry.radius < args.f_outer * contact) {
-      const float t = window_parameter(__fdividef(geometry.radius, contact),
-                                       args.f_inner, args.inverse_f_width);
-      const float seen = clamped_length(t, contact, args.f_inner, args.f_outer);
-      const float weight = bridging_switch(t);
-      const float slope = fmaf(
-          c3_envelope_derivative(seen, args.rcut) * weight, weight,
-          c3_envelope(seen, args.rcut) *
-              __fdividef(bridging_switch_derivative(t, args.inverse_f_width),
-                         contact));
-      return fmaf(envelope_gradient, slope, table_gradient * weight);
+    if (geometry.radius < bound) {
+      const float contact =
+          center_radius + __ldg(args.contact_radius + geometry.source_type);
+      if (geometry.radius < args.f_outer * contact) {
+        const float t = window_parameter(__fdividef(geometry.radius, contact),
+                                         args.f_inner, args.inverse_f_width);
+        const float seen =
+            clamped_length(t, contact, args.f_inner, args.f_outer);
+        const float weight = bridging_switch(t);
+        const float slope = fmaf(
+            c3_envelope_derivative(seen, args.rcut) * weight, weight,
+            c3_envelope(seen, args.rcut) *
+                __fdividef(bridging_switch_derivative(t, args.inverse_f_width),
+                           contact));
+        return fmaf(envelope_gradient, slope, table_gradient * weight);
+      }
     }
   }
   return fmaf(envelope_gradient,
@@ -824,6 +888,70 @@ __device__ __forceinline__ float load_output_gradient(
     int coordinate) {
   return __ldg(gradient + node * output_width + coordinate) *
          __ldg(inverse_stddev + coordinate);
+}
+
+/// Copy ``Count`` floats from global ``source`` to shared ``target``, dealing
+/// them to ``Width`` lanes from ``lane``. A lane issues all of its loads before
+/// its first store, so the latencies of the loads overlap instead of adding
+/// up along the copy.
+template <int Count, int Width>
+__device__ __forceinline__ void stage_shared(float* target,
+                                             const float* __restrict__ source,
+                                             int lane) {
+  constexpr int Rounds = (Count + Width - 1) / Width;
+  float value[Rounds];
+#pragma unroll
+  for (int round = 0; round < Rounds; ++round) {
+    const int index = lane + round * Width;
+    value[round] = index < Count ? __ldg(source + index) : 0.0f;
+  }
+#pragma unroll
+  for (int round = 0; round < Rounds; ++round) {
+    const int index = lane + round * Width;
+    if (index < Count) {
+      target[index] = value[round];
+    }
+  }
+}
+
+/// Cache level a prefetch request fills.
+enum class CacheLevel { L1, L2 };
+
+/// Request the 128-byte lines that hold ``count`` floats from ``base`` into
+/// `Level`, dealing the lines to the ``width`` lanes from ``lane``. An empty
+/// range requests nothing.
+template <CacheLevel Level>
+__device__ __forceinline__ void prefetch_lines(const float* base,
+                                               long count,
+                                               int lane,
+                                               int width) {
+  if (count <= 0) {
+    return;
+  }
+  const auto first =
+      reinterpret_cast<std::uintptr_t>(base) & ~std::uintptr_t{127};
+  const auto last = reinterpret_cast<std::uintptr_t>(base + count - 1);
+  const long lines = static_cast<long>((last - first) / 128) + 1;
+  for (long line = lane; line < lines; line += width) {
+    const std::uintptr_t address = first + line * 128ull;
+    if constexpr (Level == CacheLevel::L1) {
+      asm volatile("prefetch.global.L1 [%0];" ::"l"(address));
+    } else {
+      asm volatile("prefetch.global.L2 [%0];" ::"l"(address));
+    }
+  }
+}
+
+/// Request the bond vectors of the canonical destination row ``[begin, end)``
+/// into L2 when the launch streams them (see `Arguments::prefetch_bonds`).
+__device__ __forceinline__ void prefetch_row_bonds(const Arguments& args,
+                                                   long begin,
+                                                   long end,
+                                                   int lane) {
+  if (args.prefetch_bonds) {
+    prefetch_lines<CacheLevel::L2>(args.edge_vec + 3 * begin, 3 * (end - begin),
+                                   lane, kWarpSize);
+  }
 }
 
 template <int Channels, int Lmax>

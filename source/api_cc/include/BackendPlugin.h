@@ -15,15 +15,21 @@ class DipoleChargeModifierBase;
 
 /**
  * @brief C ABI symbol names exported by backend plugin libraries.
+ *
+ * The suffix of a symbol is the version of the interface it serves: that of
+ * the DeepPot and DeepSpin symbols changes with the virtual interface of
+ * DeepPotBackend and DeepSpinBackend, so that a plugin built against another
+ * interface is refused when it is loaded rather than called through a table
+ * of another layout.
  **/
 constexpr const char* DEEPMD_DEEPPOT_PLUGIN_CREATE_SYMBOL =
-    "deepmd_create_deeppot_backend_v1";
+    "deepmd_create_deeppot_backend_v2";
 constexpr const char* DEEPMD_DEEPPOT_PLUGIN_DELETE_SYMBOL =
-    "deepmd_delete_deeppot_backend_v1";
+    "deepmd_delete_deeppot_backend_v2";
 constexpr const char* DEEPMD_DEEPSPIN_PLUGIN_CREATE_SYMBOL =
-    "deepmd_create_deepspin_backend_v1";
+    "deepmd_create_deepspin_backend_v2";
 constexpr const char* DEEPMD_DEEPSPIN_PLUGIN_DELETE_SYMBOL =
-    "deepmd_delete_deepspin_backend_v1";
+    "deepmd_delete_deepspin_backend_v2";
 constexpr const char* DEEPMD_DEEPTENSOR_PLUGIN_CREATE_SYMBOL =
     "deepmd_create_deeptensor_backend_v1";
 constexpr const char* DEEPMD_DEEPTENSOR_PLUGIN_DELETE_SYMBOL =

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""The fixture cache key must change when imported generator helpers change."""
+"""Fixture dependency changes invalidate the cache without hashing C++ tests."""
 
 import hashlib
 import shlex
@@ -12,27 +12,32 @@ from pathlib import (
 
 
 class TestCCFixtureCacheFingerprint(unittest.TestCase):
-    def test_shared_helper_change_invalidates_fingerprint(self):
+    def test_dependency_changes_invalidate_fingerprint(self):
         workflow = (
             Path(__file__).resolve().parents[3]
             / ".github"
             / "workflows"
             / "test_cc.yml"
         ).read_text(encoding="utf-8")
-        command = workflow.split("source_fingerprint=$(git ls-files -s --", 1)[
-            1
-        ].split("| sha256sum", 1)[0]
+        command = workflow.split("source_fingerprint=$(git ls-files -s --", 1)[1].split(
+            "| sha256sum", 1
+        )[0]
         pathspecs = shlex.split(command.replace("\\\n", " "))
-        self.assertIn("source/tests/dpa4_fixtures.py", pathspecs)
-
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            helper = repo / "source" / "tests" / "dpa4_fixtures.py"
             generator = repo / "source" / "tests" / "infer" / "gen_dpa4_spin.py"
-            helper.parent.mkdir(parents=True)
             generator.parent.mkdir(parents=True)
-            helper.write_text("jitter = 0.05\n", encoding="utf-8")
             generator.write_text("from dpa4_fixtures import jitter\n", encoding="utf-8")
+            dependencies = (
+                "source/tests/dpa4_fixtures.py",
+                "source/lib/src/tabulate.cc",
+                "source/lib/include/tabulate.h",
+                "source/CMakeLists.txt",
+            )
+            for path in dependencies:
+                dependency = repo / path
+                dependency.parent.mkdir(parents=True, exist_ok=True)
+                dependency.write_text("original\n", encoding="utf-8")
 
             def git(*args):
                 return subprocess.run(
@@ -48,12 +53,24 @@ class TestCCFixtureCacheFingerprint(unittest.TestCase):
                 ).hexdigest()
 
             git("init", "-q")
-            git("add", "--", "source/tests")
+            git("add", "--", "source")
             before = fingerprint()
-            # The generator is unchanged; only its imported helper changes.
-            helper.write_text("jitter = 0.10\n", encoding="utf-8")
-            git("add", "--", "source/tests/dpa4_fixtures.py")
-            self.assertNotEqual(before, fingerprint())
+            # Each dependency changes independently while the generator stays
+            # unchanged: native kernels/headers matter just as Python helpers do.
+            for path in dependencies:
+                with self.subTest(dependency=path):
+                    (repo / path).write_text("changed\n", encoding="utf-8")
+                    git("add", "--", path)
+                    after = fingerprint()
+                    self.assertNotEqual(before, after)
+                    before = after
+
+            # Editing a C++ test must not trigger expensive fixture generation.
+            unrelated = repo / "source/lib/tests/test_tabulate.cc"
+            unrelated.parent.mkdir(parents=True)
+            unrelated.write_text("new test\n", encoding="utf-8")
+            git("add", "--", "source/lib/tests/test_tabulate.cc")
+            self.assertEqual(before, fingerprint())
 
 
 if __name__ == "__main__":

@@ -51,6 +51,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    GridDensityLoss,
     PopulationLoss,
     PropertyLoss,
     TaskLoss,
@@ -95,6 +96,10 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.learning_rate import (
     BaseLR,
+)
+from deepmd.pt.utils.spin_finetune import (
+    compute_native_spin_input_stats,
+    get_native_spin_finetune_state,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -770,6 +775,24 @@ class Trainer:
                                 _pretrained_model_params["descriptor"],
                                 _model_key_from,
                             )
+                        if _finetune_rule_single.convert_to_native_spin:
+                            log.info(
+                                "Initialize native-spin branch '%s' from spin-free branch '%s'.",
+                                _model_key,
+                                _model_key_from,
+                            )
+                            converted = get_native_spin_finetune_state(
+                                self.wrapper.model[_model_key],
+                                pretrained_model_wrapper.model[_model_key_from],
+                                random_fitting=_new_fitting,
+                            )
+                            _new_state_dict.update(
+                                {
+                                    f"model.{_model_key}.{key}": value
+                                    for key, value in converted.items()
+                                }
+                            )
+                            return
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()
@@ -846,11 +869,16 @@ class Trainer:
                         model = (
                             self.model[_model_key] if self.multi_task else self.model
                         )
-                        model = model_change_out_bias(
-                            model,
+                        sample_func = (
                             self.get_sample_func[_model_key]
                             if self.multi_task
-                            else self.get_sample_func,
+                            else self.get_sample_func
+                        )
+                        if _finetune_rule.convert_to_native_spin:
+                            compute_native_spin_input_stats(model, sample_func)
+                        model = model_change_out_bias(
+                            model,
+                            sample_func,
                             _bias_adjust_mode="change-by-statistic"
                             if not _finetune_rule.get_random_fitting()
                             else "set-by-statistic",
@@ -2106,6 +2134,7 @@ class Trainer:
             "coord",
             "atype",
             "spin",
+            "grid",
             "box",
             "fparam",
             "aparam",
@@ -2130,6 +2159,10 @@ class Trainer:
         if "fid" in batch_data:
             log_dict["fid"] = batch_data["fid"]
         log_dict["sid"] = batch_data["sid"]
+        # models without grid support do not accept a grid keyword in forward;
+        # drop it when the data does not provide grid
+        if input_dict.get("grid") is None:
+            input_dict.pop("grid", None)
         return input_dict, label_dict, log_dict
 
     def print_header(
@@ -2298,6 +2331,22 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         ]
         additional_data_requirement += spin_requirement_items
+    has_grid = getattr(_model, "has_grid", False)
+    if callable(has_grid):
+        has_grid = has_grid()
+    if has_grid:
+        # the grid is a model input (like fparam/aparam), not a label; it is
+        # frame-major (nframes, ngrid, 3) and not per-atom
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "grid",
+                ndof=3,
+                atomic=False,
+                must=True,
+                high_prec=True,
+                special_shape="frame_major",
+            )
+        )
     if _model.has_chg_spin_ebd():
         has_default_cs = _model.has_default_chg_spin()
         cs_default = (
@@ -2401,6 +2450,9 @@ def get_loss(
             tensor_name = "polar"
         loss_params["tensor_name"] = tensor_name
         return TensorLoss(**loss_params)
+    elif loss_type == "grid_density":
+        loss_params["starter_learning_rate"] = start_lr
+        return GridDensityLoss(**loss_params)
     elif loss_type == "property":
         task_dim = _model.get_task_dim()
         var_name = _model.get_var_name()
