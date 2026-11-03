@@ -623,6 +623,34 @@ def test_prepared_table_is_reused_across_calls() -> None:
 
 
 @_CPU
+@pytest.mark.parametrize("canonical", [False, True])
+def test_leading_table_views_keep_their_interval_count(canonical: bool) -> None:
+    """A short leading view must not supply the prepared table for a full one."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=canonical)
+    arguments = _arguments(descriptor, graph, atype)
+    table = arguments[5]
+    short_arguments = (*arguments[:5], table[:1], *arguments[6:])
+    assert short_arguments[5].data_ptr() == table.data_ptr()
+    # Populate the cache using only the first interval. The subsequent call
+    # needs later intervals from the same storage and the same data address.
+    torch.ops.deepmd.dpa4c_graph_compress(
+        torch.zeros_like(graph.edge_vec), *short_arguments
+    )
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
+    reference = _reference_descriptor(reference_edge, *_spin_free(arguments))
+    torch.testing.assert_close(output, reference, atol=3.0e-5, rtol=3.0e-5)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    (reference_gradient,) = torch.autograd.grad(
+        (reference * cotangent).sum(), reference_edge
+    )
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=8.0e-6, rtol=1.0e-4)
+
+
+@_CPU
 @pytest.mark.parametrize("rewrite", ["rebound", "in_place"])
 @pytest.mark.parametrize("table", [8, 9], ids=["pair_film", "pair_mixing"])
 def test_new_pair_tables_reach_the_kernel(table: int, rewrite: str) -> None:

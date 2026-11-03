@@ -10,8 +10,8 @@ single forward pass produces the embeddings without computing forces or virials.
 > including DPA4/SeZM and DP+ZBL or other linear combinations. The PyTorch
 > Exportable backend serves models whose descriptor has a graph form, such as
 > DPA1, DPA2, DPA4 and DPA4C, including ZBL-bridged DPA4 and DPA4C. A combination
-> reports the embeddings of its descriptor-fitting sub-model. Both backends serve
-> energy, dipole, polarizability, dos and property models, though the
+> reports the embeddings of its first descriptor-fitting sub-model. Both backends
+> serve energy, dipole, polarizability, dos and property models, though the
 > `structural_feature` is only physically meaningful for energy models. Spin
 > models are not supported.
 
@@ -22,8 +22,11 @@ Three embeddings are produced for each frame:
 - `atomic_feature`: the per-atom activation after the last fitting hidden layer
   (before the final output projection), with shape (nframes, natoms, dim_hidden).
 - `structural_feature`: a per-structure summary obtained by summing
-  `atomic_feature` over the atoms of each frame, with shape
-  (nframes, dim_hidden).
+  `atomic_feature` over the real atoms of each frame not excluded by
+  `atom_exclude_types`, with shape (nframes, dim_hidden).
+
+Atoms excluded by `atom_exclude_types` retain their per-atom `descriptor` and
+`atomic_feature`; only the structural sum leaves them out.
 
 ## Command line
 
@@ -116,3 +119,10 @@ them through `charge_spin`, one `[charge, multiplicity]` pair per frame with sha
 (nframes, 2); without the argument it uses its `default_chg_spin`. A compressed
 model serves one condition at a time, so all frames of a call must share the same
 pair.
+
+For a PyTorch Exportable linear combination with runtime charge/spin
+conditioning, omitting `charge_spin` requires all charge-conditioned sub-models
+to define matching `default_chg_spin` values, including compressed sub-models
+whose condition is folded into tables. If the defaults differ or any is missing,
+pass `charge_spin` explicitly. The inference interface does not apply each
+sub-model's default separately.

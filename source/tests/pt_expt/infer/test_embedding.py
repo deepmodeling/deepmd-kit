@@ -252,6 +252,59 @@ def test_dpa4_matches_pt_backend(dpa4_models: dict) -> None:
     )
 
 
+@pytest.mark.skipif(
+    not graph_compress.op_available(),
+    reason="the compressed DPA4C operator is not built",
+)
+@pytest.mark.parametrize("auto_batch_size", [False, 1])
+@pytest.mark.parametrize("periodic", [False, True])
+@pytest.mark.parametrize("dim_aparam", [0, 1])
+def test_compressed_empty_frames(
+    dim_aparam: int,
+    auto_batch_size: bool | int,
+    periodic: bool,
+    tmp_path: "os.PathLike[str]",
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty-node-capable descriptor retains feature widths and zero totals.
+
+    Exercise empty atomic parameters and per-frame parameters too, including
+    when automatic batching evaluates one empty frame at a time.
+    """
+    config = copy.deepcopy(_DPA4C_CONFIG)
+    config["descriptor"]["precision"] = "float32"
+    config["fitting_net"].update(
+        precision="float32", numb_fparam=1, numb_aparam=dim_aparam
+    )
+    model_params = _normalize_model(config)
+    model = get_model(copy.deepcopy(model_params)).eval()
+    path = _save_checkpoint(model, model_params, os.path.join(tmp_path, "empty.pt"))
+    dp = DeepPot(path, auto_batch_size=auto_batch_size)
+    # Embeddings evaluate the deserialized model. Its compressed operator
+    # supports empty nodes, unlike the uncompressed descriptor graph forward.
+    descriptor_model = dp.deep_eval._dpmodel.atomic_model.descriptor
+    descriptor_model.enable_compression(1.4, table_stride_1=0.01)
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    nframes = 2
+    descriptor, atomic_feature, structural_feature = dp.eval_embedding(
+        np.empty((nframes, 0, 3)),
+        _CELLS if periodic else None,
+        np.empty(0, dtype=np.int32),
+        fparam=_FPARAM,
+        aparam=np.empty((nframes, 0, dim_aparam)) if dim_aparam else None,
+        dtype="fp64",
+    )
+    assert descriptor.shape == (nframes, 0, descriptor_model.get_dim_out())
+    dim_hidden = config["fitting_net"]["neuron"][-1]
+    assert atomic_feature.shape == (nframes, 0, dim_hidden)
+    assert structural_feature.shape == (nframes, dim_hidden)
+    assert all(
+        output.dtype == np.float64
+        for output in (descriptor, atomic_feature, structural_feature)
+    )
+    np.testing.assert_array_equal(structural_feature, 0.0)
+
+
 def test_dpa4_frozen_model_and_dpmodel(dpa4_models: dict) -> None:
     """A frozen model and the NumPy dpmodel give the embeddings of the checkpoint.
 

@@ -3110,7 +3110,7 @@ class DeepEval(DeepEvalBackend):
         )
         if aparam_t is not None:
             # Graph inputs flatten frame and atom axes into one node axis.
-            aparam_t = aparam_t.reshape(nframes * natoms, -1)
+            aparam_t = aparam_t.reshape(nframes * natoms, self.get_dim_aparam())
         charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             ret = self._dpmodel.atomic_model.forward_common_embedding_graph(
@@ -3129,7 +3129,13 @@ class DeepEval(DeepEvalBackend):
             return value.cpu().numpy().reshape(shape)
 
         return (
-            emit(ret["descriptor"], (nframes, natoms, -1)),
-            emit(ret["atomic_feature"], (nframes, natoms, -1)),
-            emit(ret["structural_feature"], (nframes, -1)),
+            emit(ret["descriptor"], (nframes, natoms, ret["descriptor"].shape[-1])),
+            emit(
+                ret["atomic_feature"],
+                (nframes, natoms, ret["atomic_feature"].shape[-1]),
+            ),
+            emit(
+                ret["structural_feature"],
+                (nframes, ret["structural_feature"].shape[-1]),
+            ),
         )

@@ -239,13 +239,15 @@ class TableCache {
                      layout.modes > 0 ? identify(pair_mixing) : Identity{}};
     std::lock_guard<std::mutex> guard(mutex_);
     for (const Entry& entry : entries_) {
-      if (entry.key == key && entry.block == layout.block) {
+      if (entry.key == key && entry.block == layout.block &&
+          entry.spline_count == layout.spline_count) {
         return entry.tables;
       }
     }
     Entry entry;
     entry.key = key;
     entry.block = layout.block;
+    entry.spline_count = layout.spline_count;
     entry.retained = {table, pair_film, pair_mixing};
     entry.tables = std::make_shared<const PreparedTables>(prepare_tables(
         table.const_data_ptr<float>(), pair_film.const_data_ptr<float>(),
@@ -275,6 +277,7 @@ class TableCache {
   struct Entry {
     Key key;
     int block;
+    int spline_count;
     std::vector<torch::Tensor> retained;
     std::shared_ptr<const PreparedTables> tables;
   };

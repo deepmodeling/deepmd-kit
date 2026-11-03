@@ -695,11 +695,14 @@ A trained DPA4C model exports learned representations for downstream analysis
 with `dp embed`. A single forward pass (no force or virial) produces the per-atom
 `descriptor`, the per-atom `atomic_feature` (the activation after the last
 fitting hidden layer), and the per-frame `structural_feature` (the sum of
-`atomic_feature` over the atoms):
+`atomic_feature` over real atoms not excluded by `atom_exclude_types`):
 
 ```bash
 dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
 ```
+
+Atoms excluded by `atom_exclude_types` retain their per-atom `descriptor` and
+`atomic_feature`; only the structural sum leaves them out.
 
 The command reads the training checkpoint (`.pt`) or the frozen model (`.pt2`),
 compressed or not, and a ZBL-bridged model reports the embeddings of its learned
