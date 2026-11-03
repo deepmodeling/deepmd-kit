@@ -2219,7 +2219,9 @@ class TestSeZMGieScatter(unittest.TestCase):
         allocation.  The consistent pair must still trace (the assert is
         deferred, not an eager guard failure).
         """
-        from torch.fx.experimental.proxy_tensor import make_fx
+        from torch.fx.experimental.proxy_tensor import (
+            make_fx,
+        )
 
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
             gie_zonal_scatter,
@@ -2268,7 +2270,9 @@ class TestSeZMGieScatter(unittest.TestCase):
             SimpleNamespace,
         )
 
-        from torch.fx.experimental.proxy_tensor import make_fx
+        from torch.fx.experimental.proxy_tensor import (
+            make_fx,
+        )
 
         from deepmd.pt.model.descriptor.sezm_nn.embedding import (
             GeometricInitialEmbedding,
@@ -2529,7 +2533,9 @@ class TestSeZMGieScatter(unittest.TestCase):
         grid form itself is defense in depth here, not this test's
         discriminator.)
         """
-        from torch.fx.experimental.proxy_tensor import make_fx
+        from torch.fx.experimental.proxy_tensor import (
+            make_fx,
+        )
 
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
             gie_zonal_scatter,
