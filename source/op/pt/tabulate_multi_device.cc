@@ -32,6 +32,15 @@ void CheckTabulateDataTensor(const torch::Tensor& tensor,
   TORCH_CHECK(tensor.is_contiguous(), name, " must be contiguous");
 }
 
+void CheckTabulateTensorShape(const torch::Tensor& tensor,
+                              const torch::Tensor& table_tensor,
+                              const at::IntArrayRef expected_shape,
+                              const char* name) {
+  TORCH_CHECK(tensor.sizes() == expected_shape, name, " must have shape ",
+              expected_shape);
+  CheckTabulateDataTensor(tensor, table_tensor, name);
+}
+
 // The native SE-A kernels assume that every non-empty local-atom dimension
 // has at least one neighbor. Reject the degenerate shape before calculating
 // raw buffer offsets in either public or autograd-internal entry points.
@@ -257,11 +266,26 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
                         {"dy_dem_x", dy_dem_x_tensor},
                         {"dy_dem", dy_dem_tensor},
                         {"dy_dtwo", dy_dtwo_tensor}});
-  // check input shape
-  if (dy_tensor.dim() != 3) {
-    throw std::invalid_argument("Dim of dy_tensor should be 3");
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 3, "descriptor must be rank 3");
+  const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateSeAInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                 em_tensor, two_embed_tensor, last_layer_size);
+  CheckTabulateTensorShape(
+      descriptor_tensor, table_tensor,
+      {em_tensor.size(0), em_tensor.size(2), last_layer_size}, "descriptor");
+  CheckTabulateTensorShape(dy_tensor, table_tensor, descriptor_tensor.sizes(),
+                           "dy");
+  CheckTabulateTensorShape(dy_dem_x_tensor, table_tensor, em_x_tensor.sizes(),
+                           "dy_dem_x");
+  CheckTabulateTensorShape(dy_dem_tensor, table_tensor, em_tensor.sizes(),
+                           "dy_dem");
+  TORCH_CHECK(dy_dtwo_tensor.defined() == two_embed_tensor.defined(),
+              "dy_dtwo must be defined if and only if two_embed is defined");
+  if (two_embed_tensor.defined()) {
+    CheckTabulateTensorShape(dy_dtwo_tensor, table_tensor,
+                             two_embed_tensor.sizes(), "dy_dtwo");
   }
-  CheckTabulateSeANeighborCount(em_tensor);
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -283,7 +307,6 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
   const int64_t ndescrpt = em_tensor.size(2);
-  const int64_t last_layer_size = descriptor_tensor.size(2);
   CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
@@ -324,15 +347,26 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
                         {"dz_dy_dtwo", dz_dy_dtwo_tensor},
                         {"descriptor", descriptor_tensor},
                         {"dz_dy", dz_dy_tensor}});
-  // Check input shape
-  if (dz_dy_dem_x_tensor.dim() != 2) {
-    throw std::invalid_argument("Dim of dz_dy_dem_x should be 2");
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 3, "descriptor must be rank 3");
+  const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateSeAInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                 em_tensor, two_embed_tensor, last_layer_size);
+  CheckTabulateTensorShape(
+      descriptor_tensor, table_tensor,
+      {em_tensor.size(0), em_tensor.size(2), last_layer_size}, "descriptor");
+  CheckTabulateTensorShape(dz_dy_dem_x_tensor, table_tensor,
+                           em_x_tensor.sizes(), "dz_dy_dem_x");
+  CheckTabulateTensorShape(dz_dy_dem_tensor, table_tensor, em_tensor.sizes(),
+                           "dz_dy_dem");
+  CheckTabulateTensorShape(dz_dy_tensor, table_tensor,
+                           descriptor_tensor.sizes(), "dz_dy");
+  TORCH_CHECK(dz_dy_dtwo_tensor.defined() == two_embed_tensor.defined(),
+              "dz_dy_dtwo must be defined if and only if two_embed is defined");
+  if (two_embed_tensor.defined()) {
+    CheckTabulateTensorShape(dz_dy_dtwo_tensor, table_tensor,
+                             two_embed_tensor.sizes(), "dz_dy_dtwo");
   }
-  if (dz_dy_dem_tensor.dim() != 3) {
-    throw std::invalid_argument("Dim of dz_dy_dem should be 3");
-  }
-  CheckTabulateSeANeighborCount(em_tensor);
-  // get the device
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -355,7 +389,6 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
   const int64_t ndescrpt = em_tensor.size(2);
-  const int64_t last_layer_size = descriptor_tensor.size(2);
   CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
@@ -444,11 +477,19 @@ void TabulateFusionSeTGradForward(const torch::Tensor& table_tensor,
                         {"descriptor", descriptor_tensor},
                         {"dy_dem_x", dy_dem_x_tensor},
                         {"dy_dem", dy_dem_tensor}});
-  // check input shape
-  if (dy_tensor.dim() != 2) {
-    throw std::invalid_argument("Dim of dy_tensor should be 2");
-  }
-  // get the device
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 2, "descriptor must be rank 2");
+  const int64_t last_layer_size = descriptor_tensor.size(1);
+  CheckTabulateSeTInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                 em_tensor, last_layer_size);
+  CheckTabulateTensorShape(descriptor_tensor, table_tensor,
+                           {em_tensor.size(0), last_layer_size}, "descriptor");
+  CheckTabulateTensorShape(dy_tensor, table_tensor, descriptor_tensor.sizes(),
+                           "dy");
+  CheckTabulateTensorShape(dy_dem_x_tensor, table_tensor, em_x_tensor.sizes(),
+                           "dy_dem_x");
+  CheckTabulateTensorShape(dy_dem_tensor, table_tensor, em_tensor.sizes(),
+                           "dy_dem");
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -463,7 +504,6 @@ void TabulateFusionSeTGradForward(const torch::Tensor& table_tensor,
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei_i = em_tensor.size(1);
   const int64_t nnei_j = em_tensor.size(2);
-  const int64_t last_layer_size = descriptor_tensor.size(1);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -498,14 +538,19 @@ void TabulateFusionSeTGradGradForward(const torch::Tensor& table_tensor,
                         {"dz_dy_dem", dz_dy_dem_tensor},
                         {"descriptor", descriptor_tensor},
                         {"dz_dy", dz_dy_tensor}});
-  // Check input shape
-  if (dz_dy_dem_x_tensor.dim() != 2) {
-    throw std::invalid_argument("Dim of dz_dy_dem_x should be 2");
-  }
-  if (dz_dy_dem_tensor.dim() != 3) {
-    throw std::invalid_argument("Dim of dz_dy_dem should be 3");
-  }
-  // get the device
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 2, "descriptor must be rank 2");
+  const int64_t last_layer_size = descriptor_tensor.size(1);
+  CheckTabulateSeTInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                 em_tensor, last_layer_size);
+  CheckTabulateTensorShape(descriptor_tensor, table_tensor,
+                           {em_tensor.size(0), last_layer_size}, "descriptor");
+  CheckTabulateTensorShape(dz_dy_dem_x_tensor, table_tensor,
+                           em_x_tensor.sizes(), "dz_dy_dem_x");
+  CheckTabulateTensorShape(dz_dy_dem_tensor, table_tensor, em_tensor.sizes(),
+                           "dz_dy_dem");
+  CheckTabulateTensorShape(dz_dy_tensor, table_tensor,
+                           descriptor_tensor.sizes(), "dz_dy");
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -520,7 +565,6 @@ void TabulateFusionSeTGradGradForward(const torch::Tensor& table_tensor,
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei_i = em_tensor.size(1);
   const int64_t nnei_j = em_tensor.size(2);
-  const int64_t last_layer_size = descriptor_tensor.size(1);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -611,10 +655,19 @@ void TabulateFusionSeTTebdGradForward(const torch::Tensor& table_tensor,
                         {"dy", dy_tensor},
                         {"descriptor", descriptor_tensor},
                         {"dy_dem_x", dy_dem_x_tensor}});
-  // check input shape
-  if (dy_tensor.dim() != 4) {
-    throw std::invalid_argument("Dim of dy_tensor should be 4");
-  }
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 4, "descriptor must be rank 4");
+  const int64_t last_layer_size = descriptor_tensor.size(3);
+  CheckTabulateSeTInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                 em_tensor, last_layer_size);
+  CheckTabulateTensorShape(descriptor_tensor, table_tensor,
+                           {em_tensor.size(0), em_tensor.size(1),
+                            em_tensor.size(2), last_layer_size},
+                           "descriptor");
+  CheckTabulateTensorShape(dy_tensor, table_tensor, descriptor_tensor.sizes(),
+                           "dy");
+  CheckTabulateTensorShape(dy_dem_x_tensor, table_tensor, em_x_tensor.sizes(),
+                           "dy_dem_x");
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -629,7 +682,6 @@ void TabulateFusionSeTTebdGradForward(const torch::Tensor& table_tensor,
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei_i = em_tensor.size(1);
   const int64_t nnei_j = em_tensor.size(2);
-  const int64_t last_layer_size = descriptor_tensor.size(3);
 
   // compute
   if (device == "GPU") {
@@ -665,11 +717,19 @@ void TabulateFusionSeTTebdGradGradForward(
                         {"dz_dy_dem_x", dz_dy_dem_x_tensor},
                         {"descriptor", descriptor_tensor},
                         {"dz_dy", dz_dy_tensor}});
-  // Check input shape
-  if (dz_dy_dem_x_tensor.dim() != 3) {
-    throw std::invalid_argument("Dim of dz_dy_dem_x should be 3");
-  }
-  // get the device
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 4, "descriptor must be rank 4");
+  const int64_t last_layer_size = descriptor_tensor.size(3);
+  CheckTabulateSeTInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                 em_tensor, last_layer_size);
+  CheckTabulateTensorShape(descriptor_tensor, table_tensor,
+                           {em_tensor.size(0), em_tensor.size(1),
+                            em_tensor.size(2), last_layer_size},
+                           "descriptor");
+  CheckTabulateTensorShape(dz_dy_dem_x_tensor, table_tensor, em_tensor.sizes(),
+                           "dz_dy_dem_x");
+  CheckTabulateTensorShape(dz_dy_tensor, table_tensor,
+                           descriptor_tensor.sizes(), "dz_dy");
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -683,7 +743,6 @@ void TabulateFusionSeTTebdGradGradForward(
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei_i = em_tensor.size(1);
   const int64_t nnei_j = em_tensor.size(2);
-  const int64_t last_layer_size = descriptor_tensor.size(3);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -763,11 +822,18 @@ void TabulateFusionSeRGradForward(const torch::Tensor& table_tensor,
                         {"dy", dy_tensor},
                         {"descriptor", descriptor_tensor},
                         {"dy_dem", dy_dem_tensor}});
-  // check input shape
-  if (dy_tensor.dim() != 3) {
-    throw std::invalid_argument("Dim of dy_tensor should be 3");
-  }
-  // get the device
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 3, "descriptor must be rank 3");
+  const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateSeRInputs<FPTYPE>(table_tensor, table_info_tensor, em_tensor,
+                                 last_layer_size);
+  CheckTabulateTensorShape(
+      descriptor_tensor, table_tensor,
+      {em_tensor.size(0), em_tensor.size(1), last_layer_size}, "descriptor");
+  CheckTabulateTensorShape(dy_tensor, table_tensor, descriptor_tensor.sizes(),
+                           "dy");
+  CheckTabulateTensorShape(dy_dem_tensor, table_tensor, em_tensor.sizes(),
+                           "dy_dem");
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -779,7 +845,6 @@ void TabulateFusionSeRGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
-  const int64_t last_layer_size = descriptor_tensor.size(2);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -809,11 +874,18 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
                         {"dz_dy_dem", dz_dy_dem_tensor},
                         {"descriptor", descriptor_tensor},
                         {"dz_dy", dz_dy_tensor}});
-  // Check input shape
-  if (dz_dy_dem_tensor.dim() != 2) {
-    throw std::invalid_argument("Dim of dz_dy_dem should be 2");
-  }
-  // get the device
+  // Saved-tensor hooks may replace inputs after forward validation.
+  TORCH_CHECK(descriptor_tensor.dim() == 3, "descriptor must be rank 3");
+  const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateSeRInputs<FPTYPE>(table_tensor, table_info_tensor, em_tensor,
+                                 last_layer_size);
+  CheckTabulateTensorShape(
+      descriptor_tensor, table_tensor,
+      {em_tensor.size(0), em_tensor.size(1), last_layer_size}, "descriptor");
+  CheckTabulateTensorShape(dz_dy_dem_tensor, table_tensor, em_tensor.sizes(),
+                           "dz_dy_dem");
+  CheckTabulateTensorShape(dz_dy_tensor, table_tensor,
+                           descriptor_tensor.sizes(), "dz_dy");
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -825,7 +897,6 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* dz_dy_dem = dz_dy_dem_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
-  const int64_t last_layer_size = descriptor_tensor.size(2);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
