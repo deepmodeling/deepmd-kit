@@ -60,7 +60,8 @@ def test_export_target_scope(monkeypatch):
 
 
 @pytest.mark.parametrize("edges", [0, 1, 17])
-def test_cpu_scalar_layout_and_vjp(edges):
+@pytest.mark.parametrize("rank", [0, 1, 2])
+def test_cpu_scalar_layout_and_vjp(edges, rank):
     """CPU reference and fake/CUDA layouts share the same output contract."""
     torch.manual_seed(42)
     x = torch.randn(7, 16, 64, device="cpu", requires_grad=True)
@@ -68,9 +69,12 @@ def test_cpu_scalar_layout_and_vjp(edges):
     order = src.argsort(stable=True)
     ptr = torch.cat((src.new_zeros(1), torch.bincount(src, minlength=7).cumsum(0)))
     w = torch.eye(16, device="cpu").repeat(edges, 1, 1).requires_grad_()
-    kc = torch.randn(edges, 25, device="cpu", requires_grad=True)
-    cb = torch.randn(64, device="cpu", requires_grad=True)
-    args = (x, src, order, ptr, w, kc, cb, 3, 2, 1)
+    kc_shape = (edges, 4, 64) if rank == 0 else (edges, 25 * rank)
+    kc = torch.randn(kc_shape, device="cpu", requires_grad=True)
+    cb = torch.randn(
+        1 if rank == 0 else 64 * rank, device="cpu", requires_grad=rank > 0
+    )
+    args = (x, src, order, ptr, w, kc, cb, 3, 2, rank)
     u, scalar = vp._rotate_mix_scalar_op(*args)
     ref = vp._rotate_mix_op(*args)
     torch.testing.assert_close(u, ref, atol=0, rtol=0)
@@ -79,12 +83,106 @@ def test_cpu_scalar_layout_and_vjp(edges):
     if edges:
         assert scalar.untyped_storage().data_ptr() != u.untyped_storage().data_ptr()
     gu, gs = torch.randn_like(u), torch.randn_like(scalar)
-    actual = torch.autograd.grad((u, scalar), (x, w, kc, cb), (gu, gs))
+    leaves = (x, w, kc) + ((cb,) if rank else ())
+    actual = torch.autograd.grad((u, scalar), leaves, (gu, gs))
     expected = torch.autograd.grad(
-        (ref, ref[:, :, :32].permute(1, 0, 2)), (x, w, kc, cb), (gu, gs)
+        (ref, ref[:, :, :32].permute(1, 0, 2)), leaves, (gu, gs)
     )
     for a, b in zip(actual, expected, strict=True):
         torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-4)
+        assert torch.isfinite(a).all()
+        if not edges:
+            torch.testing.assert_close(a, torch.zeros_like(a), atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("branch", ["both", "main", "scalar"])
+def test_empty_cpu_second_derivative(branch):
+    """Empty output branches retain zero first and second derivatives."""
+    x = torch.randn(3, 16, 64, device="cpu", requires_grad=True)
+    src = torch.empty(0, device="cpu", dtype=torch.long)
+    ptr = torch.zeros(4, device="cpu", dtype=torch.long)
+    w = torch.empty(0, 16, 16, device="cpu", requires_grad=True)
+    kc = torch.empty(0, 25, device="cpu", requires_grad=True)
+    cb = torch.randn(64, device="cpu", requires_grad=True)
+    outputs = vp._rotate_mix_scalar_op(x, src, src, ptr, w, kc, cb, 3, 2, 1)
+    chosen = {"both": outputs, "main": outputs[:1], "scalar": outputs[1:]}[branch]
+    leaves = (x, w, kc, cb)
+    first = torch.autograd.grad(
+        sum(v.square().sum() for v in chosen), leaves, create_graph=True
+    )
+    second = torch.autograd.grad(sum(v.square().sum() for v in first), leaves)
+    for gradient in (*first, *second):
+        torch.testing.assert_close(gradient, torch.zeros_like(gradient), rtol=0, atol=0)
+
+
+@GPU
+def test_capture_freeze_load(monkeypatch, strict_environment, tmp_path):
+    """Compile a real capture-enabled package and compare loaded predictions."""
+    import re
+    import zipfile
+
+    import deepmd.pt_expt.utils.env as export_env
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt.entrypoints import (
+        freeze_pt2,
+    )
+    from deepmd.pt.model.model import (
+        get_model,
+    )
+    from deepmd.pt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", "1")
+    # The launch-table sweep is a performance concern; retain the real
+    # tracing, torch.export, AOTI compilation and package loader below.
+    monkeypatch.setattr(freeze_pt2, "_tune_triton_configs", lambda *args: None)
+    monkeypatch.setattr(export_env, "DEVICE", torch.device("cuda:0"))
+    params = _model_params()
+    params["descriptor"].update(radial_so2_mode="degree_channel", radial_so2_rank=1)
+    model = get_model(params).to("cuda").eval()
+    model.requires_grad_(False)
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.2, 0.2, 0.1], [0.3, 1.1, 0.2], [0.1, 0.2, 1.3]]],
+        device="cuda",
+        dtype=torch.float64,
+    )
+    atype = torch.zeros(1, 4, device="cuda", dtype=torch.long)
+    reference = model(coord, atype, None)
+    checkpoint, package = tmp_path / "model.pt", tmp_path / "model.pt2"
+    wrapper = ModelWrapper(model, model_params=params)
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+    freeze_pt2.freeze_sezm_to_pt2(
+        str(checkpoint),
+        str(package),
+        device=torch.device("cuda:0"),
+        with_comm=False,
+    )
+    with zipfile.ZipFile(package) as archive:
+        wrappers = [
+            archive.read(name).decode()
+            for name in archive.namelist()
+            if name.endswith(".wrapper.cpp")
+        ]
+    assert any(
+        re.search(r"['\"]SAVE_SCALAR['\"]\s*:\s*True", text) for text in wrappers
+    )
+    evaluator = DeepPot(str(package))
+    energy, force, virial = evaluator.eval(
+        coord.detach().cpu().numpy(),
+        None,
+        [0] * 4,
+    )
+    for actual, name in ((energy, "energy"), (force, "force"), (virial, "virial")):
+        expected = reference[name].detach().cpu()
+        torch.testing.assert_close(
+            torch.as_tensor(actual).reshape(expected.shape),
+            expected,
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
 
 @GPU
@@ -224,10 +322,14 @@ def test_model_capture_on_off(monkeypatch, strict_environment):
             )
 
 
-@GPU
 @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
 @pytest.mark.parametrize(
-    "capture,target", [(True, "cuda"), (False, "cuda"), (True, "cpu")]
+    "capture,target",
+    [
+        pytest.param(True, "cuda", marks=GPU),
+        pytest.param(False, "cuda", marks=GPU),
+        (True, "cpu"),
+    ],
 )
 def test_export_dispatch(
     monkeypatch, strict_environment, tmp_path, backend, capture, target

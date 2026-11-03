@@ -189,6 +189,12 @@ def _rotate_mix_reference(
     dim = (lmax + 1) ** 2
     n_deg = lmax + 1
     reduced = 3 * lmax + 1
+    if _has_no_edges(n_edge):
+        # opt_einsum 3.3 cannot plan zero-cost contractions (0 / 0).
+        # Empty reductions retain the zero derivative to every operand,
+        # including the nonempty node features and shared channel basis.
+        dependency = x[:0].sum() + wigner.sum() + kc.sum() + cb[:0].sum()
+        return x.new_empty((n_focus, n_edge, reduced * focus_dim)) + dependency
     coeff = build_m_major_index(lmax, 1, device=x.device)
     d_to_m = wigner[:, :dim, :dim].index_select(1, coeff)
     x_local = torch.bmm(d_to_m, x.index_select(0, src))  # (E, reduced, C_wide)
@@ -249,6 +255,15 @@ def _rotate_mix_backward_reference(
     dim = (lmax + 1) ** 2
     n_deg = lmax + 1
     reduced = 3 * lmax + 1
+    if _has_no_edges(n_edge):
+        # All three edge cotangents are empty. Preserve their differentiable
+        # dependency without sending zero-size einsums to the path planner.
+        dependency = grad_u.sum() + x[:0].sum() + wigner.sum() + kc.sum() + cb[:0].sum()
+        return (
+            x.new_empty((n_edge, dim, c_wide)) + dependency,
+            wigner.new_empty(wigner.shape) + dependency,
+            kc.new_empty(kc.shape) + dependency,
+        )
     coeff = build_m_major_index(lmax, 1, device=x.device)
     d_to_m = wigner[:, :dim, :dim].index_select(1, coeff)
     x_src = x.index_select(0, src)
