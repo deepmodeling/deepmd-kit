@@ -2148,119 +2148,176 @@ class TestSeZMGieScatter(unittest.TestCase):
 
     @_GPU_KERNELS
     def test_backward_reaches_the_degree_normalization(self):
-        """The degree normalization stays outside the operator on purpose.
+        """The production wiring: the in-graph degree scale receives grads.
 
-        The scaling descends from the cutoff envelope, so its cotangent is
-        part of the force.  The Triton path deliberately leaves the
-        ``out * inv_sqrt_deg`` multiply to the traced graph; this check
-        fails if a future refactor folds it into the kernel without a
-        gradient path for the scale (mirroring the CUDA operator's guard).
+        Drives ``GeometricInitialEmbedding.forward`` itself (the fused
+        scatter followed by the in-place ``out.mul_(inv_sqrt_deg)`` the
+        production path runs), with the scale marked as requiring grad,
+        and compares against the same module with the scatter unbound.
+        The scale descends from the cutoff envelope, so its cotangent is
+        part of the force; a fold of the multiply into the kernel without
+        a gradient path leaves ``inv_sqrt_deg.grad`` at None and fails.
         """
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding,
+        )
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            module = GeometricInitialEmbedding(
+                lmax=3, channels=32, dtype=torch.float32
+            ).cuda()
+        module.eval()
+        self.assertIsNotNone(module._triton_scatter, "precondition: bound")
+
+        generator = torch.Generator(device="cuda").manual_seed(23)
+        n_edge, n_nodes, channels = 2048, 64, 32
+        dst = torch.randint(0, n_nodes, (n_edge,), device="cuda", generator=generator)
+        d_full = torch.randn(n_edge, 16, 16, device="cuda", generator=generator)
+        radial = torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+
+        # Fixed tensors so both states see identical inputs; each run
+        # re-attaches the graph on a fresh leaf clone of the scale.
+        scale0 = torch.rand(
+            n_nodes, 1, 1, device="cuda", generator=generator
+        ).clamp_min(0.1)
+        cotangent = torch.randn(
+            n_nodes, 16, channels, device="cuda", generator=generator
+        )
+
+        def run():
+            scale = scale0.clone().requires_grad_(True)
+
+            class _Cache:
+                pass
+
+            cache = _Cache()
+            cache.dst = dst
+            cache.edge_vec = torch.zeros(n_edge, 3, device="cuda")
+            cache.inv_sqrt_deg = scale
+            cache.csr_cache = {}
+            cache.edge_src_gate = None
+            cache.Dt_full = d_full
+
+            out = module.forward(n_nodes=n_nodes, edge_cache=cache, radial_feat=radial)
+            grad = torch.autograd.grad(out, scale, cotangent)[0]
+            return out, grad
+
+        out_bound, grad_bound = run()
+        self.assertIsNotNone(grad_bound)
+
+        module._triton_scatter = None
+        out_ref, grad_ref = run()
+        torch.testing.assert_close(out_bound, out_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(grad_bound, grad_ref, atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
+    def test_row_pointer_must_match_node_count(self):
+        """A row pointer shorter/longer than n_nodes + 1 raises, not corrupts.
+
+        Mirrors the CUDA sibling's TORCH_CHECK: too few entries would leave
+        trailing output rows uninitialized, too many would store past the
+        allocation.  The consistent pair must still trace (the assert is
+        deferred, not an eager guard failure).
+        """
+        from torch.fx.experimental.proxy_tensor import make_fx
+
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
             gie_zonal_scatter,
         )
 
-        generator = torch.Generator(device="cuda").manual_seed(11)
-        n_edge, n_nodes = 2048, 64
-        zonal, radial, dst, order, row_ptr, _ = self._make_case(
-            n_edge, n_nodes, generator
-        )
-        inv_sqrt_deg = torch.rand(
-            n_nodes, device="cuda", generator=generator
-        ).clamp_min(0.1)
-        cotangent = torch.randn(
-            n_nodes,
-            self._ROWS + 1,
-            radial.shape[2],
-            device="cuda",
-            generator=torch.Generator(device="cuda").manual_seed(13),
+        generator = torch.Generator(device="cuda").manual_seed(29)
+        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
+            512, 32, generator
         )
 
-        grads = {}
-        for name, compose in (
-            (
-                "fused",
-                lambda z, r, sc: (
-                    gie_zonal_scatter(z, r, dst, order, row_ptr, n_nodes, 3)
-                    * sc[:, None, None]
-                ),
-            ),
-            (
-                "reference",
-                lambda z, r, sc: (
-                    self._reference(z, r, dst, n_nodes) * sc[:, None, None]
-                ),
-            ),
-        ):
-            z = zonal.clone().requires_grad_(True)
-            r = radial.clone().requires_grad_(True)
-            sc = inv_sqrt_deg.clone().requires_grad_(True)
-            compose(z, r, sc).backward(cotangent)
-            grads[name] = (z.grad, r.grad, sc.grad)
+        short = torch.cat([row_ptr, row_ptr[-1:]])
+        with self.assertRaisesRegex(RuntimeError, r"n_nodes \+ 1"):
+            gie_zonal_scatter(zonal, radial, dst, order, short, 32, 3)
 
-        self.assertIsNotNone(
-            grads["fused"][2],
-            "the scale gradient must flow; a fold without a gradient path "
-            "silently biases inference forces",
+        trimmed = row_ptr[:32]
+        with self.assertRaisesRegex(RuntimeError, r"n_nodes \+ 1"):
+            gie_zonal_scatter(zonal, radial, dst, order, trimmed, 32, 3)
+
+        # The consistent pair still builds a symbolic graph: the check
+        # becomes a deferred runtime assert, it must not break tracing.
+        def fn(z, r, d, o, rp):
+            return gie_zonal_scatter(z, r, d, o, rp, rp.shape[0] - 1, 3)
+
+        graph = make_fx(fn, tracing_mode="symbolic", _allow_non_fake_inputs=True)(
+            zonal, radial, dst, order, row_ptr
         )
+        out = graph(zonal, radial, dst, order, row_ptr)
         torch.testing.assert_close(
-            grads["fused"][2], grads["reference"][2], atol=1e-5, rtol=1e-5
-        )
-        torch.testing.assert_close(
-            grads["fused"][0], grads["reference"][0], atol=1e-5, rtol=1e-5
-        )
-        torch.testing.assert_close(
-            grads["fused"][1], grads["reference"][1], atol=1e-5, rtol=1e-5
+            out,
+            gie_zonal_scatter(zonal, radial, dst, order, row_ptr, 32, 3),
+            atol=0.0,
+            rtol=0.0,
         )
 
     @_GPU_KERNELS
-    def test_forward_row_base_survives_past_int32(self):
-        """The row base is 64-bit: nodes past 2**31/(rows*C) must not wrap.
+    def test_triton_scatter_pinned_for_export_traces(self):
+        """Freeze traces on CPU; the pin keeps the fused scatter selected.
 
-        At the wrap scale the output itself is ~8 GiB, so the check is
-        gated on free VRAM.  The buffer is pre-dirtied with NaN through the
-        caching allocator (fill, free, let the operator's allocation reuse
-        the block): every node program writes its full 16-row block, so any
-        surviving NaN marks a row whose stores landed outside the buffer --
-        exactly what an int32 row base does past the threshold.
+        The runtime device check resolves to False on CPU tracing inputs,
+        so a CUDA-target export would silently bake the reference
+        composition.  With the pin the freeze seam sets, the traced graph
+        carries the operator node; without it (and CPU tensors) it must
+        keep the reference composition.
         """
-        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
-            gie_zonal_scatter,
+        from types import (
+            SimpleNamespace,
         )
 
-        free, _total = torch.cuda.mem_get_info()
-        channels = 32
-        row_elems = 16 * channels  # (N_ROW + 1) * C at the lmax == 3 gate
-        n_nodes = 2**31 // row_elems + 16
-        need_bytes = n_nodes * row_elems * 4
-        if free < need_bytes + (2 << 30):
-            self.skipTest(f"needs ~{need_bytes >> 30} GiB free VRAM")
+        from torch.fx.experimental.proxy_tensor import make_fx
 
-        generator = torch.Generator(device="cuda").manual_seed(19)
-        n_edge = 8
-        zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
-        radial = torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
-        dst = torch.zeros(n_edge, dtype=torch.int64, device="cuda")
-        order = torch.arange(n_edge, dtype=torch.int64, device="cuda")
-        row_ptr = torch.full((n_nodes + 1,), n_edge, dtype=torch.int64, device="cuda")
-        row_ptr[0] = 0
-
-        dirty = torch.full((n_nodes, 16, channels), float("nan"), device="cuda")
-        del dirty
-        out = gie_zonal_scatter(zonal, radial, dst, order, row_ptr, n_nodes, 3)
-
-        self.assertFalse(torch.isnan(out).any().item(), "unwritten row detected")
-        slot_of_row = torch.repeat_interleave(
-            torch.arange(3, device="cuda"),
-            torch.tensor([3, 5, 7], device="cuda"),
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding,
         )
-        manual = (zonal.unsqueeze(-1) * radial[:, slot_of_row]).sum(0)
-        torch.testing.assert_close(out[0, 1:, :], manual, atol=1e-5, rtol=1e-5)
-        for probe in (2**31 // row_elems, n_nodes - 1):
-            with self.subTest(node=probe):
-                self.assertEqual(float(out[probe].abs().max()), 0.0)
-        del out
-        torch.cuda.empty_cache()
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            module = GeometricInitialEmbedding(
+                lmax=3, channels=32, dtype=torch.float32
+            ).cpu()
+        module.eval()
+        self.assertIsNotNone(module._triton_scatter, "precondition: bound on host")
+
+        n_edge, n_nodes = 129, 8
+        generator = torch.Generator(device="cpu").manual_seed(31)
+        dst = torch.randint(0, n_nodes, (n_edge,), device="cpu", generator=generator)
+        d_full = torch.randn(n_edge, 16, 16, device="cpu", generator=generator)
+        radial = torch.randn(n_edge, 3, 32, device="cpu", generator=generator)
+
+        cache_dst = torch.randint(
+            0, n_nodes, (n_edge,), device="cpu", generator=generator
+        )
+
+        def traced_forward(rp):
+            cache = SimpleNamespace(
+                dst=cache_dst,
+                edge_vec=torch.zeros(n_edge, 3, device="cpu"),
+                inv_sqrt_deg=torch.ones(n_nodes, 1, 1, device="cpu"),
+                csr_cache={},
+                edge_src_gate=None,
+                Dt_full=d_full,
+            )
+            return module.forward(n_nodes=rp, edge_cache=cache, radial_feat=radial)
+
+        def fn():
+            return traced_forward(n_nodes)
+
+        module._force_triton_scatter = True
+        pinned = make_fx(fn, tracing_mode="symbolic", _allow_non_fake_inputs=True)()
+        self.assertIn(
+            "gie_zonal_scatter", pinned.code, "the pinned trace must carry the op"
+        )
+
+        module._force_triton_scatter = None
+        unpinned = make_fx(fn, tracing_mode="symbolic", _allow_non_fake_inputs=True)()
+        self.assertNotIn(
+            "gie_zonal_scatter",
+            unpinned.code,
+            "CPU tensors without the pin keep the reference composition",
+        )
 
     def test_reference_cpu_matches_manual(self):
         """CPU reference equals a hand-written sequential accumulation."""
@@ -2451,63 +2508,76 @@ class TestSeZMGieScatter(unittest.TestCase):
         torch.testing.assert_close(gr[:, :, :channels], ref_gr, atol=1e-5, rtol=1e-5)
 
     @_GPU_KERNELS
-    def test_compile_matches_eager_across_node_counts(self):
-        """The compiled path matches eager and re-runs at a second shape.
+    def test_static_trace_replays_at_a_second_node_count(self):
+        """A graph traced at one node count must replay at another.
 
-        The launch grid is derived from ``row_ptr`` inside the operator's
-        Python wrapper, so the trap this guards on only appears when a
-        compiled graph is re-run at a different node count: the callable
-        is compiled at one shape and re-run at another.  A capture backend
-        first asserts the operator is actually captured (a silent graph
-        break would run eager and keep every value comparison green), and
-        the value runs use ``fullgraph=True`` for the same reason.
+        The stack-kernel pattern: ``make_fx`` captures the operator-bound
+        graph at a small shape, Inductor compiles it dynamically, and the
+        compiled callable is then replayed at a much larger node count.
+        The replay guards the launch/allocation consistency the dynamic
+        lane can still break -- scalar arguments that specialized to the
+        small shape, a grid or output allocation that stopped following
+        the runtime row-pointer -- with the larger output block
+        pre-dirtied with NaN through the caching allocator (the output is
+        ``torch.empty``; any surviving NaN marks a row the replay never
+        wrote) and a dynamo counter asserting the replay reused the first
+        graph.  The remaining silent-grid path, a *static* export with a
+        baked node count, is closed by the row-pointer validation test:
+        the deferred assert turns an inconsistent baked pair loud instead
+        of wrong.  (Under dynamic tracing both grid derivations are
+        correct -- the node count arrives as a SymInt -- which is why the
+        grid form itself is defense in depth here, not this test's
+        discriminator.)
         """
+        from torch.fx.experimental.proxy_tensor import make_fx
+
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
             gie_zonal_scatter,
         )
 
         generator = torch.Generator(device="cuda").manual_seed(11)
-        shapes = ((4096, 128), (5000, 131))
-        cases = []
-        for n_edge, n_nodes in shapes:
-            zonal, radial, dst, order, row_ptr, _parent = self._make_case(
-                n_edge, n_nodes, generator, view_radial=True
+
+        def fn(z, r, dst_, order_, row_ptr_):
+            return gie_zonal_scatter(
+                z, r, dst_, order_, row_ptr_, row_ptr_.shape[0] - 1, 3
             )
-            cases.append((zonal, radial, dst, order, row_ptr, n_nodes))
 
-        def fn(z, r, dst_, order_, row_ptr_, n_nodes_):
-            return gie_zonal_scatter(z, r, dst_, order_, row_ptr_, n_nodes_, 3)
-
-        graphs = []
-
-        def _capture(gm, example_inputs):
-            graphs.append(gm)
-            return gm.forward
-
-        first = cases[0]
-        torch.compile(fn, backend=_capture, dynamic=True)(*first[:2], *first[2:])
-        self.assertTrue(
-            any("gie_zonal_scatter" in g.code for g in graphs),
-            "the compiled graph must capture the operator node",
+        small = self._make_case(4096, 128, generator, view_radial=True)
+        z_s, r_s, dst_s, order_s, row_s, _p = small
+        graph = make_fx(fn, tracing_mode="symbolic", _allow_non_fake_inputs=True)(
+            z_s, r_s, dst_s, order_s, row_s
         )
+        compiled = torch.compile(graph, backend="inductor", dynamic=True)
 
-        compiled = torch.compile(fn, dynamic=True, fullgraph=True)
-        for zonal, radial, dst, order, row_ptr, n_nodes in cases:
-            with self.subTest(n_nodes=n_nodes):
-                z_e = zonal.clone().requires_grad_(True)
-                r_e = radial.clone().requires_grad_(True)
-                out_e = fn(z_e, r_e, dst, order, row_ptr, n_nodes)
-                cotangent = torch.randn_like(out_e)
-                g_e = torch.autograd.grad(out_e, (z_e, r_e), cotangent)
+        import torch._dynamo.utils as dynamo_utils
 
-                z_c = zonal.clone().requires_grad_(True)
-                r_c = radial.clone().requires_grad_(True)
-                out_c = compiled(z_c, r_c, dst, order, row_ptr, n_nodes)
-                g_c = torch.autograd.grad(out_c, (z_c, r_c), cotangent)
+        dynamo_utils.counters.clear()
+        with torch.no_grad():
+            out_s = compiled(z_s, r_s, dst_s, order_s, row_s)
+            torch.testing.assert_close(
+                out_s, fn(z_s, r_s, dst_s, order_s, row_s), atol=1e-6, rtol=1e-6
+            )
 
-                torch.testing.assert_close(out_c, out_e, atol=1e-6, rtol=1e-6)
-                torch.testing.assert_close(g_c[0], g_e[0], atol=1e-6, rtol=1e-6)
-                torch.testing.assert_close(g_c[1], g_e[1], atol=1e-6, rtol=1e-6)
+            z_b, r_b, dst_b, order_b, row_b, _pb = self._make_case(
+                50000, 1024, generator, view_radial=True
+            )
+            # Dirty the big output block: fill-free-free so the operator's
+            # torch.empty reuses the NaN-marked allocation.
+            dirty = torch.full((1024, 16, r_b.shape[2]), float("nan"), device="cuda")
+            del dirty
+            out_b = compiled(z_b, r_b, dst_b, order_b, row_b)
+            self.assertFalse(
+                torch.isnan(out_b).any().item(),
+                "unwritten row: the replayed launch grid was baked to the "
+                "trace-time node count",
+            )
+            eager_b = fn(z_b, r_b, dst_b, order_b, row_b)
+        torch.testing.assert_close(out_b, eager_b, atol=1e-5, rtol=1e-5)
+        self.assertEqual(
+            dynamo_utils.counters["stats"].get("unique_graphs", 0),
+            1,
+            "the larger replay must reuse the dynamically compiled graph",
+        )
 
     @_GPU_KERNELS
     def test_constructor_binds_the_fused_scatter_only_on_the_supported_ladder(

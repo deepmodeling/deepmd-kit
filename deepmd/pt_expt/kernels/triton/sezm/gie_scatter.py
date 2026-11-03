@@ -324,6 +324,19 @@ if GIE_SCATTER_TRITON_AVAILABLE:
             and lmax == 3
         ):
             return _reference(zonal, radial, dst, n_nodes)
+        # The CUDA sibling enforces the same invariant (TORCH_CHECK in
+        # zonal_scatter.cu); torch._check keeps it export-friendly -- eager
+        # raises immediately, a traced graph carries a deferred runtime
+        # assert instead of silently launching a wrong grid (too few
+        # programs leave output rows uninitialized, too many write past
+        # the allocation).
+        torch._check(
+            row_ptr.shape[0] == n_nodes + 1,
+            lambda: (
+                f"row_ptr has {row_ptr.shape[0]} entries for n_nodes={n_nodes}; "
+                "expected n_nodes + 1 (one cumulative count per node)"
+            ),
+        )
         n_edge = zonal.shape[0]
         n_row = zonal.shape[1]
         c = radial.shape[2]

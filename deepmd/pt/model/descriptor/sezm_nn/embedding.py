@@ -217,6 +217,10 @@ class GeometricInitialEmbedding(nn.Module):
         # ``None`` keeps the runtime ``zonal_coupling.is_cuda`` dispatch; the
         # freeze pins it to the AOTI target because tracing always runs on CPU.
         self._force_fused_scatter: bool | None = None
+        # Same pin for the Triton scatter: freeze traces on CPU, where the
+        # runtime device check would otherwise resolve the CUDA-target
+        # artifact to the reference composition.
+        self._force_triton_scatter: bool | None = None
         if cuda_infer_level() >= 1 and self.dtype is torch.float32:
             from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
                 op_available,
@@ -334,10 +338,13 @@ class GeometricInitialEmbedding(nn.Module):
             # still run this forward on CPU tensors (device-qualified
             # inference), and the operator's internal fallback builds
             # data-dependent shapes that break compiled CPU graphs.
+            triton_target = (
+                self._force_triton_scatter
+                if self._force_triton_scatter is not None
+                else zonal_coupling.is_cuda
+            )
             triton_selected = (
-                self._triton_scatter is not None
-                and not self.training
-                and zonal_coupling.is_cuda
+                self._triton_scatter is not None and not self.training and triton_target
             )
             if cuda_selected or triton_selected:
                 from .edge_cache import (

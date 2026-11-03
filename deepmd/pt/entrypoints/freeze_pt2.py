@@ -1008,6 +1008,11 @@ def _freeze_sezm_to_pt2(
             module._force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
             module._force_fused_scatter = force_fused_scatter
+            # The Triton scatter needs the same trace-time pin: the runtime
+            # device check resolves to False on the CPU tracing inputs, and
+            # the CUDA-target artifact would silently bake the reference
+            # composition instead of the fused scatter.
+            module._force_triton_scatter = force_fused_scatter
 
     # Sweep any Triton launch-table keys this checkpoint needs that are not
     # covered for the local GPU, so the traced graph bakes tuned launches.
