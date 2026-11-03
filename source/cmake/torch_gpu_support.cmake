@@ -12,3 +12,12 @@ if(DEEPMD_TORCH_HAS_CUDA OR TARGET torch_hip)
 else()
   set(DEEPMD_TORCH_HAS_GPU FALSE)
 endif()
+
+# Toolkit-backed preselection queries and sets DeePMD's runtime before Torch.
+# Both must refer to the same GPU runtime. CPU-only LibTorch and builds without
+# a DeePMD toolkit remain supported.
+if(USE_CUDA_TOOLKIT AND TARGET torch_hip)
+  message(FATAL_ERROR "CUDA toolkit cannot be combined with HIP LibTorch")
+elseif(USE_ROCM_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
+  message(FATAL_ERROR "ROCm toolkit cannot be combined with CUDA LibTorch")
+endif()

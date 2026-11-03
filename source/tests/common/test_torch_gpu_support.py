@@ -13,7 +13,7 @@ import pytest
 @pytest.mark.parametrize("toolkit", ["CPU", "CUDA", "ROCM"])
 @pytest.mark.parametrize("torch_runtime", ["CPU", "CUDA", "HIP"])
 def test_torch_gpu_capability(tmp_path: Path, toolkit: str, torch_runtime: str) -> None:
-    """Only a GPU-enabled LibTorch may enable preselection, including on HIP."""
+    """Match GPU runtimes while retaining CPU and toolkit-disabled builds."""
     cmake = shutil.which("cmake")
     if cmake is None:
         pytest.skip("CMake is not installed")
@@ -36,9 +36,18 @@ def test_torch_gpu_capability(tmp_path: Path, toolkit: str, torch_runtime: str) 
         '  message(FATAL_ERROR "Incorrect CUDA-only capability")\n'
         "endif()\n"
     )
-    subprocess.run(
+    result = subprocess.run(
         [cmake, "-S", str(tmp_path), "-B", str(tmp_path / "build")],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    mismatch_message = {
+        ("CUDA", "HIP"): "CUDA toolkit cannot be combined with HIP LibTorch",
+        ("ROCM", "CUDA"): "ROCm toolkit cannot be combined with CUDA LibTorch",
+    }.get((toolkit, torch_runtime))
+    if mismatch_message is not None:
+        assert result.returncode != 0
+        assert mismatch_message in result.stdout + result.stderr
+    else:
+        result.check_returncode()
