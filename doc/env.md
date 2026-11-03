@@ -71,6 +71,16 @@ thread/device/stream. Unsupported shapes or workspace requirements fail
 explicitly rather than selecting a different reduction algorithm. Qualify
 energy and force parity for the desired model, shapes, GPU, and cuBLAS version;
 this setting is not a cross-hardware or cross-version reproducibility promise.
+
+The full-matrix statement applies to the fused operator's ordinary invocation.
+An explicit positive `tile` argument to `graph_fitting_energy_gradient`
+partitions the input and is outside the full-batch invariance guarantee.
+
+CUDA graph capture has not been qualified with `shape_stable`: each new
+thread/device/stream context lazily creates cuBLASLt metadata and scratch,
+which may not be safe inside capture. Initialize that context outside capture
+on the same stream before capturing, and independently validate capture
+compatibility for the intended workloads; otherwise use `legacy`.
 :::
 
 :::{envvar} DP_INFER_BATCH_SIZE
