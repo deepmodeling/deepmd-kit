@@ -222,6 +222,67 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return None
 
+    def has_long_range(self) -> bool:
+        """Whether the atomic energy carries a long-range module beside a fitting.
+
+        Generic capability (concrete default ``False``): a model wrapping the
+        atomic model asks it whether the energy holds a long-range interaction,
+        e.g. before combining it with a scheme defined for a learned local
+        energy alone.
+        """
+        return False
+
+    def required_topologies(self) -> tuple[str, ...]:
+        """Names of the topologies the graph forward reads beside the neighbor graph.
+
+        Generic capability (concrete default: none) in the sense of
+        :meth:`uses_graph_lower`: a long-range module, whose interaction has no
+        cutoff, declares the topology it is evaluated on (see
+        :func:`~deepmd.dpmodel.utils.neighbor_graph.build_topologies`), and
+        every caller of the graph forward builds what is declared.
+        """
+        return ()
+
+    def topology_params(self) -> dict[str, dict[str, Any]]:
+        """The build parameters of the topologies of :meth:`required_topologies`.
+
+        Generic capability (concrete default: none) in the sense of
+        :meth:`required_topologies`: a module whose topology depends on its
+        own state, such as the wave-number cutoff of a periodic long-range
+        module, which follows its kernel, gives it here, by topology name.
+        """
+        return {}
+
+    def build_topologies(
+        self,
+        coord: Any,
+        n_node: Any,
+        box: Any,
+        *,
+        atype: Any,
+        node_mask: Any = None,
+        pair_excl: Any = None,
+    ) -> dict[str, Any]:
+        """Build the topologies of :meth:`required_topologies` for one batch.
+
+        See :func:`~deepmd.dpmodel.utils.neighbor_graph.build_topologies`;
+        the build parameters are those of :meth:`topology_params`.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_topologies,
+        )
+
+        return build_topologies(
+            self.required_topologies(),
+            coord,
+            n_node,
+            box,
+            node_mask,
+            atype=atype,
+            pair_excl=pair_excl,
+            topology_params=self.topology_params(),
+        )
+
     def supports_native_spin(self) -> bool:
         """Returns whether this atomic model consumes a per-atom spin input.
 
@@ -494,6 +555,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict | None = None,
+        topologies: dict[str, Any] | None = None,
+        node_mask: Array | None = None,
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
 
@@ -530,6 +593,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             (and, from there, the descriptor's ``call_graph``). ``None`` for
             non-parallel inference (default). Mirrors :meth:`forward_common_atomic`'s
             ``comm_dict`` on the dense route.
+        topologies
+            the topologies of :meth:`required_topologies` by name, built on the
+            node axis of ``graph``; ``None`` when none is required.
+        node_mask
+            flat mask of the nodes an enclosing model counts (real, owned and
+            not excluded there), combined with this model's own; ``None``
+            imposes nothing further.
 
         Returns
         -------
@@ -538,6 +608,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
         """
         graph, atype_clamped, output_mask = self._prepare_graph_inputs(graph, atype)
+        if node_mask is not None:
+            output_mask = output_mask & node_mask
         ret_dict = self.forward_atomic_graph(
             graph,
             atype_clamped,
@@ -546,6 +618,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             charge_spin=charge_spin,
             spin=spin,
             comm_dict=comm_dict,
+            topologies=topologies,
+            node_mask=output_mask,
         )
         return self._finalize_atomic_ret(ret_dict, output_mask, atype)
 
@@ -1014,9 +1088,18 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                     self.get_rcut(),
                     pair_excl=self.pair_excl,
                 )
+                atype_flat = xp.reshape(atype, (-1,))
+                topologies = self.build_topologies(
+                    xp.reshape(coord, (-1, 3)),
+                    graph.n_node,
+                    box,
+                    atype=atype_flat,
+                    node_mask=atype_flat >= 0,
+                    pair_excl=self.pair_excl,
+                )
                 atomic_ret = self.forward_common_atomic_graph(
                     graph,
-                    xp.reshape(atype, (-1,)),
+                    atype_flat,
                     fparam=fparam,
                     aparam=(
                         xp.reshape(
@@ -1028,6 +1111,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                     ),
                     charge_spin=charge_spin,
                     spin=None if spin is None else xp.reshape(spin, (-1, 3)),
+                    topologies=topologies,
                 )
                 # The graph route works on a flat node axis; restore the
                 # per-frame layout the dense route returns.

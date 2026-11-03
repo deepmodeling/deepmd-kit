@@ -944,6 +944,49 @@ class GeneralFitting(NativeOP, BaseFitting):
             device=array_api_compat.device(self.bias_atom_e),
         )
 
+    def fold_case_embedding(self) -> None:
+        """Fold the case embedding into the first layer so the call needs no case columns.
+
+        The case embedding is the same trailing block of input columns for
+        every atom, so its product with the rows of the first-layer weight
+        that read it is a constant of the pre-activation. Adding that product
+        to the bias and removing the rows yields a fitting without the case
+        embedding that gives the same outputs. Export folds the fixed case of
+        a deployed model, so that the frozen branch of a multi-task model with
+        a shared fitting network is a plain fitting network. The fold rebuilds
+        the first layers in place, so it applies to a fitting that no other
+        branch shares. A first layer whose residual adds its input to the
+        output also carries the case embedding past the activation; such a
+        fitting keeps it.
+        """
+        if self.dim_case_embd == 0:
+            return
+        networks = [
+            self.nets[ii] for ii in range(self.ntypes if not self.mixed_types else 1)
+        ]
+        for net in networks:
+            width_in, width_out = net[0].w.shape
+            if net[0].resnet and width_out in (width_in, 2 * width_in):
+                return
+        case_embd = to_numpy_array(self.case_embd).astype(np.float64)
+        for net in networks:
+            data = net[0].serialize()
+            variables = data["@variables"]
+            weight = variables["w"]
+            kept = weight.shape[0] - self.dim_case_embd
+            variables["b"] = (
+                variables["b"].astype(np.float64)
+                + case_embd @ weight[kept:].astype(np.float64)
+            ).astype(weight.dtype)
+            variables["w"] = weight[:kept]
+            # The residual is inactive at the original input width, checked
+            # above; clearing it keeps the narrower input from activating it.
+            data["resnet"] = False
+            net[0] = type(net[0]).deserialize(data)
+            net.in_dim = kept
+        self.dim_case_embd = 0
+        self.case_embd = None
+
     def _call_common(
         self,
         descriptor: Array,

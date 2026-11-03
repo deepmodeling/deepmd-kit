@@ -1,22 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""GPU regression for a fixed full-matrix fitting GEMM configuration.
+"""GPU regressions for full-batch fitting energy and gradient invariance.
 
-Run this focused file in a fresh process with
-``DP_GRAPH_FITTING_GEMM_POLICY=shape_stable``. The policy is process-immutable.
 The optional library path supports testing an isolated C++ build without
 replacing an installed Python environment.
 """
 
 import importlib
 import os
-import subprocess
-import sys
 import unittest
 from concurrent.futures import (
     ThreadPoolExecutor,
-)
-from pathlib import (
-    Path,
 )
 
 import torch
@@ -28,61 +21,30 @@ else:
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
-class TestShapeStablePolicyProcess(unittest.TestCase):
-    """Exercise the opt-in path in ordinary GPU CI without changing its policy.
-
-    The operator reads its policy only once. Other tests may already have used
-    the legacy policy, so changing os.environ in this test process is unsafe.
-    A child process also preserves the caller's Slurm device visibility.
-    """
-
-    def test_shape_stable_in_fresh_process(self):
-        environment = dict(os.environ, DP_GRAPH_FITTING_GEMM_POLICY="shape_stable")
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(Path(__file__).resolve()),
-                "TestShapeStableFitting",
-                "-v",
-            ],
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Ran 5 tests", result.stderr)
-        self.assertNotIn("skipped", result.stderr)
-
-
-@unittest.skipUnless(
-    torch.cuda.is_available()
-    and os.environ.get("DP_GRAPH_FITTING_GEMM_POLICY") == "shape_stable",
-    "requires CUDA and a fresh shape_stable fitting process",
-)
-class TestShapeStableFitting(unittest.TestCase):
+class TestGraphFittingBatchInvariant(unittest.TestCase):
     """Check the entire feature matrix, residual backward, and stream ownership."""
 
     def setUp(self):
-        torch.set_num_threads(1)
-        torch.backends.cuda.matmul.allow_tf32 = False
-        generator = torch.Generator(device="cuda").manual_seed(20260917)
-        self.x = torch.randn(1087, 144, generator=generator, device="cuda") * 0.2
-        self.types = torch.arange(1087, device="cuda") % 6
+        self.device = torch.device("cuda", torch.cuda.current_device())
+        generator = torch.Generator(device=self.device).manual_seed(20260917)
+        options = {
+            "generator": generator,
+            "device": self.device,
+            "dtype": torch.float32,
+        }
+        self.x = torch.randn(1087, 144, **options) * 0.2
+        self.types = torch.arange(1087, device=self.device, dtype=torch.int64) % 6
         self.weights = [
-            torch.randn(a, b, generator=generator, device="cuda") * 0.04
+            torch.randn(a, b, **options) * 0.04
             for a, b in [(144, 192), (192, 192), (192, 192)]
         ]
-        self.biases = [
-            torch.randn(192, generator=generator, device="cuda") * 0.03
-            for _ in range(3)
-        ]
-        self.head = torch.randn(192, generator=generator, device="cuda") * 0.04
-        self.head_bias = torch.zeros(1, device="cuda")
-        self.atomic_bias = torch.arange(6, dtype=torch.float64, device="cuda")
+        self.biases = [torch.randn(192, **options) * 0.03 for _ in range(3)]
+        self.head = torch.randn(192, **options) * 0.04
+        self.head_bias = torch.zeros(1, device=self.device, dtype=torch.float32)
+        self.atomic_bias = torch.arange(6, dtype=torch.float64, device=self.device)
 
     def evaluate(self, x, types, activation=1):
-        """Invoke the same fitting forward and reverse paths as canonical MD."""
+        """Evaluate the separate per-layer forward and backward operators."""
         energy, saved = torch.ops.deepmd.graph_fitting(
             x,
             types,
@@ -105,63 +67,105 @@ class TestShapeStableFitting(unittest.TestCase):
         )
         return energy, gradient
 
+    def evaluate_fused(self, x, types, activation=1):
+        """Evaluate the in-place energy/gradient route used by canonical inference."""
+        gradient = x.clone()
+        energy = torch.ops.deepmd.graph_fitting_energy_gradient(
+            gradient,
+            types,
+            self.weights,
+            self.biases,
+            [1, 1, 1],
+            self.head,
+            self.head_bias,
+            self.atomic_bias,
+            activation,
+            torch.ones((x.shape[0], 1), device=x.device, dtype=torch.float64),
+            0,
+        )
+        return energy, gradient
+
     def test_batch_rows_and_backward_are_identical(self):
         for activation in (0, 1):
             single = self.evaluate(self.x, self.types, activation)
-            for repetitions in (1, 2, 4, 8, 16):
-                x = self.x.repeat(repetitions, 1)
-                types = self.types.repeat(repetitions)
-                full = self.evaluate(x, types, activation)
-                for expected, actual in zip(single, full, strict=True):
-                    # Check every repeated block, including the final partial
-                    # GEMM tile, not only the leading rows of the result.
-                    torch.testing.assert_close(
-                        actual.reshape(repetitions, *expected.shape),
-                        expected.unsqueeze(0).expand(
-                            repetitions, *expected.shape
-                        ),
-                        atol=0,
-                        rtol=0,
-                    )
+            for evaluate in (self.evaluate, self.evaluate_fused):
+                for repetitions in (1, 2, 4, 8, 16):
+                    with self.subTest(
+                        operator=evaluate.__name__,
+                        activation=activation,
+                        repetitions=repetitions,
+                    ):
+                        x = self.x.repeat(repetitions, 1)
+                        types = self.types.repeat(repetitions)
+                        full = evaluate(x, types, activation)
+                        for expected, actual in zip(single, full, strict=True):
+                            # Check every repeated block, including the final
+                            # partial GEMM tile, not only the leading rows.
+                            torch.testing.assert_close(
+                                actual.reshape(repetitions, *expected.shape),
+                                expected.unsqueeze(0).expand(
+                                    repetitions, *expected.shape
+                                ),
+                                atol=0,
+                                rtol=0,
+                            )
 
     def test_independent_streams_and_host_threads(self):
         expected = self.evaluate(self.x, self.types)
-        torch.cuda.synchronize()
+        torch.cuda.synchronize(self.device)
 
-        def worker(_):
-            stream = torch.cuda.Stream()
-            with torch.cuda.stream(stream):
-                outputs = self.evaluate(self.x, self.types)
-            stream.synchronize()
-            return outputs
+        for evaluate in (self.evaluate, self.evaluate_fused):
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            outputs = list(pool.map(worker, range(4)))
-        for output in outputs:
-            for reference, value in zip(expected, output, strict=True):
-                torch.testing.assert_close(reference, value, atol=0, rtol=0)
+            def worker(_):
+                stream = torch.cuda.Stream(device=self.device)
+                with torch.cuda.stream(stream):
+                    outputs = evaluate(self.x, self.types)
+                stream.synchronize()
+                return outputs
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                outputs = list(pool.map(worker, range(4)))
+            for output in outputs:
+                for reference, value in zip(expected, output, strict=True):
+                    torch.testing.assert_close(reference, value, atol=0, rtol=0)
 
     def test_concurrent_streams_on_one_host_thread(self):
-        # Launch both streams before synchronizing either. Unlike worker
-        # threads, this exercises the stream dimension of the thread-local
-        # GEMM context key and its private scratch workspace.
-        expected = self.evaluate(self.x, self.types)
-        torch.cuda.synchronize()
-        streams = [torch.cuda.Stream() for _ in range(2)]
-        outputs = []
-        for stream in streams:
-            with torch.cuda.stream(stream):
-                outputs.append(self.evaluate(self.x, self.types))
-        for stream in streams:
-            stream.synchronize()
-        for output in outputs:
-            for reference, value in zip(expected, output, strict=True):
-                torch.testing.assert_close(reference, value, atol=0, rtol=0)
+        # Distinct inputs expose accidental sharing of intermediate storage.
+        # Warm both streams before the concurrent submissions so first-use
+        # initialization cannot serialize the work being checked.
+        cases = [
+            (self.x.repeat(4, 1), self.types.repeat(4)),
+            ((self.x * -0.5 + 0.03).repeat(3, 1), self.types.repeat(3)),
+        ]
+        expected = [self.evaluate(x, types) for x, types in cases]
+        torch.cuda.synchronize(self.device)
+        streams = [torch.cuda.Stream(device=self.device) for _ in cases]
+        for evaluate in (self.evaluate, self.evaluate_fused):
+            for stream, (x, types) in zip(streams, cases, strict=True):
+                with torch.cuda.stream(stream):
+                    evaluate(x, types)
+            for stream in streams:
+                stream.synchronize()
+
+            outputs = []
+            for _ in range(3):
+                for stream, (x, types), reference in zip(
+                    streams, cases, expected, strict=True
+                ):
+                    with torch.cuda.stream(stream):
+                        outputs.append((reference, evaluate(x, types)))
+            for stream in streams:
+                stream.synchronize()
+            for reference, output in outputs:
+                for expected_value, value in zip(reference, output, strict=True):
+                    torch.testing.assert_close(expected_value, value, atol=0, rtol=0)
 
     def test_minimum_aligned_feature_slice(self):
         # A contiguous view can start only four bytes into its allocation.
-        # Pointer alignment must not change the selected reduction schedule.
-        backing = torch.empty(self.x.numel() + 1, device="cuda", dtype=self.x.dtype)
+        # Pointer alignment must not change the result of the reduction.
+        backing = torch.empty(
+            self.x.numel() + 1, device=self.device, dtype=self.x.dtype
+        )
         shifted = backing[1:].view_as(self.x)
         shifted.copy_(self.x)
         self.assertEqual(shifted.data_ptr() % 16, 4)
@@ -184,13 +188,14 @@ class TestShapeStableFitting(unittest.TestCase):
             current = value
         energy = current @ self.head.double() + self.atomic_bias[self.types[:19]]
         (gradient,) = torch.autograd.grad(energy.sum(), x)
-        actual_energy, actual_gradient = self.evaluate(self.x[:19], self.types[:19])
-        torch.testing.assert_close(
-            actual_energy.flatten(), energy, atol=1e-6, rtol=1e-6
-        )
-        torch.testing.assert_close(
-            actual_gradient.double(), gradient, atol=1e-6, rtol=1e-6
-        )
+        for evaluate in (self.evaluate, self.evaluate_fused):
+            actual_energy, actual_gradient = evaluate(self.x[:19], self.types[:19])
+            torch.testing.assert_close(
+                actual_energy.flatten(), energy, atol=1e-6, rtol=1e-6
+            )
+            torch.testing.assert_close(
+                actual_gradient.double(), gradient, atol=1e-6, rtol=1e-6
+            )
 
 
 if __name__ == "__main__":

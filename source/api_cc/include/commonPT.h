@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "canonical_graph.h"
 #include "common.h"
 #include "neighbor_list.h"
 
@@ -418,21 +419,12 @@ struct CanonicalGraphTensorPack {
   torch::Tensor source_order;
 };
 
-/**
- * @brief Return the scalar type of compact canonical graph indices.
- *
- * Unsigned 32-bit tensors entered the public C++ API in PyTorch 2.3. Older
- * CPU-only libtorch releases can still build DeePMD-kit, but cannot execute
- * the GPU-only compact canonical graph path.
+/** Expose typed canonical indices as a zero-copy byte carrier for AOTInductor.
  */
-inline at::ScalarType canonicalGraphIndexType() {
-#if TORCH_VERSION_MAJOR > 2 || \
-    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 3)
-  return torch::kUInt32;
-#else
-  throw deepmd_exception(
-      "compact canonical graph inference requires PyTorch 2.3 or later");
-#endif
+inline torch::Tensor canonicalIndexBytes(const torch::Tensor& index) {
+  auto shape = index.sizes().vec();
+  shape.push_back(index.element_size());
+  return index.view(torch::kUInt8).view(shape);
 }
 
 inline CanonicalGraphTensorPack compactCanonicalGraph(
@@ -441,20 +433,16 @@ inline CanonicalGraphTensorPack compactCanonicalGraph(
       graph.destination_row_ptr.select(0, graph.destination_row_ptr.size(0) - 1)
           .item<std::int64_t>();
   const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
-  if (static_cast<std::uint64_t>(storage_count) >
-      std::numeric_limits<std::uint32_t>::max()) {
-    throw deepmd_exception(
-        "compact canonical graph exceeds the uint32 edge-index range");
-  }
-  const auto index_type = canonicalGraphIndexType();
+  const auto index_type =
+      canonical_index_width(graph.atype.size(0)) == DP_CANONICAL_INDEX32
+          ? torch::kInt32
+          : torch::kInt64;
   auto source = torch::zeros({storage_count},
                              graph.edge_index.options().dtype(index_type));
   auto edge_vec = torch::zeros({storage_count, 3},
                                graph.edge_vec.options().dtype(torch::kFloat32));
-  auto source_order =
-      torch::arange(storage_count,
-                    graph.edge_index.options().dtype(torch::kInt64))
-          .to(index_type);
+  auto source_order = torch::arange(
+      storage_count, graph.edge_index.options().dtype(torch::kInt64));
   if (edge_count > 0) {
     source.slice(0, 0, edge_count)
         .copy_(graph.edge_index.select(0, 0)
@@ -463,7 +451,7 @@ inline CanonicalGraphTensorPack compactCanonicalGraph(
     edge_vec.slice(0, 0, edge_count)
         .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
     source_order.slice(0, 0, edge_count)
-        .copy_(graph.source_order.slice(0, 0, edge_count).to(index_type));
+        .copy_(graph.source_order.slice(0, 0, edge_count));
   }
   return {graph.atype,
           graph.n_node,

@@ -544,7 +544,7 @@ class TestCompressedDPA4CZBLBridging:
             edge_vec[:physical].contiguous(),
             destination_row_ptr,
             source_row_ptr,
-            source_order[:physical].to(torch.uint32).contiguous(),
+            source_order[:physical].to(torch.int64).contiguous(),
             do_atomic_virial=True,
         )
         for key, reference_key in (

@@ -55,34 +55,6 @@ Control high (double) or low (float) precision of training.
 {{ tensorflow_icon }} Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow to support JIT.
 :::
 
-:::{envvar} DP_GRAPH_FITTING_GEMM_POLICY
-
-**Default**: `legacy`
-
-For fused CUDA graph fitting, `shape_stable` selects pedantic-FP32 cuBLASLt
-GEMMs with a configuration chosen at a fixed 256-node heuristic shape.
-The actual operation evaluates the complete node matrix: it does not split
-inference into frame subbatches or change precision. The default `legacy`
-retains the existing SGEMM policy. Set the policy before the first CUDA fitting
-call; it is immutable within a process. CPU fitting is unaffected.
-
-The shape-stable path caches launch metadata and 128 MiB of workspace per
-thread/device/stream. Unsupported shapes or workspace requirements fail
-explicitly rather than selecting a different reduction algorithm. Qualify
-energy and force parity for the desired model, shapes, GPU, and cuBLAS version;
-this setting is not a cross-hardware or cross-version reproducibility promise.
-
-The full-matrix statement applies to the fused operator's ordinary invocation.
-An explicit positive `tile` argument to `graph_fitting_energy_gradient`
-partitions the input and is outside the full-batch invariance guarantee.
-
-CUDA graph capture has not been qualified with `shape_stable`: each new
-thread/device/stream context lazily creates cuBLASLt metadata and scratch,
-which may not be safe inside capture. Initialize that context outside capture
-on the same stream before capturing, and independently validate capture
-compatibility for the intended workloads; otherwise use `legacy`.
-:::
-
 :::{envvar} DP_INFER_BATCH_SIZE
 
 **Default**: `1024` on CPUs; automatically sized on GPUs
@@ -91,11 +63,22 @@ Inference batch size, calculated by multiplying the number of frames with the nu
 Setting this variable disables automatic growth; out-of-memory errors can still
 reduce the batch size.
 
-With the native PyTorch CUDA allocator, automatic multi-frame evaluation starts
-with one calibration frame and limits growth using the observed workspace and
-available device memory, leaving a 10% margin. This policy applies to both
-`dp test` and full validation in the PyTorch and PyTorch Exportable backends.
-Other GPU allocators and backends grow batches until an out-of-memory error.
+On GPUs, automatic sizing grows successful full batches exponentially and reuses
+that atom budget across systems. An out-of-memory error halves the actual
+attempted batch size and retries the same input. Growth beyond the failed size
+is retried after two successful full batches; repeated recovery probes
+increase the interval to four, then eight batches. This short, bounded delay
+favors recovering larger batches when subsequent input needs less memory, at
+the cost of occasional OOM retries even on a steady workload. Short final
+batches neither shrink the learned budget nor trigger growth.
+
+This policy applies to both `dp test` and full validation, without profiling CUDA
+allocator state on successful inference. It does not search for an exact maximum
+or guarantee the throughput-optimal batch size. Explicitly setting a positive
+`DP_INFER_BATCH_SIZE` disables growth, including these recovery probes.
+Hook-based feature extraction that retries the whole input defers recovery
+probes until a complete evaluation succeeds, so a known OOM cannot cause an
+endless restart of that input.
 :::
 
 :::{envvar} DP_BACKEND
