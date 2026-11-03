@@ -413,6 +413,23 @@ class TestEmbeddingDeepEvalAPI(unittest.TestCase):
             np.stack((aparam_shared, aparam_shared + 0.2)),
         )
 
+        # Each parameter must influence the fitting features at fixed geometry.
+        backend = DeepPot(path, auto_batch_size=False, no_jit=True).deep_eval
+        shared_params = {"fparam": fparam_shared, "aparam": aparam_shared}
+        _, baseline, _ = backend.eval_embedding(
+            self.coord_np, self.cell_np, self.atype_np, **shared_params
+        )
+        for parameter, value in shared_params.items():
+            with self.subTest(parameter=parameter):
+                changed_params = {**shared_params, parameter: value + 0.5}
+                _, atomic_feature, _ = backend.eval_embedding(
+                    self.coord_np, self.cell_np, self.atype_np, **changed_params
+                )
+                self.assertFalse(
+                    np.allclose(baseline, atomic_feature),
+                    msg=f"backend-direct atomic feature ignores {parameter}",
+                )
+
     def test_legacy_frozen_model_uses_baked_in_hook(self) -> None:
         # Frozen ``.pth`` files predating ``forward_embedding`` still carry the
         # descriptor / fitting hooks baked into the TorchScript module. The
