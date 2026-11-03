@@ -650,6 +650,77 @@ def test_leading_table_views_keep_their_interval_count(canonical: bool) -> None:
     torch.testing.assert_close(gradient, reference_gradient, atol=8.0e-6, rtol=1.0e-4)
 
 
+def _check_cached_table_views(graph: Any, arguments: tuple) -> None:
+    """Compare shared-storage views with freshly prepared native tables."""
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    fresh = tuple(
+        argument.clone() if index in (5, 8, 9) else argument
+        for index, argument in enumerate(arguments)
+    )
+    reference, reference_state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec, *fresh
+    )
+    torch.testing.assert_close(output, reference, atol=0, rtol=0)
+    torch.testing.assert_close(state, reference_state, atol=0, rtol=0)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    reference_gradient = _descriptor_backward(
+        cotangent, reference_state, graph.edge_vec, *fresh
+    )[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=0, rtol=0)
+
+
+@_CPU
+@pytest.mark.parametrize("radial_modes", [0, 2])
+def test_leading_pair_table_views_keep_their_type_count(radial_modes: int) -> None:
+    """The full type table needs pair rows absent from a shorter leading view."""
+    descriptor = _build_descriptor(16, radial_modes=radial_modes)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    short = list(arguments)
+    # The smaller configuration has one real type and one padding type.
+    # Its warm-up graph contains only the real type, so every read is valid.
+    short[4] = torch.zeros_like(atype)
+    short[8] = arguments[8][:4]
+    short[9] = arguments[9][:4]
+    short[10] = arguments[10][:2]
+    short[20] = arguments[20][:2]
+    for index in (5, 8, 9):
+        assert short[index].is_contiguous()
+        assert short[index].data_ptr() == arguments[index].data_ptr()
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *short)
+
+    _check_cached_table_views(graph, arguments)
+
+
+@_CPU
+@pytest.mark.parametrize(
+    ("channels", "radial_modes"), [(8, 4), (16, 2)], ids=["channels", "modes"]
+)
+def test_reshaped_table_views_keep_their_layout(
+    channels: int, radial_modes: int
+) -> None:
+    """Identical storage addresses do not imply identical coefficient packing."""
+    descriptor = _build_descriptor(16, radial_modes=4)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    smaller = list(
+        _arguments(_build_descriptor(channels, radial_modes=radial_modes), graph, atype)
+    )
+    for index in (5, 8, 9):
+        original = arguments[index]
+        target = smaller[index]
+        smaller[index] = original.flatten()[: target.numel()].view(target.shape)
+        assert smaller[index].is_contiguous()
+        assert smaller[index].data_ptr() == original.data_ptr()
+    assert smaller[5].shape[0] == arguments[5].shape[0]
+    # Warm the larger layout first: even a stale cache leaves sufficient
+    # buffer space for the smaller call, but its coefficient packing is wrong.
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    _check_cached_table_views(graph, tuple(smaller))
+
+
 @_CPU
 @pytest.mark.parametrize("rewrite", ["rebound", "in_place"])
 @pytest.mark.parametrize("table", [8, 9], ids=["pair_film", "pair_mixing"])
