@@ -34,6 +34,7 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     build_compression_artifacts,
     build_low_rank_table,
     build_radial_table,
+    compressed_operator_arguments,
     contact_radius_input,
     descriptor_profile,
     ensure_registered,
@@ -749,6 +750,67 @@ def test_new_pair_tables_reach_the_kernel(table: int, rewrite: str) -> None:
     reference = _reference_descriptor(graph.edge_vec, *_spin_free(tuple(arguments)))
     torch.testing.assert_close(second, reference, atol=3.0e-5, rtol=3.0e-5)
     assert (second - first).abs().max() > 1.0e-3
+
+
+@_CPU
+@pytest.mark.parametrize("table", ["data", "pair_film", "pair_mixing"])
+@pytest.mark.parametrize("load", ["copy", "assign", "assign_alias"])
+@pytest.mark.parametrize("inference", [False, True])
+def test_loaded_compression_tables_replace_prepared_tables(
+    table: str, load: str, inference: bool
+) -> None:
+    """Loading a snapshot must not reuse tables prepared before the load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    artifacts = build_compression_artifacts(descriptor, stride=0.01)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    with torch.inference_mode(inference):
+        # Cloning here also covers inference tensors, which have no version
+        # counters for a native cache to consult.
+        descriptor._set_compression(
+            {name: value.clone() for name, value in artifacts.items()}
+        )
+        assert descriptor.compress_data.is_inference() == inference
+
+        def arguments() -> tuple:
+            return (
+                graph.edge_index,
+                graph.edge_mask,
+                graph.destination_order,
+                graph.destination_row_ptr,
+                atype,
+                *compressed_operator_arguments(descriptor),
+                bool(graph.destination_sorted),
+                descriptor.lmax,
+                *descriptor._compression_scalars,
+            )
+
+        ensure_registered()
+        before, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        state = descriptor.state_dict()
+        if load != "assign_alias":
+            state = {name: value.clone() for name, value in state.items()}
+        # The alias case retains the state dict's original shared storage,
+        # including when assign=True restores those very tensors.
+        state[f"compress_{table}"].mul_(1.5).add_(0.2)
+        descriptor.load_state_dict(state, assign=load != "copy")
+        after, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        _check_cached_table_views(graph, arguments())
+        assert (after - before).abs().max() > 1.0e-3
+
+
+@pytest.mark.parametrize("assign", [False, True])
+def test_compression_state_can_load_after_inference_mode(assign: bool) -> None:
+    """An inference-mode load must not prevent a later ordinary state load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    descriptor.enable_compression(0.5, table_stride_1=0.01)
+    # Load through a parent to exercise the descriptor's state-key prefix.
+    parent = torch.nn.ModuleList([descriptor])
+    state = {name: value.clone() for name, value in parent.state_dict().items()}
+    with torch.inference_mode():
+        parent.load_state_dict(state, assign=assign)
+    parent.load_state_dict(state)
+    for name, value in parent.state_dict().items():
+        torch.testing.assert_close(value, state[name], atol=0, rtol=0)
 
 
 @_CPU
