@@ -37,6 +37,8 @@ def _standardize_fparam_aparam(
     natoms: int,
     dim_fparam: int,
     dim_aparam: int,
+    *,
+    copy_shared: bool = True,
 ) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Normalize documented parameter shorthand to frame-major arrays.
 
@@ -61,6 +63,10 @@ def _standardize_fparam_aparam(
         Number of frame-parameter components.
     dim_aparam : int
         Number of atomic-parameter components.
+    copy_shared : bool, default: True
+        Materialize shared inputs as writable arrays. If False, return
+        read-only broadcast views so compatible backends can slice batches
+        without allocating the shared parameters for the whole trajectory.
 
     Returns
     -------
@@ -76,7 +82,11 @@ def _standardize_fparam_aparam(
         if fparam.size == nframes * dim_fparam:
             fparam = fparam.reshape(nframes, dim_fparam)
         elif fparam.size == dim_fparam:
-            fparam = np.tile(fparam.reshape(1, dim_fparam), (nframes, 1))
+            fparam = np.broadcast_to(
+                fparam.reshape(1, dim_fparam), (nframes, dim_fparam)
+            )
+            if copy_shared:
+                fparam = fparam.copy()
         else:
             raise RuntimeError(
                 "got wrong size of frame param, should be either "
@@ -87,9 +97,17 @@ def _standardize_fparam_aparam(
         if aparam.size == nframes * natoms * dim_aparam:
             aparam = aparam.reshape(nframes, natoms, dim_aparam)
         elif aparam.size == natoms * dim_aparam:
-            aparam = np.tile(aparam.reshape(1, natoms, dim_aparam), (nframes, 1, 1))
+            aparam = np.broadcast_to(
+                aparam.reshape(1, natoms, dim_aparam), (nframes, natoms, dim_aparam)
+            )
+            if copy_shared:
+                aparam = aparam.copy()
         elif aparam.size == dim_aparam:
-            aparam = np.tile(aparam.reshape(1, 1, dim_aparam), (nframes, natoms, 1))
+            aparam = np.broadcast_to(
+                aparam.reshape(1, 1, dim_aparam), (nframes, natoms, dim_aparam)
+            )
+            if copy_shared:
+                aparam = aparam.copy()
         else:
             raise RuntimeError(
                 "got wrong size of atomic param, should be either "

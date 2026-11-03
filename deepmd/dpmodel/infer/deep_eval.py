@@ -248,6 +248,7 @@ class DeepEval(DeepEvalBackend):
             natoms,
             self.get_dim_fparam(),
             self.get_dim_aparam(),
+            copy_shared=False,
         )
         # The public evaluator accepts a superset of backend/model inputs (for
         # example ``efield`` is TensorFlow-only). Forward only the dpmodel
