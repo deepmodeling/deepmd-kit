@@ -500,9 +500,11 @@ def test_dense_pt2_has_lower_input_kind_nlist(dpa1_dpmodel_data) -> None:
 def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> None:
     """A non-default ``neighbor_graph_method`` on a NLIST-form artifact raises.
 
-    The knob is consumed only by graph-form ``.pt2`` eval; silently ignoring
-    it on nlist-form artifacts misled users into thinking they selected an
-    O(N) builder. The nlist-path knob is ``nlist_backend``.
+    The knob is consumed only by the artifacts whose inputs the evaluator
+    builds from a neighbor graph -- the graph, compact canonical and
+    edge-vector lowers; silently ignoring it on nlist-form artifacts misled
+    users into thinking they selected an O(N) builder. The nlist-path knob is
+    ``nlist_backend``.
     """
     from deepmd.infer import (
         DeepPot,

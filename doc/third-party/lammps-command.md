@@ -146,7 +146,7 @@ pair_style deepspin models ... keyword value ...
 - keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _charge_spin_ or _atomic_ or _relative_ or _aparam_ or _ttm_
 
 > [!NOTE]
-> Please note that the virial and atomic virial are not currently supported in spin models.
+> Please note that the `deepspin` pair style does not provide the six-component per-atom virial of `compute stress/atom`; use `compute centroid/stress/atom` for the nine-component per-atom virial.
 
 <pre>
     <i>out_file</i> value = filename
@@ -203,11 +203,57 @@ The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lamm
 Other settings and output for this pair style is the same as `deepmd` pair style, please see the detailed description [above](#pair_style-deepmd).
 
 > [!NOTE]
-> Please note that the virial and atomic virial are not currently supported in spin models.
+> Please note that the `deepspin` pair style does not provide the six-component per-atom virial of `compute stress/atom`; use `compute centroid/stress/atom` for the nine-component per-atom virial.
 
 ### Restrictions
 
 - The `deepspin` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+
+## pair_style `dpa4spin`
+
+The DeePMD-kit package provides the pair_style `dpa4spin` for native-spin [DPA4C](../model/dpa4c.md) models, which take the magnetic moment of each atom as an input and create no virtual atoms. The Kokkos variant `dpa4spin/kk` keeps the graph and the moments in device memory. For an example LAMMPS input one may check [the example input file for pair_style `dpa4spin`](../../examples/spin/dpa4c/lmp/in.lammps).
+
+```lammps
+pair_style dpa4spin model keyword value ...
+```
+
+- dpa4spin = style of this pair_style
+- model = frozen native-spin model to compute the interaction
+- keyword = _charge_spin_ or _magnetic_force_
+
+<pre>
+    <i>charge_spin</i> value = parameters
+        parameters = the dim_chg_spin charge/spin values that a model trained with a charge/spin embedding takes for the whole run. If omitted, the model's stored default_chg_spin is used.
+    <i>magnetic_force</i> value = precession or cartesian
+        precession = store the precession magnetic force that the LAMMPS SPIN package expects (default).
+        cartesian = store the negative energy gradient -dE/dS with respect to the moment; requires units metal.
+</pre>
+
+### Examples
+
+```lammps
+atom_style spin
+atom_modify map yes
+pair_style dpa4spin frozen_model.pt2
+pair_coeff * * Ni O
+
+pair_style dpa4spin frozen_model.pt2 charge_spin 1.0 2.0
+pair_style dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
+```
+
+### Description
+
+Evaluate the interaction of a system with magnetic moments by a native-spin DPA4C model, which returns the energy, the force and the magnetic force of every atom. The pair style computes the global virial and, through `compute centroid/stress/atom`, the nine-component per-atom virial; `compute stress/atom` stops with an error, because the pair style provides no six-component per-atom virial.
+
+By default the pair style stores the precession magnetic force that the LAMMPS SPIN package expects, the negative energy gradient `-dE/dS` scaled by the moment magnitude over `hbar`. A Newtonian integrator of the Cartesian spin vector needs `-dE/dS` itself rather than the precession force; the keyword `magnetic_force cartesian` selects `-dE/dS`. The pair style declares the selected convention through the scalar integer `Pair::extract("fm_cartesian_force", dim)`, zero for precession and one for Cartesian, so that such an integrator can reject a pair style left at the default.
+
+### Restrictions
+
+- The `dpa4spin` pair style requires `atom_style spin`, and on a single MPI rank an atom map (`atom_modify map yes`).
+- `dpa4spin/kk` requires a compressed archive and a LAMMPS build with the KOKKOS package on the GPU backend.
+- In [plugin mode](../install/install-lammps.md#install-lammps-plugin-mode), `dpa4spin/kk` requires a DeePMD-kit plugin built with `DEEPMD_LAMMPS_KOKKOS=ON`.
+- The `fix nve/spin` of a stock LAMMPS build does not use the magnetic force of this pair style: the fix evaluates the magnetic force itself, through the pair styles whose names begin with `spin`. With no such pair style, the fix runs silently on a single MPI rank and stops with a sectoring error on several. Spin dynamics needs a LAMMPS build whose integrator reads the magnetic force of the pair style.
+- The `dpa4spin` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
 ## compute `deepmd/fparam/dedn`
 
