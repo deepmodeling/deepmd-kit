@@ -2,7 +2,6 @@
 import os
 import unittest
 
-import ase.neighborlist
 import numpy as np
 from packaging.version import parse as parse_version
 
@@ -1183,30 +1182,3 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         np.testing.assert_almost_equal(
             vv.reshape([-1]), expected_gv.reshape([-1]), decimal=default_places
         )
-
-
-@unittest.skipIf(
-    parse_version(tf.__version__) < parse_version("1.15"),
-    f"The current tf version {tf.__version__} is too low to run the new testing model.",
-)
-class TestDeepPolarNewPBCNeighborList(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        convert_pbtxt_to_pb(
-            str(infer_path / os.path.join("deeppolar_new.pbtxt")),
-            "deeppolar_new.pb",
-        )
-        cls.dp = DeepPolar(
-            "deeppolar_new.pb",
-            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
-                cutoffs=6, bothways=True
-            ),
-        )
-
-    @unittest.skip("multiple frames not supported")
-    def test_2frame_full_atm(self) -> None:
-        pass
-
-    @unittest.skip("multiple frames not supported")
-    def test_2frame_old_atm(self) -> None:
-        pass
