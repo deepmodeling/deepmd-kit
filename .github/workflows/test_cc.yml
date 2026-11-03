@@ -48,10 +48,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes build-essential
         if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - uses: lukka/get-cmake@latest
+      - run: python -m pip install uv
+      - name: Install Python dependencies
+        run: |
+          source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax_cpu --torch-backend cpu
+          export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+          export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
+          source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax,torch] mpi4py mpich
+        env:
+          DP_ENABLE_PYTORCH: 1
       # PT2 fixtures and TorchInductor caches contain native code. PyTorch
       # documents AOTInductor packages as non-portable, so scope cache reuse
-      # to the CPU ISA, libc, and compiler of the current runner. Do not key
-      # on CPU model name: hosted runners may expose the same ISA on different
+      # to the CPU ISA, libc, compiler, Python, and installed dependencies.
+      # Fingerprint after installation because uv pip does not use uv.lock
+      # as a frozen resolution. Do not key on CPU model name: hosted runners
+      # may expose the same ISA on different
       # processor models, which would otherwise prevent safe warm-cache reuse.
       - name: Compute native cache fingerprint
         id: native-cache
@@ -67,6 +83,22 @@ jobs:
             else
               echo "cxx=missing"
             fi
+            python - <<'PYTHON'
+          import importlib.metadata
+          import platform
+          import re
+
+          print(f"python={platform.python_implementation()}-{platform.python_version()}")
+          distributions = {
+              (re.sub(r"[-_.]+", "-", dist.metadata["Name"]).lower(), dist.version)
+              for dist in importlib.metadata.distributions()
+          }
+          # The editable project's commit-derived version also changes for
+          # unrelated edits; its fixture inputs are covered by the source hash.
+          for name, version in sorted(distributions):
+              if name != "deepmd-kit":
+                  print(f"distribution={name}=={version}")
+          PYTHON
           } > "${RUNNER_TEMP}/native-cache-env.txt"
           cat "${RUNNER_TEMP}/native-cache-env.txt"
           fingerprint=$(sha256sum "${RUNNER_TEMP}/native-cache-env.txt" | cut -c1-16)
@@ -121,20 +153,6 @@ jobs:
               exit 1
             fi
           done
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - uses: lukka/get-cmake@latest
-      - run: python -m pip install uv
-      - name: Install Python dependencies
-        run: |
-          source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax_cpu --torch-backend cpu
-          export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
-          source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax,torch] mpi4py mpich
-        env:
-          DP_ENABLE_PYTORCH: 1
       - name: Convert models
         run: source/tests/infer/convert-models.sh
       # https://github.com/actions/runner-images/issues/9491
