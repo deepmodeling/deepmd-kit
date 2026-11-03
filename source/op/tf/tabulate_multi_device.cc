@@ -1,5 +1,6 @@
 
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#include <cstdint>
 #include <type_traits>
 
 #include "custom_op.h"
@@ -166,7 +167,7 @@ REGISTER_OP("TabulateFusionSeRGradGrad")
 
 template <typename Device>
 static deepmd::tf_compat::Status validate_gpu_last_layer_size(
-    const int last_layer_size) {
+    const int64_t last_layer_size) {
   // GPU tabulation kernels use this dimension either as the block size or to
   // size dynamic shared memory, so reject invalid models before any launch.
   if (std::is_same<Device, GPUDevice>::value &&
@@ -265,7 +266,7 @@ class TabulateFusionSeAGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(2);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
@@ -333,7 +334,7 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(2);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
@@ -472,7 +473,7 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(2);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
@@ -552,7 +553,7 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(2);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
@@ -682,7 +683,7 @@ class TabulateFusionSeTGradOp : public OpKernel {
     OP_REQUIRES(
         context, (dy_tensor.shape().dims() == 2),
         deepmd::tf_compat::InvalidArgument("Dim of dy_tensor should be 2"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(1);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(1);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
@@ -746,7 +747,7 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 3"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(1);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(1);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
@@ -865,7 +866,7 @@ class TabulateFusionSeRGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(2);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
@@ -916,7 +917,7 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    const int64_t last_layer_size = descriptor_tensor.shape().dim_size(2);
     OP_REQUIRES_OK(context,
                    validate_gpu_last_layer_size<Device>(last_layer_size));
     int context_output_index = 0;
