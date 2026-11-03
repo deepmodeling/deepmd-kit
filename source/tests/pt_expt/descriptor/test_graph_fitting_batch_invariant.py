@@ -11,6 +11,9 @@ import unittest
 from concurrent.futures import (
     ThreadPoolExecutor,
 )
+from threading import (
+    Barrier,
+)
 
 import torch
 
@@ -40,7 +43,9 @@ class TestGraphFittingBatchInvariant(unittest.TestCase):
         ]
         self.biases = [torch.randn(192, **options) * 0.03 for _ in range(3)]
         self.head = torch.randn(192, **options) * 0.04
-        self.head_bias = torch.zeros(1, device=self.device, dtype=torch.float32)
+        self.head_bias = torch.full(
+            (1,), 0.125, device=self.device, dtype=torch.float32
+        )
         self.atomic_bias = torch.arange(6, dtype=torch.float64, device=self.device)
 
     def evaluate(self, x, types, activation=1):
@@ -116,15 +121,27 @@ class TestGraphFittingBatchInvariant(unittest.TestCase):
 
         for evaluate in (self.evaluate, self.evaluate_fused):
 
-            def worker(_):
-                stream = torch.cuda.Stream(device=self.device)
-                with torch.cuda.stream(stream):
-                    outputs = evaluate(self.x, self.types)
-                stream.synchronize()
-                return outputs
+            def worker(barrier):
+                try:
+                    stream = torch.cuda.Stream(device=self.device)
+                    with torch.cuda.stream(stream):
+                        barrier.wait()
+                        outputs = evaluate(self.x, self.types)
+                    stream.synchronize()
+                    return outputs
+                except BaseException:
+                    # Release the other worker if setup fails before the wait.
+                    barrier.abort()
+                    raise
 
+            outputs = []
             with ThreadPoolExecutor(max_workers=2) as pool:
-                outputs = list(pool.map(worker, range(4)))
+                for _ in range(2):
+                    # Each wave must occupy two host threads, even if one
+                    # submission would otherwise finish before the next starts.
+                    barrier = Barrier(2, timeout=30)
+                    futures = [pool.submit(worker, barrier) for _ in range(2)]
+                    outputs.extend(future.result() for future in futures)
             for output in outputs:
                 for reference, value in zip(expected, output, strict=True):
                     torch.testing.assert_close(reference, value, atol=0, rtol=0)
@@ -186,7 +203,11 @@ class TestGraphFittingBatchInvariant(unittest.TestCase):
             if current.shape[1] == value.shape[1]:
                 value = value + current
             current = value
-        energy = current @ self.head.double() + self.atomic_bias[self.types[:19]]
+        energy = (
+            current @ self.head.double()
+            + self.head_bias.double()
+            + self.atomic_bias[self.types[:19]]
+        )
         (gradient,) = torch.autograd.grad(energy.sum(), x)
         for evaluate in (self.evaluate, self.evaluate_fused):
             actual_energy, actual_gradient = evaluate(self.x[:19], self.types[:19])
