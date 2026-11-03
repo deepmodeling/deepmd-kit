@@ -14,7 +14,7 @@ from pathlib import (
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "build_cc.sh uses GNU coreutils")
-class TestBuildCCLammpsArgs(unittest.TestCase):
+class TestBuildCCLAMMPSArgs(unittest.TestCase):
     def _configure_args(self, source_root=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
