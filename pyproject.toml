@@ -328,6 +328,8 @@ test-extras = ["cpu", "torch", "paddle"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
+    "dp skills list",
+    "dp skills read deepmd-train",
 ]
 [tool.cibuildwheel.windows.environment]
 PIP_PREFER_BINARY = "1"
