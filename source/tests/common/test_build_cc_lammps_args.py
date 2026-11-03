@@ -52,9 +52,7 @@ class TestBuildCCLammpsArgs(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            records = [
-                json.loads(line) for line in log_path.read_text().splitlines()
-            ]
+            records = [json.loads(line) for line in log_path.read_text().splitlines()]
             self.assertEqual(len(records), 3)  # configure, build, install
             return records[0]
 
@@ -78,11 +76,11 @@ class TestBuildCCLammpsArgs(unittest.TestCase):
                 "cmake_minimum_required(VERSION 3.20)\n"
                 "project(selector NONE)\n"
                 "if(DEFINED LAMMPS_VERSION)\n"
-                "  set(selected \"version\")\n"
+                '  set(selected "version")\n'
                 "else()\n"
-                "  set(selected \"source\")\n"
+                '  set(selected "source")\n'
                 "endif()\n"
-                "file(WRITE \"${CMAKE_BINARY_DIR}/selected.txt\" \"${selected}\")\n",
+                'file(WRITE "${CMAKE_BINARY_DIR}/selected.txt" "${selected}")\n',
                 encoding="utf-8",
             )
             build = root / "build"
@@ -94,7 +92,8 @@ class TestBuildCCLammpsArgs(unittest.TestCase):
             self.assertEqual((build / "selected.txt").read_text(), "version")
             source_args = self._configure_args("/opt/lammps source")
             selectors = [
-                value for value in source_args
+                value
+                for value in source_args
                 if value.startswith("-ULAMMPS_") or value.startswith("-DLAMMPS_")
             ]
             subprocess.run(
