@@ -229,11 +229,15 @@ def test_production_value_path_enters_cohort(monkeypatch, backend):
         monkeypatch.setenv(name, "0")
     monkeypatch.setenv("DP_TRITON_INFER", "2")
     if backend == "pt":
-        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+            SO2Convolution,
+        )
 
         precision = {"dtype": torch.float32}
     else:
-        from deepmd.pt_expt.descriptor.dpa4_nn.so2 import SO2Convolution
+        from deepmd.pt_expt.descriptor.dpa4_nn.so2 import (
+            SO2Convolution,
+        )
 
         precision = {"precision": "float32"}
     conv = (

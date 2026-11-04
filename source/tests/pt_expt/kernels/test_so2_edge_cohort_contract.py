@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Selection and bounded scratch contracts, without executing GPU kernels."""
 
-from types import SimpleNamespace
+from types import (
+    SimpleNamespace,
+)
 from unittest.mock import (
     patch,
 )
@@ -35,11 +37,15 @@ def test_existing_inference_levels(monkeypatch, backend, level):
     else:
         monkeypatch.setenv("DP_TRITON_INFER", level)
     if backend == "pt":
-        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+            SO2Convolution,
+        )
 
         precision = {"dtype": torch.float32}
     else:
-        from deepmd.pt_expt.descriptor.dpa4_nn.so2 import SO2Convolution
+        from deepmd.pt_expt.descriptor.dpa4_nn.so2 import (
+            SO2Convolution,
+        )
 
         precision = {"precision": "float32"}
     conv = (

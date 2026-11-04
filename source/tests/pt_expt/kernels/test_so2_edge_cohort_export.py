@@ -12,12 +12,22 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
 def test_export_keeps_native_backward(monkeypatch, tmp_path, backend):
     """Stop at the real export boundary and inspect the traced backward ops."""
-    from deepmd.pt.entrypoints import freeze_pt2
-    from deepmd.pt.model.model import get_model
-    from deepmd.pt.train.wrapper import ModelWrapper
-    from deepmd.pt_expt.kernels import autotune
+    from deepmd.pt.entrypoints import (
+        freeze_pt2,
+    )
+    from deepmd.pt.model.model import (
+        get_model,
+    )
+    from deepmd.pt.train.wrapper import (
+        ModelWrapper,
+    )
+    from deepmd.pt_expt.kernels import (
+        autotune,
+    )
     from deepmd.pt_expt.kernels.triton.sezm import so2_edge_cohort as ecs
-    from deepmd.pt_expt.utils.serialization import _trace_and_export_impl
+    from deepmd.pt_expt.utils.serialization import (
+        _trace_and_export_impl,
+    )
 
     for name in (
         "DP_TRITON_TRAIN",
