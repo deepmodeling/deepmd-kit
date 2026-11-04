@@ -20,9 +20,17 @@ env:
   DP_ENABLE_PADDLE: "0"
 jobs:
   test_python:
-    name: Test Python on CUDA
+    name: Test Python on CUDA (${{ matrix.shard }})
     runs-on: gpu
-    # The serial Python test suite can take several hours on the GPU runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: pt_expt
+            pytest-args: source/tests/pt_expt
+          - shard: other
+            pytest-args: source/tests --ignore=source/tests/pt_expt
+    # Each shard has its own CUDA build and can take several hours.
     timeout-minutes: 480
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     # container:
@@ -71,7 +79,7 @@ jobs:
       - name: Verify float64 CUDA kernels are enabled
         run: |
           python -c "import torch; import deepmd.pt.cxx_op; from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import op_available, float64_available; assert torch.cuda.is_available(); assert op_available(); assert float64_available() is True"
-      - run: python -m pytest source/tests --ignore=source/tests/pd
+      - run: python -m pytest ${{ matrix.pytest-args }} --ignore=source/tests/pd
         env:
           NUM_WORKERS: 0
           CUDA_VISIBLE_DEVICES: 0
@@ -204,4 +212,5 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: test_python, test_cc
+          # Require every Python shard and C++ when GPU testing is requested.
+          allowed-skips: ${{ !(github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')) && 'test_python, test_cc' || '' }}
