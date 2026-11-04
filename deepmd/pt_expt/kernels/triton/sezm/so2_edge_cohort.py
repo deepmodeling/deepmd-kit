@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Experimental edge-cohort backward for frozen, narrow SO(2) inference.
+"""Runtime edge-cohort backward for frozen, narrow SO(2) inference.
 
 Keep native GEMM column parallelism and arithmetic, but traverse all layers
 of one cohort before advancing to the next cohort. Scratch scales with the
 cohort, not the entire graph. The saved activations and returned input gradient
-still have full edge extent. This Python runtime launcher is an online-compile
-prototype; standalone AOTInductor/C++ deployment is not validated.
+still have full edge extent. This Python launcher serves online compilation;
+official CPU-traced exports retain the native deployable backward.
 """
 
 from __future__ import (
@@ -21,16 +21,13 @@ from torch.library import (
     wrap_triton,
 )
 
-from . import so2_value_path as sv
-
 COHORT_EDGES = 8192
-SINGLE_COHORT_MAX_EDGES = 16384
 
 
 def supports_edge_cohort(
     grad_out: Tensor, z_all: Tensor, lmax: int, focus_dim: int, apply_alpha: bool
 ) -> bool:
-    """Restrict opt-in dispatch to the experimentally checked Neo layout."""
+    """Restrict cohort scratch reuse to the validated FP32 Neo layout."""
     return (
         grad_out.is_cuda
         and z_all.device == grad_out.device
@@ -67,6 +64,8 @@ def cohort_input_backward_impl(
     Only an internally owned residual is overwritten: matrix input ``gz`` and
     GEMM output never alias, and caller-owned tensors remain read-only.
     """
+    from . import so2_value_path as sv
+
     if not supports_edge_cohort(grad_out, z_all, 3, 32, True):
         raise ValueError("edge cohorts require contiguous FP32 Neo inference tensors")
     if cohort_edges <= 0:
@@ -78,7 +77,10 @@ def cohort_input_backward_impl(
     if n_edge == 0:
         return result
     cap = min(n_edge, cohort_edges)
-    g = grad_out.new_empty((n_focus, cap, row))
+    # A single cohort can reuse its owned output as the residual, just like
+    # native inference. Multiple cohorts need separate bounded scratch so
+    # completing a later cohort never overwrites an earlier output.
+    g = result if n_edge <= cap else grad_out.new_empty((n_focus, cap, row))
     gz = torch.empty_like(g)
     sig = grad_out.new_empty((n_focus, cap, 96))
     bm, bn, bk, warps, stages = sv.stack_fp32_configs(32, 3)[2]
@@ -178,131 +180,6 @@ def cohort_input_backward_impl(
     return result
 
 
-# Small edge sets must not pay the opaque multi-cohort launcher overhead.
-# The residual and returned result share internally owned storage; gz never
-# aliases GEMM output. See the inference-only dispatcher below.
-@torch.library.triton_op("sezm_triton::so2_single_cohort_input_bwd", mutates_args=())
-def _single_cohort_input_backward(
-    grad_out: Tensor,
-    z_all: Tensor,
-    alpha: Tensor,
-    w0t: Tensor,
-    w1t: Tensor,
-    gw: Tensor,
-    gwt: Tensor,
-    cohort_edges: int,
-) -> Tensor:
-    """Compute one small cohort with compiled launchers and owned residual reuse."""
-    if not supports_edge_cohort(grad_out, z_all, 3, 32, True):
-        raise ValueError("edge cohorts require contiguous FP32 Neo inference tensors")
-    if cohort_edges <= 0:
-        raise ValueError("cohort_edges must be positive")
-    if not all(t.is_contiguous() for t in (alpha, w0t, w1t, gw, gwt)):
-        raise ValueError("edge-cohort parameters must be contiguous")
-    n_gated, n_focus, n_edge, row = z_all.shape
-    result = grad_out.new_empty((n_focus, n_edge, row))
-    if n_edge == 0:
-        return result
-    cap = n_edge
-    g = result
-    gz = torch.empty_like(g)
-    sig = grad_out.new_empty((n_focus, cap, 96))
-    bm, bn, bk, warps, stages = sv.stack_fp32_configs(32, 3)[2]
-    n_tiles = triton.cdiv(128, bn) + triton.cdiv(192, bn)
-    inside, point_config, recompute_config = sv._point_backward_schedule(
-        32, 3, train=False
-    )
-    start = 0
-    count = min(cap, n_edge - start)
-    go = grad_out[start:]
-    a = alpha[start:]
-    z = z_all.view(-1)[start * row :]
-    grid = (triton.cdiv(count, bm) * n_tiles, n_focus)
-    wrap_triton(sv._stack_gemm_bwd_kernel)[grid](
-        go,
-        go,
-        w0t,
-        w1t,
-        a,
-        g,
-        count,
-        n_gated,
-        L=3,
-        CF=32,
-        G_EDGE_MAJOR=True,
-        FOLD_ALPHA=True,
-        RES_IS_GZ=True,
-        output_edges=n_edge,
-        BLOCK_M=bm,
-        BLOCK_N=bn,
-        BLOCK_K=bk,
-        num_warps=warps,
-        num_stages=stages,
-    )
-    for layer in range(n_gated - 1, -1, -1):
-        if not inside:
-            rbm, rw, rs = recompute_config
-            wrap_triton(sv._stack_recompute_kernel)[triton.cdiv(count, rbm), n_focus](
-                z,
-                gw,
-                sig,
-                count,
-                layer,
-                L=3,
-                CF=32,
-                BLOCK_M=rbm,
-                saved_edges=n_edge,
-                num_warps=rw,
-                num_stages=rs,
-            )
-        pbm, pw, ps = point_config
-        wrap_triton(sv._stack_point_bwd_kernel)[triton.cdiv(count, pbm), n_focus](
-            g,
-            z,
-            sig,
-            gwt,
-            gz,
-            sig,
-            g,
-            g,
-            count,
-            layer,
-            L=3,
-            CF=32,
-            GLOGIT_OUT=False,
-            GLOGIT_STORE=False,
-            RECOMPUTE_SIG=inside,
-            RECOVER_INPUT=False,
-            BLOCK_M=pbm,
-            saved_edges=n_edge,
-            num_warps=pw,
-            num_stages=ps,
-        )
-        target = result.view(-1)[start * row :] if layer == 0 else g
-        wrap_triton(sv._stack_gemm_bwd_kernel)[grid](
-            gz,
-            g,
-            w0t,
-            w1t,
-            gz,
-            target,
-            count,
-            layer,
-            L=3,
-            CF=32,
-            G_EDGE_MAJOR=False,
-            FOLD_ALPHA=False,
-            RES_IS_GZ=False,
-            BLOCK_M=bm,
-            BLOCK_N=bn,
-            BLOCK_K=bk,
-            output_edges=n_edge if layer == 0 else count,
-            num_warps=warps,
-            num_stages=stages,
-        )
-    return result
-
-
 @torch.library.custom_op("sezm_triton::so2_cohort_input_bwd", mutates_args=())
 def _cohort_input_backward(
     grad_out: Tensor,
@@ -338,6 +215,8 @@ def _cohort_input_backward_fake(
 @torch.library.triton_op("sezm_triton::so2_cohort_alpha_bwd", mutates_args=())
 def _cohort_alpha_backward(grad_out: Tensor, x_local: Tensor, alpha: Tensor) -> Tensor:
     """Expose alpha's short-lived output dependency to the graph scheduler."""
+    from . import so2_value_path as sv
+
     n_edge, n_focus = alpha.shape
     result = torch.empty_like(alpha)
     if sv._has_no_edges(n_edge):

@@ -91,7 +91,6 @@ from __future__ import (
     annotations,
 )
 
-import os
 from typing import (
     TYPE_CHECKING,
     NamedTuple,
@@ -161,10 +160,6 @@ _MAX_LMAX = 6
 _MAX_MIXER_RANK = 4
 
 _ROTATE_MIX_BWD_CONFIG = (1, 2)  # per-edge backward (warps, stages)
-
-# Experimental, frozen first-order inference only. Read before compilation;
-# changing the switch requires a new process/graph. Disabled by default.
-_EDGE_COHORT_INFER = os.environ.get("DP_SO2_EDGE_COHORT_INFER", "0") == "1"
 
 
 # ======================================================================
@@ -4976,16 +4971,23 @@ def _mixing_stack_backward(ctx, grad_out, grad_z, grad_u):
             None,
         )
     backward_op = _mixing_stack_bwd_op
-    if _EDGE_COHORT_INFER:
-        from .so2_edge_cohort import (
-            cohort_backward,
-            supports_edge_cohort,
-        )
+    # The fused FP32 stack is selected by the existing Triton inference
+    # controls. Only its validated layout uses cohort-sized scratch; weight,
+    # saved-state and higher-order requests have already taken the train path.
+    from .so2_edge_cohort import (
+        cohort_backward,
+        supports_edge_cohort,
+    )
 
-        if supports_edge_cohort(
-            grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
-        ):
-            backward_op = cohort_backward
+    if supports_edge_cohort(
+        grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
+    ) and all(
+        value.dtype == torch.float32
+        and value.device == grad_out.device
+        and value.is_contiguous()
+        for value in (alpha, w0_all, w1_all, gw_all)
+    ):
+        backward_op = cohort_backward
     grad_u0, grad_alpha = backward_op(
         grad_out,
         x_local,
