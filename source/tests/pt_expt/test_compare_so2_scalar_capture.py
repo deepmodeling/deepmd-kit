@@ -35,13 +35,33 @@ def test_matching_identity():
 
 def test_compare_checks_cross_repeat_pairs():
     """Equal matching repeats must not hide variability across repeats."""
+    scales = {"energy": 1.0, "forces": 10.0, "virial": 100.0, "stress": 1000.0}
     arrays = {
-        f"{repeat}_{frame}_{field}": np.array([1.0 + repeat])
+        f"{repeat}_{frame}_{field}": np.array([(1.0 + repeat) * scales[field]])
         for repeat in range(3)
         for frame in range(3)
-        for field in ("energy", "forces", "virial", "stress")
+        for field in scales
     }
     result = compare(arrays, arrays)
-    for field in result.values():
-        assert not field["passed"]
-        assert field["max_abs"] == 2.0
+    for field, scale in scales.items():
+        assert not result[field]["passed"]
+        assert result[field]["max_abs"] == 2.0 * scale
+
+
+@pytest.mark.parametrize("changed_frame", [0, 1, 2])
+def test_compare_uses_reference_and_each_frame(changed_frame):
+    """Distinct routes must expose a discrepancy confined to any one frame."""
+    scales = {"energy": 1.0, "forces": 10.0, "virial": 100.0, "stress": 1000.0}
+    candidate = {
+        f"{repeat}_{frame}_{field}": np.array([scale])
+        for repeat in range(3)
+        for frame in range(3)
+        for field, scale in scales.items()
+    }
+    reference = {key: value.copy() for key, value in candidate.items()}
+    for field, scale in scales.items():
+        reference[f"0_{changed_frame}_{field}"] += 2 * scale
+    result = compare(candidate, reference)
+    for field, scale in scales.items():
+        assert not result[field]["passed"]
+        assert result[field]["max_abs"] == 2 * scale

@@ -37,8 +37,8 @@ def strict_environment(monkeypatch):
     torch.backends.cuda.matmul.allow_tf32 = old
 
 
-def test_export_target_scope(monkeypatch):
-    """CPU tracing may opt in for CUDA export, but ordinary CPU stays off."""
+def test_export_target_scope():
+    """Target and retained-storage policy both constrain CPU tracing."""
     conv = SimpleNamespace(
         training=False,
         triton_infer_level=2,
@@ -48,14 +48,44 @@ def test_export_target_scope(monkeypatch):
         focus_compete=True,
     )
     x = torch.empty(7, 16, 64, device="cpu")
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", "1")
     assert not vp._save_competition_scalar(conv, x)
     conv._force_scalar_capture_cuda_target = True
     assert vp._save_competition_scalar(conv, x)
     conv._force_scalar_capture_cuda_target = False
     assert not vp._save_competition_scalar(conv, x)
     conv._force_scalar_capture_cuda_target = True
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", "0")
+    conv._scalar_capture_retains_rotation = False
+    assert not vp._save_competition_scalar(conv, x)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("training", True),
+        ("triton_infer_level", 0),
+        ("triton_infer_level", 1),
+        ("triton_infer_level", 3),
+        ("lmax", 2),
+        ("n_focus", 1),
+        ("so2_focus_dim", 64),
+        ("focus_compete", False),
+    ],
+)
+def test_cpu_tracing_preserves_selection_constraints(field, value):
+    """A CUDA export target must not bypass inference/layout eligibility."""
+    conv = SimpleNamespace(
+        training=False,
+        triton_infer_level=2,
+        lmax=3,
+        n_focus=2,
+        so2_focus_dim=32,
+        focus_compete=True,
+        _force_scalar_capture_cuda_target=True,
+    )
+    x = torch.empty(7, 16, 64, device="cpu")
+    assert vp._save_competition_scalar(conv, x)
+    assert not vp._save_competition_scalar(conv, x.double())
+    setattr(conv, field, value)
     assert not vp._save_competition_scalar(conv, x)
 
 
@@ -135,7 +165,6 @@ def test_capture_freeze_load(monkeypatch, strict_environment, tmp_path):
         ModelWrapper,
     )
 
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", "1")
     # The launch-table sweep is a performance concern; retain the real
     # tracing, torch.export, AOTI compilation and package loader below.
     monkeypatch.setattr(freeze_pt2, "_tune_triton_configs", lambda *args: None)
@@ -187,8 +216,10 @@ def test_capture_freeze_load(monkeypatch, strict_environment, tmp_path):
 
 @GPU
 @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
-@pytest.mark.parametrize("capture", [False, True])
-def test_value_path_dispatch(monkeypatch, strict_environment, backend, capture):
+@pytest.mark.parametrize("retains_rotation", [False, True])
+def test_value_path_dispatch(
+    monkeypatch, strict_environment, backend, retains_rotation
+):
     """Exercise the production callable and prove the competition data source."""
     if backend == "pt":
         from deepmd.pt.model.descriptor.sezm_nn.so2 import (
@@ -222,6 +253,8 @@ def test_value_path_dispatch(monkeypatch, strict_environment, backend, capture):
     )
     path = vp.make_triton_value_path(conv)
     assert path is not None
+    conv._scalar_capture_retains_rotation = retains_rotation
+    capture = retains_rotation
     x = torch.randn(7, 16, 64, device="cuda") * 0.1
     radial = torch.randn(17, 4, 32, device="cuda") * 0.1
     cache = SimpleNamespace(
@@ -246,7 +279,6 @@ def test_value_path_dispatch(monkeypatch, strict_environment, backend, capture):
             torch.testing.assert_close(gate_src, seen["scalar"], rtol=0, atol=0)
         return original_alpha(gate_src)
 
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", str(int(capture)))
     with (
         patch.object(
             vp, "_rotate_mix_scalar_op", side_effect=capture_spy
@@ -305,9 +337,9 @@ def test_model_capture_on_off(monkeypatch, strict_environment):
         dtype=torch.float64,
     )
     atype = torch.zeros(1, 4, device="cuda", dtype=torch.long)
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", "0")
-    reference = model(coord, atype, None)
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", "1")
+    # A test-only ablation leaves the production acceleration policy intact.
+    with patch.object(vp, "_save_competition_scalar", return_value=False):
+        reference = model(coord, atype, None)
     with patch.object(
         vp, "_rotate_mix_scalar_op", wraps=vp._rotate_mix_scalar_op
     ) as spy:
@@ -324,17 +356,17 @@ def test_model_capture_on_off(monkeypatch, strict_environment):
 
 @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
 @pytest.mark.parametrize(
-    "capture,target",
+    "level,target",
     [
-        pytest.param(True, "cuda", marks=GPU),
-        pytest.param(False, "cuda", marks=GPU),
-        (True, "cpu"),
+        pytest.param(2, "cuda", marks=GPU),
+        pytest.param(1, "cuda", marks=GPU),
+        (2, "cpu"),
     ],
 )
 def test_export_dispatch(
-    monkeypatch, strict_environment, tmp_path, backend, capture, target
+    monkeypatch, strict_environment, tmp_path, backend, level, target
 ):
-    """Both official exporters must select capture before CPU tracing ends.
+    """Official exporters respect the level, target and storage-lifetime policy.
 
     Stop at the export boundary, avoiding compiler/toolchain dependencies in
     this routing regression. Full AOTI package inference is benchmarked separately.
@@ -355,7 +387,7 @@ def test_export_dispatch(
         _trace_and_export_impl,
     )
 
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", str(int(capture)))
+    monkeypatch.setenv("DP_TRITON_INFER", str(level))
     monkeypatch.setattr(freeze_pt2, "_tune_triton_configs", lambda *args: None)
     monkeypatch.setattr(autotune, "run_autotune", lambda *args: None)
     params = _model_params()
@@ -369,7 +401,7 @@ def test_export_dispatch(
         targets = [str(node.target) for node in traced.graph.nodes]
         count = sum("sezm_triton.so2_rotate_mix_scalar." in name for name in targets)
         seen.append(count)
-        assert (count > 0) == (capture and target == "cuda")
+        assert (count > 0) == (backend == "pt" and level == 2 and target == "cuda")
         raise ExportBoundary
 
     monkeypatch.setattr(torch.export, "export", inspect_graph)

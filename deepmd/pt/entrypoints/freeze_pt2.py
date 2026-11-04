@@ -1008,11 +1008,12 @@ def _freeze_sezm_to_pt2(
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
     # contraction, while CUDA targets also bake the fused GIE scatter and
-    # permit opt-in SO(2) scalar capture despite the CPU tracing inputs.
+    # permit level-2 SO(2) scalar capture despite the CPU tracing inputs.
     force_block_diag = target_device.type != "cpu"
     force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
         if isinstance(module, SO2Convolution):
+            module._scalar_capture_retains_rotation = True
             module._force_scalar_capture_cuda_target = target_device.type == "cuda"
         if isinstance(module, SO2Linear):
             module._force_block_diag_matmul = force_block_diag

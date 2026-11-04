@@ -71,7 +71,6 @@ os.environ.update(
     DP_CUDA_INFER="0",
     DP_TF32_INFER="0",
     DP_AMP_INFER="0",
-    DP_SO2_SCALAR_CAPTURE_INFER="1" if a.route == "CSC5" else "0",
     OMP_NUM_THREADS="1",
     DP_INTRA_OP_PARALLELISM_THREADS="1",
     DP_INTER_OP_PARALLELISM_THREADS="1",
@@ -105,7 +104,13 @@ from ase.build import (
 from deepmd.calculator import (
     DP,
 )
+from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as scalar_path
 from deepmd.utils.errors import OutOfMemoryError as DPOutOfMemoryError
+
+# BASE is an explicit benchmark-only ablation, not a public inference switch.
+# On a pre-feature checkout BASE naturally uses its original implementation.
+if a.route == "BASE" and hasattr(scalar_path, "_save_competition_scalar"):
+    scalar_path._save_competition_scalar = lambda conv, x: False
 
 torch.set_num_threads(1)
 torch.set_float32_matmul_precision("highest")
@@ -157,12 +162,12 @@ started = time.time()
 try:
     atoms = bulk("C", "diamond", a=3.567, cubic=True).repeat(tuple(a.cell))
     rng = np.random.default_rng(a.seed)
-    frames = np.stack(
-        [
+    frames = []
+    for _ in range(3):
+        frames.append(
             atoms.positions + 0.02 * rng.standard_normal(atoms.positions.shape)
-            for _ in range(3)
-        ]
-    )
+        )
+    frames = np.stack(frames)
     np.savez_compressed(
         a.out / "inputs.npz",
         positions=frames,

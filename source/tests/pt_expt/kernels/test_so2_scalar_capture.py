@@ -169,6 +169,7 @@ def test_dynamic_compile(capture: bool) -> None:
         ("n_focus", 1),
         ("so2_focus_dim", 64),
         ("focus_compete", False),
+        ("_scalar_capture_retains_rotation", False),
     ],
 )
 def test_scope(monkeypatch: pytest.MonkeyPatch, field: str, value: object) -> None:
@@ -181,9 +182,6 @@ def test_scope(monkeypatch: pytest.MonkeyPatch, field: str, value: object) -> No
         focus_compete=True,
     )
     x = torch.empty(1, 16, 64, device="cuda")
-    monkeypatch.delenv("DP_SO2_SCALAR_CAPTURE_INFER", raising=False)
-    assert not vp._save_competition_scalar(conv, x)
-    monkeypatch.setenv("DP_SO2_SCALAR_CAPTURE_INFER", "1")
     assert vp._save_competition_scalar(conv, x)
     assert not vp._save_competition_scalar(conv, x.cpu())
     assert not vp._save_competition_scalar(conv, x.double())

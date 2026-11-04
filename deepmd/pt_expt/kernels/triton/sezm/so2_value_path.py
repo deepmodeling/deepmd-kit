@@ -91,7 +91,6 @@ from __future__ import (
     annotations,
 )
 
-import os
 from typing import (
     TYPE_CHECKING,
     NamedTuple,
@@ -5323,10 +5322,14 @@ _PACKED_WEIGHT_BUFFER_NAMES = (
 
 
 def _save_competition_scalar(conv: SO2Convolution, x: Tensor) -> bool:
-    """Opt in only to the validated frozen two-focus FP32 inference layout."""
+    """Capture only where competition backward retains the rotation storage.
+
+    The PT-expt exporter can already release that storage without capture;
+    it pins this internal policy off before tracing. Runtime and PT export
+    retain the independent scalar buffer for the validated level-2 layout.
+    """
     return (
-        os.environ.get("DP_SO2_SCALAR_CAPTURE_INFER", "0").strip().lower()
-        in ("1", "true", "yes", "on")
+        getattr(conv, "_scalar_capture_retains_rotation", True)
         and not conv.training
         and conv.triton_infer_level == 2
         and conv.lmax == 3
