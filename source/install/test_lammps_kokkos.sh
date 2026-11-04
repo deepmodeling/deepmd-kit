@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Run after test_cc_local.sh: reuse its C API/backend installation and the
-# matching LAMMPS checkout instead of rebuilding DeePMD or using the pip wheel.
+# Run after test_cc_local.sh (or --build-only then --models-only=kokkos):
+# reuse its C API/backend installation, long-range fixtures, and matching
+# LAMMPS checkout instead of rebuilding DeePMD or using the pip wheel.
 SCRIPT_PATH=$(dirname "$(realpath -s "$0")")
 REPO_ROOT=$(realpath "${SCRIPT_PATH}/../..")
 DEEPMD_C_ROOT=${DEEPMD_C_ROOT:-${REPO_ROOT}/dp_test}
