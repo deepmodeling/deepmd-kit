@@ -11,7 +11,6 @@ from typing import (
 )
 
 import array_api_compat
-import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -236,36 +235,3 @@ def degree_offsets(degree_channels: Sequence[int]) -> tuple[int, ...]:
     for degree, width in enumerate(degree_channels):
         offsets.append(offsets[-1] + (2 * degree + 1) * int(width))
     return tuple(offsets)
-
-
-def build_moment_indices(
-    degree_channels: Sequence[int],
-) -> tuple[np.ndarray, np.ndarray]:
-    """Build channel and harmonic indices for one flat edge payload.
-
-    Every degree reads the leading channels of the shared radial map, so the
-    channel index of a degree is simply ``range(degree_channels[degree])``.
-
-    Parameters
-    ----------
-    degree_channels
-        Number of channels for degrees zero through ``lmax``.
-
-    Returns
-    -------
-    channel_index
-        Edge-amplitude channel indices with shape ``(S,)``.
-    harmonic_index
-        Packed harmonic indices with shape ``(S,)``, where
-        ``S = sum((2 * l + 1) * degree_channels[l])``.
-    """
-    channel_index = []
-    harmonic_index = []
-    for degree, width in enumerate(degree_channels):
-        for component in range(2 * degree + 1):
-            channel_index.extend(range(int(width)))
-            harmonic_index.extend([degree * degree + component] * int(width))
-    return (
-        np.asarray(channel_index, dtype=np.int64),
-        np.asarray(harmonic_index, dtype=np.int64),
-    )

@@ -90,7 +90,6 @@ from .dpa4c_nn import (
     OrderedPairFiLM,
     SpinChannels,
     build_angular_basis,
-    build_moment_indices,
     canonicalize_charge_spin,
     degree_offsets,
     derive_bispectrum_ranks,
@@ -245,6 +244,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     _STAT_FRAMES_PER_SAMPLE = 64
     _COMPRESSION_BUFFER_NAMES = (
         "data",
+        "basis_table",
+        "basis_matrix",
         "info",
         "pair_film",
         "pair_mixing",
@@ -258,6 +259,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         "output_mean",
         "output_inv_std",
     )
+    # The low-rank radial table and its expansion, which a payload compressed
+    # without that table does not carry; empty artifacts select the radial
+    # table itself, so such a payload loads as the snapshot it was.
+    _OPTIONAL_COMPRESSION_BUFFER_NAMES = ("basis_table", "basis_matrix")
 
     def __init__(
         self,
@@ -461,12 +466,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
 
         # === Step 4. Lay out the flat moment payload ===
         # Degree zero owns the leading `channels` entries of the flat layout,
-        # so the non-scalar block is exactly its complement and needs no
-        # separate degree index. The spin families, when present, are appended
-        # after the geometric degrees, leaving every geometric offset intact.
-        channel_index, harmonic_index = build_moment_indices(self.degree_channels)
-        self.angular_channel_index = channel_index[self.channels :]
-        self.angular_harmonic_index = harmonic_index[self.channels :]
+        # and every higher degree follows in its own harmonic-major block. The
+        # spin families, when present, are appended after the geometric
+        # degrees, leaving every geometric offset intact.
         self.degree_offsets = degree_offsets(self.degree_channels)
 
         # === Step 5. Initialize the output calibration state ===
@@ -1146,30 +1148,30 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         )
 
         xp = array_api_compat.array_namespace(amplitude)
-        device = array_api_compat.device(amplitude)
-        channel_index = xp_asarray_nodetach(
-            xp,
-            self.angular_channel_index,
-            device=device,
-        )
-        harmonic_index = xp_asarray_nodetach(
-            xp,
-            self.angular_harmonic_index,
-            device=device,
-        )
+        n_edge = amplitude.shape[0]
 
         # Payload layout: [chi^2, chi^4, degree zero (C_0), degrees one and
         # above (S - C_0)]. Degree zero is the whole edge amplitude under its
-        # single envelope, while the non-scalar block gathers an amplitude and
-        # a harmonic per flat moment coordinate and carries a second envelope.
+        # single envelope. Degree l is the outer product of its 2l + 1
+        # harmonics with the leading C_l channels of the amplitude, laid out
+        # harmonic-major and carrying a second envelope. The products are
+        # formed by broadcasting, so their backward reduces over the
+        # broadcast axes.
+        angular = [
+            xp.reshape(
+                basis[:, degree * degree : (degree + 1) * (degree + 1), None]
+                * amplitude[:, None, :width],
+                (n_edge, (2 * degree + 1) * width),
+            )
+            for degree, width in enumerate(self.degree_channels)
+            if degree > 0
+        ]
         envelope_squared = envelope * envelope
         parts = [
             envelope_squared[:, None],
             (envelope_squared * envelope_squared)[:, None],
             amplitude,
-            xp.take(amplitude, channel_index, axis=1)
-            * xp.take(basis, harmonic_index, axis=1)
-            * envelope[:, None],
+            xp.concat(angular, axis=1) * envelope[:, None],
         ]
         if spin_payload is not None:
             parts.append(spin_payload)
@@ -1931,11 +1933,36 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             obj._load_compression(compression)
         return obj
 
+    @classmethod
+    def _compression_variables(cls, compression: dict) -> dict:
+        """Return every compressed-inference artifact of a payload.
+
+        Parameters
+        ----------
+        compression
+            The ``compress`` entry of a serialized descriptor.
+
+        Returns
+        -------
+        dict
+            The artifact of every name in ``_COMPRESSION_BUFFER_NAMES``, an
+            empty float32 array for an optional one the payload omits.
+        """
+        variables = compression["@variables"]
+        return {
+            name: (
+                np.empty(0, dtype=np.float32)
+                if name in cls._OPTIONAL_COMPRESSION_BUFFER_NAMES
+                and name not in variables
+                else variables[name]
+            )
+            for name in cls._COMPRESSION_BUFFER_NAMES
+        }
+
     def _load_compression(self, compression: dict) -> None:
         """Restore the compressed-inference artifact payload."""
-        variables = compression["@variables"]
-        for name in self._COMPRESSION_BUFFER_NAMES:
-            setattr(self, f"compress_{name}", variables[name])
+        for name, value in self._compression_variables(compression).items():
+            setattr(self, f"compress_{name}", value)
         self.compress = True
 
     @classmethod
@@ -2117,6 +2144,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def get_env_protection(self) -> float:
         """Return the direction regularization scale in Å."""
         return self._EPS
+
+    def supports_graph_vacuum(self) -> bool:
+        """Isolated references use the graph core without a dense sel capacity."""
+        return True
 
     def uses_graph_lower(self) -> bool:
         """Return whether graph-native lowering is supported."""

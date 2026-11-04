@@ -18,6 +18,7 @@ from .....seed import (
 )
 from ..cases import (
     TestCaseSingleFrameWithNlist,
+    type_map_cases,
 )
 
 
@@ -144,50 +145,13 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
         mapping_device = self.mapping
         # type_map for data and exclude_types
         original_type_map = ["O", "H"]
-        full_type_map_test = [
-            "H",
-            "He",
-            "Li",
-            "Be",
-            "B",
-            "C",
-            "N",
-            "O",
-            "F",
-            "Ne",
-            "Na",
-            "Mg",
-            "Al",
-            "Si",
-            "P",
-            "S",
-            "Cl",
-            "Ar",
-        ]  # 18 elements
         rng = np.random.default_rng(GLOBAL_SEED)
-        for old_tm, new_tm, em, econf in itertools.product(
-            [
-                full_type_map_test[:],  # 18 elements
-                full_type_map_test[
-                    :16
-                ],  # 16 elements, double of tebd default first dim
-                full_type_map_test[:8],  # 8 elements, tebd default first dim
-                ["H", "O"],  # slimmed types
-            ],  # old_type_map
-            [
-                full_type_map_test[:],  # 18 elements
-                full_type_map_test[
-                    :16
-                ],  # 16 elements, double of tebd default first dim
-                full_type_map_test[:8],  # 8 elements, tebd default first dim
-                ["H", "O"],  # slimmed types
-            ],  # new_type_map
-            [[], [[0, 1]], [[1, 1]]],  # exclude_types for original_type_map
-            [False, True],  # use_econf_tebd
+        for (old_tm, new_tm, econf), em in itertools.product(
+            type_map_cases(), [[], [[0, 1]], [[1, 1]]]
         ):
             # use shuffled type_map
-            rng.shuffle(old_tm)
-            rng.shuffle(new_tm)
+            old_tm = rng.permutation(old_tm).tolist()
+            new_tm = rng.permutation(new_tm).tolist()
             old_tm_index = np.array(
                 [old_tm.index(i) for i in original_type_map], dtype=np.int32
             )
