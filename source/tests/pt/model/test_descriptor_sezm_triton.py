@@ -2598,6 +2598,44 @@ class TestSeZMWignerBandOp(unittest.TestCase):
         self.assertGreater(float(second_op.abs().max()), 0.0)
 
     @_GPU_KERNELS
+    def test_forward_band_fused_routes_at_every_supported_degree(self):
+        """Degrees 1 and 2 also ride the operator, not just the ladder top.
+
+        The monomial tables are built per degree; the admission and the
+        call arguments must follow (the predicate used to require the
+        degree-3 tables unconditionally, leaving 1 and 2 dead arms).
+        """
+        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
+        from unittest import (
+            mock,
+        )
+
+        for lmax in (1, 2, 3):
+            with self.subTest(lmax=lmax):
+                calc = self._make_calc(lmax)
+                quat = torch.randn(32, 4, device="cuda")
+                quat = quat / quat.norm(dim=-1, keepdim=True)
+
+                calls = []
+                real = wd.wigner_band_op
+
+                def _spy(*args, **kwargs):
+                    calls.append(args)
+                    return real(*args, **kwargs)
+
+                with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+                    self.assertTrue(
+                        calc.band_op_supported(),
+                        f"lmax={lmax} must admit the fused band",
+                    )
+                    with mock.patch.object(wd, "wigner_band_op", _spy):
+                        fused = calc.forward_band_fused(quat)
+                self.assertEqual(len(calls), 1)
+                torch.testing.assert_close(
+                    fused, calc.forward_band(quat), atol=0.0, rtol=0.0
+                )
+
+    @_GPU_KERNELS
     def test_forward_band_fused_routes_through_the_operator(self):
         """The production wiring: ``forward_band_fused`` picks the operator.
 

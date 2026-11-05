@@ -3171,6 +3171,46 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
             "radial_so2_rank": 2,
         }
 
+    def test_freeze_preparation_opens_the_packed_gate(self):
+        """The freeze seam clears requires-grad, so the gate opens for it.
+
+        A normally trained checkpoint keeps ``channel_basis`` trainable;
+        without the export-time freeze the packed admission would reject the
+        banded layout and the exported artifact would silently stay dense.
+        """
+        from deepmd.pt.entrypoints.freeze_pt2 import (
+            _freeze_parameters_for_export,
+        )
+
+        saved_flag = os.environ.get("DP_PACKED_D_INFER")
+        saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_PACKED_D_INFER"] = "1"
+        os.environ["DP_TRITON_INFER"] = "2"
+
+        def restore():
+            for key, old in (
+                ("DP_PACKED_D_INFER", saved_flag),
+                ("DP_TRITON_INFER", saved_level),
+            ):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+        self.addCleanup(restore)
+
+        model = DescrptSeZM(**self._kwargs()).cuda()
+        model.eval()
+        self.assertFalse(
+            model._packed_wigner_ok(),
+            "a trainable channel basis must keep the dense layout",
+        )
+        _freeze_parameters_for_export(model)
+        self.assertTrue(
+            model._packed_wigner_ok(),
+            "the export-time freeze must open the packed admission",
+        )
+
     def test_flag_on_builds_band_through_the_model_entry(self):
         """The ``forward_with_edges`` entry also carries the banded storage.
 

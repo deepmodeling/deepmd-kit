@@ -722,14 +722,26 @@ class WignerDCalculator(nn.Module):
         production model uses (degrees 1..3 with the Triton monomial
         kernels); anything else keeps the plain composition.
         """
+        if _wigner_band_op is None or self.training:
+            return False
+        # The monomial tables are built per degree: ``exp_l3`` exists only
+        # for lmax >= 3, ``exp_l2`` / ``_l2_monomial_coeff`` only for
+        # lmax >= 2, and the lmax == 1 band needs neither (the operator's
+        # own lmax >= 1 / lmax >= 2 branches mirror this).
+        flat = getattr(self, "_monomial_exponents_flat", {})
+        needs = {1: (), 2: ("exp_l2",), 3: ("exp_l2", "exp_l3")}.get(self.lmax)
+        # The Triton-monomial flag is set in the degree >= 2 construction
+        # block and only matters there: the degree-1 band is the permuted
+        # rotation matrix alone and never touches a monomial kernel.
+        monomials_needed = self.lmax >= 2
         return (
-            _wigner_band_op is not None
-            and self.lmax in (1, 2, 3)
-            and not self.training
-            and bool(getattr(self, "_use_triton_monomials", False))
-            and "exp_l2" in getattr(self, "_monomial_exponents_flat", {})
-            and "exp_l3" in getattr(self, "_monomial_exponents_flat", {})
-            and hasattr(self, "_l2_monomial_coeff")
+            needs is not None
+            and (
+                not monomials_needed
+                or bool(getattr(self, "_use_triton_monomials", False))
+            )
+            and all(name in flat for name in needs)
+            and (self.lmax == 1 or hasattr(self, "_l2_monomial_coeff"))
         )
 
     def forward_band_fused(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
@@ -747,14 +759,18 @@ class WignerDCalculator(nn.Module):
         q_unit = quaternion_normalize(
             edge_quaternion.to(dtype=self.dtype), eps=self.eps
         )
+        # The degree >= 2 tables are built per degree (see
+        # ``band_op_supported``); the operator ignores the ones above the
+        # requested degree, so missing tables pass placeholders.
+        flat = getattr(self, "_monomial_exponents_flat", {})
         return wigner_band_op(
             q_unit,
             self.l1_perm,
             self.l1_sign_outer,
-            self._l2_monomial_coeff,
-            self.small_order_kernels.C_l3,
-            self._monomial_exponents_flat["exp_l2"],
-            self._monomial_exponents_flat["exp_l3"],
+            getattr(self, "_l2_monomial_coeff", None),
+            getattr(getattr(self, "small_order_kernels", None), "C_l3", None),
+            flat.get("exp_l2", []),
+            flat.get("exp_l3", []),
             int(self.lmax),
         )
 
