@@ -235,8 +235,8 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
           export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-          python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
-          python -m pytest source/ipi/tests
+          source/install/pytest_with_junit.sh lammps python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
+          source/install/pytest_with_junit.sh ipi python -m pytest source/ipi/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -246,7 +246,7 @@ jobs:
           CUDA_VISIBLE_DEVICES: 0
           ENABLE_PADDLE: 0
       - name: Upload C++ test reports
-        if: ${{ always() && hashFiles('source/build_tests/generator-reports/**', 'source/build_tests/gtest-reports/**', 'source/build_lammps_kokkos/test-reports/**') != '' }}
+        if: ${{ always() && hashFiles('source/build_tests/generator-reports/**', 'source/build_tests/gtest-reports/**', 'source/build_tests/pytest-reports/**', 'source/build_lammps_kokkos/test-reports/**') != '' }}
         uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
@@ -254,6 +254,7 @@ jobs:
           path: |
             source/build_tests/generator-reports/**
             source/build_tests/gtest-reports/**
+            source/build_tests/pytest-reports/**
             source/build_lammps_kokkos/test-reports/**
           if-no-files-found: ignore
           retention-days: 14

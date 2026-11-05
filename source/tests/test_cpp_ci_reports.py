@@ -2,8 +2,11 @@
 """Check C++ CI report wiring without launching builds or GitHub workflows."""
 
 import csv
+import json
 import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
 from pathlib import (
@@ -17,6 +20,7 @@ ROOT = Path(__file__).parents[2]
 COMMON_REPORTS = {
     "source/build_tests/generator-reports/**",
     "source/build_tests/gtest-reports/**",
+    "source/build_tests/pytest-reports/**",
 }
 
 
@@ -58,6 +62,7 @@ def test_report_upload_cannot_replace_test_failure_with_success(workflow):
         for step in job["steps"]
         if "source/install/test_cc_local.sh" in step.get("run", "")
         or "source/install/test_lammps_kokkos.sh" in step.get("run", "")
+        or "source/install/pytest_with_junit.sh" in step.get("run", "")
     ]
     assert test_steps
     for step in test_steps:
@@ -75,6 +80,135 @@ def test_matrix_jobs_have_distinct_artifact_names(workflow):
         assert "${{" not in name
         names.append(name)
     assert len(set(names)) == len(names)
+
+
+def test_ordinary_pytest_reporting_preserves_commands_and_failure_handlers(workflow):
+    filename, job, _ = workflow
+    commands = [
+        line.strip()
+        for step in job["steps"]
+        for line in step.get("run", "").splitlines()
+        if "source/install/pytest_with_junit.sh" in line
+    ]
+    if filename == "test_cc.yml":
+        assert commands == [
+            "source/install/retry_on_sigterm.sh 3 source/install/pytest_with_junit.sh "
+            "lammps pytest --cov=deepmd source/lmp/tests",
+            "source/install/pytest_with_junit.sh ipi pytest --cov=deepmd source/ipi/tests",
+        ]
+    else:
+        assert commands == [
+            "source/install/pytest_with_junit.sh lammps python -m pytest -s "
+            "source/lmp/tests || (cat log.lammps && exit 1)",
+            "source/install/pytest_with_junit.sh ipi python -m pytest source/ipi/tests",
+        ]
+
+
+@pytest.fixture
+def ordinary_pytest_command(tmp_path):
+    # Copy the real helper to a fake checkout so no reports touch the source tree.
+    install_dir = tmp_path / "source/install"
+    install_dir.mkdir(parents=True)
+    helper = install_dir / "pytest_with_junit.sh"
+    shutil.copy2(ROOT / "source/install/pytest_with_junit.sh", helper)
+    command = tmp_path / "pytest-command"
+    command.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, signal, sys\n"
+        "from pathlib import Path\n"
+        "with open('calls.jsonl', 'a') as stream: stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "report = Path(sys.argv[-1].removeprefix('--junitxml='))\n"
+        "assert sys.argv[-1].startswith('--junitxml=')\n"
+        "statuses = os.environ['MOCK_STATUSES'].split(',')\n"
+        "count = len(Path('calls.jsonl').read_text().splitlines())\n"
+        "status = statuses[min(count, len(statuses)) - 1]\n"
+        "if status == 'SIGTERM': os.kill(os.getpid(), signal.SIGTERM)\n"
+        "report.write_text('<testsuites/>')\n"
+        "sys.exit(int(status))\n"
+    )
+    command.chmod(0o755)
+    return helper, command
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires GNU/Linux shell tools")
+@pytest.mark.parametrize("status", [0, 1, 5, 17, 143, "SIGTERM"])
+def test_ordinary_pytest_reports_preserve_status_arguments_and_invocations(
+    tmp_path, ordinary_pytest_command, status
+):
+    helper, command = ordinary_pytest_command
+    arguments = ["-m", "pytest", "--cov=deepmd", "test directory", "-k", "one or two"]
+    for invocation, name in enumerate(["lammps", "ipi", "lammps"], start=1):
+        result = subprocess.run(
+            [str(helper), name, str(command), *arguments],
+            cwd=tmp_path,
+            env={**os.environ, "MOCK_STATUSES": str(status)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        expected_status = -signal.SIGTERM if status == "SIGTERM" else status
+        assert result.returncode == expected_status, result.stderr
+        calls = [
+            json.loads(line)
+            for line in (tmp_path / "calls.jsonl").read_text().splitlines()
+        ]
+        assert len(calls) == invocation
+        assert all(args[:-1] == arguments for args in calls)
+        report_root = tmp_path / "source/build_tests/pytest-reports"
+        reports = list(report_root.glob("run.*/*.xml"))
+        # A killed pytest process may never finish writing its XML report.
+        assert len(reports) == (0 if status == "SIGTERM" else invocation)
+        assert len(list(report_root.glob("run.*"))) == invocation
+        assert Path(calls[-1][-1].split("=", 1)[1]).name == f"{name}.xml"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires GNU/Linux shell tools")
+@pytest.mark.parametrize(
+    ("statuses", "status", "attempts", "report_count"),
+    [
+        ("143,0", 0, 2, 2),
+        ("143", 143, 3, 3),
+        ("17", 17, 1, 1),
+        ("SIGTERM,0", 0, 2, 1),
+        ("SIGTERM", 143, 3, 0),
+    ],
+)
+def test_ordinary_pytest_retry_preserves_each_attempt(
+    tmp_path, ordinary_pytest_command, statuses, status, attempts, report_count
+):
+    helper, command = ordinary_pytest_command
+    # Skip only the retry delay, without replacing the actual retry script.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    sleep = bin_dir / "sleep"
+    sleep.write_text("#!/bin/bash\nexit 0\n")
+    sleep.chmod(0o755)
+    result = subprocess.run(
+        [
+            str(ROOT / "source/install/retry_on_sigterm.sh"),
+            "3",
+            str(helper),
+            "lammps",
+            str(command),
+            "--cov=deepmd",
+            "source/lmp/tests",
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+            "MOCK_STATUSES": statuses,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == status, result.stderr
+    report_root = tmp_path / "source/build_tests/pytest-reports"
+    reports = list(report_root.glob("run.*/lammps.xml"))
+    assert len(reports) == report_count
+    assert len(list(report_root.glob("run.*"))) == attempts
+    assert len((tmp_path / "calls.jsonl").read_text().splitlines()) == attempts
 
 
 def test_kokkos_pytest_processes_write_distinct_reports():

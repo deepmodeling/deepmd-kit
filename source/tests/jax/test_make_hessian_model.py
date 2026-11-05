@@ -35,9 +35,20 @@ dtype = jnp.float64
 
 
 def finite_hessian(f, x, delta=1e-6):
+    """Reuse identical oracle inputs within one finite-difference Hessian."""
     in_shape = x.shape
     assert len(in_shape) == 1
-    y0 = f(x)
+    values = {}
+
+    def evaluate(point):
+        """Evaluate one exact input without retaining caller-owned buffers."""
+        key = (point.dtype.str, point.shape, point.tobytes())
+        if key not in values:
+            # A reference evaluator may return a reusable output buffer.
+            values[key] = np.array(f(point), copy=True)
+        return values[key]
+
+    y0 = evaluate(x)
     out_shape = y0.shape
     res = np.empty(out_shape + in_shape + in_shape)
     for iidx in np.ndindex(*in_shape):
@@ -54,12 +65,34 @@ def finite_hessian(f, x, delta=1e-6):
             i1[jidx] += delta
             i2[jidx] -= delta
             i3[jidx] -= delta
-            y0 = f(x + i0)
-            y1 = f(x + i1)
-            y2 = f(x + i2)
-            y3 = f(x + i3)
+            y0 = evaluate(x + i0)
+            y1 = evaluate(x + i1)
+            y2 = evaluate(x + i2)
+            y3 = evaluate(x + i3)
             res[(Ellipsis, *iidx, *jidx)] = (y0 + y3 - y1 - y2) / (4 * delta**2.0)
     return res
+
+
+class TestFiniteHessian(unittest.TestCase):
+    def test_reuses_inputs_without_sharing_between_calls(self):
+        """Keep every Hessian entry while evaluating each input only once."""
+        x = np.arange(9, dtype=np.float64) / 10
+        calls = []
+        buffer = np.empty(2)
+
+        def oracle(point):
+            """Return two quadratic outputs through a deliberately reused buffer."""
+            calls.append(point.copy())
+            buffer[:] = (point @ point, np.sum(point) ** 2)
+            return buffer
+
+        expected = np.stack((2 * np.eye(9), 2 * np.ones((9, 9))))
+        for point in (x, x, x + 1):
+            calls.clear()
+            actual = finite_hessian(oracle, point, delta=1e-3)
+            np.testing.assert_allclose(actual, expected, rtol=1e-7, atol=1e-7)
+            self.assertEqual(len(calls), 2 * point.size**2 + 1)
+            self.assertEqual(len({value.tobytes() for value in calls}), len(calls))
 
 
 class HessianTest:

@@ -97,9 +97,10 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	# invocation owns its directory and each parallel script owns its file.
 	mkdir -p "${BUILD_TMP_DIR}/generator-reports"
 	GENERATOR_REPORT_DIR=$(mktemp -d "${BUILD_TMP_DIR}/generator-reports/run.XXXXXX")
-	run_generator() {
+	run_generator_named() {
+		local name=$1
+		shift
 		local start=$SECONDS status=0
-		local name=$(basename "${1%.py}")
 		if env ${_GEN_ENV} python -u "$@"; then
 			status=0
 		else
@@ -108,6 +109,9 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 		printf 'generator\tseconds\texit_status\n%s\t%s\t%s\n' \
 			"$name" "$((SECONDS - start))" "$status" >"${GENERATOR_REPORT_DIR}/${name}.tsv"
 		return "$status"
+	}
+	run_generator() {
+		run_generator_named "$(basename "${1%.py}")" "$@"
 	}
 	# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
 	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
@@ -169,12 +173,17 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	wait $PID9
 	wait $PID10
 
-	run_generator ${INFER_SCRIPT_PATH}/gen_spin.py &
+	# Keep both producers parallel, but compile the shared DPA1 spin model in
+	# model-devi's shorter branch, rather than repeating it on gen_spin's
+	# critical path. Finalize only after both producers succeed. Distinct
+	# report names retain both phases without overwriting their timings.
+	run_generator_named gen_spin_dpa3 ${INFER_SCRIPT_PATH}/gen_spin.py --dpa3-only &
 	PID7=$!
 	run_generator ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &
 	PID8=$!
 	wait $PID7
 	wait $PID8
+	run_generator_named gen_spin_reuse ${INFER_SCRIPT_PATH}/gen_spin.py --reuse-model-devi
 	# Copies of the multi-rank DPA3 archives of gen_dpa3.py and gen_spin.py
 	# whose nested with-comm artifact is corrupt; without them the load-failure
 	# cases of the pt_expt backends (test_with_comm_load_failure_ptexpt.cc)

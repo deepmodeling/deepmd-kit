@@ -40,6 +40,10 @@ MODELS = {
     "gen_dpa4c_canonical.py",
     "gen_dpa4c_long_range.py",
 }
+REPORTS = {Path(model).stem for model in MODELS} - {"gen_spin"} | {
+    "gen_spin_dpa3",
+    "gen_spin_reuse",
+}
 
 
 @pytest.fixture
@@ -75,12 +79,17 @@ from pathlib import Path
 name = Path(sys.argv[0]).name
 args = sys.argv[1:]
 dpa1_ready = Path(os.environ["MOCK_DPA1_READY"])
+dpa3_ready = Path(os.environ["MOCK_SPIN_DPA3_READY"])
+dpa3_mpi_ready = Path(os.environ["MOCK_SPIN_DPA3_MPI_READY"])
+model0_ready = Path(os.environ["MOCK_MODEL0_READY"])
 record = {{
     "name": name,
     "args": args,
     "ld": os.environ.get("LD_LIBRARY_PATH", ""),
     "gtest_output": os.environ.get("GTEST_OUTPUT", ""),
     "dpa1_ready": dpa1_ready.exists(),
+    "dpa3_ready": dpa3_ready.exists() and dpa3_mpi_ready.exists(),
+    "model0_ready": model0_ready.exists(),
 }}
 with open(os.environ["MOCK_LOG"], "a") as stream:
     stream.write(json.dumps(record) + "\\n")
@@ -94,6 +103,15 @@ if name == "python" and args[0] == "-u":
         time.sleep(0.05)
         dpa1_ready.touch()
     if "--reuse-dpa1" in args and not dpa1_ready.exists():
+        sys.exit(23)
+    if "--dpa3-only" in args:
+        time.sleep(0.05)
+        dpa3_ready.touch()
+        dpa3_mpi_ready.touch()
+    if Path(args[1]).name == "gen_spin_model_devi.py":
+        time.sleep(0.05)
+        model0_ready.touch()
+    if "--reuse-model-devi" in args and not (dpa3_ready.exists() and dpa3_mpi_ready.exists() and model0_ready.exists()):
         sys.exit(23)
 if name == "ctest":
     Path(args[args.index("--output-junit") + 1]).write_text("<testsuites/>")
@@ -116,6 +134,9 @@ if name == "ctest":
         "GTEST_OUTPUT": "",
         "MOCK_LOG": str(tmp_path / "commands.jsonl"),
         "MOCK_DPA1_READY": str(infer / "deeppot_dpa1_graph.pt2"),
+        "MOCK_SPIN_DPA3_READY": str(infer / "deeppot_dpa3_spin.pt2"),
+        "MOCK_SPIN_DPA3_MPI_READY": str(infer / "deeppot_dpa3_spin_mpi.pt2"),
+        "MOCK_MODEL0_READY": str(infer / "deeppot_dpa_spin_md0.pt2"),
         "MOCK_SHARED_LIB_DIR": str(tmp_path / "installed_ops"),
         "MOCK_FAIL": "",
     }
@@ -194,14 +215,23 @@ def test_default_still_builds_all_models_and_runs_ctest(build_tree):
     assert commands[2]["args"] == ["--install", "."]
     check_ctest_report(root, commands[-1])
     assert set(generated_models(commands)) == MODELS
-    assert len(generated_models(commands)) == len(MODELS)
+    assert len(generated_models(commands)) == len(MODELS) + 1
+    assert generated_models(commands).count("gen_spin.py") == 2
     reports = generator_reports(root)
-    assert {path.stem + ".py" for path in reports} == MODELS
-    assert len(reports) == len(MODELS)
+    assert {path.stem for path in reports} == REPORTS
+    assert len(reports) == len(REPORTS)
     assert {row["exit_status"] for row in reports.values()} == {"0"}
     pair_exclude = next(c for c in commands if "--reuse-dpa1" in c["args"])
     assert Path(pair_exclude["args"][1]).name == "gen_dpa1_pairexcl.py"
     assert pair_exclude["dpa1_ready"]
+    spin_reuse = next(c for c in commands if "--reuse-model-devi" in c["args"])
+    assert spin_reuse["dpa3_ready"] and spin_reuse["model0_ready"]
+    dpa3 = next(c for c in commands if "--dpa3-only" in c["args"])
+    model_devi = next(
+        c for c in commands if "gen_spin_model_devi.py" in generated_models([c])
+    )
+    assert commands.index(dpa3) < commands.index(spin_reuse)
+    assert commands.index(model_devi) < commands.index(spin_reuse)
     assert all("--compressed-only" not in c["args"] for c in commands)
     assert not stale.exists()
     assert (
@@ -308,6 +338,25 @@ def test_kokkos_models_propagate_generator_failure(build_tree):
     assert {row["exit_status"] for row in reports.values()} == {"17"}
 
 
+@pytest.mark.parametrize(
+    "failure,report",
+    [
+        ("--dpa3-only", "gen_spin_dpa3"),
+        ("gen_spin_model_devi.py", "gen_spin_model_devi"),
+        ("--reuse-model-devi", "gen_spin_reuse"),
+    ],
+)
+def test_spin_reuse_propagates_each_phase_failure(build_tree, failure, report):
+    root, _, _ = build_tree
+    result, commands = run_script(build_tree, MOCK_FAIL=failure)
+    assert result.returncode == 17
+    assert all(c["name"] != "ctest" for c in commands)
+    reports = {path.stem: row for path, row in generator_reports(root).items()}
+    assert reports[report]["exit_status"] == "17"
+    if failure != "--reuse-model-devi":
+        assert all("--reuse-model-devi" not in c["args"] for c in commands)
+
+
 def test_each_invocation_keeps_separate_generator_and_ctest_reports(build_tree):
     root, _, _ = build_tree
     first, commands = run_script(build_tree)
@@ -320,7 +369,7 @@ def test_each_invocation_keeps_separate_generator_and_ctest_reports(build_tree):
     assert first_junit != second_junit
     assert first_junit.is_file()
     reports = generator_reports(root)
-    assert len(reports) == 2 * len(MODELS)
+    assert len(reports) == 2 * len(REPORTS)
     assert len({path.parent for path in reports}) == 2
     assert {path: reports[path] for path in first_reports} == first_reports
 
