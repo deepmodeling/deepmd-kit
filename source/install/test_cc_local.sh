@@ -141,7 +141,10 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	# Remove stale generated model files so they can't be accidentally reused
 	# if gen scripts change format or the code version changes.
 	rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte
-	# Run gen scripts in parallel for faster model generation.
+	# Refill the first three generator slots instead of leaving two idle
+	# behind the long DPA2 export. DPA3 and DPA4 have no input dependency
+	# on these generators and write distinct fixtures. Keep at most three
+	# processes in this phase; do not add both on top of the initial batch.
 	# Wait on each PID separately so any failure is caught by set -e.
 	run_generator ${INFER_SCRIPT_PATH}/gen_sea.py &
 	PID1=$!
@@ -150,26 +153,27 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	run_generator ${INFER_SCRIPT_PATH}/gen_dpa2.py &
 	PID3=$!
 	wait $PID1
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4.py &
+	PID9=$!
 	wait $PID2
-	wait $PID3
-
 	run_generator ${INFER_SCRIPT_PATH}/gen_dpa3.py &
 	PID4=$!
+	wait $PID3
+	wait $PID9
+	wait $PID4
+
 	run_generator ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py &
 	PID5=$!
 	run_generator ${INFER_SCRIPT_PATH}/gen_model_devi.py &
 	PID6=$!
 	run_generator ${INFER_SCRIPT_PATH}/gen_chg_spin.py &
 	PID9=$!
-	wait $PID4
-	wait $PID5
-	wait $PID6
-	wait $PID9
-
-	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4.py &
-	PID9=$!
+	# DPA1 completed above; its archive-reuse consumer needs no other
+	# producer. Fill the fourth slot freed by moving DPA3 into the first phase.
 	run_generator ${INFER_SCRIPT_PATH}/gen_dpa1_pairexcl.py --reuse-dpa1 &
 	PID10=$!
+	wait $PID5
+	wait $PID6
 	wait $PID9
 	wait $PID10
 

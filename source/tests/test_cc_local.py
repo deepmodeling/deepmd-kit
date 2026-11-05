@@ -82,6 +82,20 @@ dpa1_ready = Path(os.environ["MOCK_DPA1_READY"])
 dpa3_ready = Path(os.environ["MOCK_SPIN_DPA3_READY"])
 dpa3_mpi_ready = Path(os.environ["MOCK_SPIN_DPA3_MPI_READY"])
 model0_ready = Path(os.environ["MOCK_MODEL0_READY"])
+schedule_dir = Path(os.environ["MOCK_SCHEDULE_DIR"])
+
+def schedule_event(event, model):
+    with open(os.environ["MOCK_SCHEDULE_LOG"], "a") as stream:
+        stream.write(json.dumps({{"event": event, "model": model}}) + "\\n")
+    (schedule_dir / (model + "." + event)).touch()
+
+def wait_for_event(event, model):
+    deadline = time.monotonic() + 10
+    while not (schedule_dir / (model + "." + event)).exists():
+        if time.monotonic() > deadline:
+            raise RuntimeError("Generator pipeline did not release " + model + "." + event)
+        time.sleep(0.01)
+
 record = {{
     "name": name,
     "args": args,
@@ -98,6 +112,21 @@ if os.environ.get("MOCK_FAIL") and any(os.environ["MOCK_FAIL"] == Path(a).name f
 if name == "python" and args[0] == "-c":
     sys.exit(subprocess.call([sys.executable, "-S", *args]))
 if name == "python" and args[0] == "-u":
+    model = Path(args[1]).name
+    schedule_event("start", model)
+    if os.environ.get("MOCK_CHECK_SCHEDULE"):
+        # Hold DPA2 open until both replacement jobs complete. This proves
+        # actual overlap without relying on timing or machine speed.
+        if model == "gen_sea.py":
+            wait_for_event("start", "gen_dpa1.py")
+            wait_for_event("start", "gen_dpa2.py")
+        elif model == "gen_dpa1.py":
+            wait_for_event("start", "gen_dpa4.py")
+        elif model == "gen_dpa2.py":
+            wait_for_event("end", "gen_dpa4.py")
+            wait_for_event("end", "gen_dpa3.py")
+        elif model == "gen_dpa4.py":
+            wait_for_event("start", "gen_dpa3.py")
     if Path(args[1]).name == "gen_dpa1.py":
         # Make a missing wait on this producer visible to the reuse consumer.
         time.sleep(0.05)
@@ -113,6 +142,7 @@ if name == "python" and args[0] == "-u":
         model0_ready.touch()
     if "--reuse-model-devi" in args and not (dpa3_ready.exists() and dpa3_mpi_ready.exists() and model0_ready.exists()):
         sys.exit(23)
+    schedule_event("end", model)
 if name == "ctest":
     Path(args[args.index("--output-junit") + 1]).write_text("<testsuites/>")
 """
@@ -139,7 +169,11 @@ if name == "ctest":
         "MOCK_MODEL0_READY": str(infer / "deeppot_dpa_spin_md0.pt2"),
         "MOCK_SHARED_LIB_DIR": str(tmp_path / "installed_ops"),
         "MOCK_FAIL": "",
+        "MOCK_SCHEDULE_DIR": str(tmp_path / "schedule"),
+        "MOCK_SCHEDULE_LOG": str(tmp_path / "schedule.jsonl"),
+        "MOCK_CHECK_SCHEDULE": "",
     }
+    Path(env["MOCK_SCHEDULE_DIR"]).mkdir()
     return root, script, env
 
 
@@ -239,6 +273,55 @@ def test_default_still_builds_all_models_and_runs_ctest(build_tree):
     ).read_text() == "custom op from this build"
 
 
+@pytest.mark.parametrize("variant", ["cpu", "cuda"])
+def test_long_generators_refill_completed_slots_before_dpa2_finishes(
+    build_tree, variant
+):
+    root, _, env = build_tree
+    result, commands = run_script(
+        build_tree, DP_VARIANT=variant, MOCK_CHECK_SCHEDULE="1"
+    )
+    assert result.returncode == 0, result.stderr
+    events = [
+        json.loads(line)
+        for line in Path(env["MOCK_SCHEDULE_LOG"]).read_text().splitlines()
+    ]
+
+    def position(event, model):
+        return events.index({"event": event, "model": model})
+
+    assert position("end", "gen_sea.py") < position("start", "gen_dpa4.py")
+    assert position("end", "gen_dpa1.py") < position("start", "gen_dpa3.py")
+    for model in ("gen_dpa3.py", "gen_dpa4.py"):
+        assert position("end", model) < position("end", "gen_dpa2.py")
+    first_phase = {
+        "gen_sea.py",
+        "gen_dpa1.py",
+        "gen_dpa2.py",
+        "gen_dpa3.py",
+        "gen_dpa4.py",
+    }
+    active = set()
+    peak = 0
+    for entry in events:
+        if entry["model"] not in first_phase:
+            continue
+        if entry["event"] == "start":
+            active.add(entry["model"])
+        else:
+            active.remove(entry["model"])
+        peak = max(peak, len(active))
+    assert not active
+    assert peak == 3
+    for model in ("gen_fparam_aparam.py", "gen_model_devi.py", "gen_chg_spin.py"):
+        assert position("end", "gen_dpa2.py") < position("start", model)
+    assert position("end", "gen_dpa1.py") < position("start", "gen_dpa1_pairexcl.py")
+    assert position("end", "gen_dpa1_pairexcl.py") < position("start", "gen_spin.py")
+    for model in first_phase:
+        assert generated_models(commands).count(model) == 1
+    check_ctest_report(root, commands[-1])
+
+
 @pytest.mark.parametrize("pytorch", ["TRUE", "FALSE"])
 def test_build_only_installs_without_generating_models_or_running_ctest(
     build_tree, pytorch
@@ -311,7 +394,16 @@ def test_kokkos_models_require_the_existing_build(build_tree, missing):
 
 
 @pytest.mark.parametrize(
-    "model", ["gen_sea.py", "gen_dpa1.py", "gen_dpa4c_long_range.py"]
+    "model",
+    [
+        "gen_sea.py",
+        "gen_dpa1.py",
+        "gen_dpa2.py",
+        "gen_dpa3.py",
+        "gen_dpa4.py",
+        "gen_dpa1_pairexcl.py",
+        "gen_dpa4c_long_range.py",
+    ],
 )
 def test_default_propagates_generator_failures(build_tree, model):
     root, _, _ = build_tree
@@ -325,6 +417,9 @@ def test_default_propagates_generator_failures(build_tree, model):
     assert failed[0]["exit_status"] == "17"
     if model == "gen_dpa1.py":
         assert all("--reuse-dpa1" not in c["args"] for c in commands)
+    if model in {"gen_dpa2.py", "gen_dpa3.py", "gen_dpa4.py"}:
+        assert "gen_fparam_aparam.py" not in generated_models(commands)
+        assert "gen_corrupt_with_comm.py" not in generated_models(commands)
 
 
 def test_kokkos_models_propagate_generator_failure(build_tree):

@@ -7,6 +7,7 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.dpmodel.model import EnergyModel as EnergyModelDP
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
 )
@@ -135,26 +136,32 @@ class HessianTest:
         np.testing.assert_allclose(ret_dict0["energy"], ret_dict1["energy"])
         ana_hess = ret_dict0["hessian"]
 
+        # Reuse the JAX atomic model with the value-only DP-model wrapper.
+        # Numerical energy differences do not need forces or virials, and the
+        # JAX model would differentiate the energy at every stencil point.
+        model_energy = EnergyModelDP(atomic_model_=self.model_valu.atomic_model)
+        np.testing.assert_allclose(
+            model_energy(coord, atype, box=cell, fparam=fparam, aparam=aparam)[
+                "energy"
+            ],
+            ret_dict1["energy"],
+        )
+
         # compute finite difference
         fnt_hess = []
         for ii in range(nf):
 
-            def np_infer(
+            def ff(
                 xx,
             ):
-                ret = self.model_valu(
+                ret = model_energy(
                     to_jax_array(xx)[None, ...],
                     atype[ii][None, ...],
                     box=cell[ii][None, ...],
                     fparam=fparam[ii][None, ...],
                     aparam=aparam[ii][None, ...],
                 )
-                # detach
-                ret = {kk: to_numpy_array(ret[kk]) for kk in ret}
-                return ret
-
-            def ff(xx):
-                return np_infer(xx)["energy"]
+                return to_numpy_array(ret["energy"])
 
             xx = to_numpy_array(coord[ii])
             fnt_hess.append(finite_hessian(ff, xx, delta=delta).squeeze())
