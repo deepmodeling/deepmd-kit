@@ -447,6 +447,7 @@ class GridBranch(nn.Module):
         | None = None,
         scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         | None = None,
+        grid_major: bool = False,
     ) -> torch.Tensor:
         """
         Apply scalar-routed grid branch mixing on coefficient operands.
@@ -510,26 +511,17 @@ class GridBranch(nn.Module):
             )
             value = left_grid * right_grid  # (N|G, G|N, F, N_branches * C)
             router = torch.softmax(self.router(scalar_pair), dim=-1)  # (N, F, Nb)
-            # The operand layout is decided by the projector pair actually
-            # supplied, not by the environment alone: the owning grid net
-            # passes its own bound ``_to_grid``/``_from_grid`` methods,
-            # which emit grid-major (G, N, F, ...) operands under the flag,
-            # while any other projector keeps the documented node-major
-            # (N, G, F, ...) layout this branch must not reinterpret.
-            # Identity of the bound-method pair decides unambiguously even
-            # when grid size and node count coincide.
-            owner = getattr(to_grid, "__self__", None)
-            # Bound methods compare by (instance, function), not identity:
-            # each attribute access builds a fresh object.
-            own_pair = (
-                owner is not None
-                and getattr(owner, "_to_grid", None) == to_grid
-                and (
-                    getattr(owner, "_from_grid", None) == from_grid
-                    or getattr(owner, "_from_grid_scalar", None) == from_grid
-                )
-            )
-            if use_grid_layout_infer() and own_pair:
+            # The operand layout is an explicit argument, not an
+            # environment-plus-identity inference: the owning grid net
+            # passes ``grid_major`` to match its own flag-aware projectors
+            # (which emit grid-major (G, N, F, ...) operands under the
+            # flag), while any other caller keeps the documented
+            # node-major (N, G, F, ...) layout.  Sniffing the projector
+            # identity is not Dynamo-safe: bound-method attributes resolve
+            # through Dynamo's hasattr path and silently read as absent,
+            # so an identity check always evaluates False under
+            # torch.compile while the projectors still emit grid-major.
+            if use_grid_layout_infer() and grid_major:
                 # Grid-major operands from the projector (G, N, F, Nb * C):
                 # the broadcast weight aligns on the node axis and the whole
                 # combination stays grid-major for the from-grid projection.
@@ -907,6 +899,7 @@ class BaseGridNet(nn.Module):
             from_grid=self._from_grid_scalar if scalar_only else self._from_grid,
             pair_grid=None if scalar_only else self._pair_grid,
             scalar_product=self._scalar_so3_product if direct_scalar else None,
+            grid_major=use_grid_layout_infer(),
         )
 
         # === Step 3. Apply scalar gating and contract Wigner-D frames ===

@@ -1209,3 +1209,53 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSeZMGridLayoutExport(_ClearDefaultDeviceTestCase):
+    """Export coverage for the routed grid branches with the flag baked on.
+
+    ``grid_branch > 0`` constructs the routed ``GridBranch`` this PR
+    optimizes; the tiny export fixtures default it off, so the switch is
+    inert there.  This class traces and ``torch.export``-exports a
+    routing-enabled model under ``DP_GRID_LAYOUT_INFER=1`` and replays
+    the exported module: the baked flag-on graph must agree with the
+    flag-off trace (values are mathematically identical) and with its
+    own traced module.
+    """
+
+    def test_export_replays_with_grid_branch_and_flag_on(self) -> None:
+        import copy
+        import os
+        from unittest import (
+            mock,
+        )
+
+        params = copy.deepcopy(_tiny_sezm_model_params())
+        params["descriptor"]["grid_branch"] = 1
+        model = get_model(params).to(_CPU).eval()
+        sample_inputs = _make_sample(model, nloc=7, start=2)
+
+        with mock.patch.dict(os.environ, {"DP_GRID_LAYOUT_INFER": "1"}, clear=False):
+            traced_on = model.forward_common_lower_exportable(*sample_inputs)
+        exported = torch.export.export(
+            traced_on,
+            sample_inputs,
+            dynamic_shapes=_build_dynamic_shapes(sample_inputs),
+            strict=False,
+            prefer_deferred_runtime_asserts_over_guards=True,
+        )
+        replay_on = exported.module()(*sample_inputs)
+
+        with mock.patch.dict(os.environ, {"DP_GRID_LAYOUT_INFER": "0"}, clear=False):
+            traced_off = model.forward_common_lower_exportable(*sample_inputs)
+        replay_off = traced_off(*sample_inputs)
+
+        self.assertEqual(replay_on.keys(), replay_off.keys())
+        for key in replay_on:
+            torch.testing.assert_close(
+                replay_on[key],
+                replay_off[key],
+                atol=1e-10,
+                rtol=1e-10,
+                msg=key,
+            )
