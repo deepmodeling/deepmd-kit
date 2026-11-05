@@ -5314,18 +5314,30 @@ class _TritonSO2ValuePath:
             # The plain checkpoint-to-eval flow never runs the prepare hook
             # (only the pt2/freeze serialization does), so fall back to
             # packing from the live weights here, mirroring how
-            # ``_pack_weights`` falls back to ``_assemble_weights``.  Under
-            # compilation the fold runs once at trace time and the effective
-            # weight becomes a graph constant.
+            # ``_pack_weights`` falls back to ``_assemble_weights``.  The
+            # result is cached under the same attributes the hook uses, so
+            # a hook-less flow packs once instead of on every call; under
+            # compilation the fold runs once at trace time and the
+            # effective weight becomes a graph constant.
             packed = self._pack_radial_weights()
             if packed is None:
                 return None
             weff, wh = packed
+            self._conv._triton_radial_weff = weff
+            self._conv._triton_radial_wh = wh
+        # The device resolves through the trace-time pin when one is set:
+        # export flows trace on CPU, and the runtime check would otherwise
+        # resolve a CUDA-target artifact to the unpacked head.  The folded
+        # head's inputs no longer require full contiguity -- a pyramid
+        # schedule hands each block a truncated slice of the shared radial
+        # surface, and ``flatten(1)`` copies such views correctly.
+        forced = getattr(self._conv, "_force_radial_packed", None)
+        target_is_cuda = forced if forced is not None else radial_feat.is_cuda
         if (
             radial_feat.dtype is not torch.float32
-            or not radial_feat.is_cuda
-            or not radial_feat.is_contiguous()
+            or not target_is_cuda
             or radial_feat.ndim != 3
+            or radial_feat.stride(-1) != 1
             or radial_feat.shape[-1] != wh.shape[0]
             or radial_feat.shape[1] * wh.shape[0] != weff.shape[0]
         ):

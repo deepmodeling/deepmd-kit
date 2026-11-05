@@ -2098,6 +2098,102 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         return conv, fused, x, cache, radial
 
     @_GPU_KERNELS
+    def test_lazy_packing_is_cached(self):
+        """A hook-less flow packs once and caches under the hook's names."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *self.CASE)
+        fused = make_triton_value_path(conv)
+        self.assertIsNotNone(fused)
+        # No prepare_inference_weights: the lazy path must engage, pack
+        # exactly once across two calls, and leave the cached attributes.
+        x, cache, radial = value_path_cls._edge_inputs(
+            self, conv, self.CASE[0], self.CASE[1]
+        )
+
+        calls = []
+        real = fused._pack_radial_weights
+
+        def _spy():
+            calls.append(1)
+            return real()
+
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            with mock.patch.object(fused, "_pack_radial_weights", _spy):
+                fused(x, cache, radial)
+                fused(x, cache, radial)
+        self.assertEqual(len(calls), 1, "the lazy pack must be cached")
+        self.assertIsNotNone(getattr(conv, "_triton_radial_weff", None))
+        self.assertIsNotNone(getattr(conv, "_triton_radial_wh", None))
+
+    @_GPU_KERNELS
+    def test_truncated_radial_slice_folds(self):
+        """A pyramid schedule's per-block slice still takes the folded head.
+
+        The shared radial surface is truncated per block (``rad[:, :l+1, :]``
+        views); the fold must not demand full contiguity -- ``flatten(1)``
+        copies the strided view and the contraction stays correct.
+        """
+        conv, fused, x, cache, radial = self._build(self.CASE)
+        sliced = radial[:, : conv.lmax, :]  # one degree short: a real view
+        self.assertFalse(sliced.is_contiguous())
+        # Simulate the per-block packed weights of a pyramid schedule: the
+        # slice keeps the low-degree row blocks of the packed weight.
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            weff = conv._triton_radial_weff
+            # Row blocks are stacked by degree; drop the highest one.
+            rows = sliced.shape[1] * weff.shape[0] // (conv.lmax + 1)
+            weff_sliced = weff[:rows]
+            conv._triton_radial_weff = weff_sliced
+            try:
+                packed = fused._radial_packed_weights(sliced)
+            finally:
+                conv._triton_radial_weff = weff
+        self.assertIsNotNone(packed, "a truncated view must still fold")
+        weff_used, wh = packed
+        kc = torch.matmul(sliced.flatten(1), weff_used)
+        kc_ref = torch.matmul(
+            radial[:, : conv.lmax, :].contiguous().flatten(1), weff_sliced
+        )
+        torch.testing.assert_close(kc, kc_ref, atol=0.0, rtol=0.0)
+        _ = wh
+
+    @_GPU_KERNELS
+    def test_export_pin_selects_the_fold_on_cpu_tensors(self):
+        """Freeze traces on CPU; the pin keeps the folded head selected."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *self.CASE)
+        fused = make_triton_value_path(conv)
+        fused.prepare_inference_weights()
+        x, cache, radial = value_path_cls._edge_inputs(
+            self, conv, self.CASE[0], self.CASE[1]
+        )
+        cpu_radial = radial.cpu()
+        x = x.cpu()
+        for name in ("src",):
+            setattr(cache, name, getattr(cache, name).cpu())
+        # The guard reads only the conv and the radial operand, so drive it
+        # directly instead of moving the whole cache to CPU.
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            self.assertIsNone(
+                fused._radial_packed_weights(cpu_radial),
+                "CPU tensors without the pin keep the unpacked head",
+            )
+            conv._force_radial_packed = True
+            try:
+                pinned = fused._radial_packed_weights(cpu_radial)
+            finally:
+                conv._force_radial_packed = None
+        self.assertIsNotNone(pinned, "the pin must select the fold for exports")
+
+    @_GPU_KERNELS
     def test_forward_and_backward_match_unpacked(self):
         conv, fused, x, cache, radial = self._build(self.CASE)
 
