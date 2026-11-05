@@ -779,20 +779,17 @@ def _export_with_comm_artifact(
     )
     from torch._inductor import config as inductor_config
 
-    from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-        assemble_op_suppressed_for_export,
-    )
-
     sample_inputs = _make_comm_sample_inputs(model, nloc=7, device=torch.device("cpu"))
-    with assemble_op_suppressed_for_export():
-        traced = model.forward_common_lower_exportable_with_comm(*sample_inputs)
-        exported = torch.export.export(
-            traced,
-            sample_inputs,
-            dynamic_shapes=_build_with_comm_dynamic_shapes(sample_inputs),
-            strict=False,
-            prefer_deferred_runtime_asserts_over_guards=True,
-        )
+    # The Wigner-assembly suppression lives in the public export seam
+    # (``trace_lower_exportable``), so every caller inherits it.
+    traced = model.forward_common_lower_exportable_with_comm(*sample_inputs)
+    exported = torch.export.export(
+        traced,
+        sample_inputs,
+        dynamic_shapes=_build_with_comm_dynamic_shapes(sample_inputs),
+        strict=False,
+        prefer_deferred_runtime_asserts_over_guards=True,
+    )
     _strip_shape_assertions(exported.graph_module)
     if target_device.type != "cpu":
         from torch.export.passes import (
@@ -1013,27 +1010,24 @@ def _freeze_sezm_to_pt2(
     # sezm_nn::wigner_d_assemble there), so the export trace keeps the eager
     # scatter the operator wraps.  The in-process inference path is
     # unaffected.
-    from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-        assemble_op_suppressed_for_export,
-    )
-
     log.info("Tracing the lower graph on CPU (make_fx)...")
-    with assemble_op_suppressed_for_export():
-        traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
+    # The Wigner-assembly suppression lives in the public export seam
+    # (``trace_lower_exportable``), so every caller inherits it.
+    traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
 
-        # Output key order is read from the static FX output node. A
-        # CUDA-target trace may already contain CUDA-only custom operators
-        # and therefore must not be replayed on the CPU tracing inputs.
-        output_keys = traced_output_keys(traced)
+    # Output key order is read from the static FX output node. A CUDA-target
+    # trace may already contain CUDA-only custom operators and therefore must
+    # not be replayed on the CPU tracing inputs.
+    output_keys = traced_output_keys(traced)
 
-        log.info("Exporting the traced graph (torch.export)...")
-        exported = torch.export.export(
-            traced,
-            sample_inputs_cpu,
-            dynamic_shapes=_build_dynamic_shapes(sample_inputs_cpu),
-            strict=False,
-            prefer_deferred_runtime_asserts_over_guards=True,
-        )
+    log.info("Exporting the traced graph (torch.export)...")
+    exported = torch.export.export(
+        traced,
+        sample_inputs_cpu,
+        dynamic_shapes=_build_dynamic_shapes(sample_inputs_cpu),
+        strict=False,
+        prefer_deferred_runtime_asserts_over_guards=True,
+    )
     _strip_shape_assertions(exported.graph_module)
 
     # move_to_device_pass handles FakeTensor device propagation cleanly;

@@ -2373,6 +2373,16 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             mode = sys.argv[1]
             tree = pathlib.Path(sys.argv[2])
             expected_registered = sys.argv[3] == "1"
+            # Warm the package while the editable finder is still alive: a
+            # scikit-build editable install serves ``deepmd.lib`` (the C
+            # extension) through that finder and the source tree has no
+            # ``deepmd/lib`` -- importing first keeps the module resident
+            # while the tree takes over the pure-Python resolution below.
+            import torch
+            import torch.distributed._functional_collectives  # noqa: F401
+
+            import deepmd  # noqa: F401  (warms deepmd.lib, see below)
+
             sys.meta_path = [
                 f
                 for f in sys.meta_path
@@ -2381,10 +2391,16 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                 and "editable" not in getattr(f, "__name__", "").lower()
             ]
             sys.path.insert(0, str(tree))
+            # The warm import cached the installed tree of packages; drop
+            # every deepmd module except the C extension (location
+            # independent once loaded) so the tree path takes over the
+            # pure-Python resolution below.
+            for _name in [
+                k for k in list(sys.modules) if k.startswith("deepmd")
+            ]:
+                if _name != "deepmd.lib":
+                    del sys.modules[_name]
             import importlib
-
-            import torch
-            import torch.distributed._functional_collectives  # noqa: F401
 
             import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
 
