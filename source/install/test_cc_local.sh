@@ -93,6 +93,22 @@ if [ "$MODE" = "--build-only" ]; then
 	exit 0
 fi
 if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
+	# Keep one timing record per generator, including successful runs. Each
+	# invocation owns its directory and each parallel script owns its file.
+	mkdir -p "${BUILD_TMP_DIR}/generator-reports"
+	GENERATOR_REPORT_DIR=$(mktemp -d "${BUILD_TMP_DIR}/generator-reports/run.XXXXXX")
+	run_generator() {
+		local start=$SECONDS status=0
+		local name=$(basename "${1%.py}")
+		if env ${_GEN_ENV} python -u "$@"; then
+			status=0
+		else
+			status=$?
+		fi
+		printf 'generator\tseconds\texit_status\n%s\t%s\t%s\n' \
+			"$name" "$((SECONDS - start))" "$status" >"${GENERATOR_REPORT_DIR}/${name}.tsv"
+		return "$status"
+	}
 	# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
 	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
 	# in the gen scripts to avoid false reports from torch/paddle internals.
@@ -115,7 +131,7 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 		rm -f ${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.pt2 \
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.pte \
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.expected
-		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py
+		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py --compressed-only
 		exit 0
 	fi
 	# Remove stale generated model files so they can't be accidentally reused
@@ -123,39 +139,39 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte
 	# Run gen scripts in parallel for faster model generation.
 	# Wait on each PID separately so any failure is caught by set -e.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_sea.py &
 	PID1=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa1.py &
 	PID2=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa2.py &
 	PID3=$!
 	wait $PID1
 	wait $PID2
 	wait $PID3
 
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa3.py &
 	PID4=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py &
 	PID5=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_model_devi.py &
 	PID6=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_chg_spin.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_chg_spin.py &
 	PID9=$!
 	wait $PID4
 	wait $PID5
 	wait $PID6
 	wait $PID9
 
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4.py &
 	PID9=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1_pairexcl.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa1_pairexcl.py --reuse-dpa1 &
 	PID10=$!
 	wait $PID9
 	wait $PID10
 
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_spin.py &
 	PID7=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &
 	PID8=$!
 	wait $PID7
 	wait $PID8
@@ -163,32 +179,32 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	# whose nested with-comm artifact is corrupt; without them the load-failure
 	# cases of the pt_expt backends (test_with_comm_load_failure_ptexpt.cc)
 	# skip.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_corrupt_with_comm.py
+	run_generator ${INFER_SCRIPT_PATH}/gen_corrupt_with_comm.py
 
 	# Native-spin DPA4 graph archives (baseline + model-level pair
 	# exclusion). Without this the whole native-spin graph C++ suite
 	# GTEST_SKIPs on the missing fixture, which is how a dead
 	# applyPairExclusion seam in DeepSpinPTExpt went unnoticed.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4_spin.py &
 	PID11=$!
 	# DPA4 + analytical ZBL bridging: a linear COMPOSITION on the graph
 	# lower, which no other C++ fixture covers.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_zbl.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4_zbl.py &
 	PID12=$!
 	# Native-spin DPA4 + charge-spin FiLM: the ONLY fixture with both
 	# is_spin=true and dim_chg_spin>0, i.e. the only one on which the
 	# runtime charge_spin argument of DeepSpin::compute is not inert.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_chgspin.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4_spin_chgspin.py &
 	PID13=$!
 	# Native-spin DPA4 + ZBL bridging COMBINED: spin reaching a linear
-	# composition, and the only fixture pinning that a bridged model
-	# exports NO with-comm artifact (single-rank only by construction).
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
+	# composition, including the source-freeze gate's cross-rank exchange
+	# through the nested with-comm artifact.
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
 	PID14=$!
 	# Minimal native-spin DPA4C for LAMMPS pair_style dpa4spin (no
 	# fparam/aparam/chg_spin). CPU-safe; used by the magnetic-force
 	# convention behavioral tests.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin_lmp.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_spin_lmp.py &
 	PID14B=$!
 	# Native-spin DPA4C: the archives above all ship a with-comm artifact
 	# and are therefore served by DeepSpinPTExpt, which leaves
@@ -198,20 +214,20 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	# fixture is generated only where the C++ suite has a GPU; the tests
 	# built on it skip when it is absent.
 	if [ "${DP_VARIANT}" = "cuda" ]; then
-		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
+		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
 		PID15=$!
 		# Compressed DPA4C, an energy and a native-spin model, on the compact
 		# canonical lower: the only fixtures that reach the device-resident
 		# entry points LAMMPS + Kokkos calls, with the replay of repeated
 		# evaluations and a runtime charge state.
-		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_canonical.py &
+		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_canonical.py &
 		PID16=$!
 	fi
 	# DPA4C with a latent-charge long-range module: the uncompressed archive
 	# takes the all-pairs topology of the graph lower; for the CUDA variant the
 	# script also writes the compressed archive, whose compact canonical lower
 	# reads the node positions.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py &
+	run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py &
 	PID17=$!
 	wait $PID11
 	wait $PID12
@@ -228,4 +244,10 @@ if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
 	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib:${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib
 fi
-ctest --output-on-failure
+# CTest otherwise hides every successful gtest's per-case time. Passing a
+# directory makes GoogleTest use each executable's name (lib, cc, c), so even
+# a parallel CTest run cannot overwrite another executable's JSON report.
+mkdir -p "${BUILD_TMP_DIR}/gtest-reports"
+GTEST_REPORT_DIR=$(mktemp -d "${BUILD_TMP_DIR}/gtest-reports/run.XXXXXX")
+export GTEST_OUTPUT=${GTEST_OUTPUT:-json:${GTEST_REPORT_DIR}/}
+ctest --output-on-failure --output-junit "${GTEST_REPORT_DIR}/ctest.xml"

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Exercise the C++ CI entry point without compiling backend libraries."""
 
+import csv
 import json
 import os
 import shutil
@@ -69,16 +70,33 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 name = Path(sys.argv[0]).name
 args = sys.argv[1:]
-record = {{"name": name, "args": args, "ld": os.environ.get("LD_LIBRARY_PATH", "")}}
+dpa1_ready = Path(os.environ["MOCK_DPA1_READY"])
+record = {{
+    "name": name,
+    "args": args,
+    "ld": os.environ.get("LD_LIBRARY_PATH", ""),
+    "gtest_output": os.environ.get("GTEST_OUTPUT", ""),
+    "dpa1_ready": dpa1_ready.exists(),
+}}
 with open(os.environ["MOCK_LOG"], "a") as stream:
     stream.write(json.dumps(record) + "\\n")
 if os.environ.get("MOCK_FAIL") and any(os.environ["MOCK_FAIL"] == Path(a).name for a in [name, *args]):
     sys.exit(17)
 if name == "python" and args[0] == "-c":
     sys.exit(subprocess.call([sys.executable, "-S", *args]))
+if name == "python" and args[0] == "-u":
+    if Path(args[1]).name == "gen_dpa1.py":
+        # Make a missing wait on this producer visible to the reuse consumer.
+        time.sleep(0.05)
+        dpa1_ready.touch()
+    if "--reuse-dpa1" in args and not dpa1_ready.exists():
+        sys.exit(23)
+if name == "ctest":
+    Path(args[args.index("--output-junit") + 1]).write_text("<testsuites/>")
 """
     for name in ("cmake", "python", "ctest"):
         executable = bin_dir / name
@@ -95,7 +113,9 @@ if name == "python" and args[0] == "-c":
         "LD_LIBRARY_PATH": "/existing/lib",
         # Do not inherit sanitizer flags from the caller.
         "CXXFLAGS": "",
+        "GTEST_OUTPUT": "",
         "MOCK_LOG": str(tmp_path / "commands.jsonl"),
+        "MOCK_DPA1_READY": str(infer / "deeppot_dpa1_graph.pt2"),
         "MOCK_SHARED_LIB_DIR": str(tmp_path / "installed_ops"),
         "MOCK_FAIL": "",
     }
@@ -123,10 +143,43 @@ def run_script(build_tree, *args, **overrides):
 
 def generated_models(commands):
     return [
-        Path(c["args"][0]).name
+        Path(c["args"][1]).name
         for c in commands
-        if c["name"] == "python" and c["args"][0] != "-c"
+        if c["name"] == "python" and c["args"][0] == "-u"
     ]
+
+
+def generator_reports(root):
+    reports = {}
+    for path in (root / "source/build_tests/generator-reports").glob("run.*/*.tsv"):
+        with path.open() as stream:
+            rows = list(csv.DictReader(stream, delimiter="\t"))
+        assert len(rows) == 1
+        row = rows[0]
+        assert set(row) == {"generator", "seconds", "exit_status"}
+        assert row["generator"] == path.stem
+        assert int(row["seconds"]) >= 0
+        reports[path] = row
+    return reports
+
+
+def check_ctest_report(root, command, gtest_output=None):
+    assert command["name"] == "ctest"
+    assert command["args"][:2] == ["--output-on-failure", "--output-junit"]
+    assert len(command["args"]) == 3
+    junit = Path(command["args"][2]).resolve()
+    assert junit.name == "ctest.xml"
+    assert junit.parent.parent == root / "source/build_tests/gtest-reports"
+    assert junit.parent.name.startswith("run.")
+    assert junit.is_file()
+    if gtest_output is None:
+        kind, path = command["gtest_output"].split(":", 1)
+        assert kind == "json"
+        assert path.endswith("/")
+        assert Path(path).resolve() == junit.parent
+    else:
+        assert command["gtest_output"] == gtest_output
+    return junit
 
 
 def test_default_still_builds_all_models_and_runs_ctest(build_tree):
@@ -139,10 +192,17 @@ def test_default_still_builds_all_models_and_runs_ctest(build_tree):
     assert [c["name"] for c in commands[:4]] == ["cmake", "cmake", "cmake", "python"]
     assert commands[1]["args"][:2] == ["--build", "."]
     assert commands[2]["args"] == ["--install", "."]
-    assert commands[-1]["name"] == "ctest"
-    assert commands[-1]["args"] == ["--output-on-failure"]
+    check_ctest_report(root, commands[-1])
     assert set(generated_models(commands)) == MODELS
     assert len(generated_models(commands)) == len(MODELS)
+    reports = generator_reports(root)
+    assert {path.stem + ".py" for path in reports} == MODELS
+    assert len(reports) == len(MODELS)
+    assert {row["exit_status"] for row in reports.values()} == {"0"}
+    pair_exclude = next(c for c in commands if "--reuse-dpa1" in c["args"])
+    assert Path(pair_exclude["args"][1]).name == "gen_dpa1_pairexcl.py"
+    assert pair_exclude["dpa1_ready"]
+    assert all("--compressed-only" not in c["args"] for c in commands)
     assert not stale.exists()
     assert (
         Path(env["MOCK_SHARED_LIB_DIR"]) / "libdeepmd_op_pt.so"
@@ -162,6 +222,8 @@ def test_build_only_installs_without_generating_models_or_running_ctest(
     assert not generated_models(commands)
     assert all(c["name"] != "ctest" for c in commands)
     assert stale.exists()
+    assert not (root / "source/build_tests/generator-reports").exists()
+    assert not (root / "source/build_tests/gtest-reports").exists()
     assert (Path(env["MOCK_SHARED_LIB_DIR"]) / "libdeepmd_op_pt.so").exists() == (
         pytorch == "TRUE"
     )
@@ -183,6 +245,13 @@ def test_kokkos_models_reuse_build_and_preserve_other_fixtures(build_tree):
     assert [c["name"] for c in commands] == ["python", "python"]
     assert commands[0]["args"][0] == "-c"
     assert generated_models(commands) == ["gen_dpa4c_long_range.py"]
+    assert commands[1]["args"][0] == "-u"
+    assert commands[1]["args"][2:] == ["--compressed-only"]
+    reports = generator_reports(root)
+    assert len(reports) == 1
+    assert {path.stem for path in reports} == {"gen_dpa4c_long_range"}
+    assert {row["exit_status"] for row in reports.values()} == {"0"}
+    assert not (root / "source/build_tests/gtest-reports").exists()
     assert (
         Path(commands[1]["ld"].split(os.pathsep)[0]).resolve() == root / "dp_test/lib"
     )
@@ -211,18 +280,62 @@ def test_kokkos_models_require_the_existing_build(build_tree, missing):
     assert not commands
 
 
-@pytest.mark.parametrize("model", ["gen_sea.py", "gen_dpa4c_long_range.py"])
+@pytest.mark.parametrize(
+    "model", ["gen_sea.py", "gen_dpa1.py", "gen_dpa4c_long_range.py"]
+)
 def test_default_propagates_generator_failures(build_tree, model):
+    root, _, _ = build_tree
     result, commands = run_script(build_tree, MOCK_FAIL=model)
-    assert result.returncode != 0
+    assert result.returncode == 17
     assert all(c["name"] != "ctest" for c in commands)
+    failed = [
+        row for path, row in generator_reports(root).items() if path.stem == model[:-3]
+    ]
+    assert len(failed) == 1
+    assert failed[0]["exit_status"] == "17"
+    if model == "gen_dpa1.py":
+        assert all("--reuse-dpa1" not in c["args"] for c in commands)
 
 
 def test_kokkos_models_propagate_generator_failure(build_tree):
+    root, _, _ = build_tree
     result, _ = run_script(
         build_tree, "--models-only=kokkos", MOCK_FAIL="gen_dpa4c_long_range.py"
     )
-    assert result.returncode != 0
+    assert result.returncode == 17
+    reports = generator_reports(root)
+    assert len(reports) == 1
+    assert {row["exit_status"] for row in reports.values()} == {"17"}
+
+
+def test_each_invocation_keeps_separate_generator_and_ctest_reports(build_tree):
+    root, _, _ = build_tree
+    first, commands = run_script(build_tree)
+    assert first.returncode == 0, first.stderr
+    first_junit = check_ctest_report(root, commands[-1])
+    first_reports = generator_reports(root)
+    second, commands = run_script(build_tree)
+    assert second.returncode == 0, second.stderr
+    second_junit = check_ctest_report(root, commands[-1])
+    assert first_junit != second_junit
+    assert first_junit.is_file()
+    reports = generator_reports(root)
+    assert len(reports) == 2 * len(MODELS)
+    assert len({path.parent for path in reports}) == 2
+    assert {path: reports[path] for path in first_reports} == first_reports
+
+
+@pytest.mark.parametrize(
+    "gtest_output", ["json:/custom/reports/", "xml:/custom/result.xml"]
+)
+def test_ctest_preserves_explicit_gtest_output(build_tree, gtest_output):
+    root, _, _ = build_tree
+    result, commands = run_script(
+        build_tree, ENABLE_PYTORCH="FALSE", GTEST_OUTPUT=gtest_output
+    )
+    assert result.returncode == 0, result.stderr
+    check_ctest_report(root, commands[-1], gtest_output)
+    assert not generator_reports(root)
 
 
 @pytest.mark.parametrize(

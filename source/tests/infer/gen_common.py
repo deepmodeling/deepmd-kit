@@ -4,6 +4,7 @@
 import glob
 import json
 import os
+import shutil
 import sys
 import zipfile
 
@@ -28,9 +29,9 @@ def derive_pair_exclude_pt2(src_pt2, dst_pt2, exclude_types):
     #18/A4) applied at the C++ ingestion seam (from ``metadata.json``) and the
     Python DeepEval build seam (from the serialized ``model.json``); it is not
     baked into the exported graph, so the compiled AOTI artifact (including any
-    nested with-comm ``.pt2``) is byte-identical to the baseline. Only the two
-    JSON blobs that carry the list are patched -- both, so the C++ and Python
-    inference paths agree; patching one alone makes them disagree. This avoids
+    nested with-comm ``.pt2``) is byte-identical to the baseline. Patch metadata,
+    the serialized model, and the optional training config so C++, Python,
+    and subsequent backend conversions all see the same exclusion. This avoids
     a second inductor compile and is bit-identical to a full recompile.
     """
     with zipfile.ZipFile(src_pt2) as zin:
@@ -45,7 +46,51 @@ def derive_pair_exclude_pt2(src_pt2, dst_pt2, exclude_types):
                 mdl = json.loads(blob)
                 mdl["model"]["pair_exclude_types"] = exclude_types
                 blob = json.dumps(mdl).encode()
+            elif info.filename == "model/extra/model_def_script.json":
+                config = json.loads(blob)
+                config["pair_exclude_types"] = exclude_types
+                blob = json.dumps(config).encode()
             zout.writestr(info, blob)
+
+
+def reuse_pt2(src_pt2, dst_pt2, model_data, *, lower_kind="nlist"):
+    """Reuse an explicitly selected fixture after checking its complete model.
+
+    The caller must name an archive generated earlier in this run. This is not
+    an existence-based cache: standalone generators still compile afresh.
+    Check weights, architecture, precision, lower ABI, and atomic-virial
+    support before copying, so later fixture changes cannot silently reuse an
+    incompatible model. Ignore provenance such as creation timestamps.
+    """
+    import numpy as np
+
+    from deepmd.pt_expt.utils.serialization import serialize_from_file
+
+    source = serialize_from_file(src_pt2)
+
+    def equal(left, right):
+        if isinstance(left, np.ndarray) or isinstance(right, np.ndarray):
+            return (
+                isinstance(left, np.ndarray)
+                and isinstance(right, np.ndarray)
+                and left.dtype == right.dtype
+                and np.array_equal(left, right)
+            )
+        if isinstance(left, dict) and isinstance(right, dict):
+            return left.keys() == right.keys() and all(
+                equal(left[key], right[key]) for key in left
+            )
+        if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+            return len(left) == len(right) and all(
+                equal(a, b) for a, b in zip(left, right, strict=True)
+            )
+        return left == right
+
+    if source["lower_input_kind"] != lower_kind or not source["do_atomic_virial"]:
+        raise ValueError(f"Incompatible lower/atomic-virial contract in {src_pt2}")
+    if not equal(source["model"], model_data["model"]):
+        raise ValueError(f"Model architecture or weights differ from {src_pt2}")
+    shutil.copyfile(src_pt2, dst_pt2)
 
 
 def ensure_inductor_compiler():

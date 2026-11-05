@@ -37,14 +37,15 @@ class TestMLPLayer(unittest.TestCase):
             [True, False],  # use time step
             ["tanh", "none"],  # activation
             [True, False],  # resnet
-            [None, [4], [3, 2]],  # prefix shapes
             ["float32", "double"],  # precision
         )
 
     def test_match_native_layer(
         self,
     ) -> None:
-        for (ninp, nout), bias, ut, ac, resnet, ashp, prec in self.test_cases:
+        for ((ninp, nout), bias, ut, ac, resnet, prec), ashp in itertools.product(
+            self.test_cases, [None, [4], [3, 2]]
+        ):
             # input
             inp_shap = [ninp]
             if ashp is not None:
@@ -78,7 +79,7 @@ class TestMLPLayer(unittest.TestCase):
             )
 
     def test_jit(self) -> None:
-        for (ninp, nout), bias, ut, ac, resnet, _, prec in self.test_cases:
+        for (ninp, nout), bias, ut, ac, resnet, prec in self.test_cases:
             ml = MLPLayer(ninp, nout, bias, ut, ac, resnet, precision=prec)
             model = torch.jit.script(ml)
             ml1 = MLPLayer.deserialize(ml.serialize())
@@ -93,14 +94,15 @@ class TestMLP(unittest.TestCase):
             [True, False],  # use time step
             ["tanh", "none"],  # activation
             [True, False],  # resnet
-            [None, [4], [3, 2]],  # prefix shapes
             ["float32", "double"],  # precision
         )
 
     def test_match_native_net(
         self,
     ) -> None:
-        for ndims, bias, ut, ac, resnet, ashp, prec in self.test_cases:
+        for (ndims, bias, ut, ac, resnet, prec), ashp in itertools.product(
+            self.test_cases, [None, [4], [3, 2]]
+        ):
             # input
             inp_shap = [ndims[0]]
             if ashp is not None:
@@ -139,17 +141,19 @@ class TestMLP(unittest.TestCase):
             )
 
     def test_jit(self) -> None:
-        for ndims, bias, ut, ac, resnet, _, prec in self.test_cases:
+        for ndims, bias, ut, ac, resnet, prec in self.test_cases:
             layers = []
             for ii in range(1, len(ndims)):
-                ml = layers.append(
+                layers.append(
                     MLPLayer(
                         ndims[ii - 1], ndims[ii], bias, ut, ac, resnet, precision=prec
                     ).serialize()
                 )
-            ml = MLP(ml)
+            ml = MLP(layers)
+            self.assertEqual(len(ml.layers), len(ndims) - 1)
             model = torch.jit.script(ml)
             ml1 = MLP.deserialize(ml.serialize())
+            self.assertEqual(len(ml1.layers), len(ndims) - 1)
             model = torch.jit.script(ml1)
 
 

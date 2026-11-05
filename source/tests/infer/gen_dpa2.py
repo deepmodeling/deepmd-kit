@@ -300,6 +300,9 @@ def main():
         copy.deepcopy(data_g),
         do_atomic_virial=True,
         lower_kind="nlist",  # independent: dense nlist, NOT graph
+        # This oracle is used only in single-rank comparisons. The three
+        # deployment fixtures below/above still export their MPI artifact.
+        with_comm=False,
     )
     dp_nlist_ref = DeepPot(nlist_ref_pt2)
 

@@ -119,6 +119,17 @@ jobs:
         continue-on-error: true
         with:
           use_oidc: true
+      - name: Upload C++ test reports
+        if: ${{ always() && hashFiles('source/build_tests/generator-reports/**', 'source/build_tests/gtest-reports/**') != '' }}
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: cpp-cpu-tf-${{ matrix.enable_tensorflow }}-pt-${{ matrix.enable_pytorch }}-pd-${{ matrix.enable_paddle }}-lsan-${{ matrix.check_memleak }}
+          path: |
+            source/build_tests/generator-reports/**
+            source/build_tests/gtest-reports/**
+          if-no-files-found: ignore
+          retention-days: 14
     permissions:
       id-token: write
   pass:

@@ -51,6 +51,53 @@ from ...seed import (
 )
 
 
+# These APIs read the same unconditioned models. Keep only the immutable files
+# across classes: each consumer creates its own DeepPot (and deserialized model)
+# so swapping _dpmodel for a conditioning check cannot affect another class.
+_INTROSPECTION_ARCHIVES: dict[str, tuple[str, int]] = {}
+
+
+def _introspection_archive(descriptor_type: str) -> tuple[str, int]:
+    if descriptor_type not in _INTROSPECTION_ARCHIVES:
+        if descriptor_type == "se_e2_a":
+            ds = DescrptSeA(4.0, 0.5, [8, 6], seed=GLOBAL_SEED)
+        else:
+            from deepmd.pt_expt.descriptor.dpa1 import (
+                DescrptDPA1,
+            )
+
+            ds = DescrptDPA1(4.0, 0.5, [8, 6], ntypes=2, seed=GLOBAL_SEED)
+        ft = EnergyFittingNet(
+            2, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=GLOBAL_SEED
+        )
+        model = EnergyModel(ds, ft, type_map=["foo", "bar"]).to(torch.float64).eval()
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as archive:
+            path = archive.name
+        try:
+            deserialize_to_file(path, {"model": model.serialize()})
+        except BaseException:
+            os.unlink(path)
+            raise
+        _INTROSPECTION_ARCHIVES[descriptor_type] = path, ds.get_dim_out()
+    return _INTROSPECTION_ARCHIVES[descriptor_type]
+
+
+def tearDownModule() -> None:
+    for path, _ in _INTROSPECTION_ARCHIVES.values():
+        os.unlink(path)
+    _INTROSPECTION_ARCHIVES.clear()
+
+
+def _set_up_introspection(cls) -> str:
+    cls.rcut, cls.rcut_smth = 4.0, 0.5
+    cls.sel, cls.nt, cls.type_map = [8, 6], 2, ["foo", "bar"]
+    pte_sea, cls.dim_descrpt_sea = _introspection_archive("se_e2_a")
+    pte_dpa1, cls.dim_descrpt_dpa1 = _introspection_archive("dpa1")
+    cls.dp_sea = DeepPot(pte_sea)
+    cls.dp_dpa1 = DeepPot(pte_dpa1)
+    return pte_sea
+
+
 def _assert_repeatable(a, b) -> None:
     """Two evals of the same inputs must agree.
 
@@ -1686,58 +1733,7 @@ class TestEvalTypeEbd(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.rcut = 4.0
-        cls.rcut_smth = 0.5
-        cls.sel = [8, 6]
-        cls.nt = 2
-        cls.type_map = ["foo", "bar"]
-
-        # se_e2_a model (no type embedding)
-        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft_sea = EnergyFittingNet(
-            cls.nt,
-            ds_sea.get_dim_out(),
-            mixed_types=ds_sea.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
-        model_sea = model_sea.to(torch.float64)
-        model_sea.eval()
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
-        cls.dp_sea = DeepPot(pte_sea)
-
-        # DPA1 model (has type embedding)
-        from deepmd.pt_expt.descriptor.dpa1 import (
-            DescrptDPA1,
-        )
-
-        ds_dpa1 = DescrptDPA1(
-            cls.rcut,
-            cls.rcut_smth,
-            cls.sel,
-            ntypes=cls.nt,
-            seed=GLOBAL_SEED,
-        )
-        ft_dpa1 = EnergyFittingNet(
-            cls.nt,
-            ds_dpa1.get_dim_out(),
-            mixed_types=ds_dpa1.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
-        model_dpa1 = model_dpa1.to(torch.float64)
-        model_dpa1.eval()
-        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
-        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
-        cls.dp_dpa1 = DeepPot(pte_dpa1)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+        _set_up_introspection(cls)
 
     def test_typeebd_dpa1(self) -> None:
         """DPA1 model has type embedding, should return valid array."""
@@ -1758,54 +1754,7 @@ class TestEvalDescriptor(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.rcut = 4.0
-        cls.rcut_smth = 0.5
-        cls.sel = [8, 6]
-        cls.nt = 2
-        cls.type_map = ["foo", "bar"]
-
-        # se_e2_a model
-        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft_sea = EnergyFittingNet(
-            cls.nt,
-            ds_sea.get_dim_out(),
-            mixed_types=ds_sea.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
-        model_sea = model_sea.to(torch.float64)
-        model_sea.eval()
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
-        cls.dp_sea = DeepPot(pte_sea)
-        cls.dim_descrpt_sea = ds_sea.get_dim_out()
-
-        # DPA1 model
-        from deepmd.pt_expt.descriptor.dpa1 import (
-            DescrptDPA1,
-        )
-
-        ds_dpa1 = DescrptDPA1(
-            cls.rcut,
-            cls.rcut_smth,
-            cls.sel,
-            ntypes=cls.nt,
-            seed=GLOBAL_SEED,
-        )
-        ft_dpa1 = EnergyFittingNet(
-            cls.nt,
-            ds_dpa1.get_dim_out(),
-            mixed_types=ds_dpa1.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
-        model_dpa1 = model_dpa1.to(torch.float64)
-        model_dpa1.eval()
-        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
-        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
-        cls.dp_dpa1 = DeepPot(pte_dpa1)
-        cls.dim_descrpt_dpa1 = ds_dpa1.get_dim_out()
+        pte_sea = _set_up_introspection(cls)
 
         # se_e2_a model with fparam (dim_fparam=1, no default; swap _dpmodel
         # because se_e2_a + fparam hits GuardOnDataDependentSymNode in export)
@@ -1818,17 +1767,9 @@ class TestEvalDescriptor(unittest.TestCase):
             seed=GLOBAL_SEED,
         )
         model_fp = EnergyModel(ds_fp, ft_fp, type_map=cls.type_map)
-        pte_fp = os.path.join(cls._tmpdir, "fp.pte")
-        deserialize_to_file(pte_fp, {"model": model_sea.serialize()})
-        cls.dp_fp = DeepPot(pte_fp)
+        cls.dp_fp = DeepPot(pte_sea)
         cls.dp_fp.deep_eval._dpmodel = model_fp
         cls.dim_descrpt_fp = ds_fp.get_dim_out()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     def _make_inputs(self):
         nframes = 1
@@ -1914,53 +1855,8 @@ class TestEvalFittingLastLayer(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.rcut = 4.0
-        cls.rcut_smth = 0.5
-        cls.sel = [8, 6]
-        cls.nt = 2
-        cls.type_map = ["foo", "bar"]
+        pte_sea = _set_up_introspection(cls)
         cls.neuron = [120, 120, 120]  # default fitting net neurons
-
-        # se_e2_a model (mixed_types=False)
-        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft_sea = EnergyFittingNet(
-            cls.nt,
-            ds_sea.get_dim_out(),
-            mixed_types=ds_sea.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
-        model_sea = model_sea.to(torch.float64)
-        model_sea.eval()
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
-        cls.dp_sea = DeepPot(pte_sea)
-
-        # DPA1 model (mixed_types=True)
-        from deepmd.pt_expt.descriptor.dpa1 import (
-            DescrptDPA1,
-        )
-
-        ds_dpa1 = DescrptDPA1(
-            cls.rcut,
-            cls.rcut_smth,
-            cls.sel,
-            ntypes=cls.nt,
-            seed=GLOBAL_SEED,
-        )
-        ft_dpa1 = EnergyFittingNet(
-            cls.nt,
-            ds_dpa1.get_dim_out(),
-            mixed_types=ds_dpa1.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
-        model_dpa1 = model_dpa1.to(torch.float64)
-        model_dpa1.eval()
-        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
-        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
-        cls.dp_dpa1 = DeepPot(pte_dpa1)
 
         # se_e2_a model with fparam and aparam (swap _dpmodel because
         # se_e2_a + fparam hits GuardOnDataDependentSymNode in export)
@@ -1974,16 +1870,8 @@ class TestEvalFittingLastLayer(unittest.TestCase):
             seed=GLOBAL_SEED,
         )
         model_fp = EnergyModel(ds_fp, ft_fp, type_map=cls.type_map)
-        pte_fp = os.path.join(cls._tmpdir, "fp.pte")
-        deserialize_to_file(pte_fp, {"model": model_sea.serialize()})
-        cls.dp_fp = DeepPot(pte_fp)
+        cls.dp_fp = DeepPot(pte_sea)
         cls.dp_fp.deep_eval._dpmodel = model_fp
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     def _make_inputs(self):
         nframes = 1
@@ -2242,28 +2130,8 @@ class TestEvalDescriptorASE(unittest.TestCase):
         cls.nt = 2
         cls.type_map = ["foo", "bar"]
 
-        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft = EnergyFittingNet(
-            cls.nt,
-            ds.get_dim_out(),
-            mixed_types=ds.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model = EnergyModel(ds, ft, type_map=cls.type_map)
-        model = model.to(torch.float64)
-        model.eval()
-        cls.dim_descrpt = ds.get_dim_out()
-
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_path = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_path, {"model": model.serialize()})
-        cls.dp_native = DeepPot(pte_path)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+        cls.pte_path, cls.dim_descrpt = _introspection_archive("se_e2_a")
+        cls.dp_native = DeepPot(cls.pte_path)
 
     @unittest.skipUnless(
         importlib.util.find_spec("ase") is not None, "ase not installed"
@@ -2272,9 +2140,8 @@ class TestEvalDescriptorASE(unittest.TestCase):
         """eval_descriptor with ASE nlist matches native nlist."""
         import ase.neighborlist
 
-        pte_path = os.path.join(self._tmpdir, "sea.pte")
         dp_ase = DeepPot(
-            pte_path,
+            self.pte_path,
             neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
                 cutoffs=self.rcut, bothways=True
             ),
@@ -2299,9 +2166,8 @@ class TestEvalDescriptorASE(unittest.TestCase):
         """eval_fitting_last_layer with ASE nlist matches native nlist."""
         import ase.neighborlist
 
-        pte_path = os.path.join(self._tmpdir, "sea.pte")
         dp_ase = DeepPot(
-            pte_path,
+            self.pte_path,
             neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
                 cutoffs=self.rcut, bothways=True
             ),
