@@ -2605,10 +2605,11 @@ class TestSeZMWignerBandOp(unittest.TestCase):
         call arguments must follow (the predicate used to require the
         degree-3 tables unconditionally, leaving 1 and 2 dead arms).
         """
-        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
         from unittest import (
             mock,
         )
+
+        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
 
         for lmax in (1, 2, 3):
             with self.subTest(lmax=lmax):
