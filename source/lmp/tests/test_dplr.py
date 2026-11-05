@@ -375,6 +375,38 @@ def test_pair_deepmd_sr(lammps) -> None:
     lammps.run(1)
 
 
+def test_pair_deepmd_hybrid_long_range(lammps) -> None:
+    """A model cutoff must not masquerade as a hybrid Coulomb cutoff."""
+    # The model cutoff is 4 A and the actual Coulomb cutoff is 5 A.  Plain
+    # PPPM must obtain the latter from coul/long without treating the DeepMD
+    # neighbor cutoff as a conflicting electrostatic cutoff.
+    lammps.pair_style(f"hybrid/overlay deepmd {pb_file.resolve()} coul/long 5.0")
+    lammps.pair_coeff("* * deepmd")
+    lammps.pair_coeff("* * coul/long")
+    lammps.kspace_style("pppm 1e-5")
+    lammps.run(0)
+    assert np.isfinite(lammps.eval("pe"))
+
+
+def test_compact_pair_deepmd_rejects_fix_dplr(lammps) -> None:
+    """DPLR must not apply full-system corrections to a compact potential."""
+    lammps.neigh_modify("exclude none")
+    lammps.group("qm id 1")
+    lammps.pair_style(
+        f"deepmd {pb_file.resolve()} center_group qm "
+        "environment_cutoff 1.5 include_molecule no"
+    )
+    lammps.pair_coeff("* *")
+    lammps.bond_style("zero")
+    lammps.bond_coeff("*")
+    lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
+
+    with pytest.raises(
+        Exception, match=r"compact pair_style deepmd does not support fix dplr"
+    ):
+        lammps.run(0)
+
+
 def test_pair_deepmd_sr_virial(lammps) -> None:
     lammps.group("real_atom type 1 2")
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
