@@ -10,6 +10,7 @@ virial) consumed by the C++ tests.
 
 import copy
 import os
+import shutil
 import sys
 
 import numpy as np
@@ -25,8 +26,6 @@ from gen_common import (
 
 
 def main():
-    import torch
-
     from deepmd.pt_expt.model.get_model import (
         get_model,
     )
@@ -68,34 +67,28 @@ def main():
     model.to("cpu")
     model.eval()
 
-    # ---- 2b. Activate the zero-initialised residual branches ----
-    # DPA4/SeZM follows the standard residual-network convention of
-    # ZERO-initialising the output projection of every residual branch
-    # (``*.so3_linear_2.weight``, ``post_focus_mix.weight``,
-    # ``env_seed_embedding.output_proj.w``) and the final descriptor output
-    # projection (``output_ffn.so3_linear_2.weight``).  At random init these
-    # branches therefore contribute EXACTLY zero, so a freshly built DPA4
-    # collapses to a type-embedding-only descriptor: the per-atom energy is a
-    # pure per-type constant and every force/virial is identically zero,
-    # regardless of geometry.  Such a fixture exercises none of the
-    # force/virial code paths and would make the C++ inference test vacuous.
-    #
-    # A trained model has non-zero weights in these branches, so to obtain a
-    # representative (geometry-dependent, non-zero-force) reference we fill the
-    # all-zero parameters with small deterministic pseudo-random values.  This
-    # is the minimal change that makes the descriptor coordinate-dependent
-    # while leaving the rest of the random init untouched.  (Unlike DPA3,
-    # whose random init already yields non-zero forces, DPA4 needs this step.)
-    generator = torch.Generator().manual_seed(20240614)
-    with torch.no_grad():
-        for _name, param in model.named_parameters():
-            if float(param.detach().abs().max()) == 0.0:
-                param.copy_(
-                    0.1
-                    * torch.randn(param.shape, dtype=param.dtype, generator=generator)
-                )
+    # ---- 2b. Activate zero-initialized parameters and output biases ----
+    # Keep the graph fixture's original serialized-array perturbation. In
+    # addition to the residual branches, this makes the model out_bias and
+    # fitting bias_atom_e nonzero; perturbing only named_parameters would
+    # silently lose that graph coverage. Dense and graph exports share these
+    # weights, so the dense archive can serve as the independent graph oracle.
+    def _jitter_zero_arrays(node, rng: np.random.Generator):
+        # Pure rebuild, matching source/tests/dpa4_fixtures.py.
+        if isinstance(node, dict):
+            return {k: _jitter_zero_arrays(v, rng) for k, v in node.items()}
+        if isinstance(node, list):
+            return [_jitter_zero_arrays(v, rng) for v in node]
+        if (
+            isinstance(node, np.ndarray)
+            and node.dtype.kind == "f"
+            and node.size > 0
+            and np.all(node == 0.0)
+        ):
+            return rng.normal(0.0, 0.05, size=node.shape).astype(node.dtype)
+        return node
 
-    model_dict = model.serialize()
+    model_dict = _jitter_zero_arrays(model.serialize(), np.random.default_rng(20240615))
 
     data = {
         "model": model_dict,
@@ -293,52 +286,13 @@ def main():
 
     print("\n---- Building graph DPA4 (jittered weights) ----")  # noqa: T201
 
-    # ---- B.1  Build a fresh DPA4 model; jitter zero-init residuals ----
-    # A freshly built DPA4 zero-initializes several residual output
-    # projections (see step 2b above and the ``jitter_zero_arrays``
-    # docstring in source/tests/dpa4_fixtures.py), so its output is
-    # architecturally edge-independent until those branches are perturbed
-    # away from exactly zero. Section A already does this via in-place
-    # torch-parameter replacement (step 2b); this section instead follows
-    # the dict-level ``jitter_zero_arrays`` pattern used by
-    # test_dpa4_call_graph.py / test_dpa4_graph_lower.py, for consistency
-    # with the rest of the DPA4 graph test suite. Inlined here (rather than
-    # imported from source/tests/dpa4_fixtures.py) because gen_dpa4.py is a
-    # standalone script run outside pytest's package machinery -- importing
-    # a source/tests/... module from it would need ad hoc sys.path /
-    # package surgery for no real benefit.
-    # Mirror of source/tests/dpa4_fixtures.py:jitter_zero_arrays -- keep in sync.
-    def _jitter_zero_arrays(node, rng: np.random.Generator):
-        # Mirror of source/tests/dpa4_fixtures.py:jitter_zero_arrays -- keep in
-        # sync. PURE rebuild (returns a new tree, does not mutate ``node``) to
-        # avoid CodeQL's py/modification-of-default-value dataflow; behavior
-        # (RNG draws, shapes, dtype) is bit-identical.
-        if isinstance(node, dict):
-            return {k: _jitter_zero_arrays(v, rng) for k, v in node.items()}
-        if isinstance(node, list):
-            return [_jitter_zero_arrays(v, rng) for v in node]
-        if (
-            isinstance(node, np.ndarray)
-            and node.dtype.kind == "f"
-            and node.size > 0
-            and np.all(node == 0.0)
-        ):
-            return rng.normal(0.0, 0.05, size=node.shape).astype(node.dtype)
-        return node
-
-    model_g = get_model(copy.deepcopy(config))
-    model_g.to("cpu")
-    model_g.eval()
-    model_dict_g = model_g.serialize()
-    model_dict_g = _jitter_zero_arrays(model_dict_g, np.random.default_rng(20240615))
-
-    data_g = {
-        "model": copy.deepcopy(model_dict_g),
-        "model_def_script": config,
-        "backend": "dpmodel",
-        "software": "deepmd-kit",
-        "version": "3.0.0",
-    }
+    # ---- B.1  Reuse the non-vacuous weights from Section A ----
+    # Both lowers support the same DPA4 configuration. Section A already
+    # uses the original graph fixture's perturbed parameters and biases, so
+    # rebuilding that model would require another identical dense AOT compile.
+    # Keep the dense and graph artifacts on the same serialized weights;
+    # their different lowers remain independent numerical cross-checks.
+    data_g = copy.deepcopy(data)
 
     # ---- B.2  Independent cross-check via nlist .pt2 (dense-quartet) ----
     # Like gen_dpa2.py's Section B.2: deeppot_dpa4_graph.expected is NOT
@@ -355,13 +309,11 @@ def main():
     # graph parity test, both exercised on the SAME jittered weights as the
     # graph model, so at non-binding sel the two paths must agree.
     nlist_ref_pt2 = os.path.join(base_dir, "deeppot_dpa4_graph_nlist_ref.pt2")
-    print(f"Exporting reference nlist .pt2 to {nlist_ref_pt2} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(
-        nlist_ref_pt2,
-        copy.deepcopy(data_g),
-        do_atomic_virial=True,
-        lower_kind="nlist",  # independent: dense nlist, NOT graph
-    )
+    # The reference has exactly Section A's weights and lower. Preserve its
+    # established filename for C++/LAMMPS/Python consumers without compiling
+    # the same dense artifact again. Reload the copy below to keep the
+    # persisted-reference check independent of the in-process evaluator.
+    shutil.copyfile(pt2_path, nlist_ref_pt2)
     dp_nlist_ref = DeepPot(nlist_ref_pt2)
 
     # PBC reference from nlist path
