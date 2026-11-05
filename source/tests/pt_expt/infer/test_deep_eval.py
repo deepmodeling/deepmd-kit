@@ -50,7 +50,6 @@ from ...seed import (
     GLOBAL_SEED,
 )
 
-
 # These APIs read the same unconditioned models. Keep only the immutable files
 # across classes: each consumer creates its own DeepPot (and deserialized model)
 # so swapping _dpmodel for a conditioning check cannot affect another class.

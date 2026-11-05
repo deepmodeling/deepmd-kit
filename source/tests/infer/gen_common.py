@@ -64,7 +64,9 @@ def reuse_pt2(src_pt2, dst_pt2, model_data, *, lower_kind="nlist"):
     """
     import numpy as np
 
-    from deepmd.pt_expt.utils.serialization import serialize_from_file
+    from deepmd.pt_expt.utils.serialization import (
+        serialize_from_file,
+    )
 
     source = serialize_from_file(src_pt2)
 

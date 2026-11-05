@@ -17,7 +17,9 @@ from .gen_common import (
 @pytest.fixture
 def archive(tmp_path, monkeypatch):
     pytest.importorskip("torch")
-    from deepmd.pt_expt.utils import serialization
+    from deepmd.pt_expt.utils import (
+        serialization,
+    )
 
     src = tmp_path / "source.pt2"
     dst = tmp_path / "target.pt2"
@@ -101,9 +103,15 @@ def test_pair_exclusion_changes_only_metadata(tmp_path, in_place):
 @pytest.mark.parametrize("exclude_types", [[], [[0, 1]]])
 def test_dpa1_serialization_keeps_pair_exclusion_metadata(lower_kind, exclude_types):
     pytest.importorskip("torch")
-    from deepmd.dpmodel.model.model import get_model
-    from deepmd.pt_expt.model.model import BaseModel
-    from deepmd.pt_expt.utils.serialization import _collect_metadata
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+    from deepmd.pt_expt.utils.serialization import (
+        _collect_metadata,
+    )
 
     # The CI fixtures reuse compiled lowers. Independently retain the real
     # dpmodel -> pt_expt -> C++ metadata export contract without another AOT

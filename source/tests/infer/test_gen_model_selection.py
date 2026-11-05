@@ -15,7 +15,9 @@ def generator(monkeypatch):
     # Standalone gen scripts import their sibling helpers by their short names.
     monkeypatch.syspath_prepend(str(Path(__file__).parent))
     module = importlib.import_module(".gen_dpa4c_long_range", __package__)
-    from deepmd.pt_expt.utils import serialization
+    from deepmd.pt_expt.utils import (
+        serialization,
+    )
 
     calls = {"graph": [], "compressed": [], "mesh": [], "metadata": [], "reference": []}
     monkeypatch.setattr(module, "ensure_inductor_compiler", lambda: None)
@@ -83,7 +85,9 @@ def test_old_torch_keeps_mesh_reference_and_compressed_periodic_model(
     generator, monkeypatch
 ):
     module, calls = generator
-    from deepmd.pt_expt.utils import serialization
+    from deepmd.pt_expt.utils import (
+        serialization,
+    )
 
     monkeypatch.setenv("DP_VARIANT", "cuda")
     monkeypatch.setattr(serialization, "mesh_freeze_supported", lambda: False)
