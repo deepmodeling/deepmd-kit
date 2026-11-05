@@ -1332,11 +1332,14 @@ def make_spin_descriptor(**overrides: Any) -> DescrptDPA4C:
 @pytest.mark.parametrize("precision", ["float32", "float64"])
 @pytest.mark.parametrize("channels", [8, 32])
 @pytest.mark.parametrize("node_count", [0, 2])
+@pytest.mark.parametrize("n_blocks", [1, 2])
 def test_native_spin_graph_without_edges(
-    precision: str, channels: int, node_count: int
+    precision: str, channels: int, node_count: int, n_blocks: int
 ) -> None:
     """Both zero-node graphs and isolated atoms retain the feature width."""
-    descriptor = make_spin_descriptor(precision=precision, channels=channels)
+    descriptor = make_spin_descriptor(
+        precision=precision, channels=channels, n_blocks=n_blocks
+    )
     graph = neighbor_graph.NeighborGraph(
         n_node=np.array([node_count], dtype=np.int64),
         n_local=np.array([node_count], dtype=np.int64),

@@ -250,10 +250,10 @@ class BlockAttention(NativeOP):
         self.head_index = np.arange(channels, dtype=np.int64) % heads
         self.reflection_sign = np.concatenate(
             [
-                np.full(2 * degree + 1, (-1.0) ** degree)
+                np.full(2 * degree + 1, (-1.0) ** degree, dtype=dtype)
                 for degree in range(1, n_degree + 1)
             ]
-        ).astype(dtype)
+        )
 
     @property
     def harmonic_width(self) -> int:
@@ -391,7 +391,9 @@ class BlockAttention(NativeOP):
         # === Step 2. Logit of every amplitude channel ===
         gain = xp_asarray_nodetach(xp, self.adam_field_gain, device=device)
         head_index = xp_asarray_nodetach(xp, self.head_index, device=device)
-        flat_fields = xp.reshape(fields, (n_edge, -1))
+        flat_fields = xp.reshape(
+            fields, (n_edge, (len(self.degree_channels) - 1) * heads)
+        )
         hidden = (
             hidden
             + self.hidden_field.call(flat_fields)

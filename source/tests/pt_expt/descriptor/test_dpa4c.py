@@ -603,12 +603,16 @@ class TestDPA4C:
 @pytest.mark.parametrize("precision", ["float32", "float64"])
 @pytest.mark.parametrize("channels", [8, 32])
 @pytest.mark.parametrize("node_count", [0, 2])
+@pytest.mark.parametrize("n_blocks", [1, 2])
 def test_native_spin_graph_without_edges(
-    precision: str, channels: int, node_count: int
+    precision: str, channels: int, node_count: int, n_blocks: int
 ) -> None:
     """The reference spin path supports zero nodes as well as isolated atoms."""
     descriptor = TestDPA4C.build(
-        precision=precision, channels=channels, use_spin=[True, False]
+        precision=precision,
+        channels=channels,
+        n_blocks=n_blocks,
+        use_spin=[True, False],
     ).eval()
     with torch.no_grad():
         descriptor.spin.spin_gate.fill_(1.0)
