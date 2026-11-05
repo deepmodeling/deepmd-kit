@@ -181,6 +181,11 @@ class IOTest:
                 aparam = np.ones((nframes, natoms, deep_eval.get_dim_aparam()))
             else:
                 aparam = None
+            # Paddle is absent from the loop above because its frozen .json
+            # reader rejects fparam/aparam. A dedicated adapter test executes
+            # its normalization path without relying on that frozen format.
+            if deep_eval.get_dim_fparam() > 0 or deep_eval.get_dim_aparam() > 0:
+                self._assert_backend_parameter_shorthand(model_file, deep_eval)
             ret = deep_eval.eval(
                 self.coords,
                 self.box,
@@ -238,6 +243,108 @@ class IOTest:
                         err_msg=f"backend {idx + 1} for rets_idx {rets_idx}",
                     )
 
+    def _assert_backend_parameter_shorthand(
+        self, model_file: str, deep_eval: DeepEval
+    ) -> None:
+        """Compare backend-direct shorthand with explicit frame-major inputs.
+
+        Calling ``deep_eval.deep_eval`` deliberately bypasses the public
+        ``_standard_input`` normalization. A one-frame auto-batch size also
+        proves that shared per-atom parameters are expanded before the batcher
+        can mistake their atom axis for a frame axis.
+        """
+        natoms = self.atype.shape[1]
+        nframes = 2
+        coords = np.concatenate((self.coords, self.coords + 0.125), axis=0)
+        boxes = np.repeat(self.box, nframes, axis=0)
+        boxes[1, 0] += 0.25
+        atom_types = np.repeat(self.atype, nframes, axis=0)
+        dim_fparam = deep_eval.get_dim_fparam()
+        dim_aparam = deep_eval.get_dim_aparam()
+        shared_params = {}
+        full_params = {}
+        frame_params = {}
+        if dim_fparam:
+            fparam_shared = np.linspace(0.25, -0.5, dim_fparam)
+            shared_params["fparam"] = fparam_shared.tolist()
+            full_params["fparam"] = np.tile(fparam_shared, (nframes, 1))
+            frame_params["fparam"] = np.stack((fparam_shared, fparam_shared + 0.375))
+        if dim_aparam:
+            aparam_per_atom = np.linspace(0.1, 0.9, natoms * dim_aparam).reshape(
+                natoms, dim_aparam
+            )
+            shared_params["aparam"] = aparam_per_atom
+            full_params["aparam"] = np.tile(aparam_per_atom, (nframes, 1, 1))
+            frame_params["aparam"] = np.stack((aparam_per_atom, aparam_per_atom + 0.2))
+        all_atom_params = frame_params.copy()
+        all_atom_full_params = frame_params.copy()
+        if dim_aparam:
+            aparam_all_atoms = np.linspace(-0.3, 0.4, dim_aparam)
+            all_atom_params["aparam"] = aparam_all_atoms
+            all_atom_full_params["aparam"] = np.tile(
+                aparam_all_atoms, (nframes, natoms, 1)
+            )
+
+        cases = (
+            (shared_params, full_params, "shared-frame-and-per-atom"),
+            (all_atom_params, all_atom_full_params, "shared-all-atoms"),
+            (frame_params, frame_params, "full-frame-major"),
+        )
+        for params, explicit_params, case_name in cases:
+            # Run the shorthand/full input first on a fresh auto-batcher so a
+            # GPU runner cannot grow the batch size on a preceding reference
+            # call and silently stop exercising the split path.
+            backend = DeepEval(model_file, auto_batch_size=natoms).deep_eval
+            actual = backend.eval(
+                coords,
+                boxes,
+                atom_types,
+                **params,
+            )
+            reference_backend = DeepEval(model_file, auto_batch_size=False).deep_eval
+            expected = reference_backend.eval(
+                coords,
+                boxes,
+                atom_types,
+                **explicit_params,
+            )
+            self.assertEqual(actual.keys(), expected.keys())
+            # Distinct frame inputs must survive batching. Parameter
+            # sensitivity is checked separately below at fixed geometry.
+            frame_key = next(
+                (key for key in ("energy_redu", "energy") if key in actual), None
+            )
+            self.assertIsNotNone(frame_key)
+            frame_values = actual[frame_key]
+            self.assertEqual(frame_values.shape[0], 2)
+            self.assertFalse(
+                np.allclose(frame_values[0], frame_values[1]),
+                msg=f"backend-direct {case_name} outputs collapsed across frames",
+            )
+            for name in actual:
+                np.testing.assert_allclose(
+                    actual[name],
+                    expected[name],
+                    rtol=1e-10,
+                    atol=1e-10,
+                    equal_nan=True,
+                    err_msg=f"backend-direct {case_name} output {name}",
+                )
+
+        # Each declared parameter must affect the energy at fixed geometry.
+        backend = DeepEval(model_file, auto_batch_size=False).deep_eval
+        baseline = backend.eval(self.coords, self.box, self.atype, **shared_params)
+        for parameter, value in shared_params.items():
+            with self.subTest(parameter=parameter, model_file=model_file):
+                changed_params = {**shared_params, parameter: np.asarray(value) + 0.5}
+                changed = backend.eval(
+                    self.coords, self.box, self.atype, **changed_params
+                )
+                self.assertFalse(
+                    np.allclose(baseline[frame_key], changed[frame_key]),
+                    msg=f"backend-direct energy ignores {parameter}",
+                )
+
 
 class TestDeepPot(unittest.TestCase, IOTest):
     def setUp(self) -> None:
@@ -283,6 +390,9 @@ class TestDeepPot(unittest.TestCase, IOTest):
 
 
 class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
+    numb_fparam: ClassVar[int] = 2
+    numb_aparam: ClassVar[int] = 2
+
     def setUp(self) -> None:
         model_def_script = {
             "type_map": ["O", "H"],
@@ -311,8 +421,8 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
                 "precision": "float64",
                 "atom_ener": [],
                 "seed": 1,
-                "numb_fparam": 2,
-                "numb_aparam": 2,
+                "numb_fparam": self.numb_fparam,
+                "numb_aparam": self.numb_aparam,
             },
         }
         model = get_model(copy.deepcopy(model_def_script))
@@ -325,6 +435,14 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
 
     def tearDown(self) -> None:
         IOTest.tearDown(self)
+
+
+class TestDeepPotFparamOnly(TestDeepPotFparamAparam):
+    numb_aparam = 0
+
+
+class TestDeepPotAparamOnly(TestDeepPotFparamAparam):
+    numb_fparam = 0
 
 
 @unittest.skipIf(
