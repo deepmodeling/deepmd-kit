@@ -405,6 +405,21 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
                 err_msg=f"{context}: {key}",
             )
 
+    def test_traced_graph_keeps_the_eager_wigner_assembly(self) -> None:
+        """The export seam must not capture the assemble operator.
+
+        AOTInductor resolves custom ops by name in the C++ runtime, where
+        nothing registers ``sezm_nn::wigner_d_assemble``; the seam inside
+        ``trace_lower_exportable`` keeps the eager scatter, so every export
+        caller (freeze and direct ``torch.export``) inherits a loadable
+        graph.
+        """
+        self.assertNotIn(
+            "wigner_d_assemble",
+            self.traced.code,
+            "the export trace must keep the eager Wigner assembly",
+        )
+
     def test_traced_matches_eager_same_shape(self) -> None:
         eager_out = _eager_forward(self.model, self.sample_inputs)
         traced_out = self.traced(*self.sample_inputs)
@@ -550,6 +565,14 @@ class TestSeZMWithCommExportPipeline(_ClearDefaultDeviceTestCase):
                 atol=1e-10,
                 err_msg=f"{context}: {key}",
             )
+
+    def test_traced_graph_keeps_the_eager_wigner_assembly(self) -> None:
+        """The with-comm export seam keeps the eager assembly too."""
+        self.assertNotIn(
+            "wigner_d_assemble",
+            self.traced.code,
+            "the with-comm export trace must keep the eager Wigner assembly",
+        )
 
     def test_traced_matches_eager(self) -> None:
         eager = _eager_parallel_forward(self.model, self.sample_inputs)

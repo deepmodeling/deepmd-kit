@@ -2498,14 +2498,26 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             get_decompositions,
         )
 
-        traced = make_fx(
-            fn,
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
-            decomposition_table=get_decompositions(
-                [torch.ops.aten.silu_backward.default]
-            ),
-        )(*sample_inputs)
+        # The export seam keeps the eager Wigner assembly: AOTInductor
+        # resolves custom ops by name in the C++ runtime, where nothing
+        # registers ``sezm_nn::wigner_d_assemble``, so an export traced
+        # through the operator cannot load.  Wiring the suppression here
+        # covers every caller of the documented export entries (the freeze
+        # flow and any direct ``torch.export`` consumer); the in-process
+        # runtime trace (``trace_and_compile``) is untouched.
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            assemble_op_suppressed_for_export,
+        )
+
+        with assemble_op_suppressed_for_export():
+            traced = make_fx(
+                fn,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+                decomposition_table=get_decompositions(
+                    [torch.ops.aten.silu_backward.default]
+                ),
+            )(*sample_inputs)
         # make_fx can lower a reshape to an unsound aten.view when the fake
         # stride diverges from the eager stride; relax views back to reshapes.
         relax_views_to_reshapes(traced)

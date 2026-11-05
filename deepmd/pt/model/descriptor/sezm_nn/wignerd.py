@@ -11,6 +11,7 @@ from __future__ import (
 )
 
 import math
+import threading
 from contextlib import (
     contextmanager,
 )
@@ -68,19 +69,24 @@ _COMPILER_IS_COMPILING = getattr(
 # .pt2 built through the operator fails to load.  The in-process inference
 # path lowers in the same process and resolves the operator through the
 # dispatcher, so only the freeze/export seam raises this flag.
-_assemble_op_suppressed_for_export = False
+# Thread-local: a process-global boolean corrupts interleaved contexts
+# (thread A's finally restores False while thread B still traces).
+_assemble_op_suppression = threading.local()
+
+
+def _assemble_op_suppressed_for_export() -> bool:
+    return getattr(_assemble_op_suppression, "value", False)
 
 
 @contextmanager
 def assemble_op_suppressed_for_export() -> Iterator[None]:
     """Route export traces through the eager scatter instead of the operator."""
-    global _assemble_op_suppressed_for_export
-    saved = _assemble_op_suppressed_for_export
-    _assemble_op_suppressed_for_export = True
+    saved = _assemble_op_suppressed_for_export()
+    _assemble_op_suppression.value = True
     try:
         yield
     finally:
-        _assemble_op_suppressed_for_export = saved
+        _assemble_op_suppression.value = saved
 
 
 def _wigner_d_assemble_impl(
@@ -775,7 +781,11 @@ class WignerDCalculator(nn.Module):
         compiling = (
             _COMPILER_IS_COMPILING() if _COMPILER_IS_COMPILING is not None else False
         )
-        fake_mode = bool(blocks) and getattr(blocks[0], "fake_mode", None) is not None
+        # len(...) > 0, not bool(...): Dynamo cannot trace ``bool`` on a
+        # list and would graph-break here, splitting the hot path in two.
+        fake_mode = (
+            len(blocks) > 0 and getattr(blocks[0], "fake_mode", None) is not None
+        )
         tracing = compiling or fake_mode
         # One assembly implementation serves both routes: the eager call
         # goes straight to the differentiable scatter (autograd flows through
@@ -795,7 +805,7 @@ class WignerDCalculator(nn.Module):
         elif (
             tracing
             and _wigner_d_assemble_op is not None
-            and not _assemble_op_suppressed_for_export
+            and not _assemble_op_suppressed_for_export()
         ):
             D_full = _wigner_d_assemble_op(
                 all_blocks,
