@@ -198,6 +198,7 @@ class GridProduct(nn.Module):
         | None = None,
         scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         | None = None,
+        grid_major: bool = False,
     ) -> torch.Tensor:
         """
         Combine two coefficient operands by a point-wise grid product.
@@ -298,6 +299,7 @@ class GridMLP(nn.Module):
         | None = None,
         scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         | None = None,
+        grid_major: bool = False,
     ) -> torch.Tensor:
         """
         Apply the polynomial point-wise MLP on coefficient operands.
