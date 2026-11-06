@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from dataclasses import (
+    replace,
+)
+from unittest import (
+    mock,
+)
+
 import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
+    build_neighbor_graph,
 )
 from deepmd.pt_expt.utils.canonical_graph import (
     INT32_MAX,
@@ -96,6 +104,57 @@ def test_reciprocity_matching_accepts_periodic_roundoff() -> None:
         2,
     )
     validate_reciprocal_canonical_graph(graph)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_periodic_self_images_are_matched_without_host_transfers(device: str) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+    coord = torch.zeros(4, 1, 3, dtype=torch.float64, device=device)
+    types = torch.zeros(4, 1, dtype=torch.int64, device=device)
+    box = 1.5 * torch.eye(3, dtype=torch.float64, device=device).repeat(4, 1, 1)
+    neighbor = build_neighbor_graph(coord, types, box, 2.0, canonicalize=True)
+    graph = canonical_graph_from_neighbor_graph(
+        replace(neighbor, n_local=neighbor.n_node)
+    )
+    with mock.patch.object(
+        torch.Tensor, "cpu", side_effect=AssertionError("host transfer")
+    ):
+        validate_reciprocal_canonical_graph(graph)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_only_ambiguous_image_groups_reach_host_matching(device: str) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+    center = torch.tensor([0, 0, 1, 1, 2, 3, 4, 4], device=device)
+    source = torch.tensor([1, 1, 0, 0, 3, 2, 4, 4], device=device)
+    vector = torch.tensor(
+        [
+            [1e-7, 1.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [-1e-7, -2.0, 0.0],
+            [0.5, 0.0, 0.0],
+            [-0.5, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+        ],
+        device=device,
+    )
+    graph = canonical_graph_from_pairs(
+        center, source, vector, torch.tensor([5], device=device), 5
+    )
+    cpu = torch.Tensor.cpu
+    transfers = []
+
+    def record_transfer(tensor: torch.Tensor) -> torch.Tensor:
+        transfers.append(tuple(tensor.shape))
+        return cpu(tensor)
+
+    with mock.patch.object(torch.Tensor, "cpu", record_transfer):
+        validate_reciprocal_canonical_graph(graph)
+    assert [shape for shape in transfers if len(shape) == 2] == [(4, 3), (4, 3)]
 
 
 @pytest.mark.parametrize("index_dtype", [torch.uint32, torch.int64])

@@ -145,9 +145,12 @@ def validate_reciprocal_canonical_graph(graph: CanonicalGraph) -> None:
 
     Every physical edge must have a reverse edge with opposite displacement.
     Periodic images sharing a node pair are matched one-to-one within the
-    displacement tolerance. Storage guards are ignored. This data-dependent check
-    synchronizes the device and belongs at graph construction, not inside a
-    captured inference operator. A partitioned graph cannot be checked locally.
+    displacement tolerance. Lexicographic displacement order pairs reciprocal
+    images on the graph device. Groups that do not match within tolerance in
+    this order are compacted before host-side matching. Storage guards are
+    ignored. This check synchronizes the device and belongs at graph
+    construction, not inside a captured inference operator. A partitioned
+    graph cannot be checked locally.
     """
     device = graph.source.device
     destination = torch.repeat_interleave(
@@ -160,44 +163,60 @@ def validate_reciprocal_canonical_graph(graph: CanonicalGraph) -> None:
     source = canonical_index_words(graph.source)[:count].to(torch.int64)
     vector = graph.edge_vec[:count]
 
-    def ordered(center: torch.Tensor, neighbor: torch.Tensor) -> torch.Tensor:
-        order = torch.arange(count, dtype=torch.int64, device=device)
+    def ordered(
+        center: torch.Tensor, neighbor: torch.Tensor, order: torch.Tensor
+    ) -> torch.Tensor:
+        """Group endpoints while preserving the supplied displacement order."""
         for column in (neighbor, center):
             order = order[torch.argsort(column[order], stable=True)]
         return order
 
-    forward = ordered(destination, source)
-    reverse = ordered(source, destination)
+    # Negating every displacement reverses its lexicographic order. One
+    # geometry ordering therefore serves both directions, including self-images.
+    geometry_order = torch.arange(count, dtype=torch.int64, device=device)
+    for axis in (2, 1, 0):
+        geometry_order = geometry_order[
+            torch.argsort(vector[geometry_order, axis], stable=True)
+        ]
+    forward = ordered(destination, source, geometry_order)
+    reverse = ordered(source, destination, geometry_order.flip(0))
     message = (
         "multi-block DPA4C requires a globally bidirectional graph: "
         "each edge must have a reverse edge with opposite displacement"
     )
-    if not (
-        torch.equal(destination[forward], source[reverse])
-        and torch.equal(source[forward], destination[reverse])
-    ):
-        raise ValueError(message)
+    same_pair = (destination[forward] == source[reverse]) & (
+        source[forward] == destination[reverse]
+    )
     actual, expected = vector[forward], -vector[reverse]
     aligned = torch.isclose(actual, expected, rtol=2e-6, atol=2e-6).all(dim=1)
-    if bool(aligned.all()):
+    if bool((same_pair & aligned).all()):
         return
-    # Unique node pairs need no matching. Only periodic image groups whose
-    # input orders differ reach the host-side bipartite matching below.
+    if not bool(same_pair.all()):
+        raise ValueError(message)
+    # A prefix count identifies groups with any mismatch. Keep every edge of
+    # those groups for one-to-one matching, without transferring accepted groups.
     changes = (destination[forward][1:] != destination[forward][:-1]) | (
         source[forward][1:] != source[forward][:-1]
     )
-    starts = [0, *(torch.nonzero(changes).flatten() + 1).cpu().tolist(), count]
-    actual, expected = actual.detach().cpu().numpy(), expected.detach().cpu().numpy()
-    aligned = aligned.cpu().numpy()
+    ends = torch.cat(
+        (torch.nonzero(changes).flatten() + 1, source.new_full((1,), count))
+    )
+    starts = torch.cat((source.new_zeros(1), ends[:-1]))
+    sizes = ends - starts
+    prefix = torch.cat((source.new_zeros(1), (~aligned).to(torch.int64).cumsum(0)))
+    pending = prefix[ends] != prefix[starts]
+    selected = torch.repeat_interleave(pending, sizes, output_size=count)
+    actual = actual[selected].detach().cpu().numpy()
+    expected = expected[selected].detach().cpu().numpy()
+    starts = np.cumsum([0, *sizes[pending].cpu().tolist()])
     for begin, end in pairwise(starts):
-        if aligned[begin:end].all():
-            continue
         adjacent = np.isclose(
             actual[begin:end, None], expected[None, begin:end], rtol=2e-6, atol=2e-6
         ).all(axis=-1)
         owner = [-1] * (end - begin)
 
         def augment(node: int, seen: set[int]) -> bool:
+            """Reassign images along a path to an unmatched reverse image."""
             for target in np.flatnonzero(adjacent[node]):
                 if target in seen:
                     continue
