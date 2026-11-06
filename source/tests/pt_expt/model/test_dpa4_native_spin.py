@@ -587,11 +587,11 @@ class TestDPA4NativeSpinGraphLowerExportable:
     mirror this ABI.
     """
 
-    def test_graph_lower_exportable_symbolic_trace(self) -> None:
-        """``make_fx`` traces the graph-spin closure on CPU; the traced
-        output matches the eager ``forward_common_lower_graph`` reference
-        (same graph inputs -- the same physical system) bit-tight, and
-        includes a genuinely non-trivial ``force_mag``.
+    def test_graph_lower_exportable_torch_export(self) -> None:
+        """``torch.export.export`` succeeds with a dynamic ``nedge`` (and
+        ``N``/``nframes``) axis; the exported program reproduces the eager
+        graph lower AND generalizes to a different (smaller) system size
+        than the one it was traced/exported on.
         """
         model = _build_native_spin_model_cpu()
         sample = _build_spin_graph_sample(model)
@@ -616,6 +616,9 @@ class TestDPA4NativeSpinGraphLowerExportable:
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
+
+        # Validate the symbolic trace before exporting the same graph. This
+        # keeps same-shape parity and dynamic replay without tracing twice.
         out = traced(
             atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs
         )
@@ -670,36 +673,6 @@ class TestDPA4NativeSpinGraphLowerExportable:
             out["atom_virial"],
             ref["energy_derv_c"].reshape(out["atom_virial"].shape),
             **tol,
-        )
-
-    def test_graph_lower_exportable_torch_export(self) -> None:
-        """``torch.export.export`` succeeds with a dynamic ``nedge`` (and
-        ``N``/``nframes``) axis; the exported program reproduces the eager
-        graph lower AND generalizes to a different (smaller) system size
-        than the one it was traced/exported on.
-        """
-        model = _build_native_spin_model_cpu()
-        sample = _build_spin_graph_sample(model)
-        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs = sample
-
-        traced = model.forward_lower_graph_exportable(
-            atype,
-            n_node,
-            n_local,
-            ei,
-            ev,
-            em,
-            do,
-            drp,
-            so,
-            srp,
-            spin,
-            fparam=fp,
-            aparam=ap,
-            do_atomic_virial=True,
-            destination_sorted=True,
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
         )
 
         nframes_dim = torch.export.Dim("nframes", min=1)

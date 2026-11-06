@@ -81,7 +81,11 @@ jobs:
       - name: Verify float64 CUDA kernels are enabled
         run: |
           python -c "import torch; import deepmd.pt.cxx_op; from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import op_available, float64_available; assert torch.cuda.is_available(); assert op_available(); assert float64_available() is True"
-      - run: python -m pytest ${{ matrix.pytest-args }} --ignore=source/tests/pd
+      - name: Test Python
+        run: >-
+          python -m pytest ${{ matrix.pytest-args }} --ignore=source/tests/pd
+          --junitxml=test-reports/python-${{ matrix.shard }}.xml
+          -o junit_duration_report=total
         env:
           NUM_WORKERS: 0
           CUDA_VISIBLE_DEVICES: 0
@@ -89,6 +93,15 @@ jobs:
           XLA_PYTHON_CLIENT_PREALLOCATE: false
           XLA_PYTHON_CLIENT_ALLOCATOR: platform
           FLAGS_use_stride_compute_kernel: 0
+      - name: Upload Python test reports
+        if: ${{ always() && hashFiles('test-reports/python-*.xml') != '' }}
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: python-cuda-${{ matrix.shard }}
+          path: test-reports/python-*.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   test_cc:
     name: Test ${{ matrix.name }} on CUDA
@@ -222,8 +235,8 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
           export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-          python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
-          python -m pytest source/ipi/tests
+          source/install/pytest_with_junit.sh lammps python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
+          source/install/pytest_with_junit.sh ipi python -m pytest source/ipi/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -232,6 +245,19 @@ jobs:
           DPA4SPIN_LMP_REQUIRED: 1
           CUDA_VISIBLE_DEVICES: 0
           ENABLE_PADDLE: 0
+      - name: Upload C++ test reports
+        if: ${{ always() && hashFiles('source/build_tests/generator-reports/**', 'source/build_tests/gtest-reports/**', 'source/build_tests/pytest-reports/**', 'source/build_lammps_kokkos/test-reports/**') != '' }}
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: cpp-cuda-${{ matrix.suite }}
+          path: |
+            source/build_tests/generator-reports/**
+            source/build_tests/gtest-reports/**
+            source/build_tests/pytest-reports/**
+            source/build_lammps_kokkos/test-reports/**
+          if-no-files-found: ignore
+          retention-days: 14
   pass:
     name: Pass testing on CUDA
     needs: [test_python, test_cc]
