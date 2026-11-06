@@ -155,7 +155,11 @@ def resolve_data_groups(
         if "lmdb" not in formats and any(is_lmdb(path) for path in roots):
             raise ValueError("LMDB training data requires the pt or pt_expt backend.")
         systems = process_systems(
-            group["systems"], group.get("rglob_patterns"), formats=formats
+            group["systems"],
+            group.get("rglob_patterns"),
+            formats=formats,
+            fmt=group.get("format"),
+            out_fmt=group.get("out_format", group.get("output_format")),
         )
         if not systems:
             raise ValueError(f"Data group {index} contains no supported data systems.")

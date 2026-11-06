@@ -83,6 +83,11 @@ class LmdbDataSystem:
         world_size: int = 1,
     ) -> None:
         self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
+        # A batch has one periodicity: zero/missing cells must be separated
+        # exactly, including in statistics and full-validation snapshots.
+        self._reader.add_data_requirement(
+            [DataRequirementItem("box", 9, atomic=False, must=False)]
+        )
 
         block_targets = None
         if auto_prob_style is not None and self._reader.frame_system_ids is not None:

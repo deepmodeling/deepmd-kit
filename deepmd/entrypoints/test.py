@@ -118,6 +118,8 @@ def test(
                     group["systems"],
                     patterns=group.get("rglob_patterns"),
                     root_dir=Path(input_json).parent,
+                    fmt=group.get("format"),
+                    out_fmt=group.get("out_format", group.get("output_format")),
                 )
             )
     elif datafile is not None:

@@ -8,6 +8,13 @@ from typing import (
     Literal,
 )
 
+from deepmd.utils.data_conversion import (
+    _DPDATA_CACHE_DIR,
+    _convert_system_by_dpdata,
+    _is_deepmd_data_format,
+    _iter_conversion_inputs,
+    conversion_will_write_lmdb,
+)
 from deepmd.utils.path import (
     DPOSPath,
     DPPath,
@@ -71,6 +78,11 @@ def expand_sys_str(
         name = str(candidate)
         if isinstance(candidate, DPOSPath):
             path = candidate.path
+            # Converted outputs are implementation details, not additional
+            # datasets when discovering an ancestor (including "."). Relative
+            # parts preserve explicit access to an output inside the cache.
+            if _DPDATA_CACHE_DIR in path.relative_to(root.path).parts:
+                continue
             if not candidate.is_dir():
                 continue
             if path != root.path and _inside_lmdb(path, root.path):
@@ -95,6 +107,8 @@ def process_systems(
     *,
     formats: tuple[DatasetFormat, ...] = ("deepmd", "lmdb"),
     root_dir: str | Path | None = None,
+    fmt: str | None = None,
+    out_fmt: str | None = None,
 ) -> list[str]:
     """Expand every input path through the same format-aware discovery.
 
@@ -113,6 +127,23 @@ def process_systems(
         paths = [
             str((Path(root_dir) / file_name).resolve()) + separator + group
             for file_name, separator, group in (path.partition("#") for path in paths)
+        ]
+    if fmt is not None and not _is_deepmd_data_format(fmt.lower()):
+        # Reject unsupported output before conversion can create cache files.
+        if "lmdb" not in formats and conversion_will_write_lmdb(
+            {"format": fmt, "out_format": out_fmt}
+        ):
+            raise NotImplementedError(
+                "Selected backend does not support LMDB data yet. "
+                "Choose out_format='deepmd/hdf5' for automatic conversion."
+            )
+        return [
+            system
+            for path in paths
+            for input_path in _iter_conversion_inputs(path, patterns)
+            for system in _convert_system_by_dpdata(
+                input_path, fmt, out_fmt, expand_systems=expand_sys_str
+            )
         ]
     return [
         system

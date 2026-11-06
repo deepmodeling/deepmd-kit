@@ -106,3 +106,19 @@ def test_numpy_backend_parent_discovery_preserves_format_scope(tmp_path: Path) -
     lmdb.mkdir()
     groups = resolve_data_groups({"systems": str(tmp_path)}, formats=("deepmd",))
     assert groups[0].systems == (str(numpy),)
+
+
+@pytest.mark.parametrize("patterns", [None, ["*"]])
+def test_native_discovery_skips_cached_numpy_outputs(tmp_path: Path, patterns) -> None:
+    """Hidden cache outputs cannot become extra native data systems."""
+    from deepmd.utils.data_path import (
+        expand_sys_str,
+    )
+
+    native = tmp_path / "native"
+    cached = tmp_path / ".deepmd_dpdata_cache" / "converted" / "H"
+    for directory in (native, cached):
+        directory.mkdir(parents=True)
+        (directory / "type.raw").touch()
+    assert expand_sys_str(tmp_path, patterns=patterns) == [str(native)]
+    assert expand_sys_str(cached.parent) == [str(cached)]

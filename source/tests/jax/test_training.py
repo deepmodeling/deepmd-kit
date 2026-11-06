@@ -1165,3 +1165,45 @@ def test_jax_multitask_state_key_normalization_preserves_numeric_task_names() ->
     assert 1 not in state["models"]
     assert 0 in state["models"]["1"]["layers"]
     assert 0 in state["models"]["task"]["layers"]
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("failure", ["validation", "summary"])
+def test_training_entrypoint_closes_data_on_setup_failure(monkeypatch, failure):
+    """Partial task setup and summary failures release acquired data systems."""
+    from importlib import (
+        import_module,
+    )
+
+    module = import_module("deepmd.jax.entrypoints.train")
+    trainer = Mock()
+    task_model = Mock()
+    task_model.get_type_map.return_value = ["H"]
+    task_model.get_rcut.return_value = 6.0
+    trainer.models = {"Default": task_model}
+    trainer_factory = Mock(return_value=trainer)
+    monkeypatch.setattr(module, "DPTrainer", trainer_factory)
+    training, validation = Mock(type_map=["H"]), Mock(type_map=["H"])
+    acquired = (
+        [training, ValueError("validation failed")]
+        if failure == "validation"
+        else [training, validation]
+    )
+    monkeypatch.setattr(module, "get_data", Mock(side_effect=acquired))
+    summary = Mock(
+        side_effect=ValueError("summary failed") if failure == "summary" else None
+    )
+    monkeypatch.setattr(module, "print_data_summaries", summary)
+    if failure == "trainer":
+        trainer_factory.side_effect = ValueError("trainer failed")
+    config = {
+        "model": {"type_map": ["H"]},
+        "training": {"training_data": {}, "validation_data": {}, "seed": 42},
+    }
+    with pytest.raises(ValueError, match=f"{failure} failed"):
+        JAXTrainEntrypoint().run_training(
+            config, TrainEntrypointOptions(input_file="input.json"), neighbor_stat=None
+        )
+    training.close.assert_called_once_with()
+    if failure != "validation":
+        validation.close.assert_called_once_with()
