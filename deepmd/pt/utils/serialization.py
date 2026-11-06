@@ -15,6 +15,9 @@ from deepmd.pt.train.wrapper import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 
 def serialize_from_file(model_file: str) -> dict:
@@ -39,7 +42,9 @@ def serialize_from_file(model_file: str) -> dict:
         state_dict = torch.load(model_file, map_location="cpu", weights_only=True)
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        model_def_script = state_dict["_extra_state"]["model_params"]
+        model_def_script = normalize_pt_model_params(
+            state_dict["_extra_state"]["model_params"]
+        )
         model = get_model(model_def_script)
         modelwrapper = ModelWrapper(model)
         modelwrapper.load_state_dict(state_dict)
