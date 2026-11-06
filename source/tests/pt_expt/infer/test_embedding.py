@@ -678,6 +678,30 @@ def test_compressed_charge_state(
     )
 
 
+def test_multiblock_canonical_metadata_keeps_the_embedding_graph_generic(
+    tmp_path: "os.PathLike[str]",
+) -> None:
+    """The archive's energy ABI does not change the embedding graph layout."""
+    config = copy.deepcopy(_DPA4C_CONFIG)
+    config["descriptor"].update(n_blocks=2, precision="float32")
+    config["fitting_net"]["precision"] = "float32"
+    model_params = _normalize_model(config)
+    model = get_model(copy.deepcopy(model_params)).eval()
+    _perturb(model, seed=5)
+    dp = DeepPot(
+        _save_checkpoint(model, model_params, os.path.join(tmp_path, "model.pt"))
+    )
+    dp.deep_eval._dpmodel.get_descriptor().enable_compression(0.5)
+    expected = dp.eval_embedding(_COORDS[:1], _CELLS[:1], _ATYPES[0])
+    # Canonical archive metadata is sufficient to exercise the CPU embedding
+    # path: no compiled energy/force entry point is called by this API.
+    dp.deep_eval.metadata.update(
+        lower_input_kind="dpa4c_canonical", has_message_passing=True
+    )
+    actual = dp.eval_embedding(_COORDS[:1], _CELLS[:1], _ATYPES[0])
+    _assert_embeddings_close(actual, expected, rtol=0.0, atol=0.0)
+
+
 def test_rejects_a_model_without_graph_forward(tmp_path: "os.PathLike[str]") -> None:
     """A model that is not evaluated on the neighbor graph has no embedding."""
     model_params = _normalize_model(

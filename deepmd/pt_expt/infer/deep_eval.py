@@ -2281,7 +2281,6 @@ class DeepEval(DeepEvalBackend):
         from deepmd.pt_expt.utils.canonical_graph import (
             CanonicalGraph,
             canonical_graph_from_neighbor_graph,
-            validate_reciprocal_canonical_graph,
         )
         from deepmd.pt_expt.utils.env import (
             DEVICE,
@@ -2338,10 +2337,6 @@ class DeepEval(DeepEvalBackend):
             )
             if canonical:
                 graph = canonical_graph_from_neighbor_graph(graph)
-        if self.metadata.get(
-            "lower_input_kind"
-        ) == "dpa4c_canonical" and self.metadata.get("has_message_passing", False):
-            validate_reciprocal_canonical_graph(graph)
         return graph, atype_t, nframes, natoms
 
     def _prepare_graph_inputs(
@@ -2359,6 +2354,7 @@ class DeepEval(DeepEvalBackend):
         from deepmd.pt_expt.utils.canonical_graph import (
             BorderPlan,
             canonical_index_bytes,
+            validate_reciprocal_canonical_graph,
         )
         from deepmd.pt_expt.utils.env import (
             DEVICE,
@@ -2372,6 +2368,10 @@ class DeepEval(DeepEvalBackend):
             coords, cells, atom_types, canonical=canonical
         )
         if canonical:
+            if self.metadata.get(
+                "lower_input_kind"
+            ) == "dpa4c_canonical" and self.metadata.get("has_message_passing", False):
+                validate_reciprocal_canonical_graph(graph)
             # The compact ABI has no conditional input slots. Compressed charge
             # conditioning instead updates the constants through its fold.
             if (

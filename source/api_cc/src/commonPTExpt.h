@@ -10,7 +10,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -19,11 +18,13 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -64,8 +65,88 @@ inline void check_canonical_index(const void* source,
   }
 }
 
-/** Check the global reverse-edge contract when a single-domain list is rebuilt.
- * Periodic images are distinguished by displacement, not only by node pair.
+/// One directed edge: local endpoints and the extended neighbor's coordinates.
+struct ReciprocalEdge {
+  int center;
+  int source;
+  int neighbor;
+};
+
+/** Match equal-size image lists of opposite directions for one node pair.
+ * Displacements are recomputed in double precision from the original
+ * coordinates, avoiding edge-sized geometry storage. Their tolerance includes
+ * the input rounding of all four coordinates: epsilon(Value) times their
+ * absolute values bounds cancellation in two independently rounded images.
+ */
+template <typename Value>
+inline bool reciprocal_images_match(const ReciprocalEdge* forward,
+                                    const ReciprocalEdge* reverse,
+                                    size_t count,
+                                    const std::vector<Value>& coord) {
+  const auto opposite = [&](const ReciprocalEdge& a, const ReciprocalEdge& b) {
+    for (size_t axis = 0; axis < 3; ++axis) {
+      const double ac = coord[3 * static_cast<size_t>(a.center) + axis];
+      const double an = coord[3 * static_cast<size_t>(a.neighbor) + axis];
+      const double bc = coord[3 * static_cast<size_t>(b.center) + axis];
+      const double bn = coord[3 * static_cast<size_t>(b.neighbor) + axis];
+      const double av = an - ac, bv = bn - bc;
+      if (!std::isfinite(av) || !std::isfinite(bv)) {
+        throw deepmd_exception(
+            "multi-block DPA4C requires finite edge displacements");
+      }
+      const double eps = std::numeric_limits<Value>::epsilon();
+      const double rounding = eps * std::abs(ac) + eps * std::abs(an) +
+                              eps * std::abs(bc) + eps * std::abs(bn);
+      if (std::abs(av + bv) >
+          2e-6 * (1.0 + std::max(std::abs(av), std::abs(bv))) + rounding) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (std::equal(forward, forward + count, reverse, opposite)) {
+    return true;
+  }
+  // Tolerance is not a strict ordering. Augmenting paths match images
+  // one-to-one even when several candidates fit, preserving multiplicities.
+  std::vector<std::vector<size_t>> adjacent(count);
+  for (size_t i = 0; i < count; ++i) {
+    for (size_t j = 0; j < count; ++j) {
+      if (opposite(forward[i], reverse[j])) {
+        adjacent[i].push_back(j);
+      }
+    }
+  }
+  std::vector<size_t> owner(count, count);
+  std::function<bool(size_t, std::vector<bool>&)> augment =
+      [&](size_t node, std::vector<bool>& seen) {
+        for (const size_t target : adjacent[node]) {
+          if (seen[target]) {
+            continue;
+          }
+          seen[target] = true;
+          if (owner[target] == count || augment(owner[target], seen)) {
+            owner[target] = node;
+            return true;
+          }
+        }
+        return false;
+      };
+  for (size_t node = 0; node < count; ++node) {
+    std::vector<bool> seen(count, false);
+    if (!augment(node, seen)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Check the global reverse-edge contract at a single-domain list rebuild.
+ * Each edge stores only three node indices. One sort groups unordered local
+ * node pairs and separates their two directions. Equal direction counts and
+ * a one-to-one displacement match establish reciprocity, including duplicate
+ * periodic images. Self-image edges match against their own negated group.
+ * The topology builder validates the local-owner mapping before this check.
  * Domain-decomposed lists are checked by their producer across ranks instead.
  */
 template <typename Value>
@@ -75,96 +156,57 @@ inline void check_reciprocal_nlist(const std::vector<std::vector<int>>& nlist,
                                    const std::vector<Value>& coord,
                                    int nloc,
                                    int nall) {
-  using Edge = std::array<double, 5>;
-  std::vector<Edge> edges, reverse;
+  size_t capacity = 0;
+  for (size_t row = 0; row < nlist.size() && row < centers.size(); ++row) {
+    if (centers[row] >= 0 && centers[row] < nloc) {
+      capacity += std::count_if(
+          nlist[row].begin(), nlist[row].end(),
+          [nall](int neighbor) { return neighbor >= 0 && neighbor < nall; });
+    }
+  }
+  std::vector<ReciprocalEdge> edges;
+  edges.reserve(capacity);
   for (size_t row = 0; row < nlist.size() && row < centers.size(); ++row) {
     const int center = centers[row];
     if (center < 0 || center >= nloc) {
       continue;
     }
     for (const int neighbor : nlist[row]) {
-      if (neighbor < 0 || neighbor >= nall) {
-        continue;
+      if (neighbor >= 0 && neighbor < nall) {
+        edges.push_back(
+            {center, static_cast<int>(mapping[neighbor]), neighbor});
       }
-      const double source = static_cast<double>(mapping[neighbor]);
-      const double dx =
-          static_cast<double>(coord[3 * neighbor]) - coord[3 * center];
-      const double dy =
-          static_cast<double>(coord[3 * neighbor + 1]) - coord[3 * center + 1];
-      const double dz =
-          static_cast<double>(coord[3 * neighbor + 2]) - coord[3 * center + 2];
-      if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) {
-        throw deepmd_exception(
-            "multi-block DPA4C requires finite edge displacements");
-      }
-      edges.push_back({static_cast<double>(center), source, dx, dy, dz});
-      reverse.push_back({source, static_cast<double>(center), -dx, -dy, -dz});
     }
   }
-  const auto pair_less = [](const Edge& a, const Edge& b) {
-    return a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]);
+  const auto pair_key = [](const ReciprocalEdge& edge) {
+    const auto endpoints = std::minmax(edge.center, edge.source);
+    return std::make_tuple(endpoints.first, endpoints.second, edge.center);
   };
-  const auto vectors_close = [](const Edge& a, const Edge& b) {
-    for (int axis = 2; axis < 5; ++axis) {
-      if (std::abs(a[axis] - b[axis]) > 2e-6 * (1.0 + std::abs(b[axis]))) {
-        return false;
-      }
-    }
-    return true;
-  };
-  std::sort(edges.begin(), edges.end(), pair_less);
-  std::sort(reverse.begin(), reverse.end(), pair_less);
-  const std::string message =
-      "multi-block DPA4C requires a globally bidirectional graph: "
-      "each edge must have a reverse edge with opposite displacement";
-  for (size_t edge = 0; edge < edges.size(); ++edge) {
-    if (edges[edge][0] != reverse[edge][0] ||
-        edges[edge][1] != reverse[edge][1]) {
-      throw deepmd_exception(message);
-    }
-  }
+  std::sort(edges.begin(), edges.end(), [&](const auto& a, const auto& b) {
+    return pair_key(a) < pair_key(b);
+  });
   for (size_t begin = 0; begin < edges.size();) {
+    const auto endpoints =
+        std::minmax(edges[begin].center, edges[begin].source);
     size_t end = begin + 1;
-    while (end < edges.size() && edges[end][0] == edges[begin][0] &&
-           edges[end][1] == edges[begin][1]) {
+    while (end < edges.size() &&
+           std::minmax(edges[end].center, edges[end].source) == endpoints) {
       ++end;
     }
-    if (std::equal(edges.begin() + begin, edges.begin() + end,
-                   reverse.begin() + begin, vectors_close)) {
-      begin = end;
-      continue;
-    }
-    // Tolerant vector comparisons cannot define a strict sort order. Match
-    // images within their exact node pair, retaining duplicate multiplicity.
-    const size_t count = end - begin;
-    std::vector<std::vector<size_t>> adjacent(count);
-    for (size_t i = 0; i < count; ++i) {
-      for (size_t j = 0; j < count; ++j) {
-        if (vectors_close(edges[begin + i], reverse[begin + j])) {
-          adjacent[i].push_back(j);
-        }
+    size_t split = begin;
+    size_t count = end - begin;
+    if (endpoints.first != endpoints.second) {
+      while (split < end && edges[split].center == endpoints.first) {
+        ++split;
       }
+      count = split - begin;
     }
-    std::vector<int> owner(count, -1);
-    std::function<bool(size_t, std::vector<bool>&)> augment =
-        [&](size_t node, std::vector<bool>& seen) {
-          for (const size_t target : adjacent[node]) {
-            if (seen[target]) {
-              continue;
-            }
-            seen[target] = true;
-            if (owner[target] < 0 || augment(owner[target], seen)) {
-              owner[target] = static_cast<int>(node);
-              return true;
-            }
-          }
-          return false;
-        };
-    for (size_t node = 0; node < count; ++node) {
-      std::vector<bool> seen(count, false);
-      if (!augment(node, seen)) {
-        throw deepmd_exception(message);
-      }
+    if (count != end - split ||
+        !reciprocal_images_match(edges.data() + begin, edges.data() + split,
+                                 count, coord)) {
+      throw deepmd_exception(
+          "multi-block DPA4C requires a globally bidirectional graph: "
+          "each edge must have a reverse edge with opposite displacement");
     }
     begin = end;
   }

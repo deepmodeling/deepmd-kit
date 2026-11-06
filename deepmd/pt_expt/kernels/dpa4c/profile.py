@@ -21,7 +21,7 @@ class DescriptorProfile:
     ranks
         Bispectrum probe rank of each degree from one through ``lmax``.
     moment_width
-        Flat moment width :math:`S=\\sum_\\ell(2\\ell+1)C_\\ell`.
+        Flat moment width :math:`S=\sum_\ell(2\ell+1)C_\ell`.
     output_width
         Invariant descriptor width consumed by the fitting network.
     gram_base
