@@ -4974,20 +4974,23 @@ def _mixing_stack_backward(ctx, grad_out, grad_z, grad_u):
     # The fused FP32 stack is selected by the existing Triton inference
     # controls. Only its validated layout uses cohort-sized scratch; weight,
     # saved-state and higher-order requests have already taken the train path.
-    from .so2_edge_cohort import (
-        cohort_backward,
-        supports_edge_cohort,
-    )
+    # CPU/reference callers must not import the CUDA-only launcher, especially
+    # when Triton is absent. Keep the existing optional-dependency fallback.
+    if SO2_VALUE_PATH_TRITON_AVAILABLE and grad_out.is_cuda:
+        from .so2_edge_cohort import (
+            cohort_backward,
+            supports_edge_cohort,
+        )
 
-    if supports_edge_cohort(
-        grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
-    ) and all(
-        value.dtype == torch.float32
-        and value.device == grad_out.device
-        and value.is_contiguous()
-        for value in (alpha, w0_all, w1_all, gw_all)
-    ):
-        backward_op = cohort_backward
+        if supports_edge_cohort(
+            grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
+        ) and all(
+            value.dtype == torch.float32
+            and value.device == grad_out.device
+            and value.is_contiguous()
+            for value in (alpha, w0_all, w1_all, gw_all)
+        ):
+            backward_op = cohort_backward
     grad_u0, grad_alpha = backward_op(
         grad_out,
         x_local,
