@@ -4,6 +4,7 @@
 Run with --torch DIR --base DIR --candidate DIR. An OOM reference is unavailable,
 not a pass. Output is JSON; absolute units follow the ASE energy/force/virial/stress
 arrays. Relative errors use max(abs(reference), 1e-8) as the denominator.
+The worst tolerance ratio records its frame, repeat pair and component values.
 """
 # ruff: noqa: T201 -- standalone comparison CLI
 
@@ -19,6 +20,15 @@ from pathlib import (
 import numpy as np
 
 
+def configure_capture_route(route, scalar_path):
+    """Reject missing CSC5 support; retain supported-layout fallback behavior."""
+    available = hasattr(scalar_path, "_save_competition_scalar")
+    if route == "CSC5" and not available:
+        raise ValueError("CSC5 is unavailable in the selected source checkout")
+    if route == "BASE" and available:
+        scalar_path._save_competition_scalar = lambda conv, x: False
+
+
 def compare(candidate, reference):
     """Compare all 3x3 repeat pairs for each of the three corresponding frames."""
     fields = {}
@@ -29,12 +39,24 @@ def compare(candidate, reference):
             y = reference[f"{j}_{frame}_{field}"]
             assert x.shape == y.shape
             delta = np.abs(x - y)
+            ratio = delta / (1e-5 + 1e-4 * abs(y))
+            index = np.unravel_index(np.argmax(ratio), ratio.shape)
             rows.append(
                 {
                     "max_abs": float(delta.max()),
                     "mean_abs": float(delta.mean()),
                     "max_relative": float((delta / np.maximum(abs(y), 1e-8)).max()),
-                    "max_ratio": float((delta / (1e-5 + 1e-4 * abs(y))).max()),
+                    "max_ratio": float(ratio.max()),
+                    "worst": {
+                        "frame": frame,
+                        "candidate_repeat": i,
+                        "reference_repeat": j,
+                        "index": [int(k) for k in index],
+                        "candidate": float(x[index]),
+                        "reference": float(y[index]),
+                        "abs_error": float(delta[index]),
+                        "tolerance": float(1e-5 + 1e-4 * abs(y[index])),
+                    },
                     "finite": bool(np.isfinite(x).all() and np.isfinite(y).all()),
                 }
             )
@@ -45,6 +67,7 @@ def compare(candidate, reference):
         fields[field]["passed"] = all(
             row["finite"] and row["max_ratio"] <= 1 for row in rows
         )
+        fields[field]["worst"] = max(rows, key=lambda row: row["max_ratio"])["worst"]
     return fields
 
 

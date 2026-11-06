@@ -107,10 +107,19 @@ from deepmd.calculator import (
 from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as scalar_path
 from deepmd.utils.errors import OutOfMemoryError as DPOutOfMemoryError
 
+from compare_so2_scalar_capture import (
+    configure_capture_route,
+)
+
 # BASE is an explicit benchmark-only ablation, not a public inference switch.
 # On a pre-feature checkout BASE naturally uses its original implementation.
-if a.route == "BASE" and hasattr(scalar_path, "_save_competition_scalar"):
-    scalar_path._save_competition_scalar = lambda conv, x: False
+try:
+    configure_capture_route(a.route, scalar_path)
+except ValueError as error:
+    write(
+        "result.json", {"status": "unsupported", "route": a.route, "reason": str(error)}
+    )
+    raise SystemExit(2) from error
 
 torch.set_num_threads(1)
 torch.set_float32_matmul_precision("highest")

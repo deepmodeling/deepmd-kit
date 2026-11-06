@@ -581,7 +581,9 @@ retain the original path. The latter already releases the large rotation
 storage, so capture adds no measured peak-memory benefit there. This is a
 capacity optimization: the extra scalar store can increase latency. Measurements
 on RTX 5090 with the Neo checkpoint found about 12.35%/12.38% lower peak allocated
-memory for PT export at 1000/4096 atoms, with about 0.65%/1.09% higher latency.
+memory for PT export at 1000/4096 atoms, with about 0.338%/0.453% higher latency
+in the [updated measurement round](https://github.com/deepmodeling/deepmd-kit/pull/6114#issuecomment-6635037675)
+(PyTorch 2.11.0+cu128, Triton 3.6.0, TF32/AMP off, 12 warmups and 30 samples).
 These measurements do not imply the same benefit for other execution paths.
 The manual full-API benchmark is
 `source/tests/pt_expt/benchmark_so2_scalar_capture.py` (`--help` lists inputs).
