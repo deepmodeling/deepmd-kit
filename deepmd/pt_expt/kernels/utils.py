@@ -380,3 +380,28 @@ def use_amp_infer() -> bool:
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+
+
+def use_radial_head_packed() -> bool:
+    """Return whether the radial head folds its projections at inference.
+
+    The flag is controlled by the ``DP_RADIAL_HEAD_PACKED_INFER`` environment
+    variable. When it is truthy and the convolution carries both the hidden
+    up-projection and the degree mixer, the inference value path contracts the
+    per-edge radial features against a pre-packed effective weight
+    ``(lmax + 1) * C -> degree-kernel columns`` instead of materializing the
+    up-projected ``(E, lmax + 1, C_wide)`` surface and then projecting it. The
+    two step contraction is algebraically the same product; only the fp32
+    summation order changes, so results agree with the unpacked path to float
+    rounding rather than bit-for-bit. Training and every path without both
+    modules keep the two-step math.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``DP_RADIAL_HEAD_PACKED_INFER`` is set to a truthy value.
+    """
+    return (
+        os.environ.get("DP_RADIAL_HEAD_PACKED_INFER", "0").strip().lower()
+        in _INFER_TRUE
+    )

@@ -2062,3 +2062,236 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
+    """Cross-check the folded radial head against the two-step value path.
+
+    The folded head contracts the per-edge radial features against a packed
+    effective weight (the hidden up-projection pre-multiplied into the degree
+    mixer blocks), replacing the up-projected ``(E, lmax+1, C_wide)`` surface
+    and its second projection.  The comparison reference is the same fused
+    value path with the folding flag off, so every other kernel in the path is
+    identical and only the radial head's summation order differs.
+    """
+
+    # (lmax, channels, n_focus, focus_dim, mixing_layers, mode, rank)
+    CASE = (3, 64, 2, 96, 4, "degree_channel", 1)
+    # channels == hidden (2 * 32) -> no hidden projection, folding must opt out
+    NO_PROJ_CASE = (3, 64, 2, 32, 4, "degree_channel", 1)
+
+    N_NODE = 512
+    N_EDGE = 20000
+
+    @mock.patch.dict(
+        "os.environ",
+        {
+            "DP_TRITON_INFER": "0",
+            "DP_CUDA_INFER": "0",
+            "DP_TRITON_TRAIN": "0",
+            "DP_CUDA_TRAIN": "0",
+        },
+    )
+    def _build(self, case):
+        """Build the fused value path and its edge inputs for ``case``."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *case)
+        fused = make_triton_value_path(conv)
+        self.assertIsNotNone(fused)
+        fused.prepare_inference_weights()
+        x, cache, radial = value_path_cls._edge_inputs(self, conv, case[0], case[1])
+        return conv, fused, x, cache, radial
+
+    @_GPU_KERNELS
+    def test_lazy_packing_is_cached(self):
+        """A hook-less flow packs once and caches under the hook's names."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *self.CASE)
+        fused = make_triton_value_path(conv)
+        self.assertIsNotNone(fused)
+        # No prepare_inference_weights: the lazy path must engage, pack
+        # exactly once across two calls, and leave the cached attributes.
+        x, cache, radial = value_path_cls._edge_inputs(
+            self, conv, self.CASE[0], self.CASE[1]
+        )
+
+        calls = []
+        real = fused._pack_radial_weights
+
+        def _spy():
+            calls.append(1)
+            return real()
+
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            with mock.patch.object(fused, "_pack_radial_weights", _spy):
+                fused(x, cache, radial)
+                fused(x, cache, radial)
+        self.assertEqual(len(calls), 1, "the lazy pack must be cached")
+        self.assertIsNotNone(getattr(conv, "_triton_radial_weff", None))
+        self.assertIsNotNone(getattr(conv, "_triton_radial_wh", None))
+
+    @_GPU_KERNELS
+    def test_truncated_radial_slice_folds(self):
+        """A pyramid schedule's per-block slice still takes the folded head.
+
+        The shared radial surface is truncated per block (``rad[:, :l+1, :]``
+        views); the fold must not demand full contiguity -- ``flatten(1)``
+        copies the strided view and the contraction stays correct.
+        """
+        conv, fused, x, cache, radial = self._build(self.CASE)
+        sliced = radial[:, : conv.lmax, :]  # one degree short: a real view
+        self.assertFalse(sliced.is_contiguous())
+        # Simulate the per-block packed weights of a pyramid schedule: the
+        # slice keeps the low-degree row blocks of the packed weight.
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            weff = conv._triton_radial_weff
+            # Row blocks are stacked by degree; drop the highest one.
+            rows = sliced.shape[1] * weff.shape[0] // (conv.lmax + 1)
+            weff_sliced = weff[:rows]
+            conv._triton_radial_weff = weff_sliced
+            try:
+                packed = fused._radial_packed_weights(sliced)
+            finally:
+                conv._triton_radial_weff = weff
+        self.assertIsNotNone(packed, "a truncated view must still fold")
+        weff_used, wh = packed
+        kc = torch.matmul(sliced.flatten(1), weff_used)
+        kc_ref = torch.matmul(
+            radial[:, : conv.lmax, :].contiguous().flatten(1), weff_sliced
+        )
+        torch.testing.assert_close(kc, kc_ref, atol=0.0, rtol=0.0)
+        _ = wh
+
+    @_GPU_KERNELS
+    def test_export_pin_selects_the_fold_on_cpu_tensors(self):
+        """Freeze traces on CPU; the pin keeps the folded head selected."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *self.CASE)
+        fused = make_triton_value_path(conv)
+        fused.prepare_inference_weights()
+        x, cache, radial = value_path_cls._edge_inputs(
+            self, conv, self.CASE[0], self.CASE[1]
+        )
+        cpu_radial = radial.cpu()
+        x = x.cpu()
+        for name in ("src",):
+            setattr(cache, name, getattr(cache, name).cpu())
+        # The guard reads only the conv and the radial operand, so drive it
+        # directly instead of moving the whole cache to CPU.
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            self.assertIsNone(
+                fused._radial_packed_weights(cpu_radial),
+                "CPU tensors without the pin keep the unpacked head",
+            )
+            conv._force_radial_packed = True
+            try:
+                pinned = fused._radial_packed_weights(cpu_radial)
+            finally:
+                conv._force_radial_packed = None
+        self.assertIsNotNone(pinned, "the pin must select the fold for exports")
+
+    @_GPU_KERNELS
+    def test_forward_and_backward_match_unpacked(self):
+        conv, fused, x, cache, radial = self._build(self.CASE)
+
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "0"}):
+            rad_ref = radial.clone().requires_grad_(True)
+            out_ref, feat_ref = fused(x, cache, rad_ref)
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            rad_packed = radial.clone().requires_grad_(True)
+            out_packed, feat_packed = fused(x, cache, rad_packed)
+
+        # The folded head materializes only the l = 0 rows the attention reads.
+        self.assertEqual(feat_ref.shape[1], conv.lmax + 1)
+        self.assertEqual(feat_packed.shape[1], 1)
+        torch.testing.assert_close(
+            feat_packed[:, 0, :], feat_ref[:, 0, :], atol=1e-5, rtol=1e-4
+        )
+        scale = out_ref.abs().max().item()
+        torch.testing.assert_close(
+            out_packed, out_ref, atol=1e-4 * max(scale, 1.0), rtol=1e-3
+        )
+
+        grad_seed = torch.randn_like(out_ref)
+        grads_ref = torch.autograd.grad(
+            out_ref, rad_ref, grad_outputs=grad_seed, retain_graph=True
+        )[0]
+        grads_packed = torch.autograd.grad(
+            out_packed, rad_packed, grad_outputs=grad_seed
+        )[0]
+        torch.testing.assert_close(
+            grads_packed, grads_ref, atol=1e-4 * max(scale, 1.0), rtol=1e-3
+        )
+
+    @_GPU_KERNELS
+    def test_dispatch_follows_flag(self):
+        conv, fused, x, cache, radial = self._build(self.CASE)
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            _, feat_on = fused(x, cache, radial)
+        self.assertEqual(feat_on.shape[1], 1)
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "0"}):
+            _, feat_off = fused(x, cache, radial)
+        self.assertEqual(feat_off.shape[1], conv.lmax + 1)
+
+    @_GPU_KERNELS
+    def test_fallback_without_hidden_projection(self):
+        conv, fused, x, cache, radial = self._build(self.NO_PROJ_CASE)
+        self.assertIsNone(conv.radial_hidden_proj)
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            _, feat = fused(x, cache, radial)
+        self.assertEqual(feat.shape[1], conv.lmax + 1)
+
+    @_GPU_KERNELS
+    def test_fallback_packing_without_prepare_hook(self):
+        # The plain checkpoint-to-eval flow never runs the prepare hook;
+        # the folded head must pack from the live weights on its own.
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *self.CASE)
+        fused = make_triton_value_path(conv)
+        self.assertIsNone(getattr(conv, "_triton_radial_weff", None))
+        x, cache, radial = value_path_cls._edge_inputs(
+            self, conv, self.CASE[0], self.CASE[1]
+        )
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            _, feat = fused(x, cache, radial)
+        self.assertEqual(feat.shape[1], 1)
+
+    @_GPU_KERNELS
+    def test_packed_buffer_shapes(self):
+        conv, fused, *_ = self._build(self.CASE)
+        lmax, channels, _, focus_dim, _, mode, rank = self.CASE
+        mixer_cols = sum((lmax - m + 1) ** 2 for m in range(2)) * rank
+        weff = getattr(conv, "_triton_radial_weff", None)
+        wh = getattr(conv, "_triton_radial_wh", None)
+        self.assertIsNotNone(weff)
+        self.assertIsNotNone(wh)
+        self.assertEqual(tuple(weff.shape), ((lmax + 1) * channels, mixer_cols))
+        self.assertEqual(tuple(wh.shape), (channels, conv.hidden_channels))
+
+        # The folded product must reproduce the two-step contraction.
+        torch.manual_seed(3)
+        radial = torch.randn(
+            257, lmax + 1, channels, device="cuda", dtype=torch.float32
+        )
+        reference = conv.radial_hidden_proj(radial)
+        kc_ref = torch.matmul(
+            reference.flatten(1), conv.radial_degree_mixer.weight.detach()
+        )
+        kc_packed = torch.matmul(radial.flatten(1), weff)
+        torch.testing.assert_close(kc_packed, kc_ref, atol=1e-5, rtol=1e-4)
