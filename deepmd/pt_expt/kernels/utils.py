@@ -380,3 +380,19 @@ def use_amp_infer() -> bool:
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+
+
+def use_grid_layout_infer() -> bool:
+    """Return whether the routed grid composition avoids the bmm form.
+
+    The flag is controlled by the ``DP_GRID_LAYOUT_INFER`` environment
+    variable and is read when the routed grid product runs; a compiled graph
+    bakes in the value observed at trace time. The branch count of the
+    routed product is tiny, so a broadcast multiply plus a sum over the
+    branch axis fuses into one kernel, while the einsum formulation lowers
+    to a bmm whose output layout then needs a full-tensor transpose copy.
+    The grid projections also switch to the grid-major layout so the
+    projector GEMM writes its output directly and the backward keeps one
+    fused transpose instead of four full-tensor layout copies.
+    """
+    return os.environ.get("DP_GRID_LAYOUT_INFER", "0").strip().lower() in _INFER_TRUE

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 import unittest
 
 import torch
@@ -1254,3 +1255,155 @@ class TestSO3CounterExample(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGridLayoutSwitch(unittest.TestCase):
+    """Both arms of ``DP_GRID_LAYOUT_INFER`` and the projector-pair rule.
+
+    The routed-combination branches must be exercised from the committed
+    suite (not a shell export), and the operand layout must be decided by
+    the projector pair actually supplied: the owning net's bound methods
+    emit grid-major operands under the flag, while any other projector
+    keeps the documented node-major layout and must not be reinterpreted.
+    """
+
+    def _run(self, branch, left, right, scalar_pair, to_grid, from_grid, grid_major):
+        from unittest import (
+            mock,
+        )
+
+        outs = {}
+        for flag in ("0", "1"):
+            with mock.patch.dict(
+                os.environ, {"DP_GRID_LAYOUT_INFER": flag}, clear=False
+            ):
+                outs[flag] = branch(
+                    left,
+                    right,
+                    scalar_pair,
+                    to_grid=to_grid,
+                    from_grid=from_grid,
+                    grid_major=grid_major and flag == "1",
+                )
+        return outs
+
+    def test_both_arms_match_for_own_and_custom_projectors(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+
+        torch.manual_seed(3)
+        n, g, d, f, c, nb = 5, 7, 6, 2, 8, 2
+        branch = GridBranch(
+            channels=c,
+            n_branches=nb,
+            n_frames=1,
+            dtype=torch.float32,
+            trainable=True,
+            seed=11,
+        )
+        branch = branch.cpu()
+        branch.eval()
+        left = torch.randn(n, d, f, c, device="cpu")
+        right = torch.randn(n, d, f, c, device="cpu")
+        scalar_pair = torch.randn(n, f, 2 * c, device="cpu")
+        a = torch.randn(g, d, device="cpu")
+        b = torch.randn(d, g, device="cpu")
+
+        def _to_grid_documented(x):  # (N, D, F, K) -> (N, G, F, K)
+            return torch.einsum("gd,ndfk->ngfk", a, x)
+
+        def _from_grid_documented(y):  # (N, G, F, K) -> (N, D, F, K)
+            return torch.einsum("dg,ngfk->ndfk", b, y)
+
+        from deepmd.pt_expt.kernels.utils import (
+            use_grid_layout_infer,
+        )
+
+        class _Owner:
+            def _to_grid(self, x):  # grid-major (G, N, F, K) under the flag
+                y = _to_grid_documented(x)
+                return y.transpose(0, 1) if use_grid_layout_infer() else y
+
+            def _from_grid(self, y):  # flag-aware inverse of _to_grid
+                if use_grid_layout_infer():
+                    y = y.transpose(0, 1)
+                return _from_grid_documented(y)
+
+        owner = _Owner()
+
+        custom = self._run(
+            branch,
+            left,
+            right,
+            scalar_pair,
+            _to_grid_documented,
+            _from_grid_documented,
+            grid_major=False,
+        )
+        own = self._run(
+            branch,
+            left,
+            right,
+            scalar_pair,
+            owner._to_grid,
+            owner._from_grid,
+            grid_major=True,
+        )
+
+        torch.testing.assert_close(custom["0"], custom["1"], atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(own["0"], own["1"], atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(custom["1"], own["1"], atol=1e-6, rtol=1e-6)
+        # A projector pair the owner did not supply keeps the documented
+        # node-major layout under the flag: without the identity check the
+        # branch reinterprets the axes and (g != n) the router broadcast
+        # fails outright.
+        self.assertEqual(custom["1"].shape, own["1"].shape)
+
+    def test_real_grid_net_matches_across_switch_with_grads(self) -> None:
+        """A real S2GridNet forwards and backpropagates identically both ways.
+
+        The routed combination runs through the net's own projectors (the
+        flag-aware ``_to_grid``/``_from_grid``), exercising the grid-major
+        projection, its backward and the explicit ``grid_major`` hand-off
+        the branch now requires; values and input gradients must match the
+        node-major formulation at rounding level.
+        """
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            S2GridNet,
+        )
+
+        torch.manual_seed(11)
+        net = S2GridNet(
+            lmax=2,
+            channels=8,
+            n_focus=1,
+            mode="self",
+            op_type="branch",
+            dtype=torch.float32,
+            layout="ndfc",
+            grid_branches=2,
+            trainable=True,
+            seed=13,
+        ).cpu()
+        net.eval()
+        query = torch.randn(5, 9, 1, 16, device="cpu")
+
+        gen = torch.Generator(device="cpu").manual_seed(3)
+        seed_t = torch.randn(5, 9, 1, 8, device="cpu", generator=gen)
+        outs, grads = {}, {}
+        for flag in ("0", "1"):
+            q = query.clone().requires_grad_(True)
+            with mock.patch.dict(
+                os.environ, {"DP_GRID_LAYOUT_INFER": flag}, clear=False
+            ):
+                out = net(q)
+                grad = torch.autograd.grad(out, q, seed_t)[0]
+            outs[flag] = out.detach()
+            grads[flag] = grad
+        torch.testing.assert_close(outs["1"], outs["0"], atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(grads["1"], grads["0"], atol=1e-5, rtol=1e-5)
