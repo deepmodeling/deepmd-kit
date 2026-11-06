@@ -22,10 +22,16 @@ def segment_envelope_gated_softmax(
     n_nodes: int,
     z_bias_raw: torch.Tensor,
     eps: float,
-    src_weight: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Compute destination-wise envelope-gated softmax attention.
+
+    The physical mass of an edge is ``edge_env**2 * exp(logits)`` and the
+    denominator of its destination is the sum of the edge masses plus the
+    positive null mass ``softplus(z_bias_raw) + eps``. An edge whose envelope
+    is zero is therefore absent from both, which is what the frozen-zone
+    invariance of a bridged model needs, since its envelope carries the
+    source gate.
 
     Parameters
     ----------
@@ -42,16 +48,6 @@ def segment_envelope_gated_softmax(
         Softplus is applied to keep the bias strictly positive.
     eps
         Small positive floor added to the physical null mass.
-    src_weight
-        Optional per-edge source-side multiplier with shape (E, 1) or
-        (E,). When provided, the physical per-edge mass is
-        ``edge_env**2 * src_weight * exp(logits)`` and the denominator is the
-        sum of edge masses plus the positive null mass
-        ``softplus(z_bias_raw) + eps``.
-        ``src_weight = 0`` therefore removes the source from both the
-        numerator and the denominator, which is what SFPG needs so that
-        a muted source does not even leak through the softmax
-        normalization.
 
     Returns
     -------
@@ -65,30 +61,16 @@ def segment_envelope_gated_softmax(
         torch.float32 if input_dtype in (torch.float16, torch.bfloat16) else input_dtype
     )
 
-    # === Step 1. Build factor-wise effective logits ===
-    # Computing the logarithms before multiplying the factors avoids losing a
-    # physically nonzero edge when ``edge_env**2 * src_weight`` underflows.
+    # === Step 1. Build the effective logits ===
+    # Taking the logarithm of the envelope before adding it to the logits
+    # avoids losing a physically nonzero edge when ``edge_env**2`` underflows.
     logits_2d = logits.reshape(n_edge, n_channel).to(dtype=compute_dtype)
     edge_env_1d = edge_env.reshape(n_edge).to(dtype=compute_dtype)
     edge_positive = edge_env_1d > 0.0
     ones = torch.ones_like(edge_env_1d)
     log_weight = 2.0 * torch.log(torch.where(edge_positive, edge_env_1d, ones))
-    active = edge_positive
-    source_ratio: torch.Tensor | None = None
-    if src_weight is not None:
-        source_weight = src_weight.reshape(n_edge).to(dtype=compute_dtype)
-        source_positive = source_weight > 0.0
-        safe_source = torch.where(source_positive, source_weight, ones)
-        source_scale = safe_source.detach()
-        log_weight = log_weight + torch.log(source_scale)
-        source_ratio = torch.where(
-            source_positive,
-            source_weight / source_scale,
-            torch.zeros_like(source_weight),
-        )
-        active = active & source_positive
     effective_logits = torch.where(
-        active.reshape(n_edge, 1),
+        edge_positive.reshape(n_edge, 1),
         logits_2d + log_weight.reshape(n_edge, 1),
         torch.full_like(logits_2d, float("-inf")),
     )
@@ -115,11 +97,6 @@ def segment_envelope_gated_softmax(
 
     # === Step 3. Normalize edge and null masses in the shared shifted frame ===
     edge_exp = torch.exp(effective_logits - edge_max)
-    if source_ratio is not None:
-        # ``source_scale`` carries the forward magnitude in log space, while
-        # this linear ratio carries derivatives without differentiating
-        # ``log(src_weight)`` at extremely small positive gates.
-        edge_exp = edge_exp * source_ratio.reshape(n_edge, 1)
     denom_sum = torch.zeros(
         n_nodes,
         n_channel,

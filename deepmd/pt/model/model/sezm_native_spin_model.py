@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Native-spin SeZM energy model.
 
-Unlike the virtual-atom :class:`SeZMSpinModel`, the native scheme injects the
+The model injects the
 per-atom spin vector directly into the descriptor as an equivariant feature
 (``l = 0`` magnitude and ``l = 1`` direction) and obtains the magnetic force as
-the negative spin gradient of the energy. No virtual atoms are created, so the
-neighbor list, type map and selection stay at their real-system sizes, and the
-analytical bridging potential needs no real/virtual masking.
+the negative spin gradient of the energy. The neighbor list, type map and
+selection use the real-system sizes.
 """
 
 from copy import (
@@ -46,7 +45,7 @@ from deepmd.utils.version import (
 
 @BaseModel.register("sezm_native_spin")
 class SeZMNativeSpinModel(SeZMModel):
-    """SeZM energy model with native (virtual-atom-free) spin.
+    """SeZM energy model with native spin.
 
     The per-atom spin enters the descriptor through :class:`SpinEmbedding`, and
     the magnetic force is the negative spin gradient of the energy, produced by
@@ -421,8 +420,7 @@ class SeZMNativeSpinModel(SeZMModel):
         enter the descriptor); padding the ghost slots with zero lets it share
         the extended reduce / fold-back contract that
         ``communicate_extended_output`` and the LAMMPS C++ backend apply to the
-        conservative force, so the native and deepspin schemes share one
-        downstream path. The padding is unconditional (``nall - nloc`` is zero
+        conservative force. The padding is unconditional (``nall - nloc`` is zero
         for an isolated cluster) so the closure stays free of shape-dependent
         branches under ``make_fx`` symbolic tracing.
         """

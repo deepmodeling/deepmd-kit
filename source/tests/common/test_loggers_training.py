@@ -257,7 +257,8 @@ def test_node_summary_does_not_take_checkpoint_ownership(
 
     output = capsys.readouterr().err
     assert "Computed num_steps=20" in output
-    assert "defaulting to the number of systems per task" in output
+    assert "defaulting to the native data size per task" in output
+    assert "NumPy/HDF5 systems or LMDB frames" in output
     assert task_schedule.model_prob.tolist() == [1 / 3, 2 / 3]
     assert "Resolved checkpoint retention to 2" in output
     assert store.max_keep == 2

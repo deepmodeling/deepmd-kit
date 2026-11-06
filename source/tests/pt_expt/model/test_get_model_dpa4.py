@@ -236,7 +236,6 @@ class TestGetModelDPA4(unittest.TestCase):
         and merely warns about.
         """
         cases = {
-            "spin": ({"use_spin": [True, False], "virtual_scale": [0.3]}, "Spin DPA4"),
             "lora": ({"rank": 4}, "`lora` is not supported"),
         }
         for key, (value, msg_regex) in cases.items():
@@ -251,6 +250,18 @@ class TestGetModelDPA4(unittest.TestCase):
         raw["preset_out_bias"] = {"energy": [None, 1.0]}
         model = get_model(raw)
         self.assertEqual(model.atomic_model.preset_out_bias, {"energy": [None, [1.0]]})
+
+    def test_spin_requires_native_scheme(self) -> None:
+        """DPA4 aliases require an explicit native spin configuration."""
+        for model_type in ("dpa4", "DPA4", "sezm", "SeZM"):
+            for scheme in (None, "invalid"):
+                with self.subTest(model_type=model_type, scheme=scheme):
+                    raw = _make_raw_model_config(type=model_type)
+                    raw["spin"] = {"use_spin": [True, False]}
+                    if scheme is not None:
+                        raw["spin"]["scheme"] = scheme
+                    with self.assertRaisesRegex(NotImplementedError, "require"):
+                        get_model(raw)
 
     def test_native_spin_capability_gate_standard_config(self) -> None:
         """The generic ``supports_native_spin()`` gate rejects a dense descriptor.

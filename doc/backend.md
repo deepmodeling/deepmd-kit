@@ -77,8 +77,7 @@ whose parameter names end in `.matrix` and `.bias`.
 
 The `.pt2` suffix identifies an AOTInductor package, but not its lower-input
 ABI. A DPA4/SeZM model frozen with `dp --pt freeze` normally uses the legacy
-`edge_vec` ABI (`lower_input_kind: edge_vec`); its deepspin virtual-atom variant
-uses the dense `nlist` ABI instead. A graph model frozen with
+`edge_vec` ABI (`lower_input_kind: edge_vec`). A graph model frozen with
 `dp --pt-expt freeze --lower-kind graph` uses the NeighborGraph ABI
 (`lower_input_kind: graph`). The `dp --pt-expt compress` workflow can instead
 export a compressed DPA-1 model through the compact canonical

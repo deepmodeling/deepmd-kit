@@ -48,6 +48,11 @@ is evaluated entirely inside the operator, with an identity competition norm
 or the per-focus RMS norm (``focus_norm=True``), whose learnable scales enter
 as the ``norm_scale`` input and receive closed-form gradients to both orders.
 Unsupported blocks keep the narrower fused paths.
+
+The kernels compute in float32 or bfloat16, the latter under automatic mixed
+precision. Their float64 instantiations serve only the numerical validation of
+the operator and exist in a build with ``DEEPMD_ENABLE_DPA4_FP64=ON``; see
+:func:`float64_available`.
 """
 
 from __future__ import (
@@ -75,6 +80,7 @@ if TYPE_CHECKING:
 __all__ = [
     "SO2ValueTrainCuda",
     "ensure_registered",
+    "float64_available",
     "make_cuda_so2_value",
     "op_available",
 ]
@@ -84,6 +90,17 @@ def op_available() -> bool:
     """Return whether the fused value-path forward is loaded."""
     ops = getattr(torch.ops, "deepmd", None)
     return ops is not None and hasattr(ops, "sezm_so2_value_fwd")
+
+
+def float64_available() -> bool:
+    """Return whether the loaded operator carries its float64 kernels.
+
+    Training never reaches them: the model binds the operator for float32
+    parameters only, and automatic mixed precision runs in bfloat16. The
+    float64 instantiations serve the numerical validation of the operator and
+    are compiled by a build with ``DEEPMD_ENABLE_DPA4_FP64=ON``.
+    """
+    return op_available() and bool(torch.ops.deepmd.sezm_so2_value_supports_float64())
 
 
 def _alpha_dtype(working: torch.dtype) -> torch.dtype:

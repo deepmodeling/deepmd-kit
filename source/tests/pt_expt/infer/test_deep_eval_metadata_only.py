@@ -142,6 +142,7 @@ class TestDeepEvalMetadataOnlyPte(unittest.TestCase):
         self.assertEqual(full.get_type_map(), meta.get_type_map())
         self.assertEqual(full.get_dim_fparam(), meta.get_dim_fparam())
         self.assertEqual(full.get_dim_aparam(), meta.get_dim_aparam())
+        self.assertEqual(full.has_default_fparam(), meta.has_default_fparam())
         self.assertEqual(full.get_sel_type(), meta.get_sel_type())
         self.assertEqual(full.get_has_spin(), meta.get_has_spin())
         self.assertEqual(full.get_use_spin(), meta.get_use_spin())
@@ -204,6 +205,12 @@ class TestDeepEvalMetadataOnlyPte(unittest.TestCase):
     def test_eval_typeebd_requires_dpmodel(self) -> None:
         with self.assertRaises(NotImplementedError):
             self.dp_meta.deep_eval.eval_typeebd()
+
+    def test_eval_embedding_requires_dpmodel(self) -> None:
+        with self.assertRaisesRegex(
+            NotImplementedError, "requires the dpmodel instance"
+        ):
+            self.dp_meta.deep_eval.eval_embedding(self.coord, self.cell, self.atype)
 
 
 class TestDeepEvalMetadataOnlyGuards(unittest.TestCase):

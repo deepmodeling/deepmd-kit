@@ -45,9 +45,7 @@
     },
     "use_compile": false,
     "enable_tf32": true,
-    "bridging_method": "zbl",
-    "bridging_r_inner": 0.5,
-    "bridging_r_outer": 0.8
+    "bridging_method": "zbl"
   },
   "learning_rate": {
     "type": "wsd",
@@ -81,8 +79,7 @@
         "../data/data_1",
         "../data/data_2"
       ],
-      "batch_size": 1,
-      "min_pair_dist": 0.5
+      "batch_size": 1
     },
     "validation_data": {
       "systems": [

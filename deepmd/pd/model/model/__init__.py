@@ -64,6 +64,11 @@ def _get_standard_model_components(
 
 
 def get_standard_model(model_params: dict) -> BaseModel:
+    if model_params.get("long_range") is not None:
+        raise NotImplementedError(
+            "long-range modules (`long_range`) are supported by the pt_expt "
+            "backend only"
+        )
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])

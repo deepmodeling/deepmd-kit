@@ -180,7 +180,7 @@ Build CPU variant or GPU variant with CUDA or ROCM support.
 
 **Type**: Path; **Default**: Detected automatically
 
-The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported, and CUDA 11.8 or later for the PyTorch backend. NVCC is required.
 :::
 
 :::{envvar} ROCM_ROOT
@@ -518,7 +518,7 @@ If `TRUE`, Build GPU support with CUDA toolkit.
 
 **Type**: `PATH`, **Default**: [Search automatically](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html)
 
-The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported, and CUDA 11.8 or later for the PyTorch backend. NVCC is required.
 See also [CMake documentation](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html).
 :::
 
@@ -569,6 +569,15 @@ There's no need for downloading PyTorch's C++ libraries.
 
 {{ pytorch_icon }} If `TRUE`, bypass PyTorch's CUDA toolkit discovery when CMake cannot find CUDAToolkit/`nvcc` and DeePMD-kit is not building CUDA support.
 This helps CPU-only PyTorch builds use CUDA-enabled PyTorch wheels without requiring a local CUDA compiler.
+:::
+
+:::{cmake:variable} DEEPMD_ENABLE_DPA4_FP64
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ pytorch_icon }} If `TRUE`, also compile the float64 variants of the CUDA kernels that accelerate DPA4 training.
+Training runs these kernels in float32 or bfloat16 only; the float64 variants serve the numerical consistency tests of the fused operators and add substantial build time.
+When installing with `pip`, pass the option through {envvar}`CMAKE_ARGS`, for example `CMAKE_ARGS="-DDEEPMD_ENABLE_DPA4_FP64=ON"`.
 :::
 
 :::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION

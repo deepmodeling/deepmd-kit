@@ -336,7 +336,7 @@ class TestSeZMDescriptorSelfCommParity(unittest.TestCase):
         sysm = _build_extended_system(model, device)
         comm = _self_comm_dict(sysm["mapping"], sysm["nloc"], sysm["nall"])
 
-        ref, _, ref_vacuum = descriptor.forward_with_edges(
+        ref, _, ref_vacuum, _ = descriptor.forward_with_edges(
             extended_coord=sysm["coord"][:, : sysm["nloc"], :],
             extended_atype=sysm["atype"],
             edge_index=sysm["edge_index"],
@@ -344,7 +344,7 @@ class TestSeZMDescriptorSelfCommParity(unittest.TestCase):
             edge_mask=sysm["edge_mask"],
             vacuum_conditions={},
         )
-        par, _, par_vacuum = descriptor.forward_with_edges(
+        par, _, par_vacuum, _ = descriptor.forward_with_edges(
             extended_coord=sysm["coord"],
             extended_atype=sysm["extended_atype"],
             edge_index=sysm["edge_scatter_index"],

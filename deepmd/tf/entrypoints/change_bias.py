@@ -47,6 +47,7 @@ from deepmd.tf.utils.sess import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+    get_data,
 )
 
 __all__ = ["change_bias"]
@@ -218,13 +219,22 @@ def _change_bias_checkpoint_file(
     if stop_batch is None and num_epoch is not None:
         if num_epoch <= 0:
             raise ValueError("training.num_epoch must be positive.")
-        # Apply sys_probs and auto_prob from original training config
-        # to ensure stop_batch calculation matches the original training
         training_data_config = training_params.get("training_data", {})
-        sys_probs = training_data_config.get("sys_probs", None)
-        auto_prob = training_data_config.get("auto_prob", "prob_sys_size")
-        data.set_sys_probs(sys_probs=sys_probs, auto_prob_style=auto_prob)
-        total_numb_batch = compute_total_numb_batch(data.nbatches, data.sys_probs)
+        if isinstance(training_data_config, list):
+            # Group probabilities and batch sizes define the training schedule;
+            # the independent bias dataset has no corresponding group indices.
+            schedule_data = get_data(
+                training_data_config, 0, jdata["model"].get("type_map"), None
+            )
+        else:
+            data.set_sys_probs(
+                sys_probs=training_data_config.get("sys_probs"),
+                auto_prob_style=training_data_config.get("auto_prob", "prob_sys_size"),
+            )
+            schedule_data = data
+        total_numb_batch = compute_total_numb_batch(
+            schedule_data.nbatches, schedule_data.sys_probs
+        )
         if total_numb_batch <= 0:
             raise ValueError("Total number of training batches must be positive.")
         stop_batch = int(np.ceil(num_epoch * total_numb_batch))

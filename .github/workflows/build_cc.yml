@@ -15,6 +15,15 @@ jobs:
   buildcc:
     name: Build C++
     runs-on: ubuntu-22.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 1G
+      CCACHE_COMPRESS: "true"
+      CCACHE_VERSION: "4.14"
+      LAMMPS_VERSION: stable_22Jul2025_update2
+      LAMMPS_SOURCE_DIR: ${{ github.workspace }}/.cache/lammps/stable_22Jul2025_update2
     strategy:
       matrix:
         include:
@@ -49,12 +58,52 @@ jobs:
           && sudo apt-get update \
           && sudo apt-get install -y rocm-dev hipcub-dev
         if: matrix.variant == 'rocm'
+      - name: Restore LAMMPS source
+        id: lammps-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.LAMMPS_SOURCE_DIR }}
+          key: lammps-source-${{ env.LAMMPS_VERSION }}-v1
+      - name: Fetch LAMMPS source
+        if: steps.lammps-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          rm -rf "$LAMMPS_SOURCE_DIR"
+          git clone --depth 1 --branch "$LAMMPS_VERSION" \
+            https://github.com/lammps/lammps "$LAMMPS_SOURCE_DIR"
+      - name: Install ccache
+        shell: bash
+        run: |
+          CCACHE_ARCHIVE="ccache-${CCACHE_VERSION}-linux-x86_64-musl-static.tar.xz"
+          curl -L --fail --retry 3 \
+            "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${CCACHE_ARCHIVE}" \
+            -o "$RUNNER_TEMP/$CCACHE_ARCHIVE"
+          echo "888eaf9697919d6eba77be797e9d9c9e40e734d11d67d25a79b075c3f79f6c77  $RUNNER_TEMP/$CCACHE_ARCHIVE" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$CCACHE_ARCHIVE" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/ccache-${CCACHE_VERSION}-linux-x86_64-musl-static" >> "$GITHUB_PATH"
+      - name: Restore ccache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-build-cc-${{ matrix.variant }}-v${{ env.CCACHE_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-build-cc-${{ matrix.variant }}-v${{ env.CCACHE_VERSION }}-
+      - name: Reset ccache statistics
+        run: |
+          ccache --version
+          ccache --zero-stats
       - run: |
           source/install/build_cc.sh
         env:
           DP_VARIANT: ${{ matrix.dp_variant }}
           DOWNLOAD_TENSORFLOW: "FALSE"
           CMAKE_GENERATOR: Ninja
+          CMAKE_ARGS: "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
+          LAMMPS_SOURCE_ROOT: ${{ env.LAMMPS_SOURCE_DIR }}
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          CMAKE_CUDA_COMPILER_LAUNCHER: ccache
+          CMAKE_HIP_COMPILER_LAUNCHER: ccache
         if: matrix.variant != 'clang'
       - run: |
           source/install/build_cc.sh
@@ -64,7 +113,14 @@ jobs:
           CC: clang
           CXX: clang++
           CMAKE_GENERATOR: Ninja
+          CMAKE_ARGS: "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
+          LAMMPS_SOURCE_ROOT: ${{ env.LAMMPS_SOURCE_DIR }}
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
         if: matrix.variant == 'clang'
+      - name: Show ccache statistics
+        if: always()
+        run: ccache --show-stats
       - name: Test files exist
         run: |
           test -f dp/bin/dp_ipi &&
