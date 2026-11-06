@@ -605,7 +605,8 @@ class TestStatisticsFilter(unittest.TestCase):
         data = _CyclicDataSystem([[0.2, 0.3, 1.5], [0.1, 0.2]])
         packed = make_stat_input(data, nbatches=3)
         np.testing.assert_array_equal(packed[0]["coord"][:, 0], [0.0, 1.0, 2.0])
-        np.testing.assert_array_equal(packed[1]["coord"][:, 0], [0.0, 1.0, 0.0])
+        # A system with fewer batches than requested is not resampled.
+        np.testing.assert_array_equal(packed[1]["coord"][:, 0], [0.0, 1.0])
 
     def test_dataset_without_valid_frames_is_reported(self) -> None:
         data = _CyclicDataSystem([[0.2, 0.3], [0.1]])
