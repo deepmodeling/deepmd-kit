@@ -17,13 +17,11 @@ device = env.DEVICE
 
 from deepmd.dpmodel.utils import (
     NativeLayer,
-)
-from deepmd.dpmodel.utils import NetworkCollection as DPNetworkCollection
-from deepmd.dpmodel.utils import (
     make_embedding_network,
     make_fitting_network,
     make_multilayer_network,
 )
+from deepmd.dpmodel.utils import NetworkCollection as DPNetworkCollection
 from deepmd.pt.model.network.init import (
     kaiming_normal_,
     normal_,
