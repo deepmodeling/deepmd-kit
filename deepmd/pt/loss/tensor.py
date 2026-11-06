@@ -7,7 +7,7 @@ import torch
 
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
-    masked_atom_num,
+    masked_global_rmse,
 )
 from deepmd.pt.loss.loss import (
     TaskLoss,
@@ -166,13 +166,12 @@ class TensorLoss(TaskLoss):
             diff = global_tensor_pred - global_tensor_label
             # idiom 3: global tensor is already padding-invariant; plain mean suffices
             l2_global_loss = torch.mean(torch.square(diff))
-            atom_num = masked_atom_num(model_pred.get("mask"), natoms, torch.float32)
             if not self.inference:
                 more_loss[f"l2_global_{self.tensor_name}_loss"] = self.display_if_exist(
                     l2_global_loss.detach(), find_global
                 )
             loss += global_weight * l2_global_loss
-            rmse_global = l2_global_loss.sqrt() / atom_num
+            rmse_global = masked_global_rmse(diff, model_pred.get("mask"), natoms)
             more_loss[f"rmse_global_{self.tensor_name}"] = self.display_if_exist(
                 rmse_global.detach(), find_global
             )

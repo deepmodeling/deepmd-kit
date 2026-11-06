@@ -13,7 +13,7 @@ from deepmd.dpmodel.loss.loss import (
 )
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
-    masked_atom_num,
+    masked_global_rmse,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -204,10 +204,9 @@ class DOSLoss(Loss):
             diff = global_pred - global_label
             # idiom 3: global dos is already padding-invariant; plain mean suffices
             l2_global_loss_dos = xp.mean(xp.square(diff))
-            atom_num = masked_atom_num(model_dict.get("mask"), natoms, diff.dtype)
             loss += pref_dos * l2_global_loss_dos
             more_loss["rmse_global_dos"] = self.display_if_exist(
-                xp.sqrt(l2_global_loss_dos) / atom_num, find_global
+                masked_global_rmse(diff, model_dict.get("mask"), natoms), find_global
             )
 
         if self.has_cdf and "dos" in model_dict and "dos" in label_dict:
@@ -222,10 +221,9 @@ class DOSLoss(Loss):
             diff = global_pred_cdf - global_label_cdf
             # idiom 3: global cdf is already padding-invariant; plain mean suffices
             l2_global_loss_cdf = xp.mean(xp.square(diff))
-            atom_num = masked_atom_num(model_dict.get("mask"), natoms, diff.dtype)
             loss += pref_cdf * l2_global_loss_cdf
             more_loss["rmse_global_cdf"] = self.display_if_exist(
-                xp.sqrt(l2_global_loss_cdf) / atom_num, find_global
+                masked_global_rmse(diff, model_dict.get("mask"), natoms), find_global
             )
 
         more_loss["rmse"] = xp.sqrt(loss)

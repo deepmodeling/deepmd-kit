@@ -13,7 +13,7 @@ from deepmd.dpmodel.loss.loss import (
 )
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
-    masked_atom_num,
+    masked_global_rmse,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -35,9 +35,9 @@ class TensorLoss(Loss):
        [a_i(T_i-\hat T_i)]^2\right\rangle
        +p_{\mathrm{global}}\left\langle(T-\hat T)^2\right\rangle.
 
-    Padded atoms are omitted from the local mean.  Reported global RMSE is
-    divided by the number of real atoms, matching the convention for
-    extensive tensor labels.
+    Padded atoms are omitted from the local mean.  Reported global RMSE
+    divides each frame's error by that frame's number of real atoms,
+    matching the convention for extensive tensor labels.
 
     Parameters
     ----------
@@ -155,10 +155,9 @@ class TensorLoss(Loss):
             diff = global_pred - global_label
             # idiom 3: global tensor is already padding-invariant; plain mean suffices
             l2_global_loss = xp.mean(xp.square(diff))
-            atom_num = masked_atom_num(model_dict.get("mask"), natoms, diff.dtype)
             loss += global_weight * l2_global_loss
             more_loss[f"rmse_global_{self.tensor_name}"] = self.display_if_exist(
-                xp.sqrt(l2_global_loss) / atom_num, find_global
+                masked_global_rmse(diff, model_dict.get("mask"), natoms), find_global
             )
 
         more_loss["rmse"] = xp.sqrt(loss)

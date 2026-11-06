@@ -7,7 +7,7 @@ import torch
 
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
-    masked_atom_num,
+    masked_global_rmse,
 )
 from deepmd.pt.loss.loss import (
     TaskLoss,
@@ -210,13 +210,12 @@ class DOSLoss(TaskLoss):
             diff = global_tensor_pred_dos - global_tensor_label_dos
             # idiom 3: global dos is already padding-invariant; plain mean suffices
             l2_global_loss_dos = torch.mean(torch.square(diff))
-            atom_num = masked_atom_num(model_pred.get("mask"), natoms, torch.float32)
             if not self.inference:
                 more_loss["l2_global_dos_loss"] = self.display_if_exist(
                     l2_global_loss_dos.detach(), find_global
                 )
             loss += pref_dos * l2_global_loss_dos
-            rmse_global_dos = l2_global_loss_dos.sqrt() / atom_num
+            rmse_global_dos = masked_global_rmse(diff, model_pred.get("mask"), natoms)
             more_loss["rmse_global_dos"] = self.display_if_exist(
                 rmse_global_dos.detach(), find_global
             )
@@ -232,15 +231,14 @@ class DOSLoss(TaskLoss):
             diff = global_tensor_pred_cdf - global_tensor_label_cdf
             # idiom 3: global cdf is already padding-invariant; plain mean suffices
             l2_global_loss_cdf = torch.mean(torch.square(diff))
-            atom_num = masked_atom_num(model_pred.get("mask"), natoms, torch.float32)
             if not self.inference:
                 more_loss["l2_global_cdf_loss"] = self.display_if_exist(
                     l2_global_loss_cdf.detach(), find_global
                 )
             loss += pref_cdf * l2_global_loss_cdf
-            rmse_global_dos = l2_global_loss_cdf.sqrt() / atom_num
+            rmse_global_cdf = masked_global_rmse(diff, model_pred.get("mask"), natoms)
             more_loss["rmse_global_cdf"] = self.display_if_exist(
-                rmse_global_dos.detach(), find_global
+                rmse_global_cdf.detach(), find_global
             )
         return model_pred, loss, more_loss
 
