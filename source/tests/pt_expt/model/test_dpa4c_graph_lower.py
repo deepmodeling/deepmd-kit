@@ -752,6 +752,22 @@ def test_a_multi_block_model_the_canonical_operators_cannot_serve_is_refused(
         _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto")
 
 
+def test_compression_preflight_checks_canonical_operator_availability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    monkeypatch.setattr(dpa4c_canonical, "op_available", lambda: False)
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config).to("cpu").eval()
+    assert (
+        "lacks the compact canonical operators"
+        in compressed_export_unsupported_reason(model)
+    )
+    model.get_descriptor().enable_compression(0.5)
+    assert dpa4c_canonical.canonical_model_eligible(model)
+
+
 def test_a_freeze_judges_a_case_embedding_as_the_export_folds_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -763,6 +779,7 @@ def test_a_freeze_judges_a_case_embedding_as_the_export_folds_it(
     leaves the model unchanged.
     """
     monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    monkeypatch.setattr(dpa4c_canonical, "op_available", lambda: True)
     config = _compressed_config(8)
     config["descriptor"]["n_blocks"] = 2
     config["fitting_net"]["dim_case_embd"] = 2

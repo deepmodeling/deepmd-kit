@@ -824,8 +824,9 @@ class TestDPA4C:
         assert not DescrptDPA4C.deserialize(single).attentions
         with pytest.raises(ValueError, match="must not increase"):
             DescrptDPA4C(rcut=[2.5, 3.0], n_blocks=2, **BLOCK_CONFIG)
-        with pytest.raises(ValueError, match="positive"):
-            DescrptDPA4C(rcut=[3.0, 0.0], n_blocks=2, **BLOCK_CONFIG)
+        for radius in (0.0, float("nan")):
+            with pytest.raises(ValueError, match="positive"):
+                DescrptDPA4C(rcut=[3.0, radius], n_blocks=2, **BLOCK_CONFIG)
         with pytest.raises(ValueError, match=r"lists 2 cutoff\(s\)"):
             DescrptDPA4C(rcut=[3.0, 2.5], n_blocks=3, **BLOCK_CONFIG)
         with pytest.raises(ValueError, match=r"lists 2 cutoff\(s\)"):
@@ -1205,6 +1206,12 @@ def test_configuration_boundaries(
 ) -> None:
     with pytest.raises(error):
         DescrptDPA4C(**{"rcut": 3.0, "ntypes": 1, **config})
+
+
+def test_legacy_positional_use_amp_keeps_its_parameter_slot() -> None:
+    descriptor = DescrptDPA4C(3.0, 2, 8, 2, "bessel", 4, 0, False)
+    assert descriptor.n_blocks == 1
+    assert descriptor.use_amp is False
 
 
 @pytest.mark.parametrize("neighbors", [8, 4096])

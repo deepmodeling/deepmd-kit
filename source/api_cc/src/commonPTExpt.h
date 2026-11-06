@@ -10,12 +10,14 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -59,6 +61,112 @@ inline void check_canonical_index(const void* source,
   if (reinterpret_cast<std::uintptr_t>(source) % width != 0) {
     throw deepmd_exception(
         "canonical source must be aligned to its word width");
+  }
+}
+
+/** Check the global reverse-edge contract when a single-domain list is rebuilt.
+ * Periodic images are distinguished by displacement, not only by node pair.
+ * Domain-decomposed lists are checked by their producer across ranks instead.
+ */
+template <typename Value>
+inline void check_reciprocal_nlist(const std::vector<std::vector<int>>& nlist,
+                                   const std::vector<int>& centers,
+                                   const std::vector<std::int64_t>& mapping,
+                                   const std::vector<Value>& coord,
+                                   int nloc,
+                                   int nall) {
+  using Edge = std::array<double, 5>;
+  std::vector<Edge> edges, reverse;
+  for (size_t row = 0; row < nlist.size() && row < centers.size(); ++row) {
+    const int center = centers[row];
+    if (center < 0 || center >= nloc) {
+      continue;
+    }
+    for (const int neighbor : nlist[row]) {
+      if (neighbor < 0 || neighbor >= nall) {
+        continue;
+      }
+      const double source = static_cast<double>(mapping[neighbor]);
+      const double dx =
+          static_cast<double>(coord[3 * neighbor]) - coord[3 * center];
+      const double dy =
+          static_cast<double>(coord[3 * neighbor + 1]) - coord[3 * center + 1];
+      const double dz =
+          static_cast<double>(coord[3 * neighbor + 2]) - coord[3 * center + 2];
+      if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) {
+        throw deepmd_exception(
+            "multi-block DPA4C requires finite edge displacements");
+      }
+      edges.push_back({static_cast<double>(center), source, dx, dy, dz});
+      reverse.push_back({source, static_cast<double>(center), -dx, -dy, -dz});
+    }
+  }
+  const auto pair_less = [](const Edge& a, const Edge& b) {
+    return a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]);
+  };
+  const auto vectors_close = [](const Edge& a, const Edge& b) {
+    for (int axis = 2; axis < 5; ++axis) {
+      if (std::abs(a[axis] - b[axis]) > 2e-6 * (1.0 + std::abs(b[axis]))) {
+        return false;
+      }
+    }
+    return true;
+  };
+  std::sort(edges.begin(), edges.end(), pair_less);
+  std::sort(reverse.begin(), reverse.end(), pair_less);
+  const std::string message =
+      "multi-block DPA4C requires a globally bidirectional graph: "
+      "each edge must have a reverse edge with opposite displacement";
+  for (size_t edge = 0; edge < edges.size(); ++edge) {
+    if (edges[edge][0] != reverse[edge][0] ||
+        edges[edge][1] != reverse[edge][1]) {
+      throw deepmd_exception(message);
+    }
+  }
+  for (size_t begin = 0; begin < edges.size();) {
+    size_t end = begin + 1;
+    while (end < edges.size() && edges[end][0] == edges[begin][0] &&
+           edges[end][1] == edges[begin][1]) {
+      ++end;
+    }
+    if (std::equal(edges.begin() + begin, edges.begin() + end,
+                   reverse.begin() + begin, vectors_close)) {
+      begin = end;
+      continue;
+    }
+    // Tolerant vector comparisons cannot define a strict sort order. Match
+    // images within their exact node pair, retaining duplicate multiplicity.
+    const size_t count = end - begin;
+    std::vector<std::vector<size_t>> adjacent(count);
+    for (size_t i = 0; i < count; ++i) {
+      for (size_t j = 0; j < count; ++j) {
+        if (vectors_close(edges[begin + i], reverse[begin + j])) {
+          adjacent[i].push_back(j);
+        }
+      }
+    }
+    std::vector<int> owner(count, -1);
+    std::function<bool(size_t, std::vector<bool>&)> augment =
+        [&](size_t node, std::vector<bool>& seen) {
+          for (const size_t target : adjacent[node]) {
+            if (seen[target]) {
+              continue;
+            }
+            seen[target] = true;
+            if (owner[target] < 0 || augment(owner[target], seen)) {
+              owner[target] = static_cast<int>(node);
+              return true;
+            }
+          }
+          return false;
+        };
+    for (size_t node = 0; node < count; ++node) {
+      std::vector<bool> seen(count, false);
+      if (!augment(node, seen)) {
+        throw deepmd_exception(message);
+      }
+    }
+    begin = end;
   }
 }
 
@@ -1187,6 +1295,12 @@ inline at::Tensor halo_swap_table(const int nswap,
     throw deepmd::deepmd_exception(
         "the halo exchange has a negative number of swaps.");
   }
+  if (nswap > 0 &&
+      (sendproc == nullptr || recvproc == nullptr || sendnum == nullptr ||
+       recvnum == nullptr || firstrecv == nullptr)) {
+    throw deepmd::deepmd_exception(
+        "a nonempty halo exchange requires all five host swap arrays.");
+  }
   auto swaps =
       torch::empty({nswap, 5}, torch::TensorOptions().dtype(torch::kInt32));
   int* const table = swaps.data_ptr<int>();
@@ -1205,10 +1319,17 @@ inline at::Tensor halo_swap_table(const int nswap,
  * on ``device``; the send list is wrapped, not copied.
  */
 inline HaloTensors halo_tensors(const DP_HaloExchange& halo,
-                                const torch::Device& device) {
+                                const torch::Device& device,
+                                std::int64_t nloc,
+                                std::int64_t nall_nodes) {
   at::Tensor swaps =
       halo_swap_table(halo.nswap, halo.sendproc, halo.recvproc, halo.sendnum,
                       halo.recvnum, halo.firstrecv);
+  const std::int64_t owned = halo.nswap == 0 ? nall_nodes : halo.firstrecv[0];
+  if (owned != nloc) {
+    throw deepmd::deepmd_exception(
+        "the halo plan's owned-node count does not match nloc.");
+  }
   std::int64_t sent = 0;
   for (int s = 0; s < halo.nswap; ++s) {
     sent += halo.sendnum[s];

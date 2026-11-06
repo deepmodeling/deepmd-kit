@@ -10,6 +10,7 @@
 #include "border_exchange.h"
 
 #include <ATen/cuda/CUDAContext.h>
+#include <ATen/ops/_assert_async.h>
 #include <c10/util/Exception.h>
 
 #include <algorithm>
@@ -87,6 +88,15 @@ std::int64_t check_border_plan(const torch::Tensor& send_nodes,
               ": the swaps of the border plan "
               "send ",
               sent, " rows, but the send list holds ", send_nodes.numel());
+  std::int64_t offset = 0;
+  for (std::int64_t s = 0; s < swaps.size(0); ++s) {
+    const Swap swap = swap_at(swaps, s);
+    const auto indices = send_nodes.slice(0, offset, offset + swap.send_count);
+    at::_assert_async(
+        ((indices >= 0) & (indices < swap.first_receive)).all(),
+        "a border swap must send only owned or earlier-received rows");
+    offset += swap.send_count;
+  }
   return owned;
 }
 

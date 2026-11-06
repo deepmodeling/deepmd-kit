@@ -66,6 +66,40 @@ STRUCTURES = [
 ]
 
 
+def test_soft_saturation_preserves_float16_values_and_derivatives() -> None:
+    from deepmd.dpmodel.descriptor.dpa4c_nn.attention import (
+        soft_saturate,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.attention import (
+        _soft_saturate,
+    )
+
+    for saturate in (soft_saturate, _soft_saturate):
+        value = torch.tensor(
+            [-65504.0, -600.0, -2.0, -1.0, 0.0, 1.0, 2.0, 600.0, 65504.0],
+            dtype=torch.float16,
+            device=env.DEVICE,
+            requires_grad=True,
+        )
+        result = saturate(value, 2.0)
+        (first,) = torch.autograd.grad(result.sum(), value, create_graph=True)
+        (second,) = torch.autograd.grad(first.sum(), value)
+        reference = value.detach().double().requires_grad_(True)
+        expected = reference / torch.sqrt(1.0 + (reference / 2.0) ** 2)
+        (expected_first,) = torch.autograd.grad(
+            expected.sum(), reference, create_graph=True
+        )
+        (expected_second,) = torch.autograd.grad(expected_first.sum(), reference)
+        for actual, target in zip(
+            (result, first, second),
+            (expected, expected_first, expected_second),
+            strict=True,
+        ):
+            torch.testing.assert_close(
+                actual, target.to(torch.float16), rtol=3e-3, atol=5e-4
+            )
+
+
 class TestDPA4C:
     def setup_method(self) -> None:
         self.descriptor = self.build()
@@ -286,6 +320,52 @@ class TestDPA4C:
         torch.testing.assert_close(
             self._evaluate(restored, self.coord), reference, rtol=1.3e-6, atol=1e-5
         )
+
+    def test_compressed_fallback_keeps_the_applied_charge_state(self) -> None:
+        descriptor = self.build(
+            precision="float32",
+            n_blocks=2,
+            add_chg_spin_ebd=True,
+            default_chg_spin=[0.0, 1.0],
+        ).eval()
+        head = descriptor.charge_spin_embedding.network.layers[-1]
+        with torch.no_grad():
+            head.w.fill_(0.1)
+        reference = (
+            DescrptDPA4C.deserialize(descriptor.serialize()).to(env.DEVICE).eval()
+        )
+        reference.default_chg_spin = [2.0, 3.0]
+        expected = self._evaluate(reference, self.coord)
+        assert not torch.allclose(expected, self._evaluate(descriptor, self.coord))
+        descriptor.enable_compression(0.5)
+        descriptor.apply_charge_state([2.0, 3.0])
+        restored = (
+            DescrptDPA4C.deserialize(descriptor.serialize()).to(env.DEVICE).eval()
+        )
+        for candidate in (descriptor, restored):
+            assert candidate.get_default_chg_spin() == [2.0, 3.0]
+            # The descriptor computes in fp32 before the dense ABI casts its output.
+            torch.testing.assert_close(
+                self._evaluate(candidate, self.coord), expected, rtol=1.3e-6, atol=1e-5
+            )
+            coord, atype, mapping, nlist = self._inputs(self.coord)
+            actual = candidate(
+                coord,
+                atype,
+                nlist,
+                mapping=mapping,
+                charge_spin=torch.tensor([[0.0, 1.0]], device=env.DEVICE),
+            )[0]
+            torch.testing.assert_close(actual, expected, rtol=1.3e-6, atol=1e-5)
+
+    def test_complete_source_neighborhoods_do_not_require_ownership(self) -> None:
+        descriptor = self.build(n_blocks=2).eval()
+        coord, atype, mapping, nlist = self._inputs(self.coord)
+        graph, atype = graph_from_dense_quartet(coord, atype, nlist, mapping)
+        reference, _ = descriptor.call_graph(graph, atype)
+        subset = dataclasses.replace(graph, n_local=graph.n_node - 1)
+        actual, _ = descriptor.call_graph(subset, atype)
+        torch.testing.assert_close(actual, reference, atol=0, rtol=0)
 
     def test_serialization_preserves_parameters(self) -> None:
         restored = DescrptDPA4C.deserialize(self.descriptor.serialize()).to(env.DEVICE)

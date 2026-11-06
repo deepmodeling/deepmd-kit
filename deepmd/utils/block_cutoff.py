@@ -55,6 +55,6 @@ def resolve_block_cutoffs(rcut: float | Sequence[float], n_blocks: int) -> list[
                 f"`rcut` lists {len(cutoffs)} cutoff(s), but `n_blocks` is "
                 f"{n_blocks}; give one cutoff per block or a single cutoff for all"
             )
-    if min(cutoffs) <= 0.0:
+    if not all(radius > 0.0 for radius in cutoffs):
         raise ValueError(f"Every cutoff in `rcut` must be positive, got {rcut!r}")
     return cutoffs

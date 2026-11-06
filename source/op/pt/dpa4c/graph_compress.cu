@@ -11,6 +11,7 @@
 
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
+#include <ATen/ops/_assert_async.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <cuda_runtime.h>
 #include <math_constants.h>
@@ -2185,7 +2186,8 @@ HaloPlan halo_plan(const char* op,
                    const std::optional<torch::Tensor>& communicator,
                    long node_count,
                    long frame_count,
-                   long block_count) {
+                   long block_count,
+                   const torch::Tensor& n_local) {
   const int given = static_cast<int>(send_nodes.has_value()) +
                     static_cast<int>(swaps.has_value()) +
                     static_cast<int>(communicator.has_value());
@@ -2198,12 +2200,16 @@ HaloPlan halo_plan(const char* op,
   TORCH_CHECK(block_count > 0, op,
               ": a border plan refreshes the halo rows that further "
               "message-passing blocks read, but the descriptor has one block");
+  TORCH_CHECK(send_nodes->device() == n_local.device(), op,
+              ": the border send list must be on the graph's device");
   const long owned = deepmd::check_border_plan(*send_nodes, *swaps,
                                                *communicator, node_count, op);
   TORCH_CHECK(owned == node_count || frame_count == 1, op,
               ": a border plan with halo rows serves a node set of one "
               "frame, got ",
               frame_count, " frames");
+  at::_assert_async(n_local.sum() == owned,
+                    "the halo plan's owned-node count must match n_local");
   return {*send_nodes, *swaps, *communicator, owned};
 }
 
@@ -2216,6 +2222,10 @@ struct FurtherBlocks {
 
   long count() const { return records.defined() ? records.size(0) : 0; }
 };
+
+__global__ void check_block_cutoff(const float* record, float cutoff) {
+  CUDA_KERNEL_ASSERT(record[0] == cutoff);
+}
 
 /// The further blocks of ``blocks`` and ``block_rcut``, whose cutoffs must not
 /// rise from block to block above ``rcut``, that of the first block. Without
@@ -2242,6 +2252,22 @@ FurtherBlocks further_blocks(
                 ": the cutoff of further block ", b + 1,
                 " must be positive and at most ", previous,
                 " Å, that of the block before; got ", further.cutoffs[b], " Å");
+  }
+  if (count > 0 && block_rcut.has_value()) {
+    TORCH_CHECK(
+        further.records.is_cuda() && further.records.is_contiguous() &&
+            further.records.scalar_type() == torch::kFloat32 &&
+            further.records.get_device() == c10::cuda::current_device() &&
+            further.records.size(1) > 0,
+        op,
+        ": block records must be a contiguous float32 matrix on "
+        "the graph's CUDA device");
+    for (long b = 0; b < count; ++b) {
+      check_block_cutoff<<<1, 1, 0, at::cuda::getCurrentCUDAStream()>>>(
+          further.records.data_ptr<float>() + b * further.records.size(1),
+          static_cast<float>(further.cutoffs[b]));
+    }
+    DPA4C_CHECK_LAUNCH("dpa4c block cutoff validation");
   }
   return further;
 }
@@ -3048,7 +3074,7 @@ dpa4c_canonical_compress_energy_force(
   const long block_count = further.count();
   const HaloPlan halo =
       halo_plan("dpa4c_canonical_compress_energy_force", halo_send, halo_swaps,
-                communicator, node_count, frame_count, block_count);
+                communicator, node_count, frame_count, block_count, n_local);
   // A node set with halo rows evaluates its owned rows: the halo rows carry
   // no edges, and every feature of theirs that an edge reads arrives from the
   // rank that owns them.
@@ -3411,7 +3437,7 @@ dpa4c_canonical_compress_long_range_energy_force(
       kOp, halo_send, halo_swaps,
       halo_send.has_value() ? std::optional<torch::Tensor>(communicator)
                             : std::nullopt,
-      node_count, frame_count, block_count);
+      node_count, frame_count, block_count, n_local);
   const long owned = halo.owned;
   const auto f32 = edge_vec.options().dtype(torch::kFloat32);
   const auto f64 = edge_vec.options().dtype(torch::kFloat64);

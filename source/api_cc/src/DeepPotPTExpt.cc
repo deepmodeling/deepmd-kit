@@ -1174,6 +1174,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           nlist_data.jlist, mapping_, nloc, nall_real,
           /*node_count=*/multi_rank ? nall_real : nloc,
           /*row_centers=*/&nlist_data.ilist, fold_to_local);
+      if (lower_input_is_canonical_ && has_message_passing_ && !multi_rank) {
+        ptexpt::check_reciprocal_nlist(nlist_data.jlist, nlist_data.ilist,
+                                       mapping_, dcoord, nloc, nall_real);
+      }
     } else {
       nlist_data.padding();
       firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei)
@@ -2990,8 +2994,9 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
           run_model_canonical_graph(
               atype, n_node, n_local, source, edge_vec, destination_row_ptr,
               source_row_ptr, source_order, coord, world, cell,
-              halo != nullptr ? ptexpt::halo_tensors(*halo, device)
-                              : ptexpt::empty_halo(device)));
+              halo != nullptr
+                  ? ptexpt::halo_tensors(*halo, device, nloc, nall_nodes)
+                  : ptexpt::empty_halo(device)));
       auto atom_energy = output["atom_energy"]
                              .reshape({nall_nodes})
                              .slice(0, 0, nloc)

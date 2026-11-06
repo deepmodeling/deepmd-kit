@@ -308,7 +308,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_modes: int = 0,
-        n_blocks: int = 1,
         use_amp: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         precision: str = DEFAULT_PRECISION,
@@ -322,6 +321,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         inner_clamp_f_inner: float | None = None,
         inner_clamp_f_outer: float | None = None,
         inner_clamp_scale: str = "covalent",
+        n_blocks: int = 1,
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
         if spin is not None:
@@ -826,6 +826,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             a charge-conditioned descriptor and ignored otherwise.
         comm_dict
             Border-exchange tensors of a domain-decomposed graph, or ``None``.
+            Without communication, every source node must carry its complete
+            neighborhood. ``n_local`` specifies energy ownership, not whether
+            a node has a complete neighborhood.
 
         Returns
         -------

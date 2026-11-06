@@ -66,8 +66,17 @@ def soft_saturate(value: Any, knee: float) -> Any:
     :math:`x_0`; its slope decays as :math:`|x|^{-3}` far beyond it.
     """
     xp = array_api_compat.array_namespace(value)
-    ratio = value / knee
-    return value / xp.sqrt(1.0 + ratio * ratio)
+    scale = xp.maximum(
+        xp.abs(value),
+        xp.asarray(knee, dtype=value.dtype, device=array_api_compat.device(value)),
+    )
+    scaled_value = value / scale
+    scaled_knee = knee / scale
+    return (
+        knee
+        * scaled_value
+        / xp.sqrt(scaled_value * scaled_value + scaled_knee * scaled_knee)
+    )
 
 
 class BlockAttention(NativeOP):

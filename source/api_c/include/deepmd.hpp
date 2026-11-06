@@ -1370,7 +1370,7 @@ class DeepPot : public DeepBaseModel {
    * blocks reads (canonical_graph_requires_halo()) with ``world``. A null
    * pointer omits any of them for a model that does not read it. A non-null
    * ``stream`` is the caller's accelerator stream on the model device. The
-   * arguments have the semantics of DP_DPA4ComputeCanonicalGraphGPU.
+   * arguments have the semantics of DP_DPA4ComputeCanonicalGraphGPU2.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
@@ -1391,7 +1391,7 @@ class DeepPot : public DeepBaseModel {
                                    const int64_t nall_nodes,
                                    const int64_t edge_storage,
                                    void* stream = nullptr) {
-    DP_DPA4ComputeCanonicalGraphGPU(
+    DP_DPA4ComputeCanonicalGraphGPU2(
         dp, d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
         index_width, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
         d_source_order, d_coord, world, halo, box, nloc, nall_nodes,
@@ -1978,7 +1978,7 @@ class DeepSpin : public DeepBaseModel {
    * (canonical_graph_requires_halo()); a null pointer omits either for a
    * model that does not read it. A non-null ``stream`` is the caller's
    * accelerator stream on the model device, with the semantics of
-   * DP_DPA4ComputeCanonicalGraphGPU.
+   * DP_DPA4ComputeCanonicalGraphGPU2.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
@@ -1999,7 +1999,7 @@ class DeepSpin : public DeepBaseModel {
                                    const int64_t nall_nodes,
                                    const int64_t edge_storage,
                                    void* stream = nullptr) {
-    DP_DPA4SpinComputeCanonicalGraphGPU(
+    DP_DPA4SpinComputeCanonicalGraphGPU2(
         dp, d_atom_energy, d_force, d_force_mag, d_virial, d_atom_virial,
         d_atype, d_source, index_width, d_edge_vec, d_destination_row_ptr,
         d_source_row_ptr, d_source_order, d_spin, world, halo, nloc, nall_nodes,

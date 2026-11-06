@@ -265,6 +265,17 @@ class DescrptDPA4C(DescrptDPA4CDP):
             charge_spin=charge_spin,
         )
 
+    def require_charge_spin(
+        self,
+        charge_spin: torch.Tensor | None,
+        nf: int,
+        ref: torch.Tensor,
+    ) -> torch.Tensor | None:
+        """Resolve the snapshot state for graph and dense reference paths."""
+        return super().require_charge_spin(
+            None if self.compress else charge_spin, nf, ref
+        )
+
     def build_edge_features(
         self,
         graph: Any,
@@ -667,14 +678,20 @@ class DescrptDPA4C(DescrptDPA4CDP):
         from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             build_charge_state_artifacts,
         )
+        from deepmd.utils.charge_state import (
+            validate_charge_state,
+        )
 
-        artifacts = build_charge_state_artifacts(self, charge_spin)
+        state = validate_charge_state(charge_spin)
+        artifacts = build_charge_state_artifacts(self, state)
         device = self.compress_pair_film.device
         for name, value in artifacts.items():
             self._buffers[f"compress_{name}"] = value.to(
                 device=device,
                 dtype=torch.float32,
             ).contiguous()
+
+        self.default_chg_spin = state
 
     def set_stat_mean_and_stddev(self, mean: Any, stddev: Any) -> None:
         """Update output calibration and its compressed snapshot."""

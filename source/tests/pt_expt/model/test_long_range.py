@@ -1175,6 +1175,8 @@ def test_compressed_further_blocks_with_long_range_match_uncompressed(
     of the descriptor. Both match the uncompressed model on a cluster and, for
     a periodic module, on the mesh of a periodic frame.
     """
+    if periodic and env.DEVICE.type != "cuda" and not mesh_freeze_supported():
+        pytest.skip(f"torch {torch.__version__} cannot package the mesh evaluation")
     config = _two_block_config(kernel, periodic)
     model = _perturbed_model(config)
     reference = copy.deepcopy(model)

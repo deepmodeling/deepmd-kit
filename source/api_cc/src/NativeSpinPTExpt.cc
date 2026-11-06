@@ -839,6 +839,10 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
         /*fold_to_local=*/!multi_rank);
     edge_index_tensor = topology.edge_index;
     edge_index_ext_tensor = topology.edge_index_ext;
+    if (canonical_graph_requires_halo() && !multi_rank) {
+      ptexpt::check_reciprocal_nlist(nlist_data.jlist, nlist_data.ilist,
+                                     mapping_, dcoord, nloc, nall_real);
+    }
   }
 
   const std::int64_t node_count = multi_rank ? nall_real : nloc;
@@ -1534,7 +1538,8 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
       extract_outputs(
           output, run_model_canonical(inputs, spin, world,
                                       halo != nullptr
-                                          ? ptexpt::halo_tensors(*halo, device)
+                                          ? ptexpt::halo_tensors(
+                                                *halo, device, nloc, nall_nodes)
                                           : ptexpt::empty_halo(device)));
       auto atom_energy = output["atom_energy"]
                              .reshape({nall_nodes})

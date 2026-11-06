@@ -8,10 +8,14 @@ from __future__ import (
 from dataclasses import (
     dataclass,
 )
+from itertools import (
+    pairwise,
+)
 from typing import (
     TYPE_CHECKING,
 )
 
+import numpy as np
 import torch
 
 if TYPE_CHECKING:
@@ -134,6 +138,77 @@ class BorderPlan:
             swaps=torch.zeros(0, 5, dtype=torch.int32, device="cpu"),
             communicator=torch.zeros(1, dtype=torch.int64, device="cpu"),
         )
+
+
+def validate_reciprocal_canonical_graph(graph: CanonicalGraph) -> None:
+    """Check reverse edges of a complete, single-domain graph at construction.
+
+    Every physical edge must have a reverse edge with opposite displacement.
+    Periodic images sharing a node pair are matched one-to-one within the
+    displacement tolerance. Storage guards are ignored. This data-dependent check
+    synchronizes the device and belongs at graph construction, not inside a
+    captured inference operator. A partitioned graph cannot be checked locally.
+    """
+    device = graph.source.device
+    destination = torch.repeat_interleave(
+        torch.arange(
+            graph.destination_row_ptr.numel() - 1, dtype=torch.int64, device=device
+        ),
+        graph.destination_row_ptr.diff(),
+    )
+    count = destination.numel()
+    source = canonical_index_words(graph.source)[:count].to(torch.int64)
+    vector = graph.edge_vec[:count]
+
+    def ordered(center: torch.Tensor, neighbor: torch.Tensor) -> torch.Tensor:
+        order = torch.arange(count, dtype=torch.int64, device=device)
+        for column in (neighbor, center):
+            order = order[torch.argsort(column[order], stable=True)]
+        return order
+
+    forward = ordered(destination, source)
+    reverse = ordered(source, destination)
+    message = (
+        "multi-block DPA4C requires a globally bidirectional graph: "
+        "each edge must have a reverse edge with opposite displacement"
+    )
+    if not (
+        torch.equal(destination[forward], source[reverse])
+        and torch.equal(source[forward], destination[reverse])
+    ):
+        raise ValueError(message)
+    actual, expected = vector[forward], -vector[reverse]
+    aligned = torch.isclose(actual, expected, rtol=2e-6, atol=2e-6).all(dim=1)
+    if bool(aligned.all()):
+        return
+    # Unique node pairs need no matching. Only periodic image groups whose
+    # input orders differ reach the host-side bipartite matching below.
+    changes = (destination[forward][1:] != destination[forward][:-1]) | (
+        source[forward][1:] != source[forward][:-1]
+    )
+    starts = [0, *(torch.nonzero(changes).flatten() + 1).cpu().tolist(), count]
+    actual, expected = actual.detach().cpu().numpy(), expected.detach().cpu().numpy()
+    aligned = aligned.cpu().numpy()
+    for begin, end in pairwise(starts):
+        if aligned[begin:end].all():
+            continue
+        adjacent = np.isclose(
+            actual[begin:end, None], expected[None, begin:end], rtol=2e-6, atol=2e-6
+        ).all(axis=-1)
+        owner = [-1] * (end - begin)
+
+        def augment(node: int, seen: set[int]) -> bool:
+            for target in np.flatnonzero(adjacent[node]):
+                if target in seen:
+                    continue
+                seen.add(target)
+                if owner[target] < 0 or augment(owner[target], seen):
+                    owner[target] = node
+                    return True
+            return False
+
+        if not all(augment(node, set()) for node in range(end - begin)):
+            raise ValueError(message)
 
 
 def validate_canonical_graph_shapes(
@@ -351,4 +426,5 @@ __all__ = [
     "canonical_index_dtype",
     "canonical_index_words",
     "validate_canonical_graph_shapes",
+    "validate_reciprocal_canonical_graph",
 ]

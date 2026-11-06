@@ -22,8 +22,9 @@ v20260911 preset. Available grades are nano, mini, neo, air, and plus; the name
 format is dpa4c-<grade>-v20260911. The presets dpa4c-<grade>-duo-v20260911,
 for mini, neo, air and plus, add a second message-passing block to the same
 grade: more accurate than the single-block grade one or two steps up at a
-similar uncompressed cost, but not compressible, so use them only when the
-uncompressed graph is the deployment. The maintained
+similar uncompressed cost. Duo presets are compressible under the same
+profile requirements, but their compressed steps cost more than those of the
+single-block grades. The maintained
 examples/water/dpa4c/input.json uses dpa4c-nano-v20260911.
 
 The model section of a new energy input should contain the preset, the dataset's
@@ -124,7 +125,7 @@ blindly replacing them with a newer preset.
 - DPA4C has no `sel`; it consumes a carry-all neighbor graph within `rcut`.
 
 Use a compression-supported configuration when compressed deployment is
-required: `n_blocks` of 1, `channels` in `{8, 16, 32, 64, 128}`, `lmax` in
+required: `channels` in `{8, 16, 32, 64, 128}`, `lmax` in
 `{2, 3, 4}`, and `radial_modes` in `{0, 2, 4, 8}`.
 
 ## Freeze, compress, and test
@@ -139,8 +140,9 @@ export DP_TF32_INFER=0
 export DP_AMP_INFER=0
 ```
 
-A compressed archive needs `DP_CUDA_INFER` of at least `1` to use the fused
-path. Validate more aggressive precision settings against the target system.
+CUDA-host exports of DPA4C graph and canonical lowers select level 2, including
+when `DP_CUDA_INFER` is `0` or `1`. Validate more aggressive precision settings
+against the target system.
 
 ```bash
 dp --pt-expt freeze -c model.ckpt.pt -o frozen_model --lower-kind graph

@@ -45,7 +45,7 @@ if TYPE_CHECKING:
         Callable,
     )
 
-    from .graph_compress import (
+    from .profile import (
         DescriptorProfile,
     )
 
@@ -381,8 +381,14 @@ def build_block_artifacts(
 
 
 def _soft_saturate(value: torch.Tensor, knee: float) -> torch.Tensor:
-    ratio = value / knee
-    return value / torch.sqrt(1.0 + ratio * ratio)
+    scale = value.abs().clamp_min(knee)
+    scaled_value = value / scale
+    scaled_knee = knee / scale
+    return (
+        knee
+        * scaled_value
+        / torch.sqrt(scaled_value * scaled_value + scaled_knee * scaled_knee)
+    )
 
 
 def _c3_envelope(radius: torch.Tensor, rcut: float) -> torch.Tensor:

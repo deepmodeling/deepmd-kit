@@ -144,10 +144,10 @@ capacity rather than by the descriptor.
 
 > [!IMPORTANT]
 > Compression supports `channels` in `{8, 16, 32, 64, 128}`, `lmax` in
-> `{2, 3, 4}`, and `radial_modes` in `{0, 2, 4, 8}` only. A model trained
-> outside those sets trains and evaluates correctly, but
-> `dp --pt-expt compress` rejects it. Choose these values with deployment in
-> mind.
+> `{2, 3, 4}`, and `radial_modes` in `{0, 2, 4, 8}` only. Values of `channels`
+> and `lmax` outside these sets are rejected at construction. Other non-negative
+> integer values of `radial_modes` can train and evaluate, but cannot be
+> compressed. Choose these values with deployment in mind.
 
 ### Presets
 
@@ -468,8 +468,9 @@ lmp -in in.lammps
 
 The fast CPU path serves compressed models with one message-passing block and
 without native spin. A model with several blocks or with native spin runs on a
-CPU host through the slower general path. Use the plain `deepmd` pair style;
-the Kokkos pair styles bring no speedup on a CPU host.
+CPU host through the slower general path. Use `deepmd` for models without
+native spin, or `dpa4spin` with `atom_style spin` for native-spin models.
+The Kokkos pair styles bring no speedup on a CPU host.
 
 Two settings are worth knowing:
 
@@ -524,16 +525,37 @@ Environment variables control inference:
 | `DP_TF32_INFER`        | `0`     | float32 matrix-multiplication precision: `0` highest, `1` high, `2` medium.                                                           |
 | `DP_CPU_MALLOC_RETAIN` | `1`     | Whether the CPU path keeps the memory it reuses from step to step. See [CPU hosts](#cpu-hosts).                                       |
 
-A compressed model runs fast on a GPU only with `DP_CUDA_INFER` of at least
-`1`; at `0` compression brings no speedup there. A CPU host needs no such
-setting. For molecular dynamics sensitive to the smoothness of the potential
-energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
+For eager inference, a compressed model runs fast on a GPU only with
+`DP_CUDA_INFER` of at least `1`; at `0` compression brings no speedup there.
+CUDA-host exports of DPA4C graph and compact canonical lowers select the
+complete level-2 pipeline, including when `DP_CUDA_INFER` is `0` or `1`.
+A CPU host needs no such setting. For molecular dynamics sensitive to the
+smoothness of the potential energy surface, keep `DP_TF32_INFER=0` and
+`DP_AMP_INFER=0`.
 
 > [!IMPORTANT]
 > Set `DP_CUDA_INFER`, `DP_AMP_INFER` and `DP_TF32_INFER` **before** running
 > `dp --pt-expt freeze` or `dp --pt-expt compress`. They are fixed into the
-> `.pt2` archive when it is exported, and LAMMPS does **not** read them when it
-> loads the archive. `DP_CPU_MALLOC_RETAIN` is read when the model runs.
+> `.pt2` archive when it is exported, with the DPA4C CUDA level-2 selection
+> described above, and LAMMPS does **not** read them when it loads the archive.
+> `DP_CPU_MALLOC_RETAIN` is read when the model runs.
+
+### Multi-block graph inputs
+
+The compact CUDA path for `n_blocks > 1` requires a globally bidirectional
+neighbor graph: every edge has a reverse edge with the opposite displacement,
+including periodic images. Python graph preparation checks this condition;
+the single-domain C++ neighbor-list path checks it when the list is rebuilt.
+A domain-decomposed list may be asymmetric locally because the reverse edge
+belongs to another rank. Its producer must preserve the global condition.
+
+The zero-copy C GPU interface also relies on the producer to establish this
+condition when building or updating its buffers. It does not copy or sort
+those buffers on every evaluation. Concurrent distributed evaluations must
+use distinct MPI communicators, with the threading support required by MPI.
+Malformed device-resident halo indices or block cutoffs trigger asynchronous
+CUDA assertions; these are not recoverable C API errors and may invalidate
+the CUDA context. Validate distributed inputs before entering collective work.
 
 ## Native spin
 

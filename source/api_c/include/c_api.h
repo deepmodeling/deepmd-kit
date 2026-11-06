@@ -15,7 +15,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 31
+#define DP_C_API_VERSION 32
 
 /**
  * @brief Neighbor list.
@@ -466,7 +466,10 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * the nodes or by the edge storage may then be NULL. A model with further
  * message-passing blocks (DP_DeepPotCanonicalGraphRequiresHalo) exchanges the
  * features of halo nodes through it with the ranks of ``halo``. Every other
- * model ignores it.
+ * model ignores it. Overlapping distributed evaluations must use distinct
+ * communicators, duplicated collectively by the caller in the same order on
+ * every rank. Concurrent MPI calls require MPI_THREAD_MULTIPLE. Calls sharing
+ * a communicator must be serialized in the same order on all ranks.
  * @param[in] halo The halo exchange of the node set, in host memory with its
  * send list on the model device, or NULL for a node set without halo nodes. A
  * model with further message-passing blocks reads features of the sources of
@@ -512,12 +515,49 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * and their captures, releases of graphs and charge-state updates, which wait
  * for the whole device, take turns; CUDA work outside DeePMD-kit that waits for
  * the whole device while a capture is under way invalidates it, and the model
- * then evaluates without replay.
+ * then evaluates without replay. The communicator-isolation requirement above
+ * also applies to models evaluated by different threads.
+ * @note Multi-block DPA4C requires a globally bidirectional neighbor graph:
+ *       every u-to-v edge has a v-to-u edge with the opposite displacement,
+ *       including periodic images. A domain need store only its owned
+ *       destination rows; reciprocal rows may belong to another rank. The
+ *       caller establishes this invariant when building or updating the graph.
+ *       This zero-copy entry point does not sort or copy graph data to verify
+ * it.
  * @note API versions 28 to 30 named this function
  *       DP_DeepPotComputeCanonicalGraphGPU, without ``d_virial``, ``d_coord``,
  *       ``world``, ``halo``, ``box`` and ``stream``; a binary built against
  *       that name fails to load rather than call a function of another
  *       argument list.
+ * @since API version 32
+ */
+extern void DP_DPA4ComputeCanonicalGraphGPU2(
+    DP_DeepPot* dp,
+    double* d_atom_energy,
+    double* d_force,
+    double* d_virial,
+    double* d_atom_virial,
+    const int64_t* d_atype,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
+    const float* d_edge_vec,
+    const int64_t* d_destination_row_ptr,
+    const int64_t* d_source_row_ptr,
+    const int64_t* d_source_order,
+    const double* d_coord,
+    void* world,
+    const DP_HaloExchange* halo,
+    const double* box,
+    int64_t nloc,
+    int64_t nall_nodes,
+    int64_t edge_storage,
+    void* stream);
+
+/**
+ * @brief API 31 canonical GPU evaluation without a halo exchange plan.
+ *
+ * The parameter order is preserved for existing binaries. A model that needs
+ * halo exchange requires DP_DPA4ComputeCanonicalGraphGPU2.
  * @since API version 31
  */
 extern void DP_DPA4ComputeCanonicalGraphGPU(
@@ -535,7 +575,6 @@ extern void DP_DPA4ComputeCanonicalGraphGPU(
     const int64_t* d_source_order,
     const double* d_coord,
     void* world,
-    const DP_HaloExchange* halo,
     const double* box,
     int64_t nloc,
     int64_t nall_nodes,
@@ -572,7 +611,7 @@ extern bool DP_DeepPotCanonicalGraphRequiresSourceCSR(DP_DeepPot* dp);
  * nodes requires its halo exchange.
  *
  * A model with further message-passing blocks reads features of the sources
- * of its edges, which DP_DPA4ComputeCanonicalGraphGPU refreshes on the halo
+ * of its edges, which DP_DPA4ComputeCanonicalGraphGPU2 refreshes on the halo
  * nodes from their owners through the halo exchange of the node set.
  * @since API version 31
  */
@@ -584,7 +623,7 @@ extern bool DP_DeepPotCanonicalGraphRequiresHalo(DP_DeepPot* dp);
  * Such a module sums its interaction over every pair of atoms, and over the
  * images of the cell of a periodic system when it serves periodic systems, so
  * the model evaluates complete systems, and the device-resident entry
- * DP_DPA4ComputeCanonicalGraphGPU passes it the node positions, the cell and,
+ * DP_DPA4ComputeCanonicalGraphGPU2 passes it the node positions, the cell and,
  * on several ranks, the communicator.
  * @since API version 31
  */
@@ -1393,23 +1432,52 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
  * halo rows carry their owner's moment.
  * @param[in] world Pointer to the MPI communicator of the caller (an
  * ``MPI_Comm``) when the system spans several ranks, or NULL on a single rank,
- * under the contract described for DP_DPA4ComputeCanonicalGraphGPU.
+ * under the contract described for DP_DPA4ComputeCanonicalGraphGPU2.
  * @param[in] halo The halo exchange of the node set, or NULL for a node set
  * without halo nodes, under the contract described for
- * DP_DPA4ComputeCanonicalGraphGPU; DP_DeepSpinCanonicalGraphRequiresHalo
+ * DP_DPA4ComputeCanonicalGraphGPU2; DP_DeepSpinCanonicalGraphRequiresHalo
  * reports whether the model reads it.
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
  * @param[in] stream Accelerator stream (``cudaStream_t``) of the model device
  * on which the inputs were produced and the outputs will be consumed, under
- * the contract described for DP_DPA4ComputeCanonicalGraphGPU.
+ * the contract described for DP_DPA4ComputeCanonicalGraphGPU2.
  * DP_DeepSpinSetChargeSpin waits for the work in flight on the model device
  * before it replaces the constants and for the replacement before it returns.
  * @note API version 30 named this function DP_DeepSpinComputeCanonicalGraphGPU,
  *       without ``d_virial``, ``world``, ``halo`` and ``stream``; a binary
  *       built against that name fails to load rather than call a function of
  *       another argument list.
+ * @since API version 32
+ */
+extern void DP_DPA4SpinComputeCanonicalGraphGPU2(
+    DP_DeepSpin* dp,
+    double* d_atom_energy,
+    double* d_force,
+    double* d_force_mag,
+    double* d_virial,
+    double* d_atom_virial,
+    const int64_t* d_atype,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
+    const float* d_edge_vec,
+    const int64_t* d_destination_row_ptr,
+    const int64_t* d_source_row_ptr,
+    const int64_t* d_source_order,
+    const float* d_spin,
+    void* world,
+    const DP_HaloExchange* halo,
+    int64_t nloc,
+    int64_t nall_nodes,
+    int64_t edge_storage,
+    void* stream);
+
+/**
+ * @brief API 31 canonical GPU evaluation without a halo exchange plan.
+ *
+ * The parameter order is preserved for existing binaries. A model that needs
+ * halo exchange requires DP_DPA4SpinComputeCanonicalGraphGPU2.
  * @since API version 31
  */
 extern void DP_DPA4SpinComputeCanonicalGraphGPU(
@@ -1427,8 +1495,6 @@ extern void DP_DPA4SpinComputeCanonicalGraphGPU(
     const int64_t* d_source_row_ptr,
     const int64_t* d_source_order,
     const float* d_spin,
-    void* world,
-    const DP_HaloExchange* halo,
     int64_t nloc,
     int64_t nall_nodes,
     int64_t edge_storage,

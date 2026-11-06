@@ -186,6 +186,8 @@ def canonical_model_unsupported_reason(
     ):
         return None
     condition = _canonical_ineligibility(model, as_compressed=as_compressed)
+    if condition is None and not op_available():
+        condition = "the loaded library lacks the compact canonical operators"
     if condition is None:
         return None
     return (
