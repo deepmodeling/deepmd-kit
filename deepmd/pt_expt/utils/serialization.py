@@ -2274,17 +2274,24 @@ def _trace_and_export_impl(
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
-    # contraction, while CUDA targets also bake the fused GIE scatter.
+    # contraction, while CUDA targets also bake the fused GIE scatter and
+    # identify the CUDA target despite the CPU tracing inputs. This exporter
+    # already releases the full rotation output: a separate scalar store adds
+    # latency without reducing its peak, so keep the non-capture route.
     from deepmd.pt_expt.descriptor.dpa4_nn.embedding import (
         GeometricInitialEmbedding,
     )
     from deepmd.pt_expt.descriptor.dpa4_nn.so2 import (
+        SO2Convolution,
         SO2Linear,
     )
 
     force_block_diag = target_device.type != "cpu"
     force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
+        if isinstance(module, SO2Convolution):
+            module._scalar_capture_retains_rotation = False
+            module._force_scalar_capture_cuda_target = target_device.type == "cuda"
         if isinstance(module, SO2Linear):
             module._force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
