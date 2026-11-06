@@ -100,16 +100,15 @@ import triton
 from ase.build import (
     bulk,
 )
+from compare_so2_scalar_capture import (
+    configure_capture_route,
+)
 
 from deepmd.calculator import (
     DP,
 )
 from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as scalar_path
 from deepmd.utils.errors import OutOfMemoryError as DPOutOfMemoryError
-
-from compare_so2_scalar_capture import (
-    configure_capture_route,
-)
 
 # BASE is an explicit benchmark-only ablation, not a public inference switch.
 # On a pre-feature checkout BASE naturally uses its original implementation.
