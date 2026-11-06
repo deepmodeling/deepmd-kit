@@ -1001,6 +1001,65 @@ class TestSeZMModelCompile(unittest.TestCase):
                 msg=f"cartesian energy-grad mismatch at {name}",
             )
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_block_attn_res_matches_compile_across_batch_sizes(self) -> None:
+        """Block attention residuals serve every node count of the traced graph."""
+        self._assert_options_match_compile_across_batch_sizes(
+            {"block_attn_res": "independent"}
+        )
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_full_attn_res_matches_compile_across_batch_sizes(self) -> None:
+        """Full attention residuals serve every node count of the traced graph."""
+        self._assert_options_match_compile_across_batch_sizes(
+            {"full_attn_res": "dependent"}
+        )
+
+    def _assert_options_match_compile_across_batch_sizes(self, options: dict) -> None:
+        """Eager and compiled training agree at three batch sizes for ``options``."""
+        params = []
+        for use_compile in (False, True):
+            param = self._build_model_params(use_compile=use_compile)
+            param["descriptor"].update(options)
+            params.append(param)
+        model_dyn = get_sezm_model(params[0])
+        self._randomize_params(model_dyn)
+        model_cmp = get_sezm_model(params[1])
+        model_cmp.load_state_dict(model_dyn.state_dict())
+        model_dyn.train()
+        model_cmp.train()
+        grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
+        for nframe in (1, 2, 3):
+            coord, atype, box, _, _, _ = self._make_tiny_frame(nframe=nframe)
+            losses = []
+            for model in (model_dyn, model_cmp):
+                model.zero_grad(set_to_none=True)
+                out = model(coord, atype, box=box)
+                loss = out["energy"].sum() + torch.sum(out["force"] * out["force"])
+                loss.backward()
+                losses.append(loss.detach())
+            _assert_close_with_strict_warning(
+                losses[0],
+                losses[1],
+                atol=1.0e-6,
+                rtol=1.0e-6,
+                msg=f"loss mismatch at nframe={nframe}",
+            )
+            for (name, p_dyn), p_cmp in zip(
+                model_dyn.named_parameters(), model_cmp.parameters(), strict=True
+            ):
+                if p_dyn.grad is None:
+                    self.assertIsNone(p_cmp.grad, msg=name)
+                    continue
+                _assert_close_with_strict_warning(
+                    p_dyn.grad,
+                    p_cmp.grad,
+                    atol=grad_atol,
+                    rtol=grad_rtol,
+                    msg=f"grad mismatch at {name}, nframe={nframe}",
+                )
+
     def _assert_multitask_compile_matches_eager(
         self,
         *,

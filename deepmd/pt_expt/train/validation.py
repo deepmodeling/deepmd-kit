@@ -580,6 +580,10 @@ class FullValidator:
             and bool(test_data.get("find_fparam", 0.0))
             else None,
             aparam=test_data["aparam"] if self.model.get_dim_aparam() > 0 else None,
+            charge_spin=test_data["charge_spin"].reshape(nframes, -1)
+            if self.model.has_chg_spin_ebd()
+            and bool(test_data.get("find_charge_spin", 0.0))
+            else None,
             spin=spin,
             include_virial=include_virial,
             natoms=natoms,
@@ -601,6 +605,7 @@ class FullValidator:
         box: np.ndarray | None,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
         spin: np.ndarray | None,
         include_virial: bool,
         natoms: int,
@@ -610,7 +615,9 @@ class FullValidator:
 
         Energy and real-atom force are always produced. The virial is added
         for periodic energy-type systems, while magnetic force and its atom
-        mask are added for spin systems.
+        mask are added for spin systems. ``charge_spin`` holds the frame-level
+        charge and spin condition of each frame; without it a conditioned
+        model evaluates every frame at its default condition.
         """
 
         def predict_batch(
@@ -619,6 +626,7 @@ class FullValidator:
             box_batch: np.ndarray | None,
             fparam_batch: np.ndarray | None,
             aparam_batch: np.ndarray | None,
+            charge_spin_batch: np.ndarray | None,
             spin_batch: np.ndarray | None,
         ) -> dict[str, np.ndarray]:
             coord_input = torch.tensor(
@@ -659,6 +667,11 @@ class FullValidator:
                 )
             else:
                 aparam_input = None
+            charge_spin_kwargs = (
+                {}
+                if charge_spin_batch is None
+                else {"charge_spin": to_torch_tensor(charge_spin_batch.reshape(-1, 2))}
+            )
             if spin_batch is not None:
                 spin_kwargs = {
                     "spin": torch.tensor(
@@ -682,6 +695,7 @@ class FullValidator:
                 box=box_input,
                 fparam=fparam_input,
                 aparam=aparam_input,
+                **charge_spin_kwargs,
                 **spin_kwargs,
             )
             if isinstance(batch_output, tuple):
@@ -726,6 +740,7 @@ class FullValidator:
             box,
             fparam,
             aparam,
+            charge_spin,
             spin,
         )
         prediction = {

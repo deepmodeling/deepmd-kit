@@ -1150,6 +1150,35 @@ class TestDescrptSeZM(_SeZMTestCase):
                 msg="Smooth weight differs for models with same seed",
             )
 
+    def test_shared_descriptor_binds_fused_radial_to_shared_basis(self) -> None:
+        """Fused radial inference of a linked branch reads the shared basis."""
+        from deepmd.pt_expt.kernels.cuda.dpa4 import (
+            edge_radial,
+        )
+
+        if self.device.type != "cuda" or not edge_radial.op_available():
+            self.skipTest("DPA4 CUDA radial operators are unavailable")
+        levels = {
+            "DP_CUDA_INFER": "1",
+            "DP_TRITON_INFER": "0",
+            "DP_CUTILE_INFER": "0",
+            "DP_CUTE_INFER": "0",
+        }
+        with mock.patch.dict(os.environ, levels):
+            base = DescrptSeZM(**_descriptor_kwargs()).to(self.device)
+            link = DescrptSeZM(**_descriptor_kwargs()).to(self.device)
+        self.assertIsNotNone(link._cuda_radial_fn)
+        with torch.no_grad():
+            base.radial_basis.adam_freqs += 0.5
+        link.share_params(base, 0)
+        self.assertIs(link.radial_basis, base.radial_basis)
+        edge_len = torch.linspace(0.5, 2.9, 16, device=self.device).reshape(-1, 1)
+        keep = torch.ones_like(edge_len)
+        shared = link._cuda_radial_fn(edge_len, keep)
+        reference = base._cuda_radial_fn(edge_len, keep)
+        for value, expected in zip(shared, reference, strict=True):
+            torch.testing.assert_close(value, expected)
+
 
 class TestSeZMSpinEmbedding(_SeZMTestCase):
     """Test the native per-atom spin embedding and its descriptor injection."""

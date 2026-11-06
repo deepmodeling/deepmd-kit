@@ -198,6 +198,42 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(output.sum(), coord)[0]
         return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
+    def test_serialized_radial_basis_reaches_fused_inference(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fused inference of a deserialized descriptor reads its learned basis."""
+        if not edge_radial.op_available():
+            pytest.skip("DPA4 CUDA radial operators are unavailable")
+        for name in (
+            "DP_TRITON_INFER",
+            "DP_CUDA_INFER",
+            "DP_CUTILE_INFER",
+            "DP_CUTE_INFER",
+        ):
+            monkeypatch.setenv(name, "0")
+        data = _make_descriptor(self.nt, self.sel_mix, self.rcut).serialize()
+        data = jitter_zero_arrays(data, np.random.default_rng(73))
+        data["@variables"]["radial_basis.adam_freqs"] += np.pi / self.rcut
+        reference = DescrptDPA4.deserialize(data).to(self.device).eval()
+        output_ref, gradient_ref = self._step(reference)
+        assert np.max(np.abs(gradient_ref)) > 1e-10
+
+        monkeypatch.setenv("DP_CUDA_INFER", "1")
+        restored = DescrptDPA4.deserialize(data).to(self.device).eval()
+        assert restored._cuda_radial_fn is not None
+        calls: list[tuple[int, ...]] = []
+        original = edge_radial.EdgeRadialCuda.__call__
+
+        def spy(operator, edge_len, keep):
+            calls.append(tuple(edge_len.shape))
+            return original(operator, edge_len, keep)
+
+        monkeypatch.setattr(edge_radial.EdgeRadialCuda, "__call__", spy)
+        output, gradient = self._step(restored)
+        assert calls, "the fused radial operator was not used"
+        np.testing.assert_allclose(output, output_ref, rtol=2e-4, atol=2e-5)
+        np.testing.assert_allclose(gradient, gradient_ref, rtol=2e-4, atol=2e-5)
+
     def test_bridged_inference_takes_the_fused_convolution(self, monkeypatch) -> None:
         """A bridged descriptor runs the fused convolution and matches the dense path.
 

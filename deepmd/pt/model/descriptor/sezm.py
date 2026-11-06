@@ -1082,19 +1082,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # distance and are cheap enough that the compiler inlines them into
         # every consumer and re-evaluates them there. Behind an operator
         # boundary the chain runs once per step.
-        self._cuda_radial_fn = None
+        self._cuda_infer_level = cuda_infer_level()
+        self._bind_radial_kernel()
         self._cuda_wigner_fn = None
-        if cuda_infer_level() >= 1:
-            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
-                make_cuda_edge_radial,
-            )
+        if self._cuda_infer_level >= 1:
             from deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense import (
                 make_cuda_wigner_dense,
             )
 
-            self._cuda_radial_fn = make_cuda_edge_radial(
-                self.edge_envelope, self.radial_basis
-            )
             # The dense Wigner pair otherwise costs five full-size passes
             # over the (E, D, D) tensors; the fused build pays only the
             # output writes.
@@ -1180,6 +1175,23 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             torch.ones(0, dtype=self.dtype, device=self.device),
             persistent=True,
         )
+
+    def _bind_radial_kernel(self) -> None:
+        """
+        Bind the fused radial operator to the current envelope and basis modules.
+
+        The operator reads the basis frequencies from the module it is bound to,
+        so it is bound again whenever parameter sharing replaces that module.
+        """
+        self._cuda_radial_fn = None
+        if self._cuda_infer_level >= 1:
+            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+                make_cuda_edge_radial,
+            )
+
+            self._cuda_radial_fn = make_cuda_edge_radial(
+                self.edge_envelope, self.radial_basis
+            )
 
     def forward(
         self,
@@ -2529,6 +2541,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             for name in ("film_scale_strength_log", "film_shift_strength_log"):
                 if self._parameters.get(name) is not None:
                     self._parameters[name] = base_class._parameters[name]
+            # The fused radial operator reads the basis frequencies of the
+            # module it is bound to, so it is bound to the shared modules.
+            self._bind_radial_kernel()
         elif shared_level == 1:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
             if self.charge_spin_embedding is not None:
