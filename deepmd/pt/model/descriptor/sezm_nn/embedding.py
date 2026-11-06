@@ -37,6 +37,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    triton_infer_level,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -216,6 +217,10 @@ class GeometricInitialEmbedding(nn.Module):
         # ``None`` keeps the runtime ``zonal_coupling.is_cuda`` dispatch; the
         # freeze pins it to the AOTI target because tracing always runs on CPU.
         self._force_fused_scatter: bool | None = None
+        # Same pin for the Triton scatter: freeze traces on CPU, where the
+        # runtime device check would otherwise resolve the CUDA-target
+        # artifact to the reference composition.
+        self._force_triton_scatter: bool | None = None
         if cuda_infer_level() >= 1 and self.dtype is torch.float32:
             from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
                 op_available,
@@ -225,6 +230,41 @@ class GeometricInitialEmbedding(nn.Module):
             self._cuda_scatter = op_available() and supported(
                 self.lmax, self.ebed_dim - 1, self.channels
             )
+
+        # === Fused Triton message-and-scatter operator ===
+        # Same boundary as the CUDA operator above, served by the Triton
+        # stack instead: the kernel specializes on the packed contiguous row
+        # layout, so anything else (or a non-fp32 compute) keeps the reference
+        # composition.
+        self._triton_scatter = None
+        # The fused Triton scatter rides the level-1 universal-kernel
+        # contract: no tunable configuration, strictly removes the
+        # (E, D-1, C) message round-trip, so no table selection is involved.
+        if triton_infer_level() >= 1 and self.dtype is torch.float32 and self.lmax == 3:
+            # The module owns its optional-triton import guard, so this
+            # import succeeds everywhere and the exported flag is the
+            # single source of truth for the capability check below.
+            from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+                GIE_SCATTER_TRITON_AVAILABLE,
+                gie_zonal_scatter,
+            )
+
+            index_device = self.non_scalar_row_index.device
+            packed_rows = torch.arange(
+                1, self.ebed_dim, device=index_device, dtype=torch.long
+            )
+            counts = [2 * ell + 1 for ell in range(1, self.lmax + 1)]
+            packed_slots = torch.repeat_interleave(
+                torch.arange(self.lmax, device=index_device, dtype=torch.long),
+                torch.tensor(counts, device=index_device, dtype=torch.long),
+            )
+            if (
+                GIE_SCATTER_TRITON_AVAILABLE
+                and torch.cuda.is_available()
+                and torch.equal(self.non_scalar_row_index, packed_rows)
+                and torch.equal(self.radial_slot_index_for_row, packed_slots)
+            ):
+                self._triton_scatter = gie_zonal_scatter
 
     def forward(
         self,
@@ -281,16 +321,59 @@ class GeometricInitialEmbedding(nn.Module):
 
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
-        # The fused operator spans this broadcast and the scatter of Step 4, so
-        # it takes over whenever nothing else joins the message in between.
-        if (
-            self._can_fuse_scatter(zonal_coupling)
-            and spin_l1_message is None
-            and edge_cache.csr_cache is not None
-        ):
-            return self.forward_fused_scatter(
-                n_nodes, edge_cache, radial_feat, zonal_coupling
+        # One fused operator spans this broadcast and the scatter of Step 4,
+        # so it takes over whenever nothing else joins the message in
+        # between.  The eligibility conditions and the destination CSR are
+        # shared once here; only the backend selection differs (the CUDA
+        # operator folds the degree normalization into its kernel, the
+        # Triton one leaves the scale in the traced graph so its cotangent
+        # keeps flowing).  Training keeps the reference composition for the
+        # Triton backend: the fused backward registers no next-derivative
+        # formula, and force-loss training differentiates the backward
+        # itself.
+        if spin_l1_message is None and edge_cache.csr_cache is not None:
+            cuda_selected = self._can_fuse_scatter(zonal_coupling)
+            # The Triton operator serves the same CUDA-only contract: the
+            # constructor binds on host availability, but a GPU host may
+            # still run this forward on CPU tensors (device-qualified
+            # inference), and the operator's internal fallback builds
+            # data-dependent shapes that break compiled CPU graphs.
+            triton_target = (
+                self._force_triton_scatter
+                if self._force_triton_scatter is not None
+                else zonal_coupling.is_cuda
             )
+            triton_selected = (
+                self._triton_scatter is not None and not self.training and triton_target
+            )
+            if cuda_selected or triton_selected:
+                from .edge_cache import (
+                    cached_edge_csr,
+                )
+
+                # The destination view is only needed by a fused backend;
+                # the reference path below must not pay for its sort.
+                order, row_ptr = cached_edge_csr(edge_cache, "dst", n_nodes)
+            if cuda_selected:
+                return self.forward_fused_scatter(
+                    n_nodes, edge_cache, radial_feat, zonal_coupling, order, row_ptr
+                )
+            if triton_selected:
+                # The operator contract promises contiguous inputs: the
+                # radial slice and the gathered coupling are flattened in
+                # the traced graph before entering the op, like every
+                # other sezm_triton operator.
+                out = self._triton_scatter(
+                    zonal_coupling.contiguous(),
+                    radial_feat.contiguous(),
+                    edge_cache.dst,
+                    order,
+                    row_ptr,
+                    n_nodes,
+                    self.lmax,
+                )  # (N, D, C), l=0 zero, unnormalized
+                out.mul_(edge_cache.inv_sqrt_deg)
+                return out
 
         radial_value_for_row = radial_feat.index_select(
             1, self.radial_slot_index_for_row
@@ -333,6 +416,8 @@ class GeometricInitialEmbedding(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         zonal_coupling: torch.Tensor,
+        order: torch.Tensor,
+        row_ptr: torch.Tensor,
     ) -> torch.Tensor:
         """
         Build and reduce the geometric message with the fused CUDA operator.
@@ -358,13 +443,6 @@ class GeometricInitialEmbedding(nn.Module):
         from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
             zonal_scatter,
         )
-
-        from .edge_cache import (
-            cached_edge_csr,
-        )
-
-        # === Step 1. Destination CSR, shared with every other edge consumer ===
-        order, row_ptr = cached_edge_csr(edge_cache, "dst", n_nodes)
 
         # === Step 2. Fused message build, reduction, padding and normalization ===
         # The operator emits the packed node layout already normalized, so the
