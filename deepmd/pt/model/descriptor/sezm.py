@@ -69,14 +69,12 @@ from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
 )
-from deepmd.utils.bridging import (
-    BRIDGING_RECORD_VERSION,
-    check_bridging_record_version,
-    check_window_inside_cutoff,
-    migrate_inner_clamp_keys,
+from deepmd.pt_expt.utils.contact_clamp import (
+    ContactClamp,
 )
-from deepmd.utils.element_radii import (
-    contact_radius_table,
+from deepmd.utils.bridging import (
+    DEFAULT_SUPPORT,
+    drop_retired_descriptor_options,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -87,7 +85,6 @@ from .base_descriptor import (
 )
 from .sezm_nn import (
     ATTN_RES_MODES,
-    BridgingSwitch,
     C3CutoffEnvelope,
     ChargeSpinEmbedding,
     DepthAttnRes,
@@ -95,7 +92,6 @@ from .sezm_nn import (
     EnvironmentInitialEmbedding,
     EquivariantFFN,
     GeometricInitialEmbedding,
-    InnerClamp,
     RadialBasis,
     RadialMLP,
     ScalarRMSNorm,
@@ -433,21 +429,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Random seed(s).
     type_map
         Type names.
-    inner_clamp_f_inner
-        Inner radius of the zone-bridging window, as a fraction of each pair's
-        own length scale. When both fractions are set, the descriptor freezes
-        short-range geometry inside the window. Given together with
-        ``inner_clamp_f_outer`` or not at all.
-    inner_clamp_f_outer
-        Outer radius of the zone-bridging window, as a fraction of each pair's
-        own length scale. At or beyond it an edge contributes exactly as it
-        does without a window.
-    inner_clamp_scale
-        Length scale the two fractions measure against. ``"covalent"`` sizes
-        every pair by the sum of the covalent radii of its two elements, so one
-        window shape serves every element combination and a ``type_map`` is
-        required; ``"absolute"`` gives every element the unit radius, which
-        makes the pair scale 1 Å and the two fractions radii in Å.
+    contact_clamp
+        Fraction of each pair's data edge at and below which the separation the
+        descriptor reads is frozen; ``None`` reads every separation unchanged.
+        The bridging composition sets it beside its analytical potential (see
+        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`), and it needs
+        a ``type_map`` of element symbols.
+    contact_support
+        Rank, counted from the smallest, of the distinct per-frame shortest
+        separation of a pair that becomes its data edge (see
+        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`).
     add_chg_spin_ebd
         If True, add frame-level charge/spin condition embedding to scalar type
         features before edge features are built.
@@ -465,7 +456,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     """
 
     _ENV_DIM: int = 1  # Use se_r style (radial only) for EnvMatStatSe compatibility
-    LATEST_VERSION: float = 1.3
+    LATEST_VERSION: float = 1.5
 
     def __init__(
         self,
@@ -528,9 +519,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         trainable: bool = True,
         seed: int | list[int] | None = None,
         type_map: list[str] | None = None,
-        inner_clamp_f_inner: float | None = None,
-        inner_clamp_f_outer: float | None = None,
-        inner_clamp_scale: str = "covalent",
+        contact_clamp: float | None = None,
+        contact_support: int = DEFAULT_SUPPORT,
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
         use_spin: list[bool] | None = None,
@@ -697,63 +687,22 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if spin_mode not in {"exchange", "orbit"}:
             raise ValueError("`spin_mode` must be exchange or orbit")
 
-        # === Zone bridging: InnerClamp + Source Freeze Propagation Gate ===
-        # Both the geometry clamp (``InnerClamp``) and the message-passing
-        # switch (``BridgingSwitch``) are activated together on the same
-        # window, two fractions of the length scale each pair contributes
-        # through ``contact_radius``. The switch spans the whole window; the
-        # clamp freezes the distance the descriptor sees on every ``(j, k)``
-        # edge two fifths into the window, just below the frame-filter point
-        # at the midpoint, so that the displayed distance still moves where
-        # the training data end and the network can fit the labels there. The
-        # switch feeds a per-edge C3 amplitude of the true length into
-        # ``compute_source_gates``, whose per-node product over every pair
-        # other than the edge's own is folded into the envelope of every edge
-        # the node emits, so that a node with a frozen neighbor is absent
-        # from every reduction of its other neighbors as if those edges were
-        # deleted, while the frozen pair keeps seeing itself at the clamped
-        # distance. The full per-node product also fades the learned atomic
-        # energy in the model, so a frozen atom contributes the bias of its
-        # type alone. Both modules are parameter-free, so enabling bridging
-        # does not add any keys to the descriptor's state dict.
-        if (inner_clamp_f_inner is None) != (inner_clamp_f_outer is None):
+        # === Contact clamp of a bridged descriptor ===
+        # Below the data edge of a pair the separation every geometric read
+        # sees is frozen, so the analytical potential of the bridging
+        # composition alone carries the repulsion there.
+        if contact_clamp is not None and type_map is None:
             raise ValueError(
-                "`inner_clamp_f_inner` and `inner_clamp_f_outer` must be given "
-                "together."
+                "A contact clamp starts every pair at its covalent bond length, "
+                "so it needs a `type_map` of element symbols."
             )
-        if inner_clamp_scale not in ("covalent", "absolute"):
-            raise ValueError(
-                "`inner_clamp_scale` must be 'covalent' or 'absolute', got "
-                f"{inner_clamp_scale!r}."
-            )
-        self.bridging_f_inner = (
-            None if inner_clamp_f_inner is None else float(inner_clamp_f_inner)
+        self.contact_clamp = (
+            None
+            if contact_clamp is None
+            else ContactClamp(
+                list(type_map), inner=contact_clamp, support=contact_support
+            ).to(env.DEVICE)
         )
-        self.bridging_f_outer = (
-            None if inner_clamp_f_outer is None else float(inner_clamp_f_outer)
-        )
-        self.bridging_scale = str(inner_clamp_scale)
-        if self.bridging_f_inner is not None:
-            self.bridging_clamp: InnerClamp | None = InnerClamp(
-                self.bridging_f_inner, self.bridging_f_outer
-            )
-            self.bridging_switch: BridgingSwitch | None = BridgingSwitch(
-                self.bridging_f_inner, self.bridging_f_outer
-            )
-        else:
-            self.bridging_clamp = None
-            self.bridging_switch = None
-        # The table sizes a window, so an unbridged descriptor needs none and
-        # is not asked for the element symbols the covalent scale reads. It is
-        # derived from the configuration rather than trained, hence transient.
-        contact_radius = None
-        if self.bridging_f_inner is not None:
-            table = contact_radius_table(
-                self.ntypes, self.type_map, self.bridging_scale
-            )
-            check_window_inside_cutoff(table, self.bridging_f_outer, self.rcut)
-            contact_radius = torch.tensor(table, dtype=torch.float64, device=env.DEVICE)
-        self.register_buffer("contact_radius", contact_radius, persistent=False)
 
         # === Env seed parameters ===
         self.use_env_seed = bool(use_env_seed)
@@ -782,6 +731,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === L/M schedules ===
         self._init_lm_schedules(lmax, n_blocks, l_schedule, mmax, m_schedule)
+        if self.contact_clamp is not None:
+            self.contact_clamp.check_cutoff(self.rcut)
         self.kmax = int(kmax)
         if self.kmax < 0:
             raise ValueError("`kmax` must be non-negative")
@@ -1230,37 +1181,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             persistent=True,
         )
 
-    def pair_contact(
-        self,
-        center_type: torch.Tensor,
-        neighbor_type: torch.Tensor,
-        dtype: torch.dtype,
-    ) -> torch.Tensor:
-        """
-        Gather the length scale of each edge from the types at its ends.
-
-        Parameters
-        ----------
-        center_type : torch.Tensor
-            Type index of the center atom of every edge, with shape (E,).
-        neighbor_type : torch.Tensor
-            Type index of the neighbor atom of every edge, with shape (E,).
-        dtype : torch.dtype
-            Floating-point dtype of the result. The edge cache divides the edge
-            distances by that result, so this is the dtype the geometry is
-            reduced in rather than the dtype of the incoming coordinates.
-
-        Returns
-        -------
-        torch.Tensor
-            Contact distance of each edge in Å, with shape (E, 1).
-        """
-        radius = self.contact_radius.to(dtype=dtype)
-        contact = radius.index_select(0, center_type) + radius.index_select(
-            0, neighbor_type
-        )
-        return contact.unsqueeze(-1)
-
     def forward(
         self,
         extended_coord: torch.Tensor,
@@ -1284,11 +1204,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     ]:
         """
         Compute the descriptor through the common descriptor interface.
-
-        The interface returns the common five elements, so the readout gate of
-        a bridged descriptor does not travel through it; the SeZM model
-        evaluates its energies through :meth:`forward_with_edges`, which hands
-        the gate over.
 
         Parameters
         ----------
@@ -1350,7 +1265,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 dtype=extended_coord.dtype,
                 device=extended_coord.device,
             )
-            descriptor, _, _, _ = self.forward_with_edges(
+            descriptor, _, _ = self.forward_with_edges(
                 extended_coord=extended_coord,
                 extended_atype=extended_atype,
                 edge_index=edge_index,
@@ -1408,11 +1323,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 )
 
         # === Step 4. Build edge cache once (geometry + RBF + Wigner-D) ===
-        # Zone bridging (InnerClamp + SFPG + ZBL) is not routed through the
-        # standard DeePMD path: bridging only makes physical sense when
-        # paired with the ZBL energy that ``SeZMModel`` injects on the
-        # sparse-edge path, so ``forward`` keeps the original
-        # bridging-free aggregation semantics.
+        # The contact clamp of a bridged descriptor is not routed through the
+        # standard DeePMD path: it only makes physical sense beside the
+        # analytical potential that ``SeZMModel`` adds on the sparse-edge
+        # path, so ``forward`` reads every separation unchanged.
         with nvtx_range("build_edge_cache"):
             edge_cache = build_edge_cache(
                 type_ebed=type_ebed,
@@ -1553,7 +1467,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         comm_dict: dict[str, torch.Tensor] | None = None,
         nloc: int | None = None,
         vacuum_conditions: dict[str, torch.Tensor] | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """
         Compute the descriptor from a sparse edge list.
 
@@ -1605,13 +1519,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         Returns
         -------
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
             The scalar descriptor with shape ``(nf, nloc, channels)``, the
             final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``,
-            with ``vacuum_conditions`` the vacuum descriptor with shape
-            ``(ntypes, channels)`` (``None`` otherwise), and for a bridged
-            descriptor the per-atom source gate with shape ``(nf, nloc, 1)``
-            that fades the learned atomic energy (``None`` otherwise).
+            and with ``vacuum_conditions`` the vacuum descriptor with shape
+            ``(ntypes, channels)`` (``None`` otherwise).
         """
         # === Step 1. Setup dimensions ===
         # ``n_per_frame`` is the per-frame node count: ``nloc`` in the
@@ -1690,25 +1602,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     type_ebed, spin, atype_flat, n_nodes=n_nodes
                 )
 
-        # Cross-rank SFPG completion (issue #5906): only a bridged model
-        # under domain decomposition needs it -- the gate's src-keyed
-        # per-node partials are rank-incomplete then.
-        node_partial_exchange = None
-        if parallel and self.bridging_switch is not None:
-            node_partial_exchange = functools.partial(
-                self._gate_partial_exchange, comm_dict=comm_dict
-            )
         # === Step 3. Build edge cache once (sparse edges) ===
-        # The window of every edge is sized by the two types at its ends, so
-        # the descriptor, which owns the radius table, resolves it here and the
-        # edge cache receives one per-edge length scale.
-        edge_contact = (
+        # The contact clamp reads the types at both ends of every edge.
+        read_distance = (
             None
-            if self.contact_radius is None
-            else self.pair_contact(
-                atype_flat.index_select(0, edge_index[1]),
-                atype_flat.index_select(0, edge_index[0]),
-                self.compute_dtype,
+            if self.contact_clamp is None
+            else functools.partial(
+                self.contact_clamp.call,
+                center_type=atype_flat.index_select(0, edge_index[1]),
+                neighbor_type=atype_flat.index_select(0, edge_index[0]),
             )
         )
         with nvtx_range("build_edge_cache"):
@@ -1723,9 +1625,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 deg_norm_floor=(
                     self.deg_norm_floor if self.version >= 1.1 else self.eps
                 ),
-                bridging_clamp=self.bridging_clamp,
-                bridging_switch=self.bridging_switch,
-                edge_contact=edge_contact,
+                read_distance=read_distance,
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
                 fused_radial=(None if self.training else self._cuda_radial_fn),
@@ -1737,7 +1637,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
-                node_partial_exchange=node_partial_exchange,
             )
 
         if self.spin_embedding is not None and spin is not None:
@@ -1858,14 +1757,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             if vacuum_ref
             else None
         )
-        node_gate = (
-            None
-            if edge_cache.node_gate is None
-            else edge_cache.node_gate[:n_out_nodes]
-            .reshape(nf, out_nloc, 1)
-            .to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
-        )
-        return descriptor, latent.contiguous(), vacuum, node_gate
+        return descriptor, latent.contiguous(), vacuum
 
     def _forward_blocks(
         self,
@@ -2561,62 +2453,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         A domain-decomposed run must exchange them through ``border_op``, so
         multi-rank inference always needs the with-comm exchange. Whether
         multi-rank is POSSIBLE at all is :meth:`supports_edge_parallel`,
-        which is ``True`` for every configuration including bridging: the
-        SFPG partials are completed by ``_gate_partial_exchange``.
+        which is ``True`` for every configuration.
         """
         return True
 
     def supports_edge_parallel(self) -> bool:
-        """Bridging included: multi-rank is supported for every SeZM config.
-
-        The SFPG per-node partials are completed across ranks by
-        ``_gate_partial_exchange`` (reverse-accumulate + broadcast) before
-        the gate is applied (issue #5906).
-        """
+        """Multi-rank inference is supported for every SeZM configuration."""
         return True
-
-    def _gate_partial_exchange(
-        self,
-        partials: torch.Tensor,
-        comm_dict: dict[str, torch.Tensor],
-    ) -> torch.Tensor:
-        """Reverse-accumulate ghost partials to owners, then broadcast back.
-
-        ``border_op_backward`` sums each ghost row into its owner across
-        ranks and zeroes the ghost rows; ``border_op`` refills them with the
-        completed owner values. Both ops carry autograd (the two are
-        transposes), so gate gradients cross ranks (issue #5906).
-
-        Parameters
-        ----------
-        partials
-            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
-        comm_dict
-            The border-exchange control tensors.
-
-        Returns
-        -------
-        torch.Tensor
-            The globally completed (n_nodes, 2) tensor.
-        """
-        # border_op exchanges rows by raw pointer arithmetic; a strided
-        # view would corrupt the exchange.
-        p = partials.contiguous()
-        comm_args = (
-            comm_dict["send_list"],
-            comm_dict["send_proc"],
-            comm_dict["recv_proc"],
-            comm_dict["send_num"],
-            comm_dict["recv_num"],
-        )
-        tail = (
-            comm_dict["communicator"],
-            comm_dict["nlocal"],
-            comm_dict["nghost"],
-        )
-        p = torch.ops.deepmd_export.border_op_backward(*comm_args, p, *tail)
-        p = torch.ops.deepmd_export.border_op(*comm_args, p, *tail)
-        return p
 
     def need_sorted_nlist_for_lower(self) -> bool:
         return False
@@ -2677,9 +2520,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             # radial_*, edge_envelope, wigner_calc, gie, blocks, final attn
             # residuals, output_ffn).  Raw ``nn.Parameter`` attributes
             # (``film_*_strength_log``) live in ``_parameters`` instead and
-            # are linked explicitly below.
+            # are linked explicitly below.  The contact clamp stays with its
+            # branch: it belongs to the branch's bridging composition and
+            # records the contacts of that branch's training data.
             for item in self._modules:
-                self._modules[item] = base_class._modules[item]
+                if item != "contact_clamp":
+                    self._modules[item] = base_class._modules[item]
             for name in ("film_scale_strength_log", "film_shift_strength_log"):
                 if self._parameters.get(name) is not None:
                     self._parameters[name] = base_class._parameters[name]
@@ -2833,9 +2679,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "eps": self.eps,
                 "trainable": self.trainable,
                 "seed": self.seed,
-                "inner_clamp_f_inner": self.bridging_f_inner,
-                "inner_clamp_f_outer": self.bridging_f_outer,
-                "inner_clamp_scale": self.bridging_scale,
+                "contact_clamp": (
+                    None if self.contact_clamp is None else self.contact_clamp.inner
+                ),
+                "contact_support": (
+                    DEFAULT_SUPPORT
+                    if self.contact_clamp is None
+                    else self.contact_clamp.support
+                ),
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
                 "use_spin": self.use_spin,
@@ -2860,7 +2711,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         variables = data.pop("@variables")
         data.pop("env_mat", None)
         config.pop("s2_grid_resolution", None)
-        migrate_inner_clamp_keys(config)
+        drop_retired_descriptor_options(config)
         obj = cls(**config)
         template = obj.state_dict()
         state = {
@@ -2911,18 +2762,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return local_jdata_cpy, min_nbor_dist
 
     def _migrate_version(self, version: float) -> float:
-        """Validate bridging semantics and update an unbridged record version.
+        """Update a record version.
 
-        Records before 1.1 retain their forward semantics. An unbridged record
-        from 1.1 onward adopts the current bridging record version without a
-        parameter transformation. Bridged records require the current window
-        semantics because their stored function cannot be migrated.
+        Records before 1.1 retain their forward semantics. Every record from
+        1.1 onward computes the current function and adopts the latest
+        version without a parameter transformation.
         """
-        check_bridging_record_version(
-            {"inner_clamp_f_inner": self.bridging_f_inner}, version
-        )
-        if 1.1 <= version < BRIDGING_RECORD_VERSION:
-            return BRIDGING_RECORD_VERSION
+        if 1.1 <= version < self.LATEST_VERSION:
+            return self.LATEST_VERSION
         return version
 
     def _load_from_state_dict(

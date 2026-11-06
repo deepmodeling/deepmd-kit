@@ -110,8 +110,8 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         expected_sorted = expected_atom_types[data.idx_map]
         np.testing.assert_array_equal(loaded["type"], np.tile(expected_sorted, (1, 1)))
 
-    def test_covalent_margin_without_dataset_type_map(self) -> None:
-        """Model type indices retain their element names without a dataset map."""
+    def test_pair_margin_without_dataset_type_map(self) -> None:
+        """A model map sizes the margin table without naming the dataset types."""
         (self.root / "type_map.raw").unlink()
         coord = np.array(
             [[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [2.0, 0.0, 0.0], [4.0, 0.0, 0.0]]
@@ -119,22 +119,44 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         box = 6.0 * np.eye(3)
         np.save(self.set_dir / "coord.npy", coord.reshape(1, -1))
         np.save(self.set_dir / "box.npy", box.reshape(1, 9))
-        type_map = ["O", "H", "Si"]
-        data = DeepmdData(str(self.root), type_map=type_map)
-        data.add("pair_margin", 1, default=0.5, length_scale="covalent")
+        data = DeepmdData(str(self.root), type_map=["O", "H", "Si"])
+        data.add("pair_margin", 1, default=0.5)
         expected = compute_min_pair_margin_single(
             coord,
             box,
             np.array([0, 1, 0, 1]),
-            pair_half_thresholds(0.5, "covalent", type_map),
+            pair_half_thresholds(0.5, 3),
             screened=True,
         )
         for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
             self.assertEqual(float(loaded["find_pair_margin"]), 1.0)
             np.testing.assert_allclose(loaded["pair_margin"], expected)
+        np.testing.assert_allclose(expected, 0.4 / 0.5)
         self.assertIsNone(data.get_type_map())
         self.assertEqual(data.get_ntypes(), 2)
         np.testing.assert_array_equal(data.atom_type, [0, 1, 0, 1])
+
+    def test_pair_margin_covers_model_types_of_mixed_data(self) -> None:
+        """Mixed-type data without names keeps its margin table at the model size.
+
+        The stored ``type.raw`` of mixed-type data holds one placeholder type,
+        so the reader counts a single type while the frames read one by one
+        carry the model's type indices.
+        """
+        (self.root / "type_map.raw").unlink()
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        coord = np.array(
+            [[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [2.0, 0.0, 0.0], [4.0, 0.0, 0.0]]
+        )
+        np.save(self.set_dir / "coord.npy", coord.reshape(1, -1))
+        np.save(self.set_dir / "box.npy", (6.0 * np.eye(3)).reshape(1, 9))
+        np.save(self.set_dir / "real_atom_types.npy", [[0, 1, 2, 1]])
+        np.save(self.set_dir / "real_atom_numbs.npy", [[1, 2, 1]])
+        data = DeepmdData(str(self.root), type_map=["O", "H", "Si"])
+        data.add("pair_margin", 1, default=0.5)
+        self.assertEqual(data.get_ntypes(), 1)
+        loaded = data.get_single_frame(0, num_worker=1)
+        np.testing.assert_allclose(loaded["pair_margin"], 0.4 / 0.5)
 
     def test_required_dataset_type_map_cannot_be_replaced(self) -> None:
         """A supplied model map does not make a required dataset map optional."""

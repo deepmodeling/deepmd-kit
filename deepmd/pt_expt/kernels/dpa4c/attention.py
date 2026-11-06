@@ -448,7 +448,9 @@ def further_block_moments(
     envelope
         Masked first-block envelope with shape ``(E,)``.
     radius
-        Regularized edge lengths with shape ``(E,)`` in Å.
+        Separations every block reads with shape ``(E,)`` in Å: the
+        regularized edge lengths, through the contact clamp of a bridged
+        descriptor.
     source, destination
         Source and destination node of every edge with shape ``(E,)``.
     scalar_divisor, angular_divisor

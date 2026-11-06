@@ -60,7 +60,7 @@ def _make_descriptor(
     rcut: float,
     precision: str = "float32",
     *,
-    source_gated: bool = False,
+    bridged: bool = False,
     env_exp: int | list[int] | None = None,
 ) -> DescrptDPA4:
     return DescrptDPA4(
@@ -82,9 +82,8 @@ def _make_descriptor(
         random_gamma=False,
         precision=precision,
         seed=7,
-        inner_clamp_f_inner=0.8 if source_gated else None,
-        inner_clamp_f_outer=1.2 if source_gated else None,
-        inner_clamp_scale="absolute",
+        type_map=["O", "H"][:ntypes] if bridged else None,
+        contact_clamp=0.75 if bridged else None,
     )
 
 
@@ -199,14 +198,16 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(output.sum(), coord)[0]
         return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
-    def test_source_gated_inference_takes_the_fused_convolution(
-        self, monkeypatch
-    ) -> None:
+    def test_bridged_inference_takes_the_fused_convolution(self, monkeypatch) -> None:
         """A bridged descriptor runs the fused convolution and matches the dense path.
 
-        The source gate is folded into the edge envelope, so the fused
-        convolution and the flash attention see it through the one factor they
-        already weight by, and the dense per-edge rotations are not built.
+        The contact clamp acts on the edge lengths before the envelope and the
+        radial features are built, so the fused convolution and the flash
+        attention see it through the inputs they already read, and the dense
+        per-edge rotations are not built. The data edges are set so that the
+        pairs of the fixture lie in the frozen zone and in the transition zone
+        of their clamp, where the clamped descriptor differs from the
+        unbridged one.
         """
         if not so2_conv.op_available():
             pytest.skip("the DPA4 CUDA inference operators are unavailable")
@@ -226,10 +227,30 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             self.nt,
             self.sel_mix,
             self.rcut,
-            source_gated=True,
+            bridged=True,
         ).serialize()
+        # Pair distances of the fixture in Å: O-O 1.0 and 2.0, O-H 1.0 and
+        # sqrt(2). With the edges below, the O-O pair at 1.0 and the O-H
+        # pair at 1.0 are frozen, the O-H pair at sqrt(2) lies in the
+        # transition zone, and the O-O pair at 2.0 is read unchanged.
+        data["@variables"]["contact_clamp.edges"] = np.array(
+            [[1.5, 1.8, 1.0], [1.8, 1.4, 1.0], [1.0, 1.0, 1.0]]
+        )
+        data = jitter_zero_arrays(data, np.random.default_rng(3))
+        unbridged = {
+            **data,
+            "config": {**data["config"], "contact_clamp": None},
+            "@variables": {
+                key: value
+                for key, value in data["@variables"].items()
+                if key != "contact_clamp.edges"
+            },
+        }
         dense = DescrptDPA4.deserialize(data).to(self.device).eval()
         dense_output, dense_gradient = self._step(dense)
+        control = DescrptDPA4.deserialize(unbridged).to(self.device).eval()
+        control_output, _ = self._step(control)
+        assert np.abs(dense_output - control_output).max() > 1e-3
 
         monkeypatch.setenv("DP_TRITON_INFER", "1")
         monkeypatch.setenv("DP_CUDA_INFER", "2")

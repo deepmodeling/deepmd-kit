@@ -33,14 +33,16 @@ Degrees three and four carry a single channel each, so their couplings are
 driven by a compact sparse Cartesian Gaunt table rather than by specialized
 code.
 
-A bridged model closes the envelope from the inside with the inner bridging
-switch of the true pair length and reads the radial table at the clamped
-length, frozen at the window midpoint; the edge scan resolves both from the
-pair's window, and the backward folds the table cotangent through the slope
-of the clamped length. A bridged model also adds an analytical pair potential
-to the learned energy. Its energy and radial slope share their exponentials
-and need no saved state, so the backward operator evaluates both in the edge
-scan that emits the edge gradient: given the per-pair series table and the
+A bridged model reads every pair separation of the first block through the
+contact clamp of its descriptor: the radial table and the cutoff envelope see
+the separation that the clamp leaves, which is frozen below the data edge of the
+pair, while the bond direction stays that of the true geometry. The edge scan
+resolves the clamp from the data edge of the type pair, and the backward folds
+the table and envelope cotangents through the slope of the clamped separation.
+A bridged model also adds an analytical pair potential to the learned energy,
+which ends at a radius of its own. Its energy and radial slope share their
+exponentials and need no saved state, so the backward operator evaluates both
+in the edge scan that emits the edge gradient: given the per-pair table and the
 energy cotangent of every node, it adds the pair slope to the radial cotangent
 of each edge and returns the pair energy of each node. The descriptor forward
 is unaware of the term.
@@ -78,14 +80,8 @@ from deepmd.pt_expt.kernels.utils import (
     backend_device_type,
     operator_available,
 )
-from deepmd.utils.bridging import (
-    window_midpoint,
-)
 from deepmd.utils.charge_state import (
     validate_charge_state,
-)
-from deepmd.utils.element_radii import (
-    UNIT_CONTACT_RADIUS,
 )
 
 from .attention import (
@@ -1345,109 +1341,47 @@ def _cutoff_factor(radius: torch.Tensor, rcut: float) -> torch.Tensor:
     return u**4 * series
 
 
-def _edge_envelope(
+def _contact_separation(
     radius: torch.Tensor,
-    contact: torch.Tensor,
-    rcut: float,
-    f_inner: float,
-    f_outer: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Evaluate the edge envelope, the length the radial table reads and the switch.
-
-    The window of a pair is two dimensionless fractions of that pair's own
-    length scale ``contact``, so both are functions of the reduced distance
-    ``radius / contact`` through the window parameter ``t``. The envelope is
-    the exponent-five C³ cutoff factor of the clamped length times the inner
-    bridging switch ``h(t)`` of the true one; the clamped length is frozen at
-    the window midpoint below the inner fraction and rises with the
-    antiderivative ``S(t)`` of the switch, ``S(1) = 1/2``, to meet the true
-    length at the outer fraction. Equal fractions denote a model without a
-    bridging window, whose table reads the true length, whose envelope is the
-    cutoff factor alone and whose switch is one.
-
-    Returns
-    -------
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        The envelope, the length the table reads and the switch ``h(t)``, all
-        with the shape of ``radius``.
-    """
-    if f_outer <= f_inner:
-        return _cutoff_factor(radius, rcut), radius, torch.ones_like(radius)
-    width = f_outer - f_inner
-    t = ((radius / contact - f_inner) / width).clamp(0.0, 1.0)
-    switch = t**4 * (35.0 + t * (-84.0 + t * (70.0 - 20.0 * t)))
-    rise = t**5 * (7.0 + t * (-14.0 + t * (10.0 - 2.5 * t)))
-    clamped = contact * (window_midpoint(f_inner, f_outer) + width * rise)
-    seen = torch.where(radius >= f_outer * contact, radius, clamped)
-    return _cutoff_factor(seen, rcut) * switch, seen, switch
-
-
-def _source_gate(
-    switch: torch.Tensor,
-    row_switch: torch.Tensor,
-    keep: torch.Tensor,
-    source: torch.Tensor,
-    destination: torch.Tensor,
-    node_count: int,
-    exchange: Callable[[torch.Tensor], torch.Tensor] | None,
+    edge: torch.Tensor,
+    inner: float,
 ) -> torch.Tensor:
-    r"""Evaluate the leave-one-out source gate of every edge.
+    r"""Evaluate the separation that the contact clamp of a pair leaves.
 
-    A descriptor of several blocks with a bridging window mutes every edge that
-    an atom inside the frozen zone of a pair emits towards a third atom (see
-    ``compute_source_gates`` of DPA4): the gate of an edge :math:`j \to i` is
-    the product of the switches of every other pair of :math:`j`. The graph
-    holds both directions of every bond, so the row of :math:`j` holds every
-    pair of :math:`j`, and the totals of the rows, the sum of the logarithms
-    of the nonzero switches and the number of zero ones, are those of the
-    edges :math:`j` emits; ``exchange`` refreshes the totals of the halo rows,
-    which carry no edges, from their owners. An edge then removes its own
-    switch from the totals of its source. Masked edges contribute a switch of
-    one.
+    A bond at or beyond the data edge :math:`e` of its type pair is read at its
+    true length. A shorter one is read at
 
-    The totals read ``row_switch``, the switch of every edge as an entry of the
-    row of its destination, whose values are those of ``switch``. A separately
-    differentiated copy separates the slope of the totals, which belongs to
-    the node of each row, from the slope of the switch of every edge itself.
+    .. math::
+
+       \tilde r=\frac{1+a}{2}\,e+(1-a)\,e\,S(t),\qquad
+       t=\operatorname{clip}\!\left(\frac{r-a\,e}{(1-a)\,e},0,1\right),
+
+    with :math:`S(t)=7t^5-14t^6+10t^7-\tfrac52t^8` and :math:`a` the inner
+    fraction of the clamp, which freezes it at :math:`(1+a)\,e/2` at and below
+    :math:`a\,e`. The polynomials are those of
+    :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp` in the same Horner
+    forms.
 
     Parameters
     ----------
-    switch
-        Bridging switch of every edge with shape ``(E,)``.
-    row_switch
-        Bridging switch of every edge as the totals read it, shape ``(E,)``.
-    keep
-        One on the kept edges and zero on the masked ones, shape ``(E,)``.
-    source, destination
-        Source and destination node of every edge with shape ``(E,)``.
-    node_count
-        Number of nodes.
-    exchange
-        Halo exchange of a node set with halo rows, or ``None``.
+    radius
+        Regularized bond lengths with shape ``(E,)`` in Å.
+    edge
+        Data edge of the type pair of every bond with shape ``(E,)`` in Å.
+    inner
+        Inner fraction :math:`a` of the clamp, in ``(0, 1)``.
 
     Returns
     -------
     torch.Tensor
-        Gate of every edge with shape ``(E,)``.
+        The separation that the radial table and the envelope read, with the
+        shape of ``radius``.
     """
-
-    def logarithms(value: torch.Tensor) -> torch.Tensor:
-        weight = value * keep + (1.0 - keep)
-        frozen = (weight <= 0.0).to(weight.dtype)
-        log_weight = torch.log(
-            torch.where(weight > 0.0, weight, torch.ones_like(weight))
-        )
-        return torch.stack((log_weight, frozen), dim=-1)
-
-    totals = torch.zeros(
-        node_count, 2, dtype=switch.dtype, device=switch.device
-    ).index_add_(0, destination, logarithms(row_switch))
-    if exchange is not None:
-        totals = exchange(totals)
-    others = totals[source] - logarithms(switch)
-    return torch.where(
-        others[:, 1] > 0.5, torch.zeros_like(switch), torch.exp(others[:, 0])
-    )
+    width = (1.0 - inner) * edge
+    t = ((radius - inner * edge) / width).clamp(0.0, 1.0)
+    rise = t**5 * (7.0 + t * (-14.0 + t * (10.0 - 2.5 * t)))
+    clamped = 0.5 * (1.0 + inner) * edge + width * rise
+    return torch.where(radius >= edge, radius, clamped)
 
 
 def _half_gram(value: torch.Tensor) -> torch.Tensor:
@@ -1518,7 +1452,7 @@ def _reference_descriptor(
     coupling_value: torch.Tensor,
     output_mean: torch.Tensor,
     output_inv_std: torch.Tensor,
-    contact_radius: torch.Tensor,
+    contact_edges: torch.Tensor,
     canonical: bool,
     lmax: int,
     table_stride: float,
@@ -1526,8 +1460,7 @@ def _reference_descriptor(
     rcut: float,
     eps: float,
     degree_floor: float,
-    f_inner: float,
-    f_outer: float,
+    contact_inner: float,
     *,
     spin: torch.Tensor | None = None,
     spin_pair: torch.Tensor | None = None,
@@ -1535,13 +1468,16 @@ def _reference_descriptor(
     edge_spin: torch.Tensor | None = None,
     blocks_record: torch.Tensor | None = None,
     exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
-    row_edge_vec: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Reference implementation of the compressed DPA4C descriptor.
 
-    ``contact_radius`` holds the per-element length scale of every type-table
-    row in Å; the sum of the two entries of a pair is the distance the window
-    fractions ``f_inner`` and ``f_outer`` are measured against.
+    ``contact_edges`` holds the data edge in Å of every ordered type pair,
+    flattened from the ``(T + 1, T + 1)`` table in row ``center * (T + 1) +
+    neighbor``, or is empty for a descriptor without a contact clamp. The
+    radial table and the envelope of every block read the separation that the
+    clamp of inner fraction ``contact_inner`` leaves (see
+    :func:`_contact_separation`); the bond directions are those of the true
+    geometry.
 
     The native spin block is optional. It comprises the raw per-node moment
     ``spin`` with shape ``(N, 3)``, the ordered scale and shift cache
@@ -1559,9 +1495,6 @@ def _reference_descriptor(
     ``None`` or an empty tensor denotes a single block. ``exchange`` refreshes
     the halo rows of a node feature from their owners before every further
     block reads them, and is ``None`` for a graph without halo nodes.
-    ``row_edge_vec``, with the values of ``edge_vec``, is the edge geometry
-    that the switch totals of a source gate read (see :func:`_source_gate`);
-    ``None`` reads ``edge_vec`` itself.
     """
     del destination_order, destination_row_ptr, canonical, coupling_meta
     compute = edge_vec.to(torch.float32)
@@ -1583,24 +1516,11 @@ def _reference_descriptor(
     neighbor_type = atype[source]
     mask = edge_mask & (neighbor_type < type_count - 1) & (center_type < type_count - 1)
     maskf = mask.to(compute.dtype)
-    radii = contact_radius.to(compute.dtype)
-    contact = radii[center_type] + radii[neighbor_type]
-    envelope, seen, switch = _edge_envelope(
-        radius, contact, float(rcut), float(f_inner), float(f_outer)
-    )
-    envelope = envelope * maskf
-    further_blocks = blocks_record is not None and blocks_record.numel() > 0
-    if further_blocks and float(f_outer) > float(f_inner):
-        row_switch = switch
-        if row_edge_vec is not None:
-            row = row_edge_vec.to(torch.float32)
-            row_radius = torch.sqrt((row * row).sum(dim=-1) + float(eps) ** 2)
-            row_switch = _edge_envelope(
-                row_radius, contact, float(rcut), float(f_inner), float(f_outer)
-            )[2]
-        envelope = envelope * _source_gate(
-            switch, row_switch, maskf, source, destination, node_count, exchange
-        )
+    seen = radius
+    if contact_edges.numel() != 0:
+        edge = contact_edges.to(compute.dtype)[center_type * type_count + neighbor_type]
+        seen = _contact_separation(radius, edge, float(contact_inner))
+    envelope = _cutoff_factor(seen, float(rcut)) * maskf
 
     # === Step 2. Evaluate the ordered FiLM amplitude ===
     tabulated = _table_lookup(
@@ -1799,7 +1719,7 @@ def _reference_descriptor(
                 amplitude,
                 basis,
                 envelope,
-                radius,
+                seen,
                 source,
                 destination,
                 scalar_divisor,
@@ -2023,10 +1943,19 @@ def _reference_pair_energy(
 ) -> torch.Tensor:
     r"""Evaluate the analytical pair energy of every node.
 
-    Each valid edge :math:`j\to i` adds half of the screened Coulomb series
-    :math:`V_{ab}(\rho)=\rho^{-1}\sum_k A_{abk}e^{-c_{abk}\rho}` of its ordered
-    type pair to node :math:`i`, at the regularized distance the kernels use.
-    Rows of the padding type vanish, so padding nodes contribute nothing.
+    Each valid edge :math:`j\to i` adds half of the truncated pair energy of
+    its ordered type pair to node :math:`i`, at the regularized distance the
+    kernels use. The energy is the screened Coulomb series
+    :math:`V_{ab}(\rho)=\rho^{-1}\sum_k A_{abk}e^{-c_{abk}\rho}` minus its cubic
+    Taylor polynomial at the end radius :math:`R_{ab}` of the pair,
+
+    .. math::
+
+       \phi_{ab}(\rho)=V_{ab}(\rho)-\sum_{n=0}^{3}t_{abn}(\rho-R_{ab})^n
+       \quad(\rho<R_{ab}),\qquad\phi_{ab}(\rho)=0\quad(\rho\ge R_{ab}),
+
+    with :math:`t_{abn}=V_{ab}^{(n)}(R_{ab})/n!`. Rows of the padding type carry
+    :math:`R=0`, so padding nodes contribute nothing.
 
     Parameters
     ----------
@@ -2039,8 +1968,8 @@ def _reference_pair_energy(
     atype
         Node types with shape ``(N,)``.
     pair_table
-        Series constants ``[A_1..A_4, c_1..c_4]`` with shape
-        ``((T + 1) ** 2, 8)``.
+        Kernel table of the pair potential, ``[A_0..A_3, c_0..c_3, R, t_0..t_3,
+        0, 0, 0]`` per ordered type pair, with shape ``((T + 1) ** 2, 16)``.
     eps
         Distance regularization in Å.
 
@@ -2053,9 +1982,16 @@ def _reference_pair_energy(
     type_count = math.isqrt(int(pair_table.shape[0]))
     radius = torch.sqrt(edge_vec.double().square().sum(dim=-1) + eps * eps)
     row = pair_table.double()[atype[destination] * type_count + atype[source]]
-    series = (row[:, :4] * torch.exp(-row[:, 4:] * radius[:, None])).sum(dim=-1)
+    series = (row[:, :4] * torch.exp(-row[:, 4:8] * radius[:, None])).sum(dim=-1)
+    delta = radius - row[:, 8]
+    polynomial = row[:, 9] + delta * (
+        row[:, 10] + delta * (row[:, 11] + delta * row[:, 12])
+    )
+    pair = torch.where(
+        radius < row[:, 8], series / radius - polynomial, torch.zeros_like(radius)
+    )
     energy = torch.zeros(atype.shape[0], dtype=torch.float64, device=edge_vec.device)
-    return energy.index_add(0, destination, 0.5 * series / radius * edge_mask)[:, None]
+    return energy.index_add(0, destination, 0.5 * pair * edge_mask)[:, None]
 
 
 def _portable_inputs(args: tuple) -> tuple:
@@ -2127,7 +2063,7 @@ def _forward_fake(
     spin: torch.Tensor,
     spin_pair: torch.Tensor,
     spin_type: torch.Tensor,
-    contact_radius: torch.Tensor,
+    contact_edges: torch.Tensor,
     canonical: bool,
     lmax: int,
     table_stride: float,
@@ -2135,8 +2071,7 @@ def _forward_fake(
     rcut: float,
     eps: float,
     degree_floor: float,
-    f_inner: float,
-    f_outer: float,
+    contact_inner: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     del (
         edge_index,
@@ -2155,15 +2090,14 @@ def _forward_fake(
         output_mean,
         spin_pair,
         spin_type,
-        contact_radius,
+        contact_edges,
         canonical,
         table_stride,
         table_max,
         rcut,
         eps,
         degree_floor,
-        f_inner,
-        f_outer,
+        contact_inner,
     )
     profile = descriptor_profile(
         int(type_embedding.shape[1]),
@@ -2188,9 +2122,9 @@ def _forward_fake(
 
 #: Position of the pair table among the backward inputs that follow
 #: ``edge_vec`` once :func:`_portable_inputs` has dropped the low-rank table:
-#: nineteen tensors, ``canonical``, ``lmax`` and seven geometry scalars precede
+#: nineteen tensors, ``canonical``, ``lmax`` and six geometry scalars precede
 #: it, and the pair seed closes the list.
-_PAIR_TABLE_SLOT = 28
+_PAIR_TABLE_SLOT = 27
 
 
 def _backward_fake(
@@ -2227,15 +2161,8 @@ def _reference_cotangents(
     *args: Any,
     blocks_record: torch.Tensor | None = None,
     exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Return the reference coordinate and magnetic cotangents of the descriptor.
-
-    The coordinate cotangent of every edge comes in two parts that share the
-    vector of the edge and add up to its cotangent. The switch totals of a
-    source gate read the pairs of every row as the edges the node of the row
-    emits (see :func:`_source_gate`), so their part, the second result,
-    belongs to the destination of each edge, and the first part belongs to
-    its source. The second part is zero without a source gate.
 
     The magnetic cotangent is split as in the device operator, which splits it
     because a destination-major scan does not own the source of an edge: the
@@ -2247,7 +2174,7 @@ def _reference_cotangents(
     A non-empty pair table adds the analytical pair potential: its energy,
     weighted by the per-node cotangent ``pair_seed``, joins the differentiated
     objective, so the coordinate cotangent carries the slope of the pair term,
-    and the node energies of the term are returned as the fifth result.
+    and the node energies of the term are returned as the fourth result.
     ``blocks_record`` and ``exchange`` are those of
     :func:`_reference_descriptor`.
     """
@@ -2257,7 +2184,6 @@ def _reference_cotangents(
     pair_table, pair_seed = args[_PAIR_TABLE_SLOT:]
     has_spin = spin.ndim == 2
     value = edge_vec.detach().clone().requires_grad_(True)
-    row_value = edge_vec.detach().clone().requires_grad_(True)
     moment = spin.detach().clone().requires_grad_(has_spin)
     edge_moment = (
         spin.detach()[args[0][0].to(torch.long)].requires_grad_(True)
@@ -2276,7 +2202,6 @@ def _reference_cotangents(
             edge_spin=edge_moment,
             blocks_record=blocks_record,
             exchange=exchange,
-            row_edge_vec=row_value,
         )
         objective = (descriptor * descriptor_gradient.to(descriptor.dtype)).sum()
         if pair_table.numel():
@@ -2291,14 +2216,13 @@ def _reference_cotangents(
             objective = objective + (pair_energy[:, 0] * pair_seed.reshape(-1)).sum()
         gradients = torch.autograd.grad(
             objective,
-            (value, row_value, moment, edge_moment) if has_spin else (value, row_value),
+            (value, moment, edge_moment) if has_spin else (value,),
             materialize_grads=True,
         )
     return (
         gradients[0].to(edge_vec.dtype),
-        gradients[1].to(edge_vec.dtype),
-        gradients[2] if has_spin else edge_vec.new_empty((0,), dtype=torch.float32),
-        gradients[3].to(edge_vec.dtype)
+        gradients[1] if has_spin else edge_vec.new_empty((0,), dtype=torch.float32),
+        gradients[2].to(edge_vec.dtype)
         if has_spin
         else edge_vec.new_empty((0,), dtype=torch.float32),
         pair_energy.detach(),
@@ -2313,12 +2237,8 @@ def _reference_backward(
     blocks_record: torch.Tensor | None = None,
     exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Return the reference cotangents in the layout of the backward operator.
-
-    The results are those of :func:`_reference_cotangents` with the two parts
-    of the coordinate cotangent of every edge added up.
-    """
-    edge, row, *rest = _reference_cotangents(
+    """Return the reference cotangents in the layout of the backward operator."""
+    return _reference_cotangents(
         descriptor_gradient,
         state,
         edge_vec,
@@ -2326,7 +2246,6 @@ def _reference_backward(
         blocks_record=blocks_record,
         exchange=exchange,
     )
-    return (edge + row, *rest)
 
 
 #: Position of the per-node magnetic moment among the operator inputs, and its
@@ -2411,16 +2330,15 @@ def ensure_registered() -> None:
         _register_ops()
 
 
-def contact_radius_input(descriptor: Any) -> torch.Tensor:
-    """Build the per-element length scales in the form the operator consumes.
+def contact_edges_input(descriptor: Any) -> torch.Tensor:
+    """Build the data edges of the contact clamp in the form the operator consumes.
 
-    The kernels read them only inside a bridging window, but the operator ABI
-    carries one entry per type-table row unconditionally. An unbridged
-    descriptor, which keeps no table of its own, therefore supplies the unit
-    table, whose pair sums are exactly 1 Å.
+    The edges are flattened from the ``(T + 1, T + 1)`` table in row
+    ``center * (T + 1) + neighbor``, the layout of every ordered-pair table of
+    the operator. A descriptor without a contact clamp supplies an empty tensor.
 
-    A compressed descriptor freezes the result alongside its other artifacts,
-    so an operator call on the deployment path reads the buffer rather than
+    A compressed descriptor freezes the result alongside its other artifacts, so
+    an operator call on the deployment path reads the buffer rather than
     building the table again.
 
     Parameters
@@ -2431,18 +2349,18 @@ def contact_radius_input(descriptor: Any) -> torch.Tensor:
     Returns
     -------
     torch.Tensor
-        Length scales in Å with shape ``(ntypes + 1,)``, contiguous fp32 on
-        the descriptor's device.
+        Data edges in Å with shape ``((ntypes + 1) ** 2,)`` or ``(0,)``,
+        contiguous fp32 on the descriptor's device.
     """
-    radii = descriptor.contact_radius
-    if radii is None:
-        return torch.full(
-            (descriptor.ntypes + 1,),
-            UNIT_CONTACT_RADIUS,
-            dtype=torch.float32,
-            device=descriptor.stddev.device,
-        )
-    return radii.to(dtype=torch.float32).contiguous()
+    clamp = descriptor.contact_clamp
+    if clamp is None:
+        return torch.empty(0, dtype=torch.float32, device=descriptor.stddev.device)
+    return (
+        torch.as_tensor(clamp.edges)
+        .to(device=descriptor.stddev.device, dtype=torch.float32)
+        .reshape(-1)
+        .contiguous()
+    )
 
 
 def compressed_operator_arguments(
@@ -2465,7 +2383,7 @@ def compressed_operator_arguments(
     tuple
         Radial table, low-rank table and its expansion, ordered caches,
         readout projections, coupling tables, output calibration, the native
-        spin block, and the per-element length scales of the bridging window.
+        spin block, and the data edges of the contact clamp.
     """
     empty = descriptor.compress_spin_type.new_empty(0)
     return (
@@ -2484,7 +2402,7 @@ def compressed_operator_arguments(
         empty if spin is None else spin.to(torch.float32).contiguous(),
         descriptor.compress_spin_pair,
         descriptor.compress_spin_type,
-        descriptor.compress_contact_radius,
+        descriptor.compress_contact_edges,
     )
 
 

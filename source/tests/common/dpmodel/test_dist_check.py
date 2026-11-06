@@ -420,23 +420,23 @@ class TestComputeMinPairMarginBatch(unittest.TestCase):
                 self.assertTrue((screened >= exact - 1e-12).all())
 
 
-class TestPairLengthScale(unittest.TestCase):
+class TestPairHalfThresholds(unittest.TestCase):
     """The window each pair carries is the sum of its two half-thresholds."""
 
-    def test_absolute_scale_is_a_plain_distance_floor(self) -> None:
-        """Every element gets the unit radius.
+    def test_filter_distance_is_a_plain_distance_floor(self) -> None:
+        """Every type gets half of the filter distance.
 
-        A pair's threshold is then the fraction itself and the margin is the
-        pair distance divided by it.
+        A pair's threshold is then the filter distance itself and the margin is
+        the pair distance divided by it.
         """
-        half = pair_half_thresholds(0.5, "absolute", ntypes=3)
+        half = pair_half_thresholds(0.5, 3)
         np.testing.assert_allclose(half, 0.25)
         coord = np.array([0.0, 0.0, 0.0, 0.8, 0.0, 0.0])
         atype = np.array([0, 2])
         margin = compute_min_pair_margin_single(coord, None, atype, half)
         np.testing.assert_allclose(margin, 0.8 / 0.5)
 
-    def test_covalent_scale_sizes_each_pair_separately(self) -> None:
+    def test_types_size_each_pair_separately(self) -> None:
         """Two pairs at one distance carry different margins."""
         half = np.array([0.1, 0.4])
         coord = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
@@ -467,8 +467,8 @@ class TestPairLengthScale(unittest.TestCase):
         )
         np.testing.assert_allclose(batched, [margins[0]])
 
-    def test_batch_matches_single_under_a_per_pair_scale(self) -> None:
-        """The batched scan owns the margin for element-dependent windows."""
+    def test_batch_matches_single_under_per_type_half_thresholds(self) -> None:
+        """The batched scan owns the margin for type-dependent windows."""
         half = np.array([0.18, 0.31, 0.46, 0.75, 0.2, 0.2, 0.2, 0.2])
         for clustered in (False, True):
             with self.subTest(clustered=clustered):
@@ -488,18 +488,11 @@ class TestPairLengthScale(unittest.TestCase):
                 )
                 np.testing.assert_allclose(got, expected, rtol=1e-12, atol=1e-12)
 
-    def test_covalent_scale_needs_a_type_map(self) -> None:
-        with self.assertRaisesRegex(ValueError, "type_map"):
-            pair_half_thresholds(0.26, "covalent", ntypes=3)
-
-    def test_covalent_scale_reads_the_periodic_table(self) -> None:
-        half = pair_half_thresholds(0.5, "covalent", type_map=["H", "O"])
-        # Half of the Pyykko single-bond radii of hydrogen and oxygen.
-        np.testing.assert_allclose(half, [0.16, 0.315])
-
-    def test_unknown_scale_is_refused(self) -> None:
-        with self.assertRaisesRegex(ValueError, "length scale"):
-            pair_half_thresholds(0.26, "vdw", ntypes=3)
+    def test_non_positive_distance_is_refused(self) -> None:
+        for distance in (0.0, -0.5):
+            with self.subTest(distance=distance):
+                with self.assertRaisesRegex(ValueError, "must be positive"):
+                    pair_half_thresholds(distance, 3)
 
 
 class TestSelectFrames(unittest.TestCase):

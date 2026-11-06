@@ -290,21 +290,19 @@ Enable it on the model:
 }
 ```
 
-`type_map` must name chemical elements, because the analytical term is built
-from their nuclear charges and the window from their covalent radii.
-`bridging_fraction_inner` and `bridging_fraction_outer` adjust the two
-fractions. Giving `bridging_r_inner` and `bridging_r_outer` instead replaces
-the rule with one window in Å applied to every pair alike, which is worth doing
-only for a single-element system or to reproduce an earlier model. See
-`examples/water/dpa4c/input-zbl.json` for a complete input.
+Choose `zbl` for the Ziegler–Biersack–Littmark potential or `nlh` for the
+Nordlund–Lehtola–Hobler form. `type_map` must contain chemical element names.
+The analytical term ends at 1.1 times each pair's covalent bond length and is
+added to the learned energy without a switching function, and below the
+data edge of each pair (the third smallest of the shortest separations that the
+training configurations hold for the pair, counting repeated values once) the
+learned part reads a compressed separation that becomes constant at
+`bridging_clamp` times the data edge. See
+[zone bridging](dpa4.md#zone-bridging) for these settings and the source of
+the refitted NLH coefficients.
 
-Training leaves out frames that contain a pair closer than the midpoint of its
-window, where the learned model has too little influence on the energy to fit a
-label. The threshold follows from the window of each element pair, so
-`training_data.min_pair_dist` must stay unset on a bridged model. The data
-statistics, including those of `dp change-bias`, use the same filter, while
-validation batches are not filtered, so a validation error also covers frames
-that training leaves out.
+Training keeps every frame. Bridging alone does not ensure accurate forces at
+short range without training data there.
 
 Bridging therefore relies on short-range training data. The labels that are
 kept have to reach into the window of every element pair, which in practice

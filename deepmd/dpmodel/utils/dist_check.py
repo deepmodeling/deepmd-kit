@@ -2,18 +2,16 @@
 r"""Pair-clearance check for frame validity filtering.
 
 A frame is admissible when every atom pair keeps the clearance the
-training-frame filter prescribes. That clearance is a fraction of each pair's
-own length scale, so the check is scale-free: the quantity compared against
-one is the margin
+training-frame filter prescribes, a minimum pair distance in Å. The quantity
+compared against one is the margin
 
 .. math::
 
    m = \min_{i<j} \frac{d_{ij}}{h_{t_i} + h_{t_j}},
 
-with :math:`h_t` the half-threshold of type :math:`t`. A radius given directly
-in Å is the same rule measured against a unit length scale, where every type
-carries the same half-threshold and the margin reduces to the minimum pair
-distance divided by that radius.
+with :math:`h_t` the half-threshold of type :math:`t` in Å. Every type carries
+half of the filter distance, so the threshold of a pair is that distance and
+the margin reduces to the minimum pair distance divided by it.
 """
 
 from __future__ import (
@@ -27,11 +25,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.utils.element_radii import (
-    UNIT_CONTACT_RADIUS,
-    covalent_radii_from_type_map,
-)
-
 #: Pairs a row block of the single-frame scan holds at once.
 _MIN_PAIR_DIST_BLOCK_PAIRS = 262_144
 #: Frames a block of the batched scan needs to be worth its fixed cost. Below
@@ -40,32 +33,20 @@ _MIN_PAIR_DIST_BLOCK_PAIRS = 262_144
 _MIN_PAIR_DIST_BATCH_FRAMES = 8
 
 
-def pair_half_thresholds(
-    fraction: float,
-    scale: str,
-    type_map: list[str] | None = None,
-    ntypes: int | None = None,
-) -> np.ndarray:
+def pair_half_thresholds(min_dist: float, ntypes: int) -> np.ndarray:
     """
     Tabulate the half-threshold each type contributes to a pair.
 
-    A pair's threshold is ``half[a] + half[b]``. Under the ``"covalent"`` scale
-    that sum is the given fraction of the pair's covalent bond length, so one
-    fraction describes every element combination; under ``"absolute"`` every
-    type carries the unit radius, the sum is the fraction itself, and the
-    margin reduces to the pair distance divided by a threshold in Å.
+    A pair's threshold is ``half[a] + half[b]``. Every type carries half of the
+    filter distance, so the threshold of any pair is the distance itself and the
+    margin reduces to the pair distance divided by it.
 
     Parameters
     ----------
-    fraction : float
-        Filter radius as a fraction of the pair's length scale, or directly in
-        Å under the ``"absolute"`` scale.
-    scale : str
-        Either ``"covalent"`` or ``"absolute"``.
-    type_map : list[str], optional
-        Element symbols, required by the ``"covalent"`` scale.
-    ntypes : int, optional
-        Number of types; taken from ``type_map`` when omitted.
+    min_dist : float
+        Filter distance in Å, the minimum pair distance a frame must keep.
+    ntypes : int
+        Number of types.
 
     Returns
     -------
@@ -75,52 +56,26 @@ def pair_half_thresholds(
     Raises
     ------
     ValueError
-        If the fraction is not positive, if the scale is unknown, if the
-        covalent scale is requested without a type map, or if the map does not
-        cover every type.
+        If the distance is not positive.
     """
-    if fraction <= 0.0:
-        raise ValueError(f"A pair window needs a positive radius, got {fraction}.")
-    if scale not in ("covalent", "absolute"):
-        raise ValueError(
-            f"Unknown pair length scale {scale!r}; expected 'covalent' or 'absolute'."
-        )
-    if scale == "absolute":
-        if ntypes is None:
-            if type_map is None:
-                raise ValueError(
-                    "An absolute pair length scale needs either `ntypes` or a "
-                    "`type_map` to size its table."
-                )
-            ntypes = len(type_map)
-        return np.full(ntypes, fraction * UNIT_CONTACT_RADIUS, dtype=np.float64)
-    if type_map is None or (ntypes is not None and len(type_map) != ntypes):
-        raise ValueError(
-            "A covalent pair length scale needs a `type_map` covering all "
-            f"{ntypes if ntypes is not None else 'model'} types."
-        )
-    return fraction * covalent_radii_from_type_map(type_map)
+    if min_dist <= 0.0:
+        raise ValueError(f"A pair distance threshold must be positive, got {min_dist}.")
+    return np.full(ntypes, 0.5 * min_dist, dtype=np.float64)
 
 
 @functools.lru_cache(maxsize=8)
-def requirement_half_thresholds(
-    fraction: float, scale: str, type_map: tuple[str, ...] | None, ntypes: int
-) -> np.ndarray:
+def requirement_half_thresholds(min_dist: float, ntypes: int) -> np.ndarray:
     """
     Resolve and retain the half-thresholds a derived margin measures against.
 
-    A reader scans every frame and every batch against one window and one type
-    map, so the table is resolved once per combination instead of once per
-    scan. The result is shared and therefore read-only.
+    A reader scans every frame and every batch against one distance and one
+    type count, so the table is resolved once per combination instead of once
+    per scan. The result is shared and therefore read-only.
 
     Parameters
     ----------
-    fraction : float
-        Filter radius, as a fraction of the pair length scale.
-    scale : str
-        Either ``"covalent"`` or ``"absolute"``.
-    type_map : tuple[str, ...], optional
-        Type names, required by the ``"covalent"`` scale.
+    min_dist : float
+        Filter distance in Å.
     ntypes : int
         Number of model types.
 
@@ -129,12 +84,7 @@ def requirement_half_thresholds(
     np.ndarray
         Half-thresholds in Å with shape ``(ntypes,)``.
     """
-    table = pair_half_thresholds(
-        fraction,
-        scale,
-        type_map=None if type_map is None else list(type_map),
-        ntypes=ntypes,
-    )
+    table = pair_half_thresholds(min_dist, ntypes)
     table.flags.writeable = False
     return table
 
@@ -530,17 +480,16 @@ def pair_margin_frame_mask(
 ) -> np.ndarray | None:
     """Mark the frames of a batch whose atom pairs all clear their window.
 
-    The filter radius the requirement was registered with is already spent:
+    The filter distance the requirement was registered with is already spent:
     it sized the per-type half-thresholds the margin was measured against.
-    What is left here is the same comparison against one for every length
-    scale, so the only decision this function still takes from the
-    configuration is whether the filter runs at all.
+    What is left here is the comparison against one, so the only decision this
+    function takes from the configuration is whether the filter runs at all.
 
     Parameters
     ----------
     batch : dict[str, Any]
         Normalized NumPy batch carrying the derived `pair_margin` field,
-        which holds each frame's margin against its own pair thresholds.
+        which holds each frame's margin against the filter distance.
     enabled : bool
         Whether the pair-clearance filter is configured for this data.
 

@@ -121,7 +121,6 @@ def make_task_maps(
 def add_training_data_requirements(
     data: Any,
     config: DataConfig,
-    model_params: Mapping[str, Any],
     requirements: list[DataRequirementItem],
     register: Callable[[Any, list[DataRequirementItem]], None],
 ) -> bool:
@@ -135,9 +134,7 @@ def add_training_data_requirements(
     datasets = data.children if len(groups) > 1 else (data,)
     filter_enabled = []
     for dataset, group in zip(datasets, groups, strict=True):
-        pair_filter = min_pair_dist_requirement(
-            model_params, float(group.get("min_pair_dist", 0.0))
-        )
+        pair_filter = min_pair_dist_requirement(float(group.get("min_pair_dist", 0.0)))
         register(dataset, requirements + ([] if pair_filter is None else [pair_filter]))
         filter_enabled.append(pair_filter is not None)
     if len(groups) > 1:

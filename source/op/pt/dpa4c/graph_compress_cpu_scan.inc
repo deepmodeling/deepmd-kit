@@ -321,7 +321,7 @@ void backward_scan(const Arguments& arguments,
       float pair_radial = 0.0f;
       if (present && has_pair) {
         float slope = 0.0f;
-        const float* row = arguments.pair_table + 8 * geometry.pair;
+        const float* row = arguments.pair_table + kPairRow * geometry.pair;
         pair_energy += 0.5f * pair_series(row, geometry.radius, &slope);
         pair_radial = pair_weight * slope;
       }

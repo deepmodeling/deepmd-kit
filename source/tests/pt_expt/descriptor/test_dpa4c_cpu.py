@@ -38,7 +38,7 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     build_low_rank_table,
     build_radial_table,
     compressed_operator_arguments,
-    contact_radius_input,
+    contact_edges_input,
     descriptor_profile,
     dpa4c_graph_compress,
     ensure_registered,
@@ -67,24 +67,41 @@ _CPU_FITTING = pytest.mark.skipif(
 )
 
 
-#: Element symbols of the two test types. They fix the covalent radii, whose
-#: pairwise sums give the three distinct length scales the window is measured
-#: against, so a kernel that gathered the wrong radius would misplace it.
+#: Element symbols of the two test types.
 _TYPE_MAP = ["O", "H"]
 
-#: A bridging window wide enough that the random test cluster populates its
-#: frozen zone, its transition zone and the plain zone beyond it. The bounds
-#: are fractions of each pair's own length scale, not distances in Å.
-_WINDOW = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.6}
+#: Data edges of the three type pairs in Å, in the order OO, OH, HH, wide
+#: enough that the random test cluster populates the frozen zone, the
+#: transition zone and the plain zone of the contact clamp of every pair.
+#: The pairs differ, so a kernel that gathered the edge of the wrong pair would
+#: misplace the window.
+_EDGES = {(0, 0): 2.4, (0, 1): 2.0, (1, 1): 1.6}
+
+#: Inner fraction of the contact clamp of the test descriptors.
+_CLAMP = {"contact_clamp": 0.6}
+
+
+def _set_contact_edges(descriptor: DescrptDPA4C) -> None:
+    """Replace the data edges of the clamp of a descriptor by ``_EDGES``.
+
+    The edges are a runtime buffer of the clamp, updated in place during
+    training; the test cluster is random, so its shortest contacts are not the
+    covalent bond lengths a fresh clamp starts from.
+    """
+    edges = descriptor.contact_clamp.edges
+    with torch.no_grad():
+        for (center, neighbor), value in _EDGES.items():
+            edges[center, neighbor] = value
+            edges[neighbor, center] = value
 
 
 def _build_descriptor(
     channels: int,
     lmax: int = 2,
     radial_modes: int = 0,
-    **window: float,
+    **clamp: float,
 ) -> DescrptDPA4C:
-    return DescrptDPA4C(
+    descriptor = DescrptDPA4C(
         rcut=3.0,
         ntypes=2,
         channels=channels,
@@ -94,20 +111,36 @@ def _build_descriptor(
         precision="float32",
         seed=17,
         type_map=_TYPE_MAP,
-        **window,
+        **clamp,
     ).eval()
+    if descriptor.contact_clamp is not None:
+        _set_contact_edges(descriptor)
+    return descriptor
 
 
-def _reduced_distance(
+def _contact_zones(
     descriptor: DescrptDPA4C,
     graph: Any,
     atype: torch.Tensor,
-) -> torch.Tensor:
-    """Return the valid edge distances in units of each pair's length scale."""
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Count the valid edges frozen, in transition and beyond the data edge.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        The number of valid edges at or below ``a e``, between ``a e`` and
+        ``e``, and at or beyond ``e``, for the data edge ``e`` of each pair.
+    """
     source, destination = graph.edge_index[0], graph.edge_index[1]
-    distance = graph.edge_vec.norm(dim=-1, keepdim=True)
-    contact = descriptor.pair_contact(atype[destination], atype[source], distance.dtype)
-    return (distance / contact)[graph.edge_mask, 0]
+    distance = graph.edge_vec.norm(dim=-1)
+    edge = descriptor.contact_clamp.edges.to(distance.dtype)[
+        atype[destination], atype[source]
+    ]
+    inner = descriptor.contact_clamp.inner
+    valid = graph.edge_mask
+    frozen = (distance <= inner * edge) & valid
+    plain = (distance >= edge) & valid
+    return frozen.sum(), (valid & ~frozen & ~plain).sum(), plain.sum()
 
 
 def test_fixed_basis_types_freeze_the_basis() -> None:
@@ -201,12 +234,11 @@ def _arguments(descriptor: DescrptDPA4C, graph, atype: torch.Tensor) -> tuple:
         artifacts["spin_type"][:0],
         artifacts["spin_pair"],
         artifacts["spin_type"],
-        contact_radius_input(descriptor),
+        contact_edges_input(descriptor),
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *(float(value) for value in artifacts["info"]),
-        descriptor.bridging_f_inner or 0.0,
-        descriptor.bridging_f_outer or 0.0,
+        0.0 if descriptor.contact_clamp is None else descriptor.contact_clamp.inner,
     )
 
 
@@ -265,18 +297,18 @@ def test_forward_backward_parity(channels: int, canonical: bool) -> None:
 
 @_CPU
 @pytest.mark.parametrize("canonical", [False, True])
-def test_bridging_window_parity(canonical: bool) -> None:
-    """The switched envelope reproduces the portable descriptor.
+def test_contact_clamp_parity(canonical: bool) -> None:
+    """The clamped separation reproduces the portable descriptor.
 
-    The reference evaluates the window in its own form, so it is first pinned
-    to the descriptor equations and then serves the kernel comparison.
+    The reference evaluates the clamp in its own form, so it is first pinned
+    to the descriptor equations and then serves the kernel comparison. The
+    test cluster populates the frozen zone, the transition zone and the plain
+    zone of the clamp.
     """
-    descriptor = _build_descriptor(32, lmax=3, radial_modes=2, **_WINDOW)
+    descriptor = _build_descriptor(32, lmax=3, radial_modes=2, **_CLAMP)
     graph, atype = _build_graph(descriptor, canonical)
-    reduced = _reduced_distance(descriptor, graph, atype)
-    inner, outer = _WINDOW.values()
-    assert (reduced < inner).any() and (reduced > outer).any()
-    assert ((reduced > inner) & (reduced < outer)).sum() > 8
+    frozen, transition, plain = _contact_zones(descriptor, graph, atype)
+    assert frozen > 8 and transition > 8 and plain > 8
     reference = _reference_descriptor(
         graph.edge_vec, *_spin_free(_arguments(descriptor, graph, atype))
     )
@@ -289,23 +321,25 @@ def test_bridging_window_parity(canonical: bool) -> None:
 
 @_CPU
 @pytest.mark.parametrize("mode", ["zbl", "nlh"])
-@pytest.mark.parametrize("windowed", [True, False])
+@pytest.mark.parametrize("clamped", [True, False])
 @pytest.mark.parametrize("canonical", [False, True])
 def test_pair_potential_matches_the_portable_term(
     canonical: bool,
-    windowed: bool,
+    clamped: bool,
     mode: str,
 ) -> None:
-    """The backward scan evaluates the analytical pair potential of a bridged model.
+    """The backward scan evaluates the truncated pair potential of a bridged model.
 
     A vanishing descriptor cotangent isolates the term: the edge gradient is
     then the pair slope alone, weighted by the energy cotangent of the
-    destination, and the scan returns the pair energy of every node. Edges
-    inside the bridging window leave the descriptor but keep the pair term,
-    and the portable reference backs the traced form of the fused operator.
-    Without a window the pair table alone selects the bridged backward, behind
-    a plain forward. The scan reads the coefficients of whichever potential
+    destination, and the scan returns the pair energy of every node. The
+    portable reference backs the traced form of the fused operator. Without a
+    contact clamp the pair table alone selects the bridged backward, behind a
+    plain forward. The scan reads the coefficients of whichever potential
     filled the table, so both supported modes ride the same kernel.
+
+    The end radii of the pairs lie inside the cluster, so the test covers
+    bonds on both sides of the truncation.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
         InnerPotential,
@@ -314,7 +348,7 @@ def test_pair_potential_matches_the_portable_term(
         _reference_backward,
     )
 
-    descriptor = _build_descriptor(32, **(_WINDOW if windowed else {}))
+    descriptor = _build_descriptor(32, **(_CLAMP if clamped else {}))
     graph, atype = _build_graph(descriptor, canonical)
     arguments = _arguments(descriptor, graph, atype)
     output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
@@ -328,7 +362,12 @@ def test_pair_potential_matches_the_portable_term(
         edge, graph.edge_index, atype, graph.edge_mask, atype.shape[0]
     )[0]
     (reference_gradient,) = torch.autograd.grad((reference[:, 0] * seed).sum(), edge)
-    assert reference.max() > 10.0
+    assert reference.max() > 1.0
+    source, destination = graph.edge_index[0], graph.edge_index[1]
+    end = pair_table[atype[destination] * 3 + atype[source], 8]
+    length = graph.edge_vec.norm(dim=-1)
+    assert ((length < end) & graph.edge_mask).sum() > 8
+    assert ((length >= end) & graph.edge_mask).sum() > 8
     for backward in (
         torch.ops.deepmd.dpa4c_graph_compress_backward,
         _reference_backward,
@@ -813,8 +852,8 @@ def test_loaded_compression_metadata_reaches_the_kernel(
     assign: bool, partial: bool
 ) -> None:
     """A same-shaped replacement table must use its own radial stride."""
-    descriptor = _build_descriptor(16, radial_modes=2, **_WINDOW)
-    replacement = _build_descriptor(16, radial_modes=2, **_WINDOW)
+    descriptor = _build_descriptor(16, radial_modes=2, **_CLAMP)
+    replacement = _build_descriptor(16, radial_modes=2, **_CLAMP)
     # Both valid strides need twelve rows, so an ordinary state load can
     # replace the coefficients without changing the buffer's shape.
     descriptor.enable_compression(0.5, table_stride_1=0.25)
@@ -823,7 +862,7 @@ def test_loaded_compression_metadata_reaches_the_kernel(
     graph, atype = _build_graph(descriptor, canonical=True)
     expected = dpa4c_graph_compress(replacement, graph, atype)
     dpa4c_graph_compress(descriptor, graph, atype)
-    window = descriptor._compression_scalars[-2:]
+    clamp = descriptor._compression_scalars[descriptor.compress_info.numel() :]
 
     # A parent exercises the state-key prefix for full and partial loads.
     parent = torch.nn.ModuleList([descriptor])
@@ -839,7 +878,25 @@ def test_loaded_compression_metadata_reaches_the_kernel(
     torch.testing.assert_close(output, expected, atol=0, rtol=0)
     assert descriptor._compression_scalars == (
         *replacement.compress_info.tolist(),
-        *window,
+        *clamp,
+    )
+
+
+def test_loaded_contact_edges_reach_the_compressed_kernel() -> None:
+    """A state load moves the frozen copy of the contact edges with the clamp."""
+    descriptor = _build_descriptor(16, radial_modes=2, **_CLAMP)
+    replacement = _build_descriptor(16, radial_modes=2, **_CLAMP)
+    with torch.no_grad():
+        replacement.contact_clamp.edges.mul_(0.5)
+    descriptor.enable_compression(0.5, table_stride_1=0.25)
+    before = descriptor.compress_contact_edges.clone()
+    # The replacement is not compressed, so only the shared weights and the
+    # clamp are loaded.
+    descriptor.load_state_dict(replacement.state_dict(), strict=False)
+    loaded = contact_edges_input(descriptor)
+    assert not torch.equal(loaded, before)
+    torch.testing.assert_close(
+        descriptor.compress_contact_edges, loaded, atol=0, rtol=0
     )
 
 

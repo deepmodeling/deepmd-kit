@@ -2024,7 +2024,6 @@ def _build_so2_edge_data(
     lmax,
     channels,
     masked="none",
-    with_gate=False,
     n_radial=None,
 ):
     """Build matching pt (sparse) and dp (padded) edge caches.
@@ -2038,8 +2037,6 @@ def _build_so2_edge_data(
     a parity failure. ``edge_env`` is the exception: the production
     ``build_edge_cache`` multiplies the envelope by the slot mask, so it is
     exactly zero on invalid slots, and this fixture mirrors that contract.
-    ``with_gate`` multiplies a random source gate into the envelope, as the
-    production builder does for a bridged model.
 
     ``n_radial``: when not None, ``edge_rbf`` is filled with random values of
     width ``n_radial`` (garbage in masked slots too); otherwise it stays the
@@ -2096,9 +2093,6 @@ def _build_so2_edge_data(
     # baseline aggregation (n_atten_head=0) relies on this; the attention path
     # masks independently, so both stay parity-correct.
     edge_env = rng.uniform(0.2, 1.0, size=(n_edge, 1)) * mask[:, None]
-    if with_gate:
-        # A bridged cache folds the source gate into the envelope.
-        edge_env = edge_env * rng.uniform(0.1, 1.0, size=(n_edge, 1))
     deg = ((edge_env[:, 0] ** 2) * mask).reshape(nloc, nnei).sum(axis=1)
     inv_sqrt_deg = (1.0 / np.sqrt(deg + 1.0)).reshape(nloc, 1, 1)
     radial = rng.normal(size=(n_edge, lmax + 1, channels))
@@ -2320,8 +2314,7 @@ class TestSO2Parity:
     @pytest.mark.parametrize(
         "masked", ["none", "slots", "node"]
     )  # padded-slot patterns (node = one all-masked destination)
-    @pytest.mark.parametrize("with_gate", [False, True])  # folded SFPG gate
-    def test_segment_envelope_gated_softmax(self, masked, with_gate) -> None:
+    def test_segment_envelope_gated_softmax(self, masked) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
             segment_envelope_gated_softmax as dp_softmax,
         )
@@ -2338,7 +2331,6 @@ class TestSO2Parity:
             lmax=2,
             channels=4,
             masked=masked,
-            with_gate=with_gate,
         )
         n_edge = nloc * nnei
         logits = rng.normal(size=(n_edge, n_focus, n_head))
@@ -2422,10 +2414,10 @@ class TestSO2Parity:
     def test_tiny_envelope_hessian(self) -> None:
         """Both softmax paths keep the physical Hessian at a tiny envelope.
 
-        The envelope enters the softmax through its logarithm, and in bridging
-        mode it carries the source gate, so the second derivative with respect
-        to it, which the force loss differentiates, must match the direct
-        physical form even where the envelope is far below one.
+        The envelope enters the softmax through its logarithm, so the second
+        derivative with respect to it, which the force loss differentiates,
+        must match the direct physical form even where the envelope is far
+        below one.
         """
         from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
             segment_envelope_gated_softmax as dp_softmax,
@@ -2583,9 +2575,7 @@ class TestSO2Parity:
         dp_mod = DPSO2Conv.deserialize(pt_mod.serialize())
         return pt_mod, dp_mod, kwargs
 
-    def _assert_conv_parity(
-        self, pt_mod, dp_mod, kwargs, *, masked="slots", with_gate=False
-    ) -> None:
+    def _assert_conv_parity(self, pt_mod, dp_mod, kwargs, *, masked="slots") -> None:
         rng = np.random.default_rng(2061)
         pt_cache, dp_cache, radial, radial_valid, x, _ = _build_so2_edge_data(
             rng,
@@ -2594,7 +2584,6 @@ class TestSO2Parity:
             lmax=kwargs["lmax"],
             channels=kwargs["channels"],
             masked=masked,
-            with_gate=with_gate,
         )
         out_dp = dp_mod.call(x, dp_cache, radial)
         out_pt = pt_mod(to_pt(x), pt_cache, to_pt(radial_valid))
@@ -2650,11 +2639,6 @@ class TestSO2Parity:
         # exercises bias0 + the layer-0 envelope bias correction
         pt_mod, dp_mod, kwargs = self._build_conv_pair(mlp_bias=True)
         self._assert_conv_parity(pt_mod, dp_mod, kwargs)
-
-    @pytest.mark.parametrize("n_atten_head", [0, 1])  # gated envelope on both paths
-    def test_so2_convolution_gated_envelope(self, n_atten_head) -> None:
-        pt_mod, dp_mod, kwargs = self._build_conv_pair(n_atten_head=n_atten_head)
-        self._assert_conv_parity(pt_mod, dp_mod, kwargs, with_gate=True)
 
     def test_so2_convolution_real_edge_cache(self) -> None:
         # end-to-end: REAL pt build_edge_cache vs REAL dp build_edge_cache
@@ -2871,8 +2855,7 @@ class TestEmbeddingParity:
         "zonal_provided", [False, True]
     )  # zonal_coupling: None (gather from Dt_full) vs provided-zonal input
     #    path with D_node == D_cache only
-    @pytest.mark.parametrize("with_gate", [False, True])  # folded SFPG gate
-    def test_gie(self, masked, zonal_provided, with_gate) -> None:
+    def test_gie(self, masked, zonal_provided) -> None:
         lmax, channels = 2, 4
         pt_mod, dp_mod = self._build_gie_pair(lmax, channels)
         rng = np.random.default_rng(2071)
@@ -2883,7 +2866,6 @@ class TestEmbeddingParity:
             lmax=lmax,
             channels=channels,
             masked=masked,
-            with_gate=with_gate,
         )
         if zonal_provided:
             # Scope: provided-zonal here uses D_node == D_cache; the genuine
@@ -2988,9 +2970,7 @@ class TestEmbeddingParity:
         dp_mod = DPEnv.deserialize(pt_mod.serialize())
         return pt_mod, dp_mod
 
-    def _assert_env_parity(
-        self, pt_mod, dp_mod, *, masked="slots", with_gate=False
-    ) -> None:
+    def _assert_env_parity(self, pt_mod, dp_mod, *, masked="slots") -> None:
         rng = np.random.default_rng(2076)
         pt_cache, dp_cache, _, _, _, _ = _build_so2_edge_data(
             rng,
@@ -2999,7 +2979,6 @@ class TestEmbeddingParity:
             lmax=1,
             channels=4,
             masked=masked,
-            with_gate=with_gate,
             n_radial=self.n_radial,
         )
         atype = rng.integers(0, self.ntypes, size=(self.nloc,))
@@ -3018,10 +2997,6 @@ class TestEmbeddingParity:
     def test_env_embedding(self, masked, mlp_bias) -> None:
         pt_mod, dp_mod = self._build_env_pair(mlp_bias=mlp_bias)
         self._assert_env_parity(pt_mod, dp_mod, masked=masked)
-
-    def test_env_embedding_gated_envelope(self) -> None:
-        pt_mod, dp_mod = self._build_env_pair()
-        self._assert_env_parity(pt_mod, dp_mod, with_gate=True)
 
     def test_env_embedding_wide_rbf(self) -> None:
         # embed_dim - 2*type_dim > 32 exercises the non-clamped rbf_out_dim
@@ -3195,9 +3170,7 @@ def _dp_cache_from_padded(
         compute_dtype=np.float64,
         eps=eps,
         deg_norm_floor=deg_norm_floor,
-        bridging_clamp=None,
-        bridging_switch=None,
-        edge_contact=None,
+        read_distance=None,
         edge_envelope=edge_envelope,
         radial_basis=radial_basis,
         random_gamma=random_gamma,
@@ -3949,10 +3922,8 @@ class TestDescriptorParity:
         assert out_dp[0].shape == tuple(out_pt[0].shape)
         # descriptor-level tolerance: rtol 1e-10 / atol 1e-12
         assert_parity(out_dp[0], out_pt[0], rtol=1e-10, atol=1e-12)
-        # unused returns are None on the dp side (pt returns empty tensors);
-        # the trailing element is the source gate of a bridging window, absent
-        # from this unbridged fixture
-        assert out_dp[1:] == (None, None, None, None, None)
+        # unused returns are None on the dp side (pt returns empty tensors)
+        assert out_dp[1:] == (None, None, None, None)
 
     @pytest.mark.parametrize("use_env_seed", [False, True])  # env FiLM + GIE seeding
     @pytest.mark.parametrize("n_blocks", [1, 2])  # interaction block stack depth
@@ -4054,38 +4025,57 @@ class TestDescriptorParity:
         pt_mod, dp_mod, _ = self._build_descr_pair()
         self._assert_descr_parity(pt_mod, dp_mod, mapping=False)
 
-    def test_descriptor_covalent_bridging_window(self) -> None:
-        """A covalent window sizes every pair by the elements at its ends.
+    @pytest.mark.parametrize("observed", [False, True])  # recorded edges or start
+    def test_descriptor_contact_clamp(self, observed) -> None:
+        """Both backends clamp every pair by the same recorded data edge.
 
-        Both backends size the window from their own copy of the radius table,
-        so a multi-element ``type_map`` is what makes the per-pair radii differ
-        and the comparison meaningful. The window reaches the descriptor only
-        on the sparse-edge route, so the two are run on one shared ghost-free
-        graph. The unwindowed descriptor pins that the window actually moves
-        this fixture's output, so parity cannot hold vacuously.
+        The clamp reaches the descriptor only on the sparse-edge route, so the
+        two are run on one shared ghost-free graph. Its edges are raised far
+        above the fixture's separations, so every pair reads a clamped
+        distance, and the unclamped descriptor pins that the clamp actually
+        moves this output. With ``observed`` the pt clamp records a batch of
+        two frames in training mode first, and the contact record and the
+        edges it sets travel through the serialization to the dpmodel twin.
         """
         from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
             _graph_from_padded_nlist,
         )
 
-        window = {
-            "type_map": ["O", "H", "N"],
-            "inner_clamp_f_inner": 1.0,
-            "inner_clamp_f_outer": 1.5,
-            "inner_clamp_scale": "covalent",
-        }
-        pt_mod, dp_mod, _ = self._build_descr_pair(**window)
-        np.testing.assert_array_equal(
-            dp_mod.contact_radius, pt_mod.contact_radius.cpu().numpy()
+        pt_mod, _, _ = self._build_descr_pair(
+            type_map=["O", "H", "N"], contact_clamp=0.75, contact_support=1
         )
+        clamp = pt_mod.contact_clamp
+        with torch.no_grad():
+            # The covalent start caps every edge, so it is raised as well.
+            clamp.start.fill_(10.0)
+            clamp.edges.fill_(10.0)
+        if observed:
+            clamp.train()
+            clamp.observe(
+                to_pt(np.array([2.5, 3.0])),
+                to_pt(np.array([0, 1])),
+                to_pt(np.array([1, 2])),
+                to_pt(np.array([True, True])),
+                to_pt(np.array([0, 1])),
+            )
+            clamp.eval()
+            assert float(clamp.edges[1, 0]) == 2.5
+        dp_mod = DescrptDPA4.deserialize(pt_mod.serialize())
+        dp_mod.contact_clamp.start = np.full_like(dp_mod.contact_clamp.start, 10.0)
+        for name in ("edges", "contacts"):
+            np.testing.assert_array_equal(
+                np.asarray(getattr(dp_mod.contact_clamp, name)),
+                getattr(clamp, name).cpu().numpy(),
+            )
         _, plain_mod, _ = self._build_descr_pair()
 
         inp = self._inputs()
         graph, atype_local = _graph_from_padded_nlist(
             inp["coord"], inp["atype_ext"], inp["nlist"], inp["mapping"]
         )
-        out_dp, _, _ = dp_mod.call_graph(graph, atype_local)
-        out_pt, _, _, _ = pt_mod.forward_with_edges(
+        out_dp, _ = dp_mod.call_graph(graph, atype_local)
+        out_pt, _, _ = pt_mod.forward_with_edges(
             extended_coord=to_pt(inp["coord"][:, : self.nloc]),
             extended_atype=to_pt(atype_local.reshape(self.nf, self.nloc)),
             edge_index=to_pt(graph.edge_index),
@@ -4098,7 +4088,7 @@ class TestDescriptorParity:
             rtol=1e-10,
             atol=1e-12,
         )
-        out_plain, _, _ = plain_mod.call_graph(graph, atype_local)
+        out_plain, _ = plain_mod.call_graph(graph, atype_local)
         assert np.max(np.abs(np.asarray(out_dp) - np.asarray(out_plain))) > 1e-8
 
     def test_descriptor_extra_node_l(self) -> None:
@@ -4267,7 +4257,7 @@ class TestDescriptorParity:
         out_dp_s, out_pt_s = _call(spin)
         assert out_dp_s[0].shape == tuple(out_pt_s[0].shape)
         assert_parity(out_dp_s[0], out_pt_s[0], rtol=1e-10, atol=1e-12)
-        assert out_dp_s[1:] == (None, None, None, None, None)
+        assert out_dp_s[1:] == (None, None, None, None)
 
         # spin=None path: pt vs dp parity
         out_dp_n, out_pt_n = _call(None)
@@ -4567,7 +4557,7 @@ class TestModelDefCompat:
             "type",
             "atomic_model",
             "bridging_method",
-            "bridging_window",
+            "bridging_truncation",
             "lora",
         }
     )

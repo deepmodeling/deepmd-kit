@@ -23,7 +23,6 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     DynamicRadialDegreeMixer,
     EdgeCartesianTensorProduct,
     ForceEmbedding,
-    InnerClamp,
     NodeCartesianTensorProduct,
     RadialBasis,
     RadialMLP,
@@ -596,7 +595,7 @@ class TestDescrptSeZM(_SeZMTestCase):
                 )
                 edge_vec = flat[edge_index[0]] - flat[edge_index[1]]
                 edge_mask = torch.ones(2, dtype=torch.bool, device=self.device)
-                desc_e, latent, _, _ = model.forward_with_edges(
+                desc_e, latent, _ = model.forward_with_edges(
                     extended_coord=coord.reshape(1, -1),
                     extended_atype=atype,
                     edge_index=edge_index,
@@ -1074,7 +1073,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             nlist,
             charge_spin=torch.tensor([[0.0, 1.0]], device=self.device),
         )
-        desc_ref, _, _, _ = model.forward_with_edges(
+        desc_ref, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1082,7 +1081,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             edge_mask=edge_mask,
             charge_spin=torch.tensor([[0.0, 1.0]], device=self.device),
         )
-        desc_shifted, _, _, _ = model.forward_with_edges(
+        desc_shifted, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1091,7 +1090,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             charge_spin=torch.tensor([[1.0, 1.0]], device=self.device),
         )
         restored = DescrptSeZM.deserialize(model.serialize())
-        desc_restored, _, _, _ = restored.forward_with_edges(
+        desc_restored, _, _ = restored.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1232,7 +1231,7 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
                 p.copy_(torch.randn_like(p) * 0.1)
         model.eval()
 
-        desc, _, _, _ = model.forward_with_edges(
+        desc, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1240,7 +1239,7 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
             edge_mask=edge_mask,
             spin=spin,
         )
-        desc_rot, _, _, _ = model.forward_with_edges(
+        desc_rot, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1251,7 +1250,7 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
         torch.testing.assert_close(desc, desc_rot, atol=1e-9, rtol=1e-9)
 
         # Spin actually changes the descriptor (injection is not a no-op).
-        desc_zero, _, _, _ = model.forward_with_edges(
+        desc_zero, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1316,7 +1315,7 @@ class TestSeZMEnvSeedSpinProjection(_SeZMTestCase):
         """The zero projection receives gradients from nonzero spin statistics."""
         model = self._descriptor()
         kwargs, spin = self._inputs()
-        desc, _, _, _ = model.forward_with_edges(**kwargs, spin=spin)
+        desc, _, _ = model.forward_with_edges(**kwargs, spin=spin)
         desc.sum().backward()
         projection_grad = model.env_seed_embedding.spin_output_proj.matrix.grad
         self.assertIsNotNone(projection_grad)
@@ -1937,129 +1936,6 @@ class TestCartesianTensorProduct(_SeZMTestCase):
                 )
 
 
-class TestInnerClamp(_SeZMTestCase):
-    """The distance clamp of a bridging window.
-
-    Below the freeze point the distance the descriptor is shown stays at that
-    point, above the outer radius the clamp is the identity, and the septic
-    Hermite profile joins the two with three continuous derivatives. The
-    freeze point sits two fifths into the window, just below the midpoint
-    where the frame filter ends the training data, so the shown distance
-    still moves at the filter point.
-    """
-
-    def setUp(self) -> None:
-        super().setUp()
-        # A unit pair length scale makes the two fractions the window radii in
-        # Å directly, so every boundary below is read at the plain distance.
-        self.r_inner = 0.5
-        self.r_outer = 1.5
-        self.r_freeze = 0.9
-        self.contact = torch.tensor(1.0, dtype=torch.float64, device=self.device)
-        self.clamp = InnerClamp(self.r_inner, self.r_outer)
-        self.assertAlmostEqual(self.clamp.f_freeze, self.r_freeze, places=14)
-
-    def _derivatives(self, r: torch.Tensor, order: int) -> list[torch.Tensor]:
-        """Successive derivatives of the clamp, from the first to ``order``."""
-        r = r.detach().clone().requires_grad_(True)
-        value = self.clamp(r, self.contact)
-        derivatives = []
-        for step in range(order):
-            value = torch.autograd.grad(value.sum(), r, create_graph=step + 1 < order)[
-                0
-            ]
-            derivatives.append(value.detach())
-        return derivatives
-
-    def test_monotonicity(self) -> None:
-        """The shown distance never decreases as the true distance grows."""
-        r = torch.linspace(0.0, 3.0, 1000, dtype=torch.float64, device=self.device)
-        out = self.clamp(r, self.contact)
-        diff = out[1:] - out[:-1]
-        self.assertTrue((diff >= -1e-14).all(), "InnerClamp is not monotonic")
-
-    def test_frozen_zone_sits_at_the_freeze_point(self) -> None:
-        """Below the freeze point the shown distance is that point itself."""
-        r = torch.tensor(
-            [0.0, 0.3, 0.5, 0.8, 0.89],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        torch.testing.assert_close(
-            self.clamp(r, self.contact),
-            torch.full_like(r, self.r_freeze),
-            atol=1e-14,
-            rtol=0,
-        )
-        grads = self._derivatives(r, 1)[0]
-        torch.testing.assert_close(
-            grads,
-            torch.zeros_like(grads),
-            atol=1e-14,
-            rtol=0,
-            msg="the frozen zone must carry no gradient",
-        )
-
-    def test_identity_zone_unit_gradient(self) -> None:
-        """Beyond the outer radius the clamp returns the distance unchanged."""
-        r = torch.tensor(
-            [1.5, 1.6, 2.0, 3.0, 5.0],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        torch.testing.assert_close(self.clamp(r, self.contact), r, atol=0, rtol=0)
-        grads = self._derivatives(r, 1)[0]
-        torch.testing.assert_close(
-            grads,
-            torch.ones_like(grads),
-            atol=1e-14,
-            rtol=0,
-            msg="the identity zone must carry a unit gradient",
-        )
-
-    def test_c3_continuity_at_boundaries(self) -> None:
-        """Three derivatives match across both ends of the transition.
-
-        The septic profile vanishes together with its first two derivatives at
-        the freeze point and reaches unit slope with vanishing curvature at the
-        outer radius, so the clamp joins the frozen and the identity branch
-        with three continuous derivatives. The step ``eps`` is small enough
-        that the genuine variation of the third derivative over it stays far
-        below the tolerance, which leaves a real discontinuity as the only way
-        to fail.
-        """
-        eps = 1.0e-9
-        for boundary in (self.r_freeze, self.r_outer):
-            r = torch.tensor(
-                [boundary - eps, boundary, boundary + eps],
-                dtype=torch.float64,
-                device=self.device,
-            )
-            for order, values in enumerate(self._derivatives(r, 3), start=1):
-                left, center, right = (float(v) for v in values)
-                self.assertAlmostEqual(
-                    left,
-                    center,
-                    delta=1e-4,
-                    msg=f"derivative {order} jumps below {boundary}",
-                )
-                self.assertAlmostEqual(
-                    center,
-                    right,
-                    delta=1e-4,
-                    msg=f"derivative {order} jumps above {boundary}",
-                )
-
-    def test_invalid_params(self) -> None:
-        """Test that invalid parameters raise ValueError."""
-        with self.assertRaises(ValueError):
-            InnerClamp(1.5, 1.0)
-        with self.assertRaises(ValueError):
-            InnerClamp(-1.0, 1.0)
-        with self.assertRaises(ValueError):
-            InnerClamp(1.0, 1.0)
-
-
 class TestCutoffNumerics(_SeZMTestCase):
     """Numerical stability at cutoff-vanishing attention boundaries."""
 
@@ -2354,8 +2230,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
     # ~(rcut - r)^4, so the energy bowl is only resolvable above noise a little
     # inside the cutoff; 4.5 keeps a robust smooth-bowl signal for this guard.
     RCUT_NEAR_DISTANCE = 4.5
-    BRIDGING_R_INNER = 0.8
-    BRIDGING_R_OUTER = 1.2
     ENERGY_SPAN_MARGIN = 1.0e-7
     FIRST_DERIVATIVE_MARGIN = 5.0e-7
     SECOND_DERIVATIVE_MARGIN = 5.0e-4
@@ -2392,8 +2266,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         n_focus: int = 1,
         edge_cartesian: bool = False,
         bridging_method: str = "none",
-        bridging_r_inner: float = 0.8,
-        bridging_r_outer: float = 1.2,
     ) -> dict:
         """Build the SeZM probe model used for one PES scan."""
         params = {
@@ -2435,8 +2307,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         }
         if bridging_method.lower() != "none":
             params["bridging_method"] = bridging_method
-            params["bridging_r_inner"] = bridging_r_inner
-            params["bridging_r_outer"] = bridging_r_outer
         return params
 
     def _build_scaled_symmetric_structure(
@@ -2468,8 +2338,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         n_focus: int = 1,
         edge_cartesian: bool = False,
         bridging_method: str = "none",
-        bridging_r_inner: float = 0.8,
-        bridging_r_outer: float = 1.2,
     ) -> torch.nn.Module:
         """Build a probe model and randomize all floating-point parameters."""
         model = get_sezm_model(
@@ -2479,8 +2347,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                 n_focus=n_focus,
                 edge_cartesian=edge_cartesian,
                 bridging_method=bridging_method,
-                bridging_r_inner=bridging_r_inner,
-                bridging_r_outer=bridging_r_outer,
             )
         ).to(
             device=self.device,
@@ -2669,7 +2535,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                         edge_cartesian=True,
                     )
 
-    def _assert_bridging_force_consistent_across_switch(
+    def _assert_bridging_force_consistent_across_the_junction(
         self,
         model: torch.nn.Module,
         *,
@@ -2679,22 +2545,21 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
 
         A finite, isolated cluster keeps the neighbor count bounded and equal to
         the physical neighbors within ``rcut``, so the check is independent of
-        the periodic-image count and of ``sel``.  Atom 1 slides along ``x`` from
-        below ``r_inner`` to above ``r_outer`` while the spectator atoms stay
-        beyond ``r_outer``; if the ``BridgingSwitch`` blend kinked at either
-        boundary, the analytical force (``-dE/dx``) would diverge from the
-        central finite difference there.
+        the periodic-image count and of ``sel``. The Na-Cl probe pair closes
+        from beyond the end of the truncated term (1.1 x 2.54 Å) through the
+        contact clamp (its edge starts at the 2.54 Å covalent bond length) to
+        well inside its freeze, while the spectators stay beyond both. A kink
+        at the truncation end or at either end of the clamp ramp would make
+        the analytical force (``-dE/dx``) diverge from the central difference.
         """
-        distances = torch.linspace(0.70, 1.30, 25, dtype=self.dtype, device=self.device)
-        # Isolated cluster: atom 0 anchor, atom 1 probe (slides on x), spectators
-        # fixed beyond r_outer but inside rcut so only the probe crosses a switch.
+        distances = torch.linspace(1.0, 3.2, 45, dtype=self.dtype, device=self.device)
         template = torch.tensor(
             [
                 [0.0, 0.0, 0.0],
                 [0.0, 0.0, 0.0],
-                [0.0, 2.6, 0.0],
-                [0.0, 0.0, 2.8],
-                [-3.0, 0.2, 0.0],
+                [0.0, 3.6, 0.0],
+                [0.0, 0.0, 3.8],
+                [-4.0, 0.2, 0.0],
             ],
             dtype=self.dtype,
             device=self.device,
@@ -2713,18 +2578,19 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         fd_force = -(energy[:, 1] - energy[:, 2]) / (2.0 * eps)
         analytical_force = result["force"][::3, 1, 0]
         torch.testing.assert_close(analytical_force, fd_force, atol=1.0e-6, rtol=1.0e-4)
-        # Below r_inner the gate freezes the network term and the ZBL repulsion
-        # dominates, so the closest probe must be pushed outward (+x).
+        # Below the freeze the learned energy no longer depends on the pair
+        # separation and the truncated ZBL term dominates, so the closest
+        # probe must be pushed outward (+x).
         self.assertGreater(
             analytical_force[0].item(),
             0.0,
             "bridged short-range force should be repulsive",
         )
 
-    def test_bridging_force_consistent_across_switch_boundaries(self) -> None:
-        """The bridged total energy stays conservative and C1-smooth across both
-        switch boundaries on a bounded, sel-independent isolated cluster, and is
-        repulsive at short range.
+    def test_bridging_force_consistent_across_the_junction(self) -> None:
+        """The bridged total energy stays conservative and C1-smooth through
+        the truncation end and the clamp ramp on a bounded, sel-independent
+        isolated cluster, and is repulsive at short range.
         """
         for use_amp in (False, True):
             for n_atten_head in (0, 1, 2):
@@ -2737,215 +2603,88 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                             use_amp=use_amp,
                             n_focus=n_focus,
                             bridging_method="ZBL",
-                            bridging_r_inner=self.BRIDGING_R_INNER,
-                            bridging_r_outer=self.BRIDGING_R_OUTER,
                         )
-                        self._assert_bridging_force_consistent_across_switch(model)
+                        self._assert_bridging_force_consistent_across_the_junction(
+                            model
+                        )
 
 
-class TestSourceFreezePropagationGate(TestDescriptorEnergyCurveSmoothness):
+class TestContactClampFreeze(TestDescriptorEnergyCurveSmoothness):
     """
-    Sharper correctness probes for the Source Freeze Propagation Gate.
+    The learned energy of a bridged model stops depending on a closing pair.
 
-    ``TestDescriptorEnergyCurveSmoothness`` already validates that the
-    bridged PES is a single smooth repulsive bowl near ``r_inner`` and
-    ``r_outer``; that family exercises the combined ``InnerClamp`` +
-    ``BridgingSwitch`` machinery on a realistic 8-atom layout and is
-    sensitive to discontinuities.
-
-    The tests below add a tighter, analytical guardrail that
-    ``InnerClamp`` alone cannot satisfy once the model grows past one
-    interaction block. Setup: three atoms ``(A, B, C)`` with ``A`` at
-    the origin, ``B`` sliding rigidly on a sphere of radius
-    ``r_AB < r_inner`` around ``A`` and ``C`` anchored in the normal
-    zone. Under this motion
-
-    * ``r_AB`` is constant, so ``V_ZBL(r_AB)`` is constant and the
-      analytical half-energy assigned to ``A`` does not move;
-    * the direction ``r_hat_AB`` varies, and so do ``r_BC`` and
-      ``r_hat_BC`` — these are exactly the channels through which the
-      direction and multi-hop leaks manifest in the user's analysis.
-
-    The gate leaves the two edges between ``A`` and ``B`` alive, so the
-    descriptors of the frozen pair still follow each other at the clamped
-    distance; what leaves the graph are the edges the pair emits into
-    ``C``, and what closes the remaining channel is the per-node gate,
-    which is zero on ``A`` and on ``B``. The guarantee is therefore sharp
-    at the level of the energy: **the atomic energy of ``A`` is the per-type
-    bias of the fitting plus the analytical halves of its own pairs, and
-    stays strictly constant** along the trajectory. ``E_B`` moves only
-    through the analytical term of its genuine bond with ``C``.
+    Two atoms ``A`` and ``B`` close along the x axis with no other atom
+    inside the cutoff, so their separation is the only geometric quantity
+    that changes. The contact clamp freezes the separation the descriptor
+    reads below ``inner`` times the pair's data edge, and every message about
+    the pair is built from what the descriptor reads. Below the freeze the
+    learned part of both atomic energies is therefore strictly constant, and
+    the energy of the pair changes only through the analytical term, which is
+    evaluated on the true separation.
     """
 
-    NEAR_DISTANCE = 0.6  # < BRIDGING_R_INNER, stays frozen for all samples
-    N_SPHERE_POINTS = 16
+    N_SCAN_POINTS = 9
     INVARIANCE_TOLERANCE = 1.0e-10
 
-    def _build_three_atom_box(
-        self,
-        *,
-        near_distance: float,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Build a 3-atom open-box probe ``(A, B, C)`` with frozen pair ``(A, B)``.
-
-        ``A`` is anchored at the origin, ``B`` is placed inside the frozen
-        sphere at distance ``near_distance`` along the initial direction,
-        and ``C`` sits well outside the bridging window so ``(A, C)`` and
-        ``(B, C)`` are ordinary GNN edges.
-        """
-        coord = torch.tensor(
-            [
-                [0.0, 0.0, 0.0],
-                [near_distance, 0.0, 0.0],
-                [2.4, 0.0, 0.0],
-            ],
-            dtype=self.dtype,
-            device=self.device,
-        ).unsqueeze(0)
-        atype = torch.tensor([[0, 1, 0]], dtype=torch.int32, device=self.device)
-        # Large enough cubic cell to keep the system aperiodic under rcut=5.
-        box = torch.tensor(
-            [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
-            dtype=self.dtype,
-            device=self.device,
-        )
-        return coord, atype, box
-
-    def _sphere_positions(
-        self,
-        n_points: int,
-        radius: float,
-    ) -> torch.Tensor:
-        """Deterministic Fibonacci-like sphere sampling around the origin."""
-        indices = torch.arange(n_points, dtype=self.dtype, device=self.device)
-        phi = math.pi * (3.0 - math.sqrt(5.0))  # golden-angle step
-        z = 1.0 - 2.0 * (indices + 0.5) / float(n_points)
-        rho = torch.sqrt(torch.clamp(1.0 - z * z, min=0.0))
-        theta = phi * indices
-        positions = torch.stack(
-            [
-                radius * rho * torch.cos(theta),
-                radius * rho * torch.sin(theta),
-                radius * z,
-            ],
-            dim=-1,
-        )
-        return positions  # (n_points, 3)
-
-    def _evaluate_frozen_sphere_atom_energies(
-        self,
-        model: torch.nn.Module,
-    ) -> torch.Tensor:
-        """Evaluate per-atom energies while ``B`` rigidly slides on the frozen sphere.
-
-        The per-edge local-``+Z`` gauge roll is turned off so every edge uses
-        the deterministic canonical edge quaternion. This removes the only
-        non-determinism that would otherwise mask the ``< 1e-10`` invariance
-        SFPG is supposed to deliver in fp64; the gauge roll is pure
-        training-time augmentation and does not change the physical content.
-        """
+    def _atom_energies(
+        self, model: torch.nn.Module, separations: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Per-atom bridged and learned energies along the A-B scan."""
         descriptor = model.atomic_model.descriptor
         previous_random_gamma = descriptor.random_gamma
         descriptor.random_gamma = False
         try:
-            coord0, atype, box = self._build_three_atom_box(
-                near_distance=self.NEAR_DISTANCE
+            coord = torch.zeros(
+                (separations.shape[0], 2, 3), dtype=self.dtype, device=self.device
             )
-            directions = self._sphere_positions(
-                self.N_SPHERE_POINTS, radius=self.NEAR_DISTANCE
-            )
-            coord = coord0.repeat(directions.shape[0], 1, 1)
-            coord[:, 1, :] = directions  # rotate B around A, radius fixed
-            result = model(
-                coord,
-                atype.expand(directions.shape[0], -1),
-                box=box.expand(directions.shape[0], -1),
-            )
+            coord[:, 1, 0] = separations
+            atype = torch.tensor(
+                [[0, 1]], dtype=torch.int32, device=self.device
+            ).expand(separations.shape[0], -1)
+            bridged = model(coord, atype, box=None)["atom_energy"].detach()
+            potential = model.inter_potential
+            model.inter_potential = None
+            try:
+                learned = model(coord, atype, box=None)["atom_energy"].detach()
+            finally:
+                model.inter_potential = potential
         finally:
             descriptor.random_gamma = previous_random_gamma
-        return result["atom_energy"].detach()  # (n_samples, 3, 1)
+        return bridged, learned
 
-    def _atomic_energy_span(
-        self,
-        atom_energies: torch.Tensor,
-        atom_index: int,
-    ) -> float:
-        """Range of one atom's energy across the sphere trajectory."""
-        values = atom_energies[:, atom_index, 0]
-        return float((values.max() - values.min()).abs())
-
-    def test_sfpg_preserves_atomic_energy_of_frozen_partner(self) -> None:
-        """
-        With SFPG active, the atomic energy of the frozen-partner atom
-        ``A`` must be strictly constant along the sphere trajectory.
-
-        ``A``'s atomic energy decomposes as ``E_A_GNN + V_ZBL(r_AB)/2
-        + V_ZBL(r_AC)/2``. Both ZBL half-terms are constant because
-        ``r_AB`` is fixed on the frozen sphere and ``r_AC`` does not
-        change either, so any residual variation must come from the
-        GNN branch. ``E_C`` is deliberately not probed here because
-        ``V_ZBL(r_BC)/2`` that sits on the ``C`` side is of order
-        several eV at ``r_BC ≈ r_outer`` and moves with ``B`` even
-        though the GNN piece of ``E_C`` remains strictly invariant.
-        Writing the test on ``E_A`` keeps the assertion clean and
-        purely diagnostic of SFPG rather than of ZBL geometry.
-        """
+    def test_learned_energy_is_frozen_below_the_clamp(self) -> None:
         model = self._build_random_weight_model(
             n_atten_head=2,
             use_amp=False,
             n_focus=2,
             bridging_method="ZBL",
-            bridging_r_inner=self.BRIDGING_R_INNER,
-            bridging_r_outer=self.BRIDGING_R_OUTER,
         )
-        atom_energies = self._evaluate_frozen_sphere_atom_energies(model)
-        self.assertTrue(torch.isfinite(atom_energies).all().item())
-
-        span_a = self._atomic_energy_span(atom_energies, atom_index=0)
-        self.assertLess(
-            span_a,
-            self.INVARIANCE_TOLERANCE,
-            (
-                "SFPG must freeze the atomic energy of ``A`` under rigid "
-                f"motion of its frozen partner; observed span {span_a:.3e} "
-                f"> {self.INVARIANCE_TOLERANCE:.3e}."
-            ),
+        clamp = model.atomic_model.descriptor.contact_clamp
+        edge = float(clamp.edges[0, 1])
+        freeze = clamp.inner * edge
+        below = torch.linspace(
+            0.3 * freeze,
+            freeze,
+            self.N_SCAN_POINTS,
+            dtype=self.dtype,
+            device=self.device,
         )
+        bridged, learned = self._atom_energies(model, below)
+        span = float((learned - learned[:1]).abs().max())
+        self.assertLess(span, self.INVARIANCE_TOLERANCE)
+        # The analytical term adds a repulsion that grows as the pair closes.
+        added = (bridged - learned).sum(dim=(1, 2))
+        self.assertTrue(torch.all(added > 0.0))
+        self.assertTrue(torch.all(added[:-1] > added[1:]))
 
-    def test_sfpg_leaks_reopen_when_gate_is_disabled(self) -> None:
-        """
-        Ablation: clearing ``bridging_switch`` must re-expose the leak.
-
-        This test is the contrapositive of the previous one: if SFPG is
-        the only mechanism that closes the direction / multi-hop leak,
-        disabling it must produce a measurably non-constant ``E_A`` on
-        the same frozen-sphere trajectory. Keeping this ablation in the
-        suite pins down which component owns the invariance, so any
-        future regression that silently disables SFPG is caught
-        immediately.
-        """
-        model = self._build_random_weight_model(
-            n_atten_head=2,
-            use_amp=False,
-            n_focus=2,
-            bridging_method="ZBL",
-            bridging_r_inner=self.BRIDGING_R_INNER,
-            bridging_r_outer=self.BRIDGING_R_OUTER,
+        # Inside the ramp the learned energy still follows the pair.
+        ramp = torch.tensor(
+            [0.5 * (freeze + edge), edge], dtype=self.dtype, device=self.device
         )
-        # Drop only the per-source gate: InnerClamp and ZBL stay active.
-        model.atomic_model.descriptor.bridging_switch = None
-        atom_energies = self._evaluate_frozen_sphere_atom_energies(model)
-
-        span_a = self._atomic_energy_span(atom_energies, atom_index=0)
+        _, learned_ramp = self._atom_energies(model, ramp)
         self.assertGreater(
-            span_a,
+            float((learned_ramp[0] - learned_ramp[1]).abs().max()),
             self.INVARIANCE_TOLERANCE,
-            (
-                "Clearing SFPG should re-expose the direction / multi-hop "
-                f"leak on ``E_A``; observed span {span_a:.3e} is not above "
-                f"the invariance tolerance {self.INVARIANCE_TOLERANCE:.3e}."
-            ),
         )
 
 

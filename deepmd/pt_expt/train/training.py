@@ -163,6 +163,9 @@ from deepmd.pt_expt.train.validation import (
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
 )
+from deepmd.pt_expt.utils.contact_clamp import (
+    synchronize_contact_edges,
+)
 from deepmd.pt_expt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
@@ -1710,6 +1713,7 @@ class _CompiledModel(torch.nn.Module):
                 aparam = aparam[node_index]
             if spin is not None:
                 spin = spin[node_index]
+        _model.observe_contacts(ng, atype_flat)
         # The topologies the atomic model declares are built here as well,
         # outside the compiled region, on the node axis of the graph.
         topologies = _model.atomic_model.build_topologies(
@@ -2020,7 +2024,6 @@ class Trainer(AbstractTrainer):
                 add_training_data_requirements(
                     self.training_data_by_task[model_key],
                     task_params["training_data"],
-                    self.model_params_by_task[model_key],
                     data_requirement,
                     lambda data, requirements: data.add_data_requirements(requirements),
                 )
@@ -2950,11 +2953,8 @@ class Trainer(AbstractTrainer):
                 raise RuntimeError(
                     f"No training frame of task {task_key!r} keeps every atom "
                     "pair beyond the frame-filter radius within "
-                    f"{discarded} consecutive batches. A bridged model filters "
-                    "at the midpoint of its bridging window, so lower "
-                    "`bridging_fraction_inner` or `bridging_fraction_outer` "
-                    "there, or `training_data.min_pair_dist` on any other "
-                    "model, or clean the dataset."
+                    f"{discarded} consecutive batches; lower "
+                    "`training_data.min_pair_dist` or clean the dataset."
                 )
 
     def _epoch_length(self, model_key: str) -> int:
@@ -3698,6 +3698,7 @@ class Trainer(AbstractTrainer):
             )
 
         self._optimizer_step()
+        synchronize_contact_edges(self.wrapper)
         if self.model_ema is not None:
             self.model_ema.update()
         return TrainStepResult(

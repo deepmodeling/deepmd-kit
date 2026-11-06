@@ -18,12 +18,16 @@
 //
 // The two operators that close an energy-force evaluation, the generic
 // backward and the fused canonical energy-force, also evaluate an analytical
-// pair potential when `pair_table` is not empty. Its energy and radial slope
-// share their exponentials and need no saved state, so the edge scan that
-// differentiates the descriptor produces both: it adds
-// `pair_seed_i * dV/dr / 2` to the radial cotangent of every edge of node `i`
-// and accumulates `V / 2` into the node energy (`pair_energy`, or the node
-// energy of the fused operator, whose pair seed is its ownership mask).
+// pair potential when `pair_table` is not empty. It has one row of 16 floats
+// per ordered type pair: the amplitudes and rates of a screened Coulomb
+// series, the end radius of the pair and the Taylor coefficients of the series
+// there. The pair energy is the series minus its cubic Taylor polynomial at
+// the end radius below that radius, and zero from it on. Its energy and radial
+// slope share their exponentials and need no saved state, so the edge scan
+// that differentiates the descriptor produces both: it adds
+// `pair_seed_i * dphi/dr / 2` to the radial cotangent of every edge of node
+// `i` and accumulates `phi / 2` into the node energy (`pair_energy`, or the
+// node energy of the fused operator, whose pair seed is its ownership mask).
 //
 // The fused canonical operator derives the ownership mask from `n_node` and
 // `n_local` -- a node contributes energy when its type is real and it is among
@@ -64,10 +68,13 @@
 // expansion that a single-type scan reads instead of the scalar-only channels
 // (empty together when the descriptor admits none; see `low_rank_basis`).
 //
-// Every schema carries the zone-bridging window as the two dimensionless
-// fractions `f_inner` and `f_outer` of a pair's own length scale, together
-// with the per-element radii `contact_radius` whose pairwise sums are those
-// length scales in Å. Equal fractions denote a descriptor without a window.
+// Every schema carries the contact clamp of a bridged descriptor as the data
+// edge of every ordered type pair in Å, `contact_edges`, flattened from the
+// ((T + 1), (T + 1)) table in row `center * (T + 1) + neighbor`, together with
+// the inner fraction `contact_inner` of the clamp, in (0, 1). Below its edge a
+// pair is read at a separation that is frozen at and below `contact_inner`
+// times the edge. An empty `contact_edges` denotes a descriptor without a
+// clamp, and `contact_inner` is then unused.
 
 #include <torch/library.h>
 
@@ -80,10 +87,10 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
-      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_edges, "
       "bool canonical, int lmax, float table_stride, float table_max, "
-      "float rcut, float eps, float degree_floor, float f_inner, "
-      "float f_outer) -> (Tensor descriptor, Tensor state)");
+      "float rcut, float eps, float degree_floor, float contact_inner) "
+      "-> (Tensor descriptor, Tensor state)");
   library.def(
       "dpa4c_graph_compress_backward(Tensor descriptor_gradient, "
       "Tensor state, Tensor edge_vec, Tensor edge_index, Tensor edge_mask, "
@@ -93,9 +100,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor type_embedding, Tensor readout_matrices, Tensor coupling_meta, "
       "Tensor coupling_entry, Tensor coupling_value, Tensor output_mean, "
       "Tensor output_inv_std, Tensor spin, Tensor spin_pair, "
-      "Tensor spin_type, Tensor contact_radius, bool canonical, int lmax, "
+      "Tensor spin_type, Tensor contact_edges, bool canonical, int lmax, "
       "float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor, float f_inner, float f_outer, Tensor pair_table, "
+      "float degree_floor, float contact_inner, Tensor pair_table, "
       "Tensor pair_seed) "
       "-> (Tensor edge_gradient, Tensor spin_gradient, "
       "Tensor edge_spin_gradient, Tensor pair_energy)");
@@ -106,9 +113,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
-      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_edges, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor, float f_inner, float f_outer) "
+      "float degree_floor, float contact_inner) "
       "-> (Tensor descriptor, Tensor state)");
   library.def(
       "dpa4c_canonical_compress_backward(Tensor descriptor_gradient, "
@@ -118,9 +125,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
-      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_edges, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor, float f_inner, float f_outer) "
+      "float degree_floor, float contact_inner) "
       "-> (Tensor edge_gradient, Tensor spin_gradient, "
       "Tensor edge_spin_gradient)");
   library.def(
@@ -131,9 +138,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
-      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_edges, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor, float f_inner, float f_outer) "
+      "float degree_floor, float contact_inner) "
       "-> (Tensor edge_gradient, Tensor spin_gradient, "
       "Tensor edge_spin_gradient)");
   library.def(
@@ -144,9 +151,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
-      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_edges, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor, float f_inner, float f_outer, "
+      "float degree_floor, float contact_inner, "
       "Tensor[] ws, Tensor[] bs, int[] resnets, "
       "Tensor w_head, Tensor b_head, Tensor bias_atom_e, int act, "
       "int tile, Tensor pair_table, int[]? fitting_routes=None, "
@@ -162,9 +169,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
-      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_edges, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor, float f_inner, float f_outer, "
+      "float degree_floor, float contact_inner, "
       "Tensor[] ws, Tensor[] bs, int[] resnets, "
       "Tensor w_head, Tensor b_head, Tensor bias_atom_e, int act, int tile, "
       "Tensor[] charge_ws, Tensor[] charge_bs, int[] charge_resnets, "

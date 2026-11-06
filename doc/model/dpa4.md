@@ -263,8 +263,9 @@ See [the denoising example](../../examples/water/dpa4/input_dens.json).
 
 Zone bridging adds an analytical repulsive potential at short interatomic
 distances. Use it when simulations may contain close contacts, such as
-collisions. The model switches smoothly between the learned interaction and
-the short-range repulsion.
+collisions. The analytical term is a screened Coulomb repulsion that falls
+smoothly to zero at 1.1 times each element pair's covalent bond length and is
+added to the learned energy.
 
 Enable it in the model configuration:
 
@@ -290,19 +291,29 @@ Nordlund–Lehtola–Hobler form. `type_map` must contain chemical element names
 See [the ZBL example](../../examples/water/dpa4/input-zbl.json) for a complete
 input.
 
-The default transition window runs from 0.26 to 0.80 times each element pair's
-covalent bond length. Set `bridging_fraction_inner` and
-`bridging_fraction_outer` to change these fractions. To use fixed distances
-in Å for all pairs, set `bridging_r_inner` and `bridging_r_outer` instead.
+The learned part reads each pair separation unchanged down to the data edge
+of the pair: the third smallest of the shortest separations that the training
+configurations hold for that pair of elements, counting repeated values once
+and at most the covalent bond length of the pair. For a closer pair the
+separation it reads moves smoothly to a frozen value, which it reaches at 0.75
+of the data edge, so below that point the analytical term alone carries the
+repulsion of a closer pair; the bond directions are read unchanged. Requiring several
+configurations keeps one unusual configuration from setting the edge of a
+pair. Training records the data edges from its batches as it goes, and the
+model stores them.
 
-Include short-range training data that cover the transition window for the
-element pairs of interest. Bridging does not replace those labels. Training
-and data statistics omit frames with a pair closer than the midpoint of its
-window; validation keeps them. Leave `training_data.min_pair_dist` unset for
-a bridged model.
+`bridging_truncation` sets where the analytical term ends, as a multiple of
+the covalent bond length (default 1.1). `bridging_clamp` sets the fraction of
+the data edge at and below which the read separation is frozen (default
+0.75); `null` reads every separation unchanged. `bridging_support` sets which
+of these separations, counted from the smallest, becomes the data edge
+(default 3); 1 takes the shortest separation of any
+configuration. Training keeps every frame unless `training_data.min_pair_dist`
+is set.
 
 To add bridging to a trained model, keep its architecture, add the bridging
-settings and fine-tune. Recalibrate an existing model's energy bias with
+settings and fine-tune; the data edges start at the covalent bond lengths and
+follow the fine-tuning data. Recalibrate an existing model's energy bias with
 `dp change-bias --mode change`, which accounts for the model's complete energy,
 including the analytical term. See [changing the energy bias](change-bias.md).
 

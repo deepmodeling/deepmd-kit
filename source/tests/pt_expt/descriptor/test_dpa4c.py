@@ -28,23 +28,24 @@ from deepmd.pt_expt.utils import (
     env,
 )
 
+# Data edge in Å that every pair of types takes in the descriptors of the
+# contract tests that carry a contact clamp, and the inner fraction of that
+# clamp. With the five-atom test cluster of ``TestDPA4C.setup_method`` they put
+# four bonds in the frozen zone, four in the transition zone and two beyond the
+# data edge.
+CLAMP_EDGE = 1.8
+CLAMP = {"contact_clamp": 0.75, "type_map": ["O", "H"]}
+
 # Structural variants exercised by the backend-agnostic contracts. They span
-# both angular profiles and both radial function classes, one bridging window
-# whose transition zone holds several pairs of the test cluster, and two and
-# three message-passing blocks with and without that window.
+# both angular profiles and both radial function classes, one contact clamp
+# whose three zones hold bonds of the test cluster, and two and three
+# message-passing blocks with and without that clamp.
 STRUCTURES = [
     {"channels": 16, "lmax": 2, "radial_modes": 0},
     {"channels": 32, "lmax": 4, "radial_modes": 0},
     {"channels": 32, "lmax": 2, "radial_modes": 3},
     {"channels": 16, "lmax": 3, "radial_modes": 3},
-    {
-        "channels": 16,
-        "lmax": 3,
-        "radial_modes": 3,
-        "inner_clamp_f_inner": 1.0,
-        "inner_clamp_f_outer": 1.25,
-        "inner_clamp_scale": "absolute",
-    },
+    {"channels": 16, "lmax": 3, "radial_modes": 3, **CLAMP},
     {"channels": 16, "lmax": 3, "radial_modes": 3, "rcut": [3.0, 2.5], "n_blocks": 2},
     {
         "channels": 16,
@@ -52,9 +53,7 @@ STRUCTURES = [
         "radial_modes": 3,
         "rcut": [3.0, 2.5],
         "n_blocks": 2,
-        "inner_clamp_f_inner": 1.0,
-        "inner_clamp_f_outer": 1.25,
-        "inner_clamp_scale": "absolute",
+        **CLAMP,
     },
     {
         "channels": 16,
@@ -128,7 +127,10 @@ class TestDPA4C:
 
         The default precision is double, which the numerical contracts need.
         Mixed-precision tests must override it, because CUDA autocast ignores
-        double operands and would otherwise leave the region untouched.
+        double operands and would otherwise leave the region untouched. A
+        descriptor with a contact clamp takes ``CLAMP_EDGE`` as the data edge of
+        every pair, and applies the clamp in evaluation mode only, as the
+        clamp is the identity in training.
         """
         descriptor = DescrptDPA4C(
             ntypes=2,
@@ -142,6 +144,8 @@ class TestDPA4C:
                 **structure,
             },
         ).to(env.DEVICE)
+        if descriptor.contact_clamp is not None:
+            descriptor.contact_clamp.edges.fill_(CLAMP_EDGE)
         # The output maps of the further blocks start at zero, which makes
         # every block the identity, so the contracts would not reach them.
         # Every zero map is drawn at random to exercise the blocks.
@@ -249,7 +253,7 @@ class TestDPA4C:
         self,
         structure: dict[str, int],
     ) -> None:
-        descriptor = self.build(**structure)
+        descriptor = self.build(**structure).eval()
         coord_ext, atype_ext, mapping, nlist = self._inputs(self.coord)
         result = descriptor(coord_ext, atype_ext, nlist, mapping=mapping)[0]
         reference = DPDescrptDPA4C.deserialize(descriptor.serialize())(
@@ -471,7 +475,7 @@ class TestDPA4C:
 
     @pytest.mark.parametrize("structure", STRUCTURES)
     def test_force_loss_double_backward(self, structure: dict[str, int]) -> None:
-        descriptor = self.build(**structure)
+        descriptor = self.build(**structure).eval()
         coord = self.coord.detach().clone().requires_grad_(True)
         output = self._evaluate(descriptor, coord)
         (force_gradient,) = torch.autograd.grad(
@@ -628,19 +632,19 @@ class TestDPA4C:
             rtol=0.0,
         )
 
-    def test_bridging_window_is_c3_continuous(self) -> None:
-        window = {
-            "inner_clamp_f_inner": 0.5,
-            "inner_clamp_f_outer": 0.8,
-            "inner_clamp_scale": "absolute",
-        }
-        descriptor = self.build(channels=16, lmax=4, **window).eval()
+    def test_contact_clamp_is_c4_continuous(self) -> None:
+        # The data edge of the dimer is 0.8 Å and the clamp freezes the
+        # separation at and below 0.5 Å. The septic smootherstep that is the
+        # slope of the read separation has a triple zero at both ends, so the
+        # separation is C^4 at the edge, where it joins the plain descriptor,
+        # and flat to the same order at the inner radius, where the probe
+        # joins a constant. The regularized distance exceeds the separation by
+        # 1e-14 Å, which the fourth derivative of the separation turns into
+        # the tolerance below.
+        descriptor = self.build(channels=16, lmax=4, **CLAMP | {"contact_clamp": 0.625})
+        descriptor.contact_clamp.edges.fill_(0.8)
+        descriptor.eval()
         plain = self.build(channels=16, lmax=4).eval()
-        # The septic switch meets both radii with three vanishing derivatives:
-        # at the inner radius the probe joins the constant of the removed
-        # edge, at the outer radius it joins the plain descriptor. The
-        # regularized distance exceeds the separation by 1e-14 Å, which the
-        # fourth derivative of the switch turns into the tolerance below.
         inner = self._dimer_derivatives(descriptor, 0.5)
         for order in (1, 2, 3):
             torch.testing.assert_close(
@@ -660,21 +664,24 @@ class TestDPA4C:
                 rtol=0.0,
             )
 
-    def test_frozen_edge_matches_removed_topology(self) -> None:
-        descriptor = self.build(
-            inner_clamp_f_inner=0.5,
-            inner_clamp_f_outer=0.8,
-            inner_clamp_scale="absolute",
-        ).eval()
+    def test_frozen_bond_reads_one_separation(self) -> None:
+        descriptor = self.build(**CLAMP | {"contact_clamp": 0.625})
+        descriptor.contact_clamp.edges.fill_(0.8)
+        descriptor.eval()
         plain = self.build().eval()
-        radius = torch.tensor(0.5, dtype=torch.float64, device=env.DEVICE)
-        removed = self._dimer_probe(descriptor, radius, active=False)
-        # The plain descriptor must see the pair, or the comparison is vacuous.
-        assert (self._dimer_probe(plain, radius) - removed).abs() > 1e-3
+        near = torch.tensor(0.2, dtype=torch.float64, device=env.DEVICE)
+        far = torch.tensor(0.5, dtype=torch.float64, device=env.DEVICE)
+        # The plain descriptor must see the difference, or the comparison is
+        # vacuous.
+        assert (
+            self._dimer_probe(plain, near) - self._dimer_probe(plain, far)
+        ).abs() > 1e-3
+        # The bond keeps its direction, which the regularization moves by
+        # 1e-14 between the two lengths.
         torch.testing.assert_close(
-            self._dimer_probe(descriptor, radius, active=True),
-            removed,
-            atol=0.0,
+            self._dimer_probe(descriptor, near),
+            self._dimer_probe(descriptor, far),
+            atol=1e-12,
             rtol=0.0,
         )
 

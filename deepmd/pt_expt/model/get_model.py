@@ -328,9 +328,9 @@ def get_linear_model(model_params: dict) -> BaseModel:
 
     Children with a ``descriptor`` build as learned atomic models;
     ``pairtab`` children build as pair-tabulation atomic models; an
-    ``inner_potential`` child builds the analytical bridging term, with the
-    learned sibling descriptor's window derived from the child's (issue
-    #5948). A top-level ``spin`` section (scheme ``native``) wraps the
+    ``inner_potential`` child builds the analytical close-contact term, with
+    the learned sibling descriptor's ``contact_clamp`` derived from the
+    child's ``clamp`` (issue #5948). A top-level ``spin`` section (scheme ``native``) wraps the
     composition as a :class:`NativeSpinEnergyModel`.
 
     Parameters

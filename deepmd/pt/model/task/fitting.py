@@ -483,7 +483,6 @@ class GeneralFitting(Fitting):
         self.register_buffer("bias_atom_e", bias_atom_e)
         # Deployment constants; see :meth:`fold_vacuum_reference`.
         self.register_buffer("vacuum_table", None, persistent=False)
-        self.register_buffer("folded_reference", None, persistent=False)
 
         if self.numb_fparam > 0:
             self.register_buffer(
@@ -595,7 +594,6 @@ class GeneralFitting(Fitting):
         self.bias_atom_e = self.bias_atom_e[remap_index]
         # the stored references belong to the old type map
         self.vacuum_table = None
-        self.folded_reference = None
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
@@ -945,11 +943,9 @@ class GeneralFitting(Fitting):
         Under uniform conditioning the reference output of an atom is a
         constant of its type, so subtracting it from ``bias_atom_e`` yields
         the same outputs as the referenced forward and the option is switched
-        off; the subtracted outputs are kept as ``folded_reference`` so that
-        :meth:`readout_reference` still knows the bias the fold moved. With
-        frame or atomic parameters the reference output varies between atoms,
-        so the vacuum descriptor is stored instead and the forward evaluates
-        the references from the stored table. Both are deployment constants:
+        off. With frame or atomic parameters the reference output varies
+        between atoms, so the vacuum descriptor is stored instead and the
+        forward evaluates the references from the stored table. Both are deployment constants:
         an exported model bakes them, checkpoints leave them out, and a
         fitting loaded from a checkpoint takes the reference from the
         descriptor again.
@@ -967,29 +963,10 @@ class GeneralFitting(Fitting):
                 reference = self.vacuum_property(vacuum_descriptor).to(
                     self.bias_atom_e.dtype
                 )
-                self.folded_reference = reference.detach().clone()
                 self.bias_atom_e = self.bias_atom_e - reference
                 self.vacuum_ref = False
             else:
                 self.vacuum_table = vacuum_descriptor.detach().to(self.prec).clone()
-
-    def readout_reference(self) -> torch.Tensor:
-        """Per-type constant the readout gate of a bridging window fades to.
-
-        It is the fitting bias ``bias_atom_e`` of every type, which under the
-        vacuum reference is the output of an isolated atom of that type. A
-        fold under uniform conditioning moves the reference outputs out of the
-        bias; the stored copy restores the bias the gate reads, so the gate
-        is the same function of the atom before and after the fold.
-
-        Returns
-        -------
-        torch.Tensor
-            The reference of every type with shape (ntypes, dim_out).
-        """
-        if self.folded_reference is None:
-            return self.bias_atom_e
-        return self.bias_atom_e + self.folded_reference
 
     def _forward_common(
         self,
@@ -1002,7 +979,6 @@ class GeneralFitting(Fitting):
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
-        node_gate: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         # cast the input to internal precision
         xx = descriptor.to(self.prec)
@@ -1102,16 +1078,6 @@ class GeneralFitting(Fitting):
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
-        # === Step 3. Readout gate of a bridging window ===
-        # The learned part of the output is its deviation from the bias of
-        # the type (see :meth:`readout_reference`), which is the output of an
-        # isolated atom whenever the fitting references its atoms. A bridged
-        # descriptor hands over the per-atom source gate, and the learned part
-        # fades with it: an atom of a frozen pair keeps only the bias of its
-        # type.
-        if node_gate is not None:
-            reference = self.readout_reference()[atype].to(self.prec)
-            outs = reference + node_gate.to(self.prec) * (outs - reference)
         # nf x nloc
         mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod

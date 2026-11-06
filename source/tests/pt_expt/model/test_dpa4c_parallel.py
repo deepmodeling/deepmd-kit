@@ -65,8 +65,7 @@ ZBL_CONFIG = {
     **CONFIG,
     "type_map": ["O", "He"],
     "bridging_method": "zbl",
-    "bridging_r_inner": 0.8,
-    "bridging_r_outer": 1.2,
+    "bridging_clamp": 0.75,
 }
 THREE_BLOCK_CONFIG = {
     **ZBL_CONFIG,
@@ -166,7 +165,9 @@ class TestMultiBlockSelfComm:
         ensure_comm_registered()
         self.model = _perturb(get_model(copy.deepcopy(config)).to("cpu").eval())
         # Atoms 0 and 1 face each other across the periodic x boundary at
-        # 0.9 Å, inside the window of the bridged model.
+        # 0.9 Å, inside the frozen zone of the contact clamp of the bridged
+        # model, which reads the true geometry of every edge and so needs no
+        # exchange of its own.
         self.coord = COORD
 
     def test_exchange_matches_the_folded_graph(self) -> None:
@@ -189,24 +190,6 @@ class TestMultiBlockSelfComm:
         assert np.abs(exchanged_energy - energy).max() > 1e-6
 
 
-def test_source_gate_needs_its_cross_rank_completion(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The close pair straddles the boundary, so its gate partials do too."""
-    from deepmd.pt_expt.descriptor import dpa4c as module
-
-    ensure_comm_registered()
-    model = _perturb(get_model(copy.deepcopy(ZBL_CONFIG)).to("cpu").eval())
-    energy, _ = _run_folded(model, COORD)
-    monkeypatch.setattr(
-        module.DescrptDPA4C,
-        "complete_node_partials",
-        lambda self, partials, comm_dict: partials,
-    )
-    exchanged_energy, _ = _run_self_comm(model, COORD)
-    assert np.abs(exchanged_energy - energy).max() > 1e-6
-
-
 @pytest.mark.parametrize("config", [CONFIG, ZBL_CONFIG], ids=["plain", "bridged"])
 def test_with_comm_export_traces_the_exchange(config: dict) -> None:
     """A multi-block model freezes a with-comm program that refreshes ghosts."""
@@ -224,10 +207,7 @@ def test_with_comm_export_traces_the_exchange(config: dict) -> None:
         with_comm_dict=True,
         lower_kind="graph",
     )
-    code = str(exported.module().code)
-    assert "deepmd_export.border_op" in code
-    if "bridging_method" in config:
-        assert "deepmd_export.border_op_backward" in code
+    assert "deepmd_export.border_op" in str(exported.module().code)
 
 
 def test_single_block_needs_no_with_comm_artifact() -> None:

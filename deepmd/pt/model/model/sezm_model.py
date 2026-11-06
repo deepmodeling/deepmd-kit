@@ -478,6 +478,9 @@ if TYPE_CHECKING:
 from deepmd.dpmodel.atomic_model.inner_potential import (
     InnerPotential as InnerPotentialDP,
 )
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    check_end_inside_cutoff,
+)
 from deepmd.pt.model.atomic_model.sezm_atomic_model import (
     SeZMAtomicModel,
 )
@@ -519,6 +522,9 @@ from deepmd.pt_expt.utils.auto_neighbor_list import (
 )
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
+)
+from deepmd.utils.bridging import (
+    DEFAULT_TRUNCATION,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -610,11 +616,7 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         bool(descriptor.random_gamma),
         descriptor.charge_spin_embedding is not None,
         descriptor.spin_embedding is not None,
-        descriptor.bridging_clamp is not None,
-        descriptor.bridging_switch is not None,
-        descriptor.bridging_f_inner,
-        descriptor.bridging_f_outer,
-        descriptor.bridging_scale,
+        descriptor.contact_clamp is not None,
         int(descriptor.get_dim_chg_spin()),
     )
     fitting_state = (
@@ -624,7 +626,7 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
     atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
     model_state = (
         str(model.bridging_method),
-        model.inter_potential is not None,
+        None if model.inter_potential is None else model.inter_potential.truncation,
         tuple(model.get_type_map()),
     )
     return (
@@ -667,6 +669,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         use_compile: bool = False,
         enable_tf32: bool = True,
         bridging_method: str = "none",
+        bridging_truncation: float = DEFAULT_TRUNCATION,
         lora: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -721,13 +724,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if self._env_use_compile_infer is True:
             check_compile_torch_version()
 
-        # === Bridging (optional short-range zone bridging) ===
+        # === Bridging (optional analytical close-contact repulsion) ===
         self.bridging_method: str = str(bridging_method).upper()
         self.inter_potential: InnerPotential | None = (
-            InnerPotential(type_map=self.get_type_map(), mode=self.bridging_method)
+            InnerPotential(
+                type_map=self.get_type_map(),
+                mode=self.bridging_method,
+                truncation=bridging_truncation,
+            )
             if self.bridging_method != "NONE"
             else None
         )
+        if self.inter_potential is not None:
+            check_end_inside_cutoff(
+                self.get_type_map(),
+                self.inter_potential.truncation,
+                self.atomic_model.descriptor.rcut,
+            )
 
     # =========================================================================
     # Forward Methods
@@ -1079,6 +1092,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if spin is not None:
             spin = spin.to(device=coord.device, dtype=coord.dtype)
         nf = atype.shape[0]
+        # A bridged descriptor records the contacts of every training batch
+        # before it is evaluated, frame by frame; the record happens outside
+        # any compiled region.
+        clamp = self.atomic_model.descriptor.contact_clamp
+        if self.training and clamp is not None:
+            node_atype = atype if extended_atype is None else extended_atype
+            # The node axis holds the ``nf`` frames one after the other.
+            node_frame = torch.arange(
+                nf, dtype=torch.int64, device=node_atype.device
+            ).repeat_interleave(node_atype.shape[1])
+            clamp.observe_edges(
+                edge_vec.detach(),
+                edge_index,
+                node_atype.reshape(-1),
+                edge_mask,
+                node_frame,
+            )
         should_compile = (
             self.should_use_compile() if use_compile is None else use_compile
         )
@@ -1486,7 +1516,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # without ``comm_dict``, and ``extended_coord`` only supplies the device.
         fitting_net = self.atomic_model.fitting_net
         with nvtx_range("SeZM/descriptor"):
-            descriptor, _, vacuum, node_gate = descriptor_model.forward_with_edges(
+            descriptor, _, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=coord,
                 extended_atype=descriptor_atype,
                 edge_index=edge_index,
@@ -1512,7 +1542,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 aparam=aparam,
                 vacuum_descriptor=vacuum,
                 return_atomic_feature=embedding_only,
-                node_gate=node_gate,
             )
 
         # === Embedding short circuit ===
@@ -1688,7 +1717,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         # === Step 3. Descriptor forward with force embedding ===
         with nvtx_range("SeZM/descriptor_dens"):
-            descriptor, latent, vacuum, node_gate = descriptor_model.forward_with_edges(
+            descriptor, latent, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=extended_coord[:, :nloc, :],
                 extended_atype=atype,
                 edge_index=edge_index,
@@ -1712,7 +1741,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 aparam=aparam,
                 vacuum_descriptor=vacuum,
                 return_components=True,
-                node_gate=node_gate,
             )
         return torch.cat(
             [
@@ -3057,12 +3085,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     def supports_edge_parallel(self) -> bool:
         """Whether the edge-based LAMMPS multi-rank with-comm artifact applies.
 
-        Delegates to the descriptor capability. Bridging participates since
-        issue #5906: the Source Freeze Propagation Gate's per-node partials
-        are completed across ranks (``_gate_partial_exchange``) and the
-        analytical ZBL injection reads extended types, so the parallel path
-        reproduces the folded one. The native spin scheme reuses the
-        edge_vec interface and therefore participates.
+        Delegates to the descriptor capability. Bridging participates: the
+        contact clamp acts on each edge alone and the analytical term reads
+        the extended types, so the parallel path reproduces the folded one.
+        The native spin scheme reuses the edge_vec interface and therefore
+        participates.
         """
         descriptor = self.atomic_model.descriptor
         return bool(descriptor.supports_edge_parallel())
@@ -3280,10 +3307,15 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         """
         return {
             "@class": "Model",
-            "@version": 1,
+            "@version": 2,
             "type": self.model_type,
             "atomic_model": self.atomic_model.serialize(),
             "bridging_method": self.bridging_method,
+            "bridging_truncation": (
+                DEFAULT_TRUNCATION
+                if self.inter_potential is None
+                else self.inter_potential.truncation
+            ),
             "lora": self.lora_config,
         }
 
@@ -3304,7 +3336,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         """
         data = data.copy()
         version = int(data.pop("@version", 1))
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         atomic_model = SeZMAtomicModel.deserialize(data.pop("atomic_model"))
@@ -3363,29 +3395,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
 
 # =============================================================================
-# InnerPotential: analytical pair potentials for bridging
+# InnerPotential: analytical close-contact pair potential
 # =============================================================================
 
 
 class InnerPotential(torch.nn.Module):
     r"""
-    Analytical pair potential module for Zone bridging.
+    Analytical close-contact pair potential on the sparse edge list.
 
-    Every supported potential is a screened Coulomb series in the pair
-    separation,
-
-    .. math::
-
-       V_{ab}(r) = \frac1r \sum_{k=1}^{4} A_{abk} e^{-c_{abk} r},
-
-    so one table of eight constants per ordered type pair describes all of
-    them. ``"ZBL"`` builds that table from the Ziegler-Biersack-Littmark
-    universal screening function, and ``"NLH"`` from the bundled
-    Nordlund-Lehtola-Hobler coefficients; the table itself is built by the
+    The potential is the truncated screened Coulomb series of the
     backend-agnostic :class:`~deepmd.dpmodel.atomic_model.inner_potential.InnerPotential`,
-    so both backends evaluate the same constants.
-
-    Each pair (i, j) contributes ``V(r_ij) / 2`` to both atom i and atom j,
+    which builds the tables both backends read: the series ends at the
+    fraction ``truncation`` of each pair's covalent bond length, where its
+    cubic Taylor polynomial is subtracted, so the term is non-negative,
+    decreasing, convex and C³ and exactly zero beyond its end radius. Each
+    pair (i, j) contributes ``phi(r_ij) / 2`` to both atom i and atom j,
     avoiding double-counting from the symmetric neighbor list.
 
     Parameters
@@ -3395,33 +3419,32 @@ class InnerPotential(torch.nn.Module):
         to the ``atype`` integer values.
     mode : str
         Potential formula, ``"zbl"`` or ``"nlh"``. Case-insensitive.
-
-    Raises
-    ------
-    ValueError
-        If ``mode`` is not recognized, or if any element in ``type_map`` is
-        not found in the periodic table.
+    truncation : float
+        Radius at which the potential ends, as a fraction of each pair's
+        covalent bond length.
     """
 
-    def __init__(self, type_map: list[str], mode: str = "zbl") -> None:
+    def __init__(
+        self,
+        type_map: list[str],
+        mode: str = "zbl",
+        truncation: float = DEFAULT_TRUNCATION,
+    ) -> None:
         super().__init__()
-        mode = mode.upper()
-        if mode not in InnerPotentialDP.SUPPORTED_MODES:
-            raise ValueError(f"Unknown InnerPotential mode: {mode}")
-        self.mode = mode
-        self.ntypes = len(type_map)
-
-        # Derived from ``type_map`` and ``mode``, hence rebuilt on construction
-        # and kept out of the checkpoint.
-        self.register_buffer(
-            "series_table",
-            torch.tensor(
-                InnerPotentialDP.series_table_from_type_map(type_map, mode=mode),
-                dtype=torch.float64,
-                device=env.DEVICE,
-            ),
-            persistent=False,
-        )
+        reference = InnerPotentialDP(type_map, mode=mode, truncation=truncation)
+        self.mode = reference.mode
+        self.truncation = reference.truncation
+        self.ntypes = reference.ntypes
+        # Derived from the configuration, hence rebuilt on construction and
+        # kept out of the checkpoint.
+        for name in ("series_table", "taylor_table"):
+            self.register_buffer(
+                name,
+                torch.tensor(
+                    getattr(reference, name), dtype=torch.float64, device=env.DEVICE
+                ),
+                persistent=False,
+            )
 
     def forward(
         self,
@@ -3463,12 +3486,21 @@ class InnerPotential(torch.nn.Module):
         # Padded atoms carry type -1; their edges are masked below, so the
         # table lookup only needs a valid index for them.
         atype_row = atype_flat.clamp(min=0)
-
-        r = edge_vec.to(dtype=torch.float64).norm(dim=-1).clamp(min=1e-10)  # (E,)
+        # The floor inside the square root keeps every derivative of a padded
+        # zero-length edge finite.
+        vec = edge_vec.to(dtype=torch.float64)
+        r = torch.sqrt((vec * vec).sum(-1) + 1e-20)  # (E,)
         # Row ``center * (T + 1) + neighbor``, the ordered-pair index the fused
         # kernels use, with the destination as the center.
-        row = self.series_table[atype_row[dst] * stride + atype_row[src]]  # (E, 8)
-        pair_e = (row[:, :4] * torch.exp(-row[:, 4:] * r[:, None])).sum(-1) / r  # (E,)
+        pair = atype_row[dst] * stride + atype_row[src]
+        row = self.series_table[pair]  # (E, 8)
+        taylor = self.taylor_table[pair]  # (E, 5)
+        delta = r - taylor[:, 0]
+        polynomial = taylor[:, 1] + delta * (
+            taylor[:, 2] + delta * (taylor[:, 3] + delta * taylor[:, 4])
+        )
+        series = (row[:, :4] * torch.exp(-row[:, 4:] * r[:, None])).sum(-1) / r
+        pair_e = torch.where(delta < 0.0, series - polynomial, torch.zeros_like(r))
         pair_e = pair_e * edge_mask.to(dtype=pair_e.dtype)
 
         # Half contribution to each destination atom

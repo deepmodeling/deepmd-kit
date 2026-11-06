@@ -27,6 +27,12 @@ enum class IndexKind : int { Bits32 = 0, Bits64 = 1 };
 /// the types below 32 times this count (`Arguments::type_present`).
 constexpr int kTypeWords = 4;
 
+/// Floats of one row of `Arguments::pair_table`, one row per ordered type pair:
+/// the four amplitudes and four rates of the screened Coulomb series, the end
+/// radius and the four Taylor coefficients of the series there, and three
+/// zeros that make the row four 16-byte vectors.
+constexpr int kPairRow = 16;
+
 /// Mode profiles that a folded scan carries as extra features and that a
 /// slotted scan holds in the slots of its types. A model with more modes
 /// scans unfolded.
@@ -78,16 +84,13 @@ struct Arguments {
   float rcut = 0.0f;
   float eps = 0.0f;
   float degree_floor = 0.0f;
-  // Inner bridging switch of the edge envelope, as the two dimensionless
-  // fractions of a pair's own length scale that bound its window and the
-  // reciprocal of their difference. A bridged launch without a window keeps
-  // the outer fraction at zero, which no edge lies below.
-  float f_inner = 0.0f;
-  float f_outer = 0.0f;
-  float inverse_f_width = 0.0f;
-  // Whether the launch belongs to a zone-bridging composition, that is whether
-  // it carries a bridging window or an analytical pair potential. Only the
-  // bridged specializations evaluate either.
+  // Inner fraction `a` of the contact clamp, in (0, 1): the separation a
+  // pair is read at is frozen at and below `a` times its data edge
+  // (`contact_edges`). Zero without a clamp.
+  float contact_inner = 0.0f;
+  // Whether the launch belongs to a bridged model, that is whether it carries
+  // a contact clamp or an analytical pair potential. Only the bridged
+  // specializations evaluate either.
   bool bridged = false;
   bool canonical = false;
   // Native-spin symmetry: zero without spin, one for orbit, two for exchange.
@@ -120,40 +123,18 @@ struct Arguments {
   const float* coupling_value = nullptr;
   const float* output_mean = nullptr;
   const float* output_inv_std = nullptr;
-  // Per-element length scale in Å, indexed by atom type over the whole type
-  // table including the padding row. The sum of the two entries of a pair is
-  // the distance the window fractions are measured against. Read by the
-  // bridged specializations only.
-  const float* contact_radius = nullptr;
+  // Data edge of every ordered type pair in Å, the shortest separation that the
+  // configured number of training frames reach, in row
+  // `center * type_count + neighbor` over the whole type table including the
+  // padding row. Null without a contact clamp.
+  // Read by the bridged specializations only.
+  const float* contact_edges = nullptr;
   const float* descriptor_gradient = nullptr;
   const float* state = nullptr;
   // Device word that stays zero while every node of the system carries the
   // type of node zero. A canonical launch of such a system scans the bare
   // radial features; null disables that scan.
   const int* type_mismatch = nullptr;
-  // Largest length-scale radius among the node types of the system, written
-  // on the device by the scan of the node types that precedes the edge kernels
-  // of a canonical launch, or null. No bond of a row lies inside a bridging
-  // window once it is at least `f_outer` times the sum of the centre radius
-  // and this radius long, so the edge scans resolve the window of a pair only
-  // for the shorter bonds of the row.
-  const float* largest_radius = nullptr;
-  // === Source gate of a bridged descriptor of several blocks ===
-  // A descriptor of several blocks with a bridging window mutes every edge
-  // that an atom inside the frozen zone of a pair emits towards a third atom:
-  // the envelope of an edge carries the product of the switches of every
-  // other pair of its source, its leave-one-out gate. ``source_gate`` holds,
-  // per node over the absolute node axis, the two totals of the switches of
-  // the pairs of the node, the sum of the logarithms of the nonzero ones and
-  // the number of zero ones (source_gate_kernel). ``gate_sums`` holds, per
-  // node over the absolute node axis, signed fixed-point sums in units of
-  // ``1 / kForceFixedScale``, onto which the edge backward adds the envelope
-  // cotangent times the envelope of every edge whose source has a pair inside
-  // its window (see gate_closure_kernel). Both are null for a descriptor of
-  // one block or without a window, and ``gate_sums`` for a forward launch.
-  const float2* source_gate = nullptr;
-  unsigned long long* gate_sums = nullptr;
-
   // === Native spin ===
   // Present together or not at all. ``spin`` is indexed by absolute node id,
   // like ``atype``, because neighbour lookups address it with source indices.
@@ -168,11 +149,14 @@ struct Arguments {
   // === Analytical pair potential ===
   // Present together or not at all, and read by the edge backward only, which
   // is the one scan that sees an edge together with the energy cotangent of
-  // its destination. ``pair_table`` holds, per ordered type pair, the four
-  // amplitudes and the four decay rates of the screened Coulomb series
-  // V(r) = (1/r) sum_k A_k exp(-c_k r). ``pair_seed`` is that cotangent and
-  // ``pair_energy`` the fp64 node energies onto which the scan adds V/2 per
-  // edge. Both are node indexed and offset by the caller, like ``descriptor``.
+  // its destination. ``pair_table`` holds, per ordered type pair, a row of
+  // `kPairRow` floats: the four amplitudes and four decay rates of the
+  // screened Coulomb series V(r) = (1/r) sum_k A_k exp(-c_k r), the end radius
+  // R of the pair, and the Taylor coefficients of V at R, whose cubic
+  // polynomial the pair energy subtracts below R and which ends it at R.
+  // ``pair_seed`` is that cotangent and ``pair_energy`` the fp64 node energies
+  // onto which the scan adds phi/2 per edge. Both are node indexed and offset
+  // by the caller, like ``descriptor``.
   const float* pair_table = nullptr;
   const double* pair_seed = nullptr;
   double* pair_energy = nullptr;

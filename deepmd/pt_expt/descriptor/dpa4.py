@@ -11,11 +11,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingSwitch as BridgingSwitchDP
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
@@ -46,32 +44,6 @@ register_dpmodel_mapping(SwiGLUDP, lambda v: SwiGLU())
 class C3CutoffEnvelope(C3CutoffEnvelopeDP):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
-
-
-@torch_module
-class InnerClamp(InnerClampDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-# InnerClamp/BridgingSwitch are parameter-free (the two window fractions only,
-# no serialize()); rebuild fresh from the stored constructor arguments.
-register_dpmodel_mapping(
-    InnerClampDP,
-    lambda v: InnerClamp(v.f_inner, v.f_outer),
-)
-
-
-@torch_module
-class BridgingSwitch(BridgingSwitchDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-register_dpmodel_mapping(
-    BridgingSwitchDP,
-    lambda v: BridgingSwitch(v.f_inner, v.f_outer),
-)
 
 
 # C3CutoffEnvelope carries only scalar configuration (cutoff radius and
@@ -191,11 +163,6 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
 @torch_module
 class DescrptDPA4(DescrptDPA4DP):
     _update_sel_cls = UpdateSel
-
-    #: The per-element length scales of the bridging window follow from
-    #: ``type_map``, which the constructor resolves on every load, so the
-    #: buffer they land in stays out of the state dict.
-    CONFIG_DERIVED_ARRAYS = ("contact_radius",)
 
     def adam_route_patterns(self) -> list[str]:
         """
@@ -335,49 +302,6 @@ class DescrptDPA4(DescrptDPA4DP):
         calls ``model.eval()`` before tracing).
         """
         return bool(self.training)
-
-    def _gate_partial_exchange(
-        self,
-        partials: torch.Tensor,
-        comm_dict: dict[str, torch.Tensor],
-    ) -> torch.Tensor:
-        """Reverse-accumulate ghost partials to owners, then broadcast back.
-
-        ``border_op_backward`` sums each ghost row into its owner across
-        ranks and zeroes the ghost rows; ``border_op`` refills them with the
-        completed owner values. Both ops carry autograd (the two are
-        transposes), so gate gradients cross ranks (issue #5906).
-
-        Parameters
-        ----------
-        partials
-            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
-        comm_dict
-            The border-exchange control tensors.
-
-        Returns
-        -------
-        torch.Tensor
-            The globally completed (n_nodes, 2) tensor.
-        """
-        # border_op exchanges rows by raw pointer arithmetic; a strided
-        # view would corrupt the exchange.
-        p = partials.contiguous()
-        comm_args = (
-            comm_dict["send_list"],
-            comm_dict["send_proc"],
-            comm_dict["recv_proc"],
-            comm_dict["send_num"],
-            comm_dict["recv_num"],
-        )
-        tail = (
-            comm_dict["communicator"],
-            comm_dict["nlocal"],
-            comm_dict["nghost"],
-        )
-        p = torch.ops.deepmd_export.border_op_backward(*comm_args, p, *tail)
-        p = torch.ops.deepmd_export.border_op(*comm_args, p, *tail)
-        return p
 
     def disable_graph_lower(self) -> None:
         """Persisted variant of the dpmodel escape hatch (see base class).

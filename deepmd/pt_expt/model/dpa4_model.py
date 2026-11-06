@@ -45,7 +45,7 @@ class DPA4EnergyModel(EnergyModel):
     Behaviorally identical to :class:`EnergyModel`; additionally owns the
     pt-checkpoint interop: pt's ``SeZMModel`` serialises with a model-level
     wrapper (``{type: "SeZM", atomic_model: <sezm_atomic dict>,
-    bridging_method, bridging_r_*, lora}``) whose atomic dict carries
+    bridging_method, bridging_truncation, lora}``) whose atomic dict carries
     pt-only extras -- :meth:`deserialize` recognises those layouts,
     normalises them to the standard flat dict, and delegates to the
     generic path.
@@ -64,11 +64,11 @@ class DPA4EnergyModel(EnergyModel):
     def _unwrap_pt_sezm_model(data: dict[str, Any]) -> dict[str, Any]:
         """Unwrap pt's ``SeZMModel`` serialization to the inner atomic dict."""
         data = data.copy()
-        # The pt SeZM model wrapper serialises with ``@version`` 1.  Validate
-        # before discarding it so a future incompatible wrapper schema is not
-        # silently mis-deserialized (the wrapper only carries the guarded
-        # bridging/lora extras below, so the accepted range is narrow).
-        check_version_compatibility(int(data.get("@version", 1)), 1, 1)
+        # Validate the pt SeZM model wrapper version before discarding it so a
+        # future incompatible wrapper schema is not silently mis-deserialized
+        # (the wrapper only carries the guarded bridging/lora extras below, so
+        # the accepted range is narrow).
+        check_version_compatibility(int(data.get("@version", 1)), 2, 1)
         bridging_method = str(data.get("bridging_method", "none")).lower()
         if data.get("lora") is not None:
             raise NotImplementedError(

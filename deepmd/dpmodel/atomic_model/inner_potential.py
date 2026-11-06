@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Analytical pair potentials for Zone bridging, defined once for every backend.
+"""Analytical close-contact pair potentials, defined once for every backend.
 
 Lives in the atomic-model package: the atomic layer owns per-atom energy
 assembly, where the analytical term is injected on the graph route.
@@ -7,6 +7,7 @@ assembly, where the analytical term is injected on the graph route.
 
 import functools
 import json
+import math
 from pathlib import (
     Path,
 )
@@ -27,6 +28,12 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
+)
+from deepmd.utils.bridging import (
+    DEFAULT_TRUNCATION,
+)
+from deepmd.utils.element_radii import (
+    covalent_radii_from_type_map,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -98,6 +105,13 @@ _A_BOHR = 0.5291772109  # Bohr radius in Å
 NLH_COEFFICIENTS_FILE = Path(__file__).with_name("nlh_coefficients.npz")
 
 _SERIES_TERMS = 4
+#: Columns of the truncation table: the end radius and the four constants of
+#: the subtracted cubic polynomial.
+_TAYLOR_COLUMNS = 5
+#: Width of a row of the single-precision kernel table: the eight series
+#: constants, the five constants of the truncation and three zeros that keep
+#: a row a whole number of 16-byte vectors.
+_KERNEL_ROW = 16
 
 
 @functools.lru_cache(maxsize=1)
@@ -141,7 +155,7 @@ def nlh_provenance() -> dict[str, Any]:
 
 
 class InnerPotential(NativeOP):
-    r"""Analytical pair potential for Zone bridging.
+    r"""Analytical close-contact pair potential.
 
     Every supported potential is a screened Coulomb series in the pair
     separation,
@@ -151,11 +165,29 @@ class InnerPotential(NativeOP):
        V_{ab}(r)=\frac1r\sum_{k=1}^{4}A_{abk}\,e^{-c_{abk}r},
 
     so one table of eight constants per ordered type pair describes all of
-    them and both evaluation routes read it: :attr:`series_table` carries it in
-    double precision for :meth:`call`, and :attr:`pair_table` is its float32
-    view, the layout the fused kernels require. The term is evaluated on the
-    edge form so that its force and virial flow through the same edge backward
-    as the learned energy. Each pair (i, j) contributes ``V(r_ij) / 2`` to both
+    them. The series ends at :math:`R_{ab}=f\,s_{ab}`, the fraction :math:`f`
+    (``truncation``) of the pair's covalent bond length :math:`s_{ab}`, where
+    its cubic Taylor polynomial is subtracted:
+
+    .. math::
+
+       \phi_{ab}(r)=V_{ab}(r)-\sum_{k=0}^{3}\frac{V_{ab}^{(k)}(R_{ab})}{k!}
+       (r-R_{ab})^k\quad(r<R_{ab}),\qquad\phi_{ab}(r)=0\quad(r\ge R_{ab}).
+
+    Every term of the series is completely monotone, so :math:`V^{(4)}>0`, and
+    by Taylor's theorem :math:`\phi(r)=\int_r^R V^{(4)}(t)\,(t-r)^3/6\,dt` is
+    non-negative, decreasing and convex, with value and first three
+    derivatives zero at :math:`R` (C³). The subtracted polynomial is bounded at
+    the origin, so the nuclear asymptote of :math:`V` is kept. A pair term
+    that decreases and is convex in the separation adds a positive pressure and
+    bulk modulus along every uniform compression, whatever the learned model
+    does there, and it is exactly zero at long range.
+
+    :attr:`series_table` and :attr:`taylor_table` carry the constants in double
+    precision for :meth:`call`, and :attr:`pair_table` is their single
+    precision layout for the fused kernels. The term is evaluated on the edge
+    form so that its force and virial flow through the same edge backward as
+    the learned energy. Each pair (i, j) contributes ``phi(r_ij) / 2`` to both
     atom i and atom j, avoiding double-counting from the symmetric neighbor
     list. The class is written against the array API, so every backend
     evaluates the same definition on its own array type.
@@ -169,32 +201,131 @@ class InnerPotential(NativeOP):
         Potential formula: ``"zbl"`` for the Ziegler-Biersack-Littmark
         universal potential, ``"nlh"`` for the bundled Nordlund-Lehtola-Hobler
         coefficients. Case-insensitive.
+    truncation : float
+        Radius at which the potential ends, as a fraction of each pair's
+        covalent bond length.
 
     Raises
     ------
     ValueError
-        If ``mode`` is not recognized, or if any element in ``type_map`` is
-        not found in the periodic table.
+        If ``mode`` is not recognized, if any element in ``type_map`` is
+        not found in the periodic table, or if ``truncation`` is not finite
+        and positive.
+
+    Notes
+    -----
+    The identity that makes the truncated term vanish to third order at its
+    end holds between the double-precision series and Taylor tables; the
+    single-precision kernel tables round them independently and leave jumps of
+    about 1e-7 eV and 1e-6 eV/Å there.
     """
 
-    # Rebuilt from ``type_map`` and ``mode`` by ``__init__`` and
-    # ``change_type_map``, so a wrapped backend keeps them out of its
+    # Rebuilt from ``type_map``, ``mode`` and ``truncation`` by ``__init__``
+    # and ``change_type_map``, so a wrapped backend keeps them out of its
     # checkpoints.
-    CONFIG_DERIVED_ARRAYS = ("pair_table", "series_table")
+    CONFIG_DERIVED_ARRAYS = ("pair_table", "series_table", "taylor_table")
 
     SUPPORTED_MODES = ("ZBL", "NLH")
 
-    def __init__(self, type_map: list[str], mode: str = "zbl") -> None:
+    def __init__(
+        self,
+        type_map: list[str],
+        mode: str = "zbl",
+        truncation: float = DEFAULT_TRUNCATION,
+    ) -> None:
         super().__init__()
         mode = str(mode).upper()
         if mode not in self.SUPPORTED_MODES:
             raise ValueError(f"Unknown InnerPotential mode: {mode}")
+        truncation = float(truncation)
+        if not (math.isfinite(truncation) and truncation > 0.0):
+            raise ValueError(
+                f"`truncation` must be finite and positive, got {truncation}"
+            )
         self.mode = mode
         self.type_map = list(type_map)
         self.ntypes = len(type_map)
-        table = self.series_table_from_type_map(type_map, mode=mode)
-        self.series_table = table
-        self.pair_table = table.astype(np.float32)
+        self.truncation = truncation
+        self._build_tables()
+
+    def _build_tables(self) -> None:
+        """Tabulate the series, its truncation and their kernel layout.
+
+        Each table is placed in the namespace and on the device of the one it
+        replaces, so a rebuild on a wrapped backend (a pt_expt buffer on CPU
+        or CUDA) stays where the model lives.
+        """
+        series = self.series_table_from_type_map(self.type_map, mode=self.mode)
+        taylor = self.taylor_table_from_series(self.type_map, series, self.truncation)
+        kernel = np.zeros((series.shape[0], _KERNEL_ROW), dtype=np.float32)
+        kernel[:, : 2 * _SERIES_TERMS] = series
+        kernel[:, 2 * _SERIES_TERMS : 2 * _SERIES_TERMS + _TAYLOR_COLUMNS] = taylor
+        for name, table in (
+            ("series_table", series),
+            ("taylor_table", taylor),
+            ("pair_table", kernel),
+        ):
+            setattr(self, name, self._in_namespace_of(table, getattr(self, name, None)))
+
+    @staticmethod
+    def taylor_table_from_series(
+        type_map: list[str], series: np.ndarray, truncation: float
+    ) -> np.ndarray:
+        r"""Tabulate the end radius and the subtracted polynomial of every pair.
+
+        For one term :math:`A e^{-cr}/r` of the series the derivatives are
+
+        .. math::
+
+           \frac{d^n}{dr^n}\frac{A e^{-cr}}{r}=(-1)^n A e^{-cr}
+           \sum_{k=0}^{n}\frac{n!}{(n-k)!}\,c^{n-k}\,r^{-k-1},
+
+        evaluated at the end radius of every pair in double precision.
+
+        Parameters
+        ----------
+        type_map : list[str]
+            Element symbols; index corresponds to ``atype`` values.
+        series : np.ndarray
+            Series constants with shape ``((T + 1) ** 2, 8)`` in eV Å and Å⁻¹,
+            as :meth:`series_table_from_type_map` returns them.
+        truncation : float
+            End radius as a fraction of each pair's covalent bond length.
+
+        Returns
+        -------
+        np.ndarray
+            The end radius :math:`R` in Å followed by :math:`V^{(n)}(R)/n!`
+            for :math:`n=0..3` in eV/Å^n, with shape ``((T + 1) ** 2, 5)`` and
+            rows ordered like ``series``. Rows of the padding type carry
+            :math:`R=0`, below which no separation lies.
+        """
+        radius = covalent_radii_from_type_map(type_map)
+        ntypes = radius.shape[0]
+        end = np.zeros((ntypes + 1, ntypes + 1), dtype=np.float64)
+        end[:ntypes, :ntypes] = truncation * (radius[:, None] + radius[None, :])
+        end = end.reshape(-1, 1)
+        real = end[:, 0] > 0.0
+        at = np.where(end > 0.0, end, 1.0)
+        rate = series[:, _SERIES_TERMS:]
+        amplitude = series[:, :_SERIES_TERMS] * np.exp(-rate * at)
+        columns = [end[:, 0]]
+        for order in range(_TAYLOR_COLUMNS - 1):
+            derivative = sum(
+                math.factorial(order)
+                / math.factorial(order - k)
+                * rate ** (order - k)
+                * at ** (-k - 1)
+                for k in range(order + 1)
+            )
+            columns.append(
+                (-1) ** order
+                * np.sum(amplitude * derivative, axis=1)
+                / math.factorial(order)
+            )
+        table = np.stack(columns, axis=1)
+        table[~real] = 0.0
+        return table
 
     @classmethod
     def series_table_from_type_map(
@@ -325,25 +456,19 @@ class InnerPotential(NativeOP):
         """Rebuild the coefficient tables for a new type map.
 
         This class owns the coefficient tables, so it owns every update of
-        them: the symbols, their count and the two tables are one piece of
-        state and are replaced together. Reordering, adding and dropping
-        elements are all covered, because a table is rebuilt from the symbols
-        rather than permuted, so no index bookkeeping can drift. Each rebuilt
-        array keeps the current one's namespace and device, so a wrapped
-        backend (pt_expt buffer on CPU or CUDA) is updated in place.
+        them: the symbols, their count and the tables are one piece of state
+        and are replaced together. Reordering, adding and dropping elements are
+        all covered, because a table is rebuilt from the symbols rather than
+        permuted, so no index bookkeeping can drift.
 
         Parameters
         ----------
         type_map : list[str]
             The new element symbols.
         """
-        table = self.series_table_from_type_map(type_map, mode=self.mode)
-        self.series_table = self._in_namespace_of(table, self.series_table)
-        self.pair_table = self._in_namespace_of(
-            table.astype(np.float32), self.pair_table
-        )
         self.type_map = list(type_map)
         self.ntypes = len(type_map)
+        self._build_tables()
 
     @staticmethod
     def _series_energy(xp: Any, r: Array, row: Array) -> Array:
@@ -408,20 +533,40 @@ class InnerPotential(NativeOP):
         stride = self.ntypes + 1
         src = xp.astype(edge_index[0, :], xp.int64)
         dst = xp.astype(edge_index[1, :], xp.int64)
-        r = xp.linalg.vector_norm(xp.astype(edge_vec, xp.float64), axis=-1)
-        r = xp.clip(r, min=1e-10)
+        # The floor sits inside the square root: a padded edge of zero length
+        # then has finite derivatives of every order, where a norm clipped
+        # after the fact gives the Hessian 0 / 0 at it.
+        vec = xp.astype(edge_vec, xp.float64)
+        r = xp.sqrt(xp.sum(vec * vec, axis=-1) + 1e-20)
         # Padded atoms carry type -1; their edges are masked below, so the
         # table lookup only needs a valid index for them.
         atype_row = xp.astype(atype_flat, xp.int64)
         atype_row = xp.maximum(atype_row, xp.zeros_like(atype_row))
         # Row ``center * (T + 1) + neighbor``, the ordered-pair index the
         # fused kernels use, with the destination as the center.
+        pair = xp.take(atype_row, dst, axis=0) * stride + xp.take(
+            atype_row, src, axis=0
+        )
         row = xp.take(
             xp_asarray_nodetach(xp, self.series_table, dtype=xp.float64, device=device),
-            xp.take(atype_row, dst, axis=0) * stride + xp.take(atype_row, src, axis=0),
+            pair,
             axis=0,
         )
-        pair_e = self._series_energy(xp, r, row)
+        taylor = xp.take(
+            xp_asarray_nodetach(xp, self.taylor_table, dtype=xp.float64, device=device),
+            pair,
+            axis=0,
+        )
+        end = taylor[:, 0]
+        delta = r - end
+        polynomial = taylor[:, 1] + delta * (
+            taylor[:, 2] + delta * (taylor[:, 3] + delta * taylor[:, 4])
+        )
+        pair_e = xp.where(
+            r < end,
+            self._series_energy(xp, r, row) - polynomial,
+            xp.zeros_like(r),
+        )
         pair_e = pair_e * xp.astype(xp.astype(edge_mask, xp.bool), pair_e.dtype)
         # Symmetric neighbor list: both directed edges exist, each scatters
         # half into its dst -- atoms i and j each receive V/2.
@@ -433,13 +578,44 @@ class InnerPotential(NativeOP):
         return xp.astype(xp.reshape(atom_energy, (1, n_node, 1)), edge_vec.dtype)
 
 
+def check_end_inside_cutoff(
+    type_map: list[str], truncation: float, rcut: float
+) -> None:
+    """Refuse an analytical potential that the neighbor graph would cut off.
+
+    A pair whose end radius lies at or beyond ``rcut`` leaves the graph while
+    its term is still nonzero, which would make the energy jump.
+
+    Parameters
+    ----------
+    type_map : list[str]
+        Element symbols of the types.
+    truncation : float
+        End radius as a multiple of each pair's covalent bond length.
+    rcut : float
+        Cutoff radius of the neighbor graph in Å.
+
+    Raises
+    ------
+    ValueError
+        If the end radius of the largest pair reaches ``rcut``.
+    """
+    end = truncation * 2.0 * float(np.max(covalent_radii_from_type_map(list(type_map))))
+    if end >= rcut:
+        raise ValueError(
+            f"The analytical potential of the largest pair ends at {end:.3f} Å, "
+            f"at or beyond the cutoff {rcut} Å; enlarge `rcut` or lower the "
+            "truncation (`bridging_truncation`)."
+        )
+
+
 @BaseAtomicModel.register("inner_potential")
 class InnerPotentialAtomicModel(BaseAtomicModel):
-    """Analytical bridging pair potential as an ATOMIC MODEL.
+    """Analytical close-contact pair potential as an ATOMIC MODEL.
 
     First-principles composition design: the analytical term maps local
     atomic environments to per-atom energies -- exactly the atomic-model
-    contract -- so a "bridging model" is a SUM of two atomic energy models
+    contract -- so a bridged model is a SUM of two atomic energy models
     (the learned one and this one) via
     :class:`~deepmd.dpmodel.atomic_model.linear_atomic_model.LinearEnergyAtomicModel`
     with ``weights="sum"``, not a flag on the learned model. Graph-route
@@ -451,30 +627,42 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
     ----------
     type_map : list[str]
         Element symbols; index corresponds to ``atype`` values.
-    mode : str
-        Potential formula, ``"zbl"`` or ``"nlh"``. Case-insensitive.
     rcut : float
         Cut-off radius this model declares (the composition uses the max
         over children; pass the learned model's).
+    mode : str
+        Potential formula, ``"zbl"`` or ``"nlh"``. Case-insensitive.
     sel : list[int] | int
         Neighbor selection this model declares (composition bookkeeping).
+    truncation : float
+        Radius at which the potential ends, as a fraction of each pair's
+        covalent bond length; see :class:`InnerPotential`.
+
+    Raises
+    ------
+    ValueError
+        If the potential ends at or beyond ``rcut`` for some pair.
     """
 
     def __init__(
         self,
         type_map: list[str],
+        rcut: float,
         mode: str = "zbl",
-        rcut: float = 0.0,
         sel: "list[int] | int" = 0,
+        truncation: float = DEFAULT_TRUNCATION,
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
-        self.potential = InnerPotential(type_map=list(type_map), mode=mode)
+        self.potential = InnerPotential(
+            type_map=list(type_map), mode=mode, truncation=truncation
+        )
         self.mode = self.potential.mode
         self.rcut = float(rcut)
         self.sel = (
             [int(s) for s in sel] if isinstance(sel, (list, tuple)) else [int(sel)]
         )
+        check_end_inside_cutoff(self.type_map, self.potential.truncation, self.rcut)
         super().init_out_stat()
 
     def change_type_map(
@@ -497,6 +685,7 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
             Model with statistics for the new types (unused: an analytical
             term has no fitted statistics).
         """
+        check_end_inside_cutoff(type_map, self.potential.truncation, self.rcut)
         super().change_type_map(
             type_map, model_with_new_type_stat=model_with_new_type_stat
         )
@@ -649,10 +838,11 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
             {
                 "@class": "Model",
                 "type": "inner_potential",
-                "@version": 1,
+                "@version": 2,
                 "mode": self.mode,
                 "rcut": self.rcut,
                 "sel": self.sel,
+                "truncation": self.potential.truncation,
             }
         )
         return data
@@ -660,7 +850,7 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "InnerPotentialAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class", None)
         data.pop("type", None)
         return super().deserialize(data)

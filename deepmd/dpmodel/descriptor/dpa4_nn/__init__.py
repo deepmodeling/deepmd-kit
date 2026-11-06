@@ -31,7 +31,6 @@ from .cartesian import (
 from .edge_cache import (
     EdgeCache,
     build_edge_type_feat,
-    compute_source_gates,
     edge_cache_to_dtype,
 )
 from .embedding import (
@@ -91,13 +90,9 @@ from .projection import (
     resolve_so3_grid,
 )
 from .radial import (
-    BridgingClamp,
-    BridgingSwitch,
     C3CutoffEnvelope,
-    InnerClamp,
     RadialBasis,
     RadialMLP,
-    pair_contact,
 )
 from .so2 import (
     DynamicRadialDegreeMixer,
@@ -129,8 +124,6 @@ __all__ = [
     "ATTN_RES_MODES",
     "BaseGridNet",
     "BaseGridProjector",
-    "BridgingClamp",
-    "BridgingSwitch",
     "C3CutoffEnvelope",
     "ChannelLinear",
     "ChargeSpinEmbedding",
@@ -146,7 +139,6 @@ __all__ = [
     "GeometricInitialEmbedding",
     "GridBranch",
     "GridMLP",
-    "InnerClamp",
     "LoRASO2",
     "LoRASO3",
     "NodeCartesianTensorProduct",
@@ -179,7 +171,6 @@ __all__ = [
     "build_m_major_l_index",
     "build_merged_state_dict",
     "build_rotate_inv_rescale",
-    "compute_source_gates",
     "edge_cache_to_dtype",
     "fold_lora_state_dict_keys",
     "get_promoted_dtype",
@@ -188,7 +179,6 @@ __all__ = [
     "init_trunc_normal_fan_in_out",
     "map_degree_idx",
     "merge_lora_into_base",
-    "pair_contact",
     "project_D_to_m",
     "project_Dt_from_m",
     "quaternion_multiply",

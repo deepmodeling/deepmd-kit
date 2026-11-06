@@ -499,7 +499,7 @@ class SeZMNativeSpinModel(SeZMModel):
         """Deserialize a native-spin SeZM model."""
         data = data.copy()
         version = int(data.pop("@version", 1))
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         spin = Spin.deserialize(data.pop("spin"))

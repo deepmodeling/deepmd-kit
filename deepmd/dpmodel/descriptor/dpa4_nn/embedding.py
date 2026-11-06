@@ -1076,7 +1076,7 @@ class SpinEmbedding(NativeOP):
 
     The on-site map conditions scalar type features. The pair map conditions
     the shared radial basis and hence every interaction block. Its output is
-    multiplied by the edge envelope, including exclusion and bridging gates.
+    multiplied by the edge envelope, including the exclusion mask.
     Both output maps start at zero to preserve spin-free initialization.
     """
 

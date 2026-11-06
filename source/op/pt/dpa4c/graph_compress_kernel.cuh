@@ -1042,12 +1042,6 @@ __global__ __launch_bounds__(
       static_cast<const index_t*>(args.destination_order);
   const int center_type =
       static_cast<int>(args.atype[args.node_begin + row_node]);
-  // The centre half of every pair length scale is a node constant, like the
-  // centre type it follows, and so is the length from which the window of no
-  // pair of the row needs resolving.
-  const float center_radius =
-      Bridged ? __ldg(args.contact_radius + center_type) : 0.0f;
-  const float bound = Bridged ? window_bound(args, center_radius) : 0.0f;
   const long begin = args.destination_row_ptr[row_node];
   const long end = active ? args.destination_row_ptr[row_node + 1] : begin;
   const int radial_modes = HasModes ? args.radial_modes : 0;
@@ -1151,10 +1145,8 @@ __global__ __launch_bounds__(
         return;
       }
     }
-    const EdgeGeometry geometry = load_geometry<Bridged>(
-        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
-        args.inverse_f_width, center_radius, bound, args.contact_radius,
-        args.eps, args.edge_vec, args.source_gate);
+    const EdgeGeometry geometry =
+        load_geometry<Bridged>(args, edge, source, source_type, center_type);
     const TableLocation location = locate_table<Canonical>(
         geometry.seen, args.table_stride, args.table_max, args.interval_count);
     const TableRow row =
@@ -3072,12 +3064,6 @@ __global__ __launch_bounds__(
       static_cast<const index_t*>(args.destination_order);
   const int center_type =
       static_cast<int>(args.atype[args.node_begin + row_node]);
-  // The centre half of every pair length scale is a node constant, like the
-  // centre type it follows, and so is the length from which the window of no
-  // pair of the row needs resolving.
-  const float center_radius =
-      Bridged ? __ldg(args.contact_radius + center_type) : 0.0f;
-  const float bound = Bridged ? window_bound(args, center_radius) : 0.0f;
   const long begin = args.destination_row_ptr[row_node];
   const long end = active ? args.destination_row_ptr[row_node + 1] : begin;
   const int radial_modes = HasModes ? args.radial_modes : 0;
@@ -3493,10 +3479,8 @@ __global__ __launch_bounds__(
         return;
       }
     }
-    const EdgeGeometry geometry = load_geometry<Bridged>(
-        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
-        args.inverse_f_width, center_radius, bound, args.contact_radius,
-        args.eps, args.edge_vec, args.source_gate);
+    const EdgeGeometry geometry =
+        load_geometry<Bridged>(args, edge, source, source_type, center_type);
     const TableLocation location = locate_table<Canonical>(
         geometry.seen, args.table_stride, args.table_max, args.interval_count);
     // The pair term depends on the geometry alone, so it starts here and runs
@@ -3506,9 +3490,9 @@ __global__ __launch_bounds__(
     if (has_pair) {
       const long pair_row = static_cast<long>(center_type) * args.type_count +
                             geometry.source_type;
-      const PairTerm term =
-          pair_term<EdgeWidth>(args.pair_table + pair_row * 8, base_channel,
-                               geometry.radius, geometry.inverse_radius);
+      const PairTerm term = pair_term<EdgeWidth>(
+          args.pair_table + pair_row * kPairRow, base_channel, geometry.radius,
+          geometry.inverse_radius);
       pair_energy = fmaf(0.5f, term.energy, pair_energy);
       pair_slope = term.slope;
     }
@@ -4040,28 +4024,13 @@ __global__ __launch_bounds__(
           fmaf(4.0f * squared * envelope, angular_mass_gradient,
                fmaf(2.0f * envelope, scalar_mass_gradient, envelope_gradient));
     }
-    // The table terms above differentiate the length the table reads; the
-    // pair potential acts on the true length and joins after the chain rule.
+    // The table and envelope terms above differentiate the length they read;
+    // the pair potential acts on the true length and joins after the chain
+    // rule.
     radial_gradient =
-        radial_chain<Bridged>(geometry, args, center_radius, bound,
-                              radial_gradient, envelope_gradient);
+        radial_chain(geometry, args.rcut, radial_gradient, envelope_gradient);
     if constexpr (Bridged) {
       radial_gradient = fmaf(pair_weight, pair_slope, radial_gradient);
-      // Under a source gate the envelope of an edge enters the gate of every
-      // other edge of its source, so its cotangent times the envelope joins
-      // the totals of a source with a pair inside its window, from which
-      // gate_closure_kernel forms the slope of the switches of that source.
-      if (args.gate_sums != nullptr) {
-        const float sum = subwarp_allsum<EdgeWidth>(envelope_gradient, mask) *
-                          geometry.envelope;
-        if (thread == leader &&
-            has_window_pair(args.source_gate[geometry.source])) {
-          if (args.force != nullptr) {
-            check_force_range(sum, args.force + geometry.source * kForceWords);
-          }
-          atomicAdd(args.gate_sums + geometry.source, fixed_point(sum));
-        }
-      }
     }
 
     // The basis VJP is linear in the radial and angular cotangents, so

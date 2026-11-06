@@ -49,8 +49,8 @@ def _sugar_config() -> dict:
         "descriptor": _descriptor(),
         "fitting_net": _fitting(),
         "bridging_method": "ZBL",
-        "bridging_r_inner": 0.8,
-        "bridging_r_outer": 1.2,
+        "bridging_truncation": 1.05,
+        "bridging_clamp": 0.7,
     }
 
 
@@ -68,8 +68,8 @@ def _canonical_config() -> dict:
             {
                 "type": "inner_potential",
                 "mode": "ZBL",
-                "r_inner": 0.8,
-                "r_outer": 1.2,
+                "truncation": 1.05,
+                "clamp": 0.7,
             },
         ],
     }
@@ -79,12 +79,10 @@ def test_canonical_builds_sezm_model() -> None:
     model = get_model(_canonical_config())
     assert isinstance(model, SeZMModel)
     assert model.bridging_method == "ZBL"
-    # The window belongs to the descriptor, which is what the composition's
-    # radii have to reach for the learned side to honour them.
-    descriptor = model.atomic_model.descriptor
-    assert descriptor.bridging_f_inner == 0.8
-    assert descriptor.bridging_f_outer == 1.2
-    assert descriptor.bridging_scale == "absolute"
+    # The truncation belongs to the analytical term and the clamp to the
+    # descriptor, which is what the composition's options have to reach.
+    assert model.inter_potential.truncation == 1.05
+    assert model.atomic_model.descriptor.contact_clamp.inner == 0.7
 
 
 def test_canonical_matches_sugar_serialize() -> None:
@@ -257,10 +255,10 @@ def test_is_sezm_checkpoint_recognizes_canonical_params(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("method", ["none", "ZBL"])  # bridging disabled / enabled
-def test_normalized_checkpoint_with_optional_radii_loads(
+def test_normalized_checkpoint_with_default_options_loads(
     tmp_path: Path, method: str
 ) -> None:
-    """Checkpoint loading preserves the normalized optional window radii."""
+    """A checkpoint of a normalized config with default bridging options loads."""
     import numpy as np
     import torch
 
@@ -276,14 +274,14 @@ def test_normalized_checkpoint_with_optional_radii_loads(
 
     config = _sugar_config()
     config["bridging_method"] = method
-    config.pop("bridging_r_inner")
-    config.pop("bridging_r_outer")
+    config.pop("bridging_truncation")
+    config.pop("bridging_clamp")
     config["descriptor"].update(channels=4, n_radial=3, lmax=1, mmax=1, n_blocks=1)
     config["use_compile"] = False
     params = model_args().normalize_value(config, trim_pattern="_*")
     model_args().check_value(params, strict=True)
-    assert params["bridging_r_inner"] is None
-    assert params["bridging_r_outer"] is None
+    assert params["bridging_truncation"] == 1.1
+    assert params["bridging_clamp"] == 0.75
     model = get_model(copy.deepcopy(params)).eval()
     wrapper = ModelWrapper(model, model_params=params)
     checkpoint = tmp_path / "model.pt"

@@ -1860,9 +1860,7 @@ class SO2Convolution(nn.Module):
         Reduce the edge messages with the scalar envelope weight.
 
         The attention-free path: an envelope-weighted scatter add followed by the
-        degree normalization. In bridging mode the envelope already carries the
-        Source Freeze Propagation Gate, so a muted source drops out of both the
-        sum and the normalization.
+        degree normalization.
 
         Parameters
         ----------
@@ -2178,11 +2176,8 @@ class SO2Convolution(nn.Module):
         Build envelope-gated attention weights from the scalar channels.
 
         The envelope enters both the numerator and the denominator of the
-        softmax. In bridging mode it carries the Source Freeze Propagation
-        Gate, so a muted source (``eta_src = 0``) drops out of the
-        destination's normalization entirely, which the frozen-zone invariance
-        requires: post-multiplying the weights alone would still leak the muted
-        source through the shared denominator.
+        softmax, so an edge at the cutoff drops out of the destination's
+        normalization entirely.
 
         Parameters
         ----------

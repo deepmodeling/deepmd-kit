@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""pt_expt wrapper for the analytical bridging pair potential."""
+"""pt_expt wrapper for the analytical close-contact pair potential."""
 
 from typing import (
     Any,
@@ -20,10 +20,10 @@ class InnerPotential(InnerPotentialDP):
         return self.call(*args, **kwargs)
 
 
-# InnerPotential carries no trainable state (only the per-pair series table,
-# derived from the constructor arguments), so it implements no
-# serialize()/deserialize(); rebuild it fresh from (type_map, mode).
+# InnerPotential carries no trainable state (only the per-pair tables of its
+# series and of its truncation, derived from the constructor arguments), so it
+# implements no serialize()/deserialize(); rebuild it fresh from them.
 register_dpmodel_mapping(
     InnerPotentialDP,
-    lambda v: InnerPotential(type_map=v.type_map, mode=v.mode),
+    lambda v: InnerPotential(type_map=v.type_map, mode=v.mode, truncation=v.truncation),
 )

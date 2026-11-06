@@ -27,6 +27,9 @@ import torch
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.dpmodel.utils.contact_clamp import (
+    ContactClamp,
+)
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
@@ -755,7 +758,9 @@ class TestFinetuneCLI(unittest.TestCase):
         The composition holds the learned descriptor and fitting net as its
         first sub-model, so the weights of that part come from the checkpoint
         although their path differs; a RANDOM fitting takes the descriptor
-        alone and computes the output statistics of the new fitting.
+        alone and computes the output statistics of the new fitting. A plain
+        checkpoint records no contact edges, so a bridged target keeps the
+        covalent bond lengths its clamp starts from.
         """
         plain = {
             "type_map": ["O", "H"],
@@ -770,12 +775,7 @@ class TestFinetuneCLI(unittest.TestCase):
             "fitting_net": {"neuron": [16, 16], "seed": 1},
             "data_stat_nbatch": 1,
         }
-        bridged = {
-            **deepcopy(plain),
-            "bridging_method": "zbl",
-            "bridging_r_inner": 0.5,
-            "bridging_r_outer": 0.8,
-        }
+        bridged = {**deepcopy(plain), "bridging_method": "zbl"}
         source, target = (bridged, plain) if source_bridged else (plain, bridged)
         source_path, target_path = (
             (".atomic_model.models.0.", ".atomic_model.")
@@ -814,10 +814,15 @@ class TestFinetuneCLI(unittest.TestCase):
             parts = ["descriptor."]
             if model_branch != "RANDOM":
                 parts.append("fitting_net.")
+            edges = [key for key in ft_state if key.endswith(".contact_clamp.edges")]
+            records = [
+                key for key in ft_state if key.endswith(".contact_clamp.contacts")
+            ]
             learned = [
                 key
                 for key in ft_state
                 if any(f"{target_path}{part}" in key for part in parts)
+                and key not in edges + records
             ]
             self.assertTrue(learned)
             for key in learned:
@@ -826,6 +831,22 @@ class TestFinetuneCLI(unittest.TestCase):
                     pretrained_state[key.replace(target_path, source_path)],
                     msg=f"{key} should come from the checkpoint",
                 )
+            # Only a bridged target has a clamp, and a plain source recorded
+            # no edges for it to inherit.
+            self.assertEqual(len(edges), 0 if source_bridged else 1)
+            for key in edges:
+                torch.testing.assert_close(
+                    ft_state[key],
+                    torch.as_tensor(
+                        ContactClamp.initial_edges(["O", "H"]),
+                        dtype=ft_state[key].dtype,
+                        device=ft_state[key].device,
+                    ),
+                    msg=f"{key} should start from the covalent bond lengths",
+                )
+            self.assertEqual(len(records), len(edges))
+            for key in records:
+                self.assertTrue(torch.isinf(ft_state[key]).all(), key)
         finally:
             os.chdir(old_cwd)
             shutil.rmtree(tmpdir, ignore_errors=True)

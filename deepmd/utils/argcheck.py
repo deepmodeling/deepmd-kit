@@ -33,8 +33,9 @@ from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
 from deepmd.utils.bridging import (
-    DEFAULT_FRACTION_INNER,
-    DEFAULT_FRACTION_OUTER,
+    DEFAULT_CLAMP,
+    DEFAULT_SUPPORT,
+    DEFAULT_TRUNCATION,
 )
 from deepmd.utils.data_config import (
     data_group_configs,
@@ -4259,34 +4260,34 @@ def _bridging_method_args() -> list[Argument]:
         "equivalent explicit `linear_ener` composition over the learned "
         "model and an `inner_potential` sub-model."
     )
-    doc_bridging_fraction_inner = (
-        "Inner radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to. A pair closer than this interacts "
-        "through the analytical potential alone. In DPA4 the distance the "
-        "descriptor reads for the pair is frozen just below the window midpoint, "
-        "the two atoms disappear from the descriptors of every other atom, and their "
-        "fitting output falls to the bias of their types, which under `vacuum_ref` "
-        "leaves them the energy of isolated atoms; in DPA4C the pair is removed "
-        "from the descriptor. Because the window follows each pair's own size, "
-        "one value describes every element combination. Only used when "
-        "`bridging_method` is enabled and no explicit radius is given."
+    doc_bridging_truncation = (
+        "Radius at which the analytical potential ends, as a fraction of the "
+        "covalent bond length of each atom pair. Below it the screened Coulomb "
+        "series minus its cubic Taylor polynomial at the end radius is added to "
+        "the learned energy, without any switching function: the term is "
+        "non-negative, decreasing, convex and C^3, and exactly zero beyond the "
+        "end radius. The default 1.1 reaches just beyond first-neighbor bonds, "
+        "so the term carries the pressure of every uniform compression."
     )
-    doc_bridging_fraction_outer = (
-        "Outer radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to. Pairs beyond it reach the learned "
-        "descriptor unchanged, and the transition zone between the two fractions "
-        "uses a C^3-continuous septic Hermite polynomial. Only used when "
-        "`bridging_method` is enabled and no explicit radius is given."
+    doc_bridging_clamp = (
+        "Fraction of each atom pair's data edge (the separation set by "
+        "`bridging_support` from the training contacts) at and below "
+        "which the separation the learned descriptor reads is frozen; between it "
+        "and the data edge the read separation rises smoothly to the true one. "
+        "The data edges are recorded from the training batches and stored with "
+        "the model, so the clamp is the identity on every training contact "
+        "except those of the fewer frames below an edge, and below the data the "
+        "analytical potential alone carries the repulsion. Set it to null to let "
+        "the descriptor read every separation unchanged."
     )
-    doc_bridging_r_inner = (
-        "Inner radius of the bridging window in Å, applied to every atom pair alike. "
-        "Giving it together with `bridging_r_outer` replaces the fractional window "
-        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
-    )
-    doc_bridging_r_outer = (
-        "Outer radius of the bridging window in Å, applied to every atom pair alike. "
-        "Giving it together with `bridging_r_inner` replaces the fractional window "
-        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
+    doc_bridging_support = (
+        "Rank, counted from the smallest, of the per-frame shortest separation "
+        "of an atom pair that becomes its data edge, capped at the pair's "
+        "covalent bond length; separations in the same 1e-6 Å bin count once. "
+        "1 takes the shortest contact of any frame; a larger value keeps a "
+        "single unusual frame from moving the edge into a range that no other "
+        "frame covers, where the learned part would be fitted to that one frame "
+        "alone."
     )
     return [
         Argument(
@@ -4297,32 +4298,25 @@ def _bridging_method_args() -> list[Argument]:
             doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
         ),
         Argument(
-            "bridging_fraction_inner",
+            "bridging_truncation",
             float,
             optional=True,
-            default=DEFAULT_FRACTION_INNER,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_inner,
+            default=DEFAULT_TRUNCATION,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_truncation,
         ),
         Argument(
-            "bridging_fraction_outer",
-            float,
+            "bridging_clamp",
+            [float, None],
             optional=True,
-            default=DEFAULT_FRACTION_OUTER,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_outer,
+            default=DEFAULT_CLAMP,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_clamp,
         ),
         Argument(
-            "bridging_r_inner",
-            float,
+            "bridging_support",
+            int,
             optional=True,
-            default=None,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
-        ),
-        Argument(
-            "bridging_r_outer",
-            float,
-            optional=True,
-            default=None,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
+            default=DEFAULT_SUPPORT,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_support,
         ),
     ]
 
@@ -4559,25 +4553,31 @@ def inner_potential_model_args() -> Argument:
         "universal screened repulsion, and 'nlh', a repulsion refitted to "
         "self-consistent density-functional pair energies (case-insensitive)."
     )
-    doc_fraction_inner = (
-        "Inner radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to, derived onto the learned sibling's "
-        "descriptor: a closer atom pair interacts through the analytical potential "
-        "alone. Because the window follows each pair's own size, one value "
-        "describes every element combination."
+    doc_truncation = (
+        "Radius at which the analytical potential ends, as a fraction of the "
+        "covalent bond length of each atom pair. Below it the screened Coulomb "
+        "series minus its cubic Taylor polynomial at the end radius is added to "
+        "the learned energy, without any switching function: the term is "
+        "non-negative, decreasing, convex and C^3, and exactly zero beyond the "
+        "end radius. The default 1.1 reaches just beyond first-neighbor bonds, "
+        "so the term carries the pressure of every uniform compression."
     )
-    doc_fraction_outer = (
-        "Outer radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to. The transition zone between the "
-        "two fractions uses a C^3-continuous septic Hermite polynomial."
+    doc_clamp = (
+        "Fraction of each atom pair's data edge (the separation set by "
+        "`support` from the training contacts) at and below which the "
+        "separation the descriptor of the learned sibling reads is frozen; "
+        "between it and the data edge the read separation rises smoothly to the "
+        "true one. The data edges are recorded from the training batches and "
+        "stored with the model, so the clamp is the identity on every training "
+        "contact except those of the fewer frames below an edge, and below the "
+        "data the analytical potential alone carries the repulsion. Set it to "
+        "null to let the descriptor read every separation unchanged."
     )
-    doc_r_inner = (
-        "Inner radius of the bridging window in Å, applied to every atom pair "
-        "alike. Giving it together with `r_outer` replaces the fractional window."
-    )
-    doc_r_outer = (
-        "Outer radius of the bridging window in Å, applied to every atom pair "
-        "alike. Giving it together with `r_inner` replaces the fractional window."
+    doc_support = (
+        "Rank, counted from the smallest, of the per-frame shortest separation "
+        "of an atom pair that becomes the data edge of the clamp of the learned "
+        "sibling, capped at the pair's covalent bond length; separations in the "
+        "same 1e-6 Å bin count once."
     )
     ca = Argument(
         "inner_potential",
@@ -4585,26 +4585,31 @@ def inner_potential_model_args() -> Argument:
         [
             Argument("mode", str, optional=True, default="zbl", doc=doc_mode),
             Argument(
-                "fraction_inner",
+                "truncation",
                 float,
                 optional=True,
-                default=DEFAULT_FRACTION_INNER,
-                doc=doc_fraction_inner,
+                default=DEFAULT_TRUNCATION,
+                doc=doc_truncation,
             ),
             Argument(
-                "fraction_outer",
-                float,
+                "clamp",
+                [float, None],
                 optional=True,
-                default=DEFAULT_FRACTION_OUTER,
-                doc=doc_fraction_outer,
+                default=DEFAULT_CLAMP,
+                doc=doc_clamp,
             ),
-            Argument("r_inner", float, optional=True, default=None, doc=doc_r_inner),
-            Argument("r_outer", float, optional=True, default=None, doc=doc_r_outer),
+            Argument(
+                "support",
+                int,
+                optional=True,
+                default=DEFAULT_SUPPORT,
+                doc=doc_support,
+            ),
         ],
         doc=supported_backends("pt", "pt_expt")
-        + "Analytical short-range bridging pair potential (e.g. ZBL), usable "
-        "only as a sub-model of a `linear_ener` composition over one DPA4 or "
-        "DPA4C model; the window radii are derived onto the learned sibling's "
+        + "Analytical close-contact pair potential (e.g. ZBL), usable only as a "
+        "sub-model of a `linear_ener` composition over one DPA4 or DPA4C model; "
+        "its `clamp` and `support` are derived onto the learned sibling's "
         "descriptor at build time.",
     )
     return ca
@@ -6249,10 +6254,6 @@ If MPI is used, the value should be considered as the batch size per task.'
         "Frames containing any atom pair closer than this distance are excluded "
         "from loss computation, as DFT labels for near-collision configurations "
         "are often unreliable. Set to 0 to disable (default). "
-        "A bridged model filters its training frames by the midpoint of its own "
-        "bridging window, below which its learned energy is throttled to less "
-        "than half of its amplitude; that radius is taken from the model, so this "
-        "key must be left unset for such a model and is an error otherwise. "
         "A batch left without a valid frame is never trained on: under "
         "distributed training the pt backend skips that step on every rank, and "
         "the pt_expt backend draws the next batch on the rank concerned. "

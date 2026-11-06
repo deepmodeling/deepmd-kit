@@ -1,15 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""ZBL zone bridging of a DPA4C standard model in pt_expt.
+"""ZBL bridging of a DPA4C standard model in pt_expt.
 
 ``bridging_method: zbl`` on a DPA4C model builds the same linear composition
 as DPA4 (``LinearEnergyModel`` over ``[learned, InnerPotentialAtomicModel]``).
-A single-block DPA4C carries the edge envelope in every edge term, so its
-bridging window is one inner switch on that envelope, paired with a clamp of
-the length the radial features read: a pair at or below the inner radius
-leaves the learned model exactly as if its edge were deleted, and the
-analytical term supplies the whole pair interaction. A further block that
-reads its neighbors adds the source gate of DPA4, which keeps the pair out of
-every third environment.
+The analytical term is the ZBL series truncated at a fraction of each pair's
+covalent bond length, and the learned part reads every pair separation through
+the contact clamp of its descriptor: below the data edge of a pair the
+separation is frozen, so a pair that closes further changes the learned energy
+by nothing and the analytical term alone carries the repulsion. The bond
+directions and the analytical term read the true geometry.
 """
 
 import copy
@@ -46,10 +45,16 @@ from deepmd.pt_expt.utils.serialization import (
     _trace_and_export,
     build_synthetic_graph_inputs,
 )
+from deepmd.utils.bridging import (
+    DEFAULT_TRUNCATION,
+)
+from deepmd.utils.element_radii import (
+    covalent_radii_from_type_map,
+)
 
 TYPE_MAP = ["O", "H", "He"]
-R_INNER = 0.5
-R_OUTER = 0.8
+CLAMP = 0.75
+RADII = covalent_radii_from_type_map(TYPE_MAP)
 PLAIN_CONFIG = {
     "type_map": TYPE_MAP,
     "descriptor": {
@@ -67,11 +72,11 @@ PLAIN_CONFIG = {
 ZBL_CONFIG = {
     **PLAIN_CONFIG,
     "bridging_method": "zbl",
-    "bridging_r_inner": R_INNER,
-    "bridging_r_outer": R_OUTER,
+    "bridging_clamp": CLAMP,
 }
 # One O-He pair whose separation is set per test, among atoms that keep every
-# other pair beyond the window.
+# other pair beyond the data edge of its type pair, where the clamp is the
+# identity.
 ATYPE = np.array([0, 2, 1, 1])
 DIRECTION = np.array([0.8, 0.36, -0.48])
 ENVIRONMENT = np.array([[-0.4, 0.9, 0.3], [0.2, -0.5, 1.2]])
@@ -83,33 +88,93 @@ def _cluster(distance: float) -> np.ndarray:
     return np.concatenate([np.zeros((1, 3)), distance * DIRECTION[None], ENVIRONMENT])
 
 
-def _evaluate(model: torch.nn.Module, coord: np.ndarray) -> dict[str, torch.Tensor]:
+#: An oxygen and a helium atom, whose separation a dimer test sets.
+DIMER = np.array([0, 2])
+
+
+def _dimer(distance: float) -> np.ndarray:
+    return np.array([[0.0, 0.0, 0.0], distance * DIRECTION])
+
+
+def _evaluate(
+    model: torch.nn.Module, coord: np.ndarray, atype: np.ndarray = ATYPE
+) -> dict[str, torch.Tensor]:
     """Evaluate one open-boundary frame on the backend device."""
     return model(
         torch.tensor(
             coord[None], dtype=torch.float64, device=env.DEVICE
         ).requires_grad_(True),
-        torch.tensor(ATYPE[None], dtype=torch.int64, device=env.DEVICE),
+        torch.tensor(atype[None], dtype=torch.int64, device=env.DEVICE),
         box=None,
     )
 
 
-def _analytic_zbl_total(coord: np.ndarray, atype: np.ndarray = ATYPE) -> float:
-    """Independent reference: direct double loop over open-boundary pairs."""
+def _zbl_series(r: torch.Tensor, charge_i: float, charge_j: float) -> torch.Tensor:
+    """Evaluate the ZBL universal screened Coulomb energy of one pair in eV."""
     a_coeff = (0.18175, 0.50986, 0.28022, 0.028171)
     b_coeff = (3.1998, 0.94229, 0.4029, 0.20162)
-    charge = [float(ELEMENT_TO_Z[TYPE_MAP[t]]) for t in atype]
+    length = 0.88534 * 0.5291772109 / (charge_i**0.23 + charge_j**0.23)
+    phi = sum(
+        ak * torch.exp(-bk * r / length)
+        for ak, bk in zip(a_coeff, b_coeff, strict=True)
+    )
+    return 14.3996 * charge_i * charge_j / r * phi
+
+
+def _truncated_zbl(distance: float, type_i: int, type_j: int) -> float:
+    """Evaluate the truncated ZBL energy of one pair, independently of the model.
+
+    The series ends at ``DEFAULT_TRUNCATION`` times the covalent bond length of
+    the pair, by subtracting its cubic Taylor polynomial there; the Taylor
+    coefficients come from automatic differentiation of the series.
+    """
+    charge_i = float(ELEMENT_TO_Z[TYPE_MAP[type_i]])
+    charge_j = float(ELEMENT_TO_Z[TYPE_MAP[type_j]])
+    end = DEFAULT_TRUNCATION * float(RADII[type_i] + RADII[type_j])
+    if distance >= end:
+        return 0.0
+    anchor = torch.tensor(end, dtype=torch.float64, requires_grad=True)
+    derivatives = [_zbl_series(anchor, charge_i, charge_j)]
+    for _ in range(3):
+        derivatives.append(
+            torch.autograd.grad(derivatives[-1], anchor, create_graph=True)[0]
+        )
+    delta = distance - end
+    polynomial = sum(
+        derivative.item() / math.factorial(order) * delta**order
+        for order, derivative in enumerate(derivatives)
+    )
+    value = _zbl_series(torch.tensor(distance, dtype=torch.float64), charge_i, charge_j)
+    return value.item() - polynomial
+
+
+def _analytic_zbl_total(coord: np.ndarray, atype: np.ndarray = ATYPE) -> float:
+    """Independent reference: direct double loop over open-boundary pairs."""
     total = 0.0
-    for i in range(len(charge)):
-        for j in range(i + 1, len(charge)):
-            r = float(np.linalg.norm(coord[i] - coord[j]))
-            a = 0.88534 * 0.5291772109 / (charge[i] ** 0.23 + charge[j] ** 0.23)
-            phi = sum(
-                ak * math.exp(-bk * r / a)
-                for ak, bk in zip(a_coeff, b_coeff, strict=True)
-            )
-            total += 14.3996 * charge[i] * charge[j] / r * phi
+    for i in range(len(atype)):
+        for j in range(i + 1, len(atype)):
+            distance = float(np.linalg.norm(coord[i] - coord[j]))
+            total += _truncated_zbl(distance, int(atype[i]), int(atype[j]))
     return total
+
+
+def _set_edge(model: torch.nn.Module, type_i: int, type_j: int, edge: float) -> None:
+    """Set the data edge of a type pair of the learned child of a bridged model."""
+    edges = model.atomic_model.models[0].descriptor.contact_clamp.edges
+    with torch.no_grad():
+        edges[type_i, type_j] = edges[type_j, type_i] = edge
+
+
+def _learned_state(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+    """State of the learned child of a bridged model, without its contact edges.
+
+    A learned model without a contact clamp has no edges to load.
+    """
+    return {
+        name: value
+        for name, value in model.atomic_model.models[0].state_dict().items()
+        if "contact_clamp" not in name
+    }
 
 
 def _perturb(model: torch.nn.Module) -> None:
@@ -133,11 +198,10 @@ class TestDPA4CZBLBridging:
         _perturb(self.model)
         self.learned = self.model.atomic_model.models[0]
 
-    def _plain_twin(self, exclude: list[tuple[int, int]]) -> torch.nn.Module:
-        """The learned model alone, with the same weights and no window."""
+    def _plain_twin(self) -> torch.nn.Module:
+        """The learned model alone, with the same weights and no contact clamp."""
         plain = get_model(copy.deepcopy(PLAIN_CONFIG)).eval()
-        plain.atomic_model.load_state_dict(self.learned.state_dict())
-        plain.atomic_model.descriptor.reinit_exclude(exclude)
+        plain.atomic_model.load_state_dict(_learned_state(self.model))
         return plain
 
     def test_builder_composes_a_graph_route_linear_model(self) -> None:
@@ -145,33 +209,89 @@ class TestDPA4CZBLBridging:
         learned, potential = self.model.atomic_model.fused_decomposition()
         assert learned is self.learned
         assert potential is self.model.atomic_model.models[1].potential
-        # An explicit window in Å reaches the descriptor as the same pair of
-        # fractions measured against a unit length scale.
-        assert learned.descriptor.bridging_scale == "absolute"
-        assert learned.descriptor.bridging_f_inner == R_INNER
-        assert learned.descriptor.bridging_f_outer == R_OUTER
+        # The composition derives the clamp of the descriptor from its own
+        # option, and the analytical term ends at the default fraction of the
+        # covalent bond length of every pair.
+        assert learned.descriptor.contact_clamp.inner == CLAMP
+        assert potential.truncation == DEFAULT_TRUNCATION
         assert model_uses_graph_lower(self.model)
         # DPA4C exchanges no node features, so bridging needs no with-comm
-        # artifact (a bridged DPA4 does, for its source gate).
+        # artifact.
         assert _needs_with_comm_artifact(self.model, lower_kind="graph") is False
 
-    @pytest.mark.parametrize("distance", [0.2, 0.45])
-    def test_frozen_pair_interacts_through_zbl_alone(self, distance: float) -> None:
-        coord = _cluster(distance)
-        energy = _evaluate(self.model, coord)["energy"].item()
-        removed = _evaluate(self._plain_twin([(0, 2), (2, 0)]), coord)["energy"].item()
-        visible = _evaluate(self._plain_twin([]), coord)["energy"].item()
-        # The plain model must see the pair, or the comparison is vacuous.
-        assert abs(visible - removed) > 1e-3
-        assert energy == pytest.approx(removed + _analytic_zbl_total(coord), abs=1e-10)
+    def test_clamp_starts_from_the_covalent_bond_lengths(self) -> None:
+        edges = self.learned.descriptor.contact_clamp.edges
+        expected = RADII[:, None] + RADII[None, :]
+        np.testing.assert_allclose(
+            edges[:3, :3].cpu().numpy(), expected, rtol=0.0, atol=1e-12
+        )
+        # The padding type keeps its fixed edge.
+        assert torch.all(edges[3] == 1.0) and torch.all(edges[:, 3] == 1.0)
 
-    def test_pairs_beyond_the_window_add_zbl_to_the_plain_model(self) -> None:
-        coord = _cluster(R_OUTER + 0.05)
+    @pytest.mark.parametrize("distance", [0.2, 0.5, 0.8])
+    def test_frozen_pair_interacts_through_zbl_alone(self, distance: float) -> None:
+        """A pair at or below ``a e`` is read at one separation by the learned part.
+
+        The learned energy of the dimer is the energy of the composition less
+        the analytical term. It is the same for every separation in the frozen
+        zone, while the learned model without the clamp still sees the pair.
+        """
+        end = float(RADII[0] + RADII[2]) * CLAMP
+        assert distance <= end
+        reference = _dimer(0.1)
+        learned = _evaluate(self.model, reference, DIMER)["energy"].item() - (
+            _analytic_zbl_total(reference, DIMER)
+        )
+        coord = _dimer(distance)
+        energy = _evaluate(self.model, coord, DIMER)["energy"].item()
+        assert energy - _analytic_zbl_total(coord, DIMER) == pytest.approx(
+            learned, abs=1e-10
+        )
+        # The learned model without the clamp must read the pair differently, or
+        # the comparison is vacuous.
+        plain = _evaluate(self._plain_twin(), coord, DIMER)["energy"].item()
+        assert abs(plain - learned) > 1e-3
+
+    def test_frozen_pair_feels_the_analytical_force_only(self) -> None:
+        """Below ``a e`` the learned energy is flat along the bond."""
+        coord = _dimer(0.4)
+        force = _evaluate(self.model, coord, DIMER)["force"][0].detach().cpu().numpy()
+        step = 1.0e-5
+        expected = np.zeros((2, 3))
+        for atom in range(2):
+            for axis in range(3):
+                shift = np.zeros_like(coord)
+                shift[atom, axis] = step
+                upper = _analytic_zbl_total(coord + shift, DIMER)
+                lower = _analytic_zbl_total(coord - shift, DIMER)
+                expected[atom, axis] = -(upper - lower) / (2.0 * step)
+        # The learned energy depends on the direction of the bond only, which
+        # a dimer does not constrain, so the force along the bond is the
+        # analytical one.
+        bond = DIRECTION / np.linalg.norm(DIRECTION)
+        np.testing.assert_allclose(force @ bond, expected @ bond, rtol=1e-6, atol=1e-6)
+
+    def test_pairs_beyond_the_data_edge_add_zbl_to_the_plain_model(self) -> None:
+        """Beyond its data edge a pair is read as it is, and the term adds up."""
+        edge = float(RADII[0] + RADII[2])
+        distance = edge + 0.01
+        assert distance < DEFAULT_TRUNCATION * edge
+        coord = _cluster(distance)
+        assert _truncated_zbl(distance, 0, 2) > 1e-3
         energy = _evaluate(self.model, coord)["energy"].item()
-        plain = _evaluate(self._plain_twin([]), coord)["energy"].item()
+        plain = _evaluate(self._plain_twin(), coord)["energy"].item()
         assert energy == pytest.approx(plain + _analytic_zbl_total(coord), abs=1e-10)
 
-    @pytest.mark.parametrize("distance", [0.3, 0.5, 0.65, 0.8, 1.1])
+    def test_the_term_ends_at_the_truncation_radius(self) -> None:
+        """Beyond the end radius of every pair the composition is the learned model."""
+        distance = 1.05 * DEFAULT_TRUNCATION * float(RADII[0] + RADII[2])
+        coord = _cluster(distance)
+        assert _truncated_zbl(distance, 0, 2) == 0.0
+        energy = _evaluate(self.model, coord)["energy"].item()
+        plain = _evaluate(self._plain_twin(), coord)["energy"].item()
+        assert energy == pytest.approx(plain + _analytic_zbl_total(coord), abs=1e-10)
+
+    @pytest.mark.parametrize("distance", [0.3, 0.5, 0.65, 0.8, 0.95, 1.1, 1.15, 1.25])
     def test_force_matches_finite_difference(self, distance: float) -> None:
         coord = _cluster(distance)
         force = _evaluate(self.model, coord)["force"]
@@ -187,6 +307,11 @@ class TestDPA4CZBLBridging:
             )
 
     def test_serialize_roundtrip(self) -> None:
+        # The recorded edges belong to the model: moving one puts the pair in
+        # the transition zone of its clamp, and the restored model keeps it.
+        edges = self.learned.descriptor.contact_clamp.edges
+        with torch.no_grad():
+            edges[0, 2] = edges[2, 0] = 0.7
         coord = _cluster(0.65)
         data = self.model.serialize()
         assert data["type"] == "linear"
@@ -197,6 +322,8 @@ class TestDPA4CZBLBridging:
             rtol=0.0,
             atol=0.0,
         )
+        restored_edges = restored.atomic_model.models[0].descriptor.contact_clamp.edges
+        torch.testing.assert_close(restored_edges, edges, rtol=0.0, atol=0.0)
 
     def test_isolated_atoms_keep_the_vacuum_reference(self) -> None:
         """A preset bias keeps the learned child referencing the isolated atoms.
@@ -260,26 +387,51 @@ class TestDPA4CZBLBridging:
 
     def test_pair_table_is_rebuilt_not_stored(self) -> None:
         potential = self.model.atomic_model.models[1].potential
-        assert not any("pair_table" in key for key in self.model.state_dict())
+        stored = list(self.model.state_dict())
+        for name in ("pair_table", "series_table", "taylor_table"):
+            assert not any(name in key for key in stored)
         assert potential.pair_table.dtype == torch.float32
-        table = potential.pair_table.double().cpu().reshape(4, 4, 8)
+        table = potential.pair_table.double().cpu().reshape(4, 4, 16)
         # Rows and columns of the padding type vanish.
         assert table[3].abs().max() == 0.0 and table[:, 3].abs().max() == 0.0
-        radius = 0.7
-        series = (table[0, 2, :4] * torch.exp(-table[0, 2, 4:] * radius)).sum() / radius
-        pair = np.array([[0.0, 0.0, 0.0], [radius, 0.0, 0.0]])
-        assert series.item() == pytest.approx(
-            _analytic_zbl_total(pair, np.array([0, 2])), rel=1e-6
+        row = table[0, 2]
+        end = row[8].item()
+        assert end == pytest.approx(
+            DEFAULT_TRUNCATION * float(RADII[0] + RADII[2]), rel=1e-6
         )
+        assert row[13:].abs().max() == 0.0
+        charge_i, charge_j = (float(ELEMENT_TO_Z[TYPE_MAP[t]]) for t in (0, 2))
+
+        def series(radius: float) -> float:
+            return (row[:4] * torch.exp(-row[4:8] * radius)).sum().item() / radius
+
+        # The series is the ZBL potential, and the Taylor coefficients of the
+        # row make the truncated energy vanish to third order at its end.
+        assert series(0.7) == pytest.approx(
+            _zbl_series(torch.tensor(0.7), charge_i, charge_j).item(), rel=1e-6
+        )
+        assert row[9].item() == pytest.approx(series(end), rel=1e-5)
+
+        def truncated(radius: float) -> float:
+            delta = radius - end
+            return (
+                series(radius)
+                - (
+                    row[9] + delta * (row[10] + delta * (row[11] + delta * row[12]))
+                ).item()
+            )
+
+        assert truncated(0.7) == pytest.approx(_truncated_zbl(0.7, 0, 2), rel=1e-4)
+        assert abs(truncated(end * (1.0 - 1e-3))) < 1e-6
 
 
 class TestDPA4CZBLBridgingMultiBlock:
-    """A further block that reads its neighbors keeps the frozen pair out.
+    """A model of two blocks evaluates the clamp in its first block.
 
-    The neighbor state of a third atom sees both atoms of a close pair, so
-    without the source gate it would hand the pair back to either atom. The
-    gate mutes every edge a frozen atom emits towards a third atom, so both
-    atoms of the pair leave every other environment.
+    The states that the further block passes on are built from the first
+    block, whose radial table and envelope read the clamped separation, so the
+    clamp reaches every block through them. The block envelope of a further
+    block reads the true length.
     """
 
     MULTI_BLOCK: ClassVar[dict] = {"rcut": [4.0, 3.5], "n_blocks": 2}
@@ -290,45 +442,7 @@ class TestDPA4CZBLBridgingMultiBlock:
         self.model = get_model(config).eval()
         _perturb(self.model)
 
-    def _learned_twin(self, window: bool) -> torch.nn.Module:
-        """The learned child as a standalone model, with or without its window."""
-        config = copy.deepcopy(PLAIN_CONFIG)
-        config["descriptor"].update(self.MULTI_BLOCK)
-        if window:
-            config["descriptor"].update(
-                inner_clamp_f_inner=R_INNER,
-                inner_clamp_f_outer=R_OUTER,
-                inner_clamp_scale="absolute",
-            )
-        twin = get_model(config).eval()
-        twin.atomic_model.load_state_dict(
-            self.model.atomic_model.models[0].state_dict()
-        )
-        return twin
-
-    @staticmethod
-    def _atom_energy(model: torch.nn.Module, coord: np.ndarray) -> np.ndarray:
-        return _evaluate(model, coord)["atom_energy"].detach().cpu().numpy()[0, :, 0]
-
-    @pytest.mark.parametrize("distance", [0.2, 0.45])
-    def test_frozen_pair_does_not_reach_the_other_atoms(self, distance: float) -> None:
-        coord = _cluster(distance)
-        moved = coord.copy()
-        moved[1] = coord[0] + distance * np.array([0.0, -0.6, 0.8])
-        windowed = self._learned_twin(window=True)
-        delta = self._atom_energy(windowed, moved) - self._atom_energy(windowed, coord)
-        # The learned energies of the O atom and of both third atoms ignore
-        # where the He atom sits inside the frozen zone, while the He atom
-        # sees its own new environment.
-        np.testing.assert_allclose(delta[[0, 2, 3]], 0.0, atol=1e-12)
-        assert abs(delta[1]) > 1e-6
-        # Without the window the third atoms read the motion of the He atom,
-        # so the contract is not vacuous.
-        plain = self._learned_twin(window=False)
-        plain_delta = self._atom_energy(plain, moved) - self._atom_energy(plain, coord)
-        assert np.abs(plain_delta[[2, 3]]).max() > 1e-6
-
-    @pytest.mark.parametrize("distance", [0.3, 0.5, 0.65, 0.8, 1.1])
+    @pytest.mark.parametrize("distance", [0.3, 0.5, 0.65, 0.8, 0.95, 1.1, 1.15])
     def test_force_matches_finite_difference(self, distance: float) -> None:
         coord = _cluster(distance)
         force = _evaluate(self.model, coord)["force"]
@@ -379,9 +493,11 @@ class TestDPA4CZBLBridgingWithNativeSpin:
         self.model = get_model(_native_spin(ZBL_CONFIG)).eval()
         _perturb(self.model)
         self.plain = get_model(_native_spin(PLAIN_CONFIG)).eval()
-        self.plain.atomic_model.load_state_dict(
-            self.model.atomic_model.models[0].state_dict()
-        )
+        self.plain.atomic_model.load_state_dict(_learned_state(self.model))
+        # The oxygen-helium pair is read as it is from its data edge on, so a
+        # dimer of 0.7 Å is a pair that the analytical term acts on strongly
+        # and the clamp leaves alone.
+        _set_edge(self.model, 0, 2, 0.6)
 
     def test_the_composition_answers_the_spin_capability(self) -> None:
         learned, potential = self.model.atomic_model.fused_decomposition()
@@ -393,7 +509,7 @@ class TestDPA4CZBLBridgingWithNativeSpin:
         assert not self.model.atomic_model.models[1].supports_native_spin()
 
     def test_the_analytical_term_leaves_the_magnetic_force_alone(self) -> None:
-        coord = _cluster(R_OUTER + 0.05)
+        coord = _cluster(0.7)
         bridged = _evaluate_spin(self.model, coord)
         plain = _evaluate_spin(self.plain, coord)
         assert bridged["energy"].item() == pytest.approx(
@@ -435,7 +551,7 @@ def test_children_reference_the_isolated_atoms_by_the_composition_preset() -> No
     assert all(sub.fitting_net.vacuum_ref for sub in model.atomic_model.models)
 
 
-def _compressed_config(window: tuple[float, float] | None) -> dict:
+def _compressed_config(bridged: bool) -> dict:
     """A float32 DPA4C model the fused operators can serve."""
     config = {
         "type_map": ["O", "H"],
@@ -458,12 +574,8 @@ def _compressed_config(window: tuple[float, float] | None) -> dict:
             "seed": 19,
         },
     }
-    if window is not None:
-        config.update(
-            bridging_method="zbl",
-            bridging_r_inner=window[0],
-            bridging_r_outer=window[1],
-        )
+    if bridged:
+        config.update(bridging_method="zbl", bridging_clamp=CLAMP)
     return config
 
 
@@ -475,7 +587,7 @@ def test_compression_keeps_the_default_charge_state() -> None:
     still reports that default, which an archive of it serves when a caller
     names no condition.
     """
-    config = _compressed_config((0.5, 0.8))
+    config = _compressed_config(True)
     config["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[0.0, 1.0])
     model = get_model(config).eval()
     model.atomic_model.enable_compression(0.5, 1.0, 0.002, 0.002)
@@ -487,9 +599,11 @@ class TestCompressedDPA4CZBLBridging:
     """A bridged compressed model keeps the fused and the canonical routes."""
 
     def setup_method(self) -> None:
-        # The window follows the sample, so that its edges populate the frozen
-        # zone, the transition zone and the plain zone alike.
-        plain = get_model(_compressed_config(None)).to(env.DEVICE).eval()
+        # The data edge of the clamp follows the sample, so that its edges
+        # populate the frozen zone, the transition zone and the plain zone of
+        # the clamp alike, and the end radius of the analytical term lies
+        # inside the sample as well.
+        plain = get_model(_compressed_config(False)).to(env.DEVICE).eval()
         self.sample = build_synthetic_graph_inputs(
             plain,
             e_max=None,
@@ -500,18 +614,18 @@ class TestCompressedDPA4CZBLBridging:
         )
         edge_vec, edge_mask = self.sample[4], self.sample[5]
         length = edge_vec[edge_mask].norm(dim=-1)
-        window = tuple(
-            float(value)
-            for value in torch.quantile(
-                length,
-                torch.tensor([0.2, 0.5], dtype=length.dtype, device=length.device),
-            )
-        )
-        self.model = get_model(_compressed_config(window)).to(env.DEVICE).eval()
+        edge = float(torch.quantile(length, 0.5))
+        self.model = get_model(_compressed_config(True)).to(env.DEVICE).eval()
         _perturb(self.model)
+        descriptor = self.model.atomic_model.models[0].descriptor
+        with torch.no_grad():
+            descriptor.contact_clamp.edges[:2, :2] = edge
         self.model.atomic_model.enable_compression(0.5, 1.0, 0.002, 0.002)
-        assert ((length > window[0]) & (length < window[1])).sum() > 4
-        assert (length < window[0]).any()
+        lower = CLAMP * edge
+        assert ((length > lower) & (length < edge)).sum() > 4
+        assert (length <= lower).any() and (length >= edge).any()
+        end = self.model.atomic_model.models[1].potential.pair_table[:, 8]
+        assert (length < float(end[:2].max())).any()
 
     def _lower(self, n_local: torch.Tensor | None = None) -> dict[str, torch.Tensor]:
         (

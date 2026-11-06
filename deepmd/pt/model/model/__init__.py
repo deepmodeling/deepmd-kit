@@ -37,11 +37,9 @@ from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
 from deepmd.utils.bridging import (
-    DEFAULT_FRACTION_INNER,
-    DEFAULT_FRACTION_OUTER,
-    concise_bridging_window,
+    concise_bridging_options,
     expand_bridging_method,
-    resolve_bridging_window,
+    resolve_bridging_options,
     route_canonical_learned_options,
 )
 from deepmd.utils.spin import (
@@ -369,15 +367,11 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
     learned["type_map"] = copy.deepcopy(model_params["type_map"])
     learned["atom_exclude_types"] = model_params.get("atom_exclude_types", [])
     learned["pair_exclude_types"] = model_params.get("pair_exclude_types", [])
+    bridging = resolve_bridging_options(inner_cfg)
     learned["bridging_method"] = inner_cfg.get("mode", "zbl")
-    learned["bridging_fraction_inner"] = inner_cfg.get(
-        "fraction_inner", DEFAULT_FRACTION_INNER
-    )
-    learned["bridging_fraction_outer"] = inner_cfg.get(
-        "fraction_outer", DEFAULT_FRACTION_OUTER
-    )
-    learned["bridging_r_inner"] = inner_cfg.get("r_inner")
-    learned["bridging_r_outer"] = inner_cfg.get("r_outer")
+    learned["bridging_truncation"] = bridging["truncation"]
+    learned["bridging_clamp"] = bridging["clamp"]
+    learned["bridging_support"] = bridging["support"]
     if "spin" in model_params:
         learned["spin"] = model_params["spin"]
         return get_sezm_spin_model(learned)
@@ -471,24 +465,6 @@ def get_standard_model(model_params: dict) -> BaseModel:
     return model
 
 
-def _bridging_window_options(model_params: dict) -> dict:
-    """
-    Resolve the bridging window of a SeZM model section.
-
-    Parameters
-    ----------
-    model_params : dict
-        A DPA4/SeZM model section carrying the concise bridging keys.
-
-    Returns
-    -------
-    dict
-        The window options of the learned descriptor, as
-        :func:`deepmd.utils.bridging.resolve_bridging_window` spells them.
-    """
-    return resolve_bridging_window(concise_bridging_window(model_params))
-
-
 def _reconcile_sezm_pair_exclude_types(model_params: dict) -> list[list[int]]:
     """Reconcile ``pair_exclude_types`` with ``descriptor.exclude_types``.
 
@@ -547,10 +523,10 @@ def get_sezm_model(model_params: dict) -> BaseModel:
 
     # === Bridging parameters ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_window = _bridging_window_options(model_params)
-    # Only inject bridging parameters when bridging is enabled.
+    bridging = concise_bridging_options(model_params)
     if bridging_method != "NONE":
-        model_params["descriptor"].update(bridging_window)
+        model_params["descriptor"]["contact_clamp"] = bridging["clamp"]
+        model_params["descriptor"]["contact_support"] = bridging["support"]
 
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
@@ -603,6 +579,7 @@ def get_sezm_model(model_params: dict) -> BaseModel:
         use_compile=use_compile,
         enable_tf32=enable_tf32,
         bridging_method=bridging_method,
+        bridging_truncation=bridging["truncation"],
     )
     model.model_def_script = json.dumps(model_params_old)
     return model
@@ -647,9 +624,10 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
 
     # === Bridging parameters ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_window = _bridging_window_options(model_params)
+    bridging = concise_bridging_options(model_params)
     if bridging_method != "NONE":
-        model_params["descriptor"].update(bridging_window)
+        model_params["descriptor"]["contact_clamp"] = bridging["clamp"]
+        model_params["descriptor"]["contact_support"] = bridging["support"]
 
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
@@ -683,6 +661,7 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
         use_compile=use_compile,
         enable_tf32=enable_tf32,
         bridging_method=bridging_method,
+        bridging_truncation=bridging["truncation"],
         spin=spin,
     )
     model.model_def_script = json.dumps(model_params_old)

@@ -72,13 +72,7 @@ def _dpa4_descriptor(bridging: bool) -> DescrptDPA4:
         "random_gamma": False,
     }
     if bridging:
-        # The absolute scale gives every pair the unit length scale, so the two
-        # fractions are the window radii in Å.
-        kwargs.update(
-            inner_clamp_f_inner=0.8,
-            inner_clamp_f_outer=1.2,
-            inner_clamp_scale="absolute",
-        )
+        kwargs.update(type_map=TYPE_MAP, contact_clamp=0.75)
     return DescrptDPA4(**kwargs)
 
 
@@ -121,9 +115,9 @@ def test_dp_atomic_model_delegates_to_descriptor() -> None:
     plain = _dp_atomic_model(_dpa4_descriptor(bridging=False))
     local_only = _dp_atomic_model(DescrptSeA(rcut=4.0, rcut_smth=3.5, sel=[8, 8]))
     assert bridged.has_message_passing_across_ranks() is True
-    # bridged is True too since the SFPG cross-rank completion (issue
-    # #5906); the ALL-aggregation's False branch is pinned by the stub
-    # children in test_linear_aggregation_mixed_children.
+    # The contact clamp acts on each edge alone, so a bridged descriptor runs
+    # multi-rank as well; the ALL-aggregation's False branch is pinned by the
+    # stub children in test_linear_aggregation_mixed_children.
     assert bridged.supports_edge_parallel() is True
     assert plain.has_message_passing_across_ranks() is True
     assert plain.supports_edge_parallel() is True
@@ -137,18 +131,6 @@ def test_dp_atomic_model_delegates_to_descriptor() -> None:
     assert plain.uses_compact_edge_pairs() is bool(
         plain.descriptor.uses_compact_edge_pairs()
     )
-
-
-def test_hybrid_descriptor_refuses_a_bridged_child() -> None:
-    """A concatenated descriptor has no fitting output for a child's readout gate."""
-    from deepmd.dpmodel.descriptor.hybrid import (
-        DescrptHybrid,
-    )
-
-    with pytest.raises(NotImplementedError, match="bridged child"):
-        DescrptHybrid(
-            [_dpa4_descriptor(bridging=True), _dpa4_descriptor(bridging=False)]
-        )
 
 
 def test_hybrid_descriptor_aggregates_dense_comm() -> None:
@@ -235,9 +217,8 @@ def _stub_linear(**child_kwargs_pair) -> LinearEnergyAtomicModel:
 
 
 def test_linear_aggregation_any_all() -> None:
-    """Real ZBL composition: the bridged DP child sets needs=True (any);
-    edge-parallel aggregates to True since the SFPG cross-rank completion
-    (issue #5906).
+    """Real ZBL composition: the bridged DP child sets needs=True (any), and
+    edge-parallel aggregates to True.
     """
     am = get_model(copy.deepcopy(ZBL_CONFIG)).atomic_model
     assert isinstance(am, LinearEnergyAtomicModel)

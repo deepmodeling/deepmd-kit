@@ -255,15 +255,14 @@ def _forward_fake(
     spin: torch.Tensor,
     spin_pair: torch.Tensor,
     spin_type: torch.Tensor,
-    contact_radius: torch.Tensor,
+    contact_edges: torch.Tensor,
     lmax: int,
     table_stride: float,
     table_max: float,
     rcut: float,
     eps: float,
     degree_floor: float,
-    f_inner: float,
-    f_outer: float,
+    contact_inner: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     del (
         source,
@@ -280,14 +279,13 @@ def _forward_fake(
         output_mean,
         spin_pair,
         spin_type,
-        contact_radius,
+        contact_edges,
         table_stride,
         table_max,
         rcut,
         eps,
         degree_floor,
-        f_inner,
-        f_outer,
+        contact_inner,
     )
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         descriptor_profile,
@@ -419,9 +417,8 @@ def _cpu_energy_force(
 
     The force and the virial are assembled by index reduction in fp64. The
     per-atom virial is attributed to the source nodes that the source CSR
-    lists, and is zero when two-entry placeholders take the place of the CSR;
-    the part of the switch totals of a source gate belongs to the node of the
-    row that holds each edge, its destination. A frame whose energy or virial
+    lists, and is zero when two-entry placeholders take the place of the CSR.
+    A frame whose energy or virial
     is not finite reports every force of its nodes, and every magnetic force,
     as not a number, as the CUDA operator does.
     """
@@ -497,13 +494,7 @@ def _cpu_energy_force(
     gradient = torch.ops.deepmd.graph_fitting_backward(
         seed.reshape(-1, 1), saved, ws, bs, resnets, w_head, act
     )
-    (
-        edge_gradient,
-        row_gradient,
-        spin_gradient,
-        edge_spin_gradient,
-        pair_energy,
-    ) = _generic_backward(
+    edge_gradient, spin_gradient, edge_spin_gradient, pair_energy = _generic_backward(
         gradient, state, *descriptor_args, pair=(pair_table, seed), **further
     )
     if pair_table.numel():
@@ -512,12 +503,9 @@ def _cpu_energy_force(
 
     edge_index, edge_mask, _ = _generic_topology(source, destination_row_ptr)
     keep = edge_mask[:, None].to(torch.float64)
-    source_part = edge_gradient.to(torch.float64) * keep
-    row_part = row_gradient.to(torch.float64) * keep
-    g = source_part + row_part
+    g = edge_gradient.to(torch.float64) * keep
     vector = edge_vec.to(torch.float64)[:, None, :]
-    source_outer = -(source_part[:, :, None] * vector)
-    row_outer = -(row_part[:, :, None] * vector)
+    outer = -(g[:, :, None] * vector)
     source_index, destination_index = edge_index[0], edge_index[1]
     destination_force = torch.zeros(
         node_count, 3, dtype=torch.float64, device=device
@@ -535,7 +523,7 @@ def _cpu_energy_force(
     atom_energy[out_of_range] = torch.nan
     node_virial = torch.zeros(
         node_count, 3, 3, dtype=torch.float64, device=device
-    ).index_add_(0, destination_index, source_outer + row_outer)
+    ).index_add_(0, destination_index, outer)
     # Padding nodes past the last frame belong to none: they enter no frame
     # total, as in the CUDA operator.
     frame_id = frame_id_from_n_node(n_node, n_total=node_count)
@@ -553,8 +541,7 @@ def _cpu_energy_force(
             torch.arange(node_count, dtype=torch.int64, device=device), listed
         )
         positions = source_order[: int(source_row_ptr[-1])].to(torch.int64)
-        atom_virial.index_add_(0, rows, source_outer[positions])
-        atom_virial.index_add_(0, destination_index, row_outer)
+        atom_virial.index_add_(0, rows, outer[positions])
     if spin_gradient.ndim == 2:
         spin_force = torch.zeros(
             node_count, 3, dtype=torch.float64, device=device
@@ -618,12 +605,12 @@ def _generic_topology(
 
 # The compact ABI drops the three topology tensors of the generic ABI and its
 # leading ``canonical`` flag; the remaining trailing scalars are identical.
-_CANONICAL_SCALAR_COUNT = 8
+_CANONICAL_SCALAR_COUNT = 7
 
 #: Arguments of the compact descriptor operator: ``edge_vec``, the source
 #: indices, the destination row pointers and the node types, then the
 #: compression artifacts and the trailing geometry scalars.
-_DESCRIPTOR_ARGUMENT_COUNT = 28
+_DESCRIPTOR_ARGUMENT_COUNT = 27
 
 #: Magnitude in eV/Å from which a force contribution lies outside the range of
 #: the fixed-point force totals of the CUDA operator (``kForceFixedLimit``).
@@ -730,15 +717,13 @@ def _generic_backward(
     pair: tuple[torch.Tensor, torch.Tensor] | None = None,
     blocks_record: torch.Tensor | None = None,
     exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run the generic reference cotangents on a compact payload.
 
-    ``pair`` is the series table and the energy cotangent of an analytical
-    pair potential; the compact descriptor operators carry none.
+    ``pair`` is the table and the energy cotangent of an analytical pair
+    potential; the compact descriptor operators carry none.
     ``blocks_record`` and ``exchange`` are those of the reference descriptor.
-    The results are those of ``_reference_cotangents``, whose second one is
-    the part of the coordinate cotangent that belongs to the destination of
-    every edge.
+    The results are those of ``_reference_cotangents``.
     """
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         _reference_cotangents as generic_cotangents,
@@ -771,10 +756,8 @@ def _generic_backward(
 
 
 def _cpu_backward(*args: Any) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    edge_gradient, row_gradient, spin_gradient, edge_spin_gradient, _ = (
-        _generic_backward(*args)
-    )
-    return edge_gradient + row_gradient, spin_gradient, edge_spin_gradient
+    edge_gradient, spin_gradient, edge_spin_gradient, _ = _generic_backward(*args)
+    return edge_gradient, spin_gradient, edge_spin_gradient
 
 
 def _cpu_backward_inplace(
