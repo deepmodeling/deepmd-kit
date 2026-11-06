@@ -1576,6 +1576,27 @@ class TestMixedNloc(unittest.TestCase):
         self.assertEqual(batch["homo_energy"].shape, (2, 2))
         np.testing.assert_array_equal(batch["homo_energy"][1], reader[3]["homo_energy"])
 
+    def test_stride_probe_ignores_unrelated_validation_and_missing_fields(self):
+        path = _create_mix_probe_lmdb(f"{self._tmpdir.name}/probe_missing.lmdb")
+        with lmdb.open(path) as database:
+            with database.begin(write=True) as transaction:
+                key = format(1, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                del frame["energies"], frame["homo_energy"]
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        reader = LmdbDataReader(path, self._type_map, batch_size="mix:36")
+        reader.add_data_requirement(
+            [DataRequirementItem("energy", 1, atomic=False, must=True)]
+        )
+        self.assertNotIn("homo_energy", reader.per_atom_strides(0))
+        batch = reader.decode_batch([3, 5])
+        self.assertEqual(batch["homo_energy"].shape, (2, 2))
+        # Dataset-level classification also applies to a same-size ragged batch.
+        ragged = reader.decode_batch([0, 2], ragged=True)
+        self.assertEqual(ragged["homo_energy"].shape, (2, 2))
+        with self.assertRaisesRegex(RuntimeError, "energy"):
+            reader.decode_batch([1])
+
     def test_mix_tracks_the_atom_proportional_weighting(self):
         """Packing to a budget must not distort how much each frame counts.
 

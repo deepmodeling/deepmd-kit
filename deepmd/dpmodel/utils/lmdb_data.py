@@ -118,7 +118,7 @@ PHANTOM_ATOM_TYPE = -1
 # authoritative ``atomic`` flag; these two sets cover the fields that exist
 # without one.
 _STRUCTURAL_PER_ATOM_KEYS = frozenset({"coord", "atype"})
-_OPTIONAL_PER_ATOM_KEYS = frozenset({"aparam", "spin"})
+_OPTIONAL_PER_ATOM_KEYS = frozenset({"aparam", "force", "spin"})
 
 # Frame-level fields that a decoded frame may carry without a registered
 # requirement. They anchor the shape-based fallback below, which classifies any
@@ -2676,17 +2676,12 @@ class LmdbDataReader:
     def per_atom_strides(self, index: int = 0) -> dict[str, int]:
         """Return the leading-axis entries per atom of each per-atom field.
 
-        Every frame of one LMDB exposes the same fields, so the classification
-        is a property of the dataset and its registered requirements rather
-        than of a batch, and is resolved once.
-
-        A field the loader has no requirement for is classified by comparing
-        its leading axis with the atom count, which one frame cannot settle: a
-        frame-level field of length two looks per-atom on every two-atom
-        frame. When the dataset holds frames of another atom count, a field
-        that such a frame also carries is therefore kept per-atom only if it
-        matches there too. Declared fields match on every frame, so only the
-        shape-guessed ones can be dropped.
+        Registered fields determine their atom axis. For an undeclared field,
+        the leading axis is compared with the atom count on the selected frame
+        and on a representative record of every other atom-count group that
+        carries it. Missing optional fields do not settle the classification.
+        These probes read raw field shapes, without validating, transforming,
+        or deriving labels in records outside the selected batch.
 
         Parameters
         ----------
@@ -2701,12 +2696,37 @@ class LmdbDataReader:
         """
         if self._per_atom_strides is None:
             frame = self[index]
-            keys = resolve_per_atom_keys(frame, self._decode_config)
-            other = np.flatnonzero(self._frame_nlocs != self._frame_nlocs[index])
-            if other.size:
-                other_frame = self[int(other[0])]
-                other_keys = resolve_per_atom_keys(other_frame, self._decode_config)
-                keys -= (keys - other_keys) & other_frame.keys()
+            keys = set(resolve_per_atom_keys(frame, self._decode_config))
+            inferred = keys - (
+                _STRUCTURAL_PER_ATOM_KEYS
+                | _OPTIONAL_PER_ATOM_KEYS
+                | self._decode_config.data_requirements.keys()
+            )
+            for nloc, indices in self._nloc_groups.items():
+                if nloc == self._frame_nlocs[index] or not inferred:
+                    continue
+                pending = inferred.copy()
+                for other in indices:
+                    key = format(
+                        int(self._retained_keys[other]), self._frame_fmt
+                    ).encode()
+                    raw = self._transaction().get(key)
+                    if raw is None:
+                        raise IndexError(f"Frame {key.decode()} not found in LMDB")
+                    record = _remap_keys(_decode_frame(raw, copy_arrays=False))
+                    present = pending & record.keys()
+                    for field in present:
+                        value = record[field]
+                        if not (
+                            isinstance(value, np.ndarray)
+                            and value.ndim >= 1
+                            and value.shape[0] == nloc
+                        ):
+                            keys.remove(field)
+                            inferred.remove(field)
+                    pending -= present
+                    if not pending:
+                        break
             self._per_atom_strides = per_atom_strides(frame, keys)
         return self._per_atom_strides
 
