@@ -2,8 +2,14 @@
 import json
 import os
 import unittest
+from collections.abc import (
+    Iterator,
+)
 from pathlib import (
     Path,
+)
+from threading import (
+    Event,
 )
 
 import numpy as np
@@ -17,6 +23,8 @@ from deepmd.common import (
     expand_sys_str,
 )
 from deepmd.pd.utils.dataloader import (
+    QUEUESIZE,
+    BufferedIterator,
     DpLoaderSet,
     get_weighted_sampler,
 )
@@ -26,6 +34,44 @@ from deepmd.utils.data_system import (
 )
 
 CUR_DIR = os.path.dirname(__file__)
+
+
+class TestBufferedIterator(unittest.TestCase):
+    def test_close_stops_production_with_a_full_queue(self) -> None:
+        full = Event()
+        extra_read = Event()
+
+        class Source:
+            def __len__(self) -> int:
+                return 10000
+
+            def __iter__(self) -> Iterator[int]:
+                for index in range(len(self)):
+                    if index == QUEUESIZE + 1:
+                        full.set()
+                    if index == QUEUESIZE + 2:
+                        extra_read.set()
+                    yield index
+
+        buffered = BufferedIterator(Source())
+        self.addCleanup(buffered.close)
+        self.assertEqual(next(buffered), 0)
+        self.assertTrue(full.wait(timeout=5))
+        self.assertTrue(buffered._queue.full())
+        producer = buffered._consumer
+        buffered.close()
+        self.assertFalse(producer.is_alive())
+        self.assertFalse(extra_read.is_set())
+        self.assertTrue(buffered._queue.empty())
+        with self.assertRaises(StopIteration):
+            next(buffered)
+        buffered.close()
+
+    def test_exhaustion_releases_the_producer(self) -> None:
+        buffered = BufferedIterator(range(3))
+        self.assertEqual(list(buffered), [0, 1, 2])
+        self.assertIsNone(buffered._consumer)
+        self.assertIsNone(buffered._iterable)
 
 
 class TestSampler(unittest.TestCase):

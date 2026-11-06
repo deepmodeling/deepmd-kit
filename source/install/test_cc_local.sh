@@ -1,6 +1,27 @@
 #!/bin/bash
 set -ex
 
+# With no arguments, build, generate every fixture, and run CTest as before.
+# The independent Kokkos job needs the installation and only long-range models.
+MODE=${1:-all}
+if [ "$#" -gt 1 ]; then
+	echo "Usage: $0 [--build-only | --models-only=kokkos]" >&2
+	exit 2
+fi
+case "$MODE" in
+all | --build-only | --models-only=kokkos) ;;
+*)
+	echo "Usage: $0 [--build-only | --models-only=kokkos]" >&2
+	exit 2
+	;;
+esac
+if [ "$MODE" = "--models-only=kokkos" ]; then
+	if [ "${DP_VARIANT:-}" != "cuda" ] || [ "${ENABLE_PYTORCH:-TRUE}" != "TRUE" ]; then
+		echo "Kokkos fixtures require DP_VARIANT=cuda and ENABLE_PYTORCH=TRUE." >&2
+		exit 1
+	fi
+fi
+
 if [ "$DP_VARIANT" = "cuda" ]; then
 	CUDA_ARGS="-DUSE_CUDA_TOOLKIT=TRUE"
 elif [ "$DP_VARIANT" = "rocm" ]; then
@@ -20,19 +41,28 @@ BUILD_TMP_DIR=${SCRIPT_PATH}/../build_tests
 PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
-cmake \
-	-D ENABLE_TENSORFLOW=${ENABLE_TENSORFLOW:-TRUE} \
-	-D ENABLE_PYTORCH=${ENABLE_PYTORCH:-TRUE} \
-	-D ENABLE_PADDLE=${ENABLE_PADDLE:-TRUE} \
-	-D INSTALL_TENSORFLOW=FALSE \
-	-D USE_TF_PYTHON_LIBS=${ENABLE_TENSORFLOW:-TRUE} \
-	-D USE_PT_PYTHON_LIBS=${ENABLE_PYTORCH:-TRUE} \
-	-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
-	-D BUILD_TESTING:BOOL=TRUE \
-	-D LAMMPS_VERSION=stable_22Jul2025_update2 \
-	${CUDA_ARGS} ..
-cmake --build . -j${NPROC}
-cmake --install .
+if [ "$MODE" != "--models-only=kokkos" ]; then
+	BUILD_TESTING=TRUE
+	if [ "$MODE" = "--build-only" ]; then
+		BUILD_TESTING=FALSE
+	fi
+	cmake \
+		-D ENABLE_TENSORFLOW=${ENABLE_TENSORFLOW:-TRUE} \
+		-D ENABLE_PYTORCH=${ENABLE_PYTORCH:-TRUE} \
+		-D ENABLE_PADDLE=${ENABLE_PADDLE:-TRUE} \
+		-D INSTALL_TENSORFLOW=FALSE \
+		-D USE_TF_PYTHON_LIBS=${ENABLE_TENSORFLOW:-TRUE} \
+		-D USE_PT_PYTHON_LIBS=${ENABLE_PYTORCH:-TRUE} \
+		-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
+		-D BUILD_TESTING:BOOL=${BUILD_TESTING} \
+		-D LAMMPS_VERSION=stable_22Jul2025_update2 \
+		${CUDA_ARGS} ..
+	cmake --build . -j${NPROC}
+	cmake --install .
+else
+	# Never let a missing installation fall back to an unrelated Python build.
+	test -f "${INSTALL_PREFIX}/lib/libdeepmd_c.so"
+fi
 # Generate PT/PT2 model files for C++ tests.
 # Must run after cmake --build so that libdeepmd_op_pt.so (custom ops) is available.
 if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
@@ -40,6 +70,9 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	# loads it via cxx_op.py.  The .so depends on libdeepmd.so (compute
 	# kernels) in the install prefix, so add that to LD_LIBRARY_PATH too.
 	export LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
+	if [ "$MODE" != "all" ]; then
+		test -f "${BUILD_TMP_DIR}/op/pt/libdeepmd_op_pt.so"
+	fi
 	python -c '
 import shutil, sys
 from pathlib import Path
@@ -55,13 +88,15 @@ else:
     shutil.copy2(str(so), str(dst))
     print(f"Installed {so} -> {dst}")
 '
+fi
+if [ "$MODE" = "--build-only" ]; then
+	exit 0
+fi
+if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 	# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
 	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
 	# in the gen scripts to avoid false reports from torch/paddle internals.
 	INFER_SCRIPT_PATH=${SCRIPT_PATH}/../tests/infer
-	# Remove stale generated model files so they can't be accidentally reused
-	# if gen scripts change format or the code version changes.
-	rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte
 	_GEN_ENV=""
 	if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
 		_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
@@ -75,6 +110,17 @@ else:
 			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0 DP_GEN_UNDER_SANITIZER=lsan"
 		fi
 	fi
+	if [ "$MODE" = "--models-only=kokkos" ]; then
+		# Leave the other C++ fixtures alone when reusing an existing build.
+		rm -f ${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.pt2 \
+			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.pte \
+			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.expected
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py
+		exit 0
+	fi
+	# Remove stale generated model files so they can't be accidentally reused
+	# if gen scripts change format or the code version changes.
+	rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte
 	# Run gen scripts in parallel for faster model generation.
 	# Wait on each PID separately so any failure is caught by set -e.
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py &
@@ -113,6 +159,11 @@ else:
 	PID8=$!
 	wait $PID7
 	wait $PID8
+	# Copies of the multi-rank DPA3 archives of gen_dpa3.py and gen_spin.py
+	# whose nested with-comm artifact is corrupt; without them the load-failure
+	# cases of the pt_expt backends (test_with_comm_load_failure_ptexpt.cc)
+	# skip.
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_corrupt_with_comm.py
 
 	# Native-spin DPA4 graph archives (baseline + model-level pair
 	# exclusion). Without this the whole native-spin graph C++ suite
@@ -134,6 +185,11 @@ else:
 	# exports NO with-comm artifact (single-rank only by construction).
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
 	PID14=$!
+	# Minimal native-spin DPA4C for LAMMPS pair_style dpa4spin (no
+	# fparam/aparam/chg_spin). CPU-safe; used by the magnetic-force
+	# convention behavioral tests.
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin_lmp.py &
+	PID14B=$!
 	# Native-spin DPA4C: the archives above all ship a with-comm artifact
 	# and are therefore served by DeepSpinPTExpt, which leaves
 	# NativeSpinPTExpt -- the class the dispatch selects for a native-spin
@@ -144,14 +200,29 @@ else:
 	if [ "${DP_VARIANT}" = "cuda" ]; then
 		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
 		PID15=$!
+		# Compressed DPA4C, an energy and a native-spin model, on the compact
+		# canonical lower: the only fixtures that reach the device-resident
+		# entry points LAMMPS + Kokkos calls, with the replay of repeated
+		# evaluations and a runtime charge state.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_canonical.py &
+		PID16=$!
 	fi
+	# DPA4C with a latent-charge long-range module: the uncompressed archive
+	# takes the all-pairs topology of the graph lower; for the CUDA variant the
+	# script also writes the compressed archive, whose compact canonical lower
+	# reads the node positions.
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py &
+	PID17=$!
 	wait $PID11
 	wait $PID12
 	wait $PID13
 	wait $PID14
+	wait $PID14B
 	if [ "${DP_VARIANT}" = "cuda" ]; then
 		wait $PID15
+		wait $PID16
 	fi
+	wait $PID17
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir

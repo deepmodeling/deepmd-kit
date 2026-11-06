@@ -124,7 +124,7 @@ _DPA4_GRADES: dict[str, dict[str, dict[str, Any]]] = {
         "descriptor": {
             "channels": 128,
             "lmax": 6,
-            "n_blocks": 10,
+            "n_blocks": 8,
             "mixing_layers": 4,
             "radial_so2_rank": 4,
             "n_focus": 3,

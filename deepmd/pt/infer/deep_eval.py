@@ -20,6 +20,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.infer.deep_density import (
+    DeepDensity,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -69,17 +72,12 @@ from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
     RESERVED_PRECISION_DICT,
 )
-from deepmd.pt.utils.nv_nlist import (
-    NvNeighborList,
-    is_nv_available,
-)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
-from deepmd.pt_expt.utils.vesin_neighbor_list import (
-    VesinNeighborList,
-    is_vesin_torch_available,
+from deepmd.pt_expt.utils.auto_neighbor_list import (
+    make_neighbor_list,
 )
 from deepmd.utils.batch_size import (
     RetrySignal,
@@ -113,7 +111,7 @@ _EMBEDDING_DTYPE_TO_TORCH = {
 def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
     """Return whether the params describe a SeZM / DPA4 model."""
     model_type = str(model_params.get("type", "")).lower()
-    if model_type in {"sezm", "dpa4", "sezm_spin"}:
+    if model_type in {"sezm", "dpa4"}:
         return True
     # canonical bridged spelling: linear_ener over [dpa4, inner_potential],
     # realized by the pt backend as a SeZMModel
@@ -143,6 +141,15 @@ class DeepEval(DeepEvalBackend):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
+    nlist_backend : str, default: "auto"
+        Extended-coordinate neighbor search: ``"auto"``, ``"native"``,
+        ``"vesin"``, or ``"nv"``. Auto prefers Vesin for a single frame and
+        Toolkit-Ops for CUDA batches when available.
+    neighbor_graph_method : str, default: "auto"
+        SeZM/DPA4 inference search: ``"auto"``, ``"vesin"``, or ``"nv"``.
+        The strategy runs inside the model's native forward geometry stage.
+    neighbor_skin : float, default: 0.0
+        Vesin candidate-search skin in angstrom. Zero disables Verlet caching.
     **kwargs : dict
         Keyword arguments.
     """
@@ -157,11 +164,15 @@ class DeepEval(DeepEvalBackend):
         head: str | int | None = None,
         no_jit: bool = False,
         nlist_backend: str = "auto",
+        neighbor_graph_method: str = "auto",
+        neighbor_skin: float = 0.0,
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
+        self._neighbor_graph_method = neighbor_graph_method
+        self._neighbor_skin = neighbor_skin
         # data modifier, populated only for frozen .pth models that carry one
         self.modifier = None
         if str(self.model_path).endswith(".pt"):
@@ -279,25 +290,47 @@ class DeepEval(DeepEvalBackend):
     def _setup_nlist_backend(self, nlist_backend: str) -> None:
         """Resolve the neighbor-list construction strategy from a user choice.
 
-        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` / ``"nv"``
-        force the O(N) ``vesin.torch`` / ``nvalchemiops`` cell list (raising if
-        unavailable or the model/inputs are unsupported); ``"auto"`` picks the
-        first available O(N) builder (vesin, then nv) and otherwise falls back to
-        the native builder.  Results are unchanged either way -- only the
-        neighbor-search cost differs.
+        ``"native"`` retains the model's unbuffered construction policy and
+        ignores ``neighbor_skin``. For self-built SeZM/DPA4 models this is a
+        batch-aware Vesin/NV strategy, with dense carry-all edges only when both
+        optional libraries are unavailable. Other models retain their native
+        extended-coordinate construction. ``"vesin"`` / ``"nv"`` force the
+        corresponding search (raising for unavailable or unsupported inputs);
+        ``"auto"`` selects by frame count and available libraries. Results are
+        unchanged either way -- only the neighbor-search cost differs.
         """
         inner = self.dp.model["Default"]
         self_built = getattr(inner, "use_self_built_nlist", None)
         if callable(self_built) and self_built():
-            # The model builds its own neighbor list and runs the native path;
-            # an external strategy would bypass it, so always use native.
-            log.debug(
-                "Ignoring nlist_backend=%r: %s uses its own built-in neighbor list.",
-                nlist_backend,
-                type(inner).__name__,
-            )
+            # The strategy belongs to the model's geometry stage. Keeping the
+            # native forward entry preserves its compiled core computation.
+            configure = getattr(inner, "set_inference_neighbor_list", None)
             self._nlist_builder = None
+            if not callable(configure):
+                return
+            method = self._neighbor_graph_method
+            if method not in ("auto", "vesin", "nv"):
+                raise ValueError(
+                    "PT SeZM/DPA4 supports neighbor_graph_method 'auto', "
+                    f"'vesin', or 'nv'; got {method!r}."
+                )
+            if method != "auto" and nlist_backend != "auto":
+                raise ValueError(
+                    "Select only one of neighbor_graph_method and nlist_backend."
+                )
+            if method == "auto":
+                method = nlist_backend
+            configure(
+                make_neighbor_list(
+                    method, DEVICE, self._neighbor_skin, return_mode="edges"
+                )
+            )
             return
+        if self._neighbor_graph_method != "auto":
+            raise ValueError(
+                "neighbor_graph_method applies to PT SeZM/DPA4 models; "
+                "use nlist_backend for this model."
+            )
         if nlist_backend not in ("auto", "vesin", "nv", "native"):
             raise ValueError(
                 f"Unknown nlist_backend '{nlist_backend}'; "
@@ -325,7 +358,6 @@ class DeepEval(DeepEvalBackend):
             unsupported = "non-energy models"
         ase_provided = self.neighbor_list is not None
 
-        builder = None
         if nlist_backend in ("vesin", "nv"):
             if unsupported is not None:
                 raise ValueError(
@@ -337,36 +369,11 @@ class DeepEval(DeepEvalBackend):
                     f"nlist_backend='{nlist_backend}' conflicts with an "
                     "explicitly supplied ASE neighbor_list; pass only one."
                 )
-            if nlist_backend == "vesin":
-                if not is_vesin_torch_available():
-                    raise ImportError(
-                        "nlist_backend='vesin' was requested but 'vesin.torch' "
-                        "is not installed. Install it (`pip install "
-                        "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
-                    )
-                builder = VesinNeighborList()
-            elif DEVICE.type != "cuda":
-                raise ValueError(
-                    "nlist_backend='nv' requires CUDA inference tensors; "
-                    f"current DEVICE is {DEVICE!s}. Use nlist_backend='native' "
-                    "(or 'auto') for CPU inference."
-                )
-            elif not is_nv_available():
-                raise ImportError(
-                    "nlist_backend='nv' was requested but 'nvalchemi-toolkit-ops'"
-                    " is not installed. Install it (`pip install "
-                    "nvalchemi-toolkit-ops`) or use nlist_backend='native' "
-                    "(or 'auto')."
-                )
-            else:
-                builder = NvNeighborList()
-        elif nlist_backend == "auto" and unsupported is None and not ase_provided:
-            # Pick the first available O(N) builder; nv is GPU-only.
-            if is_vesin_torch_available():
-                builder = VesinNeighborList()
-            elif is_nv_available() and DEVICE.type == "cuda":
-                builder = NvNeighborList()
-        self._nlist_builder = builder
+        self._nlist_builder = (
+            make_neighbor_list(nlist_backend, DEVICE, self._neighbor_skin)
+            if unsupported is None and not ase_provided
+            else None
+        )
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -440,10 +447,25 @@ class DeepEval(DeepEvalBackend):
             return DeepWFC
         elif "population" in model_output_type:
             return DeepPopulation
+        elif "density" in model_output_type and self._model_has_grid(
+            self.dp.model["Default"]
+        ):
+            # key on the grid capability rather than the output name, so a
+            # property fitting with property_name "density" still dispatches
+            # to DeepProperty below
+            return DeepDensity
         elif self.get_var_name() in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
+
+    @staticmethod
+    def _model_has_grid(model: Any) -> bool:
+        has_grid = getattr(model, "has_grid", None)
+        try:
+            return bool(has_grid()) if callable(has_grid) else False
+        except AttributeError:
+            return False
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
@@ -551,6 +573,41 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
+        if "grid" in kwargs and kwargs["grid"] is not None:
+            grid_input = np.array(kwargs["grid"])
+            # the directional neighbor list is dense in ngrid x nall, so the
+            # batching size proxy must account for the grid extent, not just
+            # the atom count
+            ngrid = grid_input.size // (numb_test * 3)
+            out = self._eval_func(
+                self._eval_model_density, numb_test, max(natoms, ngrid)
+            )(
+                coords,
+                cells,
+                atom_types,
+                grid_input,
+                fparam,
+                aparam,
+                self._get_request_defs(atomic),
+                charge_spin,
+            )
+            # _eval_model_density returns a 1-element tuple; execute_all unwraps
+            # it when auto batching is enabled, but with auto_batch_size=False
+            # the inner function is called directly and the tuple survives.
+            # request_defs is ignored on this path: the density output is a
+            # single fixed variable, so atomic=True returns the same dict as
+            # atomic=False. Kept for signature parity with the other
+            # _eval_model_* paths.
+            if isinstance(out, tuple):
+                (out,) = out
+            return {"density": out}
+        if "density" in self.output_def.var_defs and self._model_has_grid(
+            self.dp.model["Default"]
+        ):
+            raise ValueError(
+                "grid is required to evaluate a density model; "
+                "pass grid=... with shape (nframes, ngrid, 3)"
+            )
         request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
@@ -917,6 +974,86 @@ class DeepEval(DeepEvalBackend):
                         ],
                     )
                 )  # this is kinda hacky
+        return tuple(results)
+
+    def _eval_model_density(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        grid: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
+    ) -> tuple[np.ndarray, ...]:
+        model = self.dp.to(DEVICE)
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = torch.tensor(
+            coords.reshape([nframes, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        grid_input = torch.tensor(
+            grid.reshape([nframes, -1, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        ngrid = grid_input.shape[1]
+        if cells is not None:
+            box_input = torch.tensor(
+                cells.reshape([nframes, 3, 3]),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
+        else:
+            box_input = None
+        if fparam is not None:
+            fparam_input = to_torch_tensor(
+                fparam.reshape(nframes, self.get_dim_fparam())
+            )
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = to_torch_tensor(
+                aparam.reshape(nframes, natoms, self.get_dim_aparam())
+            )
+        else:
+            aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
+
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+        )
+        batch_output = model(
+            coord_input,
+            type_input,
+            grid=grid_input,
+            box=box_input,
+            do_atomic_virial=do_atomic_virial,
+            fparam=fparam_input,
+            aparam=aparam_input,
+            charge_spin=charge_spin_input,
+        )
+        if isinstance(batch_output, tuple):
+            batch_output = batch_output[0]
+
+        results = []
+        pt_name = "density"
+        density_shape = [nframes, ngrid]
+        out = batch_output[pt_name].reshape(density_shape).detach().cpu().numpy()
+        results.append(out)
         return tuple(results)
 
     def _get_output_shape(

@@ -78,10 +78,9 @@ unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 > descriptors. On the conservative **energy** path it is only an initial
 > neighbor-search capacity that grows on demand, so it never truncates the
 > neighbor list and you do not need to size it to the true maximum neighbor count.
-> The native spin scheme shares this energy path, so it grows on demand too; only
-> the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
-> `sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
-> the training data.
+> The native spin scheme shares this energy path, so it grows on demand too;
+> the denoising (`dens`) path caps the list at `sum(sel)`. You can also set `sel`
+> to `auto` or `auto:factor` to size it from the training data.
 
 ### Presets
 
@@ -231,23 +230,14 @@ default training path. See `examples/water/dpa4/input_dens.json` for an example.
 ### Spin
 
 DPA4/SeZM supports the DeePMD-kit spin convention through the standard
-`model.spin` block. Two schemes are available, selected by `model.spin.scheme`:
+`model.spin` block. The `native` scheme passes the per-atom spin vector into the
+descriptor as an equivariant feature, and the magnetic force is the negative
+spin gradient of the energy. The neighbor list and type map keep their
+real-system sizes.
 
-- `native` — the per-atom spin vector enters the descriptor as an
-  equivariant feature, and the magnetic force is the spin gradient of the
-  energy. No virtual atoms are introduced, so the neighbor list and type map
-  keep their real-system sizes.
-- `deepspin` (default) — the classical DeepSpin representation, in which each
-  magnetic atom is paired with a virtual atom displaced along its spin. It is
-  the default, so a `model.spin` block without an explicit `scheme` reproduces
-  the classical behaviour shared with every non-SeZM spin model.
-
-Both schemes train against the conservative `ener_spin` loss, share the same
+Spin models train against the conservative `ener_spin` loss, use the
 `spin` / `force_mag` data convention, and are not combined with the `dens` mode.
-Because the dataset and loss are identical, switching `scheme` does not require
-any change to the data or the loss block. Complete inputs are in
-`examples/spin/dpa4/`: `input.json` for the native scheme and
-`input-deepspin.json` for the deepspin scheme. See
+A complete input is provided in `examples/spin/dpa4/input.json`. See
 [training spin energy models](train-energy-spin.md) for the general workflow.
 
 `use_spin` accepts a per-type boolean list or, to avoid enumerating a large
@@ -294,44 +284,10 @@ the magnetic force come from a single energy gradient:
 
 where $\mathbf{s}_i$ is the input spin vector. The model does not rescale the
 spin internally, so $\mathbf{s}_i$ keeps the dataset's `spin` convention and the
-magnetic force is reported in the matching units of `force_mag` -- there is no
-`virtual_scale` factor in this scheme. The magnetic force is reported on the
-magnetic atom types only, matching the `force_mag` label. The native scheme
+magnetic force is reported in the matching units of `force_mag`, on magnetic
+atom types only, matching the `force_mag` label. The native scheme
 relies on the descriptor's angular degrees to represent the spin direction, so
 it requires `lmax >= 1` (the default).
-
-#### DeepSpin virtual-atom scheme (default)
-
-```json
-{
-  "model": {
-    "type": "dpa4",
-    "type_map": [
-      "Ni",
-      "O"
-    ],
-    "spin": {
-      "use_spin": [
-        true,
-        false
-      ],
-      "virtual_scale": [
-        0.314
-      ],
-      "scheme": "deepspin"
-    },
-    "descriptor": {
-      "sel": 120,
-      "rcut": 6.0
-    }
-  }
-}
-```
-
-The `deepspin` scheme augments each magnetic atom with a virtual atom at
-`coord + spin * virtual_scale`, which doubles the internal neighbor capacity and
-type map. `virtual_scale` is required by this scheme and ignored by the native
-scheme.
 
 ### Multi-task / shared fitting
 
@@ -371,42 +327,101 @@ Best checkpoints fold the LoRA deltas back into the base weights, producing
 plain DPA4/SeZM checkpoints suitable for deployment. See
 `examples/water/dpa4/lora_ft.json`.
 
-## Zone bridging (ZBL)
+## Zone bridging
 
-DPA4/SeZM can add an analytical short-range repulsion (typically ZBL) to the
-learned energy in a protected region:
+DPA4/SeZM can add an analytical short-range repulsion to the learned energy in a
+protected region:
 
 ```math
-E_i = E_i^{\mathrm{DPA4/SeZM}} + E_i^{\mathrm{ZBL}}.
+E_i = E_i^{\mathrm{DPA4/SeZM}} + E_i^{\mathrm{pair}}.
 ```
 
-Below `bridging_r_inner` the distance seen by the descriptor is clamped, with a
-smooth transition back to the true distance up to `bridging_r_outer`; a source
-gate additionally blocks the learned model from leaking information about the
-frozen short-range pairs. The recommended way to enable it is the concise
-form, set directly on the `dpa4` model:
+Two potentials are available. `bridging_method: "zbl"` uses the
+Ziegler-Biersack-Littmark screened nuclear potential, which is derived from
+frozen atomic electron densities and covers every element.
+`bridging_method: "nlh"` uses the Nordlund-Lehtola-Hobler form, whose
+coefficients are fitted to self-consistent quantum-chemical pair energies and
+therefore follow the real repulsive wall much more closely, leaving a smaller
+residual repulsion at ordinary bond lengths for the learned model to cancel.
+`zbl` is the default; whether `nlh` yields a better trained model has not been
+established.
+
+> [!NOTE]
+> The `nlh` coefficients shipped with DeePMD-kit are this project's own refit and
+> are **not** the coefficients published by Nordlund, Lehtola and Hobler. They are
+> fitted independently to the same open reference data — K. Nordlund, G. Hobler and
+> S. Lehtola, Zenodo [10.5281/zenodo.14172633](https://doi.org/10.5281/zenodo.14172633)
+> v1.0 (2024), CC BY 4.0 — under conditions this use requires, and are therefore
+> modified material. The functional form is that of
+> [Phys. Rev. A **111**, 032818 (2025)](https://doi.org/10.1103/PhysRevA.111.032818).
+> Pairs containing an element heavier than uranium, which the reference data does
+> not cover, fall back to ZBL.
+
+Inside the window three things happen to a pair, all of them smooth in the
+pair distance. The distance the descriptor reads for the pair is frozen two
+fifths into the window for every closer pair and rejoins the true distance at
+the outer radius; the freeze point sits just below the point where the training
+data end, so the descriptor still resolves the pair distance where labels
+exist and is asked to extrapolate by less than one percent of the window
+width below them. A source gate silences every atom that has a neighbor inside
+its inner radius towards every *other* atom: such an atom is absent from the
+descriptors of all its other neighbors exactly as if those edges had been
+deleted, so the frozen pair leaks no information into the learned energy of
+the atoms around it, while the two atoms of the pair keep seeing each other at
+the frozen distance. And the fitting output of an atom fades with the same
+gate to the bias of its type, so a frozen atom contributes nothing but that
+constant; with the
+[isolated-atom energy reference](train-energy.md#isolated-atom-energy-reference)
+its energy is then exactly that of an isolated atom. Along the closing of a
+pair the learned energy of the pair therefore follows the switch linearly
+once the descriptor's distance has frozen, and the analytical term takes over.
+
+The two radii follow the size of the pair they apply to. Each is a fraction of
+the covalent bond length of that element pair, so one setting covers every
+element combination in the type map. The defaults place the outer radius at
+0.80 of the bond length, below all but the shortest multiple bonds, and the
+inner radius at 0.26, deep inside the repulsive wall where the analytical term
+is the responsible description. The recommended way to enable bridging is the
+concise form, set directly on the `dpa4` model:
 
 ```json
 {
   "model": {
     "type": "dpa4",
-    "bridging_method": "zbl",
-    "bridging_r_inner": 0.5,
-    "bridging_r_outer": 0.8
+    "bridging_method": "zbl"
   }
 }
 ```
 
-When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to the
-same value as `bridging_r_inner` so frames with shorter atom pairs are excluded
-from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
+`bridging_fraction_inner` and `bridging_fraction_outer` adjust the two
+fractions. Giving `bridging_r_inner` and `bridging_r_outer` instead replaces
+the rule with one window in Å applied to every pair alike. See
+`examples/water/dpa4/input-zbl.json` for a complete example.
+
+Training frames that contain a pair closer than the midpoint of its window are
+left out of the loss. Below the midpoint the learned contribution of the pair is
+throttled to less than half of its amplitude, so a label there would ask the
+model for a multiple of the energy it has to express. The threshold is derived
+from the window of each element pair, and `training_data.min_pair_dist` must
+stay unset on a bridged model. The data statistics, including those of
+`dp change-bias`, are drawn under the same filter, while validation batches
+are not filtered, so a validation error also covers frames that training
+leaves out.
+
+Labels inside the upper half of the window of every element pair train the
+learned contribution there, and in practice they come from dimer scans that run
+down to about half the covalent bond length. Below the freeze point the
+learned contribution of a pair is the switch amplitude times a value the
+training data fix at the frozen separation, so no label is needed to keep the
+descent smooth; the atoms around a closing pair, however, see its edges fade,
+and labels inside the window are what train that response.
 
 > [!NOTE]
 > Output-bias statistics and bridging: the model energy is
-> `E = E_model + E_bias`, and the ZBL term belongs to `E_model`. The
+> `E = E_model + E_bias`, and the analytical term belongs to `E_model`. The
 > `set-by-statistic` bias mode (initial statistics, finetune with a
 > random fitting, `dp change-bias --mode set`) fits `E_bias` to the raw
-> data labels and by definition ignores `E_model` — the analytical ZBL
+> data labels and by definition ignores `E_model` — the analytical pair
 > contribution included. For a self-consistent calibration of a bridged
 > model use `change-by-statistic`, which subtracts the complete bridged
 > prediction. See [change-bias](change-bias.md) for the precise
@@ -438,8 +453,8 @@ form above expands to exactly this equivalent explicit form:
       {
         "type": "inner_potential",
         "mode": "zbl",
-        "r_inner": 0.5,
-        "r_outer": 0.8
+        "fraction_inner": 0.26,
+        "fraction_outer": 0.8
       }
     ]
   }
@@ -680,13 +695,8 @@ Two different export routes produce one:
 The two are distinct ABIs consumed by different C++ paths; neither is a dense
 route, and `--lower-kind` selects between the pt_expt lowers only.
 
-Which models lose multi-rank, on either route:
-
-- **The deepspin (virtual-atom) spin scheme**, which overrides the export ABI
-  to `nlist` because it expands virtual atoms inside the graph.
-
-**ZBL zone bridging is multi-rank capable** (including combined with native
-spin). The Source Freeze Propagation gate folds each node's full
+**Zone bridging is multi-rank capable** (including combined with native
+spin). The Source Freeze Propagation gate is a product over each node's full
 *outgoing*-edge set, which no single rank observes for ghost owners; the
 with-comm artifact completes the gate's per-node `[log eta, zero count]`
 partials across ranks with one reverse-accumulate plus one forward-broadcast
@@ -738,8 +748,7 @@ configured with `spin.scheme: native` (see [Native spin
 (magnetic)](#native-spin-magnetic) below) -- can be frozen through a
 NeighborGraph-native inference path instead of the legacy dense
 neighbor-list path. Frame-level charge/spin conditioning
-(`add_chg_spin_ebd`) and ZBL zone bridging are graph-eligible too; only the
-`deepspin` virtual-atom spin scheme remains dense-only:
+(`add_chg_spin_ebd`) and zone bridging are graph-eligible too:
 
 ```bash
 dp --pt_expt freeze -o model.pt2 --lower-kind graph
@@ -753,17 +762,12 @@ it considers every neighbor within `rcut` rather than the capacity fixed by
 `sel`. For the default conservative-energy path, `sel` is already only an
 initial search capacity that grows on demand (see the note in [Minimal
 input](#minimal-input)), so graph and dense results agree there down to
-floating-point noise. Where `sel` does act as a hard cap -- the `dens`
-denoising path, or the `deepspin` virtual-atom spin scheme, both of which
-size the neighbor list to `sum(sel)` -- the graph route's larger neighbor set
-can diverge from the dense route, the same deliberate divergence documented
-for DPA-1/DPA-2.
+floating-point noise. On the `dens` denoising path, `sel` acts as a hard cap
+that sizes the neighbor list to `sum(sel)`. The graph route's larger neighbor
+set can therefore diverge from the dense route, the same deliberate divergence
+documented for DPA-1/DPA-2.
 
-A DPA4/SeZM descriptor configured with `deepspin`-scheme spin is not
-graph-eligible and always runs the dense route regardless of `--lower-kind`;
-`--lower-kind graph` on such a model raises an error at freeze time instead
-of exporting a silently-dense-only artifact. `native`-scheme spin and ZBL
-zone bridging are the opposite case: they have *no* dense route at all --
+Native spin and zone bridging have no dense route at all --
 the analytical bridging term has no dense injection site -- so they are
 always graph-frozen, `--lower-kind` notwithstanding. Charge/spin
 conditioning rides the graph lower and constrains neither. Note that a
@@ -794,15 +798,8 @@ artifact and support multi-rank LAMMPS -- see [Native spin
 the `native`-scheme JSON example) is graph-only: a native-spin DPA4/SeZM
 model has no dense (nlist) lower at all, so it is always frozen through the
 NeighborGraph path regardless of `--lower-kind`, and always runs through it
-at inference time. The `deepspin` virtual-atom scheme is unaffected and
-keeps using the dense route described in [Spin](#spin) and [Multi-GPU (MPI)
-inference](#multi-gpu-mpi-inference).
+at inference time.
 
-- **Native scheme only.** `deepspin`-scheme spin (and the general `spin`
-  virtual-atom model outside DPA4/SeZM) is dense-only; only `scheme: native`
-  is graph-eligible. `dp --pt_expt freeze --lower-kind graph` on a
-  `deepspin`-scheme model raises an error at freeze time, per the dense/graph
-  eligibility rule above.
 - **Graph route only, no dense fallback.** A native-spin descriptor has only
   the graph lower. This is not a spin-specific restriction on the CLI: every
   graph-capable DPA4/SeZM model, plain-energy included, is frozen to the
@@ -828,7 +825,7 @@ inference](#multi-gpu-mpi-inference).
 
 No native-spin combination restrictions remain on the graph route:
 multi-rank inference, charge-spin FiLM conditioning (`add_chg_spin_ebd`),
-and ZBL zone bridging (`bridging_method: ZBL`) all combine freely with
+and zone bridging (`bridging_method: zbl` or `nlh`) all combine freely with
 `spin.scheme: native`.
 
 ## Embedding extraction
@@ -862,9 +859,14 @@ with h5py.File("embedding.hdf5", "r") as f:
     structural_feature = group["structural_feature"][:]
 ```
 
-This command operates on the training checkpoint (`.pt`), not the frozen
-`.pt2`, and honors both `DP_COMPILE_INFER` and `DP_TRITON_INFER`. See
-[model embeddings](../inference/embedding.md) for the full description.
+This command reads the training checkpoint (`.pt`) or a `.pt2` frozen through
+the [graph-native route](#graph-native-inference-route-pt_expt). A checkpoint
+of the PyTorch backend honors `DP_COMPILE_INFER` and `DP_TRITON_INFER`; a
+checkpoint of the PyTorch Exportable backend and such a `.pt2` honor
+`DP_TRITON_INFER` and `DP_CUDA_INFER` set when the command runs. The `.pt2`
+written by `dp --pt freeze` is not supported; read its training checkpoint
+instead. See [model embeddings](../inference/embedding.md) for the full
+description.
 
 ## Data format
 
@@ -954,19 +956,17 @@ closed over the one-hop neighbor shell.
 - Model compression is not supported.
 - Multi-rank (multi-GPU/MPI) LAMMPS inference works on both export routes:
   the PT `edge_vec` archive and the pt_expt NeighborGraph archive each embed
-  a with-comm artifact. ZBL zone bridging (and its native-spin combination)
+  a with-comm artifact. Zone bridging (and its native-spin combination)
   participates: the Source Freeze Propagation gate's per-node partials are
   completed across ranks by one reverse-accumulate plus one
   forward-broadcast border exchange. See
   [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference).
-- The pt_expt graph-native inference route is unavailable only for
-  `deepspin`-scheme spin, which stays on the dense route. Charge/spin
-  conditioning, ZBL zone bridging and `native`-scheme spin are all
-  graph-eligible.
+- Charge/spin conditioning, zone bridging and native spin are all eligible
+  for the pt_expt graph-native inference route.
 - `spin.scheme: native` is graph-only (it has no dense route) and supports
   multi-rank LAMMPS: ghost node features ride `border_op` per interaction
   block and ghost spins arrive through the LAMMPS `sp` forward-comm.
-  Charge-spin FiLM conditioning and ZBL zone bridging both combine with it,
+  Charge-spin FiLM conditioning and zone bridging both combine with it,
   multi-rank included. See [Native spin
   (magnetic)](#native-spin-magnetic).
 

@@ -27,7 +27,7 @@ from ...seed import (
 _RCUT, _NT = 4.0, 2
 
 
-def _model():
+def _model(numb_aparam=0):
     ds = DescrptDPA1(
         _RCUT,
         0.5,
@@ -45,6 +45,7 @@ def _model():
         ds.get_dim_out(),
         1,
         mixed_types=ds.mixed_types(),
+        numb_aparam=numb_aparam,
         precision="float64",
         seed=GLOBAL_SEED,
     ).to(env.DEVICE)
@@ -102,6 +103,37 @@ def test_graph_exportable_traces():
     # traced returns a tuple/dict; compare energy_redu
     te = traced["energy_redu"] if isinstance(traced, dict) else traced[1]
     torch.testing.assert_close(te, eager["energy_redu"], rtol=1e-10, atol=1e-10)
+
+
+@pytest.mark.parametrize("training", [False, True])
+def test_graph_forward_aparam_flattened_frames(training):
+    """Flattened training aparam must match the canonical per-atom layout."""
+    model = _model(numb_aparam=2).train(training)
+    model.neighbor_graph_method = "dense"
+    nframes, nloc, nda = 2, 3, 2
+    rng = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+    coord = (
+        torch.rand(
+            nframes, nloc, 3, dtype=torch.float64, device=env.DEVICE, generator=rng
+        )
+        * 3.0
+    )
+    atype = torch.tensor([[0, 1, 0], [1, 0, 1]], device=env.DEVICE)
+    box = torch.eye(3, dtype=torch.float64, device=env.DEVICE).reshape(1, 9)
+    box = box.repeat(nframes, 1) * 20.0
+    # Distinct values across frames, atoms and components expose indexing errors.
+    aparam = torch.linspace(
+        0.1, 1.2, nframes * nloc * nda, dtype=torch.float64, device=env.DEVICE
+    ).reshape(nframes, nloc, nda)
+    kwargs = {"box": box, "do_atomic_virial": True}
+    ref = model(coord, atype, aparam=aparam, **kwargs)
+    # The old reshape mistook nloc * nda for the per-atom parameter width.
+    out = model(coord, atype, aparam=aparam.reshape(nframes, nloc * nda), **kwargs)
+    for key in ("atom_energy", "energy", "force", "virial", "atom_virial"):
+        assert torch.isfinite(out[key]).all()
+        torch.testing.assert_close(out[key], ref[key], rtol=1e-10, atol=1e-10)
+    bumped = model(coord, atype, aparam=aparam + 1.5, **kwargs)
+    assert not torch.allclose(out["energy"], bumped["energy"])
 
 
 def test_graph_export_aparam_flat_node_axis():

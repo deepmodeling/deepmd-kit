@@ -13,6 +13,9 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
 )
+from deepmd.dpmodel.long_range import (
+    BaseLongRange,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -47,6 +50,7 @@ _model_factory = BackendModelFactory(
     atomic_model=DPAtomicModel,
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
+    long_range_base=BaseLongRange,
 )
 get_zbl_model = _model_factory.get_zbl_model
 
@@ -87,9 +91,9 @@ def get_linear_model(data: dict) -> BaseModel:
     models; ``pairtab`` children build as pair-tabulation atomic models;
     an ``inner_potential`` child builds the analytical bridging term. The
     composition is the ONE owner of the bridging coupling: it derives the
-    learned sibling descriptor's ``inner_clamp_r_inner``/``_outer`` from
-    the ``inner_potential`` child's ``r_inner``/``r_outer``, so the radii
-    are written once in the config (issue #5948, task 2).
+    learned sibling descriptor's window from the ``inner_potential``
+    child's, so the window is written once in the config (issue #5948,
+    task 2).
 
     A top-level ``spin`` section (scheme ``native``) wraps the composed
     atomic model as a :class:`NativeSpinEnergyModel`, with ``use_spin``

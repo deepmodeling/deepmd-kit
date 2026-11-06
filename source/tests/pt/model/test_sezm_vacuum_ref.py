@@ -268,7 +268,7 @@ class TestSeZMVacuumRef(unittest.TestCase):
 
         model = self.make_model(True)
         key_live = _sezm_structure_key(model)
-        model.compiled_core_compute_cache[(False, False)] = object()
+        model.compiled_core_compute_cache[False] = object()
         model.fold_vacuum_reference()
         self.assertEqual(model.compiled_core_compute_cache, {})
         # a folded model traces a graph without reference nodes
