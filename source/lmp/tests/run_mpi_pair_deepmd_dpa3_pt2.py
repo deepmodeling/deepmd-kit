@@ -267,10 +267,11 @@ ids_global = lammps.lmp.gather_atoms("id", 0, 1)
 # named per-atom computes (``c_<id>``) and returns the global,
 # id-ordered array on every rank.
 virial_global = lammps.lmp.gather("c_virial", 1, 9)
-# ``PyLammps.eval`` is rank-0-only.
+# Read results through the low-level API on every rank. PyLammps expression
+# and atom-list accessors issue commands with collective output broadcasts.
+pe_global = lammps.lmp.get_thermo("pe")
+natoms = lammps.lmp.get_natoms()
 if rank == 0:
-    pe_global = lammps.eval("pe")
-    natoms = lammps.atoms.natoms
     forces = np.array(forces_global, dtype=np.float64).reshape(natoms, 3)
     virials = np.array(virial_global, dtype=np.float64).reshape(natoms, 9)
     ids = np.array(ids_global, dtype=np.int64).reshape(natoms)
