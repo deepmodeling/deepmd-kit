@@ -372,8 +372,8 @@ class SO2Convolution(SO2ConvolutionDP):
         # scatter/gather softmax chain of the attention weights, sharing the
         # destination-sorted view with the flash aggregation; its backward and
         # hand-derived second order keep the force-loss trace from expanding
-        # the chain into materialized surfaces and serialized scatters. The
-        # source-gated (SFPG) form and fp64 compute keep the reference path.
+        # the chain into materialized surfaces and serialized scatters. fp64
+        # compute keeps the reference path.
         self._segment_softmax_fn = None
         if (
             max(self.triton_infer_level, self.triton_train_level) >= 1
@@ -417,7 +417,6 @@ class SO2Convolution(SO2ConvolutionDP):
         active_level = _active_triton_level(self)
         if (
             self._segment_softmax_fn is not None
-            and edge_cache.edge_src_gate is None
             and attn_logits.is_cuda
             and active_level >= 1
         ):

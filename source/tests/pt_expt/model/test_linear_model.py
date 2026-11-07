@@ -141,6 +141,24 @@ class TestLinearModel(unittest.TestCase):
             torch.tensor(mapping, dtype=torch.int64, device=self.device),
         )
 
+    def test_integer_mappings_are_buffers(self) -> None:
+        """The type mappings of the children are buffers, not parameters.
+
+        Every parameter is then floating point, which a sharded optimizer such
+        as ``ZeroRedundancyOptimizer`` requires, while the state-dict keys of
+        the mappings stay those of a list attribute.
+        """
+        md_pt = LinearEnergyModel.deserialize(
+            self._make_dp_linear_model().serialize()
+        ).to(self.device)
+        self.assertTrue(all(p.is_floating_point() for p in md_pt.parameters()))
+        mapping_list = md_pt.atomic_model.mapping_list
+        self.assertEqual(len(mapping_list), 2)
+        self.assertTrue(all(m.dtype == torch.int64 for m in mapping_list))
+        state = md_pt.state_dict()
+        self.assertIn("atomic_model.mapping_list.0", state)
+        self.assertIn("atomic_model.mapping_list.1", state)
+
     def test_linear_model_consistency(self) -> None:
         """Create a LinearEnergyModel, run forward() and forward_lower(),
         verify outputs have correct keys and shapes.

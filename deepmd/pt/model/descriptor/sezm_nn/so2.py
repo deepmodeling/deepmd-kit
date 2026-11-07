@@ -1738,8 +1738,8 @@ class SO2Convolution(nn.Module):
         # scatter/gather softmax chain of the attention weights, sharing the
         # destination-sorted view with the flash aggregation; its backward and
         # hand-derived second order keep the force-loss trace from expanding
-        # the chain into materialized surfaces and serialized scatters. The
-        # source-gated (SFPG) form and fp64 compute keep the reference path.
+        # the chain into materialized surfaces and serialized scatters. fp64
+        # compute keeps the reference path.
         self._segment_softmax_fn = None
         if (
             max(self.triton_infer_level, self.triton_train_level) >= 1
@@ -1838,9 +1838,9 @@ class SO2Convolution(nn.Module):
         Reduce the edge messages with the scalar envelope weight.
 
         The attention-free path: an envelope-weighted scatter add followed by the
-        degree normalization. Folding the Source Freeze Propagation Gate into the
-        envelope keeps the operation count unchanged; ``edge_src_gate`` is ``None``
-        outside bridging mode, where the branch disappears.
+        degree normalization. In bridging mode the envelope already carries the
+        Source Freeze Propagation Gate, so a muted source drops out of both the
+        sum and the normalization.
 
         Parameters
         ----------
@@ -1860,12 +1860,8 @@ class SO2Convolution(nn.Module):
         x_message, _ = self.edge_message(x, edge_cache, radial_feat)
         # (E, D, C_wide)
 
-        # === Step 2. Envelope weighting, with the source gate folded in ===
-        edge_weight = edge_cache.edge_env  # (E, 1)
-        edge_src_gate = edge_cache.edge_src_gate
-        if edge_src_gate is not None:
-            edge_weight = edge_weight * edge_src_gate.to(dtype=edge_weight.dtype)
-        x_message = x_message * edge_weight.unsqueeze(-1)  # (E, D, C_wide)
+        # === Step 2. Envelope weighting ===
+        x_message = x_message * edge_cache.edge_env.unsqueeze(-1)  # (E, D, C_wide)
 
         # === Step 3. Destination reduction and degree normalization ===
         out = x.new_zeros(x.shape, dtype=self.compute_dtype)
@@ -1909,14 +1905,7 @@ class SO2Convolution(nn.Module):
         )  # (N, Fa, Ca)
 
         # === Step 2. Backend dispatch ===
-        # The fused CUDA operator computes the attention weights itself, so it
-        # does not serve the bridging mode, whose source gate reshapes the
-        # softmax normalization.
-        run_cuda = (
-            self._cuda_conv_fn is not None
-            and not self.training
-            and edge_cache.edge_src_gate is None
-        )
+        run_cuda = self._cuda_conv_fn is not None and not self.training
         run_flash = (
             self._flash_atten_fn is not None
             and (self._flash_atten_trains or not self.training)
@@ -2166,12 +2155,12 @@ class SO2Convolution(nn.Module):
         """
         Build envelope-gated attention weights from the scalar channels.
 
-        The softmax takes ``src_weight`` so that the Source Freeze Propagation
-        Gate enters both the numerator and the denominator. A muted source
-        (``eta_src = 0``) then drops out of the destination's normalization
-        entirely, which the frozen-zone invariance requires: post-multiplying the
-        weights alone would still leak the muted source through the shared
-        denominator.
+        The envelope enters both the numerator and the denominator of the
+        softmax. In bridging mode it carries the Source Freeze Propagation
+        Gate, so a muted source (``eta_src = 0``) drops out of the
+        destination's normalization entirely, which the frozen-zone invariance
+        requires: post-multiplying the weights alone would still leak the muted
+        source through the shared denominator.
 
         Parameters
         ----------
@@ -2212,11 +2201,9 @@ class SO2Convolution(nn.Module):
         )  # (E, F, H)
 
         # === Step 3. Envelope-gated segment softmax with a null mass ===
-        edge_src_gate = edge_cache.edge_src_gate
         n_nodes = x_l0_node.shape[0]
         if (
             self._segment_softmax_fn is not None
-            and edge_src_gate is None
             and attn_logits.is_cuda
             and active_triton_level(self) >= 1
         ):
@@ -2251,9 +2238,6 @@ class SO2Convolution(nn.Module):
             n_nodes=n_nodes,
             z_bias_raw=self.adamw_attn_z_bias_raw,
             eps=self.eps,
-            src_weight=(
-                None if edge_src_gate is None else edge_src_gate.to(dtype=compute_dtype)
-            ),
         )  # (E, F, H)
 
     def attention_head_gate(self, x_l0_node: torch.Tensor) -> torch.Tensor:

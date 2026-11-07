@@ -167,9 +167,13 @@ class GLUFittingNet(NativeOP):
             xx = val * act(gate)
         return xx
 
+    def call_last(self, xx: Array) -> Array:
+        """Project the activations of :meth:`call_until_last` to the output."""
+        return self.output_layer(xx)
+
     def call(self, xx: Array) -> Array:
         """Forward pass for the GLU fitting net."""
-        return self.output_layer(self.call_until_last(xx))
+        return self.call_last(self.call_until_last(xx))
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the network to a dict (pt state_dict key contract)."""

@@ -37,13 +37,21 @@ from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
 from deepmd.utils.bridging import (
+    DEFAULT_FRACTION_INNER,
+    DEFAULT_FRACTION_OUTER,
+    concise_bridging_window,
     expand_bridging_method,
+    resolve_bridging_window,
     route_canonical_learned_options,
 )
 from deepmd.utils.spin import (
     Spin,
+    env_protection_descriptors,
 )
 
+from .density_model import (
+    GridDensityModel,
+)
 from .dipole_model import (
     DipoleModel,
 )
@@ -94,13 +102,19 @@ from .sezm_native_spin_model import (
 from .sezm_property_model import (
     SeZMPropertyModel,
 )
-from .sezm_spin_model import (
-    SeZMSpinModel,
-)
 from .spin_model import (
     SpinEnergyModel,
     SpinModel,
 )
+
+
+def _reject_long_range(model_params: dict) -> None:
+    """Reject a long-range module, which only the pt_expt backend serves."""
+    if model_params.get("long_range") is not None:
+        raise NotImplementedError(
+            "long-range modules (`long_range`) are supported by the pt_expt "
+            "backend only"
+        )
 
 
 def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
@@ -185,11 +199,9 @@ def get_spin_model(model_params: dict) -> SpinModel:
         exclude_types=model_params.get("atom_exclude_types", None)
     )
     model_params["atom_exclude_types"] = atom_exclude_types
-    if (
-        "env_protection" not in model_params["descriptor"]
-        or model_params["descriptor"]["env_protection"] == 0.0
-    ):
-        model_params["descriptor"]["env_protection"] = 0.01
+    for descriptor in env_protection_descriptors(model_params["descriptor"]):
+        if "env_protection" not in descriptor or descriptor["env_protection"] == 0.0:
+            descriptor["env_protection"] = 0.01
     if model_params["descriptor"]["type"] in ["se_e2_a"]:
         # only expand sel for se_e2_a
         model_params["descriptor"]["sel"] += model_params["descriptor"]["sel"]
@@ -205,6 +217,7 @@ def get_linear_model(model_params: dict) -> BaseModel:
                 "sub-model: add an `inner_potential` sub-model to the "
                 "composition instead."
             )
+        _reject_long_range(sub)
     if any(
         sub.get("type") == "inner_potential" for sub in model_params.get("models", [])
     ):
@@ -355,8 +368,14 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
     learned["atom_exclude_types"] = model_params.get("atom_exclude_types", [])
     learned["pair_exclude_types"] = model_params.get("pair_exclude_types", [])
     learned["bridging_method"] = inner_cfg.get("mode", "zbl")
-    learned["bridging_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
-    learned["bridging_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
+    learned["bridging_fraction_inner"] = inner_cfg.get(
+        "fraction_inner", DEFAULT_FRACTION_INNER
+    )
+    learned["bridging_fraction_outer"] = inner_cfg.get(
+        "fraction_outer", DEFAULT_FRACTION_OUTER
+    )
+    learned["bridging_r_inner"] = inner_cfg.get("r_inner")
+    learned["bridging_r_outer"] = inner_cfg.get("r_outer")
     if "spin" in model_params:
         learned["spin"] = model_params["spin"]
         return get_sezm_spin_model(learned)
@@ -364,6 +383,7 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
 
 
 def get_zbl_model(model_params: dict) -> DPZBLModel:
+    _reject_long_range(model_params)
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
     descriptor, fitting, _ = _get_standard_model_components(model_params, ntypes)
@@ -405,6 +425,7 @@ def get_standard_model(model_params: dict) -> BaseModel:
             "expands the flag), or spell the composition explicitly with "
             '`type: "linear_ener"` and an `inner_potential` sub-model.'
         )
+    _reject_long_range(model_params)
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
@@ -424,6 +445,8 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = DOSModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+    elif fitting_net_type == "density":
+        modelcls = GridDensityModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
     elif fitting_net_type == "population":
@@ -444,6 +467,24 @@ def get_standard_model(model_params: dict) -> BaseModel:
         model.enable_hessian()
     model.model_def_script = json.dumps(model_params_old)
     return model
+
+
+def _bridging_window_options(model_params: dict) -> dict:
+    """
+    Resolve the bridging window of a SeZM model section.
+
+    Parameters
+    ----------
+    model_params : dict
+        A DPA4/SeZM model section carrying the concise bridging keys.
+
+    Returns
+    -------
+    dict
+        The window options of the learned descriptor, as
+        :func:`deepmd.utils.bridging.resolve_bridging_window` spells them.
+    """
+    return resolve_bridging_window(concise_bridging_window(model_params))
 
 
 def _reconcile_sezm_pair_exclude_types(model_params: dict) -> list[list[int]]:
@@ -504,12 +545,10 @@ def get_sezm_model(model_params: dict) -> BaseModel:
 
     # === Bridging parameters ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
+    bridging_window = _bridging_window_options(model_params)
     # Only inject bridging parameters when bridging is enabled.
     if bridging_method != "NONE":
-        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
-        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
+        model_params["descriptor"].update(bridging_window)
 
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
@@ -562,37 +601,20 @@ def get_sezm_model(model_params: dict) -> BaseModel:
         use_compile=use_compile,
         enable_tf32=enable_tf32,
         bridging_method=bridging_method,
-        bridging_r_inner=bridging_r_inner,
-        bridging_r_outer=bridging_r_outer,
     )
     model.model_def_script = json.dumps(model_params_old)
     return model
 
 
 def get_sezm_spin_model(model_params: dict) -> BaseModel:
-    """Dispatch a DPA4/SeZM spin model by ``model.spin.scheme``.
-
-    ``deepspin`` selects the classical virtual-atom representation; ``native``
-    injects the spin into the descriptor as an equivariant feature. A missing
-    ``scheme`` falls back to ``deepspin``.
-    """
-    scheme = str(model_params.get("spin", {}).get("scheme", "deepspin")).lower()
-    if scheme == "native":
-        return _get_sezm_native_spin_model(model_params)
-    if scheme == "deepspin":
-        return _get_sezm_virtual_spin_model(model_params)
-    raise ValueError(
-        f"Unknown spin scheme '{scheme}' for DPA4/SeZM; use 'native' or 'deepspin'."
-    )
-
-
-def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
-    """Build the native (virtual-atom-free) spin DPA4/SeZM model.
+    """Build the native spin DPA4/SeZM model.
 
     The spin vector enters the descriptor as an equivariant feature, so the
     type map, neighbor selection and type count stay at the real-system sizes;
     only the descriptor gains the spin-embedding branch.
     """
+    if str(model_params.get("spin", {}).get("scheme", "")).lower() != "native":
+        raise ValueError("DPA4/SeZM spin models require model.spin.scheme='native'.")
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     model_params.setdefault("descriptor", {})
@@ -601,8 +623,6 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
     _normalize_spin_use_spin(model_params)
 
     use_spin = [bool(flag) for flag in model_params["spin"]["use_spin"]]
-    # ``virtual_scale`` is a virtual-atom geometric device; the native scheme
-    # only needs ``use_spin`` for masking, so it stays unset here.
     spin = Spin(
         use_spin=use_spin,
         allow_missing_label=model_params["spin"].get("allow_missing_label", False),
@@ -618,13 +638,11 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
     if pair_exclude_types:
         model_params["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
 
-    # === Bridging parameters (no virtual atoms, so ZBL needs no masking) ===
+    # === Bridging parameters ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
+    bridging_window = _bridging_window_options(model_params)
     if bridging_method != "NONE":
-        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
-        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
+        model_params["descriptor"].update(bridging_window)
 
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
@@ -658,89 +676,6 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
         use_compile=use_compile,
         enable_tf32=enable_tf32,
         bridging_method=bridging_method,
-        bridging_r_inner=bridging_r_inner,
-        bridging_r_outer=bridging_r_outer,
-        spin=spin,
-    )
-    model.model_def_script = json.dumps(model_params_old)
-    return model
-
-
-def _get_sezm_virtual_spin_model(model_params: dict) -> BaseModel:
-    model_params_old = model_params
-    model_params = copy.deepcopy(model_params)
-    model_params.setdefault("descriptor", {})
-    model_params.setdefault("fitting_net", {})
-    model_params["descriptor"].setdefault("type", "dpa4")
-    _normalize_spin_use_spin(model_params)
-    real_sel = model_params["descriptor"].get("sel", 120)
-    real_sel_list = [int(real_sel)] if isinstance(real_sel, int) else list(real_sel)
-    real_nsel = int(sum(real_sel_list))
-    model_params["descriptor"]["sel"] = [2 * real_nsel + 1]
-
-    spin = Spin(
-        use_spin=model_params["spin"]["use_spin"],
-        virtual_scale=model_params["spin"]["virtual_scale"],
-        allow_missing_label=model_params["spin"].get("allow_missing_label", False),
-    )
-    real_pair_exclude_types = _reconcile_sezm_pair_exclude_types(model_params)
-    model_params["type_map"] += [item + "_spin" for item in model_params["type_map"]]
-    pair_exclude_types = spin.get_pair_exclude_types(
-        exclude_types=real_pair_exclude_types or None
-    )
-    model_params["pair_exclude_types"] = pair_exclude_types
-    model_params["descriptor"]["exclude_types"] = pair_exclude_types
-    atom_exclude_types = spin.get_atom_exclude_types(
-        exclude_types=model_params.get("atom_exclude_types", None)
-    )
-    model_params["atom_exclude_types"] = atom_exclude_types
-
-    ntypes = len(model_params["type_map"])
-    model_params["descriptor"]["ntypes"] = ntypes
-    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
-
-    # === Bridging parameters ===
-    bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
-    if bridging_method != "NONE":
-        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
-        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
-
-    descriptor = BaseDescriptor(**model_params["descriptor"])
-
-    fitting_net = copy.deepcopy(model_params["fitting_net"])
-    fitting_net_type = fitting_net.get("type", "dpa4_ener")
-    if fitting_net_type not in ("dpa4_ener", "sezm_ener"):
-        raise ValueError(
-            "Spin DPA4/SeZM currently supports only `dpa4_ener` or `sezm_ener` "
-            f"fitting, but got `{fitting_net_type}`."
-        )
-    fitting_net.pop("type", None)
-    fitting_net["ntypes"] = descriptor.get_ntypes()
-    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
-    fitting_net["mixed_types"] = descriptor.mixed_types()
-    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
-    fitting = SeZMEnergyFittingNet(**fitting_net)
-    preset_out_bias = model_params.get("preset_out_bias")
-    data_stat_protect = model_params.get("data_stat_protect", 1e-2)
-    use_compile = bool(model_params.get("use_compile", False))
-    enable_tf32 = bool(model_params.get("enable_tf32", True))
-
-    model = SeZMSpinModel(
-        descriptor=descriptor,
-        fitting=fitting,
-        type_map=model_params["type_map"],
-        atom_exclude_types=atom_exclude_types,
-        pair_exclude_types=pair_exclude_types,
-        preset_out_bias=preset_out_bias,
-        data_stat_protect=data_stat_protect,
-        use_compile=use_compile,
-        enable_tf32=enable_tf32,
-        bridging_method=bridging_method,
-        bridging_r_inner=bridging_r_inner,
-        bridging_r_outer=bridging_r_outer,
-        real_sel=real_sel_list,
         spin=spin,
     )
     model.model_def_script = json.dumps(model_params_old)
@@ -781,7 +716,6 @@ __all__ = [
     "SeZMModel",
     "SeZMNativeSpinModel",
     "SeZMPropertyModel",
-    "SeZMSpinModel",
     "SpinEnergyModel",
     "SpinModel",
     "get_model",

@@ -369,6 +369,13 @@ def main_parser() -> argparse.ArgumentParser:
         "always freezes to 'graph', since the dense lower is deprecated in this "
         "backend -- requesting 'nlist' for one logs a warning and is overridden.",
     )
+    parser_frz.add_argument(
+        "--compress",
+        action="store_true",
+        help="(Supported backend: PyTorch Exportable) Compress the model before "
+        "export using the default compression settings. Eligible .pt2 models "
+        "use the accelerated compressed graph without an intermediate export.",
+    )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(
@@ -543,9 +550,10 @@ def main_parser() -> argparse.ArgumentParser:
         "--model",
         default="model.ckpt.pt",
         type=str,
-        help="(Supported backend: PyTorch) Energy model to import: a training "
-        "checkpoint (suffix .pt) or a frozen model (suffix .pth). SeZM/DPA4 "
-        "only supports the .pt checkpoint; the frozen .pt2 package is not supported.",
+        help="(Supported backend: PyTorch, PyTorch Exportable) Model to import: "
+        "a training checkpoint (suffix .pt), or a frozen model written by "
+        "`dp --pt freeze` (suffix .pth) or `dp --pt-expt freeze` (suffix .pt2 or "
+        ".pte).",
     )
     parser_embedding_subgroup = parser_embedding.add_mutually_exclusive_group()
     parser_embedding_subgroup.add_argument(
@@ -582,7 +590,8 @@ def main_parser() -> argparse.ArgumentParser:
         "--model-branch",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+        help="(Supported backend: PyTorch, PyTorch Exportable) Task head (alias: "
+        "model branch) to use if in multi-task mode.",
     )
 
     # * compress model *****************************************************************
@@ -1098,6 +1107,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """
     parser = main_parser()
     parsed_args = parser.parse_args(args=args)
+    if (
+        parsed_args.command == "freeze"
+        and parsed_args.compress
+        and BACKEND_TABLE[parsed_args.backend] != "pytorch-exportable"
+    ):
+        parser.error("freeze --compress requires --pt-expt (PyTorch Exportable)")
     if parsed_args.command is None:
         parser.print_help()
     else:

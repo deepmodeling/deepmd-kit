@@ -4,6 +4,9 @@ import unittest
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
 import h5py
 import numpy as np
@@ -357,6 +360,42 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret3 = cvt_ret(ret3)
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret3[kk], ret1[kk])
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["foo"]), foo_bias)
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
+
+        # Standalone change-bias explicitly ignores the checkpoint preset.
+        adjusted_bias = foo_bias + 7.0
+        md0._store_out_stat({"foo": to_paddle_tensor(adjusted_bias)})
+        forward = md0._get_forward_wrapper_func()
+        seen_biases = []
+
+        def check_forward(*args, **kwargs):
+            bias, _ = md0._fetch_out_stat(["foo"])
+            seen_biases.append(to_numpy_array(bias["foo"]).copy())
+            return forward(*args, **kwargs)
+
+        with patch.object(md0, "_get_forward_wrapper_func", return_value=check_forward):
+            BaseAtomicModel.change_out_bias(
+                md0,
+                self.merged_output_stat,
+                bias_adjust_mode="change-by-statistic",
+                preset_out_bias={},
+            )
+        self.assertTrue(seen_biases)
+        for seen_bias in seen_biases:
+            np.testing.assert_almost_equal(seen_bias, adjusted_bias)
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(
+            to_numpy_array(out_bias["foo"]), np.array([2.0, -5.0]).reshape(2, 1)
+        )
+        assert not np.allclose(to_numpy_array(out_bias["bar"]), bar_bias)
+
+        # The override does not remove the model's configured preset.
+        np.testing.assert_almost_equal(md0.preset_out_bias["foo"], foo_bias)
+        BaseAtomicModel.change_out_bias(
+            md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
         out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
         np.testing.assert_almost_equal(to_numpy_array(out_bias["foo"]), foo_bias)
         np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)

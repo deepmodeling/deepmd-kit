@@ -860,6 +860,10 @@ class DeepEval(ABC):
             in which frames in a system may have different natoms_vec(s), with the same nloc.
         dtype
             Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
+        **kwargs
+            Keyword arguments of the backend, such as ``charge_spin``, the
+            frame-level charge and spin multiplicity of a charge-conditioned
+            model, of size nframes x 2.
 
         Returns
         -------

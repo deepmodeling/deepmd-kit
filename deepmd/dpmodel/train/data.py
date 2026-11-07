@@ -14,6 +14,14 @@ from typing import (
     Any,
 )
 
+from deepmd.utils.data import (
+    DataRequirementItem,
+    min_pair_dist_requirement,
+)
+from deepmd.utils.data_config import (
+    DataConfig,
+    data_group_configs,
+)
 from deepmd.utils.stat_file import (
     StatFileMode,
     StatFileSpec,
@@ -37,7 +45,7 @@ class TrainingTaskConfig:
 
     key: str
     model_params: Mapping[str, Any]
-    training_data_params: Mapping[str, Any]
+    training_data_params: DataConfig
     validation_data_params: Mapping[str, Any] | None
     stat_file: str | None
     valid_numb_batch: int
@@ -108,6 +116,33 @@ def make_task_maps(
         validation_data[task_config.key] = valid_item
         stat_data[task_config.key] = stat_item
     return training_data, validation_data, stat_data
+
+
+def add_training_data_requirements(
+    data: Any,
+    config: DataConfig,
+    model_params: Mapping[str, Any],
+    requirements: list[DataRequirementItem],
+    register: Callable[[Any, list[DataRequirementItem]], None],
+) -> bool:
+    """Register each group's labels and its own derived pair-clearance margin.
+
+    The returned flag enables margin filtering in the trainer and statistics
+    collector. Distances belong to individual groups' requirements, not to
+    that task-wide enable flag.
+    """
+    groups = data_group_configs(config)
+    datasets = data.children if len(groups) > 1 else (data,)
+    filter_enabled = []
+    for dataset, group in zip(datasets, groups, strict=True):
+        pair_filter = min_pair_dist_requirement(
+            model_params, float(group.get("min_pair_dist", 0.0))
+        )
+        register(dataset, requirements + ([] if pair_filter is None else [pair_filter]))
+        filter_enabled.append(pair_filter is not None)
+    if len(groups) > 1:
+        data.set_filter_enabled(filter_enabled)
+    return any(filter_enabled)
 
 
 def print_data_summaries(

@@ -65,6 +65,17 @@ class TestFittingMiddleOutput(unittest.TestCase, TestCaseSingleFrameWithNlist):
         nf, nloc, _ = descriptor.shape
         expected_shape = (nf, nloc, ft.neuron[-1])
         self.assertEqual(ret["middle_output"].shape, expected_shape)
+        # Each atom carries the hidden activation of the network of its type.
+        for type_i in range(self.nt):
+            mask = atype == type_i
+            np.testing.assert_allclose(
+                ret["middle_output"][mask],
+                ft.nets[(type_i,)].call_until_last(descriptor)[mask],
+            )
+        # A per-call request returns the same activation without the flag.
+        ft.set_return_middle_output(False)
+        per_call = ft.call(descriptor, atype, return_middle_output=True)
+        np.testing.assert_array_equal(per_call["middle_output"], ret["middle_output"])
 
     def test_middle_output_toggle(self) -> None:
         """Verify toggling set_return_middle_output on/off works."""
@@ -183,6 +194,10 @@ class TestFittingMiddleOutput(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertEqual(ret["middle_output"].shape, (nf, nloc, ft.neuron[-1]))
         # Primary output still correct shape
         self.assertEqual(ret["dipole"].shape, (nf, nloc, 3))
+        # A per-call request returns the same activation without the flag.
+        ft.set_return_middle_output(False)
+        per_call = ft.call(descriptor, atype, gr=rot_mat, return_middle_output=True)
+        np.testing.assert_array_equal(per_call["middle_output"], ret["middle_output"])
 
     def test_middle_output_polar_fitting(self) -> None:
         """middle_output flows through PolarFitting.call()."""
@@ -212,3 +227,7 @@ class TestFittingMiddleOutput(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertEqual(ret["middle_output"].shape, (nf, nloc, ft.neuron[-1]))
         # Primary output still correct shape
         self.assertEqual(ret["polarizability"].shape, (nf, nloc, 3, 3))
+        # A per-call request returns the same activation without the flag.
+        ft.set_return_middle_output(False)
+        per_call = ft.call(descriptor, atype, gr=rot_mat, return_middle_output=True)
+        np.testing.assert_array_equal(per_call["middle_output"], ret["middle_output"])
