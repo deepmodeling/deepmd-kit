@@ -153,7 +153,12 @@ def test_pt_expt_entrypoint_rejects_random_model_key(
 @pytest.mark.parametrize("restore", [None, "restart", "init_model", "finetune"])
 def test_graph_neighbor_statistics_skip_is_per_task(monkeypatch, restore):
     """Graph tasks must not even open the full neighbor-stat dataset."""
-    from deepmd.pt_expt.model import BaseModel
+    from deepmd.pt_expt.model import (
+        BaseModel,
+    )
+    from deepmd.utils.argcheck import (
+        DEFAULT_DPA4_SEL,
+    )
 
     calls = []
     monkeypatch.setattr(
@@ -163,6 +168,7 @@ def test_graph_neighbor_statistics_skip_is_per_task(monkeypatch, restore):
     monkeypatch.setattr(BaseModel, "update_sel", lambda *args: (args[-1], 0.5))
     models = {
         "graph": {"descriptor": {"type": "dpa4", "sel": 120}},
+        "graph_auto": {"descriptor": {"type": "dpa4", "sel": "auto"}},
         "dense": {"descriptor": {"type": "se_e2_a", "sel": [20, 20]}},
         "auto": {"descriptor": {"type": "dpa1", "sel": "auto"}},
     }
@@ -178,12 +184,25 @@ def test_graph_neighbor_statistics_skip_is_per_task(monkeypatch, restore):
     _, distances = PTExptTrainEntrypoint().update_neighbor_stat(
         config, options, multi_task=True
     )
-    assert calls == (["graph", "dense", "auto"] if restore else ["dense", "auto"])
-    assert distances == {"graph": 0.5 if restore else None, "dense": 0.5, "auto": 0.5}
-    assert config["model"]["model_dict"]["graph"] == models["graph"]
+    assert calls == (
+        ["graph", "graph_auto", "dense", "auto"] if restore else ["dense", "auto"]
+    )
+    assert distances == {
+        "graph": 0.5 if restore else None,
+        "graph_auto": 0.5 if restore else None,
+        "dense": 0.5,
+        "auto": 0.5,
+    }
+    tasks = config["model"]["model_dict"]
+    assert tasks["graph"]["descriptor"]["sel"] == 120
+    assert tasks["graph_auto"]["descriptor"]["sel"] == (
+        "auto" if restore else DEFAULT_DPA4_SEL
+    )
 
 
 def test_graph_single_task_skips_neighbor_statistics(monkeypatch):
+    """A graph-only task never opens data for neighbor statistics."""
+
     def unexpected(*args):
         raise AssertionError("graph-only model opened neighbor-stat data")
 
@@ -209,9 +228,12 @@ def test_graph_single_task_skips_neighbor_statistics(monkeypatch):
     ],
 )
 def test_graph_default_skip_after_normalization(monkeypatch, tmp_path, model):
+    """Preset expansion and auto normalization precede the trainer and output dump."""
     import json
 
-    from deepmd.utils.argcheck import DEFAULT_DPA4_SEL
+    from deepmd.utils.argcheck import (
+        DEFAULT_DPA4_SEL,
+    )
 
     model["type_map"] = ["H"]
     config = {
