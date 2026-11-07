@@ -615,6 +615,9 @@ def descrpt_dpa4c_args() -> list[Argument]:
     ]
 
 
+DEFAULT_DPA4_SEL = 256
+
+
 @descrpt_args_plugin.register(
     "dpa4",
     alias=["DPA4", "SeZM", "sezm"],
@@ -941,7 +944,13 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_trainable = "If the parameters in the descriptor are trainable."
     doc_seed = "Random seed for parameter initialization."
     return [
-        Argument("sel", [int, list[int], str], optional=True, default=256, doc=doc_sel),
+        Argument(
+            "sel",
+            [int, list[int], str],
+            optional=True,
+            default=DEFAULT_DPA4_SEL,
+            doc=doc_sel,
+        ),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument(
             "env_exp",

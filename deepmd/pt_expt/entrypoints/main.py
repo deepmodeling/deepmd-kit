@@ -320,16 +320,51 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
         multi_task: bool,
     ) -> tuple[dict[str, Any], float | dict[str, float | None] | None]:
         """Update pt_expt descriptor selections from neighbor statistics."""
-        log.info(
-            "Calculate neighbor statistics... "
-            "(add --skip-neighbor-stat to skip this step)"
-        )
         from deepmd.pt_expt.model import (
             BaseModel,
+        )
+        from deepmd.pt_expt.model.graph_lower import (
+            model_config_skips_neighbor_stat,
+            resolve_stat_free_selections,
+        )
+
+        # Restored descriptors may explicitly disable the graph route; config
+        # alone cannot determine their effective checkpoint capability.
+        restoring = any(
+            (
+                options.restart,
+                options.init_model,
+                options.init_frz_model,
+                options.finetune,
+            )
         )
 
         min_nbor_dist: dict[str, float | None] = {}
         for task_config in iter_training_task_configs(config):
+            if not restoring and model_config_skips_neighbor_stat(
+                task_config.model_params
+            ):
+                log.info(
+                    "Skip neighbor statistics for graph-native task %s: "
+                    "its forward carries every neighbor within the cutoff.",
+                    task_config.key,
+                )
+                updated_model_params = resolve_stat_free_selections(
+                    task_config.model_params
+                )
+                if multi_task:
+                    config["model"]["model_dict"][task_config.key] = (
+                        updated_model_params
+                    )
+                else:
+                    config["model"] = updated_model_params
+                min_nbor_dist[task_config.key] = None
+                continue
+            log.info(
+                "Calculate neighbor statistics for task %s... "
+                "(add --skip-neighbor-stat to skip this step)",
+                task_config.key,
+            )
             type_map = task_config.model_params.get("type_map")
             train_data = get_neighbor_stat_data(
                 task_config.training_data_params, type_map

@@ -266,6 +266,25 @@ training or of restoring every stochastic data transform.
 
 **`--skip-neighbor-stat`** will skip calculating neighbor statistics if one is concerned about performance. Some features will be disabled.
 
+The experimental PyTorch backend (`--pt-expt`) automatically skips this full-dataset
+scan for newly initialized graph-native DPA4 and DPA4C energy models
+(DPA4C does not have a selection parameter). Their graph forward
+includes every neighbor inside the cutoff, so checking the selection capacity is
+unnecessary. The decision is made separately for each training task; compositions
+skip the scan only when all components use the graph route. Input/output
+normalization statistics are still computed as usual.
+
+For these models, `sel: "auto"` (with or without a ratio) uses the ordinary
+DPA4 default capacity of 256 instead of scanning the dataset. This capacity is
+unused by the graph forward and its input statistics; numeric selections are
+kept unchanged. Explicit dense-lower exports still use a bounded neighbor list,
+so their capacity must cover the intended dataset. Restarts, initialization and
+fine-tuning from checkpoints retain the scan because restored state can disable
+graph lowering. Other descriptor families, backends, and dense/non-energy models
+are unchanged. `--skip-neighbor-stat` remains an
+explicit override. As with that flag, automatically skipped models do not record
+the minimum neighbor distance; compression can compute it later from training data.
+
 To maximize the performance, one should follow [FAQ: How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) to control the number of threads.
 See [Runtime environment variables](../env.md) for all runtime environment variables.
 
