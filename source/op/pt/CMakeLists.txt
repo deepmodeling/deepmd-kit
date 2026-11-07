@@ -208,14 +208,42 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
             "${DPA4C_SHARD_WIDTH}, ${DPA4C_SHARD_LMAX}>(\n"
             "    const Arguments& arguments, cudaStream_t stream);\n")
         endforeach()
+        string(
+          APPEND
+          DPA4C_SHARD_INSTANTIATIONS
+          "template void launch_first_stage<"
+          "${DPA4C_SHARD_WIDTH}, ${DPA4C_SHARD_LMAX}>(\n"
+          "    FirstStage stage, const Arguments& arguments,\n"
+          "    cudaStream_t stream);\n")
+        string(
+          APPEND
+          DPA4C_BLOCK_SHARD_INSTANTIATIONS
+          "template void launch_block<"
+          "${DPA4C_SHARD_WIDTH}, ${DPA4C_SHARD_LMAX}>(\n"
+          "    BlockStage stage, const BlockArguments& arguments,\n"
+          "    cudaStream_t stream);\n")
       endforeach()
       set(DPA4C_SHARD
           "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}.cu"
       )
       configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
       list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
+      # The kernels of the further message-passing blocks are instantiated in
+      # shards of their own, which compile beside those of the first block.
+      set(DPA4C_SHARD_INSTANTIATIONS "${DPA4C_BLOCK_SHARD_INSTANTIATIONS}")
+      set(DPA4C_KERNEL_HEADER_SAVED "${DPA4C_KERNEL_HEADER}")
+      set(DPA4C_KERNEL_HEADER
+          "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/block_kernel.cuh")
+      set(DPA4C_SHARD
+          "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}_block.cu"
+      )
+      configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
+      set(DPA4C_KERNEL_HEADER "${DPA4C_KERNEL_HEADER_SAVED}")
+      unset(DPA4C_BLOCK_SHARD_INSTANTIATIONS)
     endforeach()
   endforeach()
+  unset(DPA4C_KERNEL_HEADER_SAVED)
   unset(DPA4C_SHARD)
   unset(DPA4C_SHARD_DIRECTION)
   unset(DPA4C_SHARD_LMAX)
@@ -243,6 +271,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     edge_force_virial.cu
     long_range/direct_sum.cu
     long_range/domain_exchange.cc
+    border_exchange.cc
     long_range/latent_charge_sum.cu
     long_range/mesh_sum.cu
     dpa1_graph_energy_force.cu

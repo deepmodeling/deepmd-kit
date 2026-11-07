@@ -16,12 +16,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -59,6 +62,153 @@ inline void check_canonical_index(const void* source,
   if (reinterpret_cast<std::uintptr_t>(source) % width != 0) {
     throw deepmd_exception(
         "canonical source must be aligned to its word width");
+  }
+}
+
+/// One directed edge: local endpoints and the extended neighbor's coordinates.
+struct ReciprocalEdge {
+  int center;
+  int source;
+  int neighbor;
+};
+
+/** Match equal-size image lists of opposite directions for one node pair.
+ * Displacements are recomputed in double precision from the original
+ * coordinates, avoiding edge-sized geometry storage. Their tolerance includes
+ * the input rounding of all four coordinates: epsilon(Value) times their
+ * absolute values bounds cancellation in two independently rounded images.
+ */
+template <typename Value>
+inline bool reciprocal_images_match(const ReciprocalEdge* forward,
+                                    const ReciprocalEdge* reverse,
+                                    size_t count,
+                                    const std::vector<Value>& coord) {
+  const auto opposite = [&](const ReciprocalEdge& a, const ReciprocalEdge& b) {
+    for (size_t axis = 0; axis < 3; ++axis) {
+      const double ac = coord[3 * static_cast<size_t>(a.center) + axis];
+      const double an = coord[3 * static_cast<size_t>(a.neighbor) + axis];
+      const double bc = coord[3 * static_cast<size_t>(b.center) + axis];
+      const double bn = coord[3 * static_cast<size_t>(b.neighbor) + axis];
+      const double av = an - ac, bv = bn - bc;
+      if (!std::isfinite(av) || !std::isfinite(bv)) {
+        throw deepmd_exception(
+            "multi-block DPA4C requires finite edge displacements");
+      }
+      const double eps = std::numeric_limits<Value>::epsilon();
+      const double rounding = eps * std::abs(ac) + eps * std::abs(an) +
+                              eps * std::abs(bc) + eps * std::abs(bn);
+      if (std::abs(av + bv) >
+          2e-6 * (1.0 + std::max(std::abs(av), std::abs(bv))) + rounding) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (std::equal(forward, forward + count, reverse, opposite)) {
+    return true;
+  }
+  // Tolerance is not a strict ordering. Augmenting paths match images
+  // one-to-one even when several candidates fit, preserving multiplicities.
+  std::vector<std::vector<size_t>> adjacent(count);
+  for (size_t i = 0; i < count; ++i) {
+    for (size_t j = 0; j < count; ++j) {
+      if (opposite(forward[i], reverse[j])) {
+        adjacent[i].push_back(j);
+      }
+    }
+  }
+  std::vector<size_t> owner(count, count);
+  std::function<bool(size_t, std::vector<bool>&)> augment =
+      [&](size_t node, std::vector<bool>& seen) {
+        for (const size_t target : adjacent[node]) {
+          if (seen[target]) {
+            continue;
+          }
+          seen[target] = true;
+          if (owner[target] == count || augment(owner[target], seen)) {
+            owner[target] = node;
+            return true;
+          }
+        }
+        return false;
+      };
+  for (size_t node = 0; node < count; ++node) {
+    std::vector<bool> seen(count, false);
+    if (!augment(node, seen)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Check the global reverse-edge contract at a single-domain list rebuild.
+ * Each edge stores only three node indices. One sort groups unordered local
+ * node pairs and separates their two directions. Equal direction counts and
+ * a one-to-one displacement match establish reciprocity, including duplicate
+ * periodic images. Self-image edges match against their own negated group.
+ * The topology builder validates the local-owner mapping before this check.
+ * Domain-decomposed lists are checked by their producer across ranks instead.
+ */
+template <typename Value>
+inline void check_reciprocal_nlist(const std::vector<std::vector<int>>& nlist,
+                                   const std::vector<int>& centers,
+                                   const std::vector<std::int64_t>& mapping,
+                                   const std::vector<Value>& coord,
+                                   int nloc,
+                                   int nall) {
+  size_t capacity = 0;
+  for (size_t row = 0; row < nlist.size() && row < centers.size(); ++row) {
+    if (centers[row] >= 0 && centers[row] < nloc) {
+      capacity += std::count_if(
+          nlist[row].begin(), nlist[row].end(),
+          [nall](int neighbor) { return neighbor >= 0 && neighbor < nall; });
+    }
+  }
+  std::vector<ReciprocalEdge> edges;
+  edges.reserve(capacity);
+  for (size_t row = 0; row < nlist.size() && row < centers.size(); ++row) {
+    const int center = centers[row];
+    if (center < 0 || center >= nloc) {
+      continue;
+    }
+    for (const int neighbor : nlist[row]) {
+      if (neighbor >= 0 && neighbor < nall) {
+        edges.push_back(
+            {center, static_cast<int>(mapping[neighbor]), neighbor});
+      }
+    }
+  }
+  const auto pair_key = [](const ReciprocalEdge& edge) {
+    const auto endpoints = std::minmax(edge.center, edge.source);
+    return std::make_tuple(endpoints.first, endpoints.second, edge.center);
+  };
+  std::sort(edges.begin(), edges.end(), [&](const auto& a, const auto& b) {
+    return pair_key(a) < pair_key(b);
+  });
+  for (size_t begin = 0; begin < edges.size();) {
+    const auto endpoints =
+        std::minmax(edges[begin].center, edges[begin].source);
+    size_t end = begin + 1;
+    while (end < edges.size() &&
+           std::minmax(edges[end].center, edges[end].source) == endpoints) {
+      ++end;
+    }
+    size_t split = begin;
+    size_t count = end - begin;
+    if (endpoints.first != endpoints.second) {
+      while (split < end && edges[split].center == endpoints.first) {
+        ++split;
+      }
+      count = split - begin;
+    }
+    if (count != end - split ||
+        !reciprocal_images_match(edges.data() + begin, edges.data() + split,
+                                 count, coord)) {
+      throw deepmd_exception(
+          "multi-block DPA4C requires a globally bidirectional graph: "
+          "each edge must have a reverse edge with opposite displacement");
+    }
+    begin = end;
   }
 }
 
@@ -1144,6 +1294,131 @@ inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
   return build_comm_tensors_positional(lmp_list, remapped_sendlist_ptrs.data(),
                                        remapped_sendnum.data(),
                                        remapped_recvnum.data(), nlocal, nghost);
+}
+
+// ============================================================================
+// Halo exchange of a compact canonical node set.
+// ============================================================================
+
+/**
+ * @brief The halo exchange of a node set as the compact canonical lower of a
+ * model with further message-passing blocks receives it
+ * (source/op/pt/border_exchange.h): the nodes the swaps send, int32 on the
+ * model device, and the swap table, an int32 CPU tensor of shape
+ * ``(nswap, 5)`` whose columns are the rank a swap sends to, the rank it
+ * receives from, the counts of the nodes it sends and receives, and the first
+ * halo node it receives into.
+ */
+struct HaloTensors {
+  at::Tensor send_nodes;
+  at::Tensor swaps;
+};
+
+/**
+ * @brief The halo exchange of a node set without halo nodes, on the model
+ * device ``device``.
+ */
+inline HaloTensors empty_halo(const torch::Device& device) {
+  const auto int32_option = torch::TensorOptions().dtype(torch::kInt32);
+  return {torch::zeros({0}, int32_option.device(device)),
+          torch::zeros({0, 5}, int32_option)};
+}
+
+/**
+ * @brief The swap table of ``nswap`` swaps (HaloTensors::swaps).
+ */
+inline at::Tensor halo_swap_table(const int nswap,
+                                  const int* sendproc,
+                                  const int* recvproc,
+                                  const int* sendnum,
+                                  const int* recvnum,
+                                  const int* firstrecv) {
+  if (nswap < 0) {
+    throw deepmd::deepmd_exception(
+        "the halo exchange has a negative number of swaps.");
+  }
+  if (nswap > 0 &&
+      (sendproc == nullptr || recvproc == nullptr || sendnum == nullptr ||
+       recvnum == nullptr || firstrecv == nullptr)) {
+    throw deepmd::deepmd_exception(
+        "a nonempty halo exchange requires all five host swap arrays.");
+  }
+  auto swaps =
+      torch::empty({nswap, 5}, torch::TensorOptions().dtype(torch::kInt32));
+  int* const table = swaps.data_ptr<int>();
+  for (int s = 0; s < nswap; ++s) {
+    table[5 * s + 0] = sendproc[s];
+    table[5 * s + 1] = recvproc[s];
+    table[5 * s + 2] = sendnum[s];
+    table[5 * s + 3] = recvnum[s];
+    table[5 * s + 4] = firstrecv[s];
+  }
+  return swaps;
+}
+
+/**
+ * @brief The tensors of a halo exchange of the C API, whose send list resides
+ * on ``device``; the send list is wrapped, not copied.
+ */
+inline HaloTensors halo_tensors(const DP_HaloExchange& halo,
+                                const torch::Device& device,
+                                std::int64_t nloc,
+                                std::int64_t nall_nodes) {
+  at::Tensor swaps =
+      halo_swap_table(halo.nswap, halo.sendproc, halo.recvproc, halo.sendnum,
+                      halo.recvnum, halo.firstrecv);
+  const std::int64_t owned = halo.nswap == 0 ? nall_nodes : halo.firstrecv[0];
+  if (owned != nloc) {
+    throw deepmd::deepmd_exception(
+        "the halo plan's owned-node count does not match nloc.");
+  }
+  std::int64_t sent = 0;
+  for (int s = 0; s < halo.nswap; ++s) {
+    sent += halo.sendnum[s];
+  }
+  if (sent > 0 && halo.d_sendlist == nullptr) {
+    throw deepmd::deepmd_exception(
+        "the swaps of the halo exchange send nodes, but its send list is "
+        "null.");
+  }
+  const auto int32_option =
+      torch::TensorOptions().dtype(torch::kInt32).device(device);
+  at::Tensor send_nodes =
+      sent > 0 ? torch::from_blob(const_cast<int*>(halo.d_sendlist), {sent},
+                                  int32_option)
+               : torch::zeros({0}, int32_option);
+  return {send_nodes, swaps};
+}
+
+/**
+ * @brief The halo exchange of the extended node set of a host neighbor list,
+ * whose ``nloc`` owned nodes precede the ghost atoms that ``fwd_map`` keeps,
+ * in the order of the atoms. ``fwd_map`` maps an atom to its node, or to -1
+ * for an atom of a type the model drops, whose swaps send and receive the
+ * nodes that remain. The send list is copied to ``device``.
+ */
+inline HaloTensors halo_tensors(const InputNlist& lmp_list,
+                                const std::vector<int>& fwd_map,
+                                const int nloc,
+                                const torch::Device& device) {
+  std::vector<std::vector<int>> sendlist;
+  std::vector<int> sendnum, recvnum;
+  remap_comm_sendlist(sendlist, sendnum, recvnum, lmp_list, fwd_map);
+  std::vector<int> firstrecv(lmp_list.nswap);
+  std::vector<int> nodes;
+  int next = nloc;
+  for (int s = 0; s < lmp_list.nswap; ++s) {
+    firstrecv[s] = next;
+    next += recvnum[s];
+    nodes.insert(nodes.end(), sendlist[s].begin(), sendlist[s].end());
+  }
+  at::Tensor send_nodes =
+      torch::from_blob(nodes.data(), {static_cast<std::int64_t>(nodes.size())},
+                       torch::TensorOptions().dtype(torch::kInt32))
+          .to(device, torch::kInt32, /*non_blocking=*/false, /*copy=*/true);
+  return {send_nodes,
+          halo_swap_table(lmp_list.nswap, lmp_list.sendproc, lmp_list.recvproc,
+                          sendnum.data(), recvnum.data(), firstrecv.data())};
 }
 
 // ============================================================================

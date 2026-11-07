@@ -5,9 +5,11 @@
 
 DPA4C is the compact and compressible degree-wise descriptor of the DPA4
 family. Where DPA4/SeZM targets the accuracy frontier through equivariant
-message passing, DPA4C targets the throughput frontier: it reads each local
-environment once, keeps no message-passing state, and admits a compressed CUDA
-inference path in which its radial functions are replaced by tabulated splines.
+message passing, DPA4C targets the throughput frontier: by default it reads
+each local environment once, keeps no message-passing state, and compresses
+into an archive that runs fast on GPUs and CPU hosts. A second
+message-passing block makes the model more accurate at a higher cost (see
+[Presets](#presets)).
 
 Choose DPA4C when the run is limited by simulation speed or system size rather
 than by the last increment of accuracy: large-scale molecular dynamics, long
@@ -41,20 +43,23 @@ standard DeePMD energy model:
 For each atom the descriptor accumulates angular moments of its neighbors up to
 degree {ref}`lmax <model[standard]/descriptor[dpa4c]/lmax>`, contracts them into
 rotationally invariant scalars, and passes only those scalars to the fitting
-network. The neighbor shell is read exactly once: there is no message passing,
-so an atom's descriptor depends only on the atoms within
-{ref}`rcut <model[standard]/descriptor[dpa4c]/rcut>` of it.
+network. With one message-passing block, the default, an atom's descriptor
+depends only on the atoms within
+{ref}`rcut <model[standard]/descriptor[dpa4c]/rcut>` of it, which keeps the
+cost of a step low.
 
-Three consequences shape how the model is used in practice.
+{ref}`n_blocks <model[standard]/descriptor[dpa4c]/n_blocks>` adds further
+blocks. Each one reads the features that every neighbor computed in the
+previous block, reweights the message that the neighbor sends, and adds the
+directions of the neighbor's own environment to the moments of the atom, so
+two atoms of the same element at the same distance no longer send the same
+message. Every block extends the range of the descriptor by its cutoff.
 
-- **One-hop locality** keeps the per-step cost low and removes the cross-rank
-  halo exchange of intermediate features that a message-passing model needs, so
-  domain decomposition follows the ordinary pair-style path.
-- **Exact smoothness at the cutoff.** The radial map is exactly zero at and
-  beyond `rcut`, with continuous derivatives, so the potential energy surface
-  stays smooth as neighbors cross the cutoff.
-- **Analytic bounds on every per-atom quantity**, which is why compression needs
-  neither an extrapolation region nor overflow checking.
+The radial functions vanish at `rcut` with continuous derivatives, and the
+effect of every further block fades out at its own cutoff in the same way, so
+the potential energy surface stays smooth as neighbors cross a cutoff.
+[Architecture details](#architecture-details) describes the descriptor more
+fully.
 
 ## Configuration
 
@@ -86,22 +91,28 @@ documented default.
 }
 ```
 
-DPA4C has no `sel` option. It is graph-native: the descriptor consumes a
-carry-all neighbor graph that holds every neighbor within `rcut`, rather than a
-fixed-capacity neighbor list. There is no capacity to size, no dependence on the
-densest frame in the dataset, and no truncation to guard against.
+DPA4C has no `sel` option: it always uses every neighbor within `rcut`, so
+there is no neighbor capacity to size and nothing is truncated.
 
 DPA4C defaults to `float32`
-({ref}`precision <model[standard]/descriptor[dpa4c]/precision>`), which is also
-what the compressed CUDA path requires. Double precision is neither necessary
-nor supported for compressed inference.
+({ref}`precision <model[standard]/descriptor[dpa4c]/precision>`), which
+compression requires. Double precision is neither necessary nor supported for
+compressed inference.
 
 ### Options that matter
 
 Every option, with its default and full description, is listed in the
-{ref}`argument reference <model[standard]/descriptor[dpa4c]>`. Four of them
+{ref}`argument reference <model[standard]/descriptor[dpa4c]>`. Five of them
 carry the accuracy–cost trade-off:
 
+- **Depth** — {ref}`n_blocks <model[standard]/descriptor[dpa4c]/n_blocks>`.
+  A second block makes the model more accurate than a single-block model one
+  or two sizes up, and costs several times as much per step once compressed
+  (see [Presets](#presets)); choose the depth with deployment in mind. `rcut`
+  then takes either one cutoff for every block or a list of non-increasing
+  cutoffs, one per block, such as `[6.0, 5.0]`. A further block evaluates only
+  the neighbors within its own cutoff, so a smaller cutoff makes it markedly
+  cheaper; the default of 6 Å for both blocks is the most accurate.
 - **Width** — {ref}`channels <model[standard]/descriptor[dpa4c]/channels>`, one
   of 8, 16, 32, 64, or 128. This is the primary scaling knob. It widens the
   scalar and edge features, the per-atom angular state, and the descriptor
@@ -115,9 +126,9 @@ carry the accuracy–cost trade-off:
   {ref}`radial_modes <model[standard]/descriptor[dpa4c]/radial_modes>`. Zero
   leaves every ordered atom-type pair with a rescaled copy of one shared radial
   function; larger values let each pair select its own radial shape from several
-  shared profiles. It spends per-edge work without enlarging the per-atom state,
-  which makes it the lever to reach for when memory rather than throughput is
-  the binding constraint.
+  shared profiles. It spends per-neighbor work without enlarging the per-atom
+  state, which makes it the lever to reach for when memory rather than
+  throughput is the binding constraint.
 - **Radial basis** —
   {ref}`basis_type <model[standard]/descriptor[dpa4c]/basis_type>` and
   {ref}`n_radial <model[standard]/descriptor[dpa4c]/n_radial>` select the
@@ -127,27 +138,35 @@ carry the accuracy–cost trade-off:
 
 The fitting network is sized against the descriptor because the invariant
 output grows with `channels`. Unlike `radial_modes`, fitting width is not a free
-trade against memory: it adds per-atom activations and the derivatives saved for
-the force backward pass, so widening or deepening it costs throughput and
-capacity together. Widen it only when validation error is limited by fitting
+trade against memory: widening or deepening the network costs throughput and
+memory together. Widen it only when validation error is limited by fitting
 capacity rather than by the descriptor.
 
 > [!IMPORTANT]
-> The compressed CUDA path is compiled for `channels` in `{8, 16, 32, 64, 128}`,
-> `lmax` in `{2, 3, 4}`, and `radial_modes` in `{0, 2, 4, 8}` only. A model
-> trained outside those sets trains and evaluates correctly, but
-> `dp --pt-expt compress` rejects it. Choose these values with deployment in
-> mind.
+> Compression supports `channels` in `{8, 16, 32, 64, 128}`, `lmax` in
+> `{2, 3, 4}`, and `radial_modes` in `{0, 2, 4, 8}` only. Values of `channels`
+> and `lmax` outside these sets are rejected at construction. Other non-negative
+> integer values of `radial_modes` can train and evaluate, but cannot be
+> compressed. Choose these values with deployment in mind.
 
 ### Presets
 
-DPA4C preset names use `dpa4c-<size>-<version>`. Available sizes are listed in
-ascending computational cost; `neo` is the general-purpose starting point:
+DPA4C preset names use `dpa4c-<size>-<version>`. The single-block sizes are
+listed in ascending computational cost, followed by the two-block sizes; `neo`
+is the general-purpose starting point:
 
-| Version     | Available sizes                      |
-| ----------- | ------------------------------------ |
-| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus` |
-| `v20260901` | `nano`, `mini`, `neo`, `air`, `plus` |
+| Version     | Available sizes                                                                    |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus`, `mini-duo`, `neo-duo`, `air-duo`, `plus-duo` |
+| `v20260901` | `nano`, `mini`, `neo`, `air`, `plus`                                               |
+
+A `duo` size is the size of the same name with two message-passing blocks, for
+example `dpa4c-air-duo-v20260911`. It is more accurate than the single-block
+size one or two steps up. Uncompressed, it costs about twice as much per step
+as its single-block size; compressed, roughly five to ten times as much on
+large systems, because compression speeds up the second block far less than
+the first. There is no `nano-duo`, because the single-block `mini` is more
+accurate at the same cost.
 
 Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
 and `fitting_net`. Run-specific settings are written alongside the preset:
@@ -190,17 +209,16 @@ See [training energy models](train-energy.md) for the general workflow.
 
 ### Mixed precision
 
-{ref}`use_amp <model[standard]/descriptor[dpa4c]/use_amp>` runs the per-edge
-stage under bfloat16 automatic mixed precision on CUDA during training. The
-activation footprint of that stage scales with the edge count and dominates
-memory, so enabling it lowers peak memory substantially; the destination
-reduction and the invariant readout stay in the descriptor precision. Use it on
-GPUs with native bf16 support.
+{ref}`use_amp <model[standard]/descriptor[dpa4c]/use_amp>` runs the
+per-neighbor computations of the descriptor under bfloat16 automatic mixed
+precision on CUDA during training, which lowers peak memory substantially; the
+per-atom results stay in the descriptor precision. Use it on GPUs with native
+bf16 support.
 
-`use_amp` is an execution policy rather than model state: it is not serialized,
-and evaluation and inference are governed independently by `DP_AMP_INFER`. A
-model trained in full precision can therefore be evaluated under mixed
-precision, and the reverse.
+`use_amp` applies to training only and is not stored in the model; inference
+has its own setting, `DP_AMP_INFER` (see
+[Inference settings](#inference-settings)). A model trained in full precision
+can therefore be evaluated under mixed precision, and the reverse.
 
 ## Zone bridging
 
@@ -211,6 +229,10 @@ a physical repulsive wall instead of an extrapolated network output:
 ```math
 E_i = E_i^{\mathrm{DPA4C}} + E_i^{\mathrm{pair}}.
 ```
+
+A model with several message-passing blocks needs it most: in contacts closer
+than about 0.45 of the covalent bond length, which no training set samples, it
+extrapolates worse than a single block.
 
 Two potentials are available. `bridging_method: "zbl"` uses the
 Ziegler-Biersack-Littmark screened nuclear potential, which is derived from
@@ -233,20 +255,14 @@ better trained model has not been established.
 > Pairs containing an element heavier than uranium, which the reference data does
 > not cover, fall back to ZBL.
 
-The analytical term acts on every pair inside `rcut`. The learned model, in turn, is
-made blind to pairs that are too close to be covered by training data. Below
-the inner radius of the window a pair leaves the descriptor entirely: both
-atoms are described exactly as if the other one were absent, and the pair
-interacts through the analytical term alone. Between the inner and the outer
-radius the pair enters the descriptor smoothly in two coupled ways: its
-amplitude opens from zero to one, and the separation its radial functions
-read is released at the same rate, from the midpoint of the window at the
-inner radius to the true separation at the outer radius. A pair deep inside
-the window therefore changes the descriptor through its amplitude alone,
-with its radial features held where the retained training frames place them.
-Beyond the outer radius the descriptor is the same as without bridging. The
-transition keeps the energy three times continuously differentiable, like the
-outer cutoff.
+The analytical term acts on every pair inside `rcut`, and a window between an
+inner and an outer radius hands each pair over between the two descriptions.
+Below the inner radius a pair leaves the learned model entirely: both atoms are
+described exactly as if the other one were absent, and the pair interacts
+through the analytical term alone. Across the window the pair enters the
+learned model smoothly, and beyond the outer radius the learned model is the
+same as without bridging. The energy stays three times continuously
+differentiable through the window, as it does at the outer cutoff.
 
 The two radii follow the size of the pair they apply to. Each is a fraction of
 the covalent bond length of that element pair, so a hydrogen pair is described
@@ -275,45 +291,36 @@ Enable it on the model:
 ```
 
 `type_map` must name chemical elements, because the analytical term is built
-from their nuclear charges and the window from their covalent radii. `bridging_fraction_inner` and
-`bridging_fraction_outer` adjust the two fractions. Giving `bridging_r_inner`
-and `bridging_r_outer` instead replaces the rule with one window in Å applied
-to every pair alike, which is worth doing only for a single-element system or
-to reproduce an earlier model. See `examples/water/dpa4c/input-zbl.json` for a
-complete input.
+from their nuclear charges and the window from their covalent radii.
+`bridging_fraction_inner` and `bridging_fraction_outer` adjust the two
+fractions. Giving `bridging_r_inner` and `bridging_r_outer` instead replaces
+the rule with one window in Å applied to every pair alike, which is worth doing
+only for a single-element system or to reproduce an earlier model. See
+`examples/water/dpa4c/input-zbl.json` for a complete input.
 
-Training frames that contain a pair closer than the midpoint of its window are
-left out of the loss. Below the midpoint the learned contribution of the pair is
-throttled to less than half of its amplitude, so a label there would ask the
-model for a multiple of the energy it has to express; the separation the
-radial functions read never falls below the midpoint either, and through the
-lower half of the window it moves by less than 7 % of the window width, so the
-radial features of a close pair stay next to the range the retained frames
-cover. The threshold is derived from the window of each element pair, and
+Training leaves out frames that contain a pair closer than the midpoint of its
+window, where the learned model has too little influence on the energy to fit a
+label. The threshold follows from the window of each element pair, so
 `training_data.min_pair_dist` must stay unset on a bridged model. The data
-statistics, including those of `dp change-bias`, are drawn under the same
-filter, while validation batches are not filtered, so a validation error also
-covers frames that training leaves out.
+statistics, including those of `dp change-bias`, use the same filter, while
+validation batches are not filtered, so a validation error also covers frames
+that training leaves out.
 
 Bridging therefore relies on short-range training data. The labels that are
 kept have to reach into the window of every element pair, which in practice
 means adding dimer scans that run down to about half the covalent bond length.
-Between the inner radius and the closest retained label the learned
-contribution of the pair falls to zero with no data to shape it; labels inside
-the window keep that descent smooth, while a pair whose window holds no label
-can show spurious force maxima there.
+Labels inside the window keep the hand-over smooth; a pair whose window holds
+no label can show spurious force maxima there.
 
 The same model can be written explicitly as a `linear_ener` model over the
 DPA4C model and an `inner_potential` sub-model with `weights: "sum"`; the
 concise form above expands to it.
 
-Bridging changes nothing in the workflow after training. The model freezes,
-compresses and runs in LAMMPS like a plain DPA4C model: compression still
-selects the compact canonical graph form, the fused kernels evaluate the
-analytical term in the same pass over the neighbors as the descriptor, and multi-GPU runs
-need no extra communication. Native spin and the frame charge state combine
-with bridging; the analytical term depends on the separation alone and leaves
-the magnetic force to the learned model.
+Bridging changes nothing after training: a bridged model freezes, compresses
+and runs in LAMMPS, on one GPU or several, like the plain DPA4C model of the
+same depth. Native spin and the frame charge state combine with bridging; the
+analytical term depends on the separation alone and leaves the magnetic force
+to the learned model.
 
 A model trained without bridging fine-tunes into its bridged form, and the
 other way round. Add the bridging keys above to the input, keep the
@@ -323,31 +330,24 @@ architecture, and start from the earlier checkpoint:
 dp --pt-expt train input-zbl.json --finetune model.ckpt.pt
 ```
 
-The descriptor and the fitting net are carried over although the bridged model
-holds them one level deeper, inside the composition. Fine-tuning is required
+The descriptor and the fitting network carry over. Fine-tuning is required
 rather than optional: the bridging window changes what the descriptor sees at
 short range, so the learned part is trained against the analytical term it is
 now summed with.
 
 ## Model compression
 
-Compression is the deployment step. It replaces the analytic radial functions
-and their type-pair modulation with tabulated splines evaluated by fused CPU or
-CUDA kernels. Eligible CUDA models use the compact canonical graph form;
-CPU models use the graph form with their dedicated kernels. Because the radial map is analytically bounded and
-vanishes at `rcut`, the table needs no extrapolation region and no overflow
-checking.
-
-Freeze and compress a checkpoint in one operation:
+Compression is the deployment step: it tabulates the radial functions of the
+model, which makes inference much faster on a GPU or a CPU host. Freeze and
+compress a checkpoint in one operation:
 
 ```bash
 dp --pt-expt train input.json
 dp --pt-expt freeze -c model.ckpt.pt -o compressed_model --compress
 ```
 
-This writes `compressed_model.pt2` directly using the default compression
-settings, without compiling an intermediate uncompressed archive. Compression
-selects the export schema appropriate to the model and target device.
+This writes `compressed_model.pt2` with the default compression settings. Set
+the [inference settings](#inference-settings) before running it.
 
 A branch of a multi-task model is frozen by naming it with `--head`:
 
@@ -355,25 +355,16 @@ A branch of a multi-task model is frozen by naming it with `--head`:
 dp --pt-expt freeze -c model.ckpt.pt -o compressed_branch --head CHOSEN_BRANCH --compress
 ```
 
-Where the branches share the fitting network, the case embedding that
-distinguishes them is a constant of the branch, and the export folds it into
-the bias of the first fitting layer, so the compressed branch takes the export
-schema and the fused kernels of a single-task model. The fold is not possible
-where the descriptor and the case embedding together are as wide as the first
-fitting layer, or half as wide, because the residual connection of that layer
-then carries the case embedding; such a branch keeps it and exports to the
-graph form, which the export reports with a warning.
+A branch whose fitting network is shared with the other branches compresses
+like a single-task model, unless the widths of the descriptor and the case
+embedding add up to the width of the first fitting layer or to half of it.
+Such a branch is exported in a slower form, and the export reports it with a
+warning.
 
-On a CUDA device, compression also measures which kernel evaluates the fitting
-network fastest on that GPU at each system size and stores the choices in the
-archive. A kernel other than the default is chosen only where the measurement
-finds it faster by more than 1% on a lightly loaded GPU and, under sustained
-load, at most 1% slower both on a system of one element and on a system of up
-to three elements. The measurement adds a few seconds to several minutes to a
-compression, depending on the size of the model and on the GPU. All choices
-give bit-identical results, so they affect only the speed. On a GPU of another
-model, the archive uses the default choices instead; compress on the GPU model
-that will run the simulations.
+On a GPU, compression also tunes the archive for the GPU model it runs on,
+which adds from a few seconds to several minutes. The tuning changes only the
+speed, never the results. On a GPU of another model the archive runs with
+untuned defaults, so compress on the GPU model that will run the simulations.
 
 To compress an existing frozen archive or choose the spline spacing, use the
 compression command:
@@ -382,58 +373,74 @@ compression command:
 dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2 --step 0.01
 ```
 
+`-s, --step` sets the uniform spline spacing in Å; a smaller value means a
+finer table and a larger archive. DPA4C ignores `--extrapolate`, `--frequency`
+and `--training-script`.
+
 For ASE, `DP(model="model.pt", freeze=True)` automatically compresses supported
 DPA4C checkpoints and exports a single-process `.pt2`. If compression is not
 supported, ASE warns and retains the ordinary freeze path. See the
 [ASE interface](../third-party/ase.md).
 
-Only `-s, --step` applies to DPA4C; it sets the uniform spline spacing in Å, and
-a smaller value means a finer table and a larger model. The `--extrapolate`,
-`--frequency`, and `--training-script` options exist for descriptors whose
-tables need a second region, an overflow guard, or a minimum neighbor distance
-computed from data; DPA4C needs none of them and ignores them.
-
 Compression requires:
 
 - the PyTorch Exportable backend;
 - `precision: "float32"`;
-- `channels`, `lmax` and `radial_modes` inside the compiled sets listed above;
+- `channels`, `lmax` and `radial_modes` inside the supported sets listed under
+  [Options that matter](#options-that-matter);
 - an empty
-  {ref}`exclude_types <model[standard]/descriptor[dpa4c]/exclude_types>`, since
-  the fused kernel has no type-exclusion branch.
+  {ref}`exclude_types <model[standard]/descriptor[dpa4c]/exclude_types>`.
 
 `dp --pt-expt compress` and `freeze --compress` report an explicit error when
-any of these is not met.
-A model that excludes type pairs still trains and runs; deploy it as the
-uncompressed graph archive.
+any of these is not met. A model with excluded type pairs still trains and
+runs; deploy it as an uncompressed archive.
+
+A model with several message-passing blocks compresses on the same terms and
+runs compressed on one GPU or several, also with zone bridging, native spin or
+a [latent-charge long-range module](long-range.md). For a GPU, its compressed
+export additionally requires:
+
+- a fitting network with `float32` weights, `tanh` or `silu` hidden layers whose
+  widths are multiples of four, no `resnet_dt`, and no frame or atomic
+  parameters;
+- no `pair_exclude_types` or `atom_exclude_types`;
+- for a branch of a multi-task model, widths with which the branch compresses
+  like a single-task model, as described above;
+- a long-range module, if any, that meets the conditions given in
+  [Long-range latent charges](long-range.md#training-and-inference), such as a
+  single charge channel.
+
+The compressed export of any other model with several blocks for a GPU reports
+an error. On a CPU host, a model with several blocks runs through the slower
+general path (see [CPU hosts](#cpu-hosts)).
 
 ## Running in LAMMPS
 
-DPA4C uses the PyTorch `.pt2` (AOTInductor) export path and is served by the
-`deepmd` pair style:
+DPA4C runs in LAMMPS from its `.pt2` archive through the `deepmd` pair style:
 
 ```lammps
 pair_style deepmd compressed_model.pt2
 pair_coeff * * O H
 ```
 
+A model with several message-passing blocks needs `atom_modify map yes` when it
+runs on a single MPI rank.
+
 ### Choosing a pair style
 
-The compact canonical graph form exists so that the whole step can stay on the
-device. Only the Kokkos pair styles use that device-resident entry point; the
-host styles run the same archive through a per-step host round trip. On a GPU,
-reaching DPA4C's advertised throughput therefore takes three things together: a
-Kokkos-enabled LAMMPS build on the GPU backend, the compressed archive, and
-`DP_CUDA_INFER` set at export time as described under
-[Inference settings](#inference-settings). On a CPU host none of that applies --
-see [CPU hosts](#cpu-hosts).
+On a GPU, the fastest runs take three things together: a LAMMPS build with the
+KOKKOS package on its GPU backend, running the `/kk` pair styles; a compressed
+archive; and `DP_CUDA_INFER` set when the archive is exported, as described
+under [Inference settings](#inference-settings). The other pair styles run the
+same archive more slowly, because they copy the data of every step through
+host memory. For a host without a GPU, see [CPU hosts](#cpu-hosts).
 
-| Pair style    | Build                    | Accepted archive          | Execution                                      |
-| ------------- | ------------------------ | ------------------------- | ---------------------------------------------- |
-| `deepmd`      | any                      | graph lower or compressed | host round trip each step                      |
-| `deepmd/kk`   | Kokkos, GPU backend only | graph lower or compressed | device-resident; compressed uses fused kernels |
-| `dpa4spin`    | any, `atom_style spin`   | graph lower or compressed | host round trip each step                      |
-| `dpa4spin/kk` | Kokkos, GPU backend only | compressed only           | device-resident                                |
+| Pair style    | LAMMPS build                            | Archive                    | Use                                               |
+| ------------- | --------------------------------------- | -------------------------- | ------------------------------------------------- |
+| `deepmd`      | any                                     | uncompressed or compressed | CPU hosts, and GPUs without KOKKOS                |
+| `deepmd/kk`   | KOKKOS on a GPU                         | uncompressed or compressed | GPUs                                              |
+| `dpa4spin`    | any, with `atom_style spin`             | uncompressed or compressed | spin models on CPU hosts, and GPUs without KOKKOS |
+| `dpa4spin/kk` | KOKKOS on a GPU, with `atom_style spin` | compressed                 | spin models on GPUs                               |
 
 Run under Kokkos with one GPU:
 
@@ -441,22 +448,16 @@ Run under Kokkos with one GPU:
 lmp -k on g 1 -sf kk -in in.lammps
 ```
 
-On a single MPI rank, the Kokkos styles replay the evaluation of the model as
-a CUDA graph from step to step. A step that also computes the per-atom virial,
-which `compute centroid/stress/atom` requests (the Kokkos styles provide the
-nine-component per-atom virial only), evaluates more outputs than the steps
-around it: that step and the next one run without the replay, which resumes
-one step later. Requesting the per-atom virial at a coarse interval keeps this
-cost small.
+Steps that compute the per-atom virial, which `compute centroid/stress/atom`
+requests, are slower than the steps around them, so request it at a coarse
+interval. The Kokkos pair styles provide the nine-component per-atom virial
+only.
 
 ### CPU hosts
 
-DPA4C has a second set of hand-written operators for the CPU, so a compressed
-archive runs the same fused pipeline on a host without a GPU. They are selected
-automatically -- there is no level to set, because they replace a lowering of
-the same arithmetic and are faster wherever they apply -- and they carry the
-same numerical contract as the CUDA ones: float32 model computation, no
-reduced-precision path.
+A compressed archive also runs fast on a host without a GPU. The CPU path is
+selected automatically; there is no setting to choose it. Run with one thread
+per physical core:
 
 ```bash
 export OMP_NUM_THREADS=$(nproc --all)
@@ -465,20 +466,11 @@ export DP_INTER_OP_PARALLELISM_THREADS=1
 lmp -in in.lammps
 ```
 
-Three conditions have to hold for the fused CPU path to be taken:
-
-- the archive is **compressed**, because the operator reads the radial table
-  rather than evaluating the radial network;
-- `channels` is one of 8, 16, 32, 64, 128, `lmax` one of 2, 3, 4, `radial_modes`
-  one of 0, 2, 4, 8, the parameters are float32, and no type pairs are excluded;
-- the descriptor is **not** spin-conditioned. The magnetic families need a
-  source-major counterpart of the destination scan, which only the CUDA kernels
-  carry; a spin model on a CPU host falls back to the portable path.
-
-`deepmd/kk` brings nothing on a CPU. Its purpose is to keep the neighbor list
-device-resident and avoid host-device synchronization, which on a host is
-already absent, and everything outside the pair style is about 2% of the step.
-Use the plain `deepmd` style.
+The fast CPU path serves compressed models with one message-passing block and
+without native spin. A model with several blocks or with native spin runs on a
+CPU host through the slower general path. Use `deepmd` for models without
+native spin, or `dpa4spin` with `atom_style spin` for native-spin models.
+The Kokkos pair styles bring no speedup on a CPU host.
 
 Two settings are worth knowing:
 
@@ -493,68 +485,77 @@ Two settings are worth knowing:
   next to a high thread count. Launch LAMMPS directly, or reset the mask in the
   child.
 
-Resident memory is roughly 16 to 31 KB per atom depending on the grade, so a 4
-GiB budget holds between 124 000 atoms (Plus) and 230 000 atoms (Nano). Most of
-that is the neighbor graph, which depends on the cutoff rather than on the model
-width.
-
-`DP_CPU_MALLOC_RETAIN` controls a heap policy that matters at these sizes. By
-default the operator library keeps large blocks that a step reuses instead of
-returning them to the kernel on every free; without it a molecular-dynamics step
-re-faults its whole working set and loses more than half its throughput above
-about 32 000 atoms. Retaining them costs a few hundred megabytes to a gigabyte
-of resident memory. Set `DP_CPU_MALLOC_RETAIN=0` on a memory-constrained host to
-trade that back.
+A CPU run needs roughly 15 to 30 KB of memory per atom, most of it for the
+neighbor list, which grows with `rcut` rather than with the size of the model.
+By default the CPU path also keeps the memory that it reuses from step to step,
+which makes large systems much faster and costs a few hundred megabytes to a
+gigabyte; on a host short of memory, set `DP_CPU_MALLOC_RETAIN=0`.
 
 ### Multiple GPUs
 
-Because DPA4C performs no message passing, it needs no cross-rank halo exchange
-of intermediate features, and MPI domain decomposition follows the ordinary
-pair-style path. Launch one MPI rank per GPU and make every target device
-visible:
+Run one MPI rank per GPU and make every GPU visible:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
+CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -k on g 4 -sf kk -in in.lammps
 ```
 
-Use a non-zero neighbor skin, for example `neighbor 2.0 bin`, to keep per-step
-GPU memory stable; a zero skin rebuilds the neighbor list every step.
+Use an MPI library that can access GPU memory (CUDA-aware MPI), and launch it
+with the options given in
+[Install LAMMPS](../install/install-lammps.md#mpi-for-runs-on-several-gpus).
+With an MPI library without that support, LAMMPS prints a warning and the run
+proceeds, but noticeably more slowly. A model with several message-passing
+blocks exchanges data between the GPUs at every step and depends most on these
+options; it needs no other settings of its own.
 
-Use an MPI library that can access GPU memory (CUDA-aware MPI);
-[Install LAMMPS](../install/install-lammps.md#mpi-for-runs-on-several-gpus)
-describes the setup. The KOKKOS package of LAMMPS then exchanges atom data
-between ranks directly in GPU memory. When LAMMPS detects an MPI library without
-this support, it prints a warning, turns GPU-aware communication off and copies
-the whole position array through host memory at every step;
-`pair_style deepmd/kk` and `pair_style dpa4spin/kk` then send the forces of
-ghost atoms to the ranks that own them themselves, staging only those values in
-host memory. On three RTX PRO 6000 GPUs with one million carbon atoms, a step of
-the Nano model took 6.8 ms with a CUDA-aware Open MPI and 11.3 ms with an MPI
-library without CUDA support, against 15.2 ms on one GPU.
+Use a non-zero neighbor skin, for example `neighbor 2.0 bin`, to keep the GPU
+memory of every step stable; a zero skin rebuilds the neighbor list every step.
+
+For a model with several message-passing blocks, keep the default CUDA memory
+allocator: under `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, Open MPI
+over UCX aborts the run at its first step.
 
 ## Inference settings
 
-Inference behavior is controlled by environment variables read when the model is
-constructed:
+Environment variables control inference:
 
-| Environment variable   | Default | Effect                                                                                                                                                          |
-| ---------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DP_CUDA_INFER`        | `0`     | Fused CUDA kernel level: `0` off, `1` fused descriptor and fitting, `2` additionally fuses force and virial assembly. Levels 1 and 2 are numerically identical. |
-| `DP_AMP_INFER`         | off     | bf16 autocast over the per-edge stage during inference. Independent of the training-time `use_amp`.                                                             |
-| `DP_TF32_INFER`        | `0`     | float32 matmul precision: `0` highest, `1` high, `2` medium.                                                                                                    |
-| `DP_CPU_MALLOC_RETAIN` | `1`     | Whether the CPU operator library retains large heap blocks between steps. See [CPU hosts](#cpu-hosts).                                                          |
+| Environment variable   | Default | Effect                                                                                                                                |
+| ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `DP_CUDA_INFER`        | `0`     | Fast GPU kernels: `0` off, `1` on, `2` on also for the forces and virials, the fastest level. Levels 1 and 2 give identical results.  |
+| `DP_AMP_INFER`         | off     | bfloat16 automatic mixed precision over the per-neighbor computations during inference. Independent of the training option `use_amp`. |
+| `DP_TF32_INFER`        | `0`     | float32 matrix-multiplication precision: `0` highest, `1` high, `2` medium.                                                           |
+| `DP_CPU_MALLOC_RETAIN` | `1`     | Whether the CPU path keeps the memory it reuses from step to step. See [CPU hosts](#cpu-hosts).                                       |
 
-A compressed model needs `DP_CUDA_INFER` of at least `1` to reach its fused
-path on a GPU; at `0` it evaluates through the portable path and the compression
-brings no speedup. On a CPU host there is no equivalent level: the fused
-operators are always selected when the model is eligible. For molecular dynamics sensitive to the smoothness of the potential
-energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
+For eager inference, a compressed model runs fast on a GPU only with
+`DP_CUDA_INFER` of at least `1`; at `0` compression brings no speedup there.
+CUDA-host exports of DPA4C graph and compact canonical lowers select the
+complete level-2 pipeline, including when `DP_CUDA_INFER` is `0` or `1`.
+A CPU host needs no such setting. For molecular dynamics sensitive to the
+smoothness of the potential energy surface, keep `DP_TF32_INFER=0` and
+`DP_AMP_INFER=0`.
 
 > [!IMPORTANT]
-> Set these variables **before** running `dp --pt-expt freeze` or
-> `dp --pt-expt compress`. The exported `.pt2` is an AOTInductor artifact, so the
-> kernel level and precision policy are captured into the graph at export time
-> and are **not** re-evaluated when the `.pt2` is later loaded by LAMMPS.
+> Set `DP_CUDA_INFER`, `DP_AMP_INFER` and `DP_TF32_INFER` **before** running
+> `dp --pt-expt freeze` or `dp --pt-expt compress`. They are fixed into the
+> `.pt2` archive when it is exported, with the DPA4C CUDA level-2 selection
+> described above, and LAMMPS does **not** read them when it loads the archive.
+> `DP_CPU_MALLOC_RETAIN` is read when the model runs.
+
+### Multi-block graph inputs
+
+The compact CUDA path for `n_blocks > 1` requires a globally bidirectional
+neighbor graph: every edge has a reverse edge with the opposite displacement,
+including periodic images. Python graph preparation checks this condition;
+the single-domain C++ neighbor-list path checks it when the list is rebuilt.
+A domain-decomposed list may be asymmetric locally because the reverse edge
+belongs to another rank. Its producer must preserve the global condition.
+
+The zero-copy C GPU interface also relies on the producer to establish this
+condition when building or updating its buffers. It does not copy or sort
+those buffers on every evaluation. Concurrent distributed evaluations must
+use distinct MPI communicators, with the threading support required by MPI.
+Malformed device-resident halo indices or block cutoffs trigger asynchronous
+CUDA assertions; these are not recoverable C API errors and may invalidate
+the CUDA context. Validate distributed inputs before entering collective work.
 
 ## Native spin
 
@@ -573,32 +574,18 @@ spin gradient of the same energy that yields the conservative force,
 
 The magnetic moment is an axial vector: it is even under spatial inversion and
 odd under time reversal, whereas a displacement is odd under inversion and even
-under time reversal. The descriptor therefore emits only invariants of even
-total spin order, which leaves it invariant under the full orthogonal group
-acting jointly on positions and moments, including improper operations, and
-invariant under time reversal. Reversing every moment leaves the energy
-unchanged and reverses the magnetic force.
+under time reversal. The descriptor is invariant under rotations and
+reflections acting jointly on positions and moments, and under time reversal:
+reversing every moment leaves the energy unchanged and reverses the magnetic
+force.
 
-Four families of spin channels are accumulated over the neighbor shell and
-contracted against one another and against the geometric moments:
+It represents two-body Heisenberg exchange, biquadratic exchange and
+single-ion anisotropy exactly, together with symmetric anisotropic exchange and
+longitudinal terms in the magnitude of the moments. The
+Dzyaloshinskii-Moriya interaction is not representable at any order.
 
-| Family                              | Content                                                                                           | Interaction it represents                   |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| Isotropic vector                    | $\sum_j \varphi_c(r_{ij})\,\hat{\mathbf{s}}_j$                                                    | Heisenberg exchange                         |
-| Bond-projected vector               | $\sum_j \varphi_c(r_{ij})\,(\hat{\mathbf{s}}_j\cdot\hat{\mathbf{u}}_{ij})\,\hat{\mathbf{u}}_{ij}$ | Symmetric anisotropic exchange              |
-| Quadrupole                          | $\sum_j \varphi_c(r_{ij})\,B_2(\hat{\mathbf{s}}_j)$                                               | Biquadratic exchange, single-ion anisotropy |
-| Magnitude and magnetic coordination | $\sum_j \varphi_c(r_{ij})\,\lvert\mathbf{s}_j\rvert^2$ and the gated neighbor count               | Longitudinal and stoichiometric terms       |
-
-Two-body Heisenberg exchange, biquadratic exchange and single-ion anisotropy
-are represented exactly rather than approximately: each corresponds to a single
-emitted invariant times a learned radial profile. The Dzyaloshinskii-Moriya
-interaction is not representable at any order, because the invariant read-out
-contains no antisymmetric contraction.
-
-The width of the spin block follows the degree-two width of the geometric
-descriptor, so it is set by
-{ref}`channels <model[standard]/descriptor[dpa4c]/channels>` and has no knob of
-its own.
+The spin part of the descriptor has no options of its own; its width follows
+{ref}`channels <model[standard]/descriptor[dpa4c]/channels>`.
 
 ### Enabling native spin
 
@@ -636,12 +623,11 @@ supported by this descriptor. Training uses the `ener_spin` loss, whose
 `start_pref_fm` and `limit_pref_fm` weight the magnetic force. A complete
 example is provided in `examples/spin/dpa4c/input.json`.
 
-A moment is conditioned by a per-type gate and a reference magnitude measured
-from the training corpus, so a non-magnetic type contributes exactly zero to
-every spin channel and the magnitude of a magnetic type is normalized to order
-unity. A model that declares a magnetic type but receives no moment is
-rejected rather than evaluated at zero, since the latter is indistinguishable
-from a broken data pipeline and reports a vanishing magnetic force.
+A non-magnetic type contributes nothing to the spin part of the descriptor,
+and the moments of each magnetic type are normalized by a reference magnitude
+measured from the training data. A model with a magnetic type requires the
+moments as input: evaluating it without them is an error, not an evaluation at
+zero moments.
 
 ### Running a spin model in LAMMPS
 
@@ -659,10 +645,7 @@ pair_style        dpa4spin compressed_model.pt2
 pair_coeff        * * Ni O
 ```
 
-Ghost moments are supplied by the forward communication that `atom_style spin`
-already performs, and the magnetic force is reduced back onto owning atoms
-alongside the conservative force, so domain decomposition needs no additional
-exchange.
+Spin models run on several MPI ranks without further settings.
 
 By default the pair styles store the precession magnetic force that the LAMMPS
 SPIN package expects, the negative energy gradient `-dE/dS` scaled by the
@@ -681,10 +664,6 @@ selects `-dE/dS` and requires `units metal`:
 ```lammps
 pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
 ```
-
-The pair styles declare the selected convention through the scalar integer
-`Pair::extract("fm_cartesian_force", dim)`, zero for precession and one for
-Cartesian, so such an integrator can reject a pair style left at the default.
 
 A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
 is provided in `examples/spin/dpa4c/lmp/`.
@@ -708,32 +687,36 @@ The command reads the training checkpoint (`.pt`) or the frozen model (`.pt2`),
 compressed or not, and a ZBL-bridged model reports the embeddings of its learned
 model. Unlike a LAMMPS run, `dp embed` reads the
 [inference settings](#inference-settings) when it runs rather than at export: on
-a GPU, a compressed model computes its descriptor with the fused kernels only
-when `DP_CUDA_INFER` is at least `1` for the command. See
+a GPU, a compressed model computes its descriptor fast only when
+`DP_CUDA_INFER` is at least `1` for the command. See
 [model embeddings](../inference/embedding.md) for the output format and the
 Python interface.
 
 ## Data format
 
-DPA4C consumes a mixed-type neighbor list, so it supports both the
-[standard DeePMD-kit data format](../data/system.md) and the
-[mixed-type data format](../data/system.md#mixed-type). Keep the `type_map`
-order consistent across the dataset, the input file, and any downstream
-`pair_coeff` mapping.
+DPA4C supports both the [standard DeePMD-kit data format](../data/system.md)
+and the [mixed-type data format](../data/system.md#mixed-type). Keep the
+`type_map` order consistent across the dataset, the input file, and any
+downstream `pair_coeff` mapping.
 
 ## Limitations
 
 - DPA4C is implemented for the PyTorch Exportable backend (`dp --pt-expt`).
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
-- Model compression requires `float32` and a configuration inside the compiled
-  sets listed under [Model compression](#model-compression). The resulting
-  archive runs fused kernels on either a CUDA device or a CPU host; only a
-  spin-conditioned model is CUDA-only.
-- The device-resident inference path requires a Kokkos-enabled LAMMPS build on
-  the GPU backend.
-- The descriptor is one-hop local by construction. Interactions beyond `rcut`
-  are not represented, and unlike a message-passing model the effective range
-  cannot be extended by adding layers.
+- Model compression requires `float32` and supported values of `channels`,
+  `lmax` and `radial_modes` (see [Model compression](#model-compression)). A
+  compressed archive runs fast on a GPU or a CPU host; a spin model and a model
+  with several blocks run fast on GPUs only.
+- The fastest GPU runs require a LAMMPS build with the KOKKOS package on its
+  GPU backend.
+- A single-block descriptor is one-hop local: interactions beyond `rcut` are
+  not represented. Each further block extends the range by its own cutoff.
+- A model with several blocks costs several times its single-block size per
+  step even when compressed, and on a GPU it compresses only under the
+  conditions given under [Model compression](#model-compression). In pair
+  contacts closer than about 0.45 of the covalent bond length, which no
+  training set samples, it extrapolates worse than a single block; enable
+  [zone bridging](#zone-bridging) wherever such contacts can occur.
 - Native spin requires the `native` scheme; the virtual-atom `deepspin` scheme
   is not supported. The Dzyaloshinskii-Moriya interaction is not representable,
   as explained under [Native spin](#native-spin).
@@ -756,8 +739,8 @@ Each amplitude is multiplied by a smooth cutoff envelope whose value and first
 derivatives vanish at `rcut`, and by the real spherical harmonics of the
 neighbor direction up to degree `lmax`.
 
-The per-atom state is the sum of these edge contributions, held separately for
-each angular degree. Degree zero carries `channels` scalar values; higher
+The per-atom state is the sum of these neighbor contributions, held separately
+for each angular degree. Degree zero carries `channels` scalar values; higher
 degrees carry progressively fewer channels, each with `2l + 1` angular
 components. This tapering keeps the state small, which is what bounds both the
 per-step cost and the memory per atom.
@@ -774,3 +757,17 @@ reach the fitting network:
 Because the contraction is exactly rotationally invariant, the descriptor and
 hence the energy are invariant under global rotation, and the forces obtained by
 differentiation are equivariant.
+
+A further block starts from the invariants and moments that every atom holds
+after the previous block. Each neighbor turns them into a few saturated
+features: equivariant keys, which describe how its own environment is oriented,
+and an invariant state. For every neighbor pair an attention logit combines the
+state of the neighbor, the orientation of its keys relative to the bond, and
+the amplitude of the pair in one small hidden layer, so the effect of a
+neighbor depends on its chemical environment and on the distance together. The
+logit rescales the amplitude of the pair by a factor between zero and two, and
+a softmax over the neighbors adds their keys to the moments of the atom. The
+block then sums the neighbor contributions again and reads out the invariants
+as before. Every map that produces the output of a block starts at zero, so a
+model with several blocks starts out as its single-block counterpart, and every
+block vanishes smoothly at its own cutoff.

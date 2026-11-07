@@ -2,7 +2,7 @@
 set -ex
 
 # With no arguments, build, generate every fixture, and run CTest as before.
-# The independent Kokkos job needs the installation and only long-range models.
+# The independent Kokkos job needs the installation and its compressed fixtures.
 MODE=${1:-all}
 if [ "$#" -gt 1 ]; then
 	echo "Usage: $0 [--build-only | --models-only=kokkos]" >&2
@@ -136,6 +136,7 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.pte \
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.expected
 		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py --compressed-only
+		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_canonical.py
 		exit 0
 	fi
 	# Remove stale generated model files so they can't be accidentally reused

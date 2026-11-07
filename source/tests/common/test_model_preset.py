@@ -155,7 +155,17 @@ def test_preset_catalog() -> None:
             "ultra",
         ),
         ("dpa4c", "v20260901"): ("nano", "mini", "neo", "air", "plus"),
-        ("dpa4c", "v20260911"): ("nano", "mini", "neo", "air", "plus"),
+        ("dpa4c", "v20260911"): (
+            "nano",
+            "mini",
+            "neo",
+            "air",
+            "plus",
+            "mini-duo",
+            "neo-duo",
+            "air-duo",
+            "plus-duo",
+        ),
     }
     assert set(MODEL_PRESETS) == {
         f"{family}-{grade}-{version}"
@@ -191,6 +201,14 @@ def test_version_descriptor_options(family: str, version: str, options: dict) ->
         if name.startswith(f"{family}-") and name.endswith(f"-{version}"):
             descriptor = _normalize_model(get_model_preset(name))["descriptor"]
             assert {key: descriptor[key] for key in options} == options
+
+
+@pytest.mark.parametrize("grade", ["mini", "neo", "air", "plus"])
+def test_duo_preset_adds_one_block_to_its_grade(grade: str) -> None:
+    single = get_model_preset(f"dpa4c-{grade}-v20260911")
+    duo = get_model_preset(f"dpa4c-{grade}-duo-v20260911")
+    assert duo["descriptor"] == {**single["descriptor"], "n_blocks": 2}
+    assert duo["fitting_net"] == single["fitting_net"]
 
 
 def test_presets_carry_no_runtime_options() -> None:
