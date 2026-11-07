@@ -1,0 +1,76 @@
+{
+  "_comment": "DPA4C-Nano energy-training example for the water dataset with ZBL zone bridging.",
+  "model": {
+    "preset": "dpa4c-nano-v20260911",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "use_amp": false,
+      "seed": 42
+    },
+    "fitting_net": {
+      "seed": 42
+    },
+    "_comment_bridging": "ZBL acts on every pair inside rcut. A pair closer than the inner radius of the window leaves the DPA4C descriptor and interacts through ZBL alone; the pair enters the descriptor smoothly up to the outer radius. Both radii are fractions of the covalent bond length of the element pair they apply to, so one setting covers every combination in the type map.",
+    "bridging_method": "zbl"
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 1e-3,
+    "stop_lr": 1e-6,
+    "warmup_ratio": 0.003,
+    "warmup_start_factor": 0.2,
+    "decay_phase_ratio": 0.2,
+    "decay_type": "inverse_linear"
+  },
+  "loss": {
+    "type": "ener",
+    "loss_func": "mae",
+    "f_use_norm": true,
+    "start_pref_e": 20,
+    "limit_pref_e": 20,
+    "start_pref_f": 20,
+    "limit_pref_f": 20,
+    "start_pref_v": 5,
+    "limit_pref_v": 5
+  },
+  "optimizer": {
+    "type": "HybridMuon",
+    "weight_decay": 0.001
+  },
+  "training": {
+    "stat_file": "./dpa4c_zbl.hdf5",
+    "stat_file_mode": "update",
+    "training_data": {
+      "systems": [
+        "../data/data_0",
+        "../data/data_1",
+        "../data/data_2"
+      ],
+      "_comment_min_pair_dist": "A bridged model derives its own frame filter from the bridging window, so `min_pair_dist` must not be set here.",
+      "batch_size": 1
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_3"
+      ],
+      "batch_size": 1,
+      "numb_btch": 1
+    },
+    "numb_steps": 1000000,
+    "gradient_max_norm": 5.0,
+    "save_freq": 2000,
+    "max_ckpt_keep": 3,
+    "disp_file": "lcurve.out",
+    "disp_freq": 1000,
+    "disp_training": true,
+    "time_training": true,
+    "enable_compile": true,
+    "seed": 42
+  },
+  "validating": {
+    "save_best_dir": "ckpt_best"
+  }
+}

@@ -11,10 +11,12 @@ from typing import (
 )
 
 from deepmd.utils.bridging import (
+    resolve_bridging_window,
     route_canonical_learned_options,
 )
 from deepmd.utils.spin import (
     Spin,
+    env_protection_descriptors,
 )
 
 ModelBuilder = Callable[[dict], Any]
@@ -63,6 +65,83 @@ def get_model_components(
     return descriptor, fitting, fitting_type
 
 
+def get_long_range(
+    data: dict,
+    descriptor: Any,
+    fitting: Any,
+    *,
+    long_range_base: type | None,
+    backend_name: str,
+) -> Any | None:
+    """Construct the long-range module a model configuration adds to its fitting.
+
+    The module reads the descriptor of the model, and its networks take the
+    conditioning inputs of the energy fitting they accompany.
+
+    Parameters
+    ----------
+    data : dict
+        The model configuration, with the optional ``long_range`` section.
+    descriptor : Any
+        The descriptor of the model.
+    fitting : Any
+        The energy fitting of the model.
+    long_range_base : type or None
+        Backend long-range registry base class; ``None`` for a backend
+        without long-range modules.
+    backend_name : str
+        Backend name used in error messages.
+
+    Returns
+    -------
+    Any or None
+        The backend-native long-range module, or ``None`` when none is
+        configured.
+
+    Raises
+    ------
+    NotImplementedError
+        If a long-range module is configured for a backend without them.
+    """
+    config = data.get("long_range")
+    if config is None:
+        return None
+    if long_range_base is None:
+        raise NotImplementedError(
+            f"long-range modules are not supported in the {backend_name} backend"
+        )
+    config = copy.deepcopy(config)
+    long_range_cls = long_range_base.get_class_by_type(config.pop("type"))
+    return long_range_cls.from_config(
+        config,
+        descriptor,
+        fitting,
+        fitting_seed=data.get("fitting_net", {}).get("seed"),
+    )
+
+
+def _long_range_kwargs(
+    data: dict,
+    descriptor: Any,
+    fitting: Any,
+    *,
+    long_range_base: type | None,
+    backend_name: str,
+) -> dict[str, Any]:
+    """The ``long_range`` constructor argument, absent when none is configured.
+
+    Model classes without a long-range module keep their constructor contract.
+    """
+    long_range = get_long_range(
+        data,
+        descriptor,
+        fitting,
+        long_range_base=long_range_base,
+        backend_name=backend_name,
+    )
+    return {} if long_range is None else {"long_range": long_range}
+
+
 def get_standard_model(
     data: dict,
     *,
@@ -70,6 +149,7 @@ def get_standard_model(
     fitting_base: type,
     model_base: type,
     backend_name: str,
+    long_range_base: type | None = None,
 ) -> Any:
     """Construct a standard model through backend registries."""
     descriptor, fitting, fitting_type = get_model_components(
@@ -87,6 +167,13 @@ def get_standard_model(
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=data.get("pair_exclude_types", []),
         preset_out_bias=data.get("preset_out_bias"),
+        **_long_range_kwargs(
+            data,
+            descriptor,
+            fitting,
+            long_range_base=long_range_base,
+            backend_name=backend_name,
+        ),
     )
 
 
@@ -101,6 +188,11 @@ def get_zbl_model(
     backend_name: str,
 ) -> Any:
     """Construct a ZBL model from backend-native atomic model classes."""
+    if data.get("long_range") is not None:
+        raise NotImplementedError(
+            "a long-range module is not supported with the tabulated ZBL "
+            "potential (`use_srtab`)"
+        )
     descriptor, fitting, fitting_type = get_model_components(
         data,
         descriptor_base=descriptor_base,
@@ -139,6 +231,7 @@ def get_linear_atomic_model(
     pairtab_model: type,
     linear_atomic_model: type | None = None,
     descriptor_child_builder: "Callable[[dict], Any | None] | None" = None,
+    long_range_base: type | None = None,
 ) -> Any:
     """Build the ``LinearEnergyAtomicModel`` composition from a config.
 
@@ -147,9 +240,9 @@ def get_linear_atomic_model(
     atomic models; an ``inner_potential`` child builds the analytical
     bridging term. The composition is the ONE owner of the bridging
     coupling: it derives the learned sibling descriptor's
-    ``inner_clamp_r_inner``/``_outer`` from the ``inner_potential``
-    child's ``r_inner``/``r_outer``, so the radii are written once in the
-    config (issue #5948).
+    ``inner_clamp_f_inner``/``_f_outer``/``_scale`` from the
+    ``inner_potential`` child's window, so the window is written once in
+    the config (issue #5948).
 
     Parameters
     ----------
@@ -179,6 +272,9 @@ def get_linear_atomic_model(
         back to the generic registry build. Backends use it to route
         family-specific model types (e.g. DPA4/SeZM) through their
         validated builders.
+    long_range_base : type, optional
+        Backend long-range registry base class, which builds the long-range
+        module of a child; ``None`` for a backend without long-range modules.
 
     Raises
     ------
@@ -186,8 +282,11 @@ def get_linear_atomic_model(
         If more than one ``inner_potential`` child is given, if an
         ``inner_potential`` child has no unique learned sibling, if a
         bridged composition does not use ``weights: "sum"``, if a child
-        carries a ``bridging_method`` flag, or if a child is of an
+        carries a ``bridging_method`` flag, if a child with a long-range
+        module carries its own ``pair_exclude_types``, or if a child is of an
         unsupported kind.
+    NotImplementedError
+        If a child with a long-range module carries ``atom_exclude_types``.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
         InnerPotentialAtomicModel,
@@ -266,21 +365,27 @@ def get_linear_atomic_model(
         learned_descriptor_type = str(
             children[learned_indices[0]]["descriptor"].get("type", "dpa4")
         )
-        if learned_descriptor_type not in ("dpa4", "DPA4", "sezm", "SeZM"):
-            # same family restriction as the pt builder: the clamp window
-            # below only exists on DPA4/SeZM descriptors, so any other
+        if learned_descriptor_type not in (
+            "dpa4",
+            "DPA4",
+            "sezm",
+            "SeZM",
+            "dpa4c",
+            "DPA4C",
+        ):
+            # same family restriction as the pt builder: the bridging window
+            # below only exists on DPA4-family descriptors, so any other
             # family would die on an obscure unknown-kwarg TypeError
             raise NotImplementedError(
                 f"The {backend_name} backend implements `inner_potential` "
-                "bridging only for the DPA4/SeZM descriptor family, but got "
-                f"{learned_descriptor_type!r}."
+                "bridging only for the DPA4 descriptor family (DPA4/SeZM and "
+                f"DPA4C), but got {learned_descriptor_type!r}."
             )
         # The composition derives the sibling descriptor's clamp window from
-        # the inner_potential child: one source of truth for the radii.
+        # the inner_potential child: one source of truth for the window.
         inner_cfg = children[inner_indices[0]]
         learned_descriptor = children[learned_indices[0]]["descriptor"]
-        learned_descriptor["inner_clamp_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
-        learned_descriptor["inner_clamp_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
+        learned_descriptor.update(resolve_bridging_window(inner_cfg))
         route_canonical_learned_options(data, children[learned_indices[0]])
         preset_out_bias = children[learned_indices[0]].get("preset_out_bias")
 
@@ -303,13 +408,46 @@ def get_linear_atomic_model(
             if descriptor_child_builder is not None:
                 child = descriptor_child_builder(sub)
             if child is None:
+                # A long-range child is checked as the same model alone: the
+                # pair exclusion of the composition shapes the graph and the
+                # pair topology the children share, and atom exclusion is
+                # unsupported with a long-range module.
+                if sub.get("long_range") is not None:
+                    if sub.get("pair_exclude_types"):
+                        raise ValueError(
+                            "a linear_ener sub-model with a long-range module "
+                            "takes `pair_exclude_types` from the composition, "
+                            "whose sub-models share one neighbor graph and one "
+                            "pair topology; set it on the composition"
+                        )
+                    if sub.get("atom_exclude_types"):
+                        raise NotImplementedError(
+                            "`atom_exclude_types` is not supported with a "
+                            "long-range module, which attributes each pair "
+                            "energy to both atoms of the pair"
+                        )
                 descriptor, fitting, _ = get_model_components(
                     sub,
                     descriptor_base=descriptor_base,
                     fitting_base=fitting_base,
                     backend_name=backend_name,
                 )
-                child = atomic_model(descriptor, fitting, type_map=sub["type_map"])
+                # The composition computes the output bias, so its preset
+                # decides whether the fitting of a child references the
+                # isolated atoms.
+                child = atomic_model(
+                    descriptor,
+                    fitting,
+                    type_map=sub["type_map"],
+                    preset_out_bias=preset_out_bias,
+                    **_long_range_kwargs(
+                        sub,
+                        descriptor,
+                        fitting,
+                        long_range_base=long_range_base,
+                        backend_name=backend_name,
+                    ),
+                )
             built[i] = child
         else:
             if sub.get("type") != "pairtab":
@@ -366,7 +504,8 @@ def get_spin_model(
     data["atom_exclude_types"] = spin.get_atom_exclude_types(
         exclude_types=data.get("atom_exclude_types")
     )
-    data["descriptor"].setdefault("env_protection", 1e-6)
+    for descriptor in env_protection_descriptors(data["descriptor"]):
+        descriptor.setdefault("env_protection", 1e-6)
     if data["descriptor"]["type"] == "se_e2_a":
         data["descriptor"]["sel"] += data["descriptor"]["sel"]
     backbone_model = standard_model_factory(data)
@@ -450,6 +589,7 @@ class BackendModelFactory:
         pairtab_model: type | None = None,
         zbl_model: type | None = None,
         linear_atomic_model: type | None = None,
+        long_range_base: type | None = None,
     ) -> None:
         """Store backend-native classes used by all model construction paths."""
         self.descriptor_base = descriptor_base
@@ -460,6 +600,7 @@ class BackendModelFactory:
         self.pairtab_model = pairtab_model
         self.zbl_model = zbl_model
         self.linear_atomic_model = linear_atomic_model
+        self.long_range_base = long_range_base
 
     def get_model_components(self, data: dict) -> tuple[Any, Any, str]:
         """Construct descriptor and fitting objects for this backend."""
@@ -477,6 +618,17 @@ class BackendModelFactory:
             descriptor_base=self.descriptor_base,
             fitting_base=self.fitting_base,
             model_base=self.model_base,
+            backend_name=self.backend_name,
+            long_range_base=self.long_range_base,
+        )
+
+    def get_long_range(self, data: dict, descriptor: Any, fitting: Any) -> Any | None:
+        """Construct the long-range module of a model config for this backend."""
+        return get_long_range(
+            data,
+            descriptor,
+            fitting,
+            long_range_base=self.long_range_base,
             backend_name=self.backend_name,
         )
 
@@ -498,6 +650,7 @@ class BackendModelFactory:
             pairtab_model=self.pairtab_model,
             linear_atomic_model=self.linear_atomic_model,
             descriptor_child_builder=descriptor_child_builder,
+            long_range_base=self.long_range_base,
         )
 
     def get_zbl_model(self, data: dict) -> Any:

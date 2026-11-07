@@ -12,6 +12,9 @@ import numpy as np
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    ALL_PAIRS,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
@@ -33,6 +36,9 @@ from .base_atomic_model import (
 )
 from .dp_atomic_model import (
     DPAtomicModel,
+)
+from .inner_potential import (
+    InnerPotentialAtomicModel,
 )
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
@@ -111,6 +117,47 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     "tensor: "
                     + ", ".join(f"{type(m).__name__}={dim_of(m)}" for m in models)
                 )
+
+        # A long-range module is evaluated on the NeighborGraph lower and
+        # attributes each pair energy to both atoms of the pair. It is not
+        # combined with a sub-model without that lower, which sends the whole
+        # composition to the dense route, with a bridging term, which defines
+        # the close-pair limit of a learned local energy, nor with atom
+        # exclusion, which removes atomic outputs.
+        long_range = any(m.has_long_range() for m in models)
+        if long_range and not all(m.uses_graph_lower() for m in models):
+            raise NotImplementedError(
+                "a sub-model carrying a long-range module is evaluated on the "
+                "NeighborGraph lower, which every sub-model of the composition "
+                "must provide"
+            )
+        if long_range and any(isinstance(m, InnerPotentialAtomicModel) for m in models):
+            raise NotImplementedError(
+                "an inner_potential bridging term cannot be combined with a "
+                "sub-model carrying a long-range module"
+            )
+        if self.atom_exclude_types and long_range:
+            raise NotImplementedError(
+                "`atom_exclude_types` is not supported with a sub-model carrying "
+                "a long-range module"
+            )
+        # The composition builds every topology once for all sub-models: the
+        # pairs of a periodic batch are guards only, which would silence a
+        # module serving non-periodic systems alone, and a reciprocal-space
+        # topology is built with the parameters of a single module.
+        declared = [m.required_topologies() for m in models if m.has_long_range()]
+        periodic = any(name != ALL_PAIRS for names in declared for name in names)
+        if len(declared) > 1 and periodic:
+            raise NotImplementedError(
+                "a sub-model whose long-range module serves periodic systems "
+                "takes no other sub-model carrying a long-range module beside it"
+            )
+        if self.pair_exclude_types and periodic:
+            raise NotImplementedError(
+                "`pair_exclude_types` is not supported with a sub-model whose "
+                "long-range module serves periodic systems, whose "
+                "reciprocal-space sum is global and excludes no pair"
+            )
 
         self.models = models
         self.type_map = type_map
@@ -336,6 +383,50 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return all(m.uses_graph_lower() for m in self.models)
 
+    def fused_decomposition(self) -> "tuple[Any, Any] | None":
+        """Merge the children's parts when the composition is their plain sum.
+
+        A fused pipeline evaluates one learned model plus at most one pair
+        potential on the parent's node axis, under the parent's masks and
+        output bias. That describes this composition only with ``"sum"``
+        weights, shared type maps, and children that carry no exclusion of
+        their own; a bridged ``[learned, inner_potential]`` pair qualifies.
+        The analytical child contributes no output bias to the pipeline,
+        because its output statistics are never computed and remain zero.
+        """
+        if self.weights != "sum" or not self._graph_mapping_is_identity:
+            return None
+        parts = [model.fused_decomposition() for model in self.models]
+        if any(part is None for part in parts) or any(
+            model.atom_excl is not None or model.pair_excl is not None
+            for model in self.models
+        ):
+            return None
+        learned = [part[0] for part in parts if part[0] is not None]
+        potentials = [part[1] for part in parts if part[1] is not None]
+        if len(learned) != 1 or len(potentials) > 1:
+            return None
+        return learned[0], potentials[0] if potentials else None
+
+    def compute_fitting_input_stats(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> None:
+        """Recompute the input statistics of every learned sub-model's fitting net.
+
+        Analytical and tabulated sub-models carry no fitting net and are left
+        alone.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        """
+        for model in self.models:
+            if isinstance(model, DPAtomicModel):
+                model.fitting_net.compute_input_stats(sampled_func)
+                if model.long_range is not None:
+                    model.long_range.compute_input_stats(sampled_func)
+
     def supports_native_spin(self) -> bool:
         """Spin-capable when ANY child consumes the spin input.
 
@@ -347,6 +438,30 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return any(m.supports_native_spin() for m in self.models)
 
+    def has_long_range(self) -> bool:
+        """ANY child carrying a long-range module makes the composition carry one."""
+        return any(m.has_long_range() for m in self.models)
+
+    def required_topologies(self) -> tuple[str, ...]:
+        """Every topology a child reads, each named once."""
+        return tuple(
+            dict.fromkeys(
+                name for model in self.models for name in model.required_topologies()
+            )
+        )
+
+    def topology_params(self) -> dict[str, dict[str, Any]]:
+        """The build parameters of the topologies of the sub-models.
+
+        At most one sub-model declares a reciprocal-space topology, the only
+        kind with build parameters, so that the parameters of every topology
+        come from one sub-model.
+        """
+        params: dict[str, dict[str, Any]] = {}
+        for model in self.models:
+            params.update(model.topology_params())
+        return params
+
     def forward_atomic_graph(
         self,
         graph: Any,
@@ -356,14 +471,18 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict | None = None,
+        topologies: dict[str, Any] | None = None,
+        node_mask: Array | None = None,
     ) -> dict[str, Array]:
         """Graph-route linear combination on the flat node axis.
 
-        Every child consumes the SAME graph, so on autograd backends the
-        shared ``graph.edge_vec`` leaf makes the summed energy's force and
-        virial exactly the sum of the children's -- one edge backward
-        covers the whole composition (this is what makes analytical
-        bridging terms compose with the learned model for free).
+        Every child consumes the SAME graph and topologies, so on autograd
+        backends the shared geometry leaves make the summed energy's force
+        and virial exactly the sum of the children's -- one backward covers
+        the whole composition (this is what makes analytical bridging terms
+        compose with the learned model for free). Each child evaluates its
+        complete energy, including its long-range module, before its weight
+        applies.
 
         Only constant weights are supported here (``"sum"``/``"mean"`` or a
         per-child float list); the distance-switched ZBL-interpolation
@@ -387,6 +506,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             flat (N, 3) per-node spin, forwarded to every child.
         comm_dict
             MPI communication metadata, forwarded to every child.
+        topologies
+            the topologies of :meth:`required_topologies`, forwarded to every
+            child.
+        node_mask
+            flat mask of the nodes whose outputs count, forwarded to every
+            child, which combines it with its own exclusions.
 
         Returns
         -------
@@ -401,11 +526,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         import array_api_compat
 
-        if not self._graph_mapping_is_identity:
-            raise NotImplementedError(
-                "the graph route supports children sharing the parent "
-                "type_map only (no atype remapping)"
-            )
+        self._check_graph_mapping()
         nmodels = len(self.models)
         if self.weights == "sum":
             weights = [1.0] * nmodels
@@ -430,10 +551,86 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 charge_spin=charge_spin,
                 spin=spin,
                 comm_dict=comm_dict,
+                topologies=topologies,
+                node_mask=node_mask,
             )
             contrib = ret["energy"] * ww
             energy = contrib if energy is None else energy + contrib
         return {"energy": xp.astype(energy, graph.edge_vec.dtype)}
+
+    def forward_embedding_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        node_mask: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Embeddings of the first descriptor-fitting child of the composition.
+
+        A composition such as a bridged DPA4 or DPA4C model holds one learned
+        descriptor-fitting child beside analytical terms. Its embeddings are
+        those of that child, which evaluates them on the same graph and counts
+        the nodes under the masks of both the composition and the child.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free).
+        atype
+            flat local atom types, clamped to valid types. N
+        node_mask
+            flat mask of the nodes the composition counts. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level conditioning, forwarded to the child.
+
+        Returns
+        -------
+        dict[str, Array]
+            The embeddings of the child, see
+            :meth:`~deepmd.dpmodel.atomic_model.base_atomic_model.BaseAtomicModel.forward_common_embedding_graph`.
+
+        Raises
+        ------
+        NotImplementedError
+            For children with remapped type maps, or when no child is a
+            descriptor-fitting model.
+        """
+        self._check_graph_mapping()
+        for model in self.models:
+            if isinstance(model, DPAtomicModel):
+                return model.forward_common_embedding_graph(
+                    graph,
+                    atype,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                    node_mask=node_mask,
+                )
+        raise NotImplementedError(
+            "this linear model has no descriptor-fitting child, so it provides "
+            "no embedding."
+        )
+
+    def _check_graph_mapping(self) -> None:
+        """Require the children to share the type map of the composition.
+
+        Raises
+        ------
+        NotImplementedError
+            If a child remaps the atom types, which the graph route does not
+            support.
+        """
+        if not self._graph_mapping_is_identity:
+            raise NotImplementedError(
+                "the graph route supports children sharing the parent "
+                "type_map only (no atype remapping)"
+            )
 
     def forward_atomic(
         self,
@@ -725,9 +922,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         stay omitted, letting each child apply its own default, rather than
         silently broadcasting one child's value to the others.
 
-        Children that do not consume the input (dimension 0, e.g. an
-        analytical bridging term) are excluded by the caller, so a learned
-        model composed with ZBL still inherits the learned default.
+        Children without the conditioning (e.g. an analytical bridging term)
+        are excluded by the caller, so a learned model composed with ZBL still
+        inherits the learned default.
         """
         if not actives or not all(has(m) for m in actives):
             return False, None
@@ -738,8 +935,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return True, get(actives[0])
 
     def _chg_spin_consumers(self) -> list:
-        """Children that actually consume ``charge_spin``."""
-        return [m for m in self.models if m.get_dim_chg_spin() > 0]
+        """Children conditioned on ``charge_spin``.
+
+        A compressed child carries its condition folded into frozen tables and
+        reads no input, yet it keeps the default that those tables hold.
+        """
+        return [m for m in self.models if m.has_chg_spin_ebd()]
 
     def _fparam_consumers(self) -> list:
         """Children that actually consume ``fparam``."""
@@ -891,7 +1092,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
-        masked_nlist = xp.clip(nlist_larger, 0, None)
+        masked_nlist = xp.maximum(nlist_larger, xp.zeros_like(nlist_larger))
         pairwise_rr = PairTabAtomicModel._get_pairwise_dist(
             extended_coord, masked_nlist
         )

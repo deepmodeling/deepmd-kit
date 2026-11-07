@@ -1,18 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Carry-all NeighborGraph builder backed by vesin.torch (O(N) cell list).
+"""Vesin graph builders for differentiable and compact deployment inputs.
 
-World-2 counterpart of vesin_neighbor_list.py: instead of building the dense
-quartet, it returns per-frame local (i, j, S), then delegates to the array-API
-``neighbor_graph_from_ijs`` (which recomputes ``edge_vec`` differentiably from
-the ORIGINAL grad-carrying coords). torch-only => lives in pt_expt.
+Generic graphs recompute displacements from local neighbor pairs and periodic
+image shifts, preserving coordinate and cell derivatives. Compact canonical
+graphs use Vesin's detached displacements for exported models with explicit
+forces. Both layouts retain every active neighbor within the exact cutoff.
 
-Scope note: ``vesin.torch``'s API is single-system, so this builder LOOPS over
-frames in Python (~1 ms/frame call overhead measured on GPU). It is intended
-for ``nf == 1`` inference and CPU use. Inference ``neighbor_graph_method="auto"``
-(:func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`) selects
-vesin only when ``nf == 1`` and ``vesin.torch`` is importable (and ``nv`` is
-unavailable on CUDA); multi-frame batches stay on ``nv``/``dense``. Training
-auto never selects vesin. Prefer ``nv`` (:mod:`.nv_graph_builder`) for batched
+Vesin's API is single-system, so this builder loops over frames in Python.
+It is intended for ``nf == 1`` inference and CPU use. Inference ``neighbor_graph_method="auto"``
+(:func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`) prefers
+vesin for single-frame CUDA inputs; multi-frame batches stay on ``nv``/``dense``.
+Training auto never selects vesin. Prefer ``nv`` (:mod:`.nv_graph_builder`) for batched
 multi-frame GPU work, which batches all frames in one kernel.
 """
 
@@ -40,57 +38,16 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     attach_edge_csr,
     neighbor_graph_from_ijs,
 )
+from deepmd.pt_expt.utils.canonical_graph import (
+    CanonicalGraph,
+    canonical_graph_from_pairs,
+)
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     is_vesin_torch_available,
 )
-
-
-def vesin_search_ijs(
-    positions: torch.Tensor,
-    cell: torch.Tensor | None,
-    periodic: bool,
-    rcut: float,
-    device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Raw ``vesin.torch`` neighbor search returning ``(ii, jj, ss)`` as int64.
-
-    The caller is responsible for ensuring ``vesin.torch`` is importable (check
-    :func:`~deepmd.pt_expt.utils.vesin_neighbor_list.is_vesin_torch_available`
-    before calling).  ``positions`` must be detached (the search is
-    non-differentiable).
-
-    Parameters
-    ----------
-    positions : (nloc, 3) local-frame coordinates, already detached.
-    cell : (3, 3) box matrix for periodic systems, or ``None`` for non-periodic.
-        For non-periodic systems a zero box is constructed internally.
-    periodic : whether the system is periodic.
-    rcut : neighbor cutoff radius.
-    device : device to pin as the ambient default.  ``vesin.torch`` allocates
-        some internal tensors on the ambient default device, which may be a
-        fake/other device in some test contexts (e.g. a placeholder CUDA
-        default); pinning it here prevents spurious CUDA initializations.
-
-    Returns
-    -------
-    ii : (E,) int64 center local indices.
-    jj : (E,) int64 neighbor local indices.
-    ss : (E, 3) int64 periodic image shifts.
-    """
-    import vesin.torch as _vesin_torch
-
-    box = (
-        cell if periodic else torch.zeros((3, 3), dtype=positions.dtype, device=device)
-    )
-    nl = _vesin_torch.NeighborList(cutoff=float(rcut), full_list=True)
-    with torch.device(device):
-        ii, jj, ss = nl.compute(
-            points=positions,
-            box=box,
-            periodic=periodic,
-            quantities="ijS",
-        )
-    return ii.to(torch.int64), jj.to(torch.int64), ss.to(torch.int64).reshape(-1, 3)
+from deepmd.pt_expt.utils.vesin_search import (
+    VesinNeighborSearch,
+)
 
 
 def build_neighbor_graph_vesin(
@@ -104,6 +61,7 @@ def build_neighbor_graph_vesin(
     canonicalize: bool = False,
     pair_excl: PairExcludeMask | None = None,
     compact: bool = False,
+    search: VesinNeighborSearch | None = None,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using vesin.torch's O(N) cell list.
 
@@ -135,6 +93,9 @@ def build_neighbor_graph_vesin(
     compact
         Passed to :func:`apply_pair_exclusion`; see that function for details.
         Ignored when ``pair_excl`` is ``None``.
+    search
+        Optional persistent search shared across evaluations. Its skin only
+        controls candidate reuse; the returned graph retains the exact cutoff.
 
     Returns
     -------
@@ -173,45 +134,44 @@ def build_neighbor_graph_vesin(
             canonicalize=canonicalize,
         )
 
+    if search is None:
+        search = VesinNeighborSearch(
+            sorted=(with_csr or canonicalize) and torch.device(dev).type != "cuda"
+        )
     i_parts, j_parts, S_parts, nf_parts = [], [], [], []
     for f in range(nf):
-        pts = coord[f].detach()
-        cell_f = box[f].detach() if periodic else None
-        ii, jj, ss = vesin_search_ijs(pts, cell_f, periodic, rcut, dev)
+        cell_f = box[f] if periodic else None
+        ii, jj, ss = search.compute(coord[f], cell_f, rcut, frame=f)
         i_parts.append(ii)
         j_parts.append(jj)
         S_parts.append(ss)
         nf_parts.append(torch.full((ii.shape[0],), f, dtype=torch.int64, device=dev))
 
-    # guard torch.cat against empty part lists (nf == 0), mirroring ase_builder
-    i_all = (
-        torch.cat(i_parts)
-        if i_parts
-        else torch.zeros((0,), dtype=torch.int64, device=dev)
-    )
-    j_all = (
-        torch.cat(j_parts)
-        if j_parts
-        else torch.zeros((0,), dtype=torch.int64, device=dev)
-    )
-    S_all = (
-        torch.cat(S_parts)
-        if S_parts
-        else torch.zeros((0, 3), dtype=torch.int64, device=dev)
-    )
-    nf_all = (
-        torch.cat(nf_parts)
-        if nf_parts
-        else torch.zeros((0,), dtype=torch.int64, device=dev)
-    )
+    # A single frame already owns contiguous edge arrays. Empty batches retain
+    # the same empty-array contract as the backend-independent ASE builder.
+    if nf == 1:
+        i_all, j_all, S_all, nf_all = i_parts[0], j_parts[0], S_parts[0], nf_parts[0]
+    elif nf > 1:
+        i_all = torch.cat(i_parts)
+        j_all = torch.cat(j_parts)
+        S_all = torch.cat(S_parts)
+        nf_all = torch.cat(nf_parts)
+    else:
+        i_all = torch.zeros((0,), dtype=torch.int64, device=dev)
+        j_all = torch.zeros((0,), dtype=torch.int64, device=dev)
+        S_all = torch.zeros((0, 3), dtype=torch.int64, device=dev)
+        nf_all = torch.zeros((0,), dtype=torch.int64, device=dev)
 
     # virtual atoms (atype < 0) are excluded as centers AND neighbors — the
     # World-2 builder contract shared with the dense reference builder; the
     # geometric search above cannot know about them.
     at = torch.as_tensor(atype, device=dev).reshape(nf, nloc)
     keep = (at[nf_all, i_all] >= 0) & (at[nf_all, j_all] >= 0)
-    i_all, j_all, nf_all = i_all[keep], j_all[keep], nf_all[keep]
-    S_all = S_all[keep]
+    indices = torch.nonzero(keep, as_tuple=False).flatten()
+    i_all = i_all.index_select(0, indices)
+    j_all = j_all.index_select(0, indices)
+    nf_all = nf_all.index_select(0, indices)
+    S_all = S_all.index_select(0, indices)
 
     # i = center (dst), j = neighbor (src); pass ORIGINAL coord/box
     # (grad-carrying). Unlike the nv builder, vesin's cell list handles
@@ -231,5 +191,81 @@ def build_neighbor_graph_vesin(
         at_flat = torch.as_tensor(atype, device=dev).reshape(-1)
         graph = apply_pair_exclusion(graph, at_flat, pair_excl, compact=compact)
     if with_csr or canonicalize:
-        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
+        graph = attach_edge_csr(
+            graph,
+            nf * nloc,
+            canonicalize=canonicalize,
+            destination_sorted=search.sorted and (pair_excl is None or compact),
+        )
     return graph
+
+
+def build_canonical_graph_vesin(
+    coord: torch.Tensor,
+    box: torch.Tensor | None,
+    rcut: float,
+    search: VesinNeighborSearch,
+    node_mask: torch.Tensor | None = None,
+) -> CanonicalGraph:
+    """Build the compact deployment graph directly from Vesin displacements.
+
+    Parameters
+    ----------
+    coord : torch.Tensor
+        Coordinates in angstrom with shape (nf, nloc, 3).
+    box : torch.Tensor or None
+        Cells in angstrom with shape (nf, 3, 3), or non-periodic boundaries.
+    rcut : float
+        Neighbor cutoff radius in angstrom.
+    search : VesinNeighborSearch
+        Persistent search with independent candidate storage for each frame.
+    node_mask : torch.Tensor or None
+        Active-node mask with shape (nf, nloc), on the coordinate device.
+        None includes all nodes. Inactive nodes remain in the node axis but
+        have no incoming or outgoing edges.
+
+    Returns
+    -------
+    CanonicalGraph
+        Local graph with exact-cutoff float32 geometry and dual CSR. Geometry
+        is detached; this builder serves exported models with explicit forces.
+    """
+    nf, nloc, _ = coord.shape
+    centers, sources, vectors = [], [], []
+    for frame in range(nf):
+        if nloc == 0:
+            break
+        center, source, edge_vec = search.compute(
+            coord[frame],
+            box[frame] if box is not None else None,
+            rcut,
+            frame=frame,
+            return_vectors=True,
+        )
+        if node_mask is not None:
+            active = node_mask[frame, center] & node_mask[frame, source]
+            indices = torch.nonzero(active, as_tuple=False).flatten()
+            center = center.index_select(0, indices)
+            source = source.index_select(0, indices)
+            edge_vec = edge_vec.index_select(0, indices)
+        if frame:
+            center = center + frame * nloc
+            source = source + frame * nloc
+        centers.append(center)
+        sources.append(source)
+        vectors.append(edge_vec)
+    if not centers:
+        center = torch.empty(0, dtype=torch.int64, device=coord.device)
+        source = torch.empty_like(center)
+        edge_vec = coord.new_empty((0, 3))
+    elif nf > 1:
+        center = torch.cat(centers)
+        source = torch.cat(sources)
+        edge_vec = torch.cat(vectors)
+    return canonical_graph_from_pairs(
+        center,
+        source,
+        edge_vec,
+        torch.full((nf,), nloc, dtype=torch.int64, device=coord.device),
+        nf * nloc,
+    )

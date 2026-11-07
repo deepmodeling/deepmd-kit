@@ -15,12 +15,18 @@ and validation data.
 
 import json
 import os
+import shutil
+import tempfile
 import unittest
+from copy import (
+    deepcopy,
+)
 from pathlib import (
     Path,
 )
 
 import numpy as np
+import pytest
 import torch
 from dargs import (
     Argument,
@@ -225,22 +231,53 @@ class ModifierScalingTester(BaseModifier):
         return model_pred
 
 
+@pytest.fixture(scope="module")
+def modifier_reference_path(tmp_path_factory) -> Path:
+    """Share only the unmodified frozen reference, never a mutable trainer."""
+    return tmp_path_factory.mktemp("modifier_reference") / "reference.pth"
+
+
 @parameterized(
     (1, 2),  # training data batch_size
     (1, 2),  # validation data batch_size
     (True, False),  # use_cache
 )
 class TestDataModifier(unittest.TestCase):
+    @pytest.fixture
+    def _modifier_reference(self, modifier_reference_path) -> None:
+        self.modifier_reference_path = modifier_reference_path
+
     def setUp(self) -> None:
         """Set up test fixtures."""
         input_json = str(Path(__file__).parent / "water/se_e2_a.json")
-        training_data = [
-            str(Path(__file__).parent / "water/data/data_0"),
-            str(Path(__file__).parent / "water/data/data_1"),
-        ]
-        validation_data = [str(Path(__file__).parent / "water/data/data_1")]
+        # Four distinct frames per system exercise both batch sizes, cache
+        # reuse, and multiple systems without modifying all 240 source frames
+        # before every test. Keep the real coordinates, forces, and atom types.
+        data_dir = tempfile.TemporaryDirectory(prefix="pt_modifier_data_")
+        self.addCleanup(data_dir.cleanup)
+        if not hasattr(self, "modifier_reference_path"):
+            # unittest does not inject pytest fixtures. Keep standalone runs
+            # independent, while pytest shares its immutable module reference.
+            self.modifier_reference_path = Path(data_dir.name) / "reference.pth"
+        training_data = []
+        for name in ("data_0", "data_1"):
+            source = Path(__file__).parent / "water/data" / name
+            target = Path(data_dir.name) / name
+            (target / "set.000").mkdir(parents=True)
+            for filename in ("type.raw", "type_map.raw"):
+                shutil.copyfile(source / filename, target / filename)
+            for array in (source / "set.000").glob("*.npy"):
+                np.save(target / "set.000" / array.name, np.load(array)[:4])
+            training_data.append(str(target))
+        validation_data = [training_data[1]]
         with open(input_json, encoding="utf-8") as f:
             config = json.load(f)
+        # Modifier correctness is independent of network width. Still train
+        # and freeze a real energy/force model for every parameter combination.
+        config["model"]["descriptor"]["neuron"] = [8, 16]
+        config["model"]["descriptor"]["axis_neuron"] = 4
+        config["model"]["fitting_net"]["neuron"] = [16, 16]
+        config["model"]["data_stat_nbatch"] = 2
         config["training"]["numb_steps"] = 1
         config["training"]["save_freq"] = 1
         config["learning_rate"]["start_lr"] = 1.0
@@ -255,7 +292,7 @@ class TestDataModifier(unittest.TestCase):
 
     def test_init_modify_data(self):
         """Ensure modify_data applied."""
-        tmp_config = self.config.copy()
+        tmp_config = deepcopy(self.config)
         # add tester data modifier
         tmp_config["model"]["modifier"] = {
             "type": "zero_tester",
@@ -277,7 +314,7 @@ class TestDataModifier(unittest.TestCase):
 
     def test_full_modify_data(self):
         """Ensure modify_data only applied once."""
-        tmp_config = self.config.copy()
+        tmp_config = deepcopy(self.config)
         # add tester data modifier
         tmp_config["model"]["modifier"] = {
             "type": "random_tester",
@@ -314,19 +351,24 @@ class TestDataModifier(unittest.TestCase):
                 validation_data_before, validation_data_after, label_kw
             )
 
+    @pytest.mark.usefixtures("_modifier_reference")
     def test_inference(self):
         """Test the inference with data modification by verifying scaled model predictions are properly applied."""
-        # Generate frozen energy model used in modifier
-        trainer = get_trainer(self.config)
-        trainer.run()
-        freeze("model.ckpt.pt", "frozen_model_dm.pth")
+        # The reference is arbitrary trained weights, independent of the
+        # modifier's batch/cache matrix. Prepare it once; each case still
+        # trains and freezes its own modifier-bearing model below.
+        reference_path = str(self.modifier_reference_path)
+        if not self.modifier_reference_path.exists():
+            trainer = get_trainer(deepcopy(self.config))
+            trainer.run()
+            freeze("model.ckpt.pt", reference_path)
 
-        tmp_config = self.config.copy()
+        tmp_config = deepcopy(self.config)
         sfactor = np.random.default_rng(1).random()
         # add tester data modifier
         tmp_config["model"]["modifier"] = {
             "type": "scaling_tester",
-            "model_name": "frozen_model_dm.pth",
+            "model_name": reference_path,
             "sfactor": sfactor,
             "use_cache": self.param[2],
         }
@@ -370,7 +412,7 @@ class TestDataModifier(unittest.TestCase):
         atype = np.array([0, 0, 0, 1, 1]).reshape(1, -1)
 
         model = DeepEval("frozen_model.pth")
-        modifier = DeepEval("frozen_model_dm.pth")
+        modifier = DeepEval(reference_path)
         # model inference without modifier
         model_ref = DeepEval("model.ckpt.pt")
 
@@ -379,9 +421,18 @@ class TestDataModifier(unittest.TestCase):
         model_pred_ref = model_ref.eval(coord, cell, atype)
         # expected: output_model = output_model_ref + sfactor * output_modifier
         for ii in range(3):
+            # The compact reference must still make a real correction in all
+            # three outputs; otherwise additive parity could pass vacuously.
+            self.assertTrue(np.isfinite(modifier_pred[ii]).all())
+            self.assertGreater(np.max(np.abs(modifier_pred[ii])), 1e-10)
+            expected = model_pred_ref[ii] + sfactor * modifier_pred[ii]
+            self.assertFalse(
+                np.allclose(model_pred_ref[ii], expected, rtol=1e-5, atol=1e-8),
+                "Omitting the modifier must fail the inference tolerance",
+            )
             np.testing.assert_allclose(
                 model_pred[ii],
-                model_pred_ref[ii] + sfactor * modifier_pred[ii],
+                expected,
                 rtol=1e-5,
                 atol=1e-8,
             )
@@ -421,13 +472,13 @@ class TestDataModifier(unittest.TestCase):
         return nframes
 
     @staticmethod
-    def get_sampled_data(trainer, nbatch: int, is_train: bool):
+    def get_sampled_data(trainer, nframes: int, is_train: bool):
         """
         Collect all data from trainer and organize by IDs for easy comparison.
 
         Args:
             trainer: The trainer object
-            nbatch: Number of batches to iterate through
+            nframes: Total number of distinct frames across the datasets
             is_train: Whether to get training data (True) or validation data (False)
 
         Returns
@@ -439,8 +490,9 @@ class TestDataModifier(unittest.TestCase):
         # Keep track of all unique frames we've collected
         collected_frames = set()
 
-        # Continue collecting data until we've gone through all batches
-        for _ in range(nbatch):
+        # Sampling selects systems randomly. Require every frame, rather than
+        # comparing only a possibly empty intersection of two partial passes.
+        for _ in range(10 * nframes):
             _, label_dict, log_dict = trainer.get_data(is_train=is_train)
 
             system_id = log_dict["sid"]
@@ -474,8 +526,12 @@ class TestDataModifier(unittest.TestCase):
 
                 output[system_id][frame_id] = frame_data
                 collected_frames.add(frame_key)
+            if len(collected_frames) == nframes:
+                return output
 
-        return output
+        raise AssertionError(
+            f"Collected {len(collected_frames)} of {nframes} expected frames"
+        )
 
     @staticmethod
     def check_sampled_data(
@@ -492,14 +548,12 @@ class TestDataModifier(unittest.TestCase):
         ------
         AssertionError: If the data doesn't match between reference and test
         """
-        for sid in ref_data.keys():
+        assert ref_data.keys() == test_data.keys()
+        for sid in ref_data:
             ref_sys = ref_data[sid]
             test_sys = test_data[sid]
-            for fid in ref_sys.keys():
-                # compare common elements
-                try:
-                    ref_label = to_numpy_array(ref_sys[fid][label_kw])
-                    test_label = to_numpy_array(test_sys[fid][label_kw])
-                except KeyError:
-                    continue
+            assert ref_sys.keys() == test_sys.keys()
+            for fid in ref_sys:
+                ref_label = to_numpy_array(ref_sys[fid][label_kw])
+                test_label = to_numpy_array(test_sys[fid][label_kw])
                 np.testing.assert_allclose(ref_label, test_label)

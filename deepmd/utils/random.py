@@ -76,4 +76,18 @@ def shuffle(x: np.ndarray) -> None:
     _RANDOM_GENERATOR.shuffle(x)
 
 
-__all__ = ["choice", "random", "seed", "shuffle"]
+def get_state() -> tuple:
+    """Return the generator state using checkpoint-safe Python values."""
+    kind, keys, pos, has_gauss, cached_gaussian = _RANDOM_GENERATOR.get_state()
+    return (kind, keys.tolist(), int(pos), int(has_gauss), float(cached_gaussian))
+
+
+def set_state(state: tuple) -> None:
+    """Restore a state returned by :func:`get_state`."""
+    kind, keys, pos, has_gauss, cached_gaussian = state
+    _RANDOM_GENERATOR.set_state(
+        (kind, np.asarray(keys, dtype=np.uint32), pos, has_gauss, cached_gaussian)
+    )
+
+
+__all__ = ["choice", "get_state", "random", "seed", "set_state", "shuffle"]

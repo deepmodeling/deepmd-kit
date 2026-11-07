@@ -114,32 +114,6 @@ class TestActivationFunctionConsistent(unittest.TestCase):
         test = get_activation_fn_dp(self.activation)(input)
         np.testing.assert_allclose(self.ref, to_numpy_array(test), atol=1e-7)
 
-    def test_the_tf2_namespace_name_still_resolves(self) -> None:
-        """Anchor the literal the tf2 dispatch compares against.
-
-        ``xp_erf`` and its neighbours in ``deepmd/dpmodel/array_api.py`` select
-        the TensorFlow path by comparing ``xp.__name__`` against the import
-        path of the vendored namespace -- the idiom this tree uses in
-        ``utils/nlist.py`` and ``utils/default_neighbor_list.py`` too, nine
-        occurrences across three modules.
-
-        A literal like that fails silently if the module is ever renamed or
-        moved: the comparison simply stops matching, the code falls back to the
-        NumPy round-trip, and the gradient is lost again with every
-        forward-value test still passing. This asserts the name resolves to a
-        real module, so a rename breaks a test instead of a derivative.
-
-        Deliberately not gated on ``INSTALLED_TF2``: ``find_spec`` does not
-        import the module, so this runs everywhere, including the ordinary runs
-        where the tf2 cases skip. A guard that skips alongside the thing it
-        guards would protect nothing.
-        """
-        self.assertIsNotNone(
-            find_spec("deepmd._vendors.ndtensorflow"),
-            "the namespace name that array_api.py dispatches on no longer "
-            "resolves; the TensorFlow branches there are now dead code",
-        )
-
     @unittest.skipUnless(INSTALLED_TF2, "TensorFlow 2 is not installed")
     def test_tf2_gradient_consistent_with_ref(self) -> None:
         """The derivative has to survive the dispatch, not only the value.
@@ -262,3 +236,33 @@ class TestSilutVariantsConsistent(unittest.TestCase):
             )
             test = _torch_activation(x, self.activation).detach().cpu().numpy()
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
+
+
+class TestTensorFlowNamespace(unittest.TestCase):
+    """Literal-based TensorFlow dispatch remains reachable without TF installed."""
+
+    def test_the_tf2_namespace_name_still_resolves(self) -> None:
+        """Anchor the literal the tf2 dispatch compares against.
+
+        ``xp_erf`` and its neighbours in ``deepmd/dpmodel/array_api.py`` select
+        the TensorFlow path by comparing ``xp.__name__`` against the import
+        path of the vendored namespace -- the idiom this tree uses in
+        ``utils/nlist.py`` and ``utils/default_neighbor_list.py`` too, nine
+        occurrences across three modules.
+
+        A literal like that fails silently if the module is ever renamed or
+        moved: the comparison simply stops matching, the code falls back to the
+        NumPy round-trip, and the gradient is lost again with every
+        forward-value test still passing. This asserts the name resolves to a
+        real module, so a rename breaks a test instead of a derivative.
+
+        Deliberately not gated on ``INSTALLED_TF2``: ``find_spec`` does not
+        import the module, so this runs everywhere, including the ordinary runs
+        where the tf2 cases skip. A guard that skips alongside the thing it
+        guards would protect nothing.
+        """
+        self.assertIsNotNone(
+            find_spec("deepmd._vendors.ndtensorflow"),
+            "the namespace name that array_api.py dispatches on no longer "
+            "resolves; the TensorFlow branches there are now dead code",
+        )

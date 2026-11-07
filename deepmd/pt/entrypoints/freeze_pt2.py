@@ -125,8 +125,7 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
 
     SeZM lower inputs intentionally keep extended-atom and local-atom axes
     independent: regular exports pass ghost coordinates through ``coord`` while
-    ``atype`` remains local-only, and spin exports slice both ``nall`` and
-    ``nloc`` after virtual atom expansion. ``torch.export`` may turn these valid
+    ``atype`` remains local-only. ``torch.export`` may turn these valid
     dynamic cases into deferred ``Ne(nall, nloc)`` assertions.
     """
     graph = graph_module.graph
@@ -493,11 +492,8 @@ def _make_sample_inputs(
 ) -> tuple[torch.Tensor | None, ...]:
     """Build representative ``forward_common_lower`` inputs for tracing.
 
-    Three lower ABIs are produced, selected by ``model.export_lower_input_kind()``
-    and whether the model carries spin:
+    The edge-schema inputs depend on whether the model carries spin:
 
-    - virtual spin (``nlist``): the DeepSpin extended-input signature, since the
-      graph expands virtual atoms internally;
     - native spin (``edge_vec``): the energy edge schema plus the owned-atom
       spins (the first ``nloc`` extended rows, where ``mapping`` is identity);
     - energy (``edge_vec``): the plain single-domain edge schema.
@@ -512,17 +508,6 @@ def _make_sample_inputs(
         aparam,
         charge_spin,
     ) = _build_sample_extended(model, nframes, nloc, device, has_spin)
-    if has_spin and model.export_lower_input_kind() == "nlist":
-        return (
-            ext_coord,
-            ext_atype,
-            ext_spin,
-            nlist_t,
-            mapping_t,
-            fparam,
-            aparam,
-            charge_spin,
-        )
     formatted_nlist: torch.Tensor = model.format_nlist(ext_coord, ext_atype, nlist_t)
     edge_schema = edge_schema_from_extended(
         ext_coord,
@@ -531,6 +516,7 @@ def _make_sample_inputs(
         mapping_t,
     )
     if has_spin:
+        # Local spins have a frame stride independent of ghost storage.
         return (
             edge_schema.coord,
             edge_schema.atype,
@@ -538,7 +524,7 @@ def _make_sample_inputs(
             edge_schema.edge_vec,
             edge_schema.edge_scatter_index,
             edge_schema.edge_mask,
-            ext_spin[:, :nloc],
+            ext_spin[:, :nloc].contiguous(),
             fparam,
             aparam,
             charge_spin,
@@ -681,38 +667,12 @@ def _build_dynamic_shapes(
 ) -> tuple:
     """Build positional dynamic-shape constraints for the traced lower input.
 
-    The lower ABI is recovered from the sample structure: a floating-point
-    tensor at index 2 is the extended spin of the deepspin-scheme nlist contract,
-    while an integer ``edge_index`` there marks the edge contract. A native-spin
-    edge sample carries the extra per-local-atom spin tensor, giving it ten
-    positional entries against the energy contract's nine.
+    A native-spin edge sample carries the extra per-local-atom spin tensor,
+    giving it ten positional entries against the energy contract's nine.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
     nloc_dim = torch.export.Dim("nloc", min=1)
     nedge_dim = torch.export.Dim("nedge", min=2)
-    is_nlist_spin = (
-        len(sample_inputs) >= 3
-        and sample_inputs[2] is not None
-        and sample_inputs[2].is_floating_point()
-    )
-    if is_nlist_spin:
-        nall_dim = torch.export.Dim("nall", min=4)
-        fparam = sample_inputs[5]
-        aparam = sample_inputs[6]
-        charge_spin = sample_inputs[7] if len(sample_inputs) == 8 else None
-        shapes = (
-            {0: nframes_dim, 1: nall_dim},  # extended_coord
-            {0: nframes_dim, 1: nall_dim},  # extended_atype
-            {0: nframes_dim, 1: nall_dim},  # extended_spin
-            {0: nframes_dim, 1: nloc_dim},  # nlist
-            {0: nframes_dim, 1: nall_dim},  # mapping
-            {0: nframes_dim} if fparam is not None else None,
-            {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
-        )
-        if len(sample_inputs) == 8:
-            shapes = (*shapes, {0: nframes_dim} if charge_spin is not None else None)
-        return shapes
-
     nall_dim = torch.export.Dim("nall", min=1)
     edge_shapes = (
         {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
@@ -917,6 +877,7 @@ def freeze_sezm_to_pt2(
     device: torch.device | None = None,
     head: str | None = None,
     atomic_virial: bool = True,
+    with_comm: bool = True,
 ) -> None:
     """Freeze a SeZM checkpoint into an AOTInductor ``.pt2`` archive.
 
@@ -938,6 +899,9 @@ def freeze_sezm_to_pt2(
         default: the edge-force scatter assembles the per-atom virial as a
         free by-product of the single backward, so exporting it carries no
         compute cost.
+    with_comm
+        Whether to include a communication artifact when the model supports
+        cross-rank message passing. Disable for single-process inference.
 
     Notes
     -----
@@ -955,6 +919,7 @@ def freeze_sezm_to_pt2(
             target_device=target_device,
             head=head,
             atomic_virial=atomic_virial,
+            with_comm=with_comm,
         )
 
 
@@ -965,6 +930,7 @@ def _freeze_sezm_to_pt2(
     target_device: torch.device,
     head: str | None,
     atomic_virial: bool,
+    with_comm: bool,
 ) -> None:
     """Build one AOTInductor archive under an established kernel policy."""
     from torch._inductor import (
@@ -1041,8 +1007,7 @@ def _freeze_sezm_to_pt2(
     )
 
     # Each model's exportable signature matches its sample tuple positionally
-    # (energy / native-spin edge ABI, or virtual-spin nlist ABI), so a single
-    # splat covers all three contracts.
+    # (energy or native-spin edge ABI).
     log.info("Tracing the lower graph on CPU (make_fx)...")
     traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
 
@@ -1085,17 +1050,17 @@ def _freeze_sezm_to_pt2(
 
     # Second artifact: the LAMMPS multi-rank with-comm graph. It threads the
     # eight border_op communication tensors so cross-rank ghost features are
-    # exchanged between interaction blocks. Gated on the edge_vec lower contract
-    # (energy and native spin), so virtual spin (nlist interface) is excluded
-    # and falls back to single-rank. Bridging models DO take this path: they
+    # exchanged between interaction blocks. Bridging models take this path: they
     # report supports_edge_parallel()=True since the Source Freeze Propagation
     # gate's per-node partials are completed across ranks by
     # DescrptSeZM._gate_partial_exchange (issue #5906).
-    with_comm = (
-        model.export_lower_input_kind() == "edge_vec" and model.supports_edge_parallel()
+    has_comm_artifact = (
+        with_comm
+        and model.export_lower_input_kind() == "edge_vec"
+        and model.supports_edge_parallel()
     )
     with_comm_bytes: bytes | None = None
-    if with_comm:
+    if has_comm_artifact:
         log.info(
             "Compiling the parallel with-comm artifact (second AOTInductor "
             "compilation)..."
@@ -1111,7 +1076,7 @@ def _freeze_sezm_to_pt2(
         output_keys=output_keys,
         is_spin=is_spin,
         do_atomic_virial=atomic_virial,
-        has_comm_artifact=with_comm,
+        has_comm_artifact=has_comm_artifact,
     )
     with zipfile.ZipFile(out_path_str, "a") as zf:
         zf.writestr("model/extra/metadata.json", json.dumps(metadata))
