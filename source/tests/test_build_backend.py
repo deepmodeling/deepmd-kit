@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Build-option regressions that do not require either neural-network backend."""
 
-import pytest
-
-from backend import (
-    read_env,
+from pathlib import (
+    Path,
 )
+
+import pytest
 
 
 @pytest.mark.parametrize("interface", ["python", "ipi", "lammps"])
@@ -13,6 +13,12 @@ from backend import (
 def test_cpp_interface_respects_tensorflow_selection(
     monkeypatch, interface, tensorflow
 ):
+    # The build backend belongs to the source checkout, not the installed wheel.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2]))
+    from backend import (
+        read_env,
+    )
+
     for key in (
         "DP_VARIANT",
         "DP_ENABLE_IPI",
@@ -41,12 +47,23 @@ def test_cpp_interface_respects_tensorflow_selection(
     monkeypatch.setattr(read_env, "get_pt_version", lambda path: "2.11.0")
     read_env.get_argument_from_env.cache_clear()
     try:
-        _, args, _, scripts, _, _ = read_env.get_argument_from_env()
+        _, args, _, scripts, tf_version, pt_version = read_env.get_argument_from_env()
     finally:
         read_env.get_argument_from_env.cache_clear()
     assert (
         "-DENABLE_TENSORFLOW=ON" if tf_enabled else "-DENABLE_TENSORFLOW=OFF"
     ) in args
+    if tf_enabled:
+        assert "-DTENSORFLOW_VERSION=2.20.0" in args
+        assert "-DTENSORFLOW_ROOT:PATH=/mock/tensorflow" in args
+        assert tf_version == "2.20.0"
+    else:
+        assert not any(arg.startswith("-DTENSORFLOW_VERSION=") for arg in args)
+        assert not any(arg.startswith("-DTENSORFLOW_ROOT:PATH=") for arg in args)
+        assert tf_version is None
+    assert "-DENABLE_PYTORCH=ON" in args
+    assert "-DCMAKE_PREFIX_PATH=/mock/torch" in args
+    assert pt_version == "2.11.0"
     if interface != "python":
         selected = "TRUE" if tf_enabled else "FALSE"
         assert f"-DUSE_TF_PYTHON_LIBS:BOOL={selected}" in args
