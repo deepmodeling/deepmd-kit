@@ -172,7 +172,9 @@ def samples(kokkos_model, tmp_path_factory, request):
     )
 
 
-def _assert_snapshot(actual, expected, scale=1.0):
+def _assert_snapshot(actual: dict, expected: dict, scale: float = 1.0) -> None:
+    """Compare outputs at the same timestep using the canonical fp32 tolerances."""
+    assert actual["step"] == expected["step"]
     assert actual["ids"] == expected["ids"] == list(range(1, 7))
     np.testing.assert_allclose(actual["spin"], expected["spin"], atol=0, rtol=0)
     # The canonical kernels use float32; edge/reduction ordering differs between
@@ -184,7 +186,11 @@ def _assert_snapshot(actual, expected, scale=1.0):
         fields.append(("virial", 2e-7))
     for name, atol in fields:
         np.testing.assert_allclose(
-            actual[name], scale * np.array(expected[name]), rtol=5e-4, atol=atol
+            actual[name],
+            scale * np.array(expected[name]),
+            rtol=5e-4,
+            atol=atol,
+            err_msg=f"{name} at step {expected['step']}",
         )
     if "virial" in actual:
         # The pair fills the global and the per-atom virial from separate

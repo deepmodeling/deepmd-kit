@@ -39,10 +39,12 @@ def _pair_pointer(lmp, name, pointer_type):
     return pointer
 
 
-def _snapshot(lmp, virial=False):
+def _snapshot(lmp: lammps, virial: bool = False) -> dict:
+    """Collect atom-ID-ordered outputs at the current timestep."""
+
     # gather() returns atom-ID order, including contributions reverse-communicated
     # from ghost nodes. All ranks must participate in these collective calls.
-    def gather(name, count):
+    def gather(name: str, count: int) -> list[list[float]]:
         return np.array(lmp.gather(name, 1, count)).reshape(-1, count).tolist()
 
     # The pressure compute restricted to the pair reports the global pair
@@ -51,6 +53,7 @@ def _snapshot(lmp, virial=False):
     pressure = lmp.extract_compute("pvirial", LMP_STYLE_GLOBAL, LMP_TYPE_VECTOR)
     volume = lmp.get_thermo("vol") / lmp.extract_global("nktv2p")
     snapshot = {
+        "step": int(lmp.get_thermo("step")),
         "ids": list(lmp.gather_atoms("id", 0, 1)),
         "force": gather("f", 3),
         "magnetic_force": gather("c_fmprop", 3),
@@ -88,12 +91,20 @@ def _cmdargs(kokkos):
     return cmdargs
 
 
-def _run(lmp, args, selection, overlay=False):
+def _run(
+    lmp: lammps,
+    args: argparse.Namespace,
+    selection: str,
+    overlay: bool = False,
+) -> dict:
     comm = MPI.COMM_WORLD
     assert lmp.get_mpi_comm().size == args.ranks
     pair = "dpa4spin/kk" if args.kokkos else "dpa4spin"
     atom = "spin/kk" if args.kokkos else "spin"
     integrator = "verlet/kk" if args.kokkos else "verlet"
+    # The generic host fix marks all atom arrays as host-modified, including
+    # magnetic-force DualViews. Kokkos NVE modifies only positions and velocities.
+    nve_style = "nve/kk" if args.kokkos else "nve"
     assert lmp.has_style("pair", pair), f"Missing plugin pair style {pair}"
     pair_args = "" if selection == "default" else f" magnetic_force {selection}"
     substyle = f"{pair} {args.model.resolve()}{pair_args}"
@@ -122,7 +133,7 @@ def _run(lmp, args, selection, overlay=False):
         "compute spprop all property/atom spx spy spz sp",
         "compute pvirial all pressure NULL pair",
         *(
-            ("neigh_modify every 2 delay 0 check no", "fix integrate all nve")
+            ("neigh_modify every 2 delay 0 check no", f"fix integrate all {nve_style}")
             if args.cadence
             else ()
         ),
