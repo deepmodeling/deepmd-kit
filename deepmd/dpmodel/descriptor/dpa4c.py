@@ -740,8 +740,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         fparam
             Frame parameters accepted by the common descriptor ABI; unused.
         comm_dict
-            Communication metadata accepted by the common descriptor ABI;
-            unused.
+            Communication metadata; unsupported by this dense adapter.
+            Cross-rank exchange requires the graph lower.
         charge_spin
             Frame-level total charge and spin multiplicity with shape
             ``(F, 2)``. Read only when the descriptor is configured with
@@ -766,7 +766,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             graph_from_dense_quartet,
         )
 
-        del fparam, comm_dict
+        del fparam
+        if comm_dict is not None:
+            raise NotImplementedError(
+                "DPA4C cross-rank communication requires the graph lower; "
+                "the dense adapter does not support comm_dict."
+            )
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         nf, nloc, nnei = nlist.shape
 
@@ -2492,6 +2497,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def has_message_passing_across_ranks(self) -> bool:
         """Return whether intermediate halo communication is required."""
         return bool(self.attentions)
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Cross-rank feature exchange is implemented only by the graph lower."""
+        return False
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Return whether graph-lower edges must be destination sorted."""

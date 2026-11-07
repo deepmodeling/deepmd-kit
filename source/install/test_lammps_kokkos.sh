@@ -106,7 +106,8 @@ with lammps.lammps(cmdargs=["-log", "none", "-screen", "none"]) as lmp:
 PY
 
 DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
-	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py"
+	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py" \
+	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_multiblock_kokkos.py"
 # The compressed long-range fixtures come from gen_dpa4c_long_range.py of
 # test_cc_local.sh; the MPI runner of the test launches mpirun from PATH, which
 # leads with the launcher of the MPI prefix, while pytest runs on the Python of

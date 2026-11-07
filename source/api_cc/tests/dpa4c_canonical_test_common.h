@@ -106,6 +106,23 @@ struct Spin {
       "../../tests/infer/deeppot_dpa4c_canonical_spin.expected";
 };
 
+/// Two-block counterparts whose intermediate features require halo exchange.
+template <class DP>
+struct MultiblockPotential : Potential<DP> {
+  static constexpr const char* kModelPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_multiblock.pt2";
+  static constexpr const char* kRefPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_multiblock.expected";
+};
+
+template <class DS>
+struct MultiblockSpin : Spin<DS> {
+  static constexpr const char* kModelPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_spin_multiblock.pt2";
+  static constexpr const char* kRefPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_spin_multiblock.expected";
+};
+
 /// Names the instantiations of the cases by their model.
 struct CaseNames {
   template <class Case>
@@ -392,6 +409,23 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
     }
   }
 
+  /// Compare an extended graph after folding ghost forces onto their owners.
+  void expect_folded(const Results& actual, const std::vector<int>& owner) {
+    EXPECT_LT(max_difference(actual.atom_energy, host.atom_energy),
+              kReferenceTolerance * largest(host.atom_energy));
+    EXPECT_LT(max_difference(fold_onto_owners(actual.force, owner, natoms),
+                             host.force),
+              kReferenceTolerance * largest(host.force));
+    EXPECT_LT(max_difference(actual.virial, host.virial),
+              kReferenceTolerance * largest(host.virial));
+    if constexpr (Case::kSpin) {
+      EXPECT_LT(
+          max_difference(fold_onto_owners(actual.force_mag, owner, natoms),
+                         host.force_mag),
+          kReferenceTolerance * largest(host.force_mag));
+    }
+  }
+
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
   /// The compact canonical graph that the host entry points build for a
   /// configuration, on the device. A folded graph holds the local atoms
@@ -510,7 +544,8 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
   /// declined.
   void run_device_entry(void* stream,
                         const bool source_csr = true,
-                        const bool virial = true) {
+                        const bool virial = true,
+                        const DP_HaloExchange* halo = nullptr) {
     double* const atom_energy = out_atom_energy.data_ptr<double>();
     double* const force = out_force.data_ptr<double>();
     double* const total_virial =
@@ -531,14 +566,14 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
           atom_energy, force, out_force_mag.data_ptr<double>(), total_virial,
           atom_virial, atype, source, deepmd::canonical_index_width(nodes),
           edge_vec, destination_row_ptr, source_row_ptr, source_order,
-          graph_spin.data_ptr<float>(), /*world=*/nullptr, /*halo=*/nullptr,
-          natoms, nodes, edge_storage, stream);
+          graph_spin.data_ptr<float>(), /*world=*/nullptr, halo, natoms, nodes,
+          edge_storage, stream);
     } else {
       dp.compute_canonical_graph_gpu(
           atom_energy, force, total_virial, atom_virial, atype, source,
           deepmd::canonical_index_width(nodes), edge_vec, destination_row_ptr,
           source_row_ptr, source_order,
-          /*d_coord=*/nullptr, /*world=*/nullptr, /*halo=*/nullptr,
+          /*d_coord=*/nullptr, /*world=*/nullptr, halo,
           /*box=*/nullptr, natoms, nodes, edge_storage, stream);
     }
   }
@@ -727,32 +762,17 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
   // host entry points up to the summation order of the run, which the node
   // count of the graph configures.
   const auto graph = this->build_graph(this->system, /*fold=*/false);
+  ASSERT_FALSE(this->dp.canonical_graph_requires_halo());
   this->use_graph(graph);
   ASSERT_GT(this->nodes, this->natoms);
   this->allocate_outputs();
-  const Results& host = this->host;
   for (int call = 0; call < 2; ++call) {
-    const Results halo = this->evaluate();
-    const std::string what = "call " + std::to_string(call);
-    EXPECT_LT(max_difference(halo.atom_energy, host.atom_energy),
-              kReferenceTolerance * largest(host.atom_energy))
-        << what << ": atom energy";
-    EXPECT_LT(
-        max_difference(fold_onto_owners(halo.force, graph.owner, this->natoms),
-                       host.force),
-        kReferenceTolerance * largest(host.force))
-        << what << ": force";
-    EXPECT_LT(max_difference(halo.virial, host.virial),
-              kReferenceTolerance * largest(host.virial))
-        << what << ": virial";
-    if constexpr (TypeParam::kSpin) {
-      EXPECT_LT(max_difference(
-                    fold_onto_owners(halo.force_mag, graph.owner, this->natoms),
-                    host.force_mag),
-                kReferenceTolerance * largest(host.force_mag))
-          << what << ": magnetic force";
-    }
+    SCOPED_TRACE("call " + std::to_string(call));
+    this->expect_folded(this->evaluate(), graph.owner);
   }
+  const DP_HaloExchange unused{};
+  EXPECT_THROW(this->run_device_entry(nullptr, true, true, &unused),
+               std::exception);
 }
 
 TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_capture_elsewhere_stays_valid) {
@@ -825,6 +845,51 @@ REGISTER_TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalPtExpt,
 REGISTER_TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalPtExpt,
                             host_entry_matches_reference);
 #endif
+
+template <class Case>
+class TestInferDpa4cCanonicalHalo : public TestInferDpa4cCanonicalPtExpt<Case> {
+};
+
+TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalHalo);
+
+TYPED_TEST_P(TestInferDpa4cCanonicalHalo,
+             self_exchange_matches_complete_graph) {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+  ASSERT_TRUE(this->dp.canonical_graph_requires_halo());
+  this->expect_reference(this->host, "default_state");
+  const auto graph = this->build_graph(this->system, /*fold=*/false);
+  this->use_graph(graph);
+  ASSERT_GT(this->nodes, this->natoms);
+  this->allocate_outputs();
+
+  const std::vector<int> owners(graph.owner.begin() + this->natoms,
+                                graph.owner.end());
+  const auto sendlist =
+      torch::tensor(owners, torch::TensorOptions().dtype(torch::kInt32))
+          .to(this->graph_atype.device());
+  const int rank = 0;
+  const int ghosts = this->nodes - this->natoms;
+  const DP_HaloExchange halo{1,
+                             &rank,
+                             &rank,
+                             &ghosts,
+                             &ghosts,
+                             &this->natoms,
+                             sendlist.template data_ptr<int>()};
+  for (int call = 0; call < 2; ++call) {
+    SCOPED_TRACE("call " + std::to_string(call));
+    this->reset_outputs();
+    this->run_device_entry(nullptr, true, true, &halo);
+    this->expect_folded(this->read_back(), graph.owner);
+  }
+  // A failed C API call stores its error on the handle, so rejection is
+  // checked after the successful evaluations of that handle.
+  EXPECT_THROW(this->run_device_entry(nullptr), std::exception);
+#endif
+}
+
+REGISTER_TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalHalo,
+                            self_exchange_matches_complete_graph);
 
 }  // namespace dpa4c_canonical
 }  // namespace deepmd_test

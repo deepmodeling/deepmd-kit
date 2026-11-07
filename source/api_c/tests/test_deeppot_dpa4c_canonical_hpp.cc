@@ -21,5 +21,12 @@ INSTANTIATE_TYPED_TEST_SUITE_P(C,
                                Models,
                                CaseNames);
 
+using HaloModels = ::testing::Types<MultiblockPotential<deepmd::hpp::DeepPot>,
+                                    MultiblockSpin<deepmd::hpp::DeepSpin>>;
+INSTANTIATE_TYPED_TEST_SUITE_P(C,
+                               TestInferDpa4cCanonicalHalo,
+                               HaloModels,
+                               CaseNames);
+
 }  // namespace dpa4c_canonical
 }  // namespace deepmd_test

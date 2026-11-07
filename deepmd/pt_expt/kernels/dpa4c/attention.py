@@ -493,15 +493,15 @@ def further_block_moments(
     ).to(dtype)
     hidden_node = pre[:, 2 * STATE_WIDTH : 2 * STATE_WIDTH + channels]
     null_logit = pre[:, 2 * STATE_WIDTH + channels : 2 * STATE_WIDTH + channels + HEADS]
+    key_end = layout.harmonic_width * HEADS
     sources = torch.cat(
-        [keys.reshape(node_count, -1), state, hidden_node],
+        [keys.reshape(node_count, key_end), state, hidden_node],
         dim=1,
     )
     if exchange is not None:
         sources = exchange(sources)
 
     # === Step 2. Fields of the neighbor along the reversed bond ===
-    key_end = layout.harmonic_width * HEADS
     source_keys = sources[source, :key_end].reshape(
         edge_count, layout.harmonic_width, HEADS
     )

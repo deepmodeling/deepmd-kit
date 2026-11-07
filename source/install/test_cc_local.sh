@@ -116,6 +116,7 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.pte \
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.expected
 		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_canonical.py
 		exit 0
 	fi
 	# Remove stale generated model files so they can't be accidentally reused

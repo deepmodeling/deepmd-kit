@@ -152,9 +152,10 @@ class ChargeStateFold:
 
     Every lower lifts its constants independently, so the names hold only for
     the lower they were resolved against at freeze time. Only a compressed
-    DPA4C descriptor folds a charge state, and that family never carries
-    message passing across ranks, so an archive with a fold holds exactly one
-    lower and the question of a second set of names does not arise.
+    DPA4C descriptor folds a charge state. Its single-block graph lower needs
+    no with-comm artifact, and its multi-block compressed canonical lower
+    carries halo exchange in the main ABI. An archive with a fold therefore
+    holds one inference lower and one set of constant names.
 
     Parameters
     ----------

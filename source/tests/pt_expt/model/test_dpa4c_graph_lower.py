@@ -74,6 +74,35 @@ def _compressed_config(channels: int = 8) -> dict:
     return config
 
 
+def test_multiblock_communication_is_specific_to_the_lower() -> None:
+    """Canonical halo exchange belongs to its main ABI, not a sibling archive."""
+    from deepmd.pt_expt.utils.serialization import (
+        _collect_metadata,
+        _needs_with_comm_artifact,
+    )
+
+    config = _compressed_config()
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config)
+    assert model.atomic_model.has_message_passing_across_ranks()
+    for kind, needs_sibling in (
+        ("graph", True),
+        ("nlist", False),
+        ("dpa4c_canonical", False),
+    ):
+        assert _needs_with_comm_artifact(model, kind) is needs_sibling
+        metadata = _collect_metadata(model, lower_kind=kind)
+        assert metadata["has_message_passing"] is True
+        assert metadata["has_comm_artifact"] is needs_sibling
+        if not needs_sibling:
+            with pytest.raises(ValueError, match=r"with_comm_dict.*lower"):
+                _trace_and_export(
+                    {"model": model.serialize()},
+                    lower_kind=kind,
+                    with_comm_dict=True,
+                )
+
+
 def _run_graph(
     model: torch.nn.Module,
     dtype: torch.dtype = torch.float64,

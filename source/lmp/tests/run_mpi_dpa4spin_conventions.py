@@ -121,6 +121,11 @@ def _run(lmp, args, selection, overlay=False):
         "compute fmprop all property/atom fmx fmy fmz",
         "compute spprop all property/atom spx spy spz sp",
         "compute pvirial all pressure NULL pair",
+        *(
+            ("neigh_modify every 2 delay 0 check no", "fix integrate all nve")
+            if args.cadence
+            else ()
+        ),
         "run 0",
     ):
         lmp.command(command)
@@ -140,6 +145,17 @@ def _run(lmp, args, selection, overlay=False):
     }
     assert result["pair_style"] == style
     assert result["atom_style"] == atom
+    if args.cadence:
+        result["neighbor_ages"] = [lmp.extract_setting("neigh_ago")]
+        result["local_count_history"] = [result["local_counts"]]
+        for _ in range(3):
+            lmp.command("run 1 pre no post no")
+            result["snapshots"].append(_snapshot(lmp))
+            result["neighbor_ages"].append(lmp.extract_setting("neigh_ago"))
+            result["local_count_history"].append(
+                comm.allgather(lmp.extract_setting("nlocal"))
+            )
+        return result
     # Repeated computes expose stale ghost magnetic-force accumulation.
     for _ in range(2):
         lmp.command("run 0")
@@ -169,6 +185,11 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--kokkos", action="store_true")
     parser.add_argument("--ranks", type=int, default=1)
+    parser.add_argument(
+        "--cadence",
+        action="store_true",
+        help="Run only Cartesian forces over three steps with a two-step neighbor cadence.",
+    )
     args = parser.parse_args()
     assert MPI.COMM_WORLD.size == args.ranks, (
         f"Expected {args.ranks} MPI ranks, got {MPI.COMM_WORLD.size}: "
@@ -177,13 +198,18 @@ def main():
     results = {}
     library = None
     try:
-        for selection, overlay in (
-            ("default", False),
-            ("precession", False),
-            ("cartesian", False),
-            ("precession", True),
-            ("cartesian", True),
-        ):
+        cases = (
+            (("cartesian", False),)
+            if args.cadence
+            else (
+                ("default", False),
+                ("precession", False),
+                ("cartesian", False),
+                ("precession", True),
+                ("cartesian", True),
+            )
+        )
+        for selection, overlay in cases:
             with lammps(cmdargs=_cmdargs(args.kokkos), comm=MPI.COMM_WORLD) as lmp:
                 library = lmp.lib
                 key = f"overlay_{selection}" if overlay else selection

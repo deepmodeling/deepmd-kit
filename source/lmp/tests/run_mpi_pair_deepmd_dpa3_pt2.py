@@ -142,7 +142,15 @@ parser.add_argument(
     "device path of LAMMPS + Kokkos runs it without a CUDA-aware MPI. Rank r "
     "takes device r modulo the visible devices, as DeepPotPTExpt does.",
 )
+parser.add_argument(
+    "--check-halo-cadence",
+    action="store_true",
+    help="Check owned/ghost participation and the rebuild/reuse sequence of "
+    "three Kokkos steps with --neigh-every 2.",
+)
 args = parser.parse_args()
+if args.check_halo_cadence:
+    assert args.kokkos and args.nsteps == 3 and args.neigh_every == 2
 
 cmdargs = None
 if args.kokkos:
@@ -228,7 +236,23 @@ lammps.run(0)
 # dispatch across neighbor-list rebuilds (LAMMPS rebuilds every
 # 10 steps with our neigh_modify config, so any nsteps >= 10
 # triggers at least one rebuild).
-if args.nsteps > 0:
+if args.check_halo_cadence:
+    assert lammps.lmp.extract_global("pair_style") == "deepmd/kk"
+    assert lammps.lmp.extract_setting("kokkos_active") == 1
+    counts = [comm.allgather(lammps.lmp.extract_setting("nlocal"))]
+    assert min(counts[0]) > 0
+    if comm.size > 1:
+        assert min(comm.allgather(lammps.lmp.extract_setting("nghost"))) > 0
+    ages = [lammps.lmp.extract_setting("neigh_ago")]
+    for _ in range(args.nsteps):
+        lammps.run("1 pre no post no")
+        ages.append(lammps.lmp.extract_setting("neigh_ago"))
+        counts.append(comm.allgather(lammps.lmp.extract_setting("nlocal")))
+    assert ages == [0, 1, 0, 1], ages
+    assert counts[0] == counts[1] and counts[2] == counts[3], counts
+    if comm.size > 1:
+        assert counts[0] != counts[2], counts
+elif args.nsteps > 0:
     lammps.run(args.nsteps)
 
 # Forces need to be gathered across ranks. PyLammps's ``atoms[i]``

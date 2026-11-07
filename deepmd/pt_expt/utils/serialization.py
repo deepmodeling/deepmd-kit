@@ -222,9 +222,11 @@ def _needs_with_comm_artifact(
     graph lower carries a real per-layer ``border_op`` exchange, but its
     dense (nlist) lower's adapter raises on ``comm_dict``. ``lower_kind``
     selects which lower is being traced so the gate can consult the
-    per-lower capability instead of assuming both lowers agree. Non-graph
-    kinds additionally check ``dense_lower_supports_comm()`` (``True`` for
+    per-lower capability instead of assuming both lowers agree. The dense
+    lower checks ``dense_lower_supports_comm()`` (``True`` for
     dpa2/dpa3, whose dense lower is the production multi-rank path).
+    Compact canonical lowers never use a separate with-comm artifact; the
+    multi-block DPA4C lower carries halo exchange in its main ABI.
 
     Native spin participates on the GRAPH lower, matching pt's
     ``SeZMModel.supports_edge_parallel`` (which ``SeZMNativeSpinModel`` does
@@ -239,8 +241,8 @@ def _needs_with_comm_artifact(
     model : torch.nn.Module
         The wrapped pt_expt model.
     lower_kind : str
-        Which lower is being traced/frozen: ``"graph"`` or ``"nlist"``
-        (dense). Defaults to ``"nlist"``.
+        Which lower is being traced/frozen: ``"graph"``, ``"nlist"`` (dense),
+        or a compact canonical kind. Defaults to ``"nlist"``.
 
     Returns
     -------
@@ -250,6 +252,9 @@ def _needs_with_comm_artifact(
     from deepmd.dpmodel.model.native_spin_model import (
         NativeSpinModelKind,
     )
+
+    if lower_kind not in ("graph", "nlist"):
+        return False
 
     # Cross-backend family test: the dpmodel and pt_expt concrete classes
     # are parallel factory products with no subclass relation, so the shared
@@ -267,8 +272,7 @@ def _needs_with_comm_artifact(
         return False
     if lower_kind == "graph":
         return True
-    # Non-graph kinds trace the DENSE with-comm wrapper; a model whose dense
-    # lower has no comm implementation (DPA4) must not emit a dead artifact.
+    # The dense wrapper requires its own cross-rank communication contract.
     return bool(atomic_model.dense_lower_supports_comm())
 
 
@@ -2327,6 +2331,11 @@ def _trace_and_export_impl(
         # Registry-dispatched (incl. native spin, type "native_spin"): the
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
+    if with_comm_dict and not _needs_with_comm_artifact(model, lower_kind):
+        raise ValueError(
+            f"with_comm_dict=True is unsupported for lower_kind={lower_kind!r}: "
+            "this model and lower do not use a separate with-comm artifact."
+        )
     # The fold rebuilds the first fitting layers on the default device, where
     # the deserialized model resides, so it precedes the move below.
     _fold_case_embeddings(model)
@@ -2563,13 +2572,6 @@ def _trace_and_export_impl(
             )
 
             ensure_comm_registered()
-            if not _needs_with_comm_artifact(model, lower_kind):
-                raise ValueError(
-                    "with_comm_dict=True requested but the model's "
-                    "descriptor does not need cross-rank message passing "
-                    "(has_message_passing_across_ranks() is False) — "
-                    "there's nothing to compile."
-                )
             # The pt_expt Repformer with-comm override only supports nf=1
             # (LAMMPS always drives multi-rank inference with one frame).
             # ``nloc_sample`` is the TOTAL flat node count carried by the
@@ -2798,13 +2800,6 @@ def _trace_and_export_impl(
         )
 
         ensure_comm_registered()
-        if not _needs_with_comm_artifact(model, lower_kind):
-            raise ValueError(
-                "with_comm_dict=True requested but the model's descriptor "
-                "does not need cross-rank message passing "
-                "(has_message_passing_across_ranks() is False) — "
-                "there's nothing to compile."
-            )
         nloc_sample = nlist_t.shape[1]
         nall_sample = ext_atype.shape[1]
         nghost_sample = nall_sample - nloc_sample

@@ -365,7 +365,15 @@ class TestDPA4C:
         reference, _ = descriptor.call_graph(graph, atype)
         subset = dataclasses.replace(graph, n_local=graph.n_node - 1)
         actual, _ = descriptor.call_graph(subset, atype)
-        torch.testing.assert_close(actual, reference, atol=0, rtol=0)
+        # CUDA node reductions may accumulate the same edges in another order.
+        torch.testing.assert_close(actual, reference, atol=1e-12, rtol=1e-12)
+
+    def test_dense_adapter_rejects_cross_rank_communication(self) -> None:
+        descriptor = self.build(n_blocks=2).eval()
+        coord, atype, mapping, nlist = self._inputs(self.coord)
+        assert not descriptor.dense_lower_supports_comm()
+        with pytest.raises(NotImplementedError, match="graph lower"):
+            descriptor(coord, atype, nlist, mapping=mapping, comm_dict={})
 
     def test_serialization_preserves_parameters(self) -> None:
         restored = DescrptDPA4C.deserialize(self.descriptor.serialize()).to(env.DEVICE)
@@ -472,6 +480,12 @@ class TestDPA4C:
             create_graph=True,
         )
         named_parameters = list(descriptor.named_parameters())
+        registered = dict(named_parameters)
+        for index, block in enumerate(descriptor.attentions):
+            name = f"attentions.{index}.adam_field_gain"
+            assert name in registered
+            assert registered[name] is block.adam_field_gain
+            assert registered[name].requires_grad
         parameter_gradients = torch.autograd.grad(
             force_gradient.square().mean(),
             tuple(parameter for _, parameter in named_parameters),
