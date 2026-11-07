@@ -23,6 +23,42 @@ from gen_common import (
 )
 
 
+def _eval_nlist_reference(dp, coord, box, atype):
+    """Read atomic energy, force and total virial without requesting atomic virial."""
+    # DeepPot's tuple API couples atomic energy to atomic virial. Its backend
+    # result already includes atomic energy when atomic=False, so retain the
+    # independent per-atom energy check without exporting three unused
+    # atomic-virial backward passes.
+    natoms = len(atype)
+    coord = np.asarray(coord).reshape(-1, natoms, 3)
+    box = None if box is None else np.asarray(box).reshape(-1, 9)
+    output = dp.deep_eval.eval(coord, box, atype, atomic=False)
+    return (
+        output["energy_redu"].reshape(-1, 1),
+        output["energy_derv_r"].reshape(-1, natoms, 3),
+        output["energy_derv_c_redu"].reshape(-1, 9),
+        output["energy"].reshape(-1, natoms, 1),
+    )
+
+
+def _export_nlist_reference(path, data):
+    """Export the single-rank oracle without unused per-atom virial backward passes."""
+    from deepmd.pt_expt.utils.serialization import (
+        deserialize_to_file,
+    )
+
+    # Both consumers compare energy/force and the gen-time cross-check also
+    # compares total virial and atomic energy. Neither requests this oracle's
+    # atomic virial or MPI artifact. All deployment fixtures retain both.
+    deserialize_to_file(
+        path,
+        copy.deepcopy(data),
+        do_atomic_virial=False,
+        lower_kind="nlist",
+        with_comm=False,
+    )
+
+
 def main():
     from deepmd.dpmodel.model.model import (
         get_model,
@@ -295,19 +331,14 @@ def main():
     # at non-binding sel the two paths must agree.
     nlist_ref_pt2 = os.path.join(base_dir, "deeppot_dpa2_graph_nlist_ref.pt2")
     print(f"Exporting reference nlist .pt2 to {nlist_ref_pt2} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(
-        nlist_ref_pt2,
-        copy.deepcopy(data_g),
-        do_atomic_virial=True,
-        lower_kind="nlist",  # independent: dense nlist, NOT graph
-    )
+    _export_nlist_reference(nlist_ref_pt2, data_g)
     dp_nlist_ref = DeepPot(nlist_ref_pt2)
 
     # PBC reference from nlist path
-    e_r1, f_r1, v_r1, ae_r1, av_r1 = dp_nlist_ref.eval(coord, box, atype, atomic=True)
+    e_r1, f_r1, v_r1, ae_r1 = _eval_nlist_reference(dp_nlist_ref, coord, box, atype)
     # NoPBC reference from nlist path
-    e_rnp, f_rnp, v_rnp, ae_rnp, av_rnp = dp_nlist_ref.eval(
-        coord, None, atype, atomic=True
+    e_rnp, f_rnp, v_rnp, ae_rnp = _eval_nlist_reference(
+        dp_nlist_ref, coord, None, atype
     )
 
     print(f"Nlist ref PBC energy: {e_r1[0, 0]:.18e}")  # noqa: T201
