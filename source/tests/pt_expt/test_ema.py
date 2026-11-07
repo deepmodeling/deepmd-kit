@@ -88,9 +88,16 @@ def test_update_groups_by_dtype() -> None:
     dtypes = {params[0].dtype for _, params in ema._update_groups}
     assert dtypes == {torch.float32, torch.float64}
 
+    with torch.no_grad():
+        model.fp32.fill_(3.0)
+        model.fp64.fill_(5.0)
     ema.update()
-    for shadow in ema.shadow_params.values():
-        torch.testing.assert_close(shadow, torch.ones_like(shadow))
+    torch.testing.assert_close(
+        ema.shadow_params["fp32"], torch.full_like(model.fp32, 2.0)
+    )
+    torch.testing.assert_close(
+        ema.shadow_params["fp64"], torch.full_like(model.fp64, 3.0)
+    )
 
 
 def test_update_does_not_walk_named_parameters(monkeypatch) -> None:
@@ -148,13 +155,17 @@ def test_rebind_rebuilds_plan_for_new_model() -> None:
 def test_strided_layouts(layout, device) -> None:
     """Dense non-contiguous tensors stay grouped; gapped views stay isolated."""
     if layout == "transpose":
-        value = torch.ones(3, 4, device=device).T
+        value = torch.arange(12, device=device, dtype=torch.float32).reshape(3, 4).T
     elif layout == "channels_last":
-        value = torch.ones(2, 3, 4, 5, device=device).to(
-            memory_format=torch.channels_last
+        value = (
+            torch.arange(120, device=device, dtype=torch.float32)
+            .reshape(2, 3, 4, 5)
+            .to(memory_format=torch.channels_last)
         )
     else:
-        value = torch.ones(3, 8, device=device)[:, ::2]
+        value = torch.arange(24, device=device, dtype=torch.float32).reshape(3, 8)[
+            :, ::2
+        ]
     model = torch.nn.Module()
     model.register_parameter("weight", torch.nn.Parameter(value))
     ema = ModelEMA(model, decay=0.5)
@@ -271,3 +282,25 @@ def test_singleton_strides_do_not_disable_foreach() -> None:
     assert not ema._update_fallback
     ema.update()
     torch.testing.assert_close(ema.shadow_params["weight"], torch.full((2, 1, 3), 3.0))
+
+
+def test_rejected_rebind_after_compatible_parameter() -> None:
+    """A late validation error must not partially replace the update plan."""
+    first = torch.nn.Linear(2, 2)
+    second = torch.nn.Linear(2, 2)
+    second.bias = torch.nn.Parameter(torch.ones(1))
+    ema = ModelEMA(first, decay=0.5)
+    with pytest.raises(ValueError, match=r"bias.*shape mismatch"):
+        ema.rebind(second)
+    with torch.no_grad():
+        first.weight.fill_(3.0)
+        first.bias.fill_(5.0)
+        second.weight.fill_(7.0)
+        second.bias.fill_(9.0)
+    expected = {
+        name: ema.shadow_params[name].lerp(param.detach(), 0.5)
+        for name, param in first.named_parameters()
+    }
+    ema.update()
+    for name, tensor in expected.items():
+        torch.testing.assert_close(ema.shadow_params[name], tensor)
