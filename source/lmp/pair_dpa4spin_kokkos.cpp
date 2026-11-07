@@ -27,6 +27,7 @@ PairDPA4SpinKokkos<DeviceType>::PairDPA4SpinKokkos(LAMMPS* lmp)
     : PairDPA4Spin(lmp),
       compact_graph(lmp),
       multi_rank(false),
+      canonical_halo(false),
       reverse_virial(false),
       reverse_used_host(false) {
   respa_enable = 0;
@@ -223,6 +224,17 @@ void PairDPA4SpinKokkos<DeviceType>::init_style() {
   // The model node set is shared with the graph builder; type_idx_map is
   // populated by the base coeff().
   compact_graph.setup(type_idx_map, multi_rank);
+  // The halo exchange follows the swaps of the communication atom for atom,
+  // which the nodes of an extended node set do only without virtual atoms.
+  canonical_halo = deep_spin.canonical_graph_requires_halo();
+  if (canonical_halo && multi_rank && compact_graph.has_null_types) {
+    error->all(FLERR,
+               "pair style dpa4spin/kk exchanges the features of ghost atoms "
+               "of a model with further message-passing blocks atom for atom "
+               "across ranks, which atoms of a type mapped to NULL in "
+               "pair_coeff break; map every type to an element, or run on a "
+               "single rank.");
+  }
 }
 
 template <class DeviceType>
@@ -323,6 +335,15 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
     if (model_stream == nullptr) {
       Kokkos::fence();
     }
+    // A model with further message-passing blocks refreshes the features of
+    // the ghost nodes from the ranks that own them, through the communicator
+    // and the swaps of the communication.
+    const DP_HaloExchange* const halo =
+        canonical_halo && multi_rank
+            ? halo_exchange.plan(comm, error, neighbor->ago == 0)
+            : nullptr;
+    void* const world_ptr =
+        halo != nullptr ? static_cast<void*>(&world) : nullptr;
     try {
       deep_spin.compute_canonical_graph_gpu(
           d_atom_energy.data(), d_out_force.data(), d_out_force_mag.data(),
@@ -332,8 +353,8 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
           compact_graph.d_destination_row_ptr.data(),
           cvflag_atom ? compact_graph.d_source_row_ptr.data() : nullptr,
           cvflag_atom ? compact_graph.d_source_order.data() : nullptr,
-          d_moment.data(), nloc_m, nnode_m, compact_graph.storage_count,
-          model_stream);
+          d_moment.data(), world_ptr, halo, nloc_m, nnode_m,
+          compact_graph.storage_count, model_stream);
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }

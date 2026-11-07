@@ -277,7 +277,9 @@ def test_kokkos_spin_generator_reports_preserve_status_and_invocations(
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Requires GNU/Linux shell tools")
 @pytest.mark.parametrize("failure", ["", "spin.xml", "long-range.xml"])
-def test_kokkos_report_commands_preserve_pytest_status(tmp_path, failure):
+def test_kokkos_report_commands_preserve_pytest_status(
+    tmp_path: Path, failure: str
+) -> None:
     # Execute the unmodified test-command tail with a tiny pytest stand-in.
     # This tests exit-status/report wiring, not the CUDA/LAMMPS computation.
     script = (ROOT / "source/install/test_lammps_kokkos.sh").read_text()
@@ -291,6 +293,11 @@ def test_kokkos_report_commands_preserve_pytest_status(tmp_path, failure):
         "from pathlib import Path\n"
         "assert sys.argv[1:3] == ['-m', 'pytest']\n"
         "report = Path(next(a.split('=', 1)[1] for a in sys.argv if a.startswith('--junitxml=')))\n"
+        "expected = {\n"
+        "    'spin.xml': {'test_dpa4spin_kokkos_magnetic_force.py', 'test_lammps_dpa4c_multiblock_kokkos.py'},\n"
+        "    'long-range.xml': {'test_lammps_dpa4c_long_range_kokkos.py'},\n"
+        "}\n"
+        "assert {Path(a).name for a in sys.argv if a.endswith('.py')} == expected[report.name]\n"
         "report.write_text('<testsuites/>')\n"
         "sys.exit(17 if report.name == os.environ['MOCK_FAIL'] else 0)\n"
     )

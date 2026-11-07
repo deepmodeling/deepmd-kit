@@ -28,6 +28,8 @@ from deepmd.infer import (
 from deepmd.pt_expt.entrypoints.main import (
     change_bias,
 )
+from deepmd.pt_expt.kernels import long_range as long_range_kernels
+from deepmd.pt_expt.kernels.dpa4c import canonical as dpa4c_canonical
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -47,6 +49,7 @@ from deepmd.pt_expt.utils import (
 from deepmd.pt_expt.utils.serialization import (
     check_mesh_compile_torch_version,
     check_mesh_freeze_torch_version,
+    compressed_export_unsupported_reason,
     deserialize_to_file,
     mesh_compile_supported,
     mesh_freeze_supported,
@@ -1118,6 +1121,335 @@ def test_compressed_frozen_model_matches_uncompressed(
                 name,
                 state,
             )
+
+
+def _two_block_config(
+    kernel: str, periodic: bool, width: int = 32, charge: tuple[int, ...] = (16, 16)
+) -> dict:
+    """Return a compressible model of two blocks whose long-range module the fused operator serves.
+
+    The second block reads a cutoff below that of the first, and the charge
+    network has one channel, which the fused fitting kernels reproduce. The
+    energy fitting has two hidden layers of ``width`` and the charge network
+    the hidden layers ``charge``.
+    """
+    config = _config(kernel, constraint=NEUTRAL if kernel == "les" else None)
+    config["descriptor"].update(
+        n_radial=8, precision="float32", n_blocks=2, rcut=[3.0, 2.5]
+    )
+    config["fitting_net"].update(
+        neuron=[width, width], activation_function="silu", resnet_dt=False
+    )
+    config["fitting_net"]["precision"] = "float32"
+    config["long_range"].update(
+        channels=1,
+        charge_net={"neuron": list(charge), "seed": 23},
+        periodic=periodic,
+    )
+    if kernel == "sog":
+        config["long_range"]["kernel"] = {"type": "sog", "n_gaussian": 4}
+    return config
+
+
+def _perturbed_model(config: dict) -> torch.nn.Module:
+    """Build the model of ``config`` with every parameter moved off its initial value."""
+    model = get_model(config).to(env.DEVICE).eval()
+    generator = torch.Generator().manual_seed(5)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            noise = torch.randn(parameter.shape, generator=generator)
+            parameter.add_(0.05 * noise.to(parameter))
+    return model
+
+
+@pytest.mark.parametrize("periodic", [False, True])
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_compressed_further_blocks_with_long_range_match_uncompressed(
+    tmp_path, kernel: str, periodic: bool
+) -> None:
+    """A compressed model of two blocks keeps its long-range module through the freeze.
+
+    On a CUDA device the freeze selects the compact canonical lower, whose
+    fused long-range operator evaluates the further block between the first
+    block and the charges; on the CPU the graph lower evaluates the equations
+    of the descriptor. Both match the uncompressed model on a cluster and, for
+    a periodic module, on the mesh of a periodic frame.
+    """
+    if periodic and env.DEVICE.type != "cuda" and not mesh_freeze_supported():
+        pytest.skip(f"torch {torch.__version__} cannot package the mesh evaluation")
+    config = _two_block_config(kernel, periodic)
+    model = _perturbed_model(config)
+    reference = copy.deepcopy(model)
+    if periodic:
+        reference.atomic_model.long_range.use_mesh_evaluation()
+    model.atomic_model.enable_compression(0.5)
+    frozen = tmp_path / f"two_block_long_range_{kernel}.pt2"
+    deserialize_to_file(
+        str(frozen),
+        {"model": model.serialize(), "model_def_script": config},
+        do_atomic_virial=True,
+        lower_kind="auto",
+    )
+    dp = DeepPot(str(frozen), auto_batch_size=False)
+    expected_lower = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
+    assert dp.deep_eval.metadata["lower_input_kind"] == expected_lower
+    rng = np.random.default_rng(3)
+    atype = rng.integers(0, 2, (1, 40))
+    frames = [(rng.uniform(0.0, 7.0, (1, 40, 3)) + 100.0, None)]
+    if periodic:
+        box = np.array([[[12.0, 0.0, 0.0], [0.8, 11.0, 0.0], [-0.5, 0.6, 13.0]]])
+        frames.append((rng.uniform(0.0, 1.0, (1, 40, 3)) @ box[0], box))
+    names = ("energy", "force", "virial", "atom_energy", "atom_virial")
+    for coord, cell in frames:
+        expected = reference(
+            _tensor(coord),
+            _tensor(atype, torch.int64),
+            box=None if cell is None else _tensor(cell),
+            do_atomic_virial=True,
+        )
+        actual = dp.eval(coord, cell, atype, atomic=True)
+        atom_energy = expected["atom_energy"].detach().cpu().numpy()
+        for name, value in zip(names, actual, strict=True):
+            target = expected[name].detach().cpu().numpy().reshape(value.shape)
+            # The energy of a frame sums atomic energies, whose long-range
+            # parts may cancel between atoms of either sign, so its error is
+            # bounded by their relative error times the sum of their
+            # magnitudes, which equals the magnitude of the sum when they share
+            # a sign.
+            scale = (
+                np.abs(atom_energy).sum() if name == "energy" else np.abs(target).max()
+            )
+            # The tables of the compressed descriptor approximate its
+            # networks, to a few 1e-6 of the scale of every output.
+            assert np.abs(value - target).max() <= 2e-5 * scale + 1e-5, (
+                name,
+                cell is None,
+                np.abs(value - target).max(),
+                scale,
+            )
+
+
+@pytest.mark.skipif(
+    env.DEVICE.type != "cuda", reason="the compact canonical path is CUDA only"
+)
+def test_compressed_further_blocks_need_the_fused_long_range_operator(
+    tmp_path,
+) -> None:
+    """A compressed model of two blocks with a charge network of three channels is refused.
+
+    The fused long-range operator evaluates the further blocks with a charge
+    network of one channel; the composition of operators that serves a
+    network of three channels evaluates one block, so the deployment of such
+    a model on the CUDA backend stops with a diagnostic instead of falling
+    back to the uncompressed equations of a generic lower. The model differs
+    from one that the fused operator serves in its channel count alone.
+    """
+    config = _two_block_config("sog", periodic=False)
+    config["long_range"]["channels"] = 3
+    model = get_model(config).to(env.DEVICE).eval()
+    model.atomic_model.enable_compression(0.5)
+    with pytest.raises(ValueError, match="fused long-range operator"):
+        deserialize_to_file(
+            str(tmp_path / "two_block_three_channels.pt2"),
+            {"model": model.serialize(), "model_def_script": config},
+            lower_kind="auto",
+        )
+
+
+@pytest.mark.parametrize(
+    ("case", "refused"),
+    [("one_channel", False), ("three_channels", True), ("charge_state", False)],
+)
+def test_a_freeze_judges_a_long_range_model_as_compressed(
+    monkeypatch, case: str, refused: bool
+) -> None:
+    """A freeze judges a model of two blocks with a long-range module as its compression leaves it.
+
+    The judgment before compression, from which the automatic freeze of the
+    ASE calculator decides whether to compress, is that of the compressed
+    model: a charge network of three channels is refused in both, and a
+    constraint that reads the charge state of each frame is served, since the
+    compression of the model folds that state. The judgment reads the
+    configuration and the operators of the library, so the test targets CUDA
+    with the operators present on any device.
+    """
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    monkeypatch.setattr(dpa4c_canonical, "operator_available", lambda name: True)
+    monkeypatch.setattr(long_range_kernels, "op_available", lambda: True)
+    config = _two_block_config(
+        "sog" if case == "three_channels" else "les", periodic=False
+    )
+    if case == "three_channels":
+        config["long_range"]["channels"] = 3
+    elif case == "charge_state":
+        config["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[1, 2])
+        config["long_range"]["charge_constraint"] = {"source": "charge_spin"}
+    model = get_model(config).to("cpu").eval()
+    before = compressed_export_unsupported_reason(model)
+    model.atomic_model.enable_compression(0.5)
+    after = dpa4c_canonical.canonical_model_unsupported_reason(model)
+    assert (before is not None) == (after is not None) == refused, (before, after)
+
+
+@pytest.mark.skipif(
+    env.DEVICE.type != "cuda", reason="the compact canonical lower is CUDA only"
+)
+@pytest.mark.parametrize("layout", ["per_layer", "fused"])
+@pytest.mark.parametrize("tile", [0, 16])
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_further_blocks_with_long_range_read_halo_rows(
+    monkeypatch, kernel: str, tile: int, layout: str
+) -> None:
+    """A node set with halo rows evaluates a model of two blocks and its long range like the folded frame.
+
+    The owned atoms of a periodic frame keep complete rows, and every periodic
+    image within the cutoff of an owned atom becomes a halo row without edges
+    and without charge, which one self swap of the border plan refreshes from
+    its owner before every further block. The fused long-range operator
+    evaluates the owned rows, their charges and the mesh sum of the cell, in
+    one run or in runs of 16 rows, whose descriptor rows the charges read
+    together, with both networks on the per-layer kernels or on the fused
+    network (``FUSED_LAYOUTS``); the forces and the per-atom virials of the
+    halo rows, folded onto their owners, and every other output match those
+    of the folded frame evaluated in one run, in which every edge leads from
+    the owner itself.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+        attach_edge_csr,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+    from deepmd.pt_expt.utils.canonical_graph import (
+        BorderPlan,
+        canonical_graph_from_neighbor_graph,
+    )
+
+    shape = FUSED_LAYOUTS[layout]
+    model = _perturbed_model(
+        _two_block_config(
+            kernel, periodic=True, width=shape["width"], charge=shape["charge"]
+        )
+    )
+    model.atomic_model.long_range.use_mesh_evaluation()
+    model.atomic_model.enable_compression(0.5)
+    owned, side = 40, 8.0
+    # The rules of the fitting routes take the network of the layout on every
+    # run of the owned rows; a device on which they send the runs of the fused
+    # layout to the per-layer kernels has no fused network to evaluate.
+    runs = {owned} if tile == 0 else {tile, owned % tile or tile}
+    routes = [
+        int(
+            torch.ops.deepmd.graph_fitting_route_rule(
+                fitting_operator_arguments(network).weights, n
+            )
+        )
+        for network in (
+            model.atomic_model.fitting_net,
+            model.atomic_model.long_range.charge_net,
+        )
+        for n in runs
+    ]
+    if layout == "fused" and -1 in routes:
+        pytest.skip("the fitting rules take the per-layer kernels on this device")
+    assert all((route == -1) == (layout == "per_layer") for route in routes), routes
+    rng = np.random.default_rng(11)
+    local = rng.uniform(0.0, side, (owned, 3))
+    atype = rng.integers(0, 2, owned)
+    cell = np.eye(3) * side
+    atype_t, graph, coord_t, box_t = _canonical_inputs(
+        model, local[None], atype[None], cell[None]
+    )
+
+    def evaluate(graph, atype_t, coord_t, **border) -> dict[str, torch.Tensor]:
+        return model.forward_lower_canonical_graph(
+            atype_t,
+            graph.n_node,
+            graph.n_local,
+            graph.source,
+            graph.edge_vec,
+            graph.destination_row_ptr,
+            graph.source_row_ptr,
+            graph.source_order,
+            do_atomic_virial=True,
+            coord=coord_t,
+            box=box_t,
+            **border,
+        )
+
+    monkeypatch.setenv("DP_NODE_TILE", "0")
+    expected = evaluate(graph, atype_t, coord_t)
+    monkeypatch.setenv("DP_NODE_TILE", str(tile))
+
+    # The node set: the owned atoms, then their images within the cutoff of
+    # the first block of an owned atom, as halo rows.
+    rcut = model.get_rcut()
+    points = _tensor(local)
+    shifts = torch.cartesian_prod(*[torch.tensor([-1.0, 0.0, 1.0])] * 3)
+    shifts = side * shifts[shifts.abs().sum(-1) > 0].to(points)
+    images = (points[None] + shifts[:, None]).reshape(-1, 3)
+    near = (
+        torch.cdist(images, points, compute_mode="donot_use_mm_for_euclid_dist")
+        .amin(-1)
+        .lt(rcut)
+    )
+    points = torch.cat((points, images[near]))
+    local_index = torch.arange(owned, device=env.DEVICE)
+    owner = torch.cat((local_index, local_index.repeat(shifts.shape[0])[near]))
+    distance = torch.cdist(
+        points[:owned], points, compute_mode="donot_use_mm_for_euclid_dist"
+    )
+    destination, source = torch.nonzero(
+        (distance < rcut) & (distance > 1e-8), as_tuple=True
+    )
+    node_count = points.shape[0]
+    halo_graph = canonical_graph_from_neighbor_graph(
+        attach_edge_csr(
+            NeighborGraph(
+                n_node=torch.tensor([node_count], device=env.DEVICE),
+                edge_index=torch.stack((source, destination)),
+                edge_vec=(points[source] - points[destination]).to(torch.float32),
+                edge_mask=torch.ones(
+                    source.shape[0], dtype=torch.bool, device=env.DEVICE
+                ),
+                n_local=torch.tensor([owned], device=env.DEVICE),
+            ),
+            node_count,
+            canonicalize=True,
+        )
+    )
+    halo = node_count - owned
+    plan = BorderPlan(
+        send_nodes=owner[owned:].to(torch.int32).contiguous(),
+        swaps=torch.tensor([[0, 0, halo, halo, owned]], dtype=torch.int32),
+        communicator=torch.zeros(1, dtype=torch.int64),
+    )
+    actual = evaluate(
+        halo_graph,
+        atype_t[owner],
+        points,
+        communicator=plan.communicator,
+        halo_send=plan.send_nodes,
+        halo_swaps=plan.swaps,
+    )
+    folded = {
+        "energy": actual["energy"],
+        "virial": actual["virial"],
+        "atom_energy": actual["atom_energy"][:owned],
+        "force": actual["force"]
+        .new_zeros(owned, 3)
+        .index_add_(0, owner, actual["force"]),
+        "atom_virial": actual["atom_virial"]
+        .new_zeros(owned, 3, 3)
+        .index_add_(0, owner, actual["atom_virial"].reshape(-1, 3, 3)),
+    }
+    for key, value in folded.items():
+        # Both evaluate in float32 and sum the halo rows in another order.
+        reference = expected[key].detach().to(torch.float64).reshape(value.shape)
+        error = (value.detach().to(torch.float64) - reference).abs().max()
+        scale = reference.abs().max()
+        assert error <= 1e-5 * scale + 1e-6, (key, error.item(), scale.item())
 
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])

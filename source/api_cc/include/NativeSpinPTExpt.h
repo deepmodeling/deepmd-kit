@@ -23,6 +23,7 @@
 namespace deepmd::ptexpt {
 class ChargeStateFold;
 class GraphReplay;
+struct HaloTensors;
 }  // namespace deepmd::ptexpt
 
 namespace torch::inductor {
@@ -310,6 +311,10 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    *   [edge_storage].
    * @param[in] d_spin Per-node magnetic moment, GPU [nall_nodes * 3]
    *   row-major; ghost rows carry their owner's moment.
+   * @param[in] world Caller communicator; see
+   *   DeepSpin::compute_canonical_graph_gpu.
+   * @param[in] halo Halo exchange of the node set; see
+   *   DeepSpin::compute_canonical_graph_gpu.
    * @param[in] nloc Number of local atoms.
    * @param[in] nall_nodes Graph node count (local + ghost).
    * @param[in] edge_storage Allocated edge capacity.
@@ -328,12 +333,16 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                                    const std::int64_t* d_source_row_ptr,
                                    const std::int64_t* d_source_order,
                                    const float* d_spin,
+                                   void* world,
+                                   const DP_HaloExchange* halo,
                                    const std::int64_t nloc,
                                    const std::int64_t nall_nodes,
                                    const std::int64_t edge_storage,
                                    void* stream) override;
 
   bool uses_canonical_graph_inference() const override;
+
+  bool canonical_graph_requires_halo() const override;
 
   bool uses_native_spin_scheme() const override;
 
@@ -419,14 +428,17 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                      const bool atomic);
 
   /**
-   * @brief Run the nine-input compact canonical native-spin forward.
+   * @brief Run the compact canonical native-spin forward.
    *
    * Positional order: the eight dual-CSR graph tensors, then the per-node
-   * moment at index 8, which is the last slot -- the compact lower is traced
-   * without a conditional tail.
+   * moment at index 8, then, for a model with further message-passing
+   * blocks, the communicator ``world`` and the halo exchange of the node set.
    */
   std::vector<torch::Tensor> run_model_canonical(
-      const CanonicalGraphTensorPack& graph, const torch::Tensor& spin);
+      const CanonicalGraphTensorPack& graph,
+      const torch::Tensor& spin,
+      const void* world,
+      const ptexpt::HaloTensors& halo);
 
   /**
    * @brief Run the NeighborGraph native-spin forward.
@@ -465,6 +477,11 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    *   the model carries a default or declares no width.
    * @param[in] aparam Atomic parameter, ``nloc * dim_aparam`` values, or empty
    *   when the model declares no width.
+   * @param[in] world Communicator of the ranks a decomposed system spans, or
+   *   null; the compact lower of a model with further message-passing blocks
+   *   reads it with ``halo``.
+   * @param[in] halo Halo exchange of the node set for that lower, or null
+   *   for a node set without halo nodes.
    */
   std::map<std::string, torch::Tensor> run_graph_payload(
       GraphTensorPack& graph,
@@ -473,7 +490,9 @@ class NativeSpinPTExpt : public DeepSpinBackend {
       const torch::Tensor& spin,
       const std::vector<double>& fparam,
       const std::vector<double>& aparam,
-      const std::vector<double>& charge_spin);
+      const std::vector<double>& charge_spin,
+      const void* world = nullptr,
+      const ptexpt::HaloTensors* halo = nullptr);
 
   /**
    * @brief Bind the flat artifact outputs to their metadata key names.

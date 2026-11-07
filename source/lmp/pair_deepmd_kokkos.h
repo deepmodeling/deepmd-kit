@@ -133,11 +133,16 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // The canonical artifact reads the source CSR on every call, not only for
   // the per-atom virial.
   bool canonical_source_csr;
+  // The canonical artifact reads features of the ghost nodes of an extended
+  // node set from their owners through its halo exchange.
+  bool canonical_halo;
   bool device_path_ok;     // resolved once in init_style
   bool reverse_virial;     // reverse communication operates on centroid virial
   bool reverse_used_host;  // the host pack/unpack overrides ran
   // Device-packed fold that replaces the host reverse communication.
   CompactCanonicalGhostFold<DeviceType, DeepMDKokkosCommBuffer> ghost_fold;
+  // Halo exchange of the extended node set for ``canonical_halo``.
+  CompactCanonicalHalo<DeviceType> halo_exchange;
 };
 
 }  // namespace LAMMPS_NS

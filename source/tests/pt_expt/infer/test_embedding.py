@@ -32,6 +32,9 @@ from deepmd.infer.deep_eval import (
 )
 from deepmd.pt.model.model import get_model as pt_get_model
 from deepmd.pt.train.wrapper import ModelWrapper as PtModelWrapper
+from deepmd.pt.utils.auto_batch_size import (
+    AutoBatchSize,
+)
 from deepmd.pt_expt.kernels.dpa4c import (
     graph_compress,
 )
@@ -664,18 +667,45 @@ def test_compressed_charge_state(
             )
             _assert_embeddings_close(actual, expected[name], rtol=1e-4, atol=1e-5)
     assert kernel.call_count == len(states)
-    # The folded tables hold one state, which all frames of a call share.
-    with pytest.raises(ValueError, match="single state"):
-        frozen.eval_embedding(
-            np.tile(_COORDS[:1], (2, 1, 1)),
-            np.tile(_CELLS[:1], (2, 1)),
-            atype,
-            charge_spin=np.concatenate(list(states.values())),
-        )
+    # The whole call shares one folded state even when batching splits frames.
+    for batch_size in (None, AutoBatchSize(initial_batch_size=len(atype))):
+        monkeypatch.setattr(frozen.deep_eval, "auto_batch_size", batch_size)
+        with pytest.raises(ValueError, match="single state"):
+            frozen.eval_embedding(
+                np.tile(_COORDS[:1], (2, 1, 1)),
+                np.tile(_CELLS[:1], (2, 1)),
+                atype,
+                charge_spin=np.concatenate(list(states.values())),
+            )
     assert (
         np.abs(expected["other"][1] - expected["default"][1]).max()
         > 1e-2 * np.abs(expected["default"][1]).max()
     )
+
+
+def test_multiblock_canonical_metadata_keeps_the_embedding_graph_generic(
+    tmp_path: "os.PathLike[str]",
+) -> None:
+    """The archive's energy ABI does not change the embedding graph layout."""
+    config = copy.deepcopy(_DPA4C_CONFIG)
+    config["descriptor"].update(n_blocks=2, precision="float32")
+    config["fitting_net"]["precision"] = "float32"
+    model_params = _normalize_model(config)
+    model = get_model(copy.deepcopy(model_params)).eval()
+    _perturb(model, seed=5)
+    dp = DeepPot(
+        _save_checkpoint(model, model_params, os.path.join(tmp_path, "model.pt"))
+    )
+    dp.deep_eval._dpmodel.get_descriptor().enable_compression(0.5)
+    expected = dp.eval_embedding(_COORDS[:1], _CELLS[:1], _ATYPES[0])
+    # Canonical archive metadata is sufficient to exercise the CPU embedding
+    # path: no compiled energy/force entry point is called by this API.
+    dp.deep_eval.metadata.update(
+        lower_input_kind="dpa4c_canonical", has_message_passing=True
+    )
+    actual = dp.eval_embedding(_COORDS[:1], _CELLS[:1], _ATYPES[0])
+    # The fp32 graph reductions need not be bitwise repeatable on CUDA.
+    _assert_embeddings_close(actual, expected, rtol=1e-6, atol=1e-6)
 
 
 def test_rejects_a_model_without_graph_forward(tmp_path: "os.PathLike[str]") -> None:

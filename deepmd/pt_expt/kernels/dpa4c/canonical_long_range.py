@@ -14,6 +14,7 @@ import torch
 
 if TYPE_CHECKING:
     from deepmd.pt_expt.utils.canonical_graph import (
+        BorderPlan,
         CanonicalGraph,
     )
 
@@ -25,7 +26,9 @@ def fused_long_range_eligible(long_range: Any) -> bool:
     fitting kernels reproduce, beside the compressed descriptor and the energy
     fitting that the compact canonical lower already requires; a module whose
     charge network they do not reproduce, or a library without the operator,
-    takes :func:`dpa4c_canonical_long_range_energy_force`.
+    takes :func:`dpa4c_canonical_long_range_energy_force`, which evaluates a
+    descriptor of one block, so that a descriptor of further message-passing
+    blocks with such a module is not deployed in compressed form on a GPU.
     """
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         long_range_op_available,
@@ -49,6 +52,7 @@ def dpa4c_canonical_compress_long_range_energy_force(
     atom_bias: torch.Tensor,
     fitting_routes: list[int] | None = None,
     charge_fitting_routes: list[int] | None = None,
+    border: BorderPlan | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -67,6 +71,12 @@ def dpa4c_canonical_compress_long_range_energy_force(
     so the force assembly reads the source CSR only for the per-atom virial.
     It derives the ownership mask from the frame counts, and the charged
     nodes of the module are the owned real nodes.
+
+    A descriptor of several message-passing blocks evaluates every further
+    block as that operator does, and the charges read the descriptor of the
+    last block. A node set of one domain of a decomposed frame, whose halo
+    nodes follow its owned nodes, refreshes the features of its halo nodes
+    through ``border`` and evaluates its owned nodes alone, as there.
 
     Parameters
     ----------
@@ -103,6 +113,10 @@ def dpa4c_canonical_compress_long_range_energy_force(
         Fitting-route table of the charge network. ``None`` or an empty table
         leaves the routes of its network to the rules of the operator, for
         either table.
+    border
+        Border plan of the node set for a descriptor of several blocks, whose
+        communicator is ``communicator``, or ``None`` for a node set without
+        halo nodes.
 
     Returns
     -------
@@ -142,6 +156,11 @@ def dpa4c_canonical_compress_long_range_energy_force(
 
     ensure_registered()
     ensure_fitting_registered()
+    if border is not None and not descriptor.attentions:
+        raise ValueError(
+            "a border plan serves the further message-passing blocks, but the "
+            "descriptor has one block"
+        )
     network = fitting_operator_arguments(fitting)
     charge_net = long_range.charge_net
     charges = fitting_operator_arguments(charge_net)
@@ -193,6 +212,11 @@ def dpa4c_canonical_compress_long_range_energy_force(
         # serialized empty int list to the operator as None.
         list(fitting_routes) if fitting_routes else None,
         list(charge_fitting_routes) if charge_fitting_routes else None,
+        descriptor.compress_blocks if descriptor.attentions else None,
+        *((None, None) if border is None else (border.send_nodes, border.swaps)),
+        [float(cutoff) for cutoff in descriptor.block_rcut[1:]]
+        if descriptor.attentions
+        else None,
     )
 
 
@@ -225,7 +249,8 @@ def dpa4c_canonical_long_range_energy_force(
     fitting
         Eligible pt_expt energy fitting network.
     long_range
-        Long-range module whose ``operator_eligible()`` holds.
+        Long-range module whose ``operator_eligible()`` holds and whose
+        charge state, if it reads one, is folded.
     graph
         Canonical graph whose ``source`` has shape ``(E,)`` in ``uint32`` or
         ``int64``, or shape ``(E, W)`` in ``uint8`` for the exported bytes of

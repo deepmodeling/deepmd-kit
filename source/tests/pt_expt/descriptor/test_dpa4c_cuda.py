@@ -3006,12 +3006,14 @@ def _fused_arguments(
     atom_bias: torch.Tensor,
     spin: torch.Tensor | None = None,
     pair_table: torch.Tensor | None = None,
+    border: Any = None,
 ) -> list[Any]:
     """Return the arguments with which the fused wrapper calls the operator.
 
     The call is recorded rather than evaluated. The CPU reference of the
     operator is registered first, so that the arguments can be evaluated on
-    either device.
+    either device. ``border`` is the border plan of a node set with halo rows,
+    which a descriptor of several blocks reads.
     """
     from deepmd.pt_expt.kernels.dpa4c import (
         canonical,
@@ -3026,7 +3028,14 @@ def _fused_arguments(
             lambda *arguments: calls.append(list(arguments)),
         )
         canonical.dpa4c_canonical_compress_energy_force(
-            descriptor, fitting, graph, atype, atom_bias, spin, pair_table
+            descriptor,
+            fitting,
+            graph,
+            atype,
+            atom_bias,
+            spin,
+            pair_table,
+            border=border,
         )
     (arguments,) = calls
     return arguments
@@ -4088,11 +4097,16 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
             lower_kind="dpa4c_canonical",
             do_atomic_virial=True,
         )
-        # The table is the last argument of the schema; a call that leaves it
-        # to its default of no table records one argument fewer.
+        # The table is the ``fitting_routes`` argument of the schema; a call
+        # that leaves it to its default of no table records none.
         schema = torch.ops.deepmd.dpa4c_canonical_compress_energy_force.default._schema
+        position = [argument.name for argument in schema.arguments].index(
+            "fitting_routes"
+        )
         literals = [
-            node.args[-1] if len(node.args) == len(schema.arguments) else None
+            node.args[position]
+            if len(node.args) > position
+            else node.kwargs.get("fitting_routes")
             for node in exported.graph_module.graph.nodes
             if "dpa4c_canonical_compress_energy_force" in str(node.target)
         ]
@@ -4781,6 +4795,60 @@ def test_two_routes_besides_the_rules_are_decided_on_trains(
 
 
 @_GPU
+def test_the_route_tuner_times_the_first_block_of_several() -> None:
+    """The tuner times the routes of a model of two blocks on the operator of its first block.
+
+    The routes of a network change no further message-passing block, so the
+    bench evaluates a copy of the descriptor without its further blocks, whose
+    operator it captures, and the descriptor of the model keeps its blocks.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+
+    model = (
+        get_model(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "dpa4c",
+                    "rcut": [4.0, 3.0],
+                    "n_blocks": 2,
+                    "channels": 8,
+                    "lmax": 2,
+                    "n_radial": 8,
+                    "precision": "float32",
+                    "seed": 3,
+                },
+                "fitting_net": {
+                    "type": "ener",
+                    "neuron": [64, 64],
+                    "activation_function": "silu",
+                    "precision": "float32",
+                    "resnet_dt": False,
+                    "seed": 3,
+                },
+            }
+        )
+        .to("cpu")
+        .eval()
+    )
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    device = torch.device("cuda", torch.cuda.current_device())
+    fitting = model.atomic_model.fused_decomposition()[0].fitting_net
+    bench = fitting_routes._Bench(
+        model, device, 512, fitting, fitting.bias_atom_e[:, 0]
+    )
+    assert not bench.descriptor.has_message_passing()
+    assert model.get_descriptor().has_message_passing()
+    graphs = bench._capture(bench._inputs(512), [fitting_routes.RULES], 0)
+    assert list(graphs) == [fitting_routes.RULES]
+
+
+@_GPU
 def test_the_route_tuner_measures_a_table_that_changes_no_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4839,3 +4907,571 @@ def test_the_route_tuner_measures_a_table_that_changes_no_output(
         )
         for expected, actual in zip(rules, routed, strict=True):
             assert torch.equal(expected, actual), node_count
+
+
+# === Descriptors of several message-passing blocks ===
+#
+# The further blocks run in the canonical fused operator. Their output maps
+# start at zero, which makes a fresh block the identity, so every comparison
+# below draws those maps at random first (`_activate_blocks`).
+
+
+def _activate_blocks(descriptor: DescrptDPA4C) -> None:
+    """Draw every zero-initialized map and the field gains of the further blocks."""
+    generator = np.random.default_rng(97)
+    with torch.no_grad():
+        for block in descriptor.attentions:
+            for module in block.modules():
+                weight = getattr(module, "w", None)
+                if (
+                    isinstance(weight, torch.Tensor)
+                    and weight.ndim == 2
+                    and not weight.any()
+                ):
+                    weight.copy_(
+                        torch.as_tensor(
+                            generator.normal(size=tuple(weight.shape)),
+                            dtype=weight.dtype,
+                        )
+                    )
+            gain = block.adam_field_gain
+            gain.copy_(
+                torch.as_tensor(
+                    generator.normal(size=tuple(gain.shape)), dtype=gain.dtype
+                )
+            )
+
+
+def _build_block_descriptor(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: Sequence[float],
+    spin: bool = False,
+    **window: float,
+) -> DescrptDPA4C:
+    """Return an fp32 descriptor of ``len(rcut)`` blocks with active further blocks.
+
+    Block ``k`` reads the edges within ``rcut[k]``. A spin-conditioned
+    descriptor is prepared as in `_build_spin_descriptor`, and ``window``
+    holds the fractions of a bridging window. The descriptor is not
+    compressed.
+    """
+    builder = _build_spin_descriptor if spin else _build_descriptor
+    descriptor = builder(
+        channels, lmax, radial_modes, rcut=list(rcut), n_blocks=len(rcut), **window
+    )
+    _activate_blocks(descriptor)
+    return descriptor
+
+
+#: Side in Å of the random clusters of a descriptor of several blocks with a
+#: bridging window. Nearly every atom of a denser cluster holds a pair inside
+#: the window, so that the source gates mute most of the messages of its
+#: further blocks; in this one they change the energy by a few thousandths.
+_WINDOWED_SIDE = 6.0
+
+
+def _canonical_cluster(
+    descriptor: DescrptDPA4C, node_count: int = 40, side: float = 5.0
+) -> tuple[Any, Any, torch.Tensor]:
+    """Return the neighbor graph, the compact canonical graph and the types of a cluster."""
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    neighbor_graph, atype = _build_graph(
+        descriptor, canonical=True, node_count=node_count, side=side
+    )
+    graph = canonical_graph_from_neighbor_graph(
+        dataclasses.replace(neighbor_graph, n_local=neighbor_graph.n_node)
+    )
+    return neighbor_graph, graph, atype
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes", "rcut"),
+    [
+        (8, 2, 0, (3.0, 3.0)),
+        (32, 2, 0, (3.0, 2.5)),
+        (64, 2, 0, (3.0, 3.0)),
+        (64, 3, 4, (3.0, 2.5)),
+        (128, 3, 4, (3.0, 2.5)),
+        (16, 4, 2, (3.0, 2.5, 2.0)),
+    ],
+)
+@pytest.mark.parametrize("windowed", [False, True])
+def test_further_blocks_match_the_uncompressed_model(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: tuple[float, ...],
+    windowed: bool,
+) -> None:
+    """The fused operator of several blocks reproduces the uncompressed model.
+
+    The energy, the forces, the virial and the per-atom virial of the
+    compressed descriptor and the fused fitting are compared with those of the
+    uncompressed descriptor and fitting differentiated by autograd. The record
+    of every further block is packed from the trained maps, so the comparison
+    covers the packing as well as the kernels; and the further blocks must
+    change the energy by a hundred times the tolerance, which a descriptor of
+    fresh blocks would not. A bridging window mutes every edge that an atom of
+    its frozen zone emits towards a third atom through the source gate, whose
+    slope through the switches of the pairs of a node belongs to that node;
+    the per-atom virial, which the model attributes to the source of every
+    edge, pins that attribution. The cluster holds pairs in the frozen zone,
+    in the window and beyond it.
+    """
+    from deepmd.pt_expt.kernels.dpa4c import (
+        canonical,
+    )
+    from deepmd.pt_expt.kernels.edge_force_virial import (
+        edge_force_virial,
+    )
+
+    window = _WINDOW if windowed else {}
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, rcut, **window)
+    neighbor_graph, graph, atype = _canonical_cluster(
+        descriptor, side=_WINDOWED_SIDE if windowed else 5.0
+    )
+    if windowed:
+        reduced = _reduced_distance(descriptor, neighbor_graph, atype)
+        inner, outer = window.values()
+        assert (reduced < inner).sum() > 8 and (reduced > outer).any()
+        assert ((reduced > inner) & (reduced < outer)).sum() > 8
+    fitting = _energy_fitting(descriptor)
+
+    def uncompressed(model: DescrptDPA4C) -> tuple[torch.Tensor, ...]:
+        edge_vec = neighbor_graph.edge_vec.detach().clone().requires_grad_(True)
+        node_descriptor, _ = model.call_graph(
+            dataclasses.replace(neighbor_graph, edge_vec=edge_vec),
+            atype,
+            type_embedding=model.type_embedding.call(),
+        )
+        atom_energy = fitting.call_graph(node_descriptor, atype)[fitting.var_name]
+        (edge_gradient,) = torch.autograd.grad(atom_energy.sum(), edge_vec)
+        force, atom_virial, virial, _ = edge_force_virial(
+            edge_gradient,
+            edge_vec.detach(),
+            neighbor_graph.edge_index,
+            neighbor_graph.edge_mask,
+            neighbor_graph.destination_order,
+            neighbor_graph.destination_row_ptr,
+            neighbor_graph.source_order,
+            neighbor_graph.source_row_ptr,
+            neighbor_graph.n_node,
+            edge_vec.new_empty(0),
+            atype.shape[0],
+            True,
+        )
+        return atom_energy.detach().sum().double(), force, virial, atom_virial
+
+    energy, force, virial, atom_virial = uncompressed(descriptor)
+    # Fresh further blocks are the identity, so this descriptor evaluates the
+    # first block alone.
+    first_block = _build_descriptor(
+        channels, lmax, radial_modes, rcut=list(rcut), n_blocks=len(rcut), **window
+    )
+    first_energy = uncompressed(first_block)[0]
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fused = canonical.dpa4c_canonical_compress_energy_force(
+        descriptor, fitting, graph, atype, fitting.bias_atom_e[:, 0]
+    )
+    energy_tolerance = 1e-5 * max(energy.abs().item(), 1.0)
+    force_scale = max(force.abs().max().item(), 1.0)
+    assert (energy - first_energy).abs().item() > 100 * energy_tolerance
+    torch.testing.assert_close(
+        fused[0].reshape(()), energy, atol=energy_tolerance, rtol=0
+    )
+    torch.testing.assert_close(
+        fused[2].reshape(-1, 3).float(),
+        force,
+        atol=2e-4 * force_scale,
+        rtol=0,
+    )
+    torch.testing.assert_close(
+        fused[3].reshape(3, 3).float(),
+        virial.reshape(3, 3),
+        atol=2e-4 * max(virial.abs().max().item(), 1.0),
+        rtol=0,
+    )
+    torch.testing.assert_close(
+        fused[4].float(),
+        atom_virial,
+        atol=2e-4 * max(atom_virial.abs().max().item(), 1.0),
+        rtol=0,
+    )
+
+
+@_GPU
+@pytest.mark.parametrize(("channels", "lmax", "radial_modes"), [(32, 2, 0), (64, 3, 4)])
+def test_further_block_scans_take_their_rows_from_the_graph(
+    channels: int, lmax: int, radial_modes: int
+) -> None:
+    """Guard slots of the edge storage leave every output of a model of two blocks unchanged.
+
+    A block of an edge scan of a further block takes its number of rows from
+    the edges of the graph of the block, which set how full its panels are,
+    and the summation order of every row follows from that number. The grid of
+    the launch provides for the rows that the edge storage implies, which holds
+    at least as many slots; guard slots past the graph can make it provide for
+    fewer rows per block, and so for more blocks, which retire past the rows of
+    the scan. Clusters of 500 to 1,500 atoms, whose blocks fill a wave of the
+    device or a few, take their rows from the fill of their panels; each
+    evaluates on its own edge storage and on one of ten times as many slots,
+    and every output of the two agrees bit for bit.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, (3.0, 2.5))
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    for node_count in (500, 1000, 1500):
+        _, graph, atype = _canonical_cluster(
+            descriptor,
+            node_count=node_count,
+            side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+        )
+        storage = graph.source.shape[0]
+        outputs = [
+            dpa4c_canonical_compress_energy_force(
+                descriptor, fitting, edges, atype, fitting.bias_atom_e[:, 0]
+            )
+            for edges in (graph, _padded_storage(graph, 9 * storage))
+        ]
+        for index, (compact, padded) in enumerate(zip(*outputs, strict=True)):
+            assert torch.equal(compact, padded), (node_count, index)
+
+
+@_GPU
+@pytest.mark.parametrize(("channels", "lmax", "radial_modes"), [(32, 2, 0), (64, 3, 4)])
+def test_further_block_scans_tile_like_the_whole_system(
+    channels: int, lmax: int, radial_modes: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Node tiles of a multiple of four rows change no output of a model of two blocks.
+
+    Every run of a tiled system takes the rows per block that the edges of the
+    whole system set, and a run that starts at a multiple of four rows groups
+    its rows into blocks as the whole system does, so the panels of every
+    block, and the summation order of every row, stay those of the untiled
+    system. A cluster of 1,000 atoms, whose scans take two or four rows per
+    block, evaluates untiled and in runs of 16, 256 and 600 rows, which start
+    past the first row of the graph, and every output agrees bit for bit.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, (3.0, 2.5))
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    node_count = 1000
+    _, graph, atype = _canonical_cluster(
+        descriptor,
+        node_count=node_count,
+        side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+    )
+
+    def run() -> tuple[torch.Tensor, ...]:
+        return dpa4c_canonical_compress_energy_force(
+            descriptor, fitting, graph, atype, fitting.bias_atom_e[:, 0]
+        )
+
+    monkeypatch.setenv("DP_NODE_TILE", "0")
+    reference = run()
+    for tile in (16, 256, 600):
+        monkeypatch.setenv("DP_NODE_TILE", str(tile))
+        for index, (actual, expected) in enumerate(zip(run(), reference, strict=True)):
+            assert torch.equal(actual, expected), (tile, index)
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes", "rcut", "spin", "windowed"),
+    [
+        (8, 2, 0, (3.0, 3.0), False, False),
+        (16, 3, 4, (3.0, 2.5), False, False),
+        (32, 2, 0, (3.0, 2.5), False, False),
+        (64, 2, 0, (3.0, 3.0), False, False),
+        (64, 3, 4, (3.0, 2.5), False, False),
+        (128, 3, 4, (3.0, 2.5), False, False),
+        (16, 4, 2, (3.0, 2.5, 2.0), False, False),
+        (32, 2, 0, (3.0, 2.6), True, False),
+        (8, 2, 0, (3.0, 3.0), False, True),
+        (64, 3, 4, (3.0, 2.5), False, True),
+        (16, 4, 2, (3.0, 2.5, 2.0), False, True),
+        (32, 2, 0, (3.0, 2.6), True, True),
+    ],
+)
+def test_further_blocks_match_the_reference(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: tuple[float, ...],
+    spin: bool,
+    windowed: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CUDA scans of the further blocks follow the CPU reference.
+
+    The profiles cover every panel geometry of the further-block scans and a
+    descriptor of three blocks with decreasing cutoffs; a spin-conditioned
+    descriptor carries the magnetic force of its first block through the
+    further ones. A bridging window adds the source gate of every edge and
+    the slope of the switches through it, with and without the pair potential
+    of the window.
+    """
+    descriptor = _build_block_descriptor(
+        channels, lmax, radial_modes, rcut, spin, **(_WINDOW if windowed else {})
+    )
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    _check_canonical_against_reference(
+        descriptor,
+        windowed,
+        monkeypatch,
+        single_type=False,
+        side=_WINDOWED_SIDE if windowed else 5.0,
+    )
+
+
+def _fold_halo(outputs: Sequence[torch.Tensor], owner: torch.Tensor, owned: int):
+    """Fold the forces and per-atom virials of halo rows onto their owners."""
+    energy, atom_energy, force, virial, atom_virial, force_mag, mask = outputs
+    index = owner.to(force.device)
+    folded_force = force.new_zeros(owned, 3).index_add_(0, index, force)
+    folded_virial = atom_virial.new_zeros(owned, 3, 3).index_add_(0, index, atom_virial)
+    folded_mag = force_mag
+    if force_mag.numel():
+        folded_mag = force_mag.new_zeros(owned, 3).index_add_(0, index, force_mag)
+    return (
+        energy,
+        atom_energy[:owned],
+        folded_force,
+        virial,
+        folded_virial,
+        folded_mag,
+        mask[:owned],
+    )
+
+
+def _assert_outputs_close(
+    actual: Sequence[torch.Tensor], expected: Sequence[torch.Tensor]
+) -> None:
+    """Compare operator outputs at the tolerance of the canonical parity tests."""
+    for value, reference in zip(actual, expected, strict=True):
+        reference = reference.cpu()
+        scale = max(reference.abs().max().item(), 1.0) if reference.numel() else 1.0
+        torch.testing.assert_close(
+            value.cpu().to(reference.dtype), reference, atol=2e-5 * scale, rtol=2e-5
+        )
+
+
+def _frame_graph(
+    points: torch.Tensor,
+    owned: int,
+    rcut: float,
+    owner: torch.Tensor | None = None,
+) -> Any:
+    """Return the compact canonical graph of the rows of the first ``owned`` atoms.
+
+    Every atom within ``rcut`` of an owned atom is the source of one of its
+    edges. The node set holds every atom, the rows of the others without
+    edges, or, given the ``owner`` of every atom, the owned atoms alone, every
+    edge then leading from the owner of its source.
+    """
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    distance = torch.cdist(
+        points[:owned], points, compute_mode="donot_use_mm_for_euclid_dist"
+    )
+    destination, source = torch.nonzero(
+        (distance < rcut) & (distance > 1e-8), as_tuple=True
+    )
+    edge_vec = (points[source] - points[destination]).to(torch.float32)
+    node_count = points.shape[0]
+    if owner is not None:
+        source = owner[source]
+        node_count = owned
+    graph = NeighborGraph(
+        n_node=torch.tensor([node_count], device=points.device),
+        edge_index=torch.stack((source, destination)),
+        edge_vec=edge_vec,
+        edge_mask=torch.ones(source.shape[0], dtype=torch.bool, device=points.device),
+        n_local=torch.tensor([owned], device=points.device),
+    )
+    return canonical_graph_from_neighbor_graph(
+        attach_edge_csr(graph, node_count, canonicalize=True)
+    )
+
+
+def _border_images(
+    points: np.ndarray, side: float, cut: float
+) -> tuple[np.ndarray, np.ndarray, list[list[int]], list[int]]:
+    """Emulate the border swaps of one process of a LAMMPS brick decomposition.
+
+    Every dimension takes two swaps, as in LAMMPS: the atoms within ``cut`` of
+    the lower face travel as images beyond the upper face, then those within
+    ``cut`` of the upper face as images below the lower face. Both swaps of a
+    dimension choose among the atoms present before its first swap, owned or
+    received in an earlier dimension. Returns the coordinates of every atom,
+    owned first, the owner of every atom, the swap table and the send list.
+    """
+    images = list(points)
+    owner = list(range(len(points)))
+    swaps = []
+    send = []
+    for dimension in range(3):
+        present = len(images)
+        for shift in (side, -side):
+            chosen = [
+                i
+                for i in range(present)
+                if (
+                    images[i][dimension] < cut
+                    if shift > 0
+                    else images[i][dimension] >= side - cut
+                )
+            ]
+            first = len(images)
+            for i in chosen:
+                image = images[i].copy()
+                image[dimension] += shift
+                images.append(image)
+                owner.append(owner[i])
+            swaps.append([0, 0, len(chosen), len(chosen), first])
+            send.extend(chosen)
+    return np.array(images), np.array(owner), swaps, send
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes", "rcut", "spin"),
+    [
+        (32, 2, 0, (3.0, 3.0), False),
+        (64, 3, 4, (3.0, 2.5), False),
+        (32, 2, 0, (3.0, 2.6), True),
+    ],
+)
+@pytest.mark.parametrize("swaps", ["self", "lammps", "lammps-crossing"])
+@pytest.mark.parametrize("windowed", [False, True])
+def test_halo_rows_match_the_folded_frame(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: tuple[float, ...],
+    spin: bool,
+    swaps: str,
+    windowed: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A node set with halo rows and its border plan matches the folded frame.
+
+    The owned atoms of a periodic frame keep complete rows, and every periodic
+    image within reach becomes a halo row without edges, which the border plan
+    refreshes from its owner before every further block: by one self swap of
+    all images, or by the six swaps of one process of a LAMMPS brick
+    decomposition, whose later swaps forward images received by earlier ones.
+    The forces of the halo rows, folded onto their owners, and every other
+    output match those of the folded frame, in which every edge leads from the
+    owner itself, on the device and in the CPU reference. Under a bridging
+    window the border plan also carries the switch totals of the source gate
+    to the halo rows, and returns to their owners the gate cotangents that
+    the halo rows gather as sources of edges; pairs of the frozen zone and of
+    the window cross the faces of the frame.
+
+    A plan that names a communicator crosses processes, and the operator then
+    scans the rows whose edges read no halo row while it exchanges the halo
+    rows, and the other rows after the exchange. An operator library without
+    MPI copies the rows of the self swaps of such a plan on the device, which
+    the crossing case takes; the CPU reference serves single-process plans
+    alone.
+    """
+    from deepmd.pt_expt.utils.canonical_graph import (
+        BorderPlan,
+    )
+
+    crossing = swaps == "lammps-crossing"
+    if crossing and bool(torch.ops.deepmd.enable_mpi()):
+        pytest.skip("an operator library with MPI reads the communicator")
+    owned, side = 48, 7.0
+    descriptor = _build_block_descriptor(
+        channels, lmax, radial_modes, rcut, spin, **(_WINDOW if windowed else {})
+    )
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    generator = torch.Generator(device="cuda").manual_seed(41)
+    local = side * torch.rand(
+        owned, 3, dtype=torch.float64, device="cuda", generator=generator
+    )
+    local_type = torch.arange(owned, device="cuda") % 2
+    cut = max(rcut)
+    if swaps == "self":
+        shifts = torch.cartesian_prod(*[torch.tensor([-1.0, 0.0, 1.0])] * 3)
+        shifts = side * shifts[shifts.abs().sum(-1) > 0].to(local)
+        images = (local[None] + shifts[:, None]).reshape(-1, 3)
+        near = (
+            torch.cdist(images, local, compute_mode="donot_use_mm_for_euclid_dist")
+            .amin(-1)
+            .lt(cut)
+        )
+        points = torch.cat((local, images[near]))
+        local_index = torch.arange(owned, device="cuda")
+        owner = torch.cat((local_index, local_index.repeat(shifts.shape[0])[near]))
+        halo = points.shape[0] - owned
+        plan = BorderPlan(
+            send_nodes=owner[owned:].to(torch.int32).contiguous(),
+            swaps=torch.tensor([[0, 0, halo, halo, owned]], dtype=torch.int32),
+            communicator=torch.zeros(1, dtype=torch.int64),
+        )
+    else:
+        images, owner_array, table, send = _border_images(
+            local.cpu().numpy(), side, cut + 0.5
+        )
+        points = torch.as_tensor(images, device="cuda")
+        owner = torch.as_tensor(owner_array, device="cuda")
+        # A placeholder address names a communicator, which an operator
+        # library without MPI never reads.
+        plan = BorderPlan(
+            send_nodes=torch.tensor(send, dtype=torch.int32, device="cuda"),
+            swaps=torch.tensor(table, dtype=torch.int32),
+            communicator=torch.full((1,), int(crossing), dtype=torch.int64),
+        )
+    assert points.shape[0] > owned
+    moment = halo_moment = None
+    if spin:
+        moment = torch.randn(owned, 3, device="cuda", generator=generator)
+        halo_moment = moment[owner]
+    operator = torch.ops.deepmd.dpa4c_canonical_compress_energy_force
+    reference = operator(
+        *_fused_arguments(
+            monkeypatch,
+            descriptor,
+            fitting,
+            _frame_graph(points, owned, cut, owner),
+            local_type,
+            fitting.bias_atom_e[:, 0],
+            moment,
+        )
+    )
+    arguments = _fused_arguments(
+        monkeypatch,
+        descriptor,
+        fitting,
+        _frame_graph(points, owned, cut),
+        local_type[owner],
+        fitting.bias_atom_e[:, 0],
+        halo_moment,
+        border=plan,
+    )
+    _assert_outputs_close(_fold_halo(operator(*arguments), owner, owned), reference)
+    if not crossing:
+        _assert_outputs_close(
+            _fold_halo(operator(*[_to_cpu(a) for a in arguments]), owner, owned),
+            reference,
+        )
