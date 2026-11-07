@@ -904,6 +904,30 @@ class TestCompiledConsistency(unittest.TestCase):
         model["fitting_net"]["precision"] = "float64"
         self._check_gradient_consistency(model)
 
+    def test_compiled_dpa45_gradients_match_uncompiled(self) -> None:
+        """The DPA4.5 descriptor options keep compiled force-loss gradients exact.
+
+        The measured density floor, per-block cutoffs and mixing depths, a
+        rising degree schedule, the read-out norm and natural parity all enter
+        the traced training graph.
+        """
+        model = copy.deepcopy(_MODEL_DPA4)
+        model["descriptor"].update(
+            {
+                "rcut": [3.0, 4.0],
+                "l_schedule": [1, 2],
+                "mixing_layers": [1, 2],
+                "density_floor": 8.0,
+                "readout_norm": True,
+                "parity": True,
+                "so3_readout": "mlp",
+                "precision": "float64",
+                "use_amp": False,
+            }
+        )
+        model["fitting_net"]["precision"] = "float64"
+        self._check_gradient_consistency(model)
+
     def _check_gradient_consistency(self, model: dict | None = None) -> None:
         """Compare compiled and eager loss graphs from identical parameters."""
         from deepmd.pt_expt.train.training import (

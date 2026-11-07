@@ -67,6 +67,7 @@ input_files = (
     p_examples / "water" / "dpa3" / "input_torch_dynamic.json",
     p_examples / "water" / "dpa4" / "input.json",
     p_examples / "water" / "dpa4" / "input_preset.json",
+    p_examples / "water" / "dpa4" / "input_dpa45.json",
     p_examples / "water" / "dpa4" / "input_e0.json",
     p_examples / "water" / "dpa4" / "input-zbl.json",
     p_examples / "water" / "dpa4" / "lmp" / "input.json",

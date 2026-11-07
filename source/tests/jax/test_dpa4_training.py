@@ -59,6 +59,7 @@ from deepmd.utils.data_system import (
 )
 
 from .test_dpa4_model import (
+    EXPORTABLE_OPTIONS,
     model_config,
 )
 
@@ -209,6 +210,30 @@ def test_bridged_training_records_contacts_before_the_step(tmp_path: Path) -> No
     )
     clamp = saved.atomic_model.models[0].descriptor.contact_clamp
     np.testing.assert_allclose(clamp.edges[0, 1], 0.8, rtol=1e-12)
+
+
+def test_density_floor_statistics_reach_model_and_checkpoint(tmp_path: Path) -> None:
+    """The measured envelope mass sets every block floor before training."""
+    dataset = _dataset(tmp_path / "data")
+    config = _config(tmp_path / "run", 1)
+    config["model"]["descriptor"].update(EXPORTABLE_OPTIONS)
+    trainer = _run(config, dataset)
+    descriptor = trainer.model.atomic_model.descriptor
+    mass = np.asarray(descriptor.envelope_mass[...])
+    assert mass.shape == (2,)
+    assert np.all(mass > 0.0) and not np.allclose(mass, 1.0)
+    for block, radius in zip(descriptor.blocks, descriptor.block_rcut, strict=True):
+        np.testing.assert_allclose(
+            np.log1p(np.exp(np.asarray(block.so2_conv.adamw_attn_z_bias_raw[...]))),
+            float(descriptor._density_floor(radius)),
+            rtol=1e-6,
+        )
+    saved = BaseModel.deserialize(
+        serialize_from_file(str(tmp_path / "run" / "model.jax"))["model"]
+    )
+    np.testing.assert_array_equal(
+        np.asarray(saved.atomic_model.descriptor.envelope_mass[...]), mass
+    )
 
 
 def test_ema_checkpoint_uses_bias_adjusted_after_training(tmp_path: Path) -> None:

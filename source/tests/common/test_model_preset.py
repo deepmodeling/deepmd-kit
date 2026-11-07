@@ -154,6 +154,7 @@ def test_preset_catalog() -> None:
             "max",
             "ultra",
         ),
+        ("dpa4.5", "v20261111"): ("nano", "mini", "neo", "air", "plus", "pro", "max"),
         ("dpa4c", "v20260901"): ("nano", "mini", "neo", "air", "plus"),
         ("dpa4c", "v20260911"): (
             "nano",
@@ -192,6 +193,23 @@ def test_preset_catalog() -> None:
                 "basis_type": "gaussian/fix",
             },
         ),
+        (
+            "dpa4.5",
+            "v20261111",
+            {
+                "edge_norm": [False, False, True],
+                "sandwich_norm": [True, False, True, False],
+                "env_exp": 5,
+                "basis_type": "gaussian/fix",
+                "density_floor": 8.0,
+                "readout_norm": True,
+                "parity": True,
+                "kmax": 0,
+                "message_node_so3": False,
+                "add_chg_spin_ebd": True,
+                "default_chg_spin": [0.0, 1.0],
+            },
+        ),
         ("dpa4c", "v20260901", {"basis_type": "bessel"}),
         ("dpa4c", "v20260911", {"basis_type": "gaussian/fix"}),
     ],
@@ -216,8 +234,19 @@ def test_presets_carry_no_runtime_options() -> None:
         for region in ("descriptor", "fitting_net"):
             for key in ("use_amp", "seed", "sel", "trainable"):
                 assert key not in preset[region], (name, region, key)
-        for key in ("add_chg_spin_ebd", "default_chg_spin", "so2_layers"):
-            assert key not in preset["descriptor"], (name, key)
+        assert "so2_layers" not in preset["descriptor"], name
+        # The charge/spin pair belongs to the architecture of the DPA4.5
+        # family, which conditions its descriptor on the state of the frame
+        # and references its atoms to the isolated atoms; the other families
+        # leave these options to the input.
+        if not name.startswith("dpa4.5-"):
+            for key in ("add_chg_spin_ebd", "default_chg_spin"):
+                assert key not in preset["descriptor"], (name, key)
+            assert "vacuum_ref" not in preset["fitting_net"], name
+        else:
+            assert preset["descriptor"]["add_chg_spin_ebd"] is True, name
+            assert preset["descriptor"]["default_chg_spin"] == [0.0, 1.0], name
+            assert preset["fitting_net"]["vacuum_ref"] is True, name
 
 
 def test_periodic_table_matches_econf_type_map() -> None:

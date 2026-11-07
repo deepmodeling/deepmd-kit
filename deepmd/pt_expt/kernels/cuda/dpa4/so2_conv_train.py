@@ -1057,13 +1057,16 @@ class SO2ValueTrainCuda:
         conv = self._conv
         m0 = (conv.lmax + 1) * conv.so2_focus_dim
         w0_list, w1_list, gw_list = [], [], []
+        # A parity map has no W_v block, so its |m| = 1 block is
+        # [[W_u, 0], [0, W_u]] and the kernels read the shared W_u of one sign.
+        m1 = (1 if conv.parity else 2) * conv.lmax * conv.so2_focus_dim
         for layer, linear in enumerate(conv.so2_linears):
             weight = linear._build_so2_weight()
             if not differentiable:
                 weight = weight.detach()
-            weight = weight.permute(1, 0, 2).contiguous()
+            weight = weight.permute(1, 0, 2)  # (F, D_m*Cf, D_m*Cf)
             w0_list.append(weight[:, :m0, :m0])
-            w1_list.append(weight[:, m0:, m0:])
+            w1_list.append(weight[:, m0 : m0 + m1, m0 : m0 + m1])
             non_linear = conv.non_linearities[layer]
             if type(non_linear).__name__ == "GatedActivation":
                 gate = non_linear.gate_linear.weight

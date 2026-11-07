@@ -37,6 +37,7 @@ from deepmd.jax.utils.serialization import (
 )
 
 from .test_dpa4_model import (
+    EXPORTABLE_OPTIONS,
     _reference,
     model_config,
 )
@@ -207,6 +208,96 @@ def test_complete_force_loss_parameter_gradients(
                 atol=3e-9,
                 err_msg=f"{method}:{name}",
             )
+
+
+@pytest.mark.parametrize("bridging", [False, True])
+def test_exportable_options_match_pt_expt(bridging: bool) -> None:
+    """Energies, derivatives and loss gradients equal those of PyTorch Exportable."""
+    from deepmd.pt_expt.model import get_model as get_pt_expt_model
+
+    config = model_config(bridging=bridging)
+    config["descriptor"].update(EXPORTABLE_OPTIONS)
+    reference = get_pt_expt_model(deepcopy(config)).cpu().train()
+    generator = torch.Generator().manual_seed(20261107)
+    with torch.no_grad():
+        for parameter in reference.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape, dtype=parameter.dtype, generator=generator
+                )
+            )
+        # A measured envelope mass of every block cutoff sets its floor.
+        for name, buffer in reference.named_buffers():
+            if name.endswith("envelope_mass"):
+                buffer.copy_(torch.tensor([3.0, 5.5], dtype=buffer.dtype))
+    model = BaseModel.deserialize(reference.serialize())
+    model.train()
+    coord = np.concatenate([_inputs()[0], [[[2.6, 0.3, 0.2]]]], axis=1)
+    atype = np.array([[0, 1, 0, 1]], dtype=np.int32)
+    expected = reference(torch.tensor(coord), torch.tensor(atype))
+    expected_loss = (
+        (expected["energy"] - 0.2).square().sum()
+        + 0.5 * (expected["force"] - 0.1).square().sum()
+        + 0.1 * (expected["virial"] + 0.05).square().sum()
+    )
+    expected_loss.backward()
+    inputs = _graph_inputs(model, coord, atype)
+    graph, parameters, constants = nnx.split(model, nnx.Param, ...)
+    nframes, nnodes = atype.shape[0], atype.size
+
+    def loss(parameters: Any) -> tuple[jax.Array, dict[str, jax.Array]]:
+        output = nnx.merge(graph, parameters, constants).call_common_lower_graph(
+            **inputs
+        )
+        value = (
+            jnp.sum((output["energy_redu"][:nframes] - 0.2) ** 2)
+            + 0.5 * jnp.sum((output["energy_derv_r"][:nnodes] - 0.1) ** 2)
+            + 0.1 * jnp.sum((output["energy_derv_c_redu"][:nframes] + 0.05) ** 2)
+        )
+        return value, output
+
+    (actual_loss, output), gradients = jax.jit(jax.value_and_grad(loss, has_aux=True))(
+        parameters
+    )
+    np.testing.assert_allclose(
+        actual_loss, expected_loss.detach().numpy(), rtol=2e-9, atol=2e-9
+    )
+    for source, target in (
+        ("energy", "energy_redu"),
+        ("force", "energy_derv_r"),
+        ("virial", "energy_derv_c_redu"),
+    ):
+        count = nframes if target.endswith("_redu") else nnodes
+        np.testing.assert_allclose(
+            np.asarray(output[target])[:count].reshape(expected[source].shape),
+            expected[source].detach().numpy(),
+            rtol=2e-9,
+            atol=2e-10,
+        )
+    assert len(jax.tree.leaves(parameters)) == sum(
+        parameter.requires_grad for parameter in reference.parameters()
+    )
+    with torch.no_grad():
+        for parameter in reference.parameters():
+            if parameter.requires_grad:
+                parameter.copy_(
+                    parameter.grad
+                    if parameter.grad is not None
+                    else torch.zeros_like(parameter)
+                )
+    gradient_model = nnx.merge(graph, gradients, constants)
+    expected_variables = dict(_variables(reference.serialize()))
+    actual_variables = dict(_variables(gradient_model.serialize()))
+    assert expected_variables.keys() == actual_variables.keys()
+    for name, expected_value in expected_variables.items():
+        np.testing.assert_allclose(
+            actual_variables[name],
+            expected_value,
+            rtol=3e-7,
+            atol=3e-9,
+            err_msg=name,
+        )
 
 
 @pytest.mark.parametrize("options,physics", OPTIONS[:3])

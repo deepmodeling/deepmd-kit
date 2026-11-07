@@ -1191,6 +1191,33 @@ class TestDescrptSeZM(_SeZMTestCase):
         for value, expected in zip(shared, reference, strict=True):
             torch.testing.assert_close(value, expected)
 
+    def test_exportable_backend_options_are_refused(self) -> None:
+        """Options of the exportable backend load at their defaults and fail otherwise.
+
+        The refusal comes before the neighbor statistics as well, which read
+        ``rcut`` before the descriptor is built.
+        """
+        defaults = {"density_floor": None, "readout_norm": False, "parity": False}
+        DescrptSeZM(**_descriptor_kwargs(**defaults))
+        for options in (
+            {"density_floor": 8.0},
+            {"readout_norm": True},
+            {"readout_kmax": 1},
+            {"parity": True},
+            {"rcut": [2.0, 3.0]},
+            {"mixing_layers": [1, 2]},
+        ):
+            config = _descriptor_kwargs(**options)
+            for build in (
+                lambda: DescrptSeZM(**config),
+                lambda: DescrptSeZM.update_sel(None, None, config),
+            ):
+                with (
+                    self.subTest(options=options),
+                    self.assertRaisesRegex(NotImplementedError, "pt_expt backend only"),
+                ):
+                    build()
+
 
 class TestSeZMSpinEmbedding(_SeZMTestCase):
     """Test the native per-atom spin embedding and its descriptor injection."""

@@ -13,6 +13,7 @@ from __future__ import (
     annotations,
 )
 
+import math
 from typing import (
     Any,
 )
@@ -26,6 +27,30 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.utils.network import (
     softplus_t,
 )
+
+
+def inverse_softplus(value: float) -> float:
+    """Return the raw parameter whose softplus is ``value``.
+
+    Parameters
+    ----------
+    value : float
+        A positive target value of ``softplus(raw) = log(1 + exp(raw))``.
+
+    Returns
+    -------
+    float
+        ``log(exp(value) - 1)``, evaluated as ``value + log(1 - exp(-value))``
+        so that it stays finite for large values.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not positive.
+    """
+    if not value > 0.0:
+        raise ValueError(f"softplus takes only positive values, got {value}")
+    return value + math.log(-math.expm1(-value))
 
 
 def segment_envelope_gated_softmax(

@@ -182,6 +182,9 @@ class SeZMInteractionBlock(NativeOP):
         Number of attention heads when aggregating messages in SO(2) convolution.
         0 means no attention is used; >0 enables envelope-gated grouped softmax
         attention with output-side head gate.
+    atten_null_mass
+        Initial null mass of the attention denominator, or ``None`` for a null
+        mass of about one (see ``SO2Convolution``).
     atten_f_mix
         If True, merge SO(2) focus streams into one attention stream after
         rotate-back. This gives each attention head access to the full
@@ -311,6 +314,7 @@ class SeZMInteractionBlock(NativeOP):
         edge_cartesian: bool = False,
         node_cartesian: str | int = "none",
         n_atten_head: int = 1,
+        atten_null_mass: float | None = None,
         atten_f_mix: bool = False,
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
@@ -496,6 +500,7 @@ class SeZMInteractionBlock(NativeOP):
             node_cartesian=self.node_cartesian,
             layer_scale=self.layer_scale,
             n_atten_head=n_atten_head,
+            atten_null_mass=atten_null_mass,
             atten_f_mix=self.atten_f_mix,
             atten_v_proj=self.use_atten_v_proj,
             atten_o_proj=self.use_atten_o_proj,

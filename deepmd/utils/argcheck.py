@@ -650,7 +650,14 @@ def descrpt_se_zm_args() -> list[Argument]:
     - `int`: the total capacity across all atom types.\n\n\
     - `list[int]`: `sel[i]` is the type-i capacity; only `sum(sel)` is used.\n\n\
     - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
-    doc_rcut = "The cut-off radius."
+    doc_rcut = (
+        "A cutoff radius in angstrom, or a list with one radius per interaction "
+        "block (JAX and PyTorch Exportable backends)."
+    )
+    doc_parity = (
+        "Make the model O(3)-equivariant. The default is false. Native-spin "
+        "models are always O(3)-equivariant."
+    )
     doc_env_exp = (
         "C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]` "
         "specifies the radial-basis and message-passing envelopes separately. "
@@ -666,13 +673,18 @@ def descrpt_se_zm_args() -> list[Argument]:
         "so that separations no training frame constrains cannot move them."
     )
     doc_n_radial = "Number of radial basis functions."
-    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
+    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (max(l_schedule)+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
     doc_edge_norm = "Channel RMSNorm on the cutoff-vanishing feature branches. A bool switches every site together: `false` removes the RMSNorm from the radial-network hidden layers, the environment-seed FiLM scale/shift logits and the cross-focus competition scalars, and uses unit-floor residual scaling for post-SO(2) messages. A list of three bools `[radial, film, focus]` switches the sites individually; the post-SO(2) treatment follows the first (radial) entry. Recommended: `[false, true, false]` — the radial-site norms amplify noise where the radial features vanish at the cutoff and produce a spurious long-range force step, while the FiLM and focus norms are safe to keep."
+    doc_density_floor = (
+        "Floor of the neighborhood normalization in units of the mean "
+        "neighborhood density of the training data, which training measures "
+        "and stores with the model. `null` keeps the fixed default floor."
+    )
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
         "[s, s*r_hat] representation, and enable the non-scalar geometric initial "
-        "embedding when l_schedule[0] + extra_node_l > 0. If False, the initial state contains "
+        "embedding when max(l_schedule) + extra_node_l > 0. If False, the initial state contains "
         "only atom-local scalar features before message passing. Native spin requires "
         "use_env_seed=True to retain neighbor spin correlations. Internal dimensions "
         "are derived from channels: embed_dim=min(channels, 128), "
@@ -706,7 +718,12 @@ def descrpt_se_zm_args() -> list[Argument]:
         "of nodes rather than edges, leaving the per-edge message path unchanged."
     )
     doc_lmax = "Maximum degree, only used when `l_schedule` is None."
-    doc_l_schedule = "Pyramid schedule of lmax per block, e.g. [3, 3, 2]. Must be non-increasing. If set, lmax and n_blocks will be ignored."
+    doc_l_schedule = (
+        "Degree of each block, e.g. [3, 3, 2] or [1, 2]. If set, lmax and n_blocks "
+        "will be ignored. A schedule whose degree rises after a block requires "
+        "the JAX or PyTorch Exportable backend, with full_attn_res and "
+        "block_attn_res set to 'none'."
+    )
     doc_mmax = "Maximum SO(2) order (|m|), only used when `m_schedule` is None. If None, defaults to the per-block lmax."
     doc_m_schedule = (
         "Schedule of mmax per block. Must have the same length as "
@@ -744,7 +761,9 @@ def descrpt_se_zm_args() -> list[Argument]:
     )
     doc_mixing_layers = (
         "Number of learnable mixing layers in the per-edge message core of each "
-        "block (legacy alias: so2_layers). `0` applies only the edge-condition "
+        "block (legacy alias: so2_layers). An integer applies to every block; a "
+        "list (JAX and PyTorch Exportable backends) gives one value per block, "
+        "e.g. `[1, 3]`. `0` applies only the edge-condition "
         "modulation: the rotation-free per-degree radial scaling on the SO(2) "
         "path, or a single `x @ T_e` when edge_cartesian applies. The per-node "
         "node_cartesian stack carries its own independent depth."
@@ -883,13 +902,20 @@ def descrpt_se_zm_args() -> list[Argument]:
         "before the scalar is extracted; the value selects the quadratic grid "
         "product (`glu`) or the polynomial point-wise grid MLP (`mlp`). The "
         "read-out degree equals the node degree of the last interaction block; "
-        "the Wigner-D frame order follows `kmax`."
+        "the Wigner-D frame order is `readout_kmax`."
+    )
+    doc_readout_kmax = (
+        "Wigner-D frame order of the SO(3) read-out grid, or `null` to use `kmax`."
     )
     doc_readout_layers = (
         "Number of stacked equivariant residual read-out FFNs (default 1). Each "
         "layer is an `x + FFN(x)` residual block sharing the read-out degree; "
         "intermediate layers keep the full SO(3) tensor so high-degree geometry "
         "keeps folding into l=0, and only the final layer slices the l=0 channel."
+    )
+    doc_readout_norm = (
+        "Whether to apply an equivariant RMS normalization to the node features "
+        "before the read-out."
     )
     doc_lebedev_quadrature = (
         "Either one boolean applied to both S2 branches, or two booleans "
@@ -967,7 +993,16 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_seed = "Random seed for parameter initialization."
     return [
         Argument("sel", [int, list[int], str], optional=True, default=256, doc=doc_sel),
-        Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
+        Argument(
+            "rcut", [float, list[float]], optional=True, default=6.0, doc=doc_rcut
+        ),
+        Argument(
+            "parity",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("jax", "pt_expt") + doc_parity,
+        ),
         Argument(
             "env_exp",
             [int, list[int]],
@@ -993,6 +1028,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             optional=True,
             default=True,
             doc=doc_edge_norm,
+        ),
+        Argument(
+            "density_floor",
+            [float, None],
+            optional=True,
+            default=None,
+            doc=supported_backends("jax", "pt_expt") + doc_density_floor,
         ),
         Argument(
             "use_env_seed",
@@ -1058,7 +1100,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         Argument("so2_norm", bool, optional=True, default=False, doc=doc_so2_norm),
         Argument(
             "mixing_layers",
-            int,
+            [int, list[int]],
             optional=True,
             default=4,
             alias=["so2_layers"],
@@ -1257,6 +1299,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             doc=supported_backends("pt", "jax", "pt_expt") + doc_so3_readout,
         ),
         Argument(
+            "readout_kmax",
+            [int, None],
+            optional=True,
+            default=None,
+            doc=supported_backends("jax", "pt_expt") + doc_readout_kmax,
+        ),
+        Argument(
             "readout_layers",
             int,
             optional=True,
@@ -1264,6 +1313,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             extra_check=lambda x: x >= 1,
             extra_check_errmsg="must be >= 1",
             doc=supported_backends("pt", "jax", "pt_expt") + doc_readout_layers,
+        ),
+        Argument(
+            "readout_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("jax", "pt_expt") + doc_readout_norm,
         ),
         Argument(
             "lebedev_quadrature",
@@ -5213,7 +5269,7 @@ def optimizer_adamuon() -> list[Argument]:
 
 @opt_args_plugin.register(
     "HybridMuon",
-    doc=supported_backends("jax", "pt")
+    doc=supported_backends("jax", "pt", "pt_expt")
     + "HybridMuon optimizer (DeePMD-kit custom implementation). "
     + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
     + "For matrix params: Muon update with Newton-Schulz based on selected muon_mode. "
@@ -5232,7 +5288,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             optional=True,
             default=0.95,
             alias=["muon_momentum"],
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
             "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
         ),
@@ -5241,7 +5297,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Adam beta1 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -5249,7 +5305,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.95,
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Adam beta2 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -5257,7 +5313,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.001,
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Weight decay coefficient. Applied to Muon-routed parameters and "
             + "the AdamW-style decay path for matrix parameters.",
         ),
@@ -5266,7 +5322,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
             "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
@@ -5277,7 +5333,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.18,
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
             + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
             + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
@@ -5287,7 +5343,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             str,
             optional=True,
             default="slice",
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Muon routing mode. "
             + "'2d': only effective-rank-2 params are eligible for Muon; effective rank >2 goes to AdamW-style decoupled decay path. "
             + "'flat': effective-rank >=2 params are flattened to matrix-view (prod(shape[:-1]), shape[-1]) for Muon. "
@@ -5299,7 +5355,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
             + "Square matrices keep using the current standard Newton-Schulz path.",
         ),
@@ -5308,7 +5364,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt")
+            doc=supported_backends("pt", "pt_expt")
             + "Enable triton-accelerated Newton-Schulz orthogonalization. "
             "Requires triton and CUDA. Falls back to PyTorch implementation "
             "when triton is unavailable or running on CPU. Ignored when enable_gram is true.",
@@ -5318,7 +5374,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("jax", "pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Enable Magma-lite damping on the Muon route only. "
             "When enabled, HybridMuon computes momentum-gradient alignment "
             "per Muon block, applies EMA smoothing, and rescales Muon updates "

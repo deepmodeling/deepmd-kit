@@ -27,6 +27,20 @@ from deepmd.jax.model.model import (
     get_model,
 )
 
+#: Descriptor options implemented by the JAX and PyTorch Exportable backends.
+EXPORTABLE_OPTIONS = {
+    "rcut": [3.0, 4.0],
+    "n_blocks": 2,
+    "lmax": 2,
+    "l_schedule": [1, 2],
+    "mixing_layers": [1, 2],
+    "density_floor": 8.0,
+    "readout_norm": True,
+    "parity": True,
+    "kmax": 0,
+    "message_node_so3": False,
+}
+
 
 def model_config(spin: bool = False, bridging: bool = False) -> dict[str, Any]:
     config = {

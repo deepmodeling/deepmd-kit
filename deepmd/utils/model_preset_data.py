@@ -160,6 +160,114 @@ _DPA4_VERSIONS: dict[str, dict[str, Any]] = {
     },
 }
 
+# === DPA4.5 ===
+# DPA4 with bounded extrapolation and reallocated capacity, set through DPA4
+# options alone. The density floor and the read-out normalization bound the
+# response of the network where the geometry leaves the training data; the
+# density floor is eight times the mean neighborhood density that training
+# measures on its data, so an atom with a single neighbor weighs about as much
+# as one neighbor of a bulk shell on any dataset. The grid nets work on the
+# sphere slice of the rotation-group grid (``kmax`` 0) without the
+# post-aggregation message branch, and the time saved pays for added blocks.
+# The atoms carry wider features than the messages between neighbors
+# (``focus_dim``), the early blocks run at a lower degree and with a shallower
+# message core than the last, which reads out. The model is invariant under
+# spatial inversion as well as rotation (``parity``).
+_DPA45_GRADES: dict[str, dict[str, dict[str, Any]]] = {
+    "nano": {
+        "descriptor": {
+            "channels": 32,
+            "l_schedule": [1, 2],
+            "mixing_layers": [2, 3],
+            "radial_so2_mode": "none",
+            "n_focus": 1,
+        },
+    },
+    "mini": {
+        "descriptor": {
+            "channels": 48,
+            "focus_dim": 32,
+            "l_schedule": [1, 2, 2],
+            "mixing_layers": [2, 2, 3],
+            "radial_so2_rank": 1,
+            "n_focus": 1,
+        },
+    },
+    "neo": {
+        "descriptor": {
+            "channels": 48,
+            "focus_dim": 32,
+            "l_schedule": [2, 2, 3],
+            "mixing_layers": [2, 2, 3],
+            "radial_so2_rank": 1,
+            "n_focus": 2,
+        },
+    },
+    "air": {
+        "descriptor": {
+            "channels": 128,
+            "focus_dim": 64,
+            "l_schedule": [2, 2, 3, 3],
+            "mixing_layers": [2, 3, 3, 4],
+            "radial_so2_rank": 1,
+            "n_focus": 1,
+        },
+    },
+    "plus": {
+        "descriptor": {
+            "channels": 128,
+            "focus_dim": 64,
+            "l_schedule": [3, 3, 4, 4, 4],
+            "mixing_layers": [3, 3, 4, 4, 4],
+            "radial_so2_rank": 2,
+            "n_focus": 1,
+        },
+    },
+    "pro": {
+        "descriptor": {
+            "channels": 128,
+            "focus_dim": 64,
+            "l_schedule": [4, 4, 4, 5, 5, 5],
+            "mixing_layers": [3, 3, 3, 4, 4, 4],
+            "radial_so2_rank": 2,
+            "n_focus": 2,
+            "so3_readout": "none",
+        },
+    },
+    "max": {
+        "descriptor": {
+            "channels": 256,
+            "focus_dim": 128,
+            "l_schedule": [5, 5, 5, 5, 6, 6, 6, 6],
+            "mixing_layers": [3, 3, 3, 3, 4, 4, 4, 4],
+            "radial_so2_rank": 4,
+            "n_focus": 2,
+            "so3_readout": "none",
+        },
+    },
+}
+# The charge/spin embedding belongs to the architecture of this family, which
+# conditions the descriptor on the state of the frame. The neutral singlet is
+# the state of a frame whose data carries none. The fitting references every
+# atom to the isolated atom of its type, which takes effect on a model whose
+# input gives the isolated-atom energies (``preset_out_bias``).
+_DPA45_VERSIONS: dict[str, dict[str, Any]] = {
+    "v20261111": {
+        "descriptor": {
+            **_DPA4_VERSIONS["v20260911"]["descriptor"],
+            "density_floor": 8.0,
+            "readout_norm": True,
+            "parity": True,
+            "kmax": 0,
+            "message_node_so3": False,
+            "add_chg_spin_ebd": True,
+            "default_chg_spin": [0.0, 1.0],
+        },
+        "fitting_net": {"vacuum_ref": True},
+        "grades": ("nano", "mini", "neo", "air", "plus", "pro", "max"),
+    },
+}
+
 # === DPA4C ===
 # DPA4C is a descriptor of the standard model, so no model ``type`` is set.
 _DPA4C_DESCRIPTOR: dict[str, Any] = {
@@ -240,8 +348,8 @@ def _build_family(
     the family (the model ``type`` for DPA4, nothing for DPA4C). ``descriptor``
     and ``fitting_net`` hold the options shared by every grade and version.
     Each grade in ``grades`` adds its own ``descriptor`` and ``fitting_net``
-    options, and each version in ``versions`` defines its ``descriptor``
-    options and available grades.
+    options, and each version in ``versions`` defines its ``descriptor`` and
+    ``fitting_net`` options and available grades.
     """
     presets: dict[str, dict[str, Any]] = {}
     for version, spec in versions.items():
@@ -254,7 +362,11 @@ def _build_family(
                     **spec.get("descriptor", {}),
                     **grades[grade].get("descriptor", {}),
                 },
-                "fitting_net": {**fitting_net, **grades[grade].get("fitting_net", {})},
+                "fitting_net": {
+                    **fitting_net,
+                    **spec.get("fitting_net", {}),
+                    **grades[grade].get("fitting_net", {}),
+                },
             }
     return presets
 
@@ -267,6 +379,14 @@ MODEL_PRESETS: dict[str, dict[str, Any]] = {
         _DPA4_FITTING,
         _DPA4_GRADES,
         _DPA4_VERSIONS,
+    ),
+    **_build_family(
+        "dpa4.5",
+        {"type": "dpa4"},
+        _DPA4_DESCRIPTOR,
+        _DPA4_FITTING,
+        _DPA45_GRADES,
+        _DPA45_VERSIONS,
     ),
     **_build_family(
         "dpa4c", {}, _DPA4C_DESCRIPTOR, _DPA4C_FITTING, _DPA4C_GRADES, _DPA4C_VERSIONS

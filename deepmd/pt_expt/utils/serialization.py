@@ -1754,22 +1754,21 @@ def _fused_operators_for_export() -> Iterator[None]:
 # preference. Both are baked into the exported graph, so the default is the
 # combination that is fastest without trading accuracy for it.
 #
-# ``DP_CUDA_INFER=1`` rather than 2: level 1 holds the operators whose profit is
-# memory traffic and is faster on every part and every checkpoint measured,
-# while level 2 also replaces the mixing stack with float32 SIMT arithmetic.
-# That substitution wins on narrow checkpoints and on parts with a large
-# float32 peak, and loses as the arithmetic per edge grows -- measured from
-# 1.8x down to 0.7x across the model zoo on one part -- so it is left to an
-# explicit choice.
+# ``DP_CUDA_INFER=2``: level 1 holds the operators whose profit is memory
+# traffic, and level 2 adds the fused SO(2) convolution, which replaces the
+# rotations, the mixing stack and the attention aggregation of a block with
+# float32 SIMT arithmetic. That substitution wins while the arithmetic per
+# edge is small and loses as it grows, so the convolution takes over only the
+# blocks whose mixing layer stays within the budget of the executing device
+# (``deepmd.pt_expt.kernels.cuda.dpa4.so2_conv``) and leaves the others on the
+# Triton path. Narrow checkpoints therefore gain, wide ones keep the level-1
+# speed, and a device with a small float32 peak declines every block.
 #
 # ``DP_TRITON_INFER=2`` rather than 3: level 3 adds fp16x3 split-compensated
-# GEMMs to the mixing stack. For DPA4 that is their only site, so they matter
-# exactly while the mixing stack is still Triton's -- that is, below
-# ``DP_CUDA_INFER=2``, which the default above is. Where they do run they
-# perturb the forces by up to 4e-1 eV/Å on the wider checkpoints against the
-# float32 reference, and a frozen archive is what runs molecular dynamics, so
-# it defaults to exact float32.
-_DPA4_FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "1"}
+# GEMMs to the Triton mixing stack, which perturb the forces of the wider
+# checkpoints against the float32 reference, and a frozen archive is what
+# runs molecular dynamics, so it defaults to exact float32.
+_DPA4_FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "2"}
 _DPA4_FREEZE_DISABLED_LEVELS = {
     "DP_CUTILE_INFER": "0",
     "DP_CUTE_INFER": "0",
@@ -1781,12 +1780,11 @@ def _dpa4_kernel_level_defaults() -> Iterator[None]:
     """Pin the default DPA4 inference kernel levels for the duration of a trace.
 
     The levels are read once at model construction time and baked into the
-    exported graph. An explicit setting in the environment always wins. The
-    defaults match the PT DPA4 freeze path: Triton level 2 keeps the exact
-    float32 mixing stack, while CUDA level 1 enables the uniformly profitable
-    memory-traffic operators without selecting the checkpoint-dependent fused
-    SO(2) convolution. cuTile and CuTe are Python-only eager backends and are
-    disabled because their operators cannot be captured in a frozen archive.
+    exported graph. An explicit setting in the environment always wins. Triton
+    level 2 keeps the exact float32 mixing stack, and CUDA level 2 adds the
+    fused SO(2) convolution to every block whose arithmetic it serves faster.
+    cuTile and CuTe are Python-only eager backends and are disabled because
+    their operators cannot be captured in a frozen archive.
     """
     levels = _DPA4_FREEZE_KERNEL_LEVELS | _DPA4_FREEZE_DISABLED_LEVELS
     saved = {name: os.environ.get(name) for name in levels}
@@ -2098,9 +2096,8 @@ def deserialize_to_file(
         compatible source ABIs are mapped to the target's native schema while
         preserving their execution semantics. A graph lower preserves the
         selected inference operators and always includes the per-atom virial.
-        DPA1 and DPA4C graph pipelines use ``DP_CUDA_INFER >= 2``; DPA4
-        ``.pt2`` follows its PT freeze defaults unless the environment
-        explicitly selects other levels.
+        DPA1, DPA4 and DPA4C graph pipelines use ``DP_CUDA_INFER >= 2``
+        unless the environment explicitly selects other levels.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
     with_comm : bool, optional
@@ -2114,7 +2111,8 @@ def deserialize_to_file(
     )
     # A graph lower deploys the selected inference pipeline, while the per-atom
     # virial is mandatory for the LAMMPS Kokkos consumer. DPA1 and DPA4C retain
-    # their level-two opaque pipeline; DPA4 .pt2 uses the same defaults as PT.
+    # their level-two opaque pipeline; DPA4 .pt2 uses its freeze defaults
+    # (``_DPA4_FREEZE_KERNEL_LEVELS``).
     if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         do_atomic_virial = True
         ctx: contextlib.AbstractContextManager = (
@@ -3328,12 +3326,15 @@ def _deserialize_to_file_pt2(
     from deepmd.pt.utils.compile_compat import (
         build_inductor_compile_options,
         patch_inductor_force_int64_indexing,
+        patch_inductor_stable_sort_fallback,
     )
 
     is_cuda = _env.DEVICE.type == "cuda"
     # Force int64 tensor indexing so the flattened index of a large
-    # data-dependent tensor never wraps past 2**31 into an illegal address.
+    # data-dependent tensor never wraps past 2**31 into an illegal address,
+    # and keep the compact edge counts of per-block cutoffs unbounded.
     patch_inductor_force_int64_indexing()
+    patch_inductor_stable_sort_fallback()
     # The AOTInductor freeze must use the same Inductor lockdown as the
     # pt-backend compile -- most importantly ``triton.max_tiles = 1``, which
     # keeps the data-dependent edge / node axis on the x launch dimension

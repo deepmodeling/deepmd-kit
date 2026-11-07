@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Native-spin DPA4 model, derivative, serialization and training contracts.
+"""DPA4 physical symmetries, native spin, serialization and training contracts.
 
 The graph backbone and native wrapper are checked through their public
 interfaces, including backend parity, export and magnetic-force training.
@@ -1544,7 +1544,16 @@ def test_native_spin_requires_environment_seed(backend: str) -> None:
 @pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
 @pytest.mark.parametrize(
     "variant",
-    ["none", "edge", "node", "node_so3", "message_so3", "ffn_so3", "readout_glu"],
+    [
+        "none",
+        "edge",
+        "node",
+        "node_so3",
+        "message_so3",
+        "ffn_so3",
+        "readout_glu",
+        "readout_mlp",
+    ],
 )
 def test_native_spin_physical_symmetries(
     backend: str, spin_mode: str, variant: str
@@ -1563,10 +1572,10 @@ def test_native_spin_physical_symmetries(
     }.get(variant)
     if grid_option is not None:
         config["descriptor"][grid_option] = True
-    if variant == "readout_glu":
+    if variant.startswith("readout_"):
         config["descriptor"].update(
             n_blocks=1,
-            so3_readout="glu",
+            so3_readout=variant.removeprefix("readout_"),
             readout_layers=2,
         )
     model = (pt_get_model if backend == "pt" else get_model)(config)
@@ -1602,7 +1611,7 @@ def test_native_spin_physical_symmetries(
         torch.randn(3, 3, generator=generator, dtype=torch.float64)
     )
     rotation = rotation * torch.linalg.det(rotation)
-    for transform in (rotation, -rotation):
+    for transform in (rotation, -rotation, -torch.eye(3, dtype=torch.float64)):
         axial = torch.linalg.det(transform) * transform
         transformed = model(coord @ transform.T, atype, spin @ axial.T)
         torch.testing.assert_close(
@@ -1634,6 +1643,267 @@ def test_native_spin_physical_symmetries(
     else:
         rotated = model(coord, atype, spin @ rotation.T)
         assert (rotated["energy"] - original["energy"]).abs().max() > 1e-8
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"use_env_seed": False},
+        {"s2_activation": [False, False], "glu_activation": False},
+        {"s2_activation": [True, True], "lebedev_quadrature": False},
+        {"s2_activation": [True, True], "grid_mlp": True},
+        {"s2_activation": [True, True], "grid_branch": [2, 2, 2]},
+        {"node_wise_s2": True, "message_node_s2": True},
+        {"node_wise_so3": True, "grid_mlp": True},
+        {"message_node_so3": True, "grid_branch": [0, 2, 0]},
+        {"ffn_so3_grid": True, "kmax": 1, "grid_mlp": True},
+        {"ffn_so3_grid": True, "kmax": 2, "grid_branch": [0, 0, 2]},
+        {"so3_readout": "glu", "readout_layers": 2, "readout_norm": True},
+        {"so3_readout": "mlp", "readout_layers": 2, "kmax": 2},
+        {"edge_cartesian": True},
+        {"node_cartesian": "default:2"},
+        {
+            "n_focus": 2,
+            "atten_f_mix": True,
+            "atten_v_proj": True,
+            "atten_o_proj": True,
+            "n_atten_head": 2,
+        },
+        {"radial_so2_mode": "degree", "radial_so2_rank": 0},
+        {"radial_so2_mode": "degree_channel", "radial_so2_rank": 0},
+        {"so2_attn_res": "dependent", "mixing_layers": 2},
+        {
+            "full_attn_res": "dependent",
+            "extra_node_l": 1,
+            "l_schedule": [2, 1],
+            "so3_readout": "mlp",
+        },
+        {"extra_node_l": 1, "l_schedule": [1, 2], "so3_readout": "mlp"},
+        {"block_attn_res": "independent", "l_schedule": [2, 1]},
+        {"n_blocks": 0, "extra_node_l": 1, "so3_readout": "mlp"},
+    ],
+)
+def test_o3_spin_free_physical_symmetries(options: dict) -> None:
+    """Every descriptor branch preserves inversion for nonzero trained weights."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    config.pop("spin")
+    config["descriptor"].update(parity=True, channels=8, **options)
+    model = get_model(config)
+    model = model.to(device="cpu", dtype=torch.float64).eval()
+    generator = torch.Generator().manual_seed(517)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape, generator=generator, dtype=parameter.dtype
+                )
+            )
+    coord, atype, _, _ = (torch.from_numpy(value) for value in four_atom_spin_inputs())
+    original = model(coord, atype)
+    inverted = model(-coord, atype)
+    assert original["force"].abs().max() > 1e-8
+    torch.testing.assert_close(
+        inverted["energy"], original["energy"], atol=2e-10, rtol=2e-10
+    )
+    torch.testing.assert_close(
+        inverted["force"], -original["force"], atol=2e-9, rtol=2e-9
+    )
+    torch.testing.assert_close(
+        inverted["virial"], original["virial"], atol=2e-9, rtol=2e-9
+    )
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("bridging", ["none", "zbl"])
+def test_o3_energy_force_with_bridging(native: bool, bridging: str) -> None:
+    """Inversion keeps axial moments fixed with and without analytical bridging."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    if not native:
+        config.pop("spin")
+    config["bridging_method"] = bridging
+    config["descriptor"].update(
+        parity=True,
+        channels=8,
+        l_schedule=[1, 2],
+        ffn_so3_grid=True,
+        so3_readout="mlp",
+    )
+    model = get_model(config).to(device="cpu", dtype=torch.float64).eval()
+    generator = torch.Generator().manual_seed(541)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape, generator=generator, dtype=parameter.dtype
+                )
+            )
+    coord, atype, spin, _ = (
+        torch.from_numpy(value) for value in four_atom_spin_inputs()
+    )
+    args = (atype, spin) if native else (atype,)
+    original = model(coord, *args)
+    inverted = model(-coord, *args)
+    assert original["force"].abs().max() > 1e-8
+    for key, sign in (("energy", 1), ("force", -1), ("virial", 1)):
+        torch.testing.assert_close(
+            inverted[key], sign * original[key], atol=2e-9, rtol=2e-9
+        )
+    if native:
+        assert original["force_mag"].abs().max() > 1e-8
+        torch.testing.assert_close(
+            inverted["force_mag"], original["force_mag"], atol=2e-9, rtol=2e-9
+        )
+        reversed_spin = model(coord, atype, -spin)
+        torch.testing.assert_close(
+            reversed_spin["energy"], original["energy"], atol=0.0, rtol=0.0
+        )
+        torch.testing.assert_close(
+            reversed_spin["force_mag"], -original["force_mag"], atol=0.0, rtol=0.0
+        )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.parametrize(
+    "backend,native", [("pt_expt", False), ("pt_expt", True), ("pt", True)]
+)
+@pytest.mark.parametrize(
+    "gate,binding,training",
+    [
+        ("DP_CUDA_INFER", "_cuda_conv_fn", False),
+        ("DP_TRITON_INFER", "_triton_value_path", False),
+        ("DP_CUDA_TRAIN", "_cuda_value_train", True),
+        ("DP_TRITON_TRAIN", "_flash_atten_fn", True),
+    ],
+)
+def test_o3_accelerated_model_matches_dense(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    native: bool,
+    gate: str,
+    binding: str,
+    training: bool,
+) -> None:
+    """Fused value paths preserve parity and force-loss parameter gradients."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    if not native:
+        config.pop("spin")
+    config["enable_tf32"] = False
+    monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
+    monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
+    # The PyTorch backend preserves inversion through native spin alone and
+    # takes a constant degree schedule and mixing depth.
+    schedule = (
+        {"l_schedule": [1, 2], "mixing_layers": [2, 3]}
+        if backend == "pt_expt"
+        else {"l_schedule": [2, 2], "mixing_layers": 3}
+    )
+    config["descriptor"].update(
+        parity=True,
+        channels=48,
+        focus_dim=32,
+        **schedule,
+        precision="float32",
+        use_amp=False,
+        message_node_so3=True,
+        ffn_so3_grid=True,
+        grid_branch=[0, 0, 1],
+        so3_readout="mlp",
+    )
+    config["fitting_net"]["precision"] = "float32"
+    for name in (
+        "DP_CUDA_INFER",
+        "DP_TRITON_INFER",
+        "DP_CUDA_TRAIN",
+        "DP_TRITON_TRAIN",
+    ):
+        monkeypatch.setenv(name, "0")
+    factory = pt_get_model if backend == "pt" else get_model
+    dense = factory(config).to("cuda")
+    generator = torch.Generator(device="cuda").manual_seed(541)
+    with torch.no_grad():
+        for parameter in dense.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape,
+                    generator=generator,
+                    device="cuda",
+                    dtype=parameter.dtype,
+                )
+            )
+    monkeypatch.setenv(gate, "1" if training else "2")
+    fused = factory(config).to("cuda")
+    fused.load_state_dict(dense.state_dict())
+    assert all(
+        getattr(block.so2_conv, binding) is not None
+        for block in fused.atomic_model.descriptor.blocks
+    )
+    dense.train(training)
+    fused.train(training)
+    coord, atype, spin, _ = (
+        torch.from_numpy(value).to("cuda") for value in four_atom_spin_inputs()
+    )
+    args = (atype, spin.float()) if native else (atype,)
+    expected = dense(coord.float(), *args)
+    actual = fused(coord.float(), *args)
+    inverted = fused(-coord.float(), *args)
+    for key, sign in (("energy", 1), ("force", -1), ("virial", 1)):
+        torch.testing.assert_close(actual[key], expected[key], atol=2e-5, rtol=2e-4)
+        torch.testing.assert_close(
+            inverted[key], sign * actual[key], atol=2e-5, rtol=2e-4
+        )
+    if native:
+        assert expected["force_mag"].abs().max() > 1e-8
+        torch.testing.assert_close(
+            actual["force_mag"], expected["force_mag"], atol=2e-5, rtol=2e-4
+        )
+        torch.testing.assert_close(
+            inverted["force_mag"], actual["force_mag"], atol=2e-5, rtol=2e-4
+        )
+    if training:
+        from ..kernels.conditioning import (
+            assert_conditioned,
+            deviations,
+        )
+
+        monkeypatch.setenv(gate, "0")
+        gold_config = copy.deepcopy(config)
+        gold_config["descriptor"]["precision"] = "float64"
+        gold_config["fitting_net"]["precision"] = "float64"
+        gold = factory(gold_config).to("cuda").train()
+        gold.load_state_dict(dense.state_dict())
+        gold_args = (atype, spin) if native else (atype,)
+        gold_out = gold(coord, *gold_args)
+        (gold_out["energy"].sum() + gold_out["force"].square().sum()).backward()
+        for out in (expected, actual):
+            (out["energy"].sum() + out["force"].square().sum()).backward()
+        truth, reference, result = [], [], []
+        for (name, p), q, g in zip(
+            dense.named_parameters(), fused.parameters(), gold.parameters(), strict=True
+        ):
+            if p.grad is None:
+                assert q.grad is None and g.grad is None, name
+            else:
+                # Normalize each parameter tensor independently before the joint
+                # model-level comparison, retaining small gradient tensors while
+                # sharing the observed roundoff budget of the complete chain.
+                scale = g.grad.abs().max().clamp_min(1.0)
+                truth.append((g.grad / scale).flatten())
+                reference.append((p.grad / scale).flatten())
+                result.append((q.grad / scale).flatten())
+        assert_conditioned(
+            deviations(
+                ["force-loss parameter gradients"],
+                [torch.cat(truth)],
+                [torch.cat(reference)],
+                [torch.cat(result)],
+                factor=4.0,
+                working_dtype=torch.float32,
+            )
+        )
 
 
 @pytest.mark.parametrize(

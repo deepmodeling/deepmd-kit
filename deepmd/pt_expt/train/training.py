@@ -298,7 +298,7 @@ def _warn_compiled_attention(model: torch.nn.Module, task_key: str) -> None:
             )
 
 
-def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
+def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     """Return a key that is identical iff two tasks can safely share a compiled graph.
 
     The key captures both the descriptor identity and the fitting-net
@@ -332,17 +332,26 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     interchangeable: tasks without a preset bias disable the reference,
     while a folded reference no longer appends isolated atoms to the graph.
 
+    Block cutoffs are baked into edge filtering and normalization, so shared
+    parameter identities do not make different schedules interchangeable.
+
     A long-range module is part of the traced computation and of its input
-    schema, so its identity (that of its first parameter) closes the key;
+    schema, so its identity (that of its first parameter) is part of the key;
     tasks share a graph only when they share the module as well.
     """
     descriptor_id: int = 0
     clamp_id = 0
+    block_cutoffs: tuple = ()
     try:
         desc = model.get_descriptor()
         clamp = getattr(desc, "contact_clamp", None)
         if clamp is not None:
             clamp_id = id(clamp)
+        block_cutoffs = tuple(
+            (name, tuple(module.block_rcut))
+            for name, module in desc.named_modules()
+            if hasattr(module, "block_rcut")
+        )
         for _, p in desc.named_parameters():
             descriptor_id = id(p)
             break
@@ -375,6 +384,7 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
         fitting_id,
         *vacuum_state,
         long_range_id,
+        block_cutoffs,
     )
 
 
@@ -1119,7 +1129,7 @@ class _CompiledModel(torch.nn.Module):
     def __init__(
         self,
         original_model: torch.nn.Module,
-        structure_key: tuple[int, ...],
+        structure_key: tuple[Any, ...],
         task_buf_order: tuple[str, ...] = (),
         task_buffers: dict[str, torch.Tensor] | None = None,
         compile_opts: dict[str, Any] | None = None,
@@ -2783,8 +2793,8 @@ class Trainer(AbstractTrainer):
         # Pre-pass: group tasks by structure key and auto-detect per-task buffers.
         # Grouping is needed so _detect_task_buffers can diff buffer identities
         # across all tasks that share the same compiled graph.
-        _key_for: dict[str, tuple[int, ...]] = {}
-        _groups: defaultdict[tuple[int, ...], list[str]] = defaultdict(list)
+        _key_for: dict[str, tuple[Any, ...]] = {}
+        _groups: defaultdict[tuple[Any, ...], list[str]] = defaultdict(list)
         for task_key in self.model_keys:
             sk = _get_model_structure_key(wrapper_mod.model[task_key])
             _key_for[task_key] = sk
@@ -2823,7 +2833,7 @@ class Trainer(AbstractTrainer):
         # Tasks with the same structure key reuse the same compiled graph.
         # The dict is passed to every _CompiledModel instance so the lazy
         # compile on the first forward can populate and share it.
-        _compiled_by_structure: dict[tuple[int, ...], tuple] = {}
+        _compiled_by_structure: dict[tuple[Any, ...], tuple] = {}
 
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]

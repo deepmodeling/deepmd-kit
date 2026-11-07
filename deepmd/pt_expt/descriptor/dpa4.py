@@ -290,11 +290,11 @@ class DescrptDPA4(DescrptDPA4DP):
         if self.training:
             if not self._packed_wigner_train:
                 return None
-            fused = self.blocks[0].so2_conv._cuda_value_train
+            fused = self.blocks[self._widest_block_index].so2_conv._cuda_value_train
         else:
             if not self._wigner_free_conv:
                 return None
-            fused = self.blocks[0].so2_conv._cuda_conv_fn
+            fused = self.blocks[self._widest_block_index].so2_conv._cuda_conv_fn
         if fused is None or lmax > self.lmax:
             return None
         return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]
@@ -308,6 +308,11 @@ class DescrptDPA4(DescrptDPA4DP):
         # version the fresh construction started from.
         obj.version_tensor.fill_(obj.version)
         return _promote_trainable_tree(obj)
+
+    def compute_input_stats(self, merged: Any, path: Any | None = None) -> None:
+        """Measure the density statistics without recording an autograd graph."""
+        with torch.no_grad():
+            super().compute_input_stats(merged, path)
 
     def _in_training_mode(self) -> bool:
         """Torch runtime hook for the training-only random local-Z roll.

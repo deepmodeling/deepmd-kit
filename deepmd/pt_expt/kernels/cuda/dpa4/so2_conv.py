@@ -583,12 +583,12 @@ class SO2ConvCuda:
 
     def edge_runs(self, edge_cache: Any) -> torch.Tensor:
         """
-        Packed block-diagonal Wigner runs of every edge, built once per step.
+        Packed block-diagonal Wigner runs of every edge, built once per cache.
 
-        Every interaction block of a step shares one edge set and one degree,
-        so the runs are cached next to the CSR views; autograd accumulates the
-        run cotangents of all consumers before the single contraction back onto
-        the quaternions.
+        The interaction blocks that read one edge cache share its edge set and
+        degree, so the runs are cached on it next to the CSR views; autograd
+        accumulates the run cotangents of all consumers before the single
+        contraction back onto the quaternions.
 
         Parameters
         ----------
@@ -656,10 +656,13 @@ class SO2ConvCuda:
         conv = self._conv
         m0 = (conv.lmax + 1) * conv.so2_focus_dim
         w0_list, w1_list, gw_list = [], [], []
+        # A parity map has no W_v block, so its |m| = 1 block is
+        # [[W_u, 0], [0, W_u]] and the kernels read the shared W_u of one sign.
+        m1 = (1 if conv.parity else 2) * conv.lmax * conv.so2_focus_dim
         for layer, linear in enumerate(conv.so2_linears):
-            weight = linear._build_so2_weight().detach().permute(1, 0, 2).contiguous()
+            weight = linear._build_so2_weight().detach().permute(1, 0, 2)
             w0_list.append(weight[:, :m0, :m0])
-            w1_list.append(weight[:, m0:, m0:])
+            w1_list.append(weight[:, m0 : m0 + m1, m0 : m0 + m1])
             non_linear = conv.non_linearities[layer]
             if type(non_linear).__name__ == "GatedActivation":
                 gw_list.append(
@@ -697,7 +700,10 @@ class SO2ConvCuda:
         lmax, cf = conv.lmax, conv.so2_focus_dim
         n_deg = lmax + 1
         rows = [l * l + l for l in range(n_deg)]
-        d_m0 = edge_cache.D_full[:, rows, :]  # (E, lmax+1, D)
+        # The cache holds the Wigner blocks of the largest degree of the
+        # descriptor; the rows up to this block's degree vanish beyond its
+        # (lmax + 1)^2 columns, which match the node features it reads.
+        d_m0 = edge_cache.D_full[:, rows, : n_deg * n_deg]  # (E, lmax+1, D)
         x_local = torch.bmm(d_m0, x.index_select(0, edge_cache.src))  # (E, L+1, C_wide)
         if self._rank == 0:
             scalar = x_local[:, 0, :] * rad_feat[:, 0, :]  # (E, C_wide)
@@ -877,15 +883,19 @@ def _profitable(conv: Any) -> bool:
 
     One mixing layer costs ``M0^2 + M1^2 + Cf * GATE`` multiply-adds per edge
     and focus stream, with ``M0 = (lmax + 1) Cf``, ``M1 = 2 lmax Cf`` and
-    ``GATE = lmax * Cf``; every focus stream repeats it. That count sizes the
-    float32 arithmetic the operator takes on and is what its profit turns on,
-    normalized by how much of that arithmetic the executing device buys per
-    byte of the traffic it saves.
+    ``GATE = lmax * Cf``; every focus stream repeats it. A reflection-preserving
+    (parity) map shares one ``W_u`` block between the two signs of an order, so
+    the operator multiplies both signs, each of width ``M1 / 2``, by that block:
+    ``M1^2 / 2`` multiply-adds. That count sizes the float32 arithmetic the
+    operator takes on and is what its profit turns on, normalized by how much
+    of that arithmetic the executing device buys per byte of the traffic it
+    saves.
     """
     cf = conv.so2_focus_dim
     m0 = (conv.lmax + 1) * cf
     m1 = 2 * conv.lmax * cf
-    per_layer = m0 * m0 + m1 * m1 + cf * conv.lmax * cf
+    order_fma = m1 * m1 // 2 if conv.parity else m1 * m1
+    per_layer = m0 * m0 + order_fma + cf * conv.lmax * cf
     budget = _MAX_PROFITABLE_LAYER_FMA * _device_ridge_scale()
     return per_layer * conv.n_focus <= budget
 

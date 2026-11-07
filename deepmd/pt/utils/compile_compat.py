@@ -49,6 +49,7 @@ __all__ = [
     "next_safe_prime",
     "patch_inductor_autotune_benchmark_tolerance",
     "patch_inductor_force_int64_indexing",
+    "patch_inductor_stable_sort_fallback",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
     "relax_views_to_reshapes",
@@ -148,10 +149,13 @@ def apply_global_compile_patches() -> None:
     import torch._dynamo.config as dynamo_config
 
     dynamo_config.optimize_ddp = False
+    # Cutoff-specific edge compaction carries data-dependent leading sizes.
+    dynamo_config.capture_dynamic_output_shape_ops = True
 
     # Force int64 tensor indexing in every compiled kernel.  Applies on all
     # supported PyTorch versions and is independent of runtime shapes.
     patch_inductor_force_int64_indexing()
+    patch_inductor_stable_sort_fallback()
 
     # Let GEMM autotuning survive a candidate whose benchmark harness is
     # broken; only the opt-in ``max_autotune_gemm`` (``DP_TUNE_TRAIN=2``)
@@ -194,6 +198,27 @@ def patch_inductor_force_int64_indexing() -> None:
     # forces int64 indexing in every generated kernel.
     SIMDScheduling.can_use_32bit_indexing = staticmethod(lambda numel, buffers: False)
     SIMDScheduling._dp_force_int64_patched = True
+
+
+def patch_inductor_stable_sort_fallback() -> None:
+    """Lower every stable sort to the native ATen implementation.
+
+    Persistent Triton reductions are disabled by the compiler contract, so a
+    Triton sort never runs; its lowering nevertheless checks an int16
+    eligibility bound first, and a data-dependent size that passes through it
+    (the compact edge count of a per-block cutoff) inherits the bound of
+    32766 elements, which a later ``nonzero`` then enforces. Routing stable
+    sorts to the native fallback keeps those sizes unbounded. A PyTorch release
+    without ``lowering.sort_fallback`` keeps its own lowering.
+    """
+    from torch._inductor import (
+        lowering,
+    )
+
+    sort_fallback = getattr(lowering, "sort_fallback", None)
+    if sort_fallback is None:
+        return
+    lowering.lowerings[torch.ops.aten.sort.stable] = sort_fallback
 
 
 def patch_inductor_autotune_benchmark_tolerance() -> None:

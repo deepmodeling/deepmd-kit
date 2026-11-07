@@ -38,6 +38,9 @@ import copy
 import json
 import os
 import zipfile
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 import pytest
@@ -57,6 +60,7 @@ from deepmd.pt_expt.model.model import (
 )
 from deepmd.pt_expt.utils import env as _env
 from deepmd.pt_expt.utils.serialization import (
+    _dpa4_kernel_level_defaults,
     _make_sample_inputs,
     _trace_and_export,
     build_synthetic_graph_inputs,
@@ -64,12 +68,18 @@ from deepmd.pt_expt.utils.serialization import (
 )
 
 from ...dpa4_fixtures import (
+    four_atom_spin_inputs,
     jitter_zero_arrays,
 )
 from .test_dpa4_native_spin import (
     NATIVE_SPIN_CONFIG,
     _build_native_spin_model_cpu,
 )
+
+if TYPE_CHECKING:
+    from pathlib import (
+        Path,
+    )
 
 
 def _to_artifact_device(*tensors: torch.Tensor | None) -> tuple:
@@ -125,6 +135,221 @@ CUDA_ONLY_OPS = (
     "dpa4_grid_pair",
     "dpa4_zonal_scatter",
 )
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compilation is exercised locally.",
+)
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("bridging", ["none", "zbl"])
+def test_o3_freeze_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    native: bool,
+    bridging: str,
+) -> None:
+    """The graph freeze route preserves inversion through the public inference API."""
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt_expt.entrypoints.main import (
+        freeze,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cpu"))
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    if not native:
+        config.pop("spin")
+    config["bridging_method"] = bridging
+    config["descriptor"].update(
+        parity=True,
+        channels=8,
+        l_schedule=[1, 2],
+        ffn_so3_grid=True,
+        so3_readout="mlp",
+        readout_layers=2,
+    )
+    model = get_model(config).to("cpu").eval()
+    generator = torch.Generator().manual_seed(547)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape,
+                    generator=generator,
+                    dtype=parameter.dtype,
+                    device="cpu",
+                )
+            )
+    wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
+    checkpoint = tmp_path / "o3.pt"
+    output = tmp_path / "o3.pt2"
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+    freeze(str(checkpoint), str(output), lower_kind="graph", with_comm=False)
+    potential = DeepPot(str(output))
+    coord, atype, spin, _ = four_atom_spin_inputs()
+    args = (
+        (torch.from_numpy(atype), torch.from_numpy(spin))
+        if native
+        else (torch.from_numpy(atype),)
+    )
+    reference = model(torch.from_numpy(coord), *args)
+    assert reference["force"].abs().max() > 1e-8
+    kwargs = {"spin": spin} if native else {}
+    original = potential.eval(coord, None, atype[0], **kwargs)
+    inverted = potential.eval(-coord, None, atype[0], **kwargs)
+    for index, key, sign in (
+        (0, "energy", 1),
+        (1, "force", -1),
+        (2, "virial", 1),
+    ):
+        np.testing.assert_allclose(
+            original[index].reshape(-1),
+            reference[key].detach().numpy().reshape(-1),
+            atol=2e-9,
+            rtol=2e-9,
+        )
+        np.testing.assert_allclose(
+            inverted[index], sign * original[index], atol=2e-9, rtol=2e-9
+        )
+    if native:
+        assert reference["force_mag"].abs().max() > 1e-8
+        np.testing.assert_allclose(
+            original[3].reshape(-1),
+            reference["force_mag"].detach().numpy().reshape(-1),
+            atol=2e-9,
+            rtol=2e-9,
+        )
+        np.testing.assert_allclose(inverted[3], original[3], atol=2e-9, rtol=2e-9)
+
+
+@pytest.mark.parametrize(
+    "cutoffs,l_schedule",
+    [
+        ([2.5, 4.0], [1, 2]),
+        ([4.0, 2.5], [1, 2]),
+        # three distinct compact edge axes: 6, 8 and 10 edges at the first scale
+        ([2.5, 3.5, 4.0], [1, 1, 2]),
+    ],
+)
+def test_block_cutoff_freeze_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    cutoffs: list[float],
+    l_schedule: list[int],
+) -> None:
+    """Graph archives preserve cutoff schedules and energy-force-virial values."""
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt_expt.entrypoints.main import (
+        freeze,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cpu"))
+    config = copy.deepcopy(_DPA4_CONFIG)
+    config["descriptor"].update(
+        rcut=cutoffs,
+        l_schedule=l_schedule,
+        n_blocks=len(cutoffs),
+        channels=8,
+        n_radial=4,
+        mixing_layers=1,
+        density_floor=8.0,
+        edge_norm=False,
+    )
+    model = get_model(config).to("cpu").eval()
+    generator = torch.Generator().manual_seed(131)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.03
+                * torch.randn(
+                    parameter.shape, generator=generator, dtype=parameter.dtype
+                )
+            )
+    wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
+    checkpoint, archive = tmp_path / "cutoffs.pt", tmp_path / "cutoffs.pt2"
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+    freeze(str(checkpoint), str(archive), lower_kind="graph", with_comm=False)
+    with zipfile.ZipFile(archive) as package:
+        metadata = json.loads(package.read("model/extra/metadata.json"))
+        assert metadata["rcut"] == max(cutoffs)
+        assert metadata["lower_input_kind"] == "graph"
+        definition = json.loads(package.read("model/extra/model_def_script.json"))
+        assert definition["descriptor"]["rcut"] == cutoffs
+    potential = DeepPot(str(archive))
+    coord = np.array(
+        [[[0, 0, 0], [1.2, 0.3, 0.2], [3.2, 0.2, 0.4], [5.1, 0.3, 0.5]]],
+        dtype=np.float64,
+    )
+    atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+    for scale in (1.0, 1.3, 4.0):
+        positions = coord * scale
+        reference = model(torch.from_numpy(positions), torch.from_numpy(atype))
+        result = potential.eval(positions, None, atype[0])
+        for index, key in enumerate(("energy", "force", "virial")):
+            np.testing.assert_allclose(
+                result[index].reshape(-1),
+                reference[key].detach().numpy().reshape(-1),
+                rtol=2e-9,
+                atol=2e-9,
+            )
+
+
+@pytest.mark.parametrize("explicit", [None, "0", "1"])  # unset or user-selected
+def test_freeze_kernel_levels_default_to_the_fused_convolution(
+    monkeypatch: pytest.MonkeyPatch, explicit: str | None
+) -> None:
+    """A freeze binds the fused convolution unless the user selects a level."""
+    for name in ("DP_TRITON_INFER", "DP_CUDA_INFER"):
+        monkeypatch.delenv(name, raising=False)
+    if explicit is not None:
+        monkeypatch.setenv("DP_CUDA_INFER", explicit)
+    with _dpa4_kernel_level_defaults():
+        assert os.environ["DP_CUDA_INFER"] == (explicit or "2")
+        assert os.environ["DP_TRITON_INFER"] == "2"
+    assert os.environ.get("DP_CUDA_INFER") == explicit
+    assert "DP_TRITON_INFER" not in os.environ
+
+
+def test_graph_export_sort_compaction_large_axis(tmp_path: Path) -> None:
+    """Sort profitability cannot cap a subsequent compact graph axis at int16."""
+    from deepmd.pt.utils.compile_compat import (
+        patch_inductor_stable_sort_fallback,
+    )
+
+    class SortedCompact(torch.nn.Module):
+        def forward(self, values: torch.Tensor) -> tuple[torch.Tensor]:
+            order = torch.argsort(values[:, 0], stable=True)
+            ordered = values.index_select(0, order)
+            indices = torch.nonzero(ordered[:, 1] > 0).flatten()
+            compact = ordered.index_select(0, indices)
+            return (compact.square().sum().reshape(1),)
+
+    module = SortedCompact()
+    sample = torch.ones((31, 2))
+    patch_inductor_stable_sort_fallback()
+    exported = torch.export.export(
+        module, (sample,), dynamic_shapes=({0: torch.export.Dim("edges", min=2)},)
+    )
+    package = torch._inductor.aoti_compile_and_package(
+        exported,
+        package_path=str(tmp_path / "compact.pt2"),
+        inductor_configs={"triton.persistent_reductions": False},
+    )
+    loaded = torch._inductor.aoti_load_package(package)
+    for size in (17, 40_000):
+        values = torch.ones((size, 2))
+        torch.testing.assert_close(loaded(values)[0], module(values)[0])
 
 
 def test_dpa4_fp32_cpu_export_runs_without_cuda_only_ops(monkeypatch) -> None:

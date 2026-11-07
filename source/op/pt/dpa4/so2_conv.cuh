@@ -415,6 +415,7 @@ struct ConvArgs {
   int rank;
   int kc_len;
   int c_wide;
+  bool parity;        // shared diagonal weight for the two order signs
   float inv_sqrt_ch;  // rsqrt of the head width, forward only
 };
 

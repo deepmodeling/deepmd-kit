@@ -7,14 +7,14 @@ dpmodel (array-API) backend
 This implementation is designed around two goals:
 
 1) Conservative forces: the descriptor is computed from differentiable energy.
-2) Efficient inference: edge geometry and Wigner-D rotation blocks are computed
-   exactly once per `call()` and reused by all interaction blocks.
+2) Efficient inference: edge geometry is shared, and blocks with the same
+   cutoff reuse their radial features and geometric caches.
 
 Shared descriptor building blocks live in the `dpa4_nn` subpackage.
 
 Runtime flow at a glance:
-1) Build edge cache and radial features once.
-2) Run interaction blocks with shared geometric caches.
+1) Build shared geometry and an edge cache for every distinct cutoff.
+2) Run interaction blocks on their compact edge sets.
 3) Return scalar (`l=0`) descriptor channels for fitting.
 
 Layout notes
@@ -76,6 +76,9 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.block_cutoff import (
+    resolve_block_cutoffs,
+)
 from deepmd.utils.bridging import (
     DEFAULT_SUPPORT,
     drop_retired_descriptor_options,
@@ -90,6 +93,9 @@ from deepmd.utils.version import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+from .dpa4_nn.attention import (
+    inverse_softplus,
+)
 from .dpa4_nn.attn_res import (
     DepthAttnRes,
 )
@@ -100,6 +106,8 @@ from .dpa4_nn.edge_cache import (
     EdgeCache,
     _edge_cache_from_arrays,
     edge_cache_to_dtype,
+    load_or_measure_envelope_mass,
+    restrict_edge_cache,
 )
 from .dpa4_nn.embedding import (
     ChargeSpinEmbedding,
@@ -115,6 +123,7 @@ from .dpa4_nn.indexing import (
     get_so3_dim_of_lmax,
 )
 from .dpa4_nn.norm import (
+    EquivariantRMSNorm,
     ScalarRMSNorm,
 )
 from .dpa4_nn.radial import (
@@ -296,7 +305,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     Execution outline
     -----------------
     1. Build a per-forward `EdgeCache` (geometry, envelope, Wigner-D).
-    2. Build radial/type edge features once and reuse across blocks.
+    2. Build radial/type edge features per cutoff and reuse across matching blocks.
     3. Run `SeZMInteractionBlock` stack with optional l/m schedules.
     4. Extract scalar channels and apply the final scalar FFN.
 
@@ -309,7 +318,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         - int: broadcast to all types, e.g. sel=100 with ntypes=2 → [100, 100]
         - list[int]: sel[i] is the maximum number of type i atoms within `rcut`
     rcut
-        Cutoff radius in Å.
+        Cutoff radius in Å, or one radius per block in any order. The graph
+        uses the largest radius; initial environment and geometric features
+        use the first block's radius. Each smaller radius has a compact edge
+        cache and its own envelopes and density floor.
     env_exp
         C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]`
         specifies the radial-basis and message-passing envelopes separately.
@@ -327,7 +339,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Number of radial basis functions.
     radial_mlp
         Hidden layer sizes for radial networks. An output layer of size
-        `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
+        `(max(l_schedule)+extra_node_l+1)*channels` will be automatically appended.
     edge_norm
         Channel RMSNorm on the descriptor's cutoff-vanishing branches: the
         radial network hidden layers, the environment-seed FiLM scale/shift
@@ -339,11 +351,23 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         ``sqrt(1 + variance)``, so small messages retain their cutoff
         envelope instead of receiving the standard ``1/sqrt(eps)``
         small-signal gain.
+    density_floor
+        Floor ``f`` of every neighborhood normalization in units of the mean
+        envelope mass of the training neighborhoods, or ``None`` for the
+        absolute defaults (``f = 1/4`` and an attention null mass of about
+        one). The neighborhood sums of the initial embedding are scaled by
+        ``(m + f)^(-1/2)``, with ``m`` the sum of the squared cutoff envelopes
+        of the atom's neighbors, and the attention denominators start with the
+        null mass ``f``. :meth:`compute_input_stats` measures the mean mass
+        ``m_bar`` at every block cutoff, so a block reads ``f = density_floor *
+        m_bar``. A floor of the order of the training mass keeps a sparse
+        neighborhood a small perturbation of the isolated atom, where a small
+        floor hands a lone neighbor the weight of several bulk neighbors.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
         `[s, s*r_hat]` representation, and enable the non-scalar geometric
-        initial embedding when `l_schedule[0] + extra_node_l > 0`. If False, the initial state
+        initial embedding when `max(l_schedule) + extra_node_l > 0`. If False, the initial state
         contains only atom-local scalar features before message passing.
         Native spin requires True to retain neighbor spin correlations. FiLM
         deltas are normalized and scaled with learnable strengths initialized
@@ -378,8 +402,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     lmax
         Maximum degree, only used when `l_schedule` is None.
     l_schedule
-        Pyramid schedule of lmax per block, e.g. [3, 3, 2]. Must be non-increasing.
-        If set, lmax and n_blocks will be ignored.
+        Degree of each block, e.g. [3, 3, 2] or [1, 2]. If set, lmax and
+        n_blocks will be ignored. The node features, the radial features and
+        the edge rotations cover the largest degree of the schedule; a block of
+        lower degree updates the coefficients up to its own degree, and the
+        higher coefficients pass on unchanged to the blocks and the read-out
+        that read them. A decreasing schedule narrows the features towards the
+        read-out; an increasing one lets cheap early blocks lead to a full last
+        block. An increasing schedule requires the descriptor-level attention
+        residuals to be off.
     mmax
         Maximum SO(2) order (|m|), only used when `m_schedule` is None.
         If None, defaults to the per-block `lmax` (i.e. `m_schedule = l_schedule`).
@@ -408,7 +439,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         When False (default), no normalization is applied between layers.
     mixing_layers
         Number of learnable mixing layers in the per-edge message core of each
-        block (legacy alias: ``so2_layers``). ``0`` applies only the
+        block (legacy alias: ``so2_layers``). An integer applies to every block;
+        a list gives the count of each block, so that cheap early blocks can
+        lead to a full last block (e.g. ``[1, 3]``). ``0`` applies only the
         edge-condition modulation: the rotation-free per-degree radial scaling on
         the SO(2) path, or a single ``x @ T_e`` when ``edge_cartesian`` applies.
         The per-node ``node_cartesian`` stack carries its own independent depth.
@@ -542,7 +575,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         interaction block, driven by the SO(3) Wigner-D grid, so ``l>0`` geometry
         is folded into ``l=0`` before the scalar is extracted. The value selects
         the quadratic grid product (``"glu"``) or the polynomial point-wise grid
-        MLP (``"mlp"``). The Wigner-D frame order follows ``kmax``.
+        MLP (``"mlp"``). The Wigner-D frame order is ``readout_kmax``.
+    readout_kmax
+        Wigner-D frame order (|k|) of the SO(3) read-out grid, or ``None`` for
+        the ``kmax`` of the blocks. A read-out of order 1 keeps the odd
+        coupling paths of the SO(3) grid where the energy is extracted, while
+        blocks of order 0 run on the cheaper S2-like slice.
     readout_layers
         Number of stacked equivariant residual read-out FFNs (default ``1``).
         Every layer is an ``x + FFN(x)`` residual block sharing the read-out
@@ -551,6 +589,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         slices the ``l=0`` channel from its residual sum. With ``so3_readout`` of
         ``"none"`` the stack is a degree-0 scalar residual MLP on the ``l=0``
         slice.
+    readout_norm
+        Whether the read-out reads the node features through an equivariant RMS
+        normalization, the final normalization of a pre-norm network. Every
+        block branch already reads its input normalized, but the residual
+        stream itself is not, and the quadratic grid product of the read-out
+        would square any growth of it where the geometry leaves the training
+        data, such as the sparse neighborhood of an isolated pair.
     lebedev_quadrature
         Either one boolean applied to both S2 branches, or two booleans
         ``[so2_enabled, ffn_enabled]`` aligned with ``s2_activation``. If
@@ -603,6 +648,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Default frame-level charge/spin condition `[charge, spin]`. This value is
         used when `add_chg_spin_ebd=True` and no explicit `charge_spin` tensor is
         provided at the descriptor or SeZM model boundary.
+    parity : bool, optional
+        Preserve spatial inversion with natural parity ``(-1)**l`` for degree
+        ``l``. The default is False. Native spin always enables parity.
 
     Notes
     -----
@@ -619,13 +667,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self,
         ntypes: int,
         sel: list[int] | int,
-        rcut: float = 6.0,
+        rcut: float | list[float] = 6.0,
         env_exp: int | list[int] | None = None,
         channels: int = 64,
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_mlp: list[int] | None = None,
         edge_norm: bool | list[bool] = True,
+        density_floor: float | None = None,
         use_env_seed: bool = True,
         random_gamma: bool = True,
         edge_cartesian: bool = False,
@@ -638,7 +687,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         extra_node_l: int = 0,
         n_blocks: int = 3,
         so2_norm: bool = False,
-        mixing_layers: int = 4,
+        mixing_layers: int | list[int] = 4,
         so2_layers: int | None = None,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "degree_channel",
@@ -665,7 +714,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         message_node_s2: bool = False,
         message_node_so3: bool = False,
         so3_readout: str = "none",
+        readout_kmax: int | None = None,
         readout_layers: int = 1,
+        readout_norm: bool = False,
         lebedev_quadrature: bool | list[bool] | None = True,
         activation_function: str = "silu",
         glu_activation: bool = True,
@@ -682,10 +733,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         default_chg_spin: list[float] | None = None,
         use_spin: list[bool] | None = None,
         spin_mode: str = "orbit",
+        parity: bool = False,
     ) -> None:
         self.version = float(self.LATEST_VERSION)
         self._graph_lower_disabled = False
-        self.rcut = float(rcut)
         if env_exp is None:
             env_exp = [7, 5]
         if isinstance(env_exp, int):
@@ -700,12 +751,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             self.env_exp = [int(x) for x in env_exp]
             edge_env_exp = self.env_exp[1]
         self.eps = float(eps)
-        # Floor for the envelope-squared degree normalization (GIE / env_seed).
-        # version < 1.1 keeps the tiny ``eps`` floor (legacy path, untouched);
-        # version >= 1.1 swaps in this O(1) value so sparse-neighborhood (e.g.
-        # dimer) features vanish smoothly at rcut instead of saturating and
-        # kinking just inside the cutoff.
-        self.deg_norm_floor = 0.25
+        # Ratio of the neighborhood-normalization floor to the measured mean
+        # envelope mass of the training data (``_density_floor``).
+        if density_floor is not None and not 0.0 < density_floor < math.inf:
+            raise ValueError(
+                f"`density_floor` must be positive and finite, got {density_floor}"
+            )
+        self.density_floor = None if density_floor is None else float(density_floor)
 
         if isinstance(sel, int):
             sel = [sel]
@@ -774,8 +826,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if self.so3_readout not in {"none", "glu", "mlp"}:
             raise ValueError("`so3_readout` must be one of 'none', 'glu', or 'mlp'")
         self.readout_layers = int(readout_layers)
+        self.use_readout_norm = bool(readout_norm)
         if self.readout_layers < 1:
             raise ValueError("`readout_layers` must be >= 1")
+        if readout_kmax is not None and int(readout_kmax) < 0:
+            raise ValueError(f"`readout_kmax` must be non-negative, got {readout_kmax}")
+        self.readout_kmax = None if readout_kmax is None else int(readout_kmax)
         if lebedev_quadrature is None:
             lebedev_quadrature = [True, True]
         elif isinstance(lebedev_quadrature, bool):
@@ -833,6 +889,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # Moments enter through time-even on-site and pair scalars. Per-type
         # ``use_spin`` flags enable the native spin embedding.
         self.use_spin = None if use_spin is None else [bool(x) for x in use_spin]
+        self.parity = bool(parity) or self.use_spin is not None
         self.spin_mode = spin_mode
         if spin_mode not in {"exchange", "orbit"}:
             raise ValueError("`spin_mode` must be exchange or orbit")
@@ -881,8 +938,19 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         # === L/M schedules ===
         self._init_lm_schedules(lmax, n_blocks, l_schedule, mmax, m_schedule)
+        if self.n_blocks == 0 and isinstance(rcut, (list, tuple)):
+            raise ValueError("`rcut` must be a scalar for a zero-block descriptor")
+        self.block_rcut = resolve_block_cutoffs(rcut, max(1, self.n_blocks))
+        self.rcut = max(self.block_rcut)
+        self._variable_cutoffs = min(self.block_rcut) != self.rcut
         if self.contact_clamp is not None:
-            self.contact_clamp.check_cutoff(self.rcut)
+            self.contact_clamp.check_cutoff(min(self.block_rcut))
+        if self.density_floor is not None:
+            # Mean envelope mass of the training neighborhoods at every block
+            # cutoff, set by ``compute_input_stats``; one neighbor until then.
+            self.envelope_mass = np.ones(
+                len(self.block_rcut), dtype=PRECISION_DICT[self.precision]
+            )
         self.kmax = int(kmax)
         if self.kmax < 0:
             raise ValueError("`kmax` must be non-negative")
@@ -894,7 +962,22 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.so2_norm = bool(so2_norm)
         # ``so2_layers`` is the legacy alias for ``mixing_layers``; when supplied
         # it takes precedence so existing configs keep working.
-        self.mixing_layers = int(mixing_layers if so2_layers is None else so2_layers)
+        mixing_layers = mixing_layers if so2_layers is None else so2_layers
+        self.mixing_layers = (
+            int(mixing_layers)
+            if isinstance(mixing_layers, int)
+            else [int(x) for x in mixing_layers]
+        )
+        self.mixing_schedule = (
+            [self.mixing_layers] * self.n_blocks
+            if isinstance(self.mixing_layers, int)
+            else self.mixing_layers
+        )
+        if len(self.mixing_schedule) != self.n_blocks:
+            raise ValueError(
+                "`mixing_layers` must be an integer or hold one entry per block, "
+                f"got {len(self.mixing_schedule)} entries for {self.n_blocks} blocks"
+            )
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -956,6 +1039,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if self.use_full_attn_res and self.use_block_attn_res:
             raise ValueError(
                 "`full_attn_res` and `block_attn_res` cannot both be enabled"
+            )
+        if (self.use_full_attn_res or self.use_block_attn_res) and any(
+            self.node_pass_dims[i] > self.node_ebed_dims[i]
+            for i in range(self.n_blocks)
+        ):
+            raise ValueError(
+                "An `l_schedule` whose degree rises after a block requires "
+                "`full_attn_res` and `block_attn_res` to be 'none'; got "
+                f"l_schedule={self.l_schedule}"
             )
         self.n_atten_head = int(n_atten_head)
         self.atten_f_mix = bool(atten_f_mix)
@@ -1148,7 +1240,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             k_b = min(self.kmax, l_b)
             blocks.append(
                 SeZMInteractionBlock(
-                    parity=self.use_spin is not None,
+                    parity=self.parity,
                     lmax=l_b,
                     node_lmax=node_l_b,
                     mmax=m_b,
@@ -1157,7 +1249,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     focus_dim=self.focus_dim,
                     focus_norm=self.focus_norm,
                     so2_norm=self.so2_norm,
-                    mixing_layers=self.mixing_layers,
+                    mixing_layers=self.mixing_schedule[block_idx],
                     so2_attn_res=self.so2_attn_res_mode,
                     radial_so2_mode=self.radial_so2_mode,
                     radial_so2_rank=self.radial_so2_rank,
@@ -1185,6 +1277,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     so2_lebedev_quadrature=self.so2_lebedev_quadrature,
                     ffn_lebedev_quadrature=self.ffn_lebedev_quadrature,
                     n_atten_head=self.n_atten_head,
+                    atten_null_mass=self._initial_null_mass(block_idx),
                     atten_f_mix=self.atten_f_mix,
                     atten_v_proj=self.use_atten_v_proj,
                     atten_o_proj=self.use_atten_o_proj,
@@ -1204,6 +1297,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 )
             )
         self.blocks = blocks
+        # The first block of the largest degree builds the packed Wigner runs
+        # that the initial embedding of an accelerated backend reads at that
+        # degree.
+        self._widest_block_index = (
+            self.l_schedule.index(self.lmax) if self.l_schedule else 0
+        )
 
         # Accelerated backends may replace the distance-to-radial chain and the
         # packed Wigner-D construction. The array-API reference leaves these
@@ -1249,7 +1348,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             "lmax": 0 if self.so3_readout == "none" else readout_lmax,
             "channels": self.channels,
             "hidden_channels": self.out_ffn_neurons,
-            "kmax": min(self.kmax, readout_lmax),
+            "kmax": min(
+                self.kmax if self.readout_kmax is None else self.readout_kmax,
+                readout_lmax,
+            ),
             "grid_mlp": self.so3_readout == "mlp",
             "grid_branch": 0,
             "precision": self.compute_precision,
@@ -1260,17 +1362,28 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             "mlp_bias": self.mlp_bias,
             "trainable": self.trainable,
         }
-        # Intermediate tensors preserve native parity; the final Haar scalar
-        # readout pairs equal degrees and is intrinsically inversion-even.
+        # Intermediate tensors preserve natural parity. The final quadratic
+        # Haar scalar pairs equal degrees and is intrinsically inversion-even,
+        # so its fused evaluation needs no full-tensor parity projection.
         self.readout_pre_layers = [
             EquivariantFFN(
                 **readout_ffn_kwargs,
-                parity=self.use_spin is not None,
+                parity=self.parity,
                 seed=child_seed(seed_out, layer_index),
             )
             for layer_index in range(self.readout_layers - 1)
         ]
         self.output_ffn = EquivariantFFN(**readout_ffn_kwargs, seed=seed_out)
+        self.readout_norm = (
+            EquivariantRMSNorm(
+                lmax=readout_ffn_kwargs["lmax"],
+                channels=self.channels,
+                precision=self.compute_precision,
+                trainable=self.trainable,
+            )
+            if self.use_readout_norm
+            else None
+        )
 
         # === Statistics buffers (interface compatibility) ===
         self.stats: dict[str, Any] | None = None
@@ -1590,7 +1703,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             edge_mask=edge_mask,
             compute_dtype=compute_dtype,
             eps=self.eps,
-            deg_norm_floor=(self.deg_norm_floor if self.version >= 1.1 else self.eps),
+            deg_norm_floor=self._density_floor(self.rcut),
             read_distance=read_distance,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
@@ -1608,19 +1721,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             build_wigner=self._build_full_wigner(),
         )
 
-        if self.spin_embedding is not None and spin is not None:
-            edge_cache.edge_rbf = (
-                edge_cache.edge_rbf
-                + self.spin_embedding.edge_features(
-                    xp.reshape(spin, (n_nodes, 3)), atype_flat, edge_cache
-                )
-            )
+        edge_caches = self._prepare_block_edge_caches(edge_cache, atype_flat, spin)
+        edge_cache = edge_caches[0]
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
         x0 = type_ebed  # (N, C)
         x0_out = x0  # (N, C)
 
-        # === Step 4. Compute radial features once (fp32+) ===
+        # === Step 4. Compute radial features for the initial seed (fp32+) ===
         radial_feat_flat = self.radial_embedding(edge_cache.edge_rbf)
         radial_feat = xp.reshape(
             radial_feat_flat,
@@ -1695,14 +1803,19 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
 
         # === Step 9. Fuse edge type features into radial features (fp32+) ===
-        radial_feat = xp.astype(radial_feat, get_xp_precision(xp, self.precision))
-        radial_feat = radial_feat + xp.reshape(
-            xp.astype(edge_cache.edge_type_feat, get_xp_precision(xp, self.precision)),
-            (-1, 1, self.channels),
-        )
-        rad_feat_per_block = [
-            radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
-        ]
+        if self._variable_cutoffs:
+            rad_feat_per_block = self._block_radial_features(radial_feat, edge_caches)
+        else:
+            radial_feat = xp.astype(radial_feat, get_xp_precision(xp, self.precision))
+            radial_feat = radial_feat + xp.reshape(
+                xp.astype(
+                    edge_cache.edge_type_feat, get_xp_precision(xp, self.precision)
+                ),
+                (-1, 1, self.channels),
+            )
+            rad_feat_per_block = [
+                radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
+            ]
 
         # === Step 10. Convert to self.dtype and run blocks ===
         # The block stage is skipped entirely for the zero-block descriptor,
@@ -1711,11 +1824,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if force_embedding is not None:
             x = x + xp.astype(force_embedding, get_xp_precision(xp, self.precision))
         if self.blocks:
-            edge_cache = edge_cache_to_dtype(
-                edge_cache, get_xp_precision(xp, self.precision)
-            )
+            cast_caches = {
+                radius: edge_cache_to_dtype(cache, get_xp_precision(xp, self.precision))
+                for radius, cache in dict(
+                    zip(self.block_rcut, edge_caches, strict=True)
+                ).items()
+            }
+            block_caches = [cast_caches[radius] for radius in self.block_rcut]
             x = self._forward_blocks(
-                x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
+                x, block_caches, rad_feat_per_block, comm_dict=comm_dict
             )
 
         # === Step 11. Keep the owned-atom rows for the read-out ===
@@ -1730,10 +1847,87 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x_scalar = self._apply_readout(x, n_out_nodes)
         return xp.astype(x_scalar, get_xp_precision(xp, "global")), x
 
+    def _density_floor(self, radius: float) -> Any:
+        """Floor of the neighborhood normalization at one block cutoff.
+
+        With ``density_floor`` set, the floor is that multiple of the measured
+        mean envelope mass at ``radius``. Without it, the absolute default 1/4
+        (or ``eps`` before version 1.1) scales with the uniform-density mass
+        ratio ``(radius / rcut)^3``.
+        """
+        if self.density_floor is not None:
+            return (
+                self.density_floor * self.envelope_mass[self.block_rcut.index(radius)]
+            )
+        floor = 0.25 if self.version >= 1.1 else self.eps
+        return floor * (radius / self.rcut) ** 3
+
+    def _initial_null_mass(self, block_idx: int) -> float | None:
+        """Initial attention null mass of a block, the counterpart of its floor."""
+        if self.density_floor is not None:
+            return self.density_floor
+        ratio = self.block_rcut[block_idx] / self.rcut
+        return None if ratio == 1.0 else ratio**3
+
+    def _prepare_block_edge_caches(
+        self, edge_cache: EdgeCache, atype: Array, spin: Array | None
+    ) -> list[EdgeCache]:
+        """Build one cache per distinct cutoff and condition each radial basis.
+
+        Every smaller cutoff compacts the edges of the graph cache itself, so
+        the compact edge count of each cutoff is bounded by the edge count of
+        the graph, never by the data-dependent count of another cutoff.
+        """
+        caches = {
+            radius: (
+                edge_cache
+                if radius == self.rcut
+                else restrict_edge_cache(
+                    edge_cache,
+                    radius,
+                    deg_norm_floor=self._density_floor(radius),
+                    edge_envelope=self.edge_envelope,
+                    radial_basis=self.radial_basis,
+                )
+            )
+            for radius in dict.fromkeys(self.block_rcut)
+        }
+        if self.spin_embedding is not None and spin is not None:
+            xp = array_api_compat.array_namespace(spin)
+            for cache in caches.values():
+                cache.edge_rbf = cache.edge_rbf + self.spin_embedding.edge_features(
+                    xp.reshape(spin, (-1, 3)), atype, cache
+                )
+        return [caches[radius] for radius in self.block_rcut]
+
+    def _block_radial_features(
+        self, seed_radial: Array, caches: list[EdgeCache]
+    ) -> list[Array]:
+        """Embed each distinct cutoff and truncate the radial features per block."""
+        xp = array_api_compat.array_namespace(seed_radial)
+        dtype = get_xp_precision(xp, self.precision)
+        radial_by_cutoff = {self.block_rcut[0]: seed_radial}
+        result = []
+        for radius, cache, size in zip(
+            self.block_rcut, caches, self.rad_sizes_per_block, strict=True
+        ):
+            if radius not in radial_by_cutoff:
+                radial = xp.reshape(
+                    self.radial_embedding(cache.edge_rbf),
+                    (cache.src.shape[0], self.node_init_lmax + 1, self.channels),
+                )
+                if self.version >= 1.1:
+                    radial = radial * xp.reshape(cache.edge_env, (-1, 1, 1))
+                radial_by_cutoff[radius] = radial
+            radial = xp.astype(radial_by_cutoff[radius], dtype)
+            radial = radial + xp.astype(cache.edge_type_feat, dtype)[:, None, :]
+            result.append(radial[:, :size, :])
+        return result
+
     def _forward_blocks(
         self,
         x: Array,
-        edge_cache: EdgeCache,
+        edge_caches: list[EdgeCache],
         radial_feat_per_block: list[Array],
         comm_dict: dict[str, Array] | None = None,
     ) -> Array:
@@ -1744,8 +1938,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         ----------
         x
             Initial node features with shape (N, D, 1, C).
-        edge_cache
-            Per-edge cache.
+        edge_caches
+            Per-block caches, shared by blocks with the same cutoff.
         radial_feat_per_block
             List of per-block radial features already truncated to l_schedule[i]+1.
         comm_dict
@@ -1760,21 +1954,28 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Array
             Output features with shape (N, D, 1, C).
         """
+        xp = array_api_compat.array_namespace(x)
         if not self.use_full_attn_res and not self.use_block_attn_res:
             # === Fast path without descriptor-level attention residuals ===
             for i, block in enumerate(self.blocks):
-                x = x[:, : self.node_ebed_dims[i], :, :]
+                dim = self.node_ebed_dims[i]
+                pass_dim = self.node_pass_dims[i]
                 blk_radial = radial_feat_per_block[i]
-                x, _, _, _ = block(
-                    x,
-                    edge_cache,
+                x_blk, _, _, _ = block(
+                    x[:, :dim, :, :],
+                    edge_caches[i],
                     blk_radial,
                     comm_dict=self._block_comm(i, comm_dict),
+                )
+                # Rows above the block degree that later stages read pass on.
+                x = (
+                    xp.concat([x_blk, x[:, dim:pass_dim, :, :]], axis=1)
+                    if pass_dim > dim
+                    else x_blk
                 )
             return x
 
         n_node = x.shape[0]
-        xp = array_api_compat.array_namespace(x)
 
         def node_l0_extractor(v: Array) -> Array:
             """Extract scalar features from global SO(3) layout."""
@@ -1794,7 +1995,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 blk_radial = radial_feat_per_block[i]
                 block_output, _, so2_unit_output, ffn_unit_outputs = block(
                     current_x,
-                    edge_cache,
+                    edge_caches[i],
                     blk_radial,
                     unit_history=truncated_unit_history,
                     comm_dict=self._block_comm(i, comm_dict),
@@ -1829,7 +2030,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             blk_radial = radial_feat_per_block[i]
             block_output, block_summary, _, _ = block(
                 current_x,
-                edge_cache,
+                edge_caches[i],
                 blk_radial,
                 unit_history=truncated_block_history,
                 comm_dict=self._block_comm(i, comm_dict),
@@ -1868,8 +2069,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x
             Node features with shape ``(n_rows, D, 1, channels)``. With the
             blocks skipped (zero-block or empty-edge path) ``D`` is the initial
-            degree; otherwise the pyramid has shrunk it, so the read-out slice to
-            ``node_readout_dim`` is a no-op there.
+            degree; otherwise the last block hands on exactly the read-out
+            degree, so the read-out slice to ``node_readout_dim`` is a no-op
+            there.
         n_rows
             Number of node rows fed to the read-out.
 
@@ -1889,6 +2091,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 x[:, : self.node_readout_dim, :, :],
                 get_xp_precision(xp, self.compute_precision),
             )
+        if self.readout_norm is not None:
+            x_ro = self.readout_norm(x_ro)
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
         if self.so3_readout == "none":
@@ -2111,15 +2315,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             self.l_schedule = [int(x) for x in l_schedule]
         if any(x < 0 for x in self.l_schedule):
             raise ValueError("`l_schedule` entries must be non-negative")
-        if any(
-            self.l_schedule[i] < self.l_schedule[i + 1]
-            for i in range(len(self.l_schedule) - 1)
-        ):
-            raise ValueError("`l_schedule` must be non-increasing (pyramid schedule)")
 
-        # The first entry sets the maximum degree; with zero blocks the backbone
-        # degree falls back to the configured ``lmax``.
-        self.lmax = int(self.l_schedule[0]) if self.l_schedule else int(lmax)
+        # The largest entry sets the working degree; with zero blocks the
+        # backbone degree falls back to the configured ``lmax``.
+        self.lmax = int(max(self.l_schedule)) if self.l_schedule else int(lmax)
         self.n_blocks = len(self.l_schedule)
 
         # === M schedule ===
@@ -2143,7 +2342,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
 
         self.mmax = (
-            int(self.m_schedule[0])
+            int(max(self.m_schedule))
             if self.m_schedule
             else (int(mmax) if mmax is not None else int(self.lmax))
         )
@@ -2161,10 +2360,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
           the radial-embedding width, the initial state dimension, and GIE.
         - ``node_readout_lmax`` : node backbone degree fed to the read-out FFN.
 
-        With blocks these equal ``l_schedule[0]``, ``node_l_schedule[0]`` and
-        ``node_l_schedule[-1]``; with zero blocks all three collapse onto the
-        configured ``lmax`` (plus ``extra_node_l`` on the node side), so the
-        pyramid endpoints are never read from an empty list.
+        With blocks these equal ``max(l_schedule)``, ``max(node_l_schedule)``
+        and ``node_l_schedule[-1]``; with zero blocks all three collapse onto
+        the configured ``lmax`` (plus ``extra_node_l`` on the node side), so the
+        schedule endpoints are never read from an empty list.
+
+        ``node_pass_dims[i]`` is the number of degree rows that block ``i``
+        hands on: the rows the later blocks and the read-out still read. Rows
+        above the block's own degree pass through it unchanged.
         """
         self.extra_node_l = int(extra_node_l)
         if self.extra_node_l < 0:
@@ -2185,6 +2388,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.mp_init_dim = get_so3_dim_of_lmax(self.mp_init_lmax)
         self.node_init_dim = get_so3_dim_of_lmax(self.node_init_lmax)
         self.node_readout_dim = get_so3_dim_of_lmax(self.node_readout_lmax)
+        self.node_pass_dims = [
+            max([*self.node_ebed_dims[i + 1 :], self.node_readout_dim])
+            for i in range(self.n_blocks)
+        ]
 
     def _canonicalize_charge_spin(
         self,
@@ -2527,14 +2734,41 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         path: DPPath | None = None,
     ) -> None:
         """
-        Compute statistics (interface compatibility, not used in forward).
+        Measure the mean envelope mass that sets the density floor.
 
-        SeZM uses learnable EquivariantRMSNorm for normalization, so these
-        statistics do not affect the forward pass. This is a no-op that keeps
-        mean/stddev at their initialized values (zero/one) for interface consistency.
+        With ``density_floor`` set, the mean envelope mass of the sampled
+        neighborhoods at every block cutoff is stored, and the attention null
+        mass of every block starts at its floor. Without it the descriptor has
+        no data statistics: ``mean`` and ``stddev`` stay at zero and one.
+
+        Parameters
+        ----------
+        merged : Callable[[], list[dict]] or list[dict]
+            Sampled systems, or a lazy callable that returns them.
+        path : DPPath or None
+            Statistics file. A stored measurement for the same cutoffs and
+            envelope is read back; a new one is written.
         """
-        # No-op: mean and stddev are already initialized to zero/one in __init__
-        # and are not used in forward() due to EquivariantRMSNorm.
+        if self.density_floor is None:
+            return
+        mass, _ = load_or_measure_envelope_mass(
+            merged,
+            path,
+            radii=self.block_rcut,
+            exponent=self.edge_envelope.p,
+            ntypes=self.ntypes,
+            exclude_types=self.exclude_types,
+        )
+        xp = array_api_compat.array_namespace(self.envelope_mass)
+        self.envelope_mass[...] = xp.asarray(
+            mass,
+            dtype=self.envelope_mass.dtype,
+            device=array_api_compat.device(self.envelope_mass),
+        )
+        for block, radius in zip(self.blocks, self.block_rcut, strict=False):
+            null_mass = block.so2_conv.adamw_attn_z_bias_raw
+            if null_mass is not None:
+                null_mass[...] = inverse_softplus(float(self._density_floor(radius)))
 
     def _variables(self) -> dict[str, np.ndarray]:
         """Variables keyed by the pt ``state_dict`` key names."""
@@ -2542,6 +2776,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # === Descriptor-level version and statistics buffers ===
         variables["version_tensor"] = np.asarray(self.version, dtype=np.float64)
         variables["mean"] = to_numpy_array(self.mean)
+        if self.density_floor is not None:
+            variables["envelope_mass"] = to_numpy_array(self.envelope_mass)
         variables["stddev"] = to_numpy_array(self.stddev)
         # === Type embedding (always present) ===
         for key, value in self.type_embedding.serialize()["@variables"].items():
@@ -2621,7 +2857,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "@variables"
             ].items():
                 variables[f"final_block_attn_res.{key}"] = value
-        # === Read-out pre-layers (optional) ===
+        # === Read-out normalization and pre-layers (optional) ===
+        if self.readout_norm is not None:
+            for key, value in self.readout_norm.serialize()["@variables"].items():
+                variables[f"readout_norm.{key}"] = value
         for i, layer in enumerate(self.readout_pre_layers):
             for key, value in layer._variables().items():
                 variables[f"readout_pre_layers.{i}.{key}"] = value
@@ -2657,6 +2896,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # ``version_tensor`` and the derived Wigner-D / GIE index tables are
         # transient: they are rebuilt at construction, so they are ignored here.
         self.mean = np.asarray(variables["mean"], dtype=prec)
+        if self.density_floor is not None:
+            self.envelope_mass = np.asarray(variables["envelope_mass"], dtype=prec)
         self.stddev = np.asarray(variables["stddev"], dtype=prec)
         # === Contact record and data edges (bridged descriptors only) ===
         # A record of an unbridged descriptor holds none, and its clamp keeps
@@ -2709,7 +2950,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             self.final_block_attn_res = load(
                 self.final_block_attn_res, "final_block_attn_res."
             )
-        # === Read-out pre-layers (optional) ===
+        # === Read-out normalization and pre-layers (optional) ===
+        if self.readout_norm is not None:
+            self.readout_norm = load(self.readout_norm, "readout_norm.")
         for i, layer in enumerate(self.readout_pre_layers):
             layer._load_variables(take_prefix(f"readout_pre_layers.{i}."))
         # === Output FFN ===
@@ -2734,7 +2977,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             "config": {
                 "ntypes": self.ntypes,
                 "sel": self.sel,
-                "rcut": self.rcut,
+                "rcut": (
+                    list(self.block_rcut) if self._variable_cutoffs else self.rcut
+                ),
                 "env_exp": self.env_exp,
                 "type_map": self.type_map,
                 "lmax": self.lmax,
@@ -2753,6 +2998,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     self.film_norm,
                     self.focus_norm,
                 ],
+                "density_floor": self.density_floor,
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "use_amp": self.use_amp,
@@ -2784,7 +3030,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "message_node_s2": self.message_node_s2,
                 "message_node_so3": self.message_node_so3,
                 "so3_readout": self.so3_readout,
+                "readout_kmax": self.readout_kmax,
                 "readout_layers": self.readout_layers,
+                "readout_norm": self.use_readout_norm,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,
@@ -2805,6 +3053,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
                 "use_spin": self.use_spin,
+                "parity": self.parity,
                 "spin_mode": self.spin_mode,
             },
             "@variables": self._variables(),
@@ -2862,7 +3111,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         min_nbor_dist, sel = UpdateSel().update_one_sel(
             train_data,
             type_map,
-            local_jdata_cpy["rcut"],
+            max(local_jdata_cpy["rcut"])
+            if isinstance(local_jdata_cpy["rcut"], list)
+            else local_jdata_cpy["rcut"],
             local_jdata_cpy["sel"],
             True,  # mixed_type=True for unified sel
         )

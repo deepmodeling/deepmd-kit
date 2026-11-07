@@ -126,6 +126,41 @@ if TYPE_CHECKING:
     )
 
 
+def _reject_exportable_options(options: dict[str, Any]) -> None:
+    """
+    Refuse the descriptor options that only the exportable backend implements.
+
+    Parameters
+    ----------
+    options : dict[str, Any]
+        Descriptor options, as constructor keywords or as the input section.
+
+    Raises
+    ------
+    NotImplementedError
+        If a per-block ``rcut`` or ``mixing_layers`` list, a ``density_floor``,
+        ``readout_norm``, a ``readout_kmax`` or ``parity`` without native spin
+        is requested.
+    """
+    layers = options.get("so2_layers")
+    if layers is None:
+        layers = options.get("mixing_layers")
+    requested = {
+        "rcut": isinstance(options.get("rcut"), (list, tuple)),
+        "mixing_layers": isinstance(layers, (list, tuple)),
+        "density_floor": options.get("density_floor") is not None,
+        "readout_norm": bool(options.get("readout_norm")),
+        "parity": bool(options.get("parity")) and options.get("use_spin") is None,
+        "readout_kmax": options.get("readout_kmax") is not None,
+    }
+    refused = [name for name, value in requested.items() if value]
+    if refused:
+        raise NotImplementedError(
+            f"The DPA4 options {refused} are implemented by the pt_expt backend "
+            "only; train with `dp --pt-expt`"
+        )
+
+
 @BaseDescriptor.register("SeZM")
 @BaseDescriptor.register("sezm")
 @BaseDescriptor.register("DPA4")
@@ -445,6 +480,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Default frame-level charge/spin condition `[charge, spin]`. This value is
         used when `add_chg_spin_ebd=True` and no explicit `charge_spin` tensor is
         provided at the descriptor or SeZM model boundary.
+    density_floor, readout_norm, readout_kmax, parity
+        Options of the exportable backend, accepted here at their defaults so
+        that every normalized input and serialized record of a model without
+        them loads. ``parity`` follows native spin, which always preserves
+        inversion.
 
     Notes
     -----
@@ -524,8 +564,24 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         default_chg_spin: list[float] | None = None,
         use_spin: list[bool] | None = None,
         spin_mode: str = "orbit",
+        density_floor: float | None = None,
+        readout_norm: bool = False,
+        readout_kmax: int | None = None,
+        parity: bool = False,
     ) -> None:
         super().__init__()
+        _reject_exportable_options(
+            {
+                "rcut": rcut,
+                "mixing_layers": mixing_layers,
+                "so2_layers": so2_layers,
+                "density_floor": density_floor,
+                "readout_norm": readout_norm,
+                "readout_kmax": readout_kmax,
+                "parity": parity,
+                "use_spin": use_spin,
+            }
+        )
 
         self.register_buffer(
             "version_tensor",
@@ -2659,6 +2715,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     self.film_norm,
                     self.focus_norm,
                 ],
+                "density_floor": None,
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "use_amp": self.use_amp,
@@ -2690,7 +2747,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "message_node_s2": self.message_node_s2,
                 "message_node_so3": self.message_node_so3,
                 "so3_readout": self.so3_readout,
+                "readout_kmax": None,
                 "readout_layers": self.readout_layers,
+                "readout_norm": False,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,
@@ -2711,6 +2770,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
                 "use_spin": self.use_spin,
+                "parity": self.use_spin is not None,
                 "spin_mode": self.spin_mode,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
@@ -2776,6 +2836,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         float | None
             The minimum distance between two atoms.
         """
+        _reject_exportable_options(local_jdata)
         local_jdata_cpy = local_jdata.copy()
         min_nbor_dist, sel = UpdateSel().update_one_sel(
             train_data,

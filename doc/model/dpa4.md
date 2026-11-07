@@ -1,7 +1,7 @@
-# Descriptor DPA4 {{ pytorch_icon }}
+# Descriptor DPA4 {{ pytorch_icon }} {{ jax_icon }}
 
 > [!NOTE]
-> Supported backends: PyTorch (`dp --pt`) and PyTorch Exportable (`dp --pt-expt`).
+> Supported backends: PyTorch Exportable (`dp --pt-expt`, recommended), PyTorch (`dp --pt`) and JAX (`dp --jax`, training only).
 
 DPA4 implements the SeZM (Smooth Equivariant Zone-bridging Model) architecture
 for interatomic potentials. It learns atomic environments from the positions
@@ -15,23 +15,28 @@ compression, see [DPA4C](dpa4c.md).
 
 ## Quick start
 
-From the DeePMD-kit source directory, train the water example with PyTorch:
+From the DeePMD-kit source directory, train the water example with the
+PyTorch Exportable backend:
 
 ```bash
 cd examples/water/dpa4
-dp --pt train input.json
+dp --pt-expt train input.json
 ```
 
 After training, export a checkpoint and test it on the validation data:
 
 ```bash
-dp --pt freeze -c model.ckpt.pt -o frozen_model.pt2
+dp --pt-expt freeze -c model.ckpt.pt -o frozen_model.pt2
 dp test -m frozen_model.pt2 -s ../data/data_3
 ```
 
-Replace `model.ckpt.pt` with the checkpoint you want to use. To train and
-export with PyTorch Exportable, use `--pt-expt` in place of `--pt` in the
-training and freeze commands.
+Replace `model.ckpt.pt` with the checkpoint you want to use. PyTorch Exportable
+is the recommended backend for DPA4, including the DPA4.5 presets. Property
+fitting, LoRA fine-tuning and direct-force denoising require the PyTorch backend
+(`--pt` in place of `--pt-expt`).
+
+The JAX backend (`dp --jax train input.json`) supports training only. Use the
+PyTorch Exportable backend for inference and the other tasks in this guide.
 
 The [water input](../../examples/water/dpa4/input.json) is a complete training
 configuration. To use your own data, change `model.type_map` and the system
@@ -116,6 +121,28 @@ and their shared descriptor and fitting settings. A preset inside a branch
 applies to that branch. See the
 [multi-task preset example](../../examples/water/dpa4/input_multitask_preset.json).
 
+The DPA4.5 presets, named `dpa4.5-<size>-<version>`, define O(3)-equivariant
+DPA4 models. They run on the PyTorch Exportable backend, and the JAX backend
+can train them.
+
+| Version     | Available sizes                                    |
+| ----------- | -------------------------------------------------- |
+| `v20261111` | `nano`, `mini`, `neo`, `air`, `plus`, `pro`, `max` |
+
+Train DPA4.5 models with the HybridMuon optimizer and a weight decay of 0.03:
+
+```json
+{
+  "optimizer": {
+    "type": "HybridMuon",
+    "weight_decay": 0.03
+  }
+}
+```
+
+The [DPA4.5 example](../../examples/water/dpa4/input_dpa45.json) is a complete
+input with this optimizer and [zone bridging](#zone-bridging).
+
 ### Main options
 
 Start with a preset and adjust the options that affect your task:
@@ -128,6 +155,8 @@ Start with a preset and adjust the options that affect your task:
 | `lmax`, `mmax`             | Control how much angular detail the model retains. Larger values increase cost.            |
 | `l_schedule`, `m_schedule` | Set angular detail separately for each block. `l_schedule` also sets the number of blocks. |
 | `n_radial`, `basis_type`   | Control how distances are represented.                                                     |
+| `focus_dim`                | Set the width of the messages between neighbors; `0` uses `channels`.                      |
+| `mixing_layers`            | Set the depth of each message.                                                             |
 
 The {ref}`argument reference <model[dpa4]/descriptor[dpa4]>` lists all options
 and their defaults.
@@ -142,10 +171,10 @@ To fine-tune a pretrained DPA4 checkpoint, prepare an input for the target data
 and pass the checkpoint to training:
 
 ```bash
-dp --pt train input_finetune.json --finetune pretrained.pt
+dp --pt-expt train input_finetune.json --finetune pretrained.pt
 ```
 
-Use `--pt-expt` for the PyTorch Exportable backend. Keep the pretrained model's
+Keep the pretrained model's
 architecture when transferring its weights. See [fine-tuning](../train/finetuning.md)
 for choosing fitting networks and multi-task branches.
 
@@ -157,18 +186,18 @@ support. Leave it `false` on a CPU or an unsupported GPU.
 
 Compilation and TF32 settings depend on the backend:
 
-| Setting                    | PyTorch             | PyTorch Exportable        |
-| -------------------------- | ------------------- | ------------------------- |
-| Compile training           | `model.use_compile` | `training.enable_compile` |
-| Allow TF32 during training | `model.enable_tf32` | `training.enable_tf32`    |
+| Setting                    | PyTorch             | PyTorch Exportable        | JAX                    |
+| -------------------------- | ------------------- | ------------------------- | ---------------------- |
+| Compile training           | `model.use_compile` | `training.enable_compile` | Not needed             |
+| Allow TF32 during training | `model.enable_tf32` | `training.enable_tf32`    | `training.enable_tf32` |
 
 Training precision and inference precision are configured separately. Check
 validation errors when changing precision settings.
 
 ### Spin
 
-DPA4 accepts per-atom magnetic moments through `model.spin` in both backends
-and trains them with the `ener_spin` loss; see
+DPA4 accepts per-atom magnetic moments through `model.spin` in the PyTorch
+Exportable and PyTorch backends and trains them with the `ener_spin` loss; see
 [training spin energy models](train-energy-spin.md) for the `spin` and
 `force_mag` data formats and loss weights.
 
@@ -230,10 +259,10 @@ architecture and the same elements in the same `type_map` order, add the
 `spin` block, change the loss to `ener_spin`, and fine-tune:
 
 ```bash
-dp --pt train input_spin.json --finetune pretrained.pt
+dp --pt-expt train input_spin.json --finetune pretrained.pt
 ```
 
-The same procedure works with `--pt-expt`. Initial predictions can differ from
+The same procedure works with `--pt`. Initial predictions can differ from
 the spin-free model, so train and validate the resulting spin model before
 using it. A complete input is provided in
 [the native-spin example](../../examples/spin/dpa4/input.json). Spin training
@@ -295,25 +324,15 @@ individual element pairs, rather than to a universal screening curve.
 `type_map` must contain chemical element names. See [the ZBL example](../../examples/water/dpa4/input-zbl.json) for a complete
 input.
 
-The learned part reads each pair separation unchanged down to the data edge
-of the pair: the third smallest of the shortest separations that the training
-configurations hold for that pair of elements, counting repeated values once
-and at most the covalent bond length of the pair. For a closer pair the
-separation it reads moves smoothly to a frozen value, which it reaches at 0.75
-of the data edge, so below that point the analytical term alone carries the
-repulsion of a closer pair; the bond directions are read unchanged. Requiring several
-configurations keeps one unusual configuration from setting the edge of a
-pair. Training records the data edges from its batches as it goes, and the
-model stores them.
-
-`bridging_truncation` sets where the analytical term ends, as a multiple of
-the covalent bond length (default 1.1). `bridging_clamp` sets the fraction of
-the data edge at and below which the read separation is frozen (default
-0.75); `null` reads every separation unchanged. `bridging_support` sets which
-of these separations, counted from the smallest, becomes the data edge
-(default 3); 1 takes the shortest separation of any
-configuration. Training keeps every frame unless `training_data.min_pair_dist`
-is set.
+`bridging_truncation` sets where the analytical potential ends, as a multiple
+of the covalent bond length of each element pair (default 1.1).
+For each element pair, the learned term reads the physical separation unchanged
+down to its data edge: the `bridging_support`-th smallest distinct per-frame
+minimum separation (default 3), capped at the covalent bond length. Below the
+edge the read distance changes smoothly and becomes constant at
+`bridging_clamp` times the edge (default 0.75); `null` disables the clamp.
+The bond direction is unchanged. Training keeps every frame unless
+`training_data.min_pair_dist` is set.
 
 To add bridging to a trained model, keep its architecture, add the bridging
 settings and fine-tune; the data edges start at the covalent bond lengths and
@@ -346,16 +365,12 @@ Pairs containing elements heavier than uranium use normalized ZBL coefficients.
 Export with the backend used for training:
 
 ```bash
-dp --pt freeze -c model.ckpt.pt -o frozen_model.pt2
-```
-
-For a PyTorch Exportable checkpoint:
-
-```bash
 dp --pt-expt freeze -c model.ckpt.pt -o frozen_model.pt2
 ```
 
-Both commands produce `.pt2` files for ASE or LAMMPS. For a multi-task model,
+For a PyTorch checkpoint, use `dp --pt freeze` instead.
+
+Either command produces a `.pt2` file for ASE or LAMMPS. For a multi-task model,
 add `--task BRANCH_NAME` (aliases: `--head`, `--model-branch`) to select a branch. No extra export option is needed
 for multi-rank LAMMPS. DPA4 does not support model compression.
 
@@ -363,19 +378,18 @@ Export on the device type that will run the model. For a CPU archive, hide
 GPUs during export:
 
 ```bash
-CUDA_VISIBLE_DEVICES="" dp --pt freeze -c model.ckpt.pt -o frozen_cpu.pt2
+CUDA_VISIBLE_DEVICES="" dp --pt-expt freeze -c model.ckpt.pt -o frozen_cpu.pt2
 ```
-
-Use `--pt-expt` instead for a PyTorch Exportable checkpoint.
 
 ### Inference precision and performance
 
-GPU export defaults to `DP_TRITON_INFER=2` and `DP_CUDA_INFER=1`. These settings
+GPU export with `dp --pt-expt freeze` defaults to `DP_TRITON_INFER=2` and
+`DP_CUDA_INFER=2`; `dp --pt freeze` defaults to `DP_CUDA_INFER=1`. These settings
 use optimized float32 operations. Keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`
 when force smoothness matters, including molecular dynamics:
 
 ```bash
-DP_TF32_INFER=0 DP_AMP_INFER=0 dp --pt freeze -c model.ckpt.pt -o frozen_model.pt2
+DP_TF32_INFER=0 DP_AMP_INFER=0 dp --pt-expt freeze -c model.ckpt.pt -o frozen_model.pt2
 ```
 
 Set inference options before exporting. A `.pt2` file keeps the settings used
@@ -430,7 +444,7 @@ Use one MPI rank per GPU and make all participating GPUs visible:
 CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
 ```
 
-Both training backends export models that support multi-rank LAMMPS, including
+Both PyTorch backends export models that support multi-rank LAMMPS, including
 native spin and zone bridging.
 Use CUDA-aware MPI for GPU communication and a nonzero neighbor skin, for
 example `neighbor 2.0 bin`. For PyTorch Exportable models, choose a domain
@@ -446,7 +460,7 @@ features, and their sum over each structure:
 dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
 ```
 
-The command accepts a training checkpoint from either backend or a `.pt2`
+The command accepts a training checkpoint from either PyTorch backend or a `.pt2`
 exported with `dp --pt-expt freeze`. For a model exported with `dp --pt freeze`,
 use its training checkpoint instead. See
 [model embeddings](../inference/embedding.md) for the output format and Python

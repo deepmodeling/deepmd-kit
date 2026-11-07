@@ -283,12 +283,19 @@ class TestDescrptDPA4:
             make_descriptor(kmax=4, lmax=3)
         with pytest.raises(ValueError):  # m_schedule entries must be <= l_schedule
             make_descriptor(l_schedule=[2, 2], m_schedule=[3, 1])
-        with pytest.raises(ValueError):  # l_schedule must be non-increasing
-            make_descriptor(l_schedule=[2, 3])
+        with pytest.raises(ValueError):  # a rising l_schedule needs no attn res
+            make_descriptor(l_schedule=[2, 3], full_attn_res="independent")
         with pytest.raises(ValueError):  # sandwich_norm must have length 4
             make_descriptor(sandwich_norm=[True, False])
         with pytest.raises(ValueError):  # env_exp must have length 2
             make_descriptor(env_exp=[7])
+        for floor in (0.0, -1.0, float("inf"), float("nan")):
+            with pytest.raises(ValueError, match="density_floor"):  # positive, finite
+                make_descriptor(density_floor=floor)
+        with pytest.raises(ValueError, match="mixing_layers"):  # one entry per block
+            make_descriptor(mixing_layers=[1, 2, 3])
+        with pytest.raises(ValueError, match="readout_kmax"):  # non-negative
+            make_descriptor(readout_kmax=-1)
         with pytest.raises(ValueError):  # attn res mode token
             make_descriptor(full_attn_res="depth")
         with pytest.raises(ValueError):  # wrong class tag

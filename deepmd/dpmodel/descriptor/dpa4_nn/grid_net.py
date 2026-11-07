@@ -435,6 +435,7 @@ class GridBranch(NativeOP):
         seed: int | list[int] | None = None,
     ) -> None:
         self.channels = int(channels)
+        self.project_inversion = False
         self.n_branches = int(n_branches)
         if self.n_branches < 1:
             raise ValueError("`n_branches` must be positive")
@@ -542,7 +543,8 @@ class GridBranch(NativeOP):
         else:
             coeff = (
                 pair_grid(left, right)
-                if self.n_branches == 1 and pair_grid is not None
+                if (self.n_branches == 1 or self.project_inversion)
+                and pair_grid is not None
                 else None
             )
         if coeff is None:
@@ -562,6 +564,27 @@ class GridBranch(NativeOP):
             router = router / xp.sum(router, axis=-1, keepdims=True)
             out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
             coeff = from_grid(out)
+
+        elif scalar_product is None and self.n_branches > 1:
+            n_batch, coeff_dim, n_focus, _ = coeff.shape
+            value = xp.reshape(
+                coeff,
+                (
+                    n_batch,
+                    coeff_dim,
+                    n_focus,
+                    self.n_frames,
+                    self.n_branches,
+                    self.channels,
+                ),
+            )
+            router = self.router(scalar_pair)
+            router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
+            router = router / xp.sum(router, axis=-1, keepdims=True)
+            coeff = xp.reshape(
+                xp_einsum("ndfkhc,nfh->ndfkc", value, router),
+                (n_batch, coeff_dim, n_focus, self.n_frames * self.channels),
+            )
 
         # === Step 3. Project back to coefficients and mix output channels ===
         if scalar_product is not None:
@@ -802,8 +825,13 @@ class BaseGridNet(NativeOP):
 
     CONFIG_DERIVED_ARRAYS = (
         "_from_grid_t",
+        "_grid_even",
+        "_grid_odd",
+        "_grid_order",
+        "_grid_restore",
         "_scalar_product_weight",
-        "_inversion_sign",
+        "_to_grid_mat",
+        "_from_grid_mat",
     )
 
     def __init__(
@@ -827,23 +855,9 @@ class BaseGridNet(NativeOP):
     ) -> None:
         self.projector = projector
         self.parity = bool(parity)
-        # Antipodally closed sphere grids already intertwine inversion by a
-        # permutation of points with equal quadrature weights. Their pointwise
-        # operations need no second evaluation. SO(3) grids and custom sphere
-        # grids without paired samples require the discrete projection.
-        self._project_inversion = self.parity and (
-            isinstance(projector, SO3GridProjector)
-            or (projector.grid_method == "e3nn" and projector.phi_resolution % 2 != 0)
-        )
         self.lmax = int(projector.lmax)
-        degree_index = _build_frame_degree_index(
-            lmax=self.lmax,
-            mmax=projector.mmax,
-            coefficient_layout=projector.coefficient_layout,
-        )
-        self._inversion_sign = (1 - 2 * (degree_index % 2)).astype(
-            PRECISION_DICT[precision.lower()]
-        )
+        self.precision = precision
+        self._set_grid_projection()
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.n_frames = int(projector.n_frames)
@@ -858,7 +872,6 @@ class BaseGridNet(NativeOP):
         self.op_type = str(op_type).lower()
         if self.op_type not in {"glu", "mlp", "branch"}:
             raise ValueError("`op_type` must be one of 'glu', 'mlp', or 'branch'")
-        self.precision = precision
         self.layout = str(layout).lower()
         if self.layout not in {"ndfc", "nfdc", "fndc", "flat"}:
             raise ValueError(
@@ -906,7 +919,6 @@ class BaseGridNet(NativeOP):
         # order.
         self._grid_pair_fn = None
         self._grid_pair_train_fn = None
-        self._from_grid_t = np.ascontiguousarray(projector.from_grid_mat.T)
 
         self.scalar_act = SwiGLU()
         self.scalar_gate = FocusLinear(
@@ -941,6 +953,8 @@ class BaseGridNet(NativeOP):
             self.grid_op = GridProduct()
 
         self.residual_scale_init = residual_scale_init
+        self.grid_op.project_inversion = self._project_inversion
+
         if residual_scale_init is None:
             self.residual_scale: np.ndarray | None = None
         else:
@@ -948,6 +962,45 @@ class BaseGridNet(NativeOP):
             self.residual_scale = np.ones(
                 (self.n_focus, self.output_channels), dtype=prec
             ) * float(residual_scale_init)
+
+    def _set_grid_projection(self) -> None:
+        """Build the quadratic projection plan from the projector buffers."""
+        projector = self.projector
+        # Closed grids intertwine inversion by a point permutation. Other
+        # grids separate even and odd degree reads in the quadratic product;
+        # scalar routers and channel maps commute with this projection.
+        project_inversion = self.parity and (
+            (isinstance(projector, SO3GridProjector) and projector.kmax > 0)
+            or (
+                isinstance(projector, S2GridProjector)
+                and projector.grid_method == "e3nn"
+                and (
+                    projector.phi_resolution % 2 != 0
+                    or projector.theta_resolution % 2 != 0
+                )
+            )
+        )
+        degree_index = _build_frame_degree_index(
+            lmax=projector.lmax,
+            mmax=projector.mmax,
+            coefficient_layout=projector.coefficient_layout,
+        )
+        to_grid = to_numpy_array(projector.to_grid_mat)
+        from_grid = to_numpy_array(projector.from_grid_mat)
+        self._project_inversion = project_inversion
+        slot_parity = np.repeat(degree_index % 2, projector.n_frames)
+        even = np.flatnonzero(slot_parity == 0)
+        odd = np.flatnonzero(slot_parity == 1)
+        order = np.concatenate([even, odd])
+        self._grid_even = even
+        self._grid_odd = odd
+        self._grid_even_count = int(even.shape[0])
+        self._grid_order = order
+        self._grid_restore = np.argsort(order)
+        self._to_grid_mat = to_grid
+        self._from_grid_mat = from_grid
+        self._grid_size = int(to_grid.shape[0])
+        self._from_grid_t = np.ascontiguousarray(from_grid.T)
 
     def call(self, query: Any, context: Any = None) -> Any:
         """Apply the configured grid net and restore the input layout."""
@@ -981,35 +1034,7 @@ class BaseGridNet(NativeOP):
             return self._slice_scalar_layout(self.call(query, context))
         return self._forward(query, context, scalar_only=True)
 
-    def _reflect(self, value: Any) -> Any:
-        xp = array_api_compat.array_namespace(value)
-        sign = xp_asarray_nodetach(
-            xp,
-            self._inversion_sign,
-            dtype=value.dtype,
-            device=array_api_compat.device(value),
-        )
-        canonical, shape_info = self._to_ndfc(value)
-        return self._restore_layout(canonical * sign[None, :, None, None], shape_info)
-
-    def _forward(self, query: Any, context: Any, *, scalar_only: bool) -> Any:
-        output = self._forward_unrestricted(query, context, scalar_only=scalar_only)
-        # Haar scalar contractions pair equal angular degrees, so the two
-        # inversion signs cancel before the channel maps and scalar gates.
-        if not self._project_inversion or (
-            scalar_only and self._scalar_product_weight is not None
-        ):
-            return output
-        # SO(3) grid products are projected onto the inversion-equivariant
-        # subspace locally, using the fixed harmonic parity of every degree.
-        reflected = self._forward_unrestricted(
-            self._reflect(query),
-            None if context is None else self._reflect(context),
-            scalar_only=scalar_only,
-        )
-        return 0.5 * (output + (reflected if scalar_only else self._reflect(reflected)))
-
-    def _forward_unrestricted(
+    def _forward(
         self,
         query: Any,
         context: Any,
@@ -1043,9 +1068,14 @@ class BaseGridNet(NativeOP):
                 else None
             ),
             from_grid=self._from_grid_scalar if scalar_only else self._from_grid,
-            pair_grid=None if scalar_only else self._pair_grid,
+            pair_grid=None
+            if scalar_only and not self._project_inversion
+            else self._pair_grid,
             scalar_product=self._scalar_so3_product if direct_scalar else None,
         )
+
+        if scalar_only and self._project_inversion and not direct_scalar:
+            coeff_out = coeff_out[:, :1]
 
         # === Step 3. Apply scalar gating and contract Wigner-D frames ===
         coeff_out = self._apply_scalar_path(
@@ -1269,6 +1299,8 @@ class BaseGridNet(NativeOP):
         Array or None
             Coefficient result with shape ``(N, D, F, n_frames * C)``.
         """
+        if self._project_inversion:
+            return self._parity_pair_grid(left, right)
         c_wide = left.shape[3] // self.n_frames
         if c_wide % 32 != 0 or left.shape != right.shape:
             return None
@@ -1282,7 +1314,7 @@ class BaseGridNet(NativeOP):
             return self._grid_pair_train_fn(
                 left,
                 right,
-                self.projector.to_grid_mat,
+                self._to_grid_mat,
                 self._from_grid_t,
                 self.n_frames,
             )
@@ -1296,10 +1328,95 @@ class BaseGridNet(NativeOP):
         out = self._grid_pair_fn(
             xp.reshape(left, (n_batch, flat_p, c_wide)),
             xp.reshape(right, (n_batch, flat_p, c_wide)),
-            self.projector.to_grid_mat,
+            self._to_grid_mat,
             self._from_grid_t,
         )
         return xp.reshape(out, (n_batch, coeff_dim, 1, self.n_frames * c_wide))
+
+    def _parity_pair_grid(self, left: Any, right: Any) -> Any:
+        """Project even and odd quadratic fields with one quadrature.
+
+        Frame slots inherit degree parity. Even output rows analyze AA'+BB';
+        odd output rows analyze AB'+BA', where A and B read even and odd inputs.
+        """
+        xp = array_api_compat.array_namespace(left, right)
+        device = array_api_compat.device(left)
+        channels = left.shape[-1] // self.n_frames
+        if channels % 32 == 0 and left.shape == right.shape:
+            if (
+                getattr(self, "training", False)
+                and self._grid_pair_train_fn is not None
+            ):
+                return self._grid_pair_train_fn(
+                    left,
+                    right,
+                    self._to_grid_mat,
+                    self._from_grid_t,
+                    self.n_frames,
+                    self._grid_order,
+                    self._grid_even_count,
+                )
+            if (
+                not getattr(self, "training", False)
+                and self._grid_pair_fn is not None
+                and left.shape[2] == 1
+                and left.dtype == xp.float32
+                and right.dtype == xp.float32
+            ):
+                n_batch, coeff_dim = left.shape[:2]
+                slots = coeff_dim * self.n_frames
+                out = self._grid_pair_fn(
+                    xp.reshape(left, (n_batch, slots, channels)),
+                    xp.reshape(right, (n_batch, slots, channels)),
+                    self._to_grid_mat,
+                    self._from_grid_t,
+                    self._grid_order,
+                    self._grid_even_count,
+                )
+                return xp.reshape(
+                    out, (n_batch, coeff_dim, 1, self.n_frames * channels)
+                )
+
+        n_batch, coeff_dim, n_focus, wide = left.shape
+        slots = coeff_dim * self.n_frames
+        shape = (n_batch, coeff_dim, n_focus, self.n_frames, channels)
+        left = xp.reshape(
+            xp.permute_dims(xp.reshape(left, shape), (0, 2, 1, 3, 4)),
+            (n_batch, n_focus, slots, channels),
+        )
+        right = xp.reshape(
+            xp.permute_dims(xp.reshape(right, shape), (0, 2, 1, 3, 4)),
+            (n_batch, n_focus, slots, channels),
+        )
+        synthesis = xp_asarray_nodetach(xp, self._to_grid_mat, device=device)
+        analysis = xp_asarray_nodetach(xp, self._from_grid_mat, device=device)
+        even_index = xp_asarray_nodetach(xp, self._grid_even, device=device)
+        odd_index = xp_asarray_nodetach(xp, self._grid_odd, device=device)
+        reads = []
+        for index in (even_index, odd_index):
+            matrix = xp.take(synthesis, index, axis=1)
+            reads.append(
+                (
+                    xp_einsum("gp,nfpc->ngfc", matrix, xp.take(left, index, axis=2)),
+                    xp_einsum("gp,nfpc->ngfc", matrix, xp.take(right, index, axis=2)),
+                )
+            )
+        (a, ap), (b, bp) = reads
+        even = xp_einsum(
+            "pg,ngfc->nfpc", xp.take(analysis, even_index, axis=0), a * ap + b * bp
+        )
+        odd = xp_einsum(
+            "pg,ngfc->nfpc", xp.take(analysis, odd_index, axis=0), a * bp + b * ap
+        )
+        restore = xp_asarray_nodetach(xp, self._grid_restore, device=device)
+        out = xp.take(xp.concat([even, odd], axis=2), restore, axis=2)
+        return xp.reshape(
+            xp.permute_dims(
+                xp.reshape(out, (n_batch, n_focus, coeff_dim, self.n_frames, channels)),
+                (0, 2, 1, 3, 4),
+            ),
+            (n_batch, coeff_dim, n_focus, wide),
+        )
 
     def _project_pair_in_one_transform(
         self,
@@ -1324,7 +1441,7 @@ class BaseGridNet(NativeOP):
             coeff, (n_batch, coeff_dim, n_focus, self.n_frames, n_channels)
         )
         to_grid = xp_asarray_nodetach(
-            xp, self.projector.to_grid_mat[...], device=array_api_compat.device(coeff)
+            xp, self._to_grid_mat[...], device=array_api_compat.device(coeff)
         )
         to_grid = xp.astype(to_grid, coeff.dtype)
         # einsum "gdk,ndfkc->ngfc" (with to_grid reshaped (G, D, K)) as a
@@ -1343,7 +1460,7 @@ class BaseGridNet(NativeOP):
             coeff_dk, (n_batch, coeff_dim * self.n_frames, n_focus * n_channels)
         )
         out = xp_matmul(to_grid[None, ...], coeff_flat)  # (N, G, F*C)
-        return xp.reshape(out, (n_batch, self.projector.grid_size, n_focus, n_channels))
+        return xp.reshape(out, (n_batch, self._grid_size, n_focus, n_channels))
 
     def _from_grid(self, grid: Any) -> Any:
         # Channel width is inferred to match the (possibly widened) grid field.
@@ -1351,15 +1468,13 @@ class BaseGridNet(NativeOP):
         n_batch, _, n_focus, n_channels = grid.shape
         coeff_dim = self.projector.coeff_dim // self.n_frames
         from_grid = xp_asarray_nodetach(
-            xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
+            xp, self._from_grid_mat[...], device=array_api_compat.device(grid)
         )
         from_grid = xp.astype(from_grid, grid.dtype)
         # einsum "dkg,ngfc->ndfkc" (with from_grid reshaped (D, K, G)) as a
         # broadcast batched matmul, then a reshape to (N, D, F, K*C). from_grid
         # is already stored as (D*K, G); the matmul output is reshaped/permuted.
-        grid_flat = xp.reshape(
-            grid, (n_batch, self.projector.grid_size, n_focus * n_channels)
-        )
+        grid_flat = xp.reshape(grid, (n_batch, self._grid_size, n_focus * n_channels))
         coeff = xp_matmul(from_grid[None, ...], grid_flat)  # (N, D*K, F*C)
         coeff = xp.reshape(
             coeff, (n_batch, coeff_dim, self.n_frames, n_focus, n_channels)
@@ -1374,12 +1489,10 @@ class BaseGridNet(NativeOP):
         xp = array_api_compat.array_namespace(grid)
         n_batch, _, n_focus, n_channels = grid.shape
         from_grid = xp_asarray_nodetach(
-            xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
+            xp, self._from_grid_mat[...], device=array_api_compat.device(grid)
         )
         from_grid = xp.astype(from_grid[: self.n_frames], grid.dtype)
-        grid_flat = xp.reshape(
-            grid, (n_batch, self.projector.grid_size, n_focus * n_channels)
-        )
+        grid_flat = xp.reshape(grid, (n_batch, self._grid_size, n_focus * n_channels))
         coeff = xp_matmul(from_grid[None, ...], grid_flat)  # (N, K, F*C)
         coeff = xp.reshape(coeff, (n_batch, 1, self.n_frames, n_focus, n_channels))
         coeff = xp.permute_dims(coeff, (0, 1, 3, 2, 4))  # (N, 1, F, K, C)
