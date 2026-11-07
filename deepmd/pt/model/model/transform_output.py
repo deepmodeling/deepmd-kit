@@ -219,7 +219,6 @@ def edge_energy_deriv(
     nf: int,
     nall: int,
     create_graph: bool,
-    extended_coord_corr: torch.Tensor | None = None,
     spin_leaf: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """Assemble extended force, virial and atomic virial from edge gradients.
@@ -263,9 +262,6 @@ def edge_energy_deriv(
     create_graph
         Keep the first-derivative graph alive so the force-loss second backward
         can reach the parameters.
-    extended_coord_corr
-        Optional spin virtual-displacement correction with shape
-        ``(nf, nall, 3)``; adds ``force (x) coord_corr`` per extended atom.
     spin_leaf
         Optional per-atom spin leaf with shape ``(nf, nloc, 3)`` for the native
         spin scheme. When provided, the energy is also differentiated with
@@ -385,17 +381,9 @@ def edge_energy_deriv(
         av_flat = av_flat.index_add(0, src_ext, w_edge)
         extended_virial = av_flat.view(nf, nall, 9)
 
-    if extended_coord_corr is not None:
-        # Spin: the virtual-atom displacement adds force (x) coord_corr per atom.
-        corr = (
-            extended_force.unsqueeze(-1)
-            @ extended_coord_corr.unsqueeze(-2).to(extended_force.dtype)
-        ).reshape(nf, nall, 9)
-        extended_virial = extended_virial + corr
-
     energy_derv_r = extended_force.unsqueeze(-2)
     energy_derv_c = extended_virial.unsqueeze(-2)
-    if frame_virial is not None and extended_coord_corr is None:
+    if frame_virial is not None:
         energy_derv_c_redu = frame_virial.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION).view(
             nf, 1, 9
         )
@@ -405,8 +393,7 @@ def edge_energy_deriv(
         )
 
     # Magnetic force is the negative spin gradient, matching the dataset
-    # ``force_mag = -dE/dspin`` convention (the virtual-atom scheme reaches the
-    # same quantity through ``F_virtual * virtual_scale``).
+    # ``force_mag = -dE/dspin`` convention.
     energy_derv_r_mag: torch.Tensor | None = None
     if spin_leaf is not None:
         energy_derv_r_mag = (-grads[1]).unsqueeze(-2)

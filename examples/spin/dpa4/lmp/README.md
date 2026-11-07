@@ -1,8 +1,7 @@
 # LAMMPS example for DPA4 / SeZM native spin
 
 Runs a native-spin DPA4 / SeZM model in LAMMPS through `pair_style deepspin`
-backed by an AOTInductor `.pt2` archive. For the classical DeepSpin
-(virtual-atom) scheme, see `examples/spin/lmp`.
+backed by an AOTInductor `.pt2` archive.
 
 ## Files
 

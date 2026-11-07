@@ -669,6 +669,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
         return_components: bool = False,
+        node_gate: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Run the parallel `dens` fitting branches.
@@ -692,6 +693,9 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             `(ntypes, dim_descrpt)`, required by ``vacuum_ref``.
         return_components
             If true, also return the clean-force and denoising branches.
+        node_gate
+            Per-atom source gate of a bridged descriptor with shape
+            `(nf, nloc, 1)`; the learned part of the energy fades with it.
 
         Returns
         -------
@@ -709,6 +713,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             fparam=fparam,
             aparam=aparam,
             vacuum_descriptor=vacuum_descriptor,
+            node_gate=node_gate,
         )
         clean_force = self.direct_force_head(latent).view(nf, nloc, 3)
         denoising_force = self.denoising_head(latent).view(nf, nloc, 3)

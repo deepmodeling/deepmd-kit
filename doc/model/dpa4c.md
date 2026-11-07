@@ -202,27 +202,190 @@ and evaluation and inference are governed independently by `DP_AMP_INFER`. A
 model trained in full precision can therefore be evaluated under mixed
 precision, and the reverse.
 
+## Zone bridging
+
+DPA4C can add an analytical short-range repulsion to the learned energy, so that
+close approaches in high-temperature, high-pressure or collision simulations meet
+a physical repulsive wall instead of an extrapolated network output:
+
+```math
+E_i = E_i^{\mathrm{DPA4C}} + E_i^{\mathrm{pair}}.
+```
+
+Two potentials are available. `bridging_method: "zbl"` uses the
+Ziegler-Biersack-Littmark screened nuclear potential, which is derived from
+frozen atomic electron densities and covers every element.
+`bridging_method: "nlh"` uses the Nordlund-Lehtola-Hobler form, whose
+coefficients are fitted to self-consistent quantum-chemical pair energies and
+therefore follow the real repulsive wall much more closely; it leaves a smaller
+residual repulsion at ordinary bond lengths, which is energy the learned model
+would otherwise have to cancel. `zbl` is the default; whether `nlh` yields a
+better trained model has not been established.
+
+> [!NOTE]
+> The `nlh` coefficients shipped with DeePMD-kit are this project's own refit and
+> are **not** the coefficients published by Nordlund, Lehtola and Hobler. They are
+> fitted independently to the same open reference data — K. Nordlund, G. Hobler and
+> S. Lehtola, Zenodo [10.5281/zenodo.14172633](https://doi.org/10.5281/zenodo.14172633)
+> v1.0 (2024), CC BY 4.0 — under conditions this use requires, and are therefore
+> modified material. The functional form is that of
+> [Phys. Rev. A **111**, 032818 (2025)](https://doi.org/10.1103/PhysRevA.111.032818).
+> Pairs containing an element heavier than uranium, which the reference data does
+> not cover, fall back to ZBL.
+
+The analytical term acts on every pair inside `rcut`. The learned model, in turn, is
+made blind to pairs that are too close to be covered by training data. Below
+the inner radius of the window a pair leaves the descriptor entirely: both
+atoms are described exactly as if the other one were absent, and the pair
+interacts through the analytical term alone. Between the inner and the outer
+radius the pair enters the descriptor smoothly in two coupled ways: its
+amplitude opens from zero to one, and the separation its radial functions
+read is released at the same rate, from the midpoint of the window at the
+inner radius to the true separation at the outer radius. A pair deep inside
+the window therefore changes the descriptor through its amplitude alone,
+with its radial features held where the retained training frames place them.
+Beyond the outer radius the descriptor is the same as without bridging. The
+transition keeps the energy three times continuously differentiable, like the
+outer cutoff.
+
+The two radii follow the size of the pair they apply to. Each is a fraction of
+the covalent bond length of that element pair, so a hydrogen pair is described
+down to a much shorter separation than a caesium pair, and one setting covers
+every element combination in the type map. The defaults place the outer radius
+at 0.80 of the bond length, below all but the shortest multiple bonds, and
+the inner radius at 0.26, deep inside the repulsive wall where the analytical
+term is the responsible description.
+
+Enable it on the model:
+
+```json
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa4c",
+      "rcut": 6.0
+    },
+    "bridging_method": "zbl"
+  }
+}
+```
+
+`type_map` must name chemical elements, because the analytical term is built
+from their nuclear charges and the window from their covalent radii. `bridging_fraction_inner` and
+`bridging_fraction_outer` adjust the two fractions. Giving `bridging_r_inner`
+and `bridging_r_outer` instead replaces the rule with one window in Å applied
+to every pair alike, which is worth doing only for a single-element system or
+to reproduce an earlier model. See `examples/water/dpa4c/input-zbl.json` for a
+complete input.
+
+Training frames that contain a pair closer than the midpoint of its window are
+left out of the loss. Below the midpoint the learned contribution of the pair is
+throttled to less than half of its amplitude, so a label there would ask the
+model for a multiple of the energy it has to express; the separation the
+radial functions read never falls below the midpoint either, and through the
+lower half of the window it moves by less than 7 % of the window width, so the
+radial features of a close pair stay next to the range the retained frames
+cover. The threshold is derived from the window of each element pair, and
+`training_data.min_pair_dist` must stay unset on a bridged model. The data
+statistics, including those of `dp change-bias`, are drawn under the same
+filter, while validation batches are not filtered, so a validation error also
+covers frames that training leaves out.
+
+Bridging therefore relies on short-range training data. The labels that are
+kept have to reach into the window of every element pair, which in practice
+means adding dimer scans that run down to about half the covalent bond length.
+Between the inner radius and the closest retained label the learned
+contribution of the pair falls to zero with no data to shape it; labels inside
+the window keep that descent smooth, while a pair whose window holds no label
+can show spurious force maxima there.
+
+The same model can be written explicitly as a `linear_ener` model over the
+DPA4C model and an `inner_potential` sub-model with `weights: "sum"`; the
+concise form above expands to it.
+
+Bridging changes nothing in the workflow after training. The model freezes,
+compresses and runs in LAMMPS like a plain DPA4C model: compression still
+selects the compact canonical graph form, the fused kernels evaluate the
+analytical term in the same pass over the neighbors as the descriptor, and multi-GPU runs
+need no extra communication. Native spin and the frame charge state combine
+with bridging; the analytical term depends on the separation alone and leaves
+the magnetic force to the learned model.
+
+A model trained without bridging fine-tunes into its bridged form, and the
+other way round. Add the bridging keys above to the input, keep the
+architecture, and start from the earlier checkpoint:
+
+```bash
+dp --pt-expt train input-zbl.json --finetune model.ckpt.pt
+```
+
+The descriptor and the fitting net are carried over although the bridged model
+holds them one level deeper, inside the composition. Fine-tuning is required
+rather than optional: the bridging window changes what the descriptor sees at
+short range, so the learned part is trained against the analytical term it is
+now summed with.
+
 ## Model compression
 
 Compression is the deployment step. It replaces the analytic radial functions
-and their type-pair modulation with tabulated splines evaluated by fused CUDA
-kernels, and re-exports the model in the compact canonical graph form that the
-fast inference path consumes. Because the radial map is analytically bounded and
+and their type-pair modulation with tabulated splines evaluated by fused CPU or
+CUDA kernels. Eligible CUDA models use the compact canonical graph form;
+CPU models use the graph form with their dedicated kernels. Because the radial map is analytically bounded and
 vanishes at `rcut`, the table needs no extrapolation region and no overflow
 checking.
 
-Train, freeze, then compress the frozen archive:
+Freeze and compress a checkpoint in one operation:
 
 ```bash
 dp --pt-expt train input.json
-dp --pt-expt freeze -c model.ckpt.pt -o frozen_model --lower-kind graph
-dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2
+dp --pt-expt freeze -c model.ckpt.pt -o compressed_model --compress
 ```
 
-The two archives are not interchangeable. `frozen_model.pt2` carries the plain
-graph lower and is the uncompressed intermediate; `compressed_model.pt2` carries
-the compact canonical graph lower and is what you deploy. Compression selects
-that lower on its own, so it takes no lower-kind option of its own.
+This writes `compressed_model.pt2` directly using the default compression
+settings, without compiling an intermediate uncompressed archive. Compression
+selects the export schema appropriate to the model and target device.
+
+A branch of a multi-task model is frozen by naming it with `--head`:
+
+```bash
+dp --pt-expt freeze -c model.ckpt.pt -o compressed_branch --head CHOSEN_BRANCH --compress
+```
+
+Where the branches share the fitting network, the case embedding that
+distinguishes them is a constant of the branch, and the export folds it into
+the bias of the first fitting layer, so the compressed branch takes the export
+schema and the fused kernels of a single-task model. The fold is not possible
+where the descriptor and the case embedding together are as wide as the first
+fitting layer, or half as wide, because the residual connection of that layer
+then carries the case embedding; such a branch keeps it and exports to the
+graph form, which the export reports with a warning.
+
+On a CUDA device, compression also measures which kernel evaluates the fitting
+network fastest on that GPU at each system size and stores the choices in the
+archive. A kernel other than the default is chosen only where the measurement
+finds it faster by more than 1% on a lightly loaded GPU and, under sustained
+load, at most 1% slower both on a system of one element and on a system of up
+to three elements. The measurement adds a few seconds to several minutes to a
+compression, depending on the size of the model and on the GPU. All choices
+give bit-identical results, so they affect only the speed. On a GPU of another
+model, the archive uses the default choices instead; compress on the GPU model
+that will run the simulations.
+
+To compress an existing frozen archive or choose the spline spacing, use the
+compression command:
+
+```bash
+dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2 --step 0.01
+```
+
+For ASE, `DP(model="model.pt", freeze=True)` automatically compresses supported
+DPA4C checkpoints and exports a single-process `.pt2`. If compression is not
+supported, ASE warns and retains the ordinary freeze path. See the
+[ASE interface](../third-party/ase.md).
 
 Only `-s, --step` applies to DPA4C; it sets the uniform spline spacing in Å, and
 a smaller value means a finer table and a larger model. The `--extrapolate`,
@@ -232,14 +395,15 @@ computed from data; DPA4C needs none of them and ignores them.
 
 Compression requires:
 
-- the PyTorch Exportable backend on CUDA;
+- the PyTorch Exportable backend;
 - `precision: "float32"`;
 - `channels`, `lmax` and `radial_modes` inside the compiled sets listed above;
 - an empty
   {ref}`exclude_types <model[standard]/descriptor[dpa4c]/exclude_types>`, since
   the fused kernel has no type-exclusion branch.
 
-`dp --pt-expt compress` reports an explicit error when any of these is not met.
+`dp --pt-expt compress` and `freeze --compress` report an explicit error when
+any of these is not met.
 A model that excludes type pairs still trains and runs; deploy it as the
 uncompressed graph archive.
 
@@ -276,6 +440,14 @@ Run under Kokkos with one GPU:
 ```bash
 lmp -k on g 1 -sf kk -in in.lammps
 ```
+
+On a single MPI rank, the Kokkos styles replay the evaluation of the model as
+a CUDA graph from step to step. A step that also computes the per-atom virial,
+which `compute centroid/stress/atom` requests (the Kokkos styles provide the
+nine-component per-atom virial only), evaluates more outputs than the steps
+around it: that step and the next one run without the replay, which resumes
+one step later. Requesting the per-atom virial at a coarse interval keeps this
+cost small.
 
 ### CPU hosts
 
@@ -347,6 +519,18 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
 
 Use a non-zero neighbor skin, for example `neighbor 2.0 bin`, to keep per-step
 GPU memory stable; a zero skin rebuilds the neighbor list every step.
+
+Use an MPI library that can access GPU memory (CUDA-aware MPI);
+[Install LAMMPS](../install/install-lammps.md#mpi-for-runs-on-several-gpus)
+describes the setup. The KOKKOS package of LAMMPS then exchanges atom data
+between ranks directly in GPU memory. When LAMMPS detects an MPI library without
+this support, it prints a warning, turns GPU-aware communication off and copies
+the whole position array through host memory at every step;
+`pair_style deepmd/kk` and `pair_style dpa4spin/kk` then send the forces of
+ghost atoms to the ranks that own them themselves, staging only those values in
+host memory. On three RTX PRO 6000 GPUs with one million carbon atoms, a step of
+the Nano model took 6.8 ms with a CUDA-aware Open MPI and 11.3 ms with an MPI
+library without CUDA support, against 15.2 ms on one GPU.
 
 ## Inference settings
 
@@ -462,12 +646,15 @@ from a broken data pipeline and reports a vanishing magnetic force.
 ### Running a spin model in LAMMPS
 
 Freeze and compress exactly as for any other DPA4C model, then select a spin
-pair style from the table under
-[Choosing a pair style](#choosing-a-pair-style). Both spin styles require
-`atom_style spin`:
+pair style from the table under [Choosing a pair style](#choosing-a-pair-style).
+Both spin styles require `atom_style spin` and, on a single MPI rank, an atom
+map; the
+[LAMMPS command reference](../third-party/lammps-command.md#pair_style-dpa4spin)
+describes their keywords. A minimal input reads:
 
 ```lammps
 atom_style        spin
+atom_modify       map yes
 pair_style        dpa4spin compressed_model.pt2
 pair_coeff        * * Ni O
 ```
@@ -477,13 +664,54 @@ already performs, and the magnetic force is reduced back onto owning atoms
 alongside the conservative force, so domain decomposition needs no additional
 exchange.
 
-`min_style spin` reads the magnetic force from the pair style and relaxes the
-moment directions. Spin dynamics through `fix nve/spin` requires a LAMMPS build
-whose fix recognizes this pair style, because the stock fix accumulates the
-magnetic force only from pair styles matching its own name pattern.
+By default the pair styles store the precession magnetic force that the LAMMPS
+SPIN package expects, the negative energy gradient `-dE/dS` scaled by the
+moment magnitude over `hbar`. `min_style spin` reads this force and relaxes the
+moment directions. The `fix nve/spin` of a stock LAMMPS build does not use this
+force: the fix evaluates the magnetic force itself, through the pair styles
+whose names begin with `spin`, and `dpa4spin` and `dpa4spin/kk` are not among
+them. With no such pair style, the fix runs silently on a single MPI rank and
+stops with a sectoring error on several. Spin dynamics therefore needs a LAMMPS
+build whose integrator reads the magnetic force of these pair styles.
+
+A Newtonian integrator of the Cartesian spin vector needs `-dE/dS` itself
+rather than the precession force. The keyword `magnetic_force cartesian`
+selects `-dE/dS` and requires `units metal`:
+
+```lammps
+pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
+```
+
+The pair styles declare the selected convention through the scalar integer
+`Pair::extract("fm_cartesian_force", dim)`, zero for precession and one for
+Cartesian, so such an integrator can reject a pair style left at the default.
 
 A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
 is provided in `examples/spin/dpa4c/lmp/`.
+
+## Embedding extraction
+
+A trained DPA4C model exports learned representations for downstream analysis
+with `dp embed`. A single forward pass (no force or virial) produces the per-atom
+`descriptor`, the per-atom `atomic_feature` (the activation after the last
+fitting hidden layer), and the per-frame `structural_feature` (the sum of
+`atomic_feature` over real atoms not excluded by `atom_exclude_types`):
+
+```bash
+dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
+```
+
+Atoms excluded by `atom_exclude_types` retain their per-atom `descriptor` and
+`atomic_feature`; only the structural sum leaves them out.
+
+The command reads the training checkpoint (`.pt`) or the frozen model (`.pt2`),
+compressed or not, and a ZBL-bridged model reports the embeddings of its learned
+model. Unlike a LAMMPS run, `dp embed` reads the
+[inference settings](#inference-settings) when it runs rather than at export: on
+a GPU, a compressed model computes its descriptor with the fused kernels only
+when `DP_CUDA_INFER` is at least `1` for the command. See
+[model embeddings](../inference/embedding.md) for the output format and the
+Python interface.
 
 ## Data format
 

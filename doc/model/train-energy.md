@@ -151,17 +151,42 @@ limit of the model is pinned. Two model options provide this together:
 
 `omat24` is one of the bundled tables of isolated-atom energies in eV:
 
-| Name     | Reference calculation | Elements                                  |
-| -------- | --------------------- | ----------------------------------------- |
-| `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
-| `omol25` | OMol25, neutral atoms | 83, H to Bi                               |
-| `omc25`  | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
-| `odac25` | ODAC25                | 94, H to Pu                               |
+| Name             | Reference calculation | Elements                                  |
+| ---------------- | --------------------- | ----------------------------------------- |
+| `domain_cluster` | Domain_cluster        | 9: Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, Au     |
+| `openmd`         | OpenMD, ABACUS PBE PW | 83, H to Bi                               |
+| `mptraj`         | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omat24`         | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omol25`         | OMol25, neutral atoms | 83, H to Bi                               |
+| `omc25`          | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
+| `odac25`         | ODAC25                | 94, H to Pu                               |
 
-These four tables are the isolated-atom reference energies of the UMA training
-tasks published with fairchem
+The `mptraj` table uses the final VASP `free energy TOTEN`, in eV.
+
+The `omat24`, `omol25`, `omc25` and `odac25` tables are the isolated-atom
+reference energies of the UMA training tasks published with fairchem
 (`configs/uma/training_release/element_refs/iso_atom_elem_refs.yaml`, MIT
-license). Each table is on the energy scale of its own reference calculation
+license).
+
+The `openmd` table contains the OpenMD ABACUS PBE plane-wave atomic
+reference energies from `ABACUS_PBE_PW_atom_E0.json` (H to Bi), in eV.
+Use `"preset_out_bias": {"energy": "openmd"}` to select it.
+These are ABACUS 3.9.0 `!FINAL_ETOT_IS` values calculated with the OpenMD
+UPF pseudopotentials, a 100 Ry cutoff, a 30 Angstrom cubic cell, Gamma-point
+sampling, `nspin=1`, no SOC, and Gaussian smearing of 0.01 Ry.
+They are finite-smearing, non-spin-polarized references, rather than
+spin-polarized free-atom ground-state energies. The La value
+(-950.8377156904378 eV) is the accepted final-step energy after 120 SCF
+iterations; its final density residual was 1.2043e-7 against a target of
+1e-8. The other 82 elements met that SCF threshold.
+
+The `domain_cluster` table contains the supplied Domain_cluster atomic energy
+reference biases in eV for Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, and Au. Select it
+with `"preset_out_bias": {"energy": "domain_cluster"}`. Elements outside these
+nine entries are unassigned; every element present in the training data must
+have a reference value.
+
+Each table is on the energy scale of its own reference calculation
 (the OMat24 table gives H = -1.117 eV, the OMol25 table H = -13.446 eV), so a
 model takes the table of the calculation that produced its training data. A
 table of another reference calculation is given as a JSON file
@@ -206,9 +231,13 @@ the autograd route instead.
 
 `vacuum_ref` is available for DPA4/SeZM on the PyTorch backend and for the
 graph-native models (DPA1, DPA2, DPA4 and DPA4C) on the pt_expt backend, whose
-flat node axis carries the reference atoms. Fine-tuning and `dp change-bias`
-keep the reference; a `preset_out_bias` given to them fixes the bias again
-without statistics.
+flat node axis carries the reference atoms. Fine-tuning keeps the reference
+and applies its configured `preset_out_bias` without fitting assigned outputs.
+Standalone `dp change-bias` also keeps the reference, but fits residuals from
+the stored bias without reapplying checkpoint presets. Non-finite stored bias
+cells covered by a finite checkpoint preset are recovered before residual
+fitting; finite adjusted values are preserved. To set an energy bias explicitly
+without statistics, use `dp change-bias --bias-value ...`.
 
 ## Loss
 

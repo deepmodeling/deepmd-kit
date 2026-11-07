@@ -5,7 +5,9 @@ All code here is pure Python/NumPy/lmdb/msgpack — no framework dependency.
 Backend-specific wrappers (PyTorch Dataset, JAX, etc.) import from here.
 """
 
+import copy
 import dataclasses
+import hashlib
 import logging
 import math
 import multiprocessing
@@ -30,6 +32,9 @@ from concurrent.futures.process import (
 from dataclasses import (
     dataclass,
 )
+from itertools import (
+    islice,
+)
 from pathlib import (
     Path,
 )
@@ -43,7 +48,9 @@ import msgpack
 import numpy as np
 
 from deepmd.dpmodel.utils.dist_check import (
-    compute_min_pair_dist_single,
+    compute_min_pair_margin_batch,
+    compute_min_pair_margin_single,
+    requirement_half_thresholds,
 )
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -58,6 +65,7 @@ from deepmd.utils.data import (
     DataRequirementItem,
     DataRequirementSourcePolicy,
 )
+from deepmd.utils.data_path import is_lmdb as is_lmdb
 
 log = logging.getLogger(__name__)
 
@@ -125,7 +133,7 @@ _FRAME_LEVEL_KEYS = frozenset(
         "charge_spin",
         "natoms",
         "real_natoms_vec",
-        "min_pair_dist",
+        "pair_margin",
     }
 )
 
@@ -655,16 +663,27 @@ def _scan_lmdb_path_in_worker(
         executor.shutdown(wait=True, cancel_futures=True)
 
 
-def _remap_atom_types(atype: np.ndarray, type_remap: np.ndarray) -> np.ndarray:
-    """Remap real atom types while preserving negative virtual sentinels.
-
-    Positive indices retain NumPy's normal bounds checking, so malformed LMDB
-    data cannot be silently reinterpreted as a different species.
-    """
-    remapped_atype = atype.astype(np.int64, copy=True)
-    real_atom_mask = remapped_atype >= 0
-    remapped_atype[real_atom_mask] = type_remap[remapped_atype[real_atom_mask]]
-    return remapped_atype
+def _make_type_remap(
+    lmdb_type_map: list[str] | None, type_map: list[str] | None
+) -> np.ndarray | None:
+    """Map declared source types to model indices, marking unsupported entries."""
+    if (
+        lmdb_type_map is None
+        or type_map is None
+        or list(lmdb_type_map) == list(type_map)
+    ):
+        return None
+    remap = np.array(
+        [type_map.index(name) if name in type_map else -1 for name in lmdb_type_map],
+        dtype=np.int32,
+    )
+    log.info(
+        "Type remapping: LMDB %s -> model %s, remap=%s",
+        lmdb_type_map,
+        type_map,
+        remap,
+    )
+    return remap
 
 
 @dataclass
@@ -683,11 +702,24 @@ class LmdbDecodeConfig:
     natoms
         Fallback atom count for records without ``atom_types``.
     type_remap
-        Optional LMDB-type to model-type lookup table.
+        Optional LMDB-type to model-type lookup table. Negative entries denote
+        unsupported elements, rejected only when referenced by a real atom.
     data_requirements
         Registered data requirements keyed by field name.
     dataset
         Dataset identifier used in frame-level diagnostics.
+    type_map
+        Element symbols of the model types, from which a derived field sizes
+        the per-type length scale it measures against.
+    frame_transform
+        Optional callable applied to every decoded frame, as
+        ``transform(frame, frame_index)``. Self-supervised objectives corrupt
+        their inputs and derive their labels here, before the model runs, which
+        is the only place that works for a backend whose loss never sees the
+        model. ``None``, the default, leaves decoding unchanged.
+    lmdb_type_map
+        Source element symbols used to identify unsupported atom types in
+        frame-level diagnostics.
     """
 
     ntypes: int
@@ -695,6 +727,9 @@ class LmdbDecodeConfig:
     type_remap: np.ndarray | None
     data_requirements: dict[str, Any]
     dataset: str = "<unknown LMDB>"
+    type_map: list[str] | None = None
+    frame_transform: Callable[[dict[str, Any], int], dict[str, Any]] | None = None
+    lmdb_type_map: list[str] | None = None
 
 
 def _requirement_dtype(requirement: Any) -> np.dtype:
@@ -838,6 +873,92 @@ def _compute_frame_natoms(atype: np.ndarray, ntypes: int) -> np.ndarray:
     return natoms
 
 
+def _resolve_derived_batch(
+    batch: dict[str, Any],
+    key: str,
+    requirement: Any,
+    config: LmdbDecodeConfig,
+    layout: "BatchLayout",
+) -> None:
+    """Resolve one derived field from the assembled arrays of a batch.
+
+    The batch holds the same structural data as its frames, and taking the
+    field here lets the geometric scan cross the frames of the batch in one
+    pass. The value settles the frame against the window the requirement
+    declares, exactly as the per-frame
+    :func:`_resolve_derived_requirement` does, and equals the minimum pair
+    margin whenever that margin decides the frame; a frame the window accepts
+    may carry a larger margin that it reaches, because the scan stops once
+    the side is known.
+
+    Parameters
+    ----------
+    batch : dict[str, Any]
+        Assembled batch, modified in place.
+    key : str
+        Name of the derived field.
+    requirement : Any
+        Its data requirement.
+    config : LmdbDecodeConfig
+        Decoder state, which fixes the field dtype and the pair length scale.
+    layout : BatchLayout
+        Where each frame's per-atom rows are, which tells a ragged batch from
+        a rectangular one.
+    """
+    if key != "pair_margin":
+        raise ValueError(f"Unsupported derived LMDB field {key!r}")
+
+    coord = batch.get("coord")
+    atype = batch.get("atype")
+    if not isinstance(coord, np.ndarray) or not isinstance(atype, np.ndarray):
+        batch.pop(key, None)
+        batch[f"find_{key}"] = np.float32(0.0)
+        return
+
+    # A frame without periodicity carries a cell of zeros, which the scan
+    # reads frame by frame; the batch may hold both kinds.
+    margins = compute_min_pair_margin_batch(
+        coord,
+        batch.get("box"),
+        atype,
+        _derived_half_thresholds(requirement, config),
+        n_node=layout.n_node if layout.ragged else None,
+        screened=True,
+    )
+    batch[key] = margins.reshape(-1, 1).astype(
+        _resolve_frame_dtype(config, key), copy=False
+    )
+    batch[f"find_{key}"] = np.float32(1.0)
+
+
+def _derived_half_thresholds(
+    requirement: Any,
+    config: LmdbDecodeConfig,
+) -> np.ndarray:
+    """Resolve the per-type half-thresholds a derived margin measures against.
+
+    Parameters
+    ----------
+    requirement : Any
+        The data requirement, whose default carries the filter radius and
+        whose length scale names the per-element radii it multiplies.
+    config : LmdbDecodeConfig
+        Decoder state, which carries the model type map.
+
+    Returns
+    -------
+    np.ndarray
+        Half-thresholds in Å with shape ``(ntypes,)``, read-only because every
+        frame of a decoder shares one table.
+    """
+    return requirement_half_thresholds(
+        float(_requirement_value(requirement, "default", 0.0)),
+        str(_requirement_value(requirement, "length_scale", "absolute")),
+        None if config.type_map is None else tuple(config.type_map),
+        config.ntypes,
+    )
+
+
 def _resolve_derived_requirement(
     frame: dict[str, Any],
     key: str,
@@ -845,7 +966,7 @@ def _resolve_derived_requirement(
     config: LmdbDecodeConfig,
 ) -> None:
     """Resolve one derived field from normalized structural frame data."""
-    if key != "min_pair_dist":
+    if key != "pair_margin":
         raise ValueError(f"Unsupported derived LMDB field {key!r}")
 
     coord = frame.get("coord")
@@ -858,9 +979,16 @@ def _resolve_derived_requirement(
     box = frame.get("box")
     if box is not None and np.allclose(box, 0.0):
         box = None
-    threshold = float(_requirement_value(requirement, "default", 0.0))
     frame[key] = np.array(
-        [compute_min_pair_dist_single(coord, box, atype, stop_below=threshold)],
+        [
+            compute_min_pair_margin_single(
+                coord,
+                box,
+                atype,
+                _derived_half_thresholds(requirement, config),
+                screened=True,
+            )
+        ],
         dtype=_resolve_frame_dtype(config, key),
     )
     frame[f"find_{key}"] = np.float32(1.0)
@@ -872,6 +1000,7 @@ def decode_lmdb_frame(
     config: LmdbDecodeConfig,
     *,
     copy_arrays: bool,
+    derive: bool = True,
 ) -> dict[str, Any]:
     """Decode and normalize one LMDB record.
 
@@ -887,6 +1016,11 @@ def decode_lmdb_frame(
         Whether encoded arrays are copied while unpacking. Batch decoding sets
         this to ``False`` because every value is copied exactly once into its
         preallocated batch destination.
+    derive
+        Whether the derived data requirements are resolved on this frame.
+        Batch decoding sets this to ``False`` and resolves them once on the
+        assembled batch, where the geometric scan they need runs over all
+        frames at once.
 
     Returns
     -------
@@ -929,7 +1063,26 @@ def decode_lmdb_frame(
     if "atype" in frame and isinstance(frame["atype"], np.ndarray):
         frame["atype"] = frame["atype"].reshape(-1).astype(np.int64, copy=False)
         if config.type_remap is not None:
-            frame["atype"] = _remap_atom_types(frame["atype"], config.type_remap)
+            atype = frame["atype"]
+            real_atom_mask = atype >= 0
+            real_types = atype[real_atom_mask]
+            # Negative input sentinels are not lookup indices. Positive indices
+            # retain NumPy's bounds checks for malformed source type indices.
+            mapped = config.type_remap[real_types]
+            unsupported = mapped < 0
+            if np.any(unsupported):
+                indices = np.unique(real_types[unsupported])
+                missing = (
+                    [config.lmdb_type_map[index] for index in indices]
+                    if config.lmdb_type_map is not None
+                    else indices.tolist()
+                )
+                raise ValueError(
+                    f"LMDB frame {original_key} in '{config.dataset}' uses atom "
+                    f"types {missing} not found in model type_map {config.type_map}"
+                )
+            frame["atype"] = atype.copy()
+            frame["atype"][real_atom_mask] = mapped
     if "virial" in frame and isinstance(frame["virial"], np.ndarray):
         frame["virial"] = (
             frame["virial"]
@@ -952,7 +1105,7 @@ def decode_lmdb_frame(
 
     requirements = config.data_requirements
     for key, requirement in requirements.items():
-        if _requirement_source_policy(requirement) == "derived":
+        if derive and _requirement_source_policy(requirement) == "derived":
             _resolve_derived_requirement(frame, key, requirement, config)
 
     structural_keys = frozenset(
@@ -965,6 +1118,12 @@ def decode_lmdb_frame(
             "fid",
         }
     )
+    if config.frame_transform is not None:
+        # Ahead of the requirement checks below: a self-supervised transform is
+        # what produces the fields those checks look for, by corrupting the
+        # input it was handed.
+        frame = config.frame_transform(frame, original_key)
+
     for key in list(frame):
         if key.startswith("find_") or key in structural_keys or key in requirements:
             continue
@@ -1289,6 +1448,7 @@ def decode_lmdb_batch(
             int(original_key),
             config,
             copy_arrays=False,
+            derive=False,
         )
         frame_nloc = frame["coord"].shape[0]
         if layout is None:
@@ -1367,6 +1527,9 @@ def decode_lmdb_batch(
             batch.pop(field, None)
     if layout.ragged:
         batch["n_node"] = layout.n_node
+    for key, requirement in config.data_requirements.items():
+        if _requirement_source_policy(requirement) == "derived":
+            _resolve_derived_batch(batch, key, requirement, config, layout)
     batch["sid"] = np.asarray([0], dtype=np.int64)
     return batch
 
@@ -1588,7 +1751,7 @@ class LmdbBatchIterator:
     reader
         LMDB reader that owns metadata and the synchronous transaction.
     sampler
-        Finite iterator yielding same-nloc dataset-index batches.
+        Finite sized iterable yielding dataset-index batches.
     num_workers
         Decoder process count. Zero or one selects synchronous decoding.
     """
@@ -1604,6 +1767,15 @@ class LmdbBatchIterator:
         self._reader = reader
         self._sampler = sampler
         self._epoch = 0
+        # These name the next batch the consumer will see, not the pass that
+        # the one-ahead decoder (or the sampler itself) has already entered.
+        self._next_epoch = 0
+        self._next_batch_index = 0
+        self._resume_batch_index = 0
+        self._restore_config: dict[str, Any] | None = None
+        self._queued_pass_length = 0
+        self._queued_nframes = 0.0
+        self._last_pass_length: int | None = None
         self._iterator = self._iter_epoch()
         self._num_workers = num_workers
         self._pool: _LmdbPoolEntry | None = None
@@ -1623,11 +1795,20 @@ class LmdbBatchIterator:
             batch = self._collect(pending)
         elif self._deferred_indices is not None:
             indices, self._deferred_indices = self._deferred_indices, None
-            batch = self._reader.decode_batch(indices)
+            batch = self._decode(indices)
         else:
-            batch = self._decode(self._next_indices())
+            indices, self._queued_pass_length, self._queued_nframes = (
+                self._next_indices()
+            )
+            batch = self._decode(indices)
 
-        self._schedule(self._next_indices())
+        self._last_pass_length = self._queued_pass_length
+        self._next_batch_index += 1
+        if self._next_batch_index == self._last_pass_length:
+            self._next_epoch += 1
+            self._next_batch_index = 0
+        indices, self._queued_pass_length, self._queued_nframes = self._next_indices()
+        self._schedule(indices)
         return batch
 
     def _decode(self, indices: list[int]) -> dict[str, Any]:
@@ -1706,7 +1887,7 @@ class LmdbBatchIterator:
             "decoders outlive the session that started it."
         )
 
-    def _next_indices(self) -> list[int]:
+    def _next_indices(self) -> tuple[list[int], int, float]:
         """Return the next sampler batch and restart after exhaustion."""
         try:
             return next(self._iterator)
@@ -1715,12 +1896,160 @@ class LmdbBatchIterator:
             self._iterator = self._iter_epoch()
             return next(self._iterator)
 
-    def _iter_epoch(self) -> Iterator[list[int]]:
-        """Create a sampler iterator for the current epoch."""
+    def _iter_epoch(self) -> Iterator[tuple[list[int], int, float]]:
+        """Snapshot each batch's pass length and rank-averaged frame count."""
+        if self._restore_config is not None:
+            self._check_restore_config(self._restore_config)
+            self._restore_config = None
         set_epoch = getattr(self._sampler, "set_epoch", None)
         if callable(set_epoch):
             set_epoch(self._epoch)
-        return iter(self._sampler)
+        # Samplers can advance before their first yield, and prefetch can
+        # enter another pass before the current batch reaches its consumer.
+        # Snapshot the length lazily, after data requirements and layout are set.
+        pass_length = len(self._sampler)
+        if pass_length == 0 and self._resume_batch_index == 0:
+            return
+        if not 0 <= self._resume_batch_index < pass_length:
+            raise ValueError(
+                f"LMDB batch index {self._resume_batch_index} is out of range "
+                f"for epoch {self._epoch} with {pass_length} batches"
+            )
+        # This iterator already owns epoch advancement. Retain the sampler's
+        # current pass instead of its standalone __iter__ advancing and
+        # invalidating it, so diagnostic reads can rewind within the pass.
+        pass_batches = (
+            self._sampler.batches()
+            if isinstance(self._sampler, LmdbBatchSampler)
+            else self._sampler
+        )
+        frame_counts = getattr(self._sampler, "batch_frame_counts", None)
+        counts = frame_counts() if frame_counts is not None else None
+        start = self._resume_batch_index
+        batches = islice(pass_batches, start, None)
+        self._resume_batch_index = 0
+        for index, indices in enumerate(batches, start):
+            nframes = len(indices) if counts is None else counts[index]
+            yield indices, pass_length, float(nframes)
+
+    @property
+    def uniform_sampling_mass(self) -> float:
+        """Weight the next batch by its retained systems per sampled frame.
+
+        Only sampler indices are inspected; no extra batch is decoded. The
+        frame count belongs to the queued batch, even when prefetching has
+        already advanced the sampler to another pass. Distributed samplers
+        report the same rank-averaged count on every rank.
+        """
+        nsystems = self._reader.sampling_nsystems
+        if not nsystems:
+            return 0.0
+        if self._pending is None and self._deferred_indices is None:
+            (
+                self._deferred_indices,
+                self._queued_pass_length,
+                self._queued_nframes,
+            ) = self._next_indices()
+        return nsystems / self._queued_nframes
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        """Return the systems-per-frame weight averaged over a sampler pass."""
+        nsystems = self._reader.sampling_nsystems
+        if not nsystems:
+            return 0.0
+        return nsystems / float(np.mean(self._sampler.batch_frame_counts()))
+
+    def _sampling_config(self) -> dict[str, Any]:
+        """Describe sampling without building a pass or reading any frames."""
+        reader, sampler = self._reader, self._sampler
+        if not isinstance(sampler, (LmdbBatchSampler, DistributedLmdbBatchSampler)):
+            raise TypeError("LMDB progress requires an LMDB batch sampler")
+        return {
+            "path": reader.lmdb_path,
+            "transaction": reader._transaction().id(),
+            "nframes": len(reader),
+            "type_map": list(reader.type_map),
+            "batch_rule": [
+                reader.batch_size,
+                reader._auto_rule,
+                reader._max_rule,
+                reader._filter_rule,
+                reader._mix_rule,
+            ],
+            "ragged": reader.ragged_batches,
+            "availability_keys": list(
+                _availability_requirement_keys(reader._data_requirements)
+            ),
+            "shuffle": sampler._shuffle,
+            "configured_seed": sampler._configured_seed,
+            "world_size": getattr(sampler, "world_size", 1),
+            "block_targets": hashlib.sha256(
+                msgpack.packb(sampler._block_targets, use_bin_type=True)
+            ).hexdigest(),
+        }
+
+    def _check_restore_config(
+        self, config: dict[str, Any], *, final: bool = True
+    ) -> None:
+        """Reject changed sampling, deferring trainer-selected configuration."""
+        current = self._sampling_config()
+        for key in current:
+            if not final and key in {"ragged", "availability_keys"}:
+                continue
+            if config.get(key) != current[key]:
+                raise ValueError(f"LMDB data progress is incompatible: {key} changed")
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return a compact next-batch checkpoint for this rank.
+
+        No decoded frames, permutations or prefetched work are serialized.
+        Each rank restores its deterministic partition using its own consumed
+        cursor. Filtering can advance ranks differently, so distributed
+        checkpoint writers must retain every rank's state.
+        """
+        config = (
+            self._restore_config
+            if self._restore_config is not None
+            else self._sampling_config()
+        )
+        return {
+            "version": 1,
+            "epoch": self._next_epoch,
+            "batch_index": self._next_batch_index,
+            "seed": self._sampler._seed,
+            "config": copy.deepcopy(config),
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore without sampling or decoding, even before trainer setup.
+
+        Data requirements and the ragged layout may still be registered after
+        this call. Their identity and the saved offset are checked lazily on
+        the first batch, before decoding it. Rebuilding only the saved pass
+        skips batch indices, never the frames of earlier batches or epochs.
+        """
+        if self._closed:
+            raise RuntimeError("cannot restore a closed LMDB batch iterator")
+        if state.get("version") != 1:
+            raise ValueError("Unsupported LMDB data progress version")
+        for key in ("epoch", "batch_index", "seed"):
+            if type(state.get(key)) is not int or state[key] < 0:
+                raise ValueError(f"LMDB data progress {key} must be a non-negative int")
+        config = state.get("config")
+        if not isinstance(config, dict):
+            raise ValueError("LMDB data progress is missing its sampling configuration")
+        self._check_restore_config(config, final=False)
+        self._discard_prefetch()
+        self._sampler.set_seed(state["seed"])
+        self._sampler.set_epoch(state["epoch"])
+        self._epoch = self._next_epoch = state["epoch"]
+        self._next_batch_index = self._resume_batch_index = state["batch_index"]
+        self._restore_config = copy.deepcopy(config)
+        self._queued_pass_length = 0
+        self._queued_nframes = 0.0
+        self._last_pass_length = None
+        self._iterator = self._iter_epoch()
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
         """Submit one batch as balanced contiguous chunks.
@@ -1762,6 +2091,13 @@ class LmdbBatchIterator:
         self._deferred_indices = None if futures else indices
 
     @property
+    def batch_pass_length(self) -> int:
+        """Length of the last returned batch's pass, or the first pending pass."""
+        if self._last_pass_length is None:
+            return self._queued_pass_length or len(self._sampler)
+        return self._last_pass_length
+
+    @property
     def started(self) -> bool:
         """Whether this iterator has acquired the shared process pool."""
         return self._pool is not None
@@ -1771,11 +2107,8 @@ class LmdbBatchIterator:
         """Whether this iterator has released its resources."""
         return self._closed
 
-    def close(self) -> None:
-        """Finish or cancel prefetched work and release the decoder pool."""
-        if self._closed:
-            return
-        self._closed = True
+    def _discard_prefetch(self) -> None:
+        """Discard queued reads while preserving the shared pool's health state."""
         if self._pending is not None:
             running = [
                 future for future in self._pending.futures if not future.cancel()
@@ -1784,14 +2117,16 @@ class LmdbBatchIterator:
                 self._lose_the_pool(running)
             self._pending = None
         self._deferred_indices = None
+
+    def close(self) -> None:
+        """Finish or cancel prefetched work and release the decoder pool."""
+        if self._closed:
+            return
+        self._closed = True
+        self._discard_prefetch()
         if self._pool is not None:
             self._pool = None
             _release_lmdb_executor(self._num_workers)
-
-
-def is_lmdb(systems: str) -> bool:
-    """Check if systems points to an LMDB dataset."""
-    return systems.endswith(".lmdb") or Path(systems, "data.mdb").is_file()
 
 
 def _parse_metadata(meta: dict) -> tuple[int, str, list[int]]:
@@ -1916,6 +2251,8 @@ class LmdbDataReader:
 
     Reads LMDB frames and returns dicts of numpy arrays.
     Backend-specific Dataset classes (PyTorch, JAX, etc.) wrap this.
+    Element compatibility is checked on decoded real atoms, not on unused
+    entries in the dataset's element table.
 
     An LMDB typically holds frames of many different atom counts. The
     ``batch_size`` rule decides how those frames are grouped:
@@ -1982,25 +2319,8 @@ class LmdbDataReader:
         self._natoms = sum(self._natoms_per_type)
         self._ntypes = len(type_map)
 
-        # Build type remapping if LMDB's type_map differs from model's type_map
-        lmdb_type_map = meta.get("type_map")
-        self._lmdb_type_map = lmdb_type_map
-        self._type_remap: np.ndarray | None = None
-        if lmdb_type_map is not None and list(lmdb_type_map) != list(type_map):
-            # Build remap: lmdb_type_idx -> model_type_idx
-            remap = np.empty(len(lmdb_type_map), dtype=np.int32)
-            for i, name in enumerate(lmdb_type_map):
-                if name not in type_map:
-                    raise ValueError(
-                        f"Element '{name}' in LMDB type_map {lmdb_type_map} "
-                        f"not found in model type_map {type_map}"
-                    )
-                remap[i] = type_map.index(name)
-            self._type_remap = remap
-            log.info(
-                f"Type remapping: LMDB {lmdb_type_map} -> model {type_map}, "
-                f"remap={remap}"
-            )
+        self._lmdb_type_map = meta.get("type_map")
+        self._type_remap = _make_type_remap(self._lmdb_type_map, type_map)
 
         # The parent transaction serves synchronous reads. Decoder workers open
         # independent process-local environments and transactions.
@@ -2095,7 +2415,7 @@ class LmdbDataReader:
 
         # Re-key _frame_nlocs / _frame_system_ids into the dataset-index
         # space so that every downstream consumer (nloc_groups, system_groups,
-        # LmdbBatchSampler, _expand_indices_by_blocks) operates in a single,
+        # LmdbBatchSampler, _resample_indices_by_blocks) operates in a single,
         # self-consistent indexing scheme.
         keys_are_identity = retained_keys.size == self.nframes
         self._keys_are_identity = keys_are_identity
@@ -2132,6 +2452,7 @@ class LmdbDataReader:
             ).tolist()
         else:
             self._system_nframes = [self.nframes]
+        self.sampling_nsystems = sum(count > 0 for count in self._system_nframes)
 
         # Nominal batch size, reported to callers that want a single number.
         # The sampler never uses it: same-nloc modes go through
@@ -2163,6 +2484,8 @@ class LmdbDataReader:
             type_remap=self._type_remap,
             data_requirements=self._data_requirements,
             dataset=self.lmdb_path,
+            type_map=self._type_map,
+            lmdb_type_map=self._lmdb_type_map,
         )
         # Which fields carry an atom axis follows from the registered
         # requirements, so this cache is invalidated when they change.
@@ -2317,7 +2640,7 @@ class LmdbDataReader:
         # workers a chunk of it is shipped to.
         return BatchLayout.over(
             self._frame_nlocs[np.asarray(indices, dtype=np.int64)].astype(np.int64),
-            self.per_atom_strides(),
+            self.per_atom_strides(indices[0]),
             ragged=self._ragged_batches if ragged is None else ragged,
         )
 
@@ -2350,12 +2673,18 @@ class LmdbDataReader:
         """
         self._ragged_batches = ragged and self.mixed_nloc
 
-    def per_atom_strides(self) -> dict[str, int]:
+    def per_atom_strides(self, index: int = 0) -> dict[str, int]:
         """Return the leading-axis entries per atom of each per-atom field.
 
         Every frame of one LMDB exposes the same fields, so the classification
         is a property of the dataset and its registered requirements rather
-        than of a batch, and is resolved from the first frame once.
+        than of a batch, and is resolved from a selected frame once.
+
+        Parameters
+        ----------
+        index : int, optional
+            Dataset index of the frame used to initialize the cached strides.
+            Batch consumers supply a member of their selected indices.
 
         Returns
         -------
@@ -2363,7 +2692,7 @@ class LmdbDataReader:
             Entries per atom, keyed by field name.
         """
         if self._per_atom_strides is None:
-            frame = self[0]
+            frame = self[index]
             self._per_atom_strides = per_atom_strides(
                 frame, resolve_per_atom_keys(frame, self._decode_config)
             )
@@ -2608,6 +2937,17 @@ class LmdbDataReader:
             stacklevel=2,
         )
 
+    def set_frame_transform(
+        self, transform: Callable[[dict[str, Any], int], dict[str, Any]] | None
+    ) -> None:
+        """Install a per-frame transform, or remove it with ``None``.
+
+        The transform runs on every decoded frame, in whichever process decodes
+        it, and receives ``(frame, frame_index)``. Self-supervised training uses
+        it to corrupt inputs and derive labels before the model runs.
+        """
+        self._decode_config.frame_transform = transform
+
     # --- Properties ---
 
     @property
@@ -2845,9 +3185,11 @@ def compute_block_targets(
 ) -> list[tuple[list[int], int]]:
     """Compute target frame count per block from auto_prob config.
 
-    Uses the same ``prob_sys_size_ext`` logic as the npy pipeline to parse
-    the ``auto_prob`` string, then converts per-system probabilities into
-    per-block target frame counts using the "max(frames/prob)" strategy.
+    Uniform sampling assigns each retained system the rounded-up mean frame
+    count. With ``N`` retained frames and ``M`` nonempty systems, the sampled
+    pass contains ``M * ceil(N / M)`` frames, fewer than ``N + M``.
+    Custom block rules use ``prob_sys_size_ext`` and the non-shrinking
+    ``max(frames / probability)`` strategy.
 
     Parameters
     ----------
@@ -2862,11 +3204,20 @@ def compute_block_targets(
     -------
     list[tuple[list[int], int]]
         Each element is ``(system_indices_in_block, target_frame_count)``.
-        Returns empty list if no expansion is needed (all targets == actual).
+        Returns an empty list if no resampling is needed (all targets == actual).
     """
-    from deepmd.utils.data_system import (
+    from deepmd.utils.data_sampling import (
         prob_sys_size_ext,
     )
+
+    if auto_prob_style == "prob_uniform":
+        retained = [index for index, count in enumerate(system_nframes) if count > 0]
+        if not retained:
+            return []
+        target = (sum(system_nframes) + len(retained) - 1) // len(retained)
+        if all(system_nframes[index] == target for index in retained):
+            return []
+        return [([index], target) for index in retained]
 
     # Parse block definitions from the auto_prob string
     # Format: "prob_sys_size;stt:end:weight;stt:end:weight;..."
@@ -2956,118 +3307,76 @@ def compute_block_targets(
     return result
 
 
-def _expand_indices_by_blocks(
-    indices: list[int],
+def _resample_indices_by_blocks(
+    indices: np.ndarray | list[int],
     frame_system_ids: np.ndarray,
-    block_targets: list[tuple[list[int], int]],
+    lookup: np.ndarray,
+    group_targets: list[int],
     rng: np.random.Generator,
-    _block_total_actual: list[int] | None = None,
-    _sid_to_blk_arr: np.ndarray | None = None,
-    _group_block_targets: list[int] | None = None,
 ) -> list[int]:
-    """Expand frame indices according to block targets.
+    """Resample a homogeneous group's frames to its exact block targets.
 
-    For each block, computes the proportional target for the subset of
-    indices belonging to that block (within the current nloc group),
-    then applies full-copy + remainder sampling.
+    Targets are allocated globally by :func:`_allocate_group_block_targets`.
+    A smaller target selects frames without replacement; a larger target
+    uses full-copy + remainder sampling.
 
     Parameters
     ----------
-    indices : list[int]
-        Frame indices in the current nloc group.
+    indices : numpy.ndarray or list[int]
+        Frame indices in the current homogeneous group.
     frame_system_ids : np.ndarray
         Per-frame system id for the entire dataset.
-    block_targets : list[tuple[list[int], int]]
-        Per-block (system_ids, total_target_frames).
+    lookup : numpy.ndarray
+        System-id to block-index table from :func:`system_block_lookup`.
+    group_targets : list[int]
+        Exact target for each block in this group.
     rng : np.random.Generator
-        RNG for remainder sampling.
-    _block_total_actual : list[int] or None
-        Pre-computed total actual frame count per block (across all nloc
-        groups).  When provided, avoids an O(N) scan of frame_system_ids.
-    _sid_to_blk_arr : np.ndarray or None
-        Pre-computed lookup from :func:`system_block_lookup`. When provided,
-        avoids rebuilding the mapping for each call.
-    _group_block_targets : list[int] or None
-        Exact target for each block in this group. Production samplers
-        allocate these targets globally across all groups so independent
-        rounding cannot change a block's total size.
+        RNG for subset and remainder sampling.
 
     Returns
     -------
     list[int]
-        Expanded indices.
+        Resampled indices.
     """
-    n_blocks = len(block_targets)
-
-    if _sid_to_blk_arr is None:
-        _sid_to_blk_arr = system_block_lookup(block_targets)
-
-    sid_arr = np.asarray(frame_system_ids)
     idx_arr = np.asarray(indices, dtype=np.int64)
-    idx_blks = resolve_frame_blocks(idx_arr, sid_arr, _sid_to_blk_arr)
-
-    # Pre-compute block_total_actual if not provided
-    if _block_total_actual is None and _group_block_targets is None:
-        _block_total_actual = count_group_blocks(
-            np.arange(sid_arr.size, dtype=np.int64),
-            sid_arr,
-            _sid_to_blk_arr,
-            n_blocks,
-        ).tolist()
-
-    expanded_parts: list[np.ndarray] = []
+    idx_blks = resolve_frame_blocks(idx_arr, frame_system_ids, lookup)
+    sampled_parts: list[np.ndarray] = []
 
     # Unassigned indices
     unassigned_mask = idx_blks == -1
     if np.any(unassigned_mask):
-        expanded_parts.append(idx_arr[unassigned_mask])
+        sampled_parts.append(idx_arr[unassigned_mask])
 
-    for blk_idx in range(n_blocks):
+    for blk_idx, target in enumerate(group_targets):
         blk_mask = idx_blks == blk_idx
         blk_idxs = idx_arr[blk_mask]
         n_actual = len(blk_idxs)
         if n_actual == 0:
             continue
 
-        if _group_block_targets is not None:
-            target = _group_block_targets[blk_idx]
-        else:
-            _, block_total_target = block_targets[blk_idx]
-            block_total_act = _block_total_actual[blk_idx]
-
-            # Backward-compatible fallback for direct callers. Samplers pass
-            # exact group targets allocated by _allocate_group_block_targets.
-            if block_total_act > 0:
-                target = round(block_total_target * n_actual / block_total_act)
-            else:
-                target = n_actual
-            target = max(target, n_actual)  # never shrink
-
         if target < n_actual:
-            raise ValueError(
-                "Per-group auto-probability target cannot shrink original frames: "
-                f"target={target}, actual={n_actual}, block={blk_idx}"
-            )
+            sampled_parts.append(rng.choice(blk_idxs, size=target, replace=False))
+            continue
 
         # Full copies + remainder
         deficit = target - n_actual
         if deficit <= 0:
-            expanded_parts.append(blk_idxs)
+            sampled_parts.append(blk_idxs)
         else:
             full_copies = deficit // n_actual
             remainder = deficit % n_actual
             # Original + full copies
             if full_copies > 0:
-                expanded_parts.append(np.tile(blk_idxs, 1 + full_copies))
+                sampled_parts.append(np.tile(blk_idxs, 1 + full_copies))
             else:
-                expanded_parts.append(blk_idxs)
+                sampled_parts.append(blk_idxs)
             # Remainder: sample without replacement
             if remainder > 0:
                 sampled = rng.choice(blk_idxs, size=remainder, replace=False)
-                expanded_parts.append(sampled)
+                sampled_parts.append(sampled)
 
-    if expanded_parts:
-        return np.concatenate(expanded_parts).tolist()
+    if sampled_parts:
+        return np.concatenate(sampled_parts).tolist()
     return []
 
 
@@ -3214,13 +3523,16 @@ def _allocate_group_block_targets(
     groups: list[np.ndarray],
     frame_system_ids: np.ndarray,
     block_targets: list[tuple[list[int], int]],
+    rng: np.random.Generator,
 ) -> list[list[int]]:
     """Allocate every block target exactly across homogeneous groups.
 
-    Original frames form the non-shrinking baseline. Each block's expansion
+    For expansion, original frames form the non-shrinking baseline. Each block's
     deficit is apportioned by actual group size using the integer largest-
     remainder method. Stable group order breaks equal-remainder ties, which
     keeps distributed ranks deterministic without floating-point rounding.
+    A smaller target instead samples group counts from a uniform subset of
+    the block's frames, so no small group is permanently excluded by rounding.
     """
     lookup = system_block_lookup(block_targets)
     group_actual = [
@@ -3233,17 +3545,26 @@ def _allocate_group_block_targets(
     group_targets = [counts.copy() for counts in group_actual]
     for block_index, (_system_ids, block_target) in enumerate(block_targets):
         block_actual = sum(counts[block_index] for counts in group_actual)
-        if block_target < block_actual:
-            raise ValueError(
-                "Auto-probability block target cannot shrink original frames: "
-                f"target={block_target}, actual={block_actual}, block={block_index}"
-            )
         if block_actual == 0:
             if block_target != 0:
                 raise ValueError(
                     "Cannot allocate a nonzero auto-probability target to an "
                     f"empty block: target={block_target}, block={block_index}"
                 )
+            continue
+
+        if block_target < block_actual:
+            # Uniform positions in the concatenated groups give the group
+            # counts of a global sample without replacement. Sampling within
+            # each group then gives every block frame the same inclusion chance.
+            stops = np.cumsum(
+                [counts[block_index] for counts in group_actual], dtype=np.int64
+            )
+            positions = rng.choice(block_actual, size=block_target, replace=False)
+            sampled_groups = np.searchsorted(stops, positions, side="right")
+            counts = np.bincount(sampled_groups, minlength=len(groups))
+            for group_index, target in enumerate(counts):
+                group_targets[group_index][block_index] = int(target)
             continue
 
         deficit = block_target - block_actual
@@ -3390,7 +3711,7 @@ def _build_all_batches(
         Random number generator (deterministic for reproducibility).
     block_targets : list[tuple[list[int], int]] or None
         Per-block (system_ids, target_frame_count) from compute_block_targets.
-        When provided, indices are expanded via full-copy + remainder sampling.
+        When provided, each block is resampled to its target frame count.
 
     Returns
     -------
@@ -3410,22 +3731,21 @@ def _build_all_batches(
     if block_targets and reader.frame_system_ids is not None:
         sid_arr = reader.frame_system_ids
         group_block_targets = _allocate_group_block_targets(
-            groups, sid_arr, block_targets
+            groups, sid_arr, block_targets, rng
         )
         sid_to_blk_arr = system_block_lookup(block_targets)
 
     for group_index, original_indices in enumerate(groups):
         indices = original_indices
-        # Expand each group independently using targets that were allocated
+        # Resample each group independently using targets that were allocated
         # globally, so that a block's total size is preserved exactly.
         if block_targets and sid_arr is not None and group_block_targets is not None:
-            indices = _expand_indices_by_blocks(
+            indices = _resample_indices_by_blocks(
                 indices,
                 sid_arr,
-                block_targets,
+                sid_to_blk_arr,
+                group_block_targets[group_index],
                 rng,
-                _sid_to_blk_arr=sid_to_blk_arr,
-                _group_block_targets=group_block_targets[group_index],
             )
         if shuffle:
             # ``permutation`` returns a copy, which matters because a group
@@ -3479,7 +3799,7 @@ class LmdbBatchSampler:
     seed : int or None
         Random seed for reproducibility.
     block_targets : list[tuple[list[int], int]] or None
-        Per-block expansion targets from compute_block_targets.
+        Per-block resampling targets from compute_block_targets.
     """
 
     def __init__(
@@ -3491,11 +3811,16 @@ class LmdbBatchSampler:
     ) -> None:
         self._reader = reader
         self._shuffle = shuffle
-        self._seed = seed
+        self._configured_seed = seed
+        # Draw entropy once, not once per epoch, so even an unseeded run can
+        # reconstruct its next pass from a compact checkpoint.
+        self._seed = int(np.random.SeedSequence().entropy) if seed is None else seed
         self._epoch = 0
         self._block_targets = block_targets
         self._batches: list[list[int]] | None = None
+        self._batch_frame_counts: np.ndarray | None = None
         self._data_requirements_revision = -1
+        self._ragged_batches: bool | None = None
 
     def batches(self) -> list[list[int]]:
         """Return the batch list of the pending pass, building it if needed.
@@ -3506,16 +3831,28 @@ class LmdbBatchSampler:
             Dataset indices grouped into batches.
         """
         revision = self._reader.data_requirements_revision
-        if self._batches is None or self._data_requirements_revision != revision:
-            seed = None if self._seed is None else self._seed + self._epoch
+        ragged = self._reader.mixed_nloc and self._reader.ragged_batches
+        if (
+            self._batches is None
+            or self._data_requirements_revision != revision
+            or self._ragged_batches != ragged
+        ):
             self._batches = _build_all_batches(
                 self._reader,
                 self._shuffle,
-                np.random.default_rng(seed),
+                np.random.default_rng(self._seed + self._epoch),
                 self._block_targets,
             )
             self._data_requirements_revision = revision
+            self._ragged_batches = ragged
+            self._batch_frame_counts = None
         return self._batches
+
+    def set_seed(self, seed: int) -> None:
+        """Restore the effective seed, invalidating any cached pass."""
+        if seed != self._seed:
+            self._seed = seed
+            self._batches = None
 
     def set_epoch(self, epoch: int) -> None:
         """Select the pass to serve, discarding any pass still pending.
@@ -3538,6 +3875,15 @@ class LmdbBatchSampler:
     def __len__(self) -> int:
         """Number of batches the pending pass holds."""
         return len(self.batches())
+
+    def batch_frame_counts(self) -> np.ndarray:
+        """Return the number of frames in each pending optimizer batch."""
+        batches = self.batches()
+        if self._batch_frame_counts is None:
+            self._batch_frame_counts = np.fromiter(
+                (len(batch) for batch in batches), dtype=np.float64
+            )
+        return self._batch_frame_counts
 
     @property
     def total_batches(self) -> int:
@@ -3576,7 +3922,7 @@ class DistributedLmdbBatchSampler:
     seed : int or None
         Base seed for deterministic RNG. All ranks must use the same seed.
     block_targets : list[tuple[list[int], int]] or None
-        Per-block expansion targets from compute_block_targets.
+        Per-block resampling targets from compute_block_targets.
     """
 
     def __init__(
@@ -3592,10 +3938,18 @@ class DistributedLmdbBatchSampler:
         self._rank = rank
         self._world_size = world_size
         self._shuffle = shuffle
+        self._configured_seed = seed
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
         self._global: LmdbBatchSampler | None = None
+        self._batch_frame_counts: np.ndarray | None = None
+
+    def set_seed(self, seed: int) -> None:
+        """Restore the common seed, invalidating any cached global pass."""
+        if seed != self._seed:
+            self._seed = seed
+            self._global = None
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch for deterministic cross-rank shuffling.
@@ -3616,7 +3970,11 @@ class DistributedLmdbBatchSampler:
                 seed=self._seed + self._epoch,
                 block_targets=self._block_targets,
             )
-        return self._global.batches()
+        previous = self._global._batches
+        batches = self._global.batches()
+        if batches is not previous:
+            self._batch_frame_counts = None
+        return batches
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield this rank's partition of the global batch list."""
@@ -3652,6 +4010,26 @@ class DistributedLmdbBatchSampler:
     def __len__(self) -> int:
         """Number of batches for this rank."""
         return len(self._partition_batches(self._global_batches()))
+
+    def batch_frame_counts(self) -> np.ndarray:
+        """Return rank-averaged frame counts for each pending optimizer step.
+
+        Padding matches the strided partition, so every rank obtains identical
+        source-selection weights even when their local batch sizes differ.
+        Custom partitioning strategies must provide their corresponding
+        rank-averaged counts when used with uniform source sampling.
+        """
+        self._global_batches()
+        if self._batch_frame_counts is None:
+            counts = self._global.batch_frame_counts()
+            self._batch_frame_counts = (
+                np.resize(counts, len(self) * self._world_size)
+                .reshape(-1, self._world_size)
+                .mean(axis=1)
+                if counts.size
+                else counts
+            )
+        return self._batch_frame_counts
 
     @property
     def total_batches(self) -> int:
@@ -3738,6 +4116,8 @@ class LmdbTestData:
 
     For mixed-nloc datasets, frames are grouped by nloc.
     get_test(nloc=...) returns data for a specific group.
+    Only types used by decoded frames must be supported by the model;
+    unused element-table entries do not restrict the model's type map.
     """
 
     def __init__(
@@ -3761,28 +4141,8 @@ class LmdbTestData:
             len(self._type_map) if self._type_map else len(self._natoms_per_type)
         )
 
-        # Build type remapping if LMDB's type_map differs from model's type_map
-        lmdb_type_map = meta.get("type_map")
-        self._lmdb_type_map = lmdb_type_map
-        self._type_remap: np.ndarray | None = None
-        if (
-            lmdb_type_map is not None
-            and self._type_map
-            and list(lmdb_type_map) != list(self._type_map)
-        ):
-            remap = np.empty(len(lmdb_type_map), dtype=np.int32)
-            for i, name in enumerate(lmdb_type_map):
-                if name not in self._type_map:
-                    raise ValueError(
-                        f"Element '{name}' in LMDB type_map {lmdb_type_map} "
-                        f"not found in model type_map {self._type_map}"
-                    )
-                remap[i] = self._type_map.index(name)
-            self._type_remap = remap
-            log.info(
-                f"LmdbTestData type remapping: LMDB {lmdb_type_map} -> "
-                f"model {self._type_map}, remap={remap}"
-            )
+        self._lmdb_type_map = meta.get("type_map")
+        self._type_remap = _make_type_remap(self._lmdb_type_map, self._type_map or None)
 
         # Select the frames to test, without reading any of them. Atom counts
         # come from the metadata, so grouping, shuffling and truncation are
@@ -3802,6 +4162,8 @@ class LmdbTestData:
             type_remap=self._type_remap,
             data_requirements=self._requirements,
             dataset=self.lmdb_path,
+            type_map=self._type_map,
+            lmdb_type_map=self._lmdb_type_map,
         )
 
         # Detect PBC from the first retained frame.
@@ -3809,11 +4171,13 @@ class LmdbTestData:
         first = next(
             (indices[0] for indices in self._nloc_groups.values() if len(indices)), None
         )
-        probe = self._read_frames([first]) if first is not None else []
-        if probe:
-            box = probe[0].get("box")
-            if not isinstance(box, np.ndarray) or np.allclose(box, 0.0):
-                self.pbc = False
+        if first is not None:
+            with self._env.begin() as transaction:
+                raw = transaction.get(format(first, self._frame_fmt).encode())
+            if raw is not None:
+                frame = _remap_keys(msgpack.unpackb(raw, raw=False))
+                box = _decode_value(frame.get("box"), copy_arrays=False)
+                self.pbc = isinstance(box, np.ndarray) and not np.allclose(box, 0.0)
 
         self.mixed_type = True
 
