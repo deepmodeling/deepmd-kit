@@ -2728,17 +2728,15 @@ class TestGraphInputLayout(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    torch.cuda.is_available() and dpa4c_op_available(),
-    "CUDA and the compiled DPA4C operator are required",
+    dpa4c_op_available(),
+    "the compiled DPA4C operator of the backend device is required",
 )
 class TestCompressedChargeStateRoutes(unittest.TestCase):
     """A compressed archive must serve one charge state to all of its routes.
 
-    Compression folds the condition into frozen tables that only the fused
-    kernel behind the compiled lower reads, while ``eval_descriptor`` and
-    ``eval_fitting_last_layer`` evaluate the model deserialized beside that
-    lower, which reads the condition as an argument. Both routes have to
-    answer for the state the caller asked for.
+    Compression folds the condition into frozen tables. The compiled lower
+    and the model deserialized beside it must both receive the requested
+    state, including descriptor and fitting-layer introspection.
     """
 
     lower_kind = "graph"
@@ -2754,6 +2752,7 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
 
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
         cls.tmpfile.close()
+        previous_device = torch.get_default_device()
         torch.set_default_device(None)
         try:
             deserialize_to_file(
@@ -2767,7 +2766,7 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
             cls.dp = DeepPot(cls.tmpfile.name)
             assert cls.dp.deep_eval.metadata["lower_input_kind"] == cls.lower_kind
         finally:
-            torch.set_default_device("cuda:9999999")
+            torch.set_default_device(previous_device)
 
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
@@ -2825,6 +2824,10 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
         np.testing.assert_allclose(self._routes([0.0, 1.0]), first, rtol=1e-6)
 
 
+@unittest.skipUnless(
+    DEVICE.type == "cuda" and dpa4c_op_available(),
+    "CUDA and the compiled DPA4C operator are required",
+)
 class TestCanonicalChargeStateRoutes(TestCompressedChargeStateRoutes):
     """Canonical archives retain charge folding and both graph input paths."""
 

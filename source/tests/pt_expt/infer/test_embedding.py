@@ -32,6 +32,9 @@ from deepmd.infer.deep_eval import (
 )
 from deepmd.pt.model.model import get_model as pt_get_model
 from deepmd.pt.train.wrapper import ModelWrapper as PtModelWrapper
+from deepmd.pt.utils.auto_batch_size import (
+    AutoBatchSize,
+)
 from deepmd.pt_expt.kernels.dpa4c import (
     graph_compress,
 )
@@ -664,14 +667,16 @@ def test_compressed_charge_state(
             )
             _assert_embeddings_close(actual, expected[name], rtol=1e-4, atol=1e-5)
     assert kernel.call_count == len(states)
-    # The folded tables hold one state, which all frames of a call share.
-    with pytest.raises(ValueError, match="single state"):
-        frozen.eval_embedding(
-            np.tile(_COORDS[:1], (2, 1, 1)),
-            np.tile(_CELLS[:1], (2, 1)),
-            atype,
-            charge_spin=np.concatenate(list(states.values())),
-        )
+    # The whole call shares one folded state even when batching splits frames.
+    for batch_size in (None, AutoBatchSize(initial_batch_size=len(atype))):
+        monkeypatch.setattr(frozen.deep_eval, "auto_batch_size", batch_size)
+        with pytest.raises(ValueError, match="single state"):
+            frozen.eval_embedding(
+                np.tile(_COORDS[:1], (2, 1, 1)),
+                np.tile(_CELLS[:1], (2, 1)),
+                atype,
+                charge_spin=np.concatenate(list(states.values())),
+            )
     assert (
         np.abs(expected["other"][1] - expected["default"][1]).max()
         > 1e-2 * np.abs(expected["default"][1]).max()
@@ -699,7 +704,8 @@ def test_multiblock_canonical_metadata_keeps_the_embedding_graph_generic(
         lower_input_kind="dpa4c_canonical", has_message_passing=True
     )
     actual = dp.eval_embedding(_COORDS[:1], _CELLS[:1], _ATYPES[0])
-    _assert_embeddings_close(actual, expected, rtol=0.0, atol=0.0)
+    # The fp32 graph reductions need not be bitwise repeatable on CUDA.
+    _assert_embeddings_close(actual, expected, rtol=1e-6, atol=1e-6)
 
 
 def test_rejects_a_model_without_graph_forward(tmp_path: "os.PathLike[str]") -> None:

@@ -1139,20 +1139,6 @@ class DeepEval(DeepEvalBackend):
             charge_spin = self.metadata["default_chg_spin"]
         return single_charge_state(charge_spin, fold.width)
 
-    @property
-    def _dpmodel_dim_chg_spin(self) -> int:
-        """Width of the condition the deserialized model reads as an argument.
-
-        An archive that ships its model dict is deserialized into an ordinary
-        implementation beside the compiled lower, and the introspection
-        methods evaluate that one. It reads the condition as an argument even
-        where the lower reads none, so the two widths part company exactly
-        when a fold exists, and the fold carries the width.
-        """
-        if self._charge_state_fold is not None:
-            return self._charge_state_fold.width
-        return self.get_dim_chg_spin()
-
     def _make_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
     ) -> torch.Tensor | None:
@@ -1192,12 +1178,11 @@ class DeepEval(DeepEvalBackend):
     def _make_dpmodel_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
     ) -> torch.Tensor | None:
-        """Build the condition the deserialized model reads.
+        """Serve the condition to the deserialized model used for introspection.
 
-        The introspection methods evaluate that model rather than the compiled
-        lower, so they condition it through this argument; folding the state
-        into the compressed tables would not reach them, as those tables are
-        read only by the fused kernel behind the lower.
+        A compressed descriptor reads its stored state and folded tables,
+        whereas an uncompressed descriptor reads a runtime tensor. All
+        introspection routes use this boundary to select the requested state.
 
         Parameters
         ----------
@@ -1213,8 +1198,9 @@ class DeepEval(DeepEvalBackend):
             The condition with shape ``(nframes, dim_chg_spin)``, or ``None``
             for a model that carries no charge/spin conditioning.
         """
+        self._apply_dpmodel_charge_state(charge_spin)
         return self._charge_spin_tensor(
-            nframes, charge_spin, self._dpmodel_dim_chg_spin
+            nframes, charge_spin, self._dpmodel.get_dim_chg_spin()
         )
 
     def _charge_spin_tensor(
@@ -2916,9 +2902,8 @@ class DeepEval(DeepEvalBackend):
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
-        # The lower's condition is not the one this path reads: it evaluates
-        # the deserialized model, which takes the condition as an argument
-        # even where the lower has it folded into constants.
+        # The deserialized descriptor owns its conditioning state separately
+        # from the compiled lower prepared above.
         charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, *_ = dp_am.descriptor(
@@ -2993,9 +2978,8 @@ class DeepEval(DeepEvalBackend):
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
-        # The lower's condition is not the one this path reads: it evaluates
-        # the deserialized model, which takes the condition as an argument
-        # even where the lower has it folded into constants.
+        # The deserialized descriptor owns its conditioning state separately
+        # from the compiled lower prepared above.
         charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
@@ -3104,9 +3088,8 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
-        # The folded tables of a compressed model hold one condition at a
-        # time, which every frame of the call therefore shares.
-        self._apply_dpmodel_charge_state(charge_spin)
+        # Validate the whole request before batching can split distinct states.
+        self._folded_charge_state(charge_spin)
         return self._eval_func(self._eval_embedding, numb_test, natoms)(
             coords, cells, atom_types, fparam, aparam, charge_spin, dtype
         )
