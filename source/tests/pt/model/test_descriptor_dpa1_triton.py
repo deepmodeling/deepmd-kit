@@ -190,15 +190,10 @@ class TestSeConvOp(unittest.TestCase):
                     self.device,
                     basis_dim=basis_dim,
                 )
-                gout = torch.randn_like(
-                    _se_conv_reference(
-                        z2, h1, idt, tt, idx, sw, basis, mult, act, gated
-                    )
-                )
                 ref_in = [
                     t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, basis)
                 ]
-                _se_conv_reference(
+                reference = _se_conv_reference(
                     ref_in[0],
                     ref_in[1],
                     idt,
@@ -209,7 +204,10 @@ class TestSeConvOp(unittest.TestCase):
                     mult,
                     act,
                     gated,
-                ).backward(gout)
+                )
+                gout = torch.randn_like(reference)
+                reference.backward(gout)
+                del reference
                 got_in = [
                     t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, basis)
                 ]
@@ -344,15 +342,15 @@ class TestEdgeConvOp(unittest.TestCase):
                     self.n_edge, self.n_node, ng, mult, has_idt, 169, self.device
                 )
                 tail = (dst, em, self.n_node, mult, act, gated)
-                gout = torch.randn_like(
-                    _edge_conv_reference(z2, h1, idt, tt, idx, sw, rr, *tail)
-                )
                 ref_in = [
                     t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, rr)
                 ]
-                _edge_conv_reference(
+                reference = _edge_conv_reference(
                     ref_in[0], ref_in[1], idt, tt, idx, ref_in[2], ref_in[3], *tail
-                ).backward(gout)
+                )
+                gout = torch.randn_like(reference)
+                reference.backward(gout)
+                del reference
                 got_in = [
                     t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, rr)
                 ]
@@ -410,13 +408,13 @@ class TestEdgeConvReferenceBackward(unittest.TestCase):
             512, n_node, ng, mult, True, 37, dev
         )
         tail = (dst, em, n_node, mult, act, gated)
-        gout = torch.randn_like(
-            _edge_conv_reference(z2, h1, idt, tt, idx, sw, rr, *tail)
-        )
         leaves = [t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, rr)]
-        _edge_conv_reference(
+        reference = _edge_conv_reference(
             leaves[0], leaves[1], idt, tt, idx, leaves[2], leaves[3], *tail
-        ).backward(gout)
+        )
+        gout = torch.randn_like(reference)
+        reference.backward(gout)
+        del reference
         closed = dict(
             zip(
                 ("z2", "h1", "sw", "rr"),

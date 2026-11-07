@@ -212,33 +212,26 @@ class TestDeepEvalMetadataOnlyPte(unittest.TestCase):
         ):
             self.dp_meta.deep_eval.eval_embedding(self.coord, self.cell, self.atype)
 
-
-class TestDeepEvalMetadataOnlyGuards(unittest.TestCase):
-    """Error-path coverage that is independent of the .pte fixture."""
-
     def test_missing_metadata_json_is_rejected(self) -> None:
         """A ``.pte`` stripped of ``metadata.json`` must raise on load.
 
         Metadata is the minimum contract — unlike ``model.json`` it
         must always be present.
         """
-        torch.manual_seed(0)
-        ds = DescrptSeA(4.0, 0.5, [6, 6])
-        ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=1)
-        model = EnergyModel(ds, ft, type_map=["a", "b"]).to(torch.float64).eval()
+        # Keep a real exported program in the broken archive. Reuse the
+        # immutable full fixture instead of tracing another identical graph
+        # merely to remove its metadata; all other entries are copied intact.
         with tempfile.TemporaryDirectory() as tmp:
-            full = Path(tmp) / "full.pte"
             broken = Path(tmp) / "no_metadata.pte"
-            deserialize_to_file(str(full), {"model": model.serialize()})
             with (
-                zipfile.ZipFile(full, "r") as zin,
+                zipfile.ZipFile(self.full_path, "r") as zin,
                 zipfile.ZipFile(broken, "w") as zout,
             ):
                 for info in zin.infolist():
                     if info.filename.endswith("extra/metadata.json"):
                         continue
                     zout.writestr(info, zin.read(info.filename))
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "missing 'metadata.json'"):
                 DeepPot(str(broken))
 
 

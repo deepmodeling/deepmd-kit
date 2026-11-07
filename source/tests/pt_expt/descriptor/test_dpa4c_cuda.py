@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Numerical contract of the compressed DPA4C CUDA mega kernel."""
 
+import copy
 import dataclasses
 import functools
 import json
@@ -155,18 +156,51 @@ def _build_graph(
     The atoms of each frame are uniform in a cube of ``side`` Å, and atom ``i``
     carries type ``types[i % len(types)]``.
     """
-    generator = torch.Generator(device="cuda").manual_seed(23)
+    template = _graph_template(
+        descriptor.rcut,
+        canonical,
+        node_count,
+        single_type,
+        side,
+        frames,
+        tuple(types),
+        torch.device("cuda", torch.cuda.current_device()),
+    )
+    # Every caller owns its tensors: gradient leaves, masks, CSR buffers and
+    # atom types may be changed without contaminating another parameter case.
+    return copy.deepcopy(template)
+
+
+@functools.lru_cache(maxsize=1)
+def _graph_template(
+    rcut: float,
+    canonical: bool,
+    node_count: int,
+    single_type: bool,
+    side: float,
+    frames: int,
+    types: tuple[int, ...],
+    device: torch.device,
+):
+    """Build the last geometry once, independent of descriptor channels.
+
+    Large slotted/tiling cases repeatedly use the same geometry across channel,
+    degree and compression variants. The dense neighbor search is quadratic
+    in node count; cloning its compact result is linear in the edge count.
+    Keep only one template so the CUDA matrix cannot accumulate GPU graphs.
+    """
+    generator = torch.Generator(device=device).manual_seed(23)
     coordinate = torch.rand(
         frames,
         node_count,
         3,
         dtype=torch.float32,
-        device="cuda",
+        device=device,
         generator=generator,
     )
     coordinate = coordinate * side
-    pattern = torch.as_tensor(list(types), device="cuda")
-    atype = pattern[torch.arange(node_count, device="cuda") % len(types)].repeat(
+    pattern = torch.as_tensor(list(types), device=device)
+    atype = pattern[torch.arange(node_count, device=device) % len(types)].repeat(
         frames, 1
     )
     if single_type:
@@ -174,7 +208,7 @@ def _build_graph(
     coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
         coordinate,
         atype,
-        descriptor.rcut,
+        rcut,
         [48],
         mixed_types=True,
         box=None,
@@ -191,6 +225,13 @@ def _build_graph(
         canonicalize=canonical,
     )
     return graph, flat_type
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _release_graph_template():
+    """Release the one cached GPU graph when this module finishes."""
+    yield
+    _graph_template.cache_clear()
 
 
 def _arguments(
