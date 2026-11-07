@@ -148,3 +148,105 @@ def test_pt_expt_entrypoint_rejects_random_model_key(
             {"model": {"model_dict": {"RANDOM": {}}}},
             TrainEntrypointOptions(input_file="input.json"),
         )
+
+
+@pytest.mark.parametrize("restore", [None, "restart", "init_model", "finetune"])
+def test_graph_neighbor_statistics_skip_is_per_task(monkeypatch, restore):
+    """Graph tasks must not even open the full neighbor-stat dataset."""
+    from deepmd.pt_expt.model import BaseModel
+
+    calls = []
+    monkeypatch.setattr(
+        "deepmd.pt_expt.entrypoints.main.get_neighbor_stat_data",
+        lambda params, type_map: calls.append(params["systems"]),
+    )
+    monkeypatch.setattr(BaseModel, "update_sel", lambda *args: (args[-1], 0.5))
+    models = {
+        "graph": {"descriptor": {"type": "dpa4", "sel": 120}},
+        "dense": {"descriptor": {"type": "se_e2_a", "sel": [20, 20]}},
+        "auto": {"descriptor": {"type": "dpa1", "sel": "auto"}},
+    }
+    config = {
+        "model": {"model_dict": models},
+        "training": {
+            "data_dict": {key: {"training_data": {"systems": key}} for key in models}
+        },
+    }
+    options = TrainEntrypointOptions(input_file="unused.json")
+    if restore:
+        setattr(options, restore, "checkpoint.pt")
+    _, distances = PTExptTrainEntrypoint().update_neighbor_stat(
+        config, options, multi_task=True
+    )
+    assert calls == (["graph", "dense", "auto"] if restore else ["dense", "auto"])
+    assert distances == {"graph": 0.5 if restore else None, "dense": 0.5, "auto": 0.5}
+    assert config["model"]["model_dict"]["graph"] == models["graph"]
+
+
+def test_graph_single_task_skips_neighbor_statistics(monkeypatch):
+    def unexpected(*args):
+        raise AssertionError("graph-only model opened neighbor-stat data")
+
+    monkeypatch.setattr(
+        "deepmd.pt_expt.entrypoints.main.get_neighbor_stat_data", unexpected
+    )
+    config = {
+        "model": {"descriptor": {"type": "dpa4c"}},
+        "training": {"training_data": {}},
+    }
+    actual, distance = PTExptTrainEntrypoint().update_neighbor_stat(
+        config, TrainEntrypointOptions(input_file="unused.json"), multi_task=False
+    )
+    assert actual is config
+    assert distance is None
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        {"type": "dpa4", "descriptor": {"sel": "auto:1.5"}, "fitting_net": {}},
+        {"preset": "dpa4c-nano-v20260911"},
+    ],
+)
+def test_graph_default_skip_after_normalization(monkeypatch, tmp_path, model):
+    import json
+
+    from deepmd.utils.argcheck import DEFAULT_DPA4_SEL
+
+    model["type_map"] = ["H"]
+    config = {
+        "model": model,
+        "learning_rate": {"type": "exp", "start_lr": 0.001, "stop_lr": 0.0001},
+        "loss": {"type": "ener"},
+        "training": {
+            "training_data": {"systems": "must-not-open"},
+            "numb_steps": 1,
+        },
+    }
+    input_file = tmp_path / "input.json"
+    output = tmp_path / "out.json"
+    input_file.write_text(json.dumps(config))
+    entrypoint = PTExptTrainEntrypoint()
+    observed = []
+    monkeypatch.setattr(
+        entrypoint, "run_training", lambda c, o, n: observed.append((c, n))
+    )
+    monkeypatch.setattr(entrypoint, "print_summary", lambda: None)
+    monkeypatch.setattr(entrypoint, "setup_run", lambda *args: None)
+    monkeypatch.setattr(entrypoint, "teardown_run", lambda *args: None)
+
+    def unexpected(*args):
+        raise AssertionError("default graph training must not scan neighbor statistics")
+
+    monkeypatch.setattr(
+        "deepmd.pt_expt.entrypoints.main.get_neighbor_stat_data", unexpected
+    )
+    entrypoint.run(
+        TrainEntrypointOptions(input_file=str(input_file), output=str(output))
+    )
+    normalized, distance = observed[0]
+    assert distance is None
+    descriptor = normalized["model"]["descriptor"]
+    if descriptor["type"] == "dpa4":
+        assert descriptor["sel"] == DEFAULT_DPA4_SEL
+    assert json.loads(output.read_text()) == normalized
