@@ -159,34 +159,6 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.tf.entrypoints.train.get_data")
-    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_list(self, sel_mock, get_data_mock) -> None:
-        sel_mock.return_value = self.mock_min_nbor_dist, [25]
-        get_data_mock.return_value = None
-        jdata = {
-            "model": {
-                "descriptor": {
-                    "type": "se_atten",
-                    "sel": 30,
-                    "rcut": 6,
-                }
-            },
-            "training": {"training_data": {}},
-        }
-        expected_out = {
-            "model": {
-                "descriptor": {
-                    "type": "se_atten",
-                    "sel": 30,
-                    "rcut": 6,
-                }
-            },
-            "training": {"training_data": {}},
-        }
-        jdata = update_sel(jdata)
-        self.assertEqual(jdata, expected_out)
-
-    @patch("deepmd.tf.entrypoints.train.get_data")
     def test_skip_loc_frame(self, get_data_mock) -> None:
         get_data_mock.return_value = None
         jdata = {

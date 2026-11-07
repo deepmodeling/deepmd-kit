@@ -359,5 +359,12 @@ def build_neighbor_graph_nv(
     if pair_excl is not None:
         graph = apply_pair_exclusion(graph, atype_flat, pair_excl, compact=compact)
     if with_csr or canonicalize:
-        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
+        # Matrix slots are decoded in ascending center order; compact filtering
+        # preserves that order, whereas an exclusion mask can introduce holes.
+        graph = attach_edge_csr(
+            graph,
+            nf * nloc,
+            canonicalize=canonicalize,
+            destination_sorted=pair_excl is None or compact,
+        )
     return graph

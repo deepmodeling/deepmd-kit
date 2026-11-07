@@ -434,83 +434,6 @@ class TestDpa4GraphLower:
         model.forward_common(self.coord.clone().requires_grad_(True), self.atype, box)
         assert calls["n"] == 0, "disabled route must not call DescrptDPA4.call_graph"
 
-    def test_graph_lower_symbolic_trace(self) -> None:
-        """``make_fx`` symbolic trace of ``forward_lower_graph_exportable``
-        reproduces the eager graph lower bit-tight, on a message-sensitive
-        (jittered) model.
-
-        ``forward_common_lower_graph`` computes force/virial via a single
-        ``torch.autograd.grad`` backward through its own ``edge_vec`` leaf
-        (see ``edge_transform_output.py:106``); tracing the whole exportable
-        wrapper with ``make_fx`` therefore traces that backward pass too --
-        this is what makes the DPA4 SO(3)/GridMLP compute graph, including
-        its analytic force/virial, ``.pt2``-exportable.  ``model.to("cpu")``
-        before tracing mirrors the real ``.pt2`` export path (make_fx traces
-        on CPU by design, ``serialization.py:924``) and the dpa1 CUDA lesson
-        (traced inputs and params must share a device).
-        """
-        from deepmd.pt_expt.utils.serialization import (
-            build_synthetic_graph_inputs,
-        )
-
-        model = _make_message_sensitive_model(self.device).to("cpu")
-        model.eval()
-        sample = build_synthetic_graph_inputs(
-            model,
-            e_max=175,
-            nframes=2,
-            nloc=7,
-            dtype=torch.float64,
-            device=torch.device("cpu"),
-        )
-        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
-        traced = model.forward_lower_graph_exportable(
-            atype,
-            n_node,
-            n_local,
-            ei,
-            ev,
-            em,
-            do,
-            drp,
-            so,
-            srp,
-            fparam=fp,
-            aparam=ap,
-            do_atomic_virial=True,
-            charge_spin=cs,
-            destination_sorted=True,
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
-        )
-        out = traced(atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs)
-        ref = model.forward_common_lower_graph(
-            atype,
-            n_node,
-            n_local,
-            ei,
-            ev,
-            em,
-            do,
-            drp,
-            so,
-            srp,
-            destination_sorted=True,
-            fparam=fp,
-            aparam=ap,
-            do_atomic_virial=True,
-        )
-        for key in ("energy", "force", "virial"):
-            assert torch.isfinite(out[key]).all(), f"non-finite traced {key}"
-        tol = {"rtol": 1e-12, "atol": 1e-12}
-        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
-        torch.testing.assert_close(
-            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
-        )
-        torch.testing.assert_close(
-            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
-        )
-
     def test_graph_lower_torch_export(self) -> None:
         """``torch.export.export`` the traced graph lower with the
         production dynamic shapes (``_build_graph_dynamic_shapes``): the
@@ -556,6 +479,36 @@ class TestDpa4GraphLower:
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
+        # Validate the symbolic trace before exporting the same graph. This
+        # keeps same-shape parity and dynamic replay without tracing twice.
+        out = traced(atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs)
+        ref = model.forward_common_lower_graph(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+        )
+        for key in ("energy", "force", "virial"):
+            assert torch.isfinite(out[key]).all(), f"non-finite traced {key}"
+        tol = {"rtol": 1e-12, "atol": 1e-12}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
+        )
+
         dynamic_shapes = _build_graph_dynamic_shapes(
             atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs
         )

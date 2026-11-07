@@ -58,8 +58,10 @@ from torch import (
     nn,
 )
 
-from deepmd.pt.model.model.sezm_model import (
+from deepmd.dpmodel.atomic_model.inner_potential import (
     ELEMENT_TO_Z,
+)
+from deepmd.pt.model.model.sezm_model import (
     SeZMModel,
 )
 

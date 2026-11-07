@@ -10,6 +10,9 @@ Both spellings must therefore build the same model.
 """
 
 import copy
+from pathlib import (
+    Path,
+)
 
 import pytest
 
@@ -24,10 +27,7 @@ def _descriptor() -> dict:
     return {
         "type": "dpa4",
         "rcut": 4.0,
-        "rcut_smth": 0.5,
         "sel": 20,
-        "n_dim": 8,
-        "e_dim": 8,
         "precision": "float64",
         "seed": 7,
     }
@@ -79,8 +79,12 @@ def test_canonical_builds_sezm_model() -> None:
     model = get_model(_canonical_config())
     assert isinstance(model, SeZMModel)
     assert model.bridging_method == "ZBL"
-    assert model.bridging_r_inner == 0.8
-    assert model.bridging_r_outer == 1.2
+    # The window belongs to the descriptor, which is what the composition's
+    # radii have to reach for the learned side to honour them.
+    descriptor = model.atomic_model.descriptor
+    assert descriptor.bridging_f_inner == 0.8
+    assert descriptor.bridging_f_outer == 1.2
+    assert descriptor.bridging_scale == "absolute"
 
 
 def test_canonical_matches_sugar_serialize() -> None:
@@ -252,6 +256,46 @@ def test_is_sezm_checkpoint_recognizes_canonical_params(tmp_path) -> None:
     assert is_sezm_checkpoint(ckpt2)
 
 
+@pytest.mark.parametrize("method", ["none", "ZBL"])  # bridging disabled / enabled
+def test_normalized_checkpoint_with_optional_radii_loads(
+    tmp_path: Path, method: str
+) -> None:
+    """Checkpoint loading preserves the normalized optional window radii."""
+    import numpy as np
+    import torch
+
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt.train.wrapper import (
+        ModelWrapper,
+    )
+    from deepmd.utils.argcheck import (
+        model_args,
+    )
+
+    config = _sugar_config()
+    config["bridging_method"] = method
+    config.pop("bridging_r_inner")
+    config.pop("bridging_r_outer")
+    config["descriptor"].update(channels=4, n_radial=3, lmax=1, mmax=1, n_blocks=1)
+    config["use_compile"] = False
+    params = model_args().normalize_value(config, trim_pattern="_*")
+    model_args().check_value(params, strict=True)
+    assert params["bridging_r_inner"] is None
+    assert params["bridging_r_outer"] is None
+    model = get_model(copy.deepcopy(params)).eval()
+    wrapper = ModelWrapper(model, model_params=params)
+    checkpoint = tmp_path / "model.pt"
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+
+    evaluator = DeepPot(str(checkpoint))
+    assert evaluator.get_type_map() == params["type_map"]
+    results = evaluator.eval([[0.0, 0.0, 0.0, 0.9, 0.0, 0.0]], None, [0, 1])
+    assert all(np.isfinite(value).all() for value in results)
+    evaluator.close()
+
+
 def test_sugar_with_top_level_lora_builds() -> None:
     """The concise dpa4+bridging form with trainer-owned top-level `lora`
     must keep building: the expansion routes `lora` to the composition
@@ -350,24 +394,14 @@ def test_canonical_conflicting_top_level_option_raises() -> None:
         get_model(cfg)
 
 
-@pytest.mark.parametrize(
-    "scheme",
-    [
-        "native",  # spin as an equivariant descriptor feature
-        "deepspin",  # classical virtual-atom representation
-    ],
-)
-def test_canonical_spin_rejects_mismatched_pair_exclusions(scheme: str) -> None:
-    """Both spin routes must fail fast on a pair-exclusion mismatch like
-    the no-spin route, not silently overwrite the descriptor's exclusions.
-    """
+def test_canonical_spin_rejects_mismatched_pair_exclusions() -> None:
+    """Spin models reject conflicting pair exclusions."""
     cfg = _canonical_config()
     cfg["pair_exclude_types"] = [[0, 0]]
     cfg["models"][0]["descriptor"]["exclude_types"] = [[0, 1]]
     cfg["spin"] = {
-        "scheme": scheme,
+        "scheme": "native",
         "use_spin": [True, False],
-        "virtual_scale": 0.3,
     }
     with pytest.raises(ValueError, match="must match"):
         get_model(cfg)
@@ -388,3 +422,15 @@ def test_normalized_canonical_top_level_option_survives_child_defaults() -> None
     assert cfg["models"][0]["data_stat_protect"] == 0.01  # injected default
     model = get_model(cfg)
     assert model.atomic_model.data_stat_protect == 0.123
+
+
+@pytest.mark.parametrize("canonical", [False, True])
+@pytest.mark.parametrize("scheme", [None, "invalid"])
+def test_spin_requires_native_scheme(canonical: bool, scheme: str | None) -> None:
+    """Both public model spellings require an explicit native spin scheme."""
+    cfg = _canonical_config() if canonical else _sugar_config()
+    cfg["spin"] = {"use_spin": [True, False]}
+    if scheme is not None:
+        cfg["spin"]["scheme"] = scheme
+    with pytest.raises(ValueError, match=r"require model\.spin\.scheme='native'"):
+        get_model(cfg)

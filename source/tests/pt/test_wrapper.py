@@ -21,6 +21,7 @@ class _LinearToyModel(torch.nn.Module):
         self.scale = torch.nn.Parameter(torch.ones((), device="cpu"))
         self.fail_forward = fail_forward
         self.last_requires_grad: tuple[bool, ...] | None = None
+        self.last_box: torch.Tensor | None = None
 
     def forward(
         self,
@@ -32,7 +33,8 @@ class _LinearToyModel(torch.nn.Module):
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        del atype, box, do_atomic_virial, fparam, aparam, charge_spin
+        del atype, do_atomic_virial, fparam, aparam, charge_spin
+        self.last_box = box
         self.last_requires_grad = tuple(
             param.requires_grad for param in self.parameters()
         )
@@ -130,6 +132,15 @@ class TestModelWrapper(unittest.TestCase):
         self.assertEqual(model.last_requires_grad, (True, True))
         self.assertIsNotNone(model.linear.weight.grad)
         self.assertIsNotNone(model.scale.grad)
+
+    def test_positional_box_keeps_legacy_argument_order(self) -> None:
+        model = _LinearToyModel()
+        wrapper = ModelWrapper(model)
+        box = torch.eye(3, device="cpu").view(1, 3, 3).expand(2, -1, -1)
+
+        wrapper(self.coord, self.atype, None, box)
+
+        self.assertIs(model.last_box, box)
 
 
 if __name__ == "__main__":

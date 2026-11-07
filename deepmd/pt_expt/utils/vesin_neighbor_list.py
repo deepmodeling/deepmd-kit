@@ -36,6 +36,9 @@ from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_ij_shifts,
     merge_frame_edge_schemas,
 )
+from deepmd.pt_expt.utils.vesin_search import (
+    VesinNeighborSearch,
+)
 
 
 def is_vesin_torch_available() -> bool:
@@ -55,6 +58,9 @@ class VesinNeighborList(NeighborList):
     (bridged through a CPU torch tensor); the returned quartet matches the
     namespace and device of the input coordinates.
     """
+
+    def __init__(self, skin: float = 0.0) -> None:
+        self._search = VesinNeighborSearch(skin=skin)
 
     def build(
         self,
@@ -119,6 +125,8 @@ class VesinNeighborList(NeighborList):
                     atype_t[ff],
                     rcut,
                     sel,
+                    self._search,
+                    ff,
                 )
                 for ff in range(nframes)
             ]
@@ -143,6 +151,8 @@ class VesinNeighborList(NeighborList):
                 atype_t[ff],
                 rcut,
                 sel,
+                self._search,
+                ff,
             )
             for ff in range(nframes)
         ]
@@ -193,6 +203,8 @@ def _build_single(
     atype: torch.Tensor,
     rcut: float,
     sel: list[int],
+    search: VesinNeighborSearch,
+    frame: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Single-frame ``(i,j,S)`` -> minimal-extended conversion.
 
@@ -220,17 +232,7 @@ def _build_single(
         cell if periodic else torch.zeros((3, 3), dtype=positions.dtype, device=device)
     )
 
-    # Delegate the raw search to the shared helper in vesin_graph_builder
-    # (function-level import: legacy module depends on graph module lazily to
-    # avoid a module-level cycle — vesin_graph_builder imports
-    # is_vesin_torch_available from this module).
-    from deepmd.pt_expt.utils.vesin_graph_builder import (
-        vesin_search_ijs,
-    )
-
-    ii, jj, ss = vesin_search_ijs(
-        positions.detach(), cell if periodic else None, periodic, rcut, device
-    )
+    ii, jj, ss = search.compute(positions, cell, rcut, frame=frame)
     # Phantom atoms (atype < 0) pad a mixed-nloc batch and have no physical
     # site; the geometric search above cannot know that. Their pairs are
     # dropped before the ``sum(sel)`` truncation below, so that a phantom can
@@ -309,6 +311,8 @@ def _build_single_edges(
     atype: torch.Tensor,
     rcut: float,
     sel: list[int],
+    search: VesinNeighborSearch,
+    frame: int,
 ) -> EdgeNeighborList:
     """Single-frame ``vesin`` output converted directly to edge vectors."""
     device = positions.device
@@ -325,14 +329,7 @@ def _build_single_edges(
             rcut,
         )
 
-    periodic = cell is not None
-    from deepmd.pt_expt.utils.vesin_graph_builder import (
-        vesin_search_ijs,
-    )
-
-    ii, jj, ss = vesin_search_ijs(
-        positions.detach(), cell if periodic else None, periodic, rcut, device
-    )
+    ii, jj, ss = search.compute(positions, cell, rcut, frame=frame)
     # ss is int64 from the helper; edge_schema_from_ij_shifts accepts int shifts.
     return edge_schema_from_ij_shifts(
         positions=positions,

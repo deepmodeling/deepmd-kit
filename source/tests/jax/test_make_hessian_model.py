@@ -7,6 +7,7 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.dpmodel.model import EnergyModel as EnergyModelDP
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
 )
@@ -35,9 +36,20 @@ dtype = jnp.float64
 
 
 def finite_hessian(f, x, delta=1e-6):
+    """Reuse identical oracle inputs within one finite-difference Hessian."""
     in_shape = x.shape
     assert len(in_shape) == 1
-    y0 = f(x)
+    values = {}
+
+    def evaluate(point):
+        """Evaluate one exact input without retaining caller-owned buffers."""
+        key = (point.dtype.str, point.shape, point.tobytes())
+        if key not in values:
+            # A reference evaluator may return a reusable output buffer.
+            values[key] = np.array(f(point), copy=True)
+        return values[key]
+
+    y0 = evaluate(x)
     out_shape = y0.shape
     res = np.empty(out_shape + in_shape + in_shape)
     for iidx in np.ndindex(*in_shape):
@@ -54,12 +66,34 @@ def finite_hessian(f, x, delta=1e-6):
             i1[jidx] += delta
             i2[jidx] -= delta
             i3[jidx] -= delta
-            y0 = f(x + i0)
-            y1 = f(x + i1)
-            y2 = f(x + i2)
-            y3 = f(x + i3)
+            y0 = evaluate(x + i0)
+            y1 = evaluate(x + i1)
+            y2 = evaluate(x + i2)
+            y3 = evaluate(x + i3)
             res[(Ellipsis, *iidx, *jidx)] = (y0 + y3 - y1 - y2) / (4 * delta**2.0)
     return res
+
+
+class TestFiniteHessian(unittest.TestCase):
+    def test_reuses_inputs_without_sharing_between_calls(self):
+        """Keep every Hessian entry while evaluating each input only once."""
+        x = np.arange(9, dtype=np.float64) / 10
+        calls = []
+        buffer = np.empty(2)
+
+        def oracle(point):
+            """Return two quadratic outputs through a deliberately reused buffer."""
+            calls.append(point.copy())
+            buffer[:] = (point @ point, np.sum(point) ** 2)
+            return buffer
+
+        expected = np.stack((2 * np.eye(9), 2 * np.ones((9, 9))))
+        for point in (x, x, x + 1):
+            calls.clear()
+            actual = finite_hessian(oracle, point, delta=1e-3)
+            np.testing.assert_allclose(actual, expected, rtol=1e-7, atol=1e-7)
+            self.assertEqual(len(calls), 2 * point.size**2 + 1)
+            self.assertEqual(len({value.tobytes() for value in calls}), len(calls))
 
 
 class HessianTest:
@@ -102,26 +136,32 @@ class HessianTest:
         np.testing.assert_allclose(ret_dict0["energy"], ret_dict1["energy"])
         ana_hess = ret_dict0["hessian"]
 
+        # Reuse the JAX atomic model with the value-only DP-model wrapper.
+        # Numerical energy differences do not need forces or virials, and the
+        # JAX model would differentiate the energy at every stencil point.
+        model_energy = EnergyModelDP(atomic_model_=self.model_valu.atomic_model)
+        np.testing.assert_allclose(
+            model_energy(coord, atype, box=cell, fparam=fparam, aparam=aparam)[
+                "energy"
+            ],
+            ret_dict1["energy"],
+        )
+
         # compute finite difference
         fnt_hess = []
         for ii in range(nf):
 
-            def np_infer(
+            def ff(
                 xx,
             ):
-                ret = self.model_valu(
+                ret = model_energy(
                     to_jax_array(xx)[None, ...],
                     atype[ii][None, ...],
                     box=cell[ii][None, ...],
                     fparam=fparam[ii][None, ...],
                     aparam=aparam[ii][None, ...],
                 )
-                # detach
-                ret = {kk: to_numpy_array(ret[kk]) for kk in ret}
-                return ret
-
-            def ff(xx):
-                return np_infer(xx)["energy"]
+                return to_numpy_array(ret["energy"])
 
             xx = to_numpy_array(coord[ii])
             fnt_hess.append(finite_hessian(ff, xx, delta=delta).squeeze())

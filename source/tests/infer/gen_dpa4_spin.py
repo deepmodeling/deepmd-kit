@@ -75,8 +75,7 @@ from gen_common import (
 # attention + spin-embedding paths, small enough to keep the AOTInductor
 # compile bounded. ``use_spin=[True, False]``: type 0 ("Ni") carries a
 # magnetic moment, type 1 ("O") does not. ``scheme="native"`` selects the
-# NeighborGraph-only spin route (no virtual atoms, unlike the deepspin
-# ``spin_ener`` scheme used by ``gen_spin.py``).
+# NeighborGraph spin route.
 NATIVE_SPIN_CONFIG = {
     "type_map": ["Ni", "O"],
     "descriptor": {

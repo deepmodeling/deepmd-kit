@@ -8,13 +8,15 @@
 
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
+#include <torch/library.h>
+#include <torch/types.h>
 
 #include <cmath>
 #include <cstdint>
 #include <optional>
 #include <tuple>
 
+#include "canonical_index.h"
 #include "dpa1_graph_compress_launch.h"
 
 #ifndef DEEPMD_ENABLE_DPA1_HIGH_LMAX
@@ -400,6 +402,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_canonical_compress(
     double protection,
     double neighbors,
     int64_t basis_dim) {
+  source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa1_canonical_compress: source and edge_vec storage must "
               "share the edge axis");
@@ -441,6 +444,7 @@ torch::Tensor dpa1_canonical_compress_backward(
     double rcut_smooth,
     double protection,
     double neighbors) {
+  source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa1_canonical_compress_backward: source and edge_vec storage "
               "must share the edge axis");

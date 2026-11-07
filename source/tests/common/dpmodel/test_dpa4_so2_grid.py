@@ -158,7 +158,6 @@ def _build_edge_data(
         inv_sqrt_deg=t(inv_sqrt_deg),
         D_full=t(D_full[valid]),
         Dt_full=t(Dt_full[valid]),
-        edge_src_gate=None,
     )
     dp_cache = EdgeCache(
         src=src,
@@ -171,7 +170,6 @@ def _build_edge_data(
         inv_sqrt_deg=inv_sqrt_deg,
         D_full=D_full,
         Dt_full=Dt_full,
-        edge_src_gate=None,
         edge_mask=mask,
     )
     return pt_cache, dp_cache, radial, radial[valid], x

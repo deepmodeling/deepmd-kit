@@ -12,7 +12,9 @@ keeping other sections the same as the normal energy model's input script.
 >
 > - In the TensorFlow backend, the `se_e2_a` descriptor will treat those atom types with spin as new (virtual) types,
 >   and duplicate their corresponding selected numbers of neighbors ({ref}`sel <model[standard]/descriptor[se_e2_a]/sel>`) from their real atom types.
-> - In the PyTorch-TorchScript and PyTorch-Exportable backends with the default `deepspin` (virtual-atom) scheme, if spin settings are added, all the types (with or without spin) will have their virtual types.
+> - In the PyTorch-TorchScript and PyTorch-Exportable backends, descriptors
+>   using the `deepspin` (virtual-atom) scheme add virtual types for all atom
+>   types, with or without spin.
 >   The `se_e2_a` descriptor will thus double the {ref}`sel <model[standard]/descriptor[se_e2_a]/sel>` list,
 >   while in other descriptors with mixed types (such as `dpa1` or `dpa2`), the sel number will not be changed for clarity.
 >   If you are using descriptors with mixed types, to achieve better performance,
@@ -80,11 +82,10 @@ See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.
   List of float values with shape of `ntypes` or `ntypes_spin` or one single float value for all types,
   only used when {ref}`use_spin <model/spin[ener_spin]/use_spin>` is True for each atom type.
 
-For these descriptors except `dpa4`, spin always uses the default `deepspin`
-(virtual-atom) scheme. The `dpa4` descriptor additionally supports the `native`
-scheme ({ref}`model.spin.scheme <model/spin>`), which passes the per-atom spin
-vector directly into the descriptor without virtual atoms; see the [DPA4 spin
-documentation](dpa4.md#spin).
+The `se_e2_a`, `dpa1`, `dpa2`, and `dpa3` descriptors use the `deepspin`
+(virtual-atom) scheme. DPA4 uses the `native` scheme
+({ref}`model.spin.scheme <model/spin>`), which passes the per-atom spin vector
+directly into the descriptor; see the [DPA4 spin documentation](dpa4.md#spin).
 
 > [!NOTE]
 > It should be noted that the spin models in PyTorch-TorchScript/PyTorch-Exportable/DP are capable of addressing scenarios where the spin approaches zero

@@ -79,6 +79,7 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 # which can be read by the build backend.
 [tool.deepmd_build_backend.optional-dependencies]
 test = [
+    "dependency_groups",
     "dpdata>=0.2.7",
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # fixed in 3.23.0

@@ -40,6 +40,8 @@ def make_jax_dp_atomic_model_from_dpmodel(
         """The base descriptor class."""
         base_fitting_cls = BaseFitting
         """The base fitting class."""
+        base_long_range_cls = None
+        """No long-range module is implemented in this backend."""
 
         def forward_common_atomic(
             self,
