@@ -645,7 +645,11 @@ pair_style        dpa4spin compressed_model.pt2
 pair_coeff        * * Ni O
 ```
 
-Spin models run on several MPI ranks without further settings.
+The host pair style `dpa4spin` supports MPI domain decomposition. The GPU pair
+style `dpa4spin/kk` requires LAMMPS 4 Jul 2026 or newer for correct spin-field
+communication and host/device synchronization. Build the DeePMD-kit plugin
+against the same LAMMPS and Kokkos build used to run it; see the
+[Kokkos build instructions](../install/install-lammps.md#install-lammps-plugin-mode).
 
 By default the pair styles store the precession magnetic force that the LAMMPS
 SPIN package expects, the negative energy gradient `-dE/dS` scaled by the

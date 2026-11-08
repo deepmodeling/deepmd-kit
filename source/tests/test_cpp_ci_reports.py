@@ -223,6 +223,18 @@ def test_kokkos_pytest_processes_write_distinct_reports():
     assert script.startswith("#!/bin/bash\nset -euxo pipefail\n")
 
 
+def test_kokkos_uses_a_fixed_spin_capable_lammps_release() -> None:
+    config = yaml.safe_load((ROOT / ".github/workflows/test_cuda.yml").read_text())
+    steps = config["jobs"]["test_cc"]["steps"]
+    overrides = [step for step in steps if "LAMMPS_VERSION" in step.get("env", {})]
+    assert len(overrides) == 1
+    assert overrides[0]["if"] == "matrix.suite == 'kokkos'"
+    assert overrides[0]["env"]["LAMMPS_VERSION"] == "patch_4Jul2026"
+    assert "source/install/test_cc_local.sh --build-only" in overrides[0]["run"]
+    script = (ROOT / "source/install/test_lammps_kokkos.sh").read_text()
+    assert script.count("-D CMAKE_CXX_STANDARD=20") == 2
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Requires GNU/Linux shell tools")
 @pytest.mark.parametrize("status", [0, 17])
 def test_kokkos_spin_generator_reports_preserve_status_and_invocations(

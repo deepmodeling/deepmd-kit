@@ -6,6 +6,12 @@ and DPA4C use `pair_style deepmd/kk`; compressed native-spin DPA4C models use
 
 There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library.
 
+For `dpa4spin/kk`, use LAMMPS 4 Jul 2026 or newer in place of the 2025 release
+shown in the examples below. Configure both LAMMPS and the DeePMD-kit plugin
+with `CMAKE_CXX_STANDARD=20`, and build the plugin against that same LAMMPS
+source and Kokkos build. This requirement does not apply to the host
+`dpa4spin` pair style.
+
 ## Install LAMMPS's DeePMD-kit module (built-in mode)
 
 Before following this section, [DeePMD-kit C++ interface](install-from-source.md) should have be installed.

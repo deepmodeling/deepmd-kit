@@ -182,6 +182,15 @@ void PairDPA4SpinKokkos<DeviceType>::init_style() {
   // Full neighbor-list request and the shared native-spin contract.
   PairDPA4Spin::init_style();
 
+  // Spatial and spin fields must have independent DualView ownership flags.
+  // Otherwise clearing magnetic forces can discard migrated atom velocities.
+  if (((X_MASK | V_MASK | F_MASK) & (SP_MASK | FM_MASK | FML_MASK)) != 0) {
+    error->all(FLERR,
+               "pair style dpa4spin/kk requires distinct spatial and spin "
+               "data masks; use LAMMPS 4 Jul 2026 or newer and rebuild the "
+               "DeePMD-kit plugin against that LAMMPS build.");
+  }
+
   // The device-resident entry point runs the model on an accelerator, so the
   // Kokkos host execution space has nothing to hand it.
   if (std::is_same<DeviceType, LMPHostType>::value) {

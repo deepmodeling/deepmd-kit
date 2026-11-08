@@ -55,7 +55,7 @@ if [ "$MODE" != "--models-only=kokkos" ]; then
 		-D USE_PT_PYTHON_LIBS=${ENABLE_PYTORCH:-TRUE} \
 		-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
 		-D BUILD_TESTING:BOOL=${BUILD_TESTING} \
-		-D LAMMPS_VERSION=stable_22Jul2025_update2 \
+		-D LAMMPS_VERSION="${LAMMPS_VERSION:-stable_22Jul2025_update2}" \
 		${CUDA_ARGS} ..
 	cmake --build . -j${NPROC}
 	cmake --install .

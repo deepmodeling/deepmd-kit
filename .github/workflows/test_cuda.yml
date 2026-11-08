@@ -211,6 +211,7 @@ jobs:
           source/install/test_cc_local.sh --build-only
           source/install/test_cc_local.sh --models-only=kokkos
         env:
+          LAMMPS_VERSION: patch_4Jul2026
           CMAKE_GENERATOR: Ninja
           DP_VARIANT: cuda
           ENABLE_PADDLE: FALSE

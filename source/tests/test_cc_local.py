@@ -172,6 +172,7 @@ if name == "ctest":
         "MOCK_SCHEDULE_DIR": str(tmp_path / "schedule"),
         "MOCK_SCHEDULE_LOG": str(tmp_path / "schedule.jsonl"),
         "MOCK_CHECK_SCHEDULE": "",
+        "LAMMPS_VERSION": "",
     }
     Path(env["MOCK_SCHEDULE_DIR"]).mkdir()
     return root, script, env
@@ -244,6 +245,7 @@ def test_default_still_builds_all_models_and_runs_ctest(build_tree):
     result, commands = run_script(build_tree)
     assert result.returncode == 0, result.stderr
     assert "BUILD_TESTING:BOOL=TRUE" in commands[0]["args"]
+    assert "LAMMPS_VERSION=stable_22Jul2025_update2" in commands[0]["args"]
     assert [c["name"] for c in commands[:4]] == ["cmake", "cmake", "cmake", "python"]
     assert commands[1]["args"][:2] == ["--build", "."]
     assert commands[2]["args"] == ["--install", "."]
@@ -340,6 +342,17 @@ def test_build_only_installs_without_generating_models_or_running_ctest(
     assert (Path(env["MOCK_SHARED_LIB_DIR"]) / "libdeepmd_op_pt.so").exists() == (
         pytorch == "TRUE"
     )
+
+
+def test_build_only_honors_explicit_lammps_version(
+    build_tree: tuple[Path, Path, dict[str, str]],
+) -> None:
+    result, commands = run_script(
+        build_tree, "--build-only", LAMMPS_VERSION="patch_4Jul2026"
+    )
+    assert result.returncode == 0, result.stderr
+    assert "LAMMPS_VERSION=patch_4Jul2026" in commands[0]["args"]
+    assert not generated_models(commands)
 
 
 def test_kokkos_models_reuse_build_and_preserve_other_fixtures(

@@ -20,18 +20,21 @@ from pathlib import (
     Path,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import constants
 import numpy as np
 import pytest
-from lammps import (
-    PyLammps,
-)
 from write_lmp_data import (
     write_lmp_data,
 )
+
+if TYPE_CHECKING:
+    from lammps import (
+        PyLammps,
+    )
 
 
 def require_backend(environment_variable: str, backend_name: str) -> None:
@@ -80,6 +83,10 @@ def make_atomic_lammps(
     rejects ``atom_modify map no``; this preserves the no-map failure-path
     tests used by the graph-model fixtures.
     """
+    from lammps import (
+        PyLammps,
+    )
+
     if units not in {"metal", "real", "si"}:
         raise ValueError("units should be metal, real, or si")
 
@@ -109,6 +116,10 @@ def make_spin_lammps(
     boundary: str = "p p p",
 ) -> PyLammps:
     """Create the standard two-type DeepSpin LAMMPS test system."""
+    from lammps import (
+        PyLammps,
+    )
+
     if units != "metal":
         raise ValueError("units for spin should be metal")
 
