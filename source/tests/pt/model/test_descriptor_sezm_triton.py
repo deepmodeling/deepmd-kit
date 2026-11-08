@@ -2287,7 +2287,6 @@ class TestSeZMGieScatter(unittest.TestCase):
 
         n_edge, n_nodes = 129, 8
         generator = torch.Generator(device="cpu").manual_seed(31)
-        dst = torch.randint(0, n_nodes, (n_edge,), device="cpu", generator=generator)
         d_full = torch.randn(n_edge, 16, 16, device="cpu", generator=generator)
         radial = torch.randn(n_edge, 3, 32, device="cpu", generator=generator)
 
@@ -2322,6 +2321,143 @@ class TestSeZMGieScatter(unittest.TestCase):
             unpinned.code,
             "CPU tensors without the pin keep the reference composition",
         )
+
+    @_GPU_KERNELS
+    def test_strided_destination_index_backward(self):
+        """A strided ``dst`` view must not corrupt the backward gather.
+
+        ``edge_index[1]`` of a stacked-then-transposed edge list carries a
+        non-unit stride; the forward is unaffected (it reads ``order``),
+        but the backward kernel loads ``dst`` at unit stride and would
+        gather the wrong gradient rows silently.  The impl normalizes it
+        like the CUDA sibling; this check drives the exact strided shape.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(41)
+        n_edge, n_nodes = 8192, 96
+        zonal, radial, dst, order, row_ptr, _p = self._make_case(
+            n_edge, n_nodes, generator
+        )
+        # The public edge-list shape: stack two (E,) lists as columns and
+        # transpose, so row 1 is a stride-2 view of the backing store.
+        src_like = torch.arange(n_edge, device="cuda") % n_nodes
+        edge_index = torch.stack([src_like, dst], 1).T
+        strided_dst = edge_index[1]
+        self.assertEqual(strided_dst.stride(0), 2)
+        self.assertTrue(torch.equal(strided_dst, dst))
+
+        cotangent = torch.randn(
+            n_nodes,
+            16,
+            radial.shape[2],
+            device="cuda",
+            generator=torch.Generator(device="cuda").manual_seed(43),
+        )
+
+        grads = {}
+        for tag, dst_arg in (("contiguous", dst), ("strided", strided_dst)):
+            z = zonal.clone().requires_grad_(True)
+            r = radial.clone().requires_grad_(True)
+            out = gie_zonal_scatter(z, r, dst_arg, order, row_ptr, n_nodes, 3)
+            gz, gr = torch.autograd.grad(out, (z, r), cotangent)
+            grads[tag] = (out.detach(), gz, gr)
+        for a, b in zip(grads["contiguous"], grads["strided"], strict=True):
+            torch.testing.assert_close(b, a, atol=0.0, rtol=0.0)
+
+    @_GPU_KERNELS
+    def test_degree_shape_contract_is_enforced(self):
+        """Mismatched zonal rows / radial slots raise, matching pairs pass."""
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(47)
+        zonal, radial, dst, order, row_ptr, _p = self._make_case(512, 32, generator)
+        # Accepted: the lmax=3 packed layout (15 rows, 3 slots).
+        out = gie_zonal_scatter(zonal, radial, dst, order, row_ptr, 32, 3)
+        self.assertEqual(out.shape[1], 16)
+
+        # Rejected: wrong radial slot count for lmax=3.
+        with self.assertRaisesRegex(RuntimeError, "do not match lmax=3"):
+            gie_zonal_scatter(
+                zonal, radial[:, :2, :].contiguous(), dst, order, row_ptr, 32, 3
+            )
+        # Rejected: wrong zonal row count for lmax=3.
+        with self.assertRaisesRegex(RuntimeError, "do not match lmax=3"):
+            gie_zonal_scatter(
+                zonal[:, :14].contiguous(), radial, dst, order, row_ptr, 32, 3
+            )
+        # Rejected: lmax=2 contract with the lmax=3 radial slot count.
+        with self.assertRaisesRegex(RuntimeError, "do not match lmax=2"):
+            gie_zonal_scatter(
+                zonal[:, :8].contiguous(),
+                radial,
+                dst,
+                order,
+                row_ptr,
+                32,
+                2,
+            )
+
+    @_GPU_KERNELS
+    def test_compiled_gradient_matches_eager(self):
+        """Differentiating through a ``torch.compile`` graph stays correct.
+
+        The register_autograd wiring runs under Inductor here: the forward
+        is compiled and the backward is generated for the compiled region,
+        so a regression in the operator's autograd registration leaves the
+        eager tests green but breaks this one.  A capture backend first
+        asserts the operator node is in the compiled graph.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(53)
+        n_edge, n_nodes = 4096, 64
+        zonal, radial, dst, order, row_ptr, _p = self._make_case(
+            n_edge, n_nodes, generator
+        )
+        cotangent = torch.randn(
+            n_nodes,
+            16,
+            radial.shape[2],
+            device="cuda",
+            generator=torch.Generator(device="cuda").manual_seed(59),
+        )
+
+        def fn(z, r):
+            return gie_zonal_scatter(z, r, dst, order, row_ptr, n_nodes, 3)
+
+        graphs = []
+
+        def _capture(gm, example_inputs):
+            graphs.append(gm)
+            return gm.forward
+
+        torch.compile(fn, backend=_capture, dynamic=True)(zonal.clone(), radial.clone())
+        self.assertTrue(
+            any("gie_zonal_scatter" in g.code for g in graphs),
+            "the compiled graph must capture the operator node",
+        )
+
+        compiled = torch.compile(fn, dynamic=True)
+        z_e = zonal.clone().requires_grad_(True)
+        r_e = radial.clone().requires_grad_(True)
+        out_e = fn(z_e, r_e)
+        gz_e, gr_e = torch.autograd.grad(out_e, (z_e, r_e), cotangent)
+
+        z_c = zonal.clone().requires_grad_(True)
+        r_c = radial.clone().requires_grad_(True)
+        out_c = compiled(z_c, r_c)
+        gz_c, gr_c = torch.autograd.grad(out_c, (z_c, r_c), cotangent)
+
+        torch.testing.assert_close(out_c, out_e, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(gz_c, gz_e, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(gr_c, gr_e, atol=1e-5, rtol=1e-5)
 
     def test_reference_cpu_matches_manual(self):
         """CPU reference equals a hand-written sequential accumulation."""
@@ -2367,6 +2503,15 @@ class TestSeZMGieScatter(unittest.TestCase):
             import sys
 
             tree = pathlib.Path(sys.argv[1])
+            # Warm the package while the editable finder is alive (a
+            # scikit-build editable install serves ``deepmd.lib`` through
+            # it), then drop the cached deepmd modules except the C
+            # extension so the tree path takes over the pure-Python
+            # resolution below.
+            import torch
+
+            import deepmd  # noqa: F401
+
             sys.meta_path = [
                 f
                 for f in sys.meta_path
@@ -2375,9 +2520,10 @@ class TestSeZMGieScatter(unittest.TestCase):
                 and "editable" not in getattr(f, "__name__", "").lower()
             ]
             sys.path.insert(0, str(tree))
+            for _name in [k for k in list(sys.modules) if k.startswith("deepmd")]:
+                if _name != "deepmd.lib":
+                    del sys.modules[_name]
             sys.modules["triton"] = None  # any `import triton` now fails
-
-            import torch
 
             import deepmd.pt_expt.kernels.triton.sezm.gie_scatter as gs
 
@@ -2525,12 +2671,14 @@ class TestSeZMGieScatter(unittest.TestCase):
         pre-dirtied with NaN through the caching allocator (the output is
         ``torch.empty``; any surviving NaN marks a row the replay never
         wrote) and a dynamo counter asserting the replay reused the first
-        graph.  The remaining silent-grid path, a *static* export with a
-        baked node count, is closed by the row-pointer validation test:
-        the deferred assert turns an inconsistent baked pair loud instead
-        of wrong.  (Under dynamic tracing both grid derivations are
-        correct -- the node count arrives as a SymInt -- which is why the
-        grid form itself is defense in depth here, not this test's
+        graph.  The remaining silent-grid path, a *static* AOTI artifact
+        with a baked launch, is closed at the artifact level by
+        ``TestSeZMZonalScatterFreezeArtifact`` (a CUDA-target ``.pt2``
+        whose generated code must carry the fused kernel); the eager and
+        ``torch.export`` reload paths are covered by the row-pointer
+        validation test.  (Under dynamic tracing both grid derivations
+        are correct -- the node count arrives as a SymInt -- which is why
+        the grid form itself is defense in depth here, not this test's
         discriminator.)
         """
         from torch.fx.experimental.proxy_tensor import (

@@ -1209,3 +1209,96 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+class TestSeZMZonalScatterFreezeArtifact(_ClearDefaultDeviceTestCase):
+    """The freeze pin bakes the fused Triton scatter into a CUDA ``.pt2``.
+
+    The row-pointer guard cannot survive the AOTI codegen (the triton_op is
+    inlined at compile time and the deferred assert is never emitted), so
+    the shipped artifact is guarded by construction instead: this class
+    freezes an ``lmax=3`` fp32 model with the Triton path selected
+    (``DP_TRITON_INFER >= 1`` and ``DP_CUDA_INFER=0``, the documented
+    override) to a CUDA-target ``.pt2`` and inspects the package -- the
+    generated code must carry the fused kernel, not the reference
+    composition the unpinned CPU trace would bake.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        import os
+        import zipfile
+        from unittest import (
+            mock,
+        )
+
+        cls.artifact_markers = None
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        try:
+            tmp_root = Path(cls._tmpdir.name)
+            params = copy.deepcopy(_tiny_sezm_model_params())
+            params["descriptor"]["l_schedule"] = [3]
+            params["descriptor"]["precision"] = "float32"
+            params["descriptor"]["s2_activation"] = [False, False]
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_root, params)
+            out_path = tmp_root / "fused_zonal.pt2"
+            with mock.patch.dict(
+                os.environ,
+                {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "0"},
+                clear=False,
+            ):
+                freeze_sezm_to_pt2(
+                    str(ckpt_path), str(out_path), device=torch.device("cuda")
+                )
+            markers = set()
+            with zipfile.ZipFile(out_path) as zf:
+                cls.names = zf.namelist()
+                for name in zf.namelist():
+                    if name.endswith((".py", ".cu", ".cpp", ".json")):
+                        blob = zf.read(name)
+                        try:
+                            text = blob.decode("utf-8", errors="ignore")
+                        except Exception:  # binary-safe read, skip non-text entries
+                            continue
+                        if "_gie_scatter_fwd_kernel" in text:
+                            markers.add("fused_kernel")
+                        if "gie_zonal_scatter" in text:
+                            markers.add("operator_name")
+            cls.artifact_markers = markers
+            cls.out_path = out_path
+        except Exception:
+            cls._cleanup_artifact_fixture()
+            super().tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            cls._cleanup_artifact_fixture()
+        finally:
+            super().tearDownClass()
+
+    @classmethod
+    def _cleanup_artifact_fixture(cls) -> None:
+        for attr in ("artifact_markers", "names", "out_path"):
+            if hasattr(cls, attr):
+                delattr(cls, attr)
+        if hasattr(cls, "_tmpdir"):
+            cls._tmpdir.cleanup()
+            delattr(cls, "_tmpdir")
+
+    def test_artifact_carries_the_fused_scatter(self) -> None:
+        """The pinned trace must bake the fused kernel, not the reference."""
+        self.assertIn(
+            "fused_kernel",
+            self.artifact_markers,
+            "the CUDA-target .pt2 generated code carries no fused GIE "
+            "kernel; the pin failed and the reference composition was "
+            "exported instead",
+        )
+
+    def test_artifact_names_the_operator(self) -> None:
+        """The packaged metadata references the operator by name."""
+        self.assertIn("operator_name", self.artifact_markers)

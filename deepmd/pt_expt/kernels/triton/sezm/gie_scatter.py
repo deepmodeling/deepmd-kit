@@ -325,11 +325,11 @@ if GIE_SCATTER_TRITON_AVAILABLE:
         ):
             return _reference(zonal, radial, dst, n_nodes)
         # The CUDA sibling enforces the same invariant (TORCH_CHECK in
-        # zonal_scatter.cu); torch._check keeps it export-friendly -- eager
-        # raises immediately, a traced graph carries a deferred runtime
-        # assert instead of silently launching a wrong grid (too few
-        # programs leave output rows uninitialized, too many write past
-        # the allocation).
+        # zonal_scatter.cu).  This torch._check raises eagerly and survives
+        # the torch.export reload path (the op body re-executes on replay);
+        # it does NOT survive the AOTI .pt2 codegen, where the triton_op is
+        # inlined at compile time and the deferred assert is never emitted
+        # -- there the artifact-level regression guards the contract.
         torch._check(
             row_ptr.shape[0] == n_nodes + 1,
             lambda: (
@@ -403,6 +403,12 @@ if GIE_SCATTER_TRITON_AVAILABLE:
             radial = radial.contiguous()
         if grad_out.stride(-1) != 1 or grad_out.stride(1) != grad_out.shape[2]:
             grad_out = grad_out.contiguous()
+        # The backward kernel loads ``dst`` at unit stride; a strided view
+        # (reachable from ``edge_index[1]`` of a stacked-then-transposed
+        # edge list) would gather the wrong gradient rows silently.  The
+        # CUDA sibling and ``flash_atten`` normalize it the same way.
+        if dst.stride(0) != 1:
+            dst = dst.contiguous()
         gz = torch.empty((n_edge, n_row), device=zonal.device, dtype=torch.float32)
         gr = torch.empty(
             (n_edge, radial.shape[1], c), device=zonal.device, dtype=torch.float32
@@ -518,4 +524,15 @@ def gie_zonal_scatter(
             "the fused GIE scatter needs the triton stack; the reference "
             "composition covers environments without it"
         )
+    # Degree/shape contract of the packed layout the kernel specializes on:
+    # R = lmax^2 + 2*lmax non-scalar rows and one radial slot per degree.
+    # A mismatched pair otherwise computes silently wrong values.
+    torch._check(
+        zonal.shape[1] == lmax * lmax + 2 * lmax and radial.shape[1] == lmax,
+        lambda: (
+            f"zonal rows {zonal.shape[1]} / radial slots {radial.shape[1]} "
+            f"do not match lmax={lmax}; expected {lmax * lmax + 2 * lmax} "
+            f"rows and {lmax} slots"
+        ),
+    )
     return _gie_scatter_op(zonal, radial, dst, order, row_ptr, n_nodes, lmax)
