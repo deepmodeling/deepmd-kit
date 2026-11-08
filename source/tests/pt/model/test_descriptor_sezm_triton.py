@@ -2107,6 +2107,30 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         return conv, fused, x, cache, radial
 
     @_GPU_KERNELS
+    def test_lazy_pack_then_prepare_hook_coexist(self):
+        """A lazy pack must not collide with a later prepare call.
+
+        The lazy path caches under the hook's buffer names; a plain
+        attribute would make a subsequent ``prepare_inference_weights``
+        raise KeyError when registering the same names.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *self.CASE)
+        fused = make_triton_value_path(conv)
+        x, cache, radial = value_path_cls._edge_inputs(
+            self, conv, self.CASE[0], self.CASE[1]
+        )
+
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            fused(x, cache, radial)  # lazy pack + cache
+            fused.prepare_inference_weights()  # must not raise
+            fused(x, cache, radial)  # still consistent afterwards
+
+    @_GPU_KERNELS
     def test_lazy_packing_is_cached(self):
         """A hook-less flow packs once and caches under the hook's names."""
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (

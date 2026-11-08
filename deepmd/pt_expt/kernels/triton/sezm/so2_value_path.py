@@ -5327,8 +5327,18 @@ class _TritonSO2ValuePath:
             if packed is None:
                 return None
             weff, wh = packed
-            self._conv._triton_radial_weff = weff
-            self._conv._triton_radial_wh = wh
+            # Register like the prepare hook does (non-persistent
+            # buffers): plain attributes would collide with a later
+            # prepare_inference_weights call that registers the same
+            # names.
+            for name, weight in (
+                ("_triton_radial_weff", weff),
+                ("_triton_radial_wh", wh),
+            ):
+                if name in self._conv._buffers:
+                    self._conv._buffers[name] = weight
+                else:
+                    self._conv.register_buffer(name, weight, persistent=False)
         # The device resolves through the trace-time pin when one is set:
         # export flows trace on CPU, and the runtime check would otherwise
         # resolve a CUDA-target artifact to the unpacked head.  The folded
