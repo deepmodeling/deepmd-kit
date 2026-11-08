@@ -29,6 +29,8 @@ from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
 from deepmd.dpmodel.utils.serialization import (
+    array_to_record,
+    record_to_array,
     traverse_model_dict,
 )
 from deepmd.pt.utils.compile_compat import (
@@ -178,32 +180,13 @@ def _canonical_requires_source_csr(model: Any, lower_kind: str) -> bool:
 
 
 def _numpy_to_json_serializable(model_obj: dict) -> dict:
-    """Convert numpy arrays in a model dict to JSON-serializable lists."""
-    return traverse_model_dict(
-        model_obj,
-        lambda x: (
-            {
-                "@class": "np.ndarray",
-                "@is_variable": True,
-                "dtype": x.dtype.name,
-                "value": x.tolist(),
-            }
-            if isinstance(x, np.ndarray)
-            else x
-        ),
-    )
+    """Convert numpy arrays in a model dict to JSON-serializable records."""
+    return traverse_model_dict(model_obj, array_to_record)
 
 
 def _json_to_numpy(model_obj: dict) -> dict:
     """Convert JSON-serialized numpy arrays back to np.ndarray."""
-    return traverse_model_dict(
-        model_obj,
-        lambda x: (
-            np.asarray(x["value"], dtype=np.dtype(x["dtype"]))
-            if isinstance(x, dict) and x.get("@class") == "np.ndarray"
-            else x
-        ),
-    )
+    return traverse_model_dict(model_obj, record_to_array)
 
 
 def _metadata_value_to_json(value: Any) -> Any:

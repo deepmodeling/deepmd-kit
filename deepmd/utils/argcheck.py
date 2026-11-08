@@ -237,8 +237,8 @@ def spin_args() -> list[Argument]:
         "`native` injects the per-atom spin vector as an equivariant feature "
         "directly into the descriptor and "
         "derives the magnetic force as the negative spin gradient of the energy, "
-        "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
-        "representation and is the default. Other models always use the `deepspin` scheme."
+        "without virtual atoms. Set this to `native` for DPA4/SeZM and DPA4C. "
+        "Other models use the default `deepspin` virtual-atom representation."
     )
     doc_allow_missing_label = (
         "Whether to admit training systems that lack a `spin` data file, filling their "
@@ -4330,7 +4330,10 @@ def sezm_model_args() -> Argument:
         "symbolic make_fx and torch.compile in the DPA4/SeZM model. "
         "This path may still expose PyTorch compiler bugs, but can improve "
         "training speed by roughly 2-3x on supported workloads. "
-        "Requires torch==2.11. NVIDIA GPUs require CUDA >= 12.6. "
+        "Requires a PyTorch release listed in "
+        ":data:`deepmd.pt.utils.compile_compat.SUPPORTED_COMPILE_TORCH` "
+        "(currently 2.11.x, 2.12.x, and 2.13.x). "
+        "NVIDIA GPUs require CUDA >= 12.6. "
         "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
     doc_enable_tf32 = (

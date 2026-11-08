@@ -138,18 +138,6 @@ _SKIP_OFF_COMPILE_TORCH_REASON = (
 )
 
 
-def _tiny_sezm_spin_model_params() -> dict:
-    """Minimal fp64 SeZM spin config for freeze routing tests."""
-    params = copy.deepcopy(_tiny_sezm_model_params())
-    params["type_map"] = ["O", "H"]
-    params["spin"] = {
-        "use_spin": [True, False],
-        "virtual_scale": 0.2,
-        "scheme": "deepspin",
-    }
-    return params
-
-
 def _build_tiny_sezm_model() -> torch.nn.Module:
     """Fresh tiny SeZM model on CPU, in eval mode."""
     model = get_model(_tiny_sezm_model_params())
@@ -522,11 +510,11 @@ class TestSeZMWithCommExportPipeline(_ClearDefaultDeviceTestCase):
 
 
 class _FrozenPt2Fixture(_ClearDefaultDeviceTestCase):
-    """Shared setUp/tearDown: freeze a tiny SeZM checkpoint to ``.pt2`` once.
+    """Freeze a tiny SeZM checkpoint once for archive and inference checks.
 
-    AOTInductor compilation costs a few seconds; classes that share this
-    fixture avoid paying that cost twice.  ``cls.ckpt_path`` / ``cls.out_path``
-    / ``cls.params`` are populated and live for the lifetime of the class.
+    The checks share one test class, so CI keeps them together and does not
+    repeat the expensive AOTInductor compilation on another shard.
+    ``cls.ckpt_path`` / ``cls.out_path`` / ``cls.params`` live for the class.
     """
 
     params: dict
@@ -565,8 +553,7 @@ class _FrozenPt2Fixture(_ClearDefaultDeviceTestCase):
             super().tearDownClass()
 
 
-@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
-class TestSeZMExportArchive(_FrozenPt2Fixture):
+class _SeZMExportArchiveChecks:
     """AOTI ``.pt2`` archive structure + load-and-run smoke.
 
     Numerical parity of the compiled ``.pt2`` is covered by the
@@ -658,9 +645,19 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
             self.assertIn(key, out_map)
             self.assertTrue(torch.isfinite(out_map[key]).all().item())
 
+    def test_freeze_embeds_with_comm_artifact(self) -> None:
+        """The real compiled archive includes the multi-rank with-comm artifact."""
+        with zipfile.ZipFile(self.out_path, "r") as archive:
+            names = archive.namelist()
+            metadata = json.loads(archive.read("model/extra/metadata.json"))
+
+        self.assertTrue(metadata["has_comm_artifact"])
+        self.assertTrue(metadata["has_message_passing"])
+        self.assertIn("model/extra/forward_lower_with_comm.pt2", names)
+
 
 @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
-class TestSeZMViaDeepPot(_FrozenPt2Fixture):
+class TestSeZMViaDeepPot(_SeZMExportArchiveChecks, _FrozenPt2Fixture):
     """Integration through the standard :class:`deepmd.infer.DeepPot` entry.
 
     Locks in the contract that makes ``dp test -m frozen.pt2`` and the
@@ -1032,55 +1029,13 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         self.assertEqual(model_def["type"], "dpa4")
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
-    def test_freeze_accepts_spin_checkpoint_metadata(self) -> None:
-        """SeZM spin checkpoints should export a spin-compatible pt2 contract."""
-
-        def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
-            with zipfile.ZipFile(package_path, "w") as zf:
-                zf.writestr("model/data.pkl", b"")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            params = _tiny_sezm_spin_model_params()
-            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
-            out = tmp_path / "spin.pt2"
-
-            with mock.patch(
-                "torch._inductor.aoti_compile_and_package",
-                side_effect=fake_compile,
-            ):
-                freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
-
-            with zipfile.ZipFile(str(out), "r") as zf:
-                names = zf.namelist()
-                metadata = json.loads(
-                    zf.read("model/extra/metadata.json").decode("utf-8")
-                )
-
-        self.assertTrue(metadata["is_spin"])
-        self.assertEqual(metadata["lower_input_kind"], "nlist")
-        self.assertEqual(metadata["type_map"], params["type_map"])
-        self.assertEqual(metadata["ntypes"], len(params["type_map"]))
-        self.assertEqual(metadata["dim_chg_spin"], 0)
-        self.assertIsNone(metadata["default_chg_spin"])
-        self.assertEqual(metadata["use_spin"], params["spin"]["use_spin"])
-        self.assertEqual(metadata["ntypes_spin"], 1)
-        self.assertIn("energy_derv_r_mag", metadata["output_keys"])
-        self.assertIn("energy_derv_c_redu", metadata["output_keys"])
-        # Spin uses the nlist lower interface; the edge-based with-comm artifact
-        # does not apply, so multi-rank inference fails fast in C++.
-        self.assertFalse(metadata["has_comm_artifact"])
-        self.assertNotIn("model/extra/forward_lower_with_comm.pt2", names)
-
-    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_native_spin_checkpoint_metadata(self) -> None:
         """Native-spin checkpoints export the energy edge contract plus spin.
 
         The native scheme reuses the ``edge_vec`` lower ABI; the per-local-atom
         spin is the only extra input, so the C++ backend builds the edge schema
         exactly as for a non-spin model. The magnetic force and spin mask are
-        still emitted, and the type map / ntypes stay at the real-system sizes
-        (no virtual atoms).
+        still emitted, and the type map / ntypes stay at the real-system sizes.
         """
 
         def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
@@ -1106,12 +1061,13 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                 )
 
         self.assertTrue(metadata["is_spin"])
-        # Native spin shares the energy edge ABI; only the deepspin scheme keeps
-        # the nlist contract.
+        # Native spin shares the energy edge ABI.
         self.assertEqual(metadata["lower_input_kind"], "edge_vec")
-        # Native spin keeps the real-system type map and count (no virtual atoms).
+        # Native spin keeps the real-system type map and count.
         self.assertEqual(metadata["type_map"], params["type_map"])
         self.assertEqual(metadata["ntypes"], len(params["type_map"]))
+        self.assertEqual(metadata["sel"], params["descriptor"]["sel"])
+        self.assertEqual(metadata["nnei"], sum(params["descriptor"]["sel"]))
         self.assertEqual(metadata["use_spin"], params["spin"]["use_spin"])
         self.assertEqual(metadata["ntypes_spin"], 1)
         # The magnetic force and spin mask are still exported.
@@ -1121,36 +1077,6 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         # the freeze embeds the multi-rank with-comm artifact (extended spin leaf
         # plus the eight border_op communication tensors).
         self.assertTrue(metadata["has_comm_artifact"])
-        self.assertIn("model/extra/forward_lower_with_comm.pt2", names)
-
-    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
-    def test_freeze_embeds_with_comm_artifact(self) -> None:
-        """A plain SeZM checkpoint ships the nested multi-rank with-comm artifact."""
-
-        def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
-            with zipfile.ZipFile(package_path, "w") as zf:
-                zf.writestr("model/data.pkl", b"")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            params = _tiny_sezm_model_params()
-            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
-            out = tmp_path / "with_comm.pt2"
-
-            with mock.patch(
-                "torch._inductor.aoti_compile_and_package",
-                side_effect=fake_compile,
-            ):
-                freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
-
-            with zipfile.ZipFile(str(out), "r") as zf:
-                names = zf.namelist()
-                metadata = json.loads(
-                    zf.read("model/extra/metadata.json").decode("utf-8")
-                )
-
-        self.assertTrue(metadata["has_comm_artifact"])
-        self.assertTrue(metadata["has_message_passing"])
         self.assertIn("model/extra/forward_lower_with_comm.pt2", names)
 
 

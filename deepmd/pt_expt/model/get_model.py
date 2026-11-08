@@ -96,8 +96,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     ``bridging_method`` sugar expands to that form in :func:`get_model`);
     this builder rejects the flag.
 
-    Still unsupported here, each raising ``NotImplementedError``: the
-    virtual-atom (``deepspin``) spin scheme and ``lora``.
+    ``lora`` raises ``NotImplementedError``.
 
     Notes
     -----
@@ -111,11 +110,9 @@ def get_sezm_model(data: dict) -> BaseModel:
     """
     data = copy.deepcopy(data)
     if "spin" in data:
-        if str(data["spin"].get("scheme", "deepspin")) != "native":
+        if str(data["spin"].get("scheme", "")) != "native":
             raise NotImplementedError(
-                "Spin DPA4/SeZM models with the virtual-atom (deepspin) "
-                "scheme are not supported in the pt_expt backend; use spin "
-                "scheme 'native' instead."
+                "DPA4/SeZM spin models require model.spin.scheme='native'."
             )
         return get_native_spin_model(data)
     bridging_method = str(data.get("bridging_method", "none"))

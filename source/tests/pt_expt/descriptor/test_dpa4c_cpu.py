@@ -34,8 +34,10 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     build_compression_artifacts,
     build_low_rank_table,
     build_radial_table,
+    compressed_operator_arguments,
     contact_radius_input,
     descriptor_profile,
+    dpa4c_graph_compress,
     ensure_registered,
     op_available,
 )
@@ -620,6 +622,236 @@ def test_prepared_table_is_reused_across_calls() -> None:
 
     torch.testing.assert_close(first, second)
     assert second_seconds < 0.5 * first_seconds
+
+
+@_CPU
+@pytest.mark.parametrize("canonical", [False, True])
+def test_leading_table_views_keep_their_interval_count(canonical: bool) -> None:
+    """A short leading view must not supply the prepared table for a full one."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=canonical)
+    arguments = _arguments(descriptor, graph, atype)
+    table = arguments[5]
+    short_arguments = (*arguments[:5], table[:1], *arguments[6:])
+    assert short_arguments[5].data_ptr() == table.data_ptr()
+    # Populate the cache using only the first interval. The subsequent call
+    # needs later intervals from the same storage and the same data address.
+    torch.ops.deepmd.dpa4c_graph_compress(
+        torch.zeros_like(graph.edge_vec), *short_arguments
+    )
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
+    reference = _reference_descriptor(reference_edge, *_spin_free(arguments))
+    torch.testing.assert_close(output, reference, atol=3.0e-5, rtol=3.0e-5)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    (reference_gradient,) = torch.autograd.grad(
+        (reference * cotangent).sum(), reference_edge
+    )
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=8.0e-6, rtol=1.0e-4)
+
+
+def _check_cached_table_views(graph: Any, arguments: tuple) -> None:
+    """Compare shared-storage views with freshly prepared native tables."""
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    fresh = tuple(
+        argument.clone() if index in (5, 8, 9) else argument
+        for index, argument in enumerate(arguments)
+    )
+    reference, reference_state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec, *fresh
+    )
+    torch.testing.assert_close(output, reference, atol=0, rtol=0)
+    torch.testing.assert_close(state, reference_state, atol=0, rtol=0)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    reference_gradient = _descriptor_backward(
+        cotangent, reference_state, graph.edge_vec, *fresh
+    )[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=0, rtol=0)
+
+
+@_CPU
+@pytest.mark.parametrize("radial_modes", [0, 2])
+def test_leading_pair_table_views_keep_their_type_count(radial_modes: int) -> None:
+    """The full type table needs pair rows absent from a shorter leading view."""
+    descriptor = _build_descriptor(16, radial_modes=radial_modes)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    short = list(arguments)
+    # The smaller configuration has one real type and one padding type.
+    # Its warm-up graph contains only the real type, so every read is valid.
+    short[4] = torch.zeros_like(atype)
+    short[8] = arguments[8][:4]
+    short[9] = arguments[9][:4]
+    short[10] = arguments[10][:2]
+    short[20] = arguments[20][:2]
+    for index in (5, 8, 9):
+        assert short[index].is_contiguous()
+        assert short[index].data_ptr() == arguments[index].data_ptr()
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *short)
+
+    _check_cached_table_views(graph, arguments)
+
+
+@_CPU
+@pytest.mark.parametrize(
+    ("channels", "radial_modes"), [(8, 4), (16, 2)], ids=["channels", "modes"]
+)
+def test_reshaped_table_views_keep_their_layout(
+    channels: int, radial_modes: int
+) -> None:
+    """Identical storage addresses do not imply identical coefficient packing."""
+    descriptor = _build_descriptor(16, radial_modes=4)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    smaller = list(
+        _arguments(_build_descriptor(channels, radial_modes=radial_modes), graph, atype)
+    )
+    for index in (5, 8, 9):
+        original = arguments[index]
+        target = smaller[index]
+        smaller[index] = original.flatten()[: target.numel()].view(target.shape)
+        assert smaller[index].is_contiguous()
+        assert smaller[index].data_ptr() == original.data_ptr()
+    assert smaller[5].shape[0] == arguments[5].shape[0]
+    # Warm the larger layout first: even a stale cache leaves sufficient
+    # buffer space for the smaller call, but its coefficient packing is wrong.
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    _check_cached_table_views(graph, tuple(smaller))
+
+
+@_CPU
+@pytest.mark.parametrize("rewrite", ["rebound", "in_place"])
+@pytest.mark.parametrize("table", [8, 9], ids=["pair_film", "pair_mixing"])
+def test_new_pair_tables_reach_the_kernel(table: int, rewrite: str) -> None:
+    """New ordered pair tables reach the kernel beside the same radial table.
+
+    A charge-state rebuild leaves the radial table bound and brings new
+    ordered pair tables in one of two ways: the eager descriptor binds new
+    tensors, while a frozen lower has its constants rewritten in place, after
+    which AOTInductor wraps the same bytes in a new tensor, as the DLPack
+    import does here. In neither case may the call be served the tables
+    prepared for the previous contents. The FiLM and mode-mixing tables
+    follow the radial and low-rank tables among the operator arguments.
+    """
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=False)
+    arguments = list(_arguments(descriptor, graph, atype))
+    first, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    contents = 1.5 * arguments[table] + 0.2
+    if rewrite == "in_place":
+        arguments[table] = torch.from_dlpack(arguments[table].copy_(contents))
+    else:
+        arguments[table] = contents
+    second, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference = _reference_descriptor(graph.edge_vec, *_spin_free(tuple(arguments)))
+    torch.testing.assert_close(second, reference, atol=3.0e-5, rtol=3.0e-5)
+    assert (second - first).abs().max() > 1.0e-3
+
+
+@_CPU
+@pytest.mark.parametrize("table", ["data", "pair_film", "pair_mixing"])
+@pytest.mark.parametrize("load", ["copy", "assign", "assign_alias"])
+@pytest.mark.parametrize("inference", [False, True])
+def test_loaded_compression_tables_replace_prepared_tables(
+    table: str, load: str, inference: bool
+) -> None:
+    """Loading a snapshot must not reuse tables prepared before the load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    artifacts = build_compression_artifacts(descriptor, stride=0.01)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    with torch.inference_mode(inference):
+        # Cloning here also covers inference tensors, which have no version
+        # counters for a native cache to consult.
+        descriptor._set_compression(
+            {name: value.clone() for name, value in artifacts.items()}
+        )
+        assert descriptor.compress_data.is_inference() == inference
+
+        def arguments() -> tuple:
+            return (
+                graph.edge_index,
+                graph.edge_mask,
+                graph.destination_order,
+                graph.destination_row_ptr,
+                atype,
+                *compressed_operator_arguments(descriptor),
+                bool(graph.destination_sorted),
+                descriptor.lmax,
+                *descriptor._compression_scalars,
+            )
+
+        ensure_registered()
+        before, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        state = descriptor.state_dict()
+        if load != "assign_alias":
+            state = {name: value.clone() for name, value in state.items()}
+        # The alias case retains the state dict's original shared storage,
+        # including when assign=True restores those very tensors.
+        state[f"compress_{table}"].mul_(1.5).add_(0.2)
+        descriptor.load_state_dict(state, assign=load != "copy")
+        after, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        _check_cached_table_views(graph, arguments())
+        assert (after - before).abs().max() > 1.0e-3
+
+
+@_CPU
+@pytest.mark.parametrize("assign", [False, True])
+@pytest.mark.parametrize("partial", [False, True])
+def test_loaded_compression_metadata_reaches_the_kernel(
+    assign: bool, partial: bool
+) -> None:
+    """A same-shaped replacement table must use its own radial stride."""
+    descriptor = _build_descriptor(16, radial_modes=2, **_WINDOW)
+    replacement = _build_descriptor(16, radial_modes=2, **_WINDOW)
+    # Both valid strides need twelve rows, so an ordinary state load can
+    # replace the coefficients without changing the buffer's shape.
+    descriptor.enable_compression(0.5, table_stride_1=0.25)
+    replacement.enable_compression(0.5, table_stride_1=0.26)
+    assert descriptor.compress_data.shape == replacement.compress_data.shape
+    graph, atype = _build_graph(descriptor, canonical=True)
+    expected = dpa4c_graph_compress(replacement, graph, atype)
+    dpa4c_graph_compress(descriptor, graph, atype)
+    window = descriptor._compression_scalars[-2:]
+
+    # A parent exercises the state-key prefix for full and partial loads.
+    parent = torch.nn.ModuleList([descriptor])
+    state = torch.nn.ModuleList([replacement]).state_dict()
+    if partial:
+        state = {
+            name: value
+            for name, value in state.items()
+            if name in ("0.compress_data", "0.compress_info")
+        }
+    parent.load_state_dict(state, assign=assign, strict=not partial)
+    output = dpa4c_graph_compress(descriptor, graph, atype)
+    torch.testing.assert_close(output, expected, atol=0, rtol=0)
+    assert descriptor._compression_scalars == (
+        *replacement.compress_info.tolist(),
+        *window,
+    )
+
+
+@pytest.mark.parametrize("assign", [False, True])
+def test_compression_state_can_load_after_inference_mode(assign: bool) -> None:
+    """An inference-mode load must not prevent a later ordinary state load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    descriptor.enable_compression(0.5, table_stride_1=0.01)
+    # Load through a parent to exercise the descriptor's state-key prefix.
+    parent = torch.nn.ModuleList([descriptor])
+    # Keep the input ordinary to isolate whether rebinding under the caller's
+    # inference mode creates buffers that the next ordinary load cannot update.
+    # Loading inference tensors themselves is covered by the cache tests above.
+    state = {name: value.clone() for name, value in parent.state_dict().items()}
+    with torch.inference_mode():
+        parent.load_state_dict(state, assign=assign)
+    parent.load_state_dict(state)
+    for name, value in parent.state_dict().items():
+        torch.testing.assert_close(value, state[name], atol=0, rtol=0)
 
 
 @_CPU

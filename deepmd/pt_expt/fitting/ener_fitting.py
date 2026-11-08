@@ -44,6 +44,7 @@ class EnergyFittingNet(EnergyFittingNetDP):
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
         node_gate: torch.Tensor | None = None,
+        return_middle_output: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Graph-native fitting forward, fused when the backend supports it.
 
@@ -56,10 +57,13 @@ class EnergyFittingNet(EnergyFittingNetDP):
         constant on the eligible configuration and enters the operator through
         the bias; the readout gate of a bridged descriptor scales the
         deviation of the fused output from the bias of the type (see
-        :meth:`readout_reference`).
+        :meth:`readout_reference`). The fused operator returns the output
+        alone, so a call that also asks for the middle output keeps the
+        reference.
         """
         if (
             not self.training
+            and not return_middle_output
             and fparam is None
             and aparam is None
             and fused_operators_enabled()
@@ -90,4 +94,5 @@ class EnergyFittingNet(EnergyFittingNetDP):
             aparam=aparam,
             vacuum_descriptor=vacuum_descriptor,
             node_gate=node_gate,
+            return_middle_output=return_middle_output,
         )
