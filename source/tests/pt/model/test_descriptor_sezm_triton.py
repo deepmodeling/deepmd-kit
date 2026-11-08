@@ -2510,7 +2510,7 @@ class TestSeZMGieScatter(unittest.TestCase):
             # resolution below.
             import torch
 
-            import deepmd  # noqa: F401
+            import deepmd.lib  # noqa: F401  (plain deepmd is lazy; warm the C ext)
 
             sys.meta_path = [
                 f
@@ -2523,6 +2523,12 @@ class TestSeZMGieScatter(unittest.TestCase):
             for _name in [k for k in list(sys.modules) if k.startswith("deepmd")]:
                 if _name != "deepmd.lib":
                     del sys.modules[_name]
+            # Re-link the cached C extension onto the freshly imported
+            # parent package: a plain cache-hit import does NOT restore
+            # the submodule attribute, so assign it explicitly.
+            import deepmd
+
+            sys.modules["deepmd"].lib = sys.modules["deepmd.lib"]
             sys.modules["triton"] = None  # any `import triton` now fails
 
             import deepmd.pt_expt.kernels.triton.sezm.gie_scatter as gs
