@@ -142,6 +142,7 @@ class TestDeepEvalMetadataOnlyPte(unittest.TestCase):
         self.assertEqual(full.get_type_map(), meta.get_type_map())
         self.assertEqual(full.get_dim_fparam(), meta.get_dim_fparam())
         self.assertEqual(full.get_dim_aparam(), meta.get_dim_aparam())
+        self.assertEqual(full.has_default_fparam(), meta.has_default_fparam())
         self.assertEqual(full.get_sel_type(), meta.get_sel_type())
         self.assertEqual(full.get_has_spin(), meta.get_has_spin())
         self.assertEqual(full.get_use_spin(), meta.get_use_spin())
@@ -205,9 +206,11 @@ class TestDeepEvalMetadataOnlyPte(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             self.dp_meta.deep_eval.eval_typeebd()
 
-
-class TestDeepEvalMetadataOnlyGuards(unittest.TestCase):
-    """Error-path coverage that is independent of the .pte fixture."""
+    def test_eval_embedding_requires_dpmodel(self) -> None:
+        with self.assertRaisesRegex(
+            NotImplementedError, "requires the dpmodel instance"
+        ):
+            self.dp_meta.deep_eval.eval_embedding(self.coord, self.cell, self.atype)
 
     def test_missing_metadata_json_is_rejected(self) -> None:
         """A ``.pte`` stripped of ``metadata.json`` must raise on load.
@@ -215,23 +218,20 @@ class TestDeepEvalMetadataOnlyGuards(unittest.TestCase):
         Metadata is the minimum contract — unlike ``model.json`` it
         must always be present.
         """
-        torch.manual_seed(0)
-        ds = DescrptSeA(4.0, 0.5, [6, 6])
-        ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=1)
-        model = EnergyModel(ds, ft, type_map=["a", "b"]).to(torch.float64).eval()
+        # Keep a real exported program in the broken archive. Reuse the
+        # immutable full fixture instead of tracing another identical graph
+        # merely to remove its metadata; all other entries are copied intact.
         with tempfile.TemporaryDirectory() as tmp:
-            full = Path(tmp) / "full.pte"
             broken = Path(tmp) / "no_metadata.pte"
-            deserialize_to_file(str(full), {"model": model.serialize()})
             with (
-                zipfile.ZipFile(full, "r") as zin,
+                zipfile.ZipFile(self.full_path, "r") as zin,
                 zipfile.ZipFile(broken, "w") as zout,
             ):
                 for info in zin.infolist():
                     if info.filename.endswith("extra/metadata.json"):
                         continue
                     zout.writestr(info, zin.read(info.filename))
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "missing 'metadata.json'"):
                 DeepPot(str(broken))
 
 

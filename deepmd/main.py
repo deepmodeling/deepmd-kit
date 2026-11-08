@@ -550,9 +550,10 @@ def main_parser() -> argparse.ArgumentParser:
         "--model",
         default="model.ckpt.pt",
         type=str,
-        help="(Supported backend: PyTorch) Energy model to import: a training "
-        "checkpoint (suffix .pt) or a frozen model (suffix .pth). SeZM/DPA4 "
-        "only supports the .pt checkpoint; the frozen .pt2 package is not supported.",
+        help="(Supported backend: PyTorch, PyTorch Exportable) Model to import: "
+        "a training checkpoint (suffix .pt), or a frozen model written by "
+        "`dp --pt freeze` (suffix .pth) or `dp --pt-expt freeze` (suffix .pt2 or "
+        ".pte).",
     )
     parser_embedding_subgroup = parser_embedding.add_mutually_exclusive_group()
     parser_embedding_subgroup.add_argument(
@@ -589,7 +590,8 @@ def main_parser() -> argparse.ArgumentParser:
         "--model-branch",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+        help="(Supported backend: PyTorch, PyTorch Exportable) Task head (alias: "
+        "model branch) to use if in multi-task mode.",
     )
 
     # * compress model *****************************************************************
