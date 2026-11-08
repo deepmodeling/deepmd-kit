@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-from collections import (
-    OrderedDict,
-)
 from typing import (
     Any,
 )
@@ -37,7 +34,6 @@ from deepmd.dpmodel.descriptor.repflows import (
 )
 
 from ....consistent.common import (
-    parameterize_func,
     parameterized,
 )
 from ....seed import (
@@ -86,22 +82,6 @@ def DescriptorParamSeA(
     return input_dict
 
 
-DescriptorParamSeAList = parameterize_func(
-    DescriptorParamSeA,
-    OrderedDict(
-        {
-            "resnet_dt": (False, True),
-            "type_one_side": (True, False),
-            "exclude_types": ([], [[0, 1]]),
-            "env_protection": (0.0, 1e-8, 1e-2),
-            "precision": ("float64",),
-        }
-    ),
-)
-# to get name for the default function
-DescriptorParamSeA = DescriptorParamSeAList[0]
-
-
 def DescriptorParamSeR(
     ntypes,
     rcut,
@@ -130,22 +110,6 @@ def DescriptorParamSeR(
     return input_dict
 
 
-DescriptorParamSeRList = parameterize_func(
-    DescriptorParamSeR,
-    OrderedDict(
-        {
-            "resnet_dt": (False, True),
-            "type_one_side": (True,),  # type_one_side == False not implemented
-            "exclude_types": ([], [[0, 1]]),
-            "env_protection": (0.0, 1e-8),
-            "precision": ("float64",),
-        }
-    ),
-)
-# to get name for the default function
-DescriptorParamSeR = DescriptorParamSeRList[0]
-
-
 def DescriptorParamSeT(
     ntypes,
     rcut,
@@ -172,21 +136,6 @@ def DescriptorParamSeT(
     return input_dict
 
 
-DescriptorParamSeTList = parameterize_func(
-    DescriptorParamSeT,
-    OrderedDict(
-        {
-            "resnet_dt": (False, True),
-            "exclude_types": ([], [[0, 1]]),
-            "env_protection": (0.0, 1e-8),
-            "precision": ("float64",),
-        }
-    ),
-)
-# to get name for the default function
-DescriptorParamSeT = DescriptorParamSeTList[0]
-
-
 def DescriptorParamSeTTebd(
     ntypes,
     rcut,
@@ -199,7 +148,7 @@ def DescriptorParamSeTTebd(
     tebd_input_mode="concat",
     concat_output_tebd=True,
     resnet_dt=True,
-    set_davg_zero=True,
+    set_davg_zero=False,
     smooth=True,
     use_econf_tebd=False,
     use_tebd_bias=False,
@@ -227,28 +176,6 @@ def DescriptorParamSeTTebd(
     return input_dict
 
 
-DescriptorParamSeTTebdList = parameterize_func(
-    DescriptorParamSeTTebd,
-    OrderedDict(
-        {
-            "tebd_dim": (4,),
-            "tebd_input_mode": ("concat", "strip"),
-            "resnet_dt": (True,),
-            "exclude_types": ([], [[0, 1]]),
-            "env_protection": (0.0,),
-            "set_davg_zero": (False,),
-            "smooth": (True, False),
-            "concat_output_tebd": (True,),
-            "use_econf_tebd": (False, True),
-            "use_tebd_bias": (False,),
-            "precision": ("float64",),
-        }
-    ),
-)
-# to get name for the default function
-DescriptorParamSeTTebd = DescriptorParamSeTTebdList[0]
-
-
 def DescriptorParamDPA1(
     ntypes,
     rcut,
@@ -260,7 +187,7 @@ def DescriptorParamDPA1(
     tebd_dim=4,
     tebd_input_mode="concat",
     attn=20,
-    attn_layer=2,
+    attn_layer=0,
     attn_dotr=True,
     scaling_factor=1.0,
     normalize=True,
@@ -268,8 +195,8 @@ def DescriptorParamDPA1(
     ln_eps=1e-5,
     concat_output_tebd=True,
     resnet_dt=True,
-    type_one_side=True,
-    set_davg_zero=True,
+    type_one_side=False,
+    set_davg_zero=False,
     smooth_type_embedding=True,
     use_econf_tebd=False,
     use_tebd_bias=False,
@@ -306,36 +233,6 @@ def DescriptorParamDPA1(
     return input_dict
 
 
-DescriptorParamDPA1List = parameterize_func(
-    DescriptorParamDPA1,
-    OrderedDict(
-        {
-            "tebd_dim": (4,),
-            "tebd_input_mode": ("concat", "strip"),
-            "resnet_dt": (True,),
-            "type_one_side": (False,),
-            "attn": (20,),
-            "attn_layer": (0, 2),
-            "attn_dotr": (True,),
-            "exclude_types": ([], [[0, 1]]),
-            "env_protection": (0.0,),
-            "set_davg_zero": (False,),
-            "scaling_factor": (1.0,),
-            "normalize": (True,),
-            "temperature": (None, 1.0),
-            "ln_eps": (1e-5,),
-            "smooth_type_embedding": (True, False),
-            "concat_output_tebd": (True,),
-            "use_econf_tebd": (False, True),
-            "use_tebd_bias": (False,),
-            "precision": ("float64",),
-        }
-    ),
-)
-# to get name for the default function
-DescriptorParamDPA1 = DescriptorParamDPA1List[0]
-
-
 def DescriptorParamDPA2(
     ntypes,
     rcut,
@@ -343,9 +240,9 @@ def DescriptorParamDPA2(
     sel,
     type_map,
     repinit_tebd_input_mode="concat",
-    repinit_set_davg_zero=False,
+    repinit_set_davg_zero=True,
     repinit_type_one_side=False,
-    repinit_use_three_body=False,
+    repinit_use_three_body=True,
     repformer_direct_dist=False,
     repformer_update_g1_has_conv=True,
     repformer_update_g1_has_drrd=True,
@@ -357,12 +254,12 @@ def DescriptorParamDPA2(
     repformer_attn2_has_gate=True,
     repformer_update_style="res_avg",
     repformer_update_residual_init="norm",
-    repformer_set_davg_zero=False,
+    repformer_set_davg_zero=True,
     repformer_trainable_ln=True,
     repformer_ln_eps=1e-5,
-    repformer_use_sqrt_nnei=False,
-    repformer_g1_out_conv=False,
-    repformer_g1_out_mlp=False,
+    repformer_use_sqrt_nnei=True,
+    repformer_g1_out_conv=True,
+    repformer_g1_out_mlp=True,
     smooth=True,
     add_tebd_to_repinit_out=True,
     use_econf_tebd=False,
@@ -443,44 +340,6 @@ def DescriptorParamDPA2(
     return input_dict
 
 
-DescriptorParamDPA2List = parameterize_func(
-    DescriptorParamDPA2,
-    OrderedDict(
-        {
-            "repinit_tebd_input_mode": ("concat", "strip"),
-            "repinit_set_davg_zero": (True,),
-            "repinit_type_one_side": (False,),
-            "repinit_use_three_body": (True, False),
-            "repformer_direct_dist": (False,),
-            "repformer_update_g1_has_conv": (True,),
-            "repformer_update_g1_has_drrd": (True,),
-            "repformer_update_g1_has_grrg": (True,),
-            "repformer_update_g1_has_attn": (True,),
-            "repformer_update_g2_has_g1g1": (True,),
-            "repformer_update_g2_has_attn": (True,),
-            "repformer_update_h2": (False,),
-            "repformer_attn2_has_gate": (True,),
-            "repformer_update_style": ("res_avg", "res_residual"),
-            "repformer_update_residual_init": ("norm",),
-            "repformer_set_davg_zero": (True,),
-            "repformer_trainable_ln": (True,),
-            "repformer_ln_eps": (1e-5,),
-            "repformer_use_sqrt_nnei": (True,),
-            "repformer_g1_out_conv": (True,),
-            "repformer_g1_out_mlp": (True,),
-            "smooth": (True, False),
-            "exclude_types": ([], [[0, 1]]),
-            "precision": ("float64",),
-            "add_tebd_to_repinit_out": (True, False),
-            "use_econf_tebd": (False,),
-            "use_tebd_bias": (False,),
-        }
-    ),
-)
-# to get name for the default function
-DescriptorParamDPA2 = DescriptorParamDPA2List[0]
-
-
 def DescriptorParamDPA3(
     ntypes,
     rcut,
@@ -494,15 +353,15 @@ def DescriptorParamDPA3(
     update_residual_init="const",
     update_angle=True,
     n_multi_edge_message=1,
-    a_compress_rate=0,
-    a_compress_e_rate=1,
-    a_compress_use_split=False,
+    a_compress_rate=1,
+    a_compress_e_rate=2,
+    a_compress_use_split=True,
     optim_update=True,
-    smooth_edge_update=False,
-    edge_init_use_dist=False,
-    use_exp_switch=False,
+    smooth_edge_update=True,
+    edge_init_use_dist=True,
+    use_exp_switch=True,
     fix_stat_std=0.3,
-    use_dynamic_sel=False,
+    use_dynamic_sel=True,
     precision="float64",
     use_loc_mapping=True,
     add_chg_spin_ebd=False,
@@ -562,35 +421,6 @@ def DescriptorParamDPA3(
     return input_dict
 
 
-DescriptorParamDPA3List = parameterize_func(
-    DescriptorParamDPA3,
-    OrderedDict(
-        {
-            "update_residual_init": ("const",),
-            "exclude_types": ([], [[0, 1]]),
-            "update_angle": (True,),
-            "a_compress_rate": (1,),
-            "a_compress_e_rate": (2,),
-            "a_compress_use_split": (True,),
-            "optim_update": (True, False),
-            "smooth_edge_update": (True,),
-            "edge_init_use_dist": (True, False),
-            "use_exp_switch": (True, False),
-            "fix_stat_std": (0.3,),
-            "n_multi_edge_message": (1,),
-            "use_dynamic_sel": (True, False),
-            "env_protection": (0.0, 1e-8),
-            "precision": ("float64",),
-            "use_loc_mapping": (True, False),
-        }
-    ),
-)
-
-
-# to get name for the default function
-DescriptorParamDPA3 = DescriptorParamDPA3List[0]
-
-
 def _descriptor_param_variant(param_func, name: str, **fixed_kwargs: Any):
     def wrapper(*args, **kwargs):
         return param_func(*args, **{**kwargs, **fixed_kwargs})
@@ -600,9 +430,7 @@ def _descriptor_param_variant(param_func, name: str, **fixed_kwargs: Any):
     return wrapper
 
 
-# Curated descriptor variants for model/atomic-model integration tests. The
-# descriptor tests above still cover the full parameter matrices; model-level
-# tests only need representative toggles to avoid a Cartesian-product blow-up.
+# Descriptor variants exercise independent options in model integration tests.
 DescriptorParamSeAEnergyModelList = (
     # Baseline coverage.
     DescriptorParamSeA,

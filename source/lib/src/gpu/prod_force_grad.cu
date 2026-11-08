@@ -91,8 +91,12 @@ void prod_force_grad_a_gpu(FPTYPE* grad_net,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
-  DPErrcheck(
-      gpuMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
+  const size_t output_size =
+      sizeof(FPTYPE) * static_cast<size_t>(nframes) * nloc * ndescrpt;
+  if (output_size == 0) {
+    return;
+  }
+  DPErrcheck(gpuMemset(grad_net, 0, output_size));
   const int nblock = (ndescrpt + TPB - 1) / TPB;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(TPB, 1);
@@ -122,8 +126,12 @@ void prod_force_grad_r_gpu(FPTYPE* grad_net,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
-  DPErrcheck(
-      gpuMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
+  const size_t output_size =
+      sizeof(FPTYPE) * static_cast<size_t>(nframes) * nloc * ndescrpt;
+  if (output_size == 0) {
+    return;
+  }
+  DPErrcheck(gpuMemset(grad_net, 0, output_size));
   const int nblock = (ndescrpt + TPB - 1) / TPB;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(TPB, 1);

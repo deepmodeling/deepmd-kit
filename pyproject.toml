@@ -79,6 +79,9 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 # which can be read by the build backend.
 [tool.deepmd_build_backend.optional-dependencies]
 test = [
+    # Build-option tests import the backend outside its isolated build environment.
+    "dependency_groups",
+    'tomli >= 1.1.0 ; python_version < "3.11"',
     "dpdata>=0.2.7",
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # fixed in 3.23.0

@@ -32,6 +32,12 @@ class _FakeModel:
     def compression_needs_min_nbor_dist(self) -> bool:
         return self._needs_min_nbor_dist
 
+    def eval(self) -> None:
+        """No-op: the stub holds no torch state to switch out of training."""
+
+    def fold_vacuum_reference(self) -> None:
+        """No-op: the stub has no deployment constants to fold."""
+
 
 @pytest.mark.parametrize(
     ("model_min_nbor_dist", "model_dict", "expected"),

@@ -670,6 +670,11 @@ class StandardModel(Model):
         type_map: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
+        if kwargs.get("long_range") is not None:
+            raise NotImplementedError(
+                "long-range modules (`long_range`) are supported by the pt_expt "
+                "backend only"
+            )
         super().__init__(
             descriptor=descriptor, fitting=fitting_net, type_map=type_map, **kwargs
         )

@@ -35,6 +35,25 @@ from ...seed import (
 
 
 class TestModelCompression(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._frozen_path = None
+
+    def _frozen_model_path(self) -> str:
+        """Freeze the identical seeded input once; compression outputs stay private."""
+        cls = type(self)
+        if cls._frozen_path is None:
+            model = self._make_model().eval()
+            model.min_nbor_dist = 0.5
+            with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
+                frozen_path = f.name
+            cls.addClassCleanup(os.unlink, frozen_path)
+            deserialize_to_file(
+                frozen_path, {"model": model.serialize(), "min_nbor_dist": 0.5}
+            )
+            cls._frozen_path = frozen_path
+        return cls._frozen_path
+
     def setUp(self) -> None:
         from deepmd.pt.cxx_op import (
             ENABLE_CUSTOMIZED_OP,
@@ -120,14 +139,10 @@ class TestModelCompression(unittest.TestCase):
         md.eval()
         ret_frozen = self._eval_model(md)
 
-        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
-        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
-            frozen_path = f.name
+        frozen_path = self._frozen_model_path()
         with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
             compressed_path = f.name
         try:
-            deserialize_to_file(frozen_path, model_data)
-
             # 2. Compress via entry point (same as `dp --pt_expt compress`)
             compress_entry(
                 input_file=frozen_path,
@@ -158,7 +173,6 @@ class TestModelCompression(unittest.TestCase):
                     ret_frozen[key], ret_compressed[key], atol=1e-7, err_msg=key
                 )
         finally:
-            os.unlink(frozen_path)
             os.unlink(compressed_path)
 
     def test_descriptor_preserved_in_model(self) -> None:
@@ -177,15 +191,9 @@ class TestModelCompression(unittest.TestCase):
         self.assertAlmostEqual(md.get_min_nbor_dist(), 0.5)
 
         # Freeze to .pte
-        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
-        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
-            frozen_path = f.name
-        try:
-            deserialize_to_file(frozen_path, model_data)
-            loaded_data = serialize_from_file(frozen_path)
-            self.assertAlmostEqual(loaded_data["min_nbor_dist"], 0.5)
-        finally:
-            os.unlink(frozen_path)
+        frozen_path = self._frozen_model_path()
+        loaded_data = serialize_from_file(frozen_path)
+        self.assertAlmostEqual(loaded_data["min_nbor_dist"], 0.5)
 
     def test_compress_min_nbor_dist_from_variables(self) -> None:
         """Test that compress recovers min_nbor_dist from @variables and keeps it.
@@ -288,18 +296,10 @@ class TestModelCompression(unittest.TestCase):
             main,
         )
 
-        md = self._make_model()
-        md.min_nbor_dist = 0.5
-        md.eval()
-
-        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
-        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
-            frozen_path = f.name
+        frozen_path = self._frozen_model_path()
         with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
             compressed_path = f.name
         try:
-            deserialize_to_file(frozen_path, model_data)
-
             # Call via CLI entry point
             main(
                 [
@@ -315,7 +315,6 @@ class TestModelCompression(unittest.TestCase):
             compressed_data = serialize_from_file(compressed_path)
             self.assertIn("model", compressed_data)
         finally:
-            os.unlink(frozen_path)
             if os.path.exists(compressed_path):
                 os.unlink(compressed_path)
 
@@ -338,14 +337,10 @@ class TestModelCompression(unittest.TestCase):
         md.eval()
         ret_frozen = self._eval_model(md)
 
-        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
-        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
-            frozen_path = f.name
+        frozen_path = self._frozen_model_path()
         with tempfile.NamedTemporaryFile(suffix=".pt2", delete=False) as f:
             compressed_pt2_path = f.name
         try:
-            deserialize_to_file(frozen_path, model_data)
-
             # 2. Compress with .pt2 output
             compress_entry(
                 input_file=frozen_path,
@@ -377,7 +372,6 @@ class TestModelCompression(unittest.TestCase):
                 ret_frozen["virial"], v_pt2, atol=1e-7, err_msg="virial"
             )
         finally:
-            os.unlink(frozen_path)
             if os.path.exists(compressed_pt2_path):
                 os.unlink(compressed_pt2_path)
 

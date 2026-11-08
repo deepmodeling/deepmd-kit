@@ -61,6 +61,19 @@ def _tensor(array: np.ndarray) -> torch.Tensor:
 class TestPtSpinModelVirtualTypes(unittest.TestCase):
     """Every pt lookup must mask ``atype < 0`` exactly as dpmodel does."""
 
+    def test_real_type_sequence_bias_override(self) -> None:
+        model = get_pt_model(MODEL_CONFIG)
+        sample = {
+            "coord": _tensor(np.arange(9, dtype=np.float64).reshape(1, 3, 3)),
+            "atype": _tensor(np.array([[0, 1, 2]], dtype=np.int64)),
+            "spin": _tensor(np.ones((1, 3, 3), dtype=np.float64)),
+        }
+        model.change_out_bias([sample], preset_out_bias={"energy": [1.0, 2.0, 3.0]})
+        np.testing.assert_allclose(
+            to_numpy_array(model.get_out_bias()).reshape(-1),
+            [1.0, 2.0, 3.0, 0.0, 0.0, 0.0],
+        )
+
     def test_dense_spin_expansion_preserves_virtual_types(self) -> None:
         model = get_pt_model(MODEL_CONFIG)
         coord = np.arange(9, dtype=np.float64).reshape(1, 3, 3)

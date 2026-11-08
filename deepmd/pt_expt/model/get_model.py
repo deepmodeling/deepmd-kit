@@ -31,6 +31,9 @@ from deepmd.pt_expt.descriptor import (
 from deepmd.pt_expt.fitting import (
     BaseFitting,
 )
+from deepmd.pt_expt.long_range import (
+    BaseLongRange,
+)
 from deepmd.pt_expt.model.dp_zbl_model import (
     DPZBLModel,
 )
@@ -75,6 +78,7 @@ _model_factory = BackendModelFactory(
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
     linear_atomic_model=LinearEnergyAtomicModel,
+    long_range_base=BaseLongRange,
 )
 get_zbl_model = _model_factory.get_zbl_model
 
@@ -92,8 +96,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     ``bridging_method`` sugar expands to that form in :func:`get_model`);
     this builder rejects the flag.
 
-    Still unsupported here, each raising ``NotImplementedError``: the
-    virtual-atom (``deepspin``) spin scheme and ``lora``.
+    ``lora`` raises ``NotImplementedError``.
 
     Notes
     -----
@@ -107,11 +110,9 @@ def get_sezm_model(data: dict) -> BaseModel:
     """
     data = copy.deepcopy(data)
     if "spin" in data:
-        if str(data["spin"].get("scheme", "deepspin")) != "native":
+        if str(data["spin"].get("scheme", "")) != "native":
             raise NotImplementedError(
-                "Spin DPA4/SeZM models with the virtual-atom (deepspin) "
-                "scheme are not supported in the pt_expt backend; use spin "
-                "scheme 'native' instead."
+                "DPA4/SeZM spin models require model.spin.scheme='native'."
             )
         return get_native_spin_model(data)
     bridging_method = str(data.get("bridging_method", "none"))
@@ -168,6 +169,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     data["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
 
     descriptor, fitting, _ = _model_factory.get_model_components(data)
+    long_range = _model_factory.get_long_range(data, descriptor, fitting)
     return DPA4EnergyModel(
         descriptor=descriptor,
         fitting=fitting,
@@ -175,6 +177,7 @@ def get_sezm_model(data: dict) -> BaseModel:
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=pair_exclude_types,
         preset_out_bias=data.get("preset_out_bias"),
+        **({} if long_range is None else {"long_range": long_range}),
     )
 
 

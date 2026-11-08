@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Compress a pt_expt model (.pte) by tabulating embedding nets."""
+"""Build and export compressed pt_expt inference models."""
 
 import logging
 from typing import (
-    Any,
+    TYPE_CHECKING,
 )
 
 from deepmd.pt_expt.utils.serialization import (
@@ -11,10 +11,17 @@ from deepmd.pt_expt.utils.serialization import (
     serialize_from_file,
 )
 
+if TYPE_CHECKING:
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
 log = logging.getLogger(__name__)
 
 
-def _read_saved_min_nbor_dist(model: Any, model_dict: dict) -> tuple[float | None, str]:
+def _read_saved_min_nbor_dist(
+    model: "BaseModel", model_dict: dict
+) -> tuple[float | None, str]:
     """Read the stored minimal neighbor distance and where it was read from.
 
     ``@variables`` is the cross-backend location of this value: it is written
@@ -84,14 +91,14 @@ def enable_compression(
     training_script: str | None = None,
     recompute_min_nbor_dist: bool = False,
 ) -> None:
-    """Compress a .pte model by tabulating embedding nets.
+    """Compress a .pte or .pt2 model by tabulating embedding nets.
 
     Parameters
     ----------
     input_file : str
-        Path to the input .pte model file.
+        Path to the input .pte or .pt2 model file.
     output : str
-        Path to the output compressed .pte model file.
+        Path to the output compressed .pte or .pt2 model file.
     stride : float
         The uniform stride of the first table.
     extrapolate : int
@@ -112,19 +119,82 @@ def enable_compression(
         BaseModel,
     )
 
-    # 1. Load the .pte model
     model_dict = serialize_from_file(input_file)
     model = BaseModel.deserialize(model_dict["model"])
-
-    # 2. Resolve min_nbor_dist, branching on whether compression consumes it.
-    #    Measuring it is a dense all-pairs pass over the training data, so a
-    #    model whose tabulation domain is fixed analytically never scans.
     saved_min_nbor_dist, source = _read_saved_min_nbor_dist(model, model_dict)
+    if saved_min_nbor_dist is not None and not recompute_min_nbor_dist:
+        log.info(
+            f"Minimal neighbor distance read from {source}: {saved_min_nbor_dist:f}"
+        )
+    compress_model(
+        model,
+        output,
+        stride=stride,
+        extrapolate=extrapolate,
+        check_frequency=check_frequency,
+        training_script=training_script,
+        min_nbor_dist=saved_min_nbor_dist,
+        model_def_script=model_dict.get("model_def_script"),
+        recompute_min_nbor_dist=recompute_min_nbor_dist,
+    )
+
+
+def compress_model(
+    model: "BaseModel",
+    output: str,
+    *,
+    stride: float = 0.01,
+    extrapolate: int = 5,
+    check_frequency: int = -1,
+    training_script: str | None = None,
+    min_nbor_dist: float | None = None,
+    model_def_script: dict | None = None,
+    with_comm: bool = True,
+    recompute_min_nbor_dist: bool = False,
+) -> None:
+    """Compress a loaded model and export its inference artifact.
+
+    Parameters
+    ----------
+    model
+        Model whose parameters and output statistics are loaded.
+    output
+        Destination ``.pte`` or ``.pt2`` file.
+    stride
+        Uniform spacing of the first compression table.
+    extrapolate
+        Scale of the extrapolation region for models that require it.
+    check_frequency
+        Frequency of table overflow checks.
+    training_script
+        Training configuration used when neighbor statistics are required
+        but absent from the model and ``min_nbor_dist``.
+    min_nbor_dist
+        Fallback minimum neighbor distance from artifact metadata.
+    model_def_script
+        Training model configuration to preserve in the exported artifact.
+    with_comm
+        Whether to include a communication artifact for cross-rank models.
+    recompute_min_nbor_dist
+        Ignore any stored distance and measure it from the training data.
+        Requires ``training_script``. Only applies to a model whose
+        compression consumes the statistic; it is ignored, with a warning,
+        for one that tabulates over an analytically bounded domain.
+    """
+    # === Step 1. Resolve the domain required by the compression tables. ===
+    # Branch on whether compression consumes the statistic: measuring it is a
+    # dense all-pairs pass over the training data, so a model whose tabulation
+    # domain is fixed analytically never scans.
+    # A distance on the model wins over one recovered from artifact metadata.
+    saved_min_nbor_dist = model.get_min_nbor_dist()
+    if saved_min_nbor_dist is None:
+        saved_min_nbor_dist = min_nbor_dist
+
     if model.compression_needs_min_nbor_dist():
         if recompute_min_nbor_dist:
             log.info(
-                "Recompute the minimal neighbor distance from the training data, "
-                "ignoring the one saved in the model."
+                "Recompute the minimal neighbor distance from the training "
+                "data, ignoring the one saved in the model."
             )
             if training_script is None:
                 raise ValueError(
@@ -134,7 +204,6 @@ def enable_compression(
             min_nbor_dist = _measure_min_nbor_dist(training_script)
         elif saved_min_nbor_dist is not None:
             min_nbor_dist = saved_min_nbor_dist
-            log.info(f"Minimal neighbor distance read from {source}: {min_nbor_dist:f}")
         else:
             log.info(
                 "Minimal neighbor distance is not saved in the model, "
@@ -142,9 +211,11 @@ def enable_compression(
             )
             if training_script is None:
                 raise ValueError(
-                    "The model does not have a minimum neighbor distance, "
-                    "so the training script and data must be provided "
-                    "(via -t,--training-script)."
+                    "The model does not have a minimum neighbor distance. "
+                    "Provide training_script to compression, or freeze without "
+                    "--compress and then run 'dp --pt-expt compress -i model.pte "
+                    "-o compressed.pte -t INPUT.json' with the training script "
+                    "and data."
                 )
             min_nbor_dist = _measure_min_nbor_dist(training_script)
     else:
@@ -162,16 +233,18 @@ def enable_compression(
         # Carry a measured distance through untouched; leave it absent when
         # the model has none, rather than inventing one.
         min_nbor_dist = saved_min_nbor_dist
-        if min_nbor_dist is not None:
-            log.info(f"Minimal neighbor distance read from {source}: {min_nbor_dist:f}")
 
     # ``enable_compression`` reads the value off the model, so a descriptor
     # that ignores it still needs a number there. That placeholder stays local
     # to the call: afterwards the model carries a measured distance or none.
     model.min_nbor_dist = 0.0 if min_nbor_dist is None else min_nbor_dist
 
-    # 3. Enable compression (also ensures fake ops are registered now that
-    #    the C++ custom op library is loaded via enable_compression imports)
+    # === Step 2. Fold deployment constants and build the compressed snapshot. ===
+    # The neutral vacuum reference must be resolved before a charge-conditioned
+    # descriptor specializes its tables to the deployment charge state.
+    model.eval()
+    model.fold_vacuum_reference()
+    uncompressed_model_dict = model.serialize()
     from deepmd.pt_expt.utils.tabulate_ops import (
         ensure_fake_registered,
     )
@@ -187,16 +260,14 @@ def enable_compression(
     )
     model.min_nbor_dist = min_nbor_dist
 
-    # 4. Serialize the compressed model dict (includes tabulated data)
     compressed_model_dict = model.serialize()
 
-    # 5. Re-export the compressed model.
+    # === Step 3. Export the graph supported by the compressed model. ===
     #
-    # A geometrically compressed graph-lower descriptor (DPA1 / se_atten strip,
-    # attn_layer == 0) evaluates its tabulated embedding through fused CUDA
-    # operators that make_fx can trace, so its compressed graph exports directly
-    # to a graph-lower ``.pt2``: ``deserialize_to_file`` bakes the end-to-end
-    # fused table operator and the mandatory per-atom virial (see its docstring).
+    # Compressed graph descriptors use fused operators with traceable fake
+    # implementations. Their graphs export directly to ``.pt2``; the exporter
+    # selects a compact canonical schema when the target supports it and
+    # preserves the per-atom virial alongside the total energy and forces.
     # Every other compressed descriptor keeps tabulated operators make_fx cannot
     # trace: those export the UNCOMPRESSED graph and carry the compressed dict in
     # ``model.json`` so ``deserialize()`` restores the compression state for the
@@ -205,7 +276,6 @@ def enable_compression(
         model_uses_graph_lower,
     )
 
-    model_def_script = model_dict.get("model_def_script")
     # Only a measured distance is metadata; a model that never measured one
     # leaves the field out rather than carrying a placeholder.
     measured = {} if min_nbor_dist is None else {"min_nbor_dist": float(min_nbor_dist)}
@@ -219,16 +289,18 @@ def enable_compression(
                 **measured,
             },
             lower_kind="auto",
+            with_comm=with_comm,
         )
     else:
         log.info("Re-exporting compressed model...")
         deserialize_to_file(
             output,
-            {"model": model_dict["model"], "model_def_script": model_def_script},
+            {"model": uncompressed_model_dict, "model_def_script": model_def_script},
             model_json_override={
                 "model": compressed_model_dict,
                 "model_def_script": model_def_script,
                 **measured,
             },
+            with_comm=with_comm,
         )
     log.info("Compressed model saved to %s", output)

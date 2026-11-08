@@ -36,6 +36,9 @@ from deepmd.utils.bridging import (
     DEFAULT_FRACTION_INNER,
     DEFAULT_FRACTION_OUTER,
 )
+from deepmd.utils.data_config import (
+    data_group_configs,
+)
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     FULL_VALIDATION_PROFILES,
@@ -234,8 +237,8 @@ def spin_args() -> list[Argument]:
         "`native` injects the per-atom spin vector as an equivariant feature "
         "directly into the descriptor and "
         "derives the magnetic force as the negative spin gradient of the energy, "
-        "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
-        "representation and is the default. Other models always use the `deepspin` scheme."
+        "without virtual atoms. Set this to `native` for DPA4/SeZM and DPA4C. "
+        "Other models use the default `deepspin` virtual-atom representation."
     )
     doc_allow_missing_label = (
         "Whether to admit training systems that lack a `spin` data file, filling their "
@@ -2928,6 +2931,68 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 fitting_args_plugin = ArgsPlugin()
 
 
+@fitting_args_plugin.register("density", doc=supported_backends("pt"))
+def fitting_density() -> list[Argument]:
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
+    doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
+- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+
+    # numb_aparam is deliberately not advertised: the fitting consumes
+    # grid-point descriptor rows, which have no per-atom parameters.
+    # rcond is deliberately not advertised: the per-type output shift it
+    # would control is disabled for density models.
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_default_fparam,
+        ),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_dim_case_embd,
+        ),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
 @fitting_args_plugin.register(
     "ener",
     doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2") + doc_ener,
@@ -3546,6 +3611,310 @@ def fitting_variant_type_args() -> Variant:
     )
 
 
+#  --- Long-range module configurations: --- #
+long_range_args_plugin = ArgsPlugin()
+interaction_kernel_args_plugin = ArgsPlugin()
+
+
+@interaction_kernel_args_plugin.register(
+    "les",
+    doc="The latent Ewald summation kernel erf(alpha r) / r, the interaction of "
+    "two Gaussian charge clouds: it reaches 1/r beyond a few 1/alpha and stays "
+    "finite at contact.",
+)
+def interaction_kernel_les() -> list[Argument]:
+    doc_alpha = "The inverse width alpha of the kernel, in Å^-1. Must be positive."
+    doc_trainable = "Whether alpha is trained."
+    return [
+        Argument("alpha", float, optional=True, default=1.0, doc=doc_alpha),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+    ]
+
+
+@interaction_kernel_args_plugin.register(
+    "sog",
+    doc="The sum-of-Gaussians kernel sum_k a_k exp(-r^2 / (2 sigma_k^2)).",
+)
+def interaction_kernel_sog() -> list[Argument]:
+    doc_amplitude = (
+        "The amplitudes a_k of the Gaussians, in Å^-1, of either sign: one value "
+        "shared by every Gaussian or one value per Gaussian. Required with "
+        "`width`; with the default widths it defaults to "
+        "sqrt(2 / pi) ln(`width_ratio`) / sigma_k, the weights of a discretized "
+        "1 / r, so that the default kernel follows 1 / r, less a nearly "
+        "constant offset, from a few `base_width` to a fraction of the widest "
+        "Gaussian. The offset exerts no force between fixed charges; through "
+        "charges that respond to the positions it does."
+    )
+    doc_width = (
+        "The widths sigma_k of the Gaussians, in Å, each positive. Defaults to "
+        "the geometric sequence `base_width` * `width_ratio`^k for "
+        "k = 0, ..., `n_gaussian` - 1."
+    )
+    doc_n_gaussian = "The number of Gaussians of the default widths."
+    doc_base_width = "The width of the first default Gaussian, in Å."
+    doc_width_ratio = "The ratio of consecutive default widths. Must exceed one."
+    doc_trainable = "Whether the amplitudes and widths are trained."
+    return [
+        Argument(
+            "amplitude",
+            [float, list[float], type(None)],
+            optional=True,
+            default=None,
+            doc=doc_amplitude,
+        ),
+        Argument(
+            "width",
+            [list[float], type(None)],
+            optional=True,
+            default=None,
+            doc=doc_width,
+        ),
+        Argument("n_gaussian", int, optional=True, default=12, doc=doc_n_gaussian),
+        Argument(
+            "base_width",
+            float,
+            optional=True,
+            default=2.180230445405648,
+            doc=doc_base_width,
+        ),
+        Argument(
+            "width_ratio",
+            float,
+            optional=True,
+            default=1.6297670882677647,
+            doc=doc_width_ratio,
+        ),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+    ]
+
+
+def latent_charge_net_args() -> list[Argument]:
+    doc_neuron = "The number of neurons in each hidden layer of the charge network."
+    doc_activation_function = f"The activation function in the charge network. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Defaults to the activation function of the energy fitting."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection. Defaults to the setting of the energy fitting.'
+    doc_precision = f"The precision of the charge network and kernel parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Defaults to the precision of the energy fitting."
+    doc_trainable = "Whether the parameters of the charge network are trained. A list sets every hidden layer and the output layer separately."
+    doc_seed = "Random seed for parameter initialization of the charge network. Defaults to a seed derived from the seed of the energy fitting."
+    return [
+        Argument("neuron", list[int], optional=True, default=[64, 64], doc=doc_neuron),
+        Argument(
+            "activation_function", str, optional=True, doc=doc_activation_function
+        ),
+        Argument("resnet_dt", bool, optional=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, doc=doc_precision),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
+def charge_constraint_args() -> list[Argument]:
+    doc_source = (
+        "The source of the total charge of a frame: `neutral` for zero, "
+        "`charge_spin` for the charge of the frame charge/spin condition, which "
+        "requires a descriptor with `add_chg_spin_ebd`, or `fparam` for the frame "
+        "parameter at `fparam_index`."
+    )
+    doc_fparam_index = "The column of the frame parameters holding the total charge, used when `source` is `fparam`."
+    doc_channel = "The latent charge channel that is constrained to the total charge; the other channels stay unconstrained."
+    return [
+        Argument(
+            "source",
+            str,
+            optional=True,
+            default="neutral",
+            doc=doc_source,
+            extra_check=lambda x: x in ("neutral", "charge_spin", "fparam"),
+            extra_check_errmsg="must be one of 'neutral', 'charge_spin' or 'fparam'",
+        ),
+        Argument("fparam_index", int, optional=True, default=0, doc=doc_fparam_index),
+        Argument("channel", int, optional=True, default=0, doc=doc_channel),
+    ]
+
+
+@long_range_args_plugin.register(
+    "latent_charge",
+    doc="Interaction of latent charges predicted from the descriptor. "
+    "For a non-periodic system the kernel is summed directly over every pair "
+    "of atoms; for a periodic system (``periodic: true``) it is summed over "
+    "the images of the cell in reciprocal space. Every channel interacts "
+    "through the same kernel; every atom carries half of the interaction of "
+    "its charges with all others.",
+)
+def long_range_latent_charge() -> list[Argument]:
+    doc_channels = "The number of latent charge channels predicted per atom."
+    doc_charge_net = (
+        "The network predicting the latent charges, in units of the elementary "
+        "charge, from the descriptor; it takes the frame and atomic parameters "
+        "of the energy fitting."
+    )
+    doc_kernel = "The pair interaction kernel of the latent charges, in Å^-1."
+    doc_charge_constraint = (
+        "Shift one latent charge channel uniformly over the atoms of every frame "
+        "so that it sums to the total charge of the frame. Unconstrained if not "
+        "set."
+    )
+    doc_periodic = (
+        "Evaluate the module on periodic systems as well: the kernel is summed "
+        "over the images of the cell in reciprocal space, with the "
+        "zero-wave-number mode dropped (the tin-foil convention, which places "
+        "a uniform neutralizing background under a channel with a net "
+        "charge), less the interaction of every charge with itself. "
+        "Non-periodic systems keep the direct sum."
+    )
+    doc_kspace_tolerance = (
+        "The relative weight of the slowest-decaying kernel mode at the "
+        "wave-number cutoff k_max of a periodic system."
+    )
+    doc_k_grid_mode = (
+        "How training evaluates the reciprocal sum of a periodic batch: "
+        "'pme', the default of a periodic module, by the smooth particle-mesh "
+        "Ewald method on a mesh sized by the cells of the batch at "
+        "`pme_spacing`, whose cost grows nearly linearly with the system; "
+        "'ragged' over the wave numbers "
+        "of every frame within k_max, enumerated per batch, so that the k axis "
+        "is a dynamic dimension; or 'fixed' over one integer grid shared by "
+        "the frames, sized by the largest cell of the data statistics or by "
+        "`k_grid_bounds`, with the points a frame does not reach masked, so "
+        "that the k axis has a static length (a frame whose cell needs points "
+        "beyond the grid is truncated to it, with a warning). A frozen model "
+        "evaluates every periodic frame on the mesh of its cell, whatever the "
+        "mode. 'fixed' and 'pme' require `periodic: true`."
+    )
+    doc_k_grid_bounds = (
+        "The per-axis integer bounds [n1, n2, n3] of the fixed k grid, in "
+        "place of the data statistics; only meaningful with "
+        "`k_grid_mode: fixed`."
+    )
+    doc_decouple_k_grid = (
+        "Decouple the wave-number cutoff of a periodic system from the kernel "
+        "parameters: it is derived once from the initial parameters and kept "
+        "for the life of the model, so that the k grid and the mesh stay put "
+        "while the kernel trains (the kernel values still follow the live "
+        "parameters). The frozen cutoff is serialized with the model. "
+        "Requires `periodic: true`."
+    )
+    doc_pme_spacing = (
+        "The largest spacing of the mesh of a periodic frame, in Angstrom; "
+        "the default is three quarters of the Nyquist spacing of the "
+        "wave-number cutoff, 0.75 pi / k_max. Requires `periodic: true`."
+    )
+    doc_pme_order = (
+        "The order of the B-splines that spread the charges to the mesh, 8 "
+        "by default. Requires `periodic: true`."
+    )
+    return [
+        Argument("channels", int, optional=True, default=1, doc=doc_channels),
+        Argument(
+            "charge_net",
+            dict,
+            latent_charge_net_args(),
+            optional=True,
+            doc=doc_charge_net,
+        ),
+        Argument(
+            "kernel",
+            dict,
+            [],
+            [
+                Variant(
+                    "type",
+                    interaction_kernel_args_plugin.get_all_argument(),
+                    optional=True,
+                    default_tag="les",
+                    doc="The type of the kernel.",
+                )
+            ],
+            optional=True,
+            default={"type": "les"},
+            doc=doc_kernel,
+        ),
+        Argument(
+            "charge_constraint",
+            dict,
+            charge_constraint_args(),
+            optional=True,
+            default=None,
+            doc=doc_charge_constraint,
+        ),
+        Argument("periodic", bool, optional=True, default=False, doc=doc_periodic),
+        Argument(
+            "kspace_tolerance",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=doc_kspace_tolerance,
+        ),
+        Argument(
+            "k_grid_mode",
+            [str, None],
+            optional=True,
+            default=None,
+            doc=doc_k_grid_mode,
+            extra_check=lambda x: x in (None, "ragged", "fixed", "pme"),
+            extra_check_errmsg="must be 'ragged', 'fixed' or 'pme'",
+        ),
+        Argument(
+            "k_grid_bounds",
+            list[int],
+            optional=True,
+            default=None,
+            doc=doc_k_grid_bounds,
+        ),
+        Argument(
+            "decouple_k_grid",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_decouple_k_grid,
+        ),
+        Argument(
+            "pme_spacing",
+            [float, None],
+            optional=True,
+            default=None,
+            doc=doc_pme_spacing,
+        ),
+        Argument(
+            "pme_order",
+            [int, None],
+            optional=True,
+            default=None,
+            doc=doc_pme_order,
+        ),
+    ]
+
+
+def long_range_args() -> Argument:
+    doc_long_range = (
+        "A long-range module added to the atomic energy of the energy fitting. "
+        "It reads the same descriptor and is evaluated on complete systems: "
+        "non-periodic ones directly, periodic ones in reciprocal space when "
+        "the module serves them. Currently validated with the DPA4C "
+        "descriptor."
+    )
+    return Argument(
+        "long_range",
+        dict,
+        [],
+        [
+            Variant(
+                "type",
+                long_range_args_plugin.get_all_argument(),
+                doc="The type of the long-range module.",
+            )
+        ],
+        optional=True,
+        doc=supported_backends("pt_expt") + doc_long_range,
+    )
+
+
 #  --- Modifier configurations: --- #
 modifier_args_plugin = ArgsPlugin()
 
@@ -3643,7 +4012,7 @@ def model_args(
         "For an energy model it is the energy of an isolated atom, so with `vacuum_ref` in the fitting net an atom "
         "without neighbors gives exactly this energy. Four forms are accepted: a dict keyed by element symbol, "
         "e.g. `{'energy': {'O': -430.1, 'H': -13.6}}`; the name of a bundled table of isolated-atom energies, e.g. "
-        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25` and `odac25`, which takes precedence "
+        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25`, `odac25`, `openmd` and `domain_cluster`, which takes precedence "
         "over a file of the same name; "
         "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
         "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
@@ -3651,7 +4020,9 @@ def model_args(
         "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
         "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
         "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
-        "changed by fine-tuning or `dp change-bias`. Dipole models apply no output bias and take no preset."
+        "changed by fine-tuning. `dp change-bias` fits from its input data without reapplying the model's stored "
+        "preset; explicit `--bias-value` values override the bias directly. "
+        "Dipole models apply no output bias and take no preset."
     )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
@@ -3843,6 +4214,7 @@ def standard_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
+            long_range_args(),
             *_bridging_method_args(),
         ],
         doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
@@ -3958,7 +4330,10 @@ def sezm_model_args() -> Argument:
         "symbolic make_fx and torch.compile in the DPA4/SeZM model. "
         "This path may still expose PyTorch compiler bugs, but can improve "
         "training speed by roughly 2-3x on supported workloads. "
-        "Requires torch==2.11. NVIDIA GPUs require CUDA >= 12.6. "
+        "Requires a PyTorch release listed in "
+        ":data:`deepmd.pt.utils.compile_compat.SUPPORTED_COMPILE_TORCH` "
+        "(currently 2.11.x, 2.12.x, and 2.13.x). "
+        "NVIDIA GPUs require CUDA >= 12.6. "
         "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
     doc_enable_tf32 = (
@@ -5183,6 +5558,28 @@ def loss_ener() -> list[Argument]:
     ]
 
 
+@loss_args_plugin.register("grid_density", doc=supported_backends("pt"))
+def loss_grid_density() -> list[Argument]:
+    doc_start_pref_d = start_pref("density", abbr="d")
+    doc_limit_pref_d = limit_pref("density")
+    return [
+        Argument(
+            "start_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_start_pref_d,
+        ),
+        Argument(
+            "limit_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_d,
+        ),
+    ]
+
+
 @loss_args_plugin.register("dens", doc=supported_backends("pt"))
 def loss_dens() -> list[Argument]:
     doc_start_pref_e = start_pref("energy", abbr="e")
@@ -5773,15 +6170,15 @@ def loss_args() -> list[Argument]:
 
 
 #  --- Training configurations: --- #
-def training_data_args() -> list[
-    Argument
-]:  # ! added by Ziyao: new specification style for data systems.
+def training_data_args() -> Argument:
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item is expanded recursively in input order. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "either directly or beneath a parent directory."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -5797,10 +6194,15 @@ def training_data_args() -> list[
 - string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model and needs no configuration of its own: a descriptor reading a flat node axis (the graph route of the PyTorch Exportable backend) takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms with `atype = -1` that the neighbor list, the model and the loss all skip. Unlike `"max:N"`, which leaves an under-filled batch whenever an nloc group is small, this keeps every batch close to `N` atoms. A lone frame with nloc > `N` still forms a batch of its own.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. A group expanding to multiple "
+        "sources including LMDB must omit this option; use separate training_data "
+        "groups with prob to assign source probabilities."
+    )
     doc_min_pair_dist = (
         "Minimum pairwise atomic distance threshold in Å. "
         "Frames containing any atom pair closer than this distance are excluded "
@@ -5842,7 +6244,10 @@ If MPI is used, the value should be considered as the batch size per task.'
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " When a group expands to multiple sources including LMDB, only "
+            "prob_sys_size and prob_uniform are supported. Use separate groups to configure "
+            "individual LMDB system probabilities.",
             alias=[
                 "auto_prob_style",
             ],
@@ -5862,12 +6267,28 @@ If MPI is used, the value should be considered as the batch size per task.'
             default=0.0,
             doc=supported_backends("pt", "pt_expt") + doc_min_pair_dist,
         ),
+        Argument(
+            "prob",
+            [float, None],
+            optional=True,
+            default=None,
+            doc="The probability of selecting a training batch from this entire "
+            "group. Applies when training_data is a list of group dictionaries. "
+            "Assigned probabilities must be non-negative and sum to at most one. "
+            "Groups without prob share the remaining probability in proportion "
+            "to their batch counts. If every group specifies prob, their sum "
+            "must be one. Within-group auto_prob and sys_probs remain independent.",
+        ),
     ]
 
-    doc_training_data = "Configurations of training data."
+    doc_training_data = (
+        "Training data configured as one dictionary or a nonempty list of group "
+        "dictionaries. Each group has its own systems, batch_size and within-group "
+        "sampling rules; prob optionally controls the group's total probability."
+    )
     return Argument(
         "training_data",
-        dict,
+        [dict, list[dict]],
         optional=True,
         sub_fields=args,
         sub_variants=[],
@@ -5884,7 +6305,9 @@ def validation_data_args() -> list[
         "The data systems for validation. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "including multiple LMDB paths and parent directories containing LMDB datasets."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
@@ -5898,10 +6321,14 @@ def validation_data_args() -> list[
 - string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
 - string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model: a descriptor reading a flat node axis takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms that the neighbor list, the model and the loss all skip.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. Must be omitted when the "
+        "validation data expands to multiple sources including LMDB."
+    )
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
 
     args = [
@@ -5928,7 +6355,9 @@ def validation_data_args() -> list[
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " Only prob_sys_size and prob_uniform are supported when systems expands to "
+            "multiple sources including LMDB.",
             alias=[
                 "auto_prob_style",
             ],
@@ -6039,6 +6468,16 @@ def training_args(
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
     doc_save_ckpt = "The path prefix of saving check point files."
+    doc_reset_data_progress = (
+        "On --restart, discard the saved training-data cursors and task/system "
+        "selection RNG, retaining their newly initialized state. Model weights, "
+        "optimizer, learning-rate schedule and training step still resume. "
+        "Use this explicit reset when relocating data or intentionally changing "
+        "data settings; batches may repeat and exact data-order continuation "
+        "is unavailable. By default, saved data progress is restored strictly, "
+        "including dataset locations. Has no effect on fresh training, "
+        "initialization, finetuning or checkpoints without data progress."
+    )
     doc_save_dir = (
         "The directory in which periodic checkpoint files are written, "
         "including the regular checkpoints (the `save_ckpt` prefix) and, when "
@@ -6126,8 +6565,11 @@ def training_args(
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
-        "or an empty dict, defaults to weights proportional to the number of "
-        "systems per task."
+        "or an empty dict, defaults to each task's native data size: the number "
+        "of NPY/HDF5 systems, or retained LMDB frames on the PyTorch and "
+        "PyTorch Exportable backends. Grouped inputs sum their native sizes "
+        "without applying group probabilities. Batch size and nominal epoch "
+        "length do not affect these default weights."
     )
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
@@ -6236,6 +6678,13 @@ def training_args(
         ),
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
+        ),
+        Argument(
+            "reset_data_progress",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt") + doc_reset_data_progress,
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
         Argument(
@@ -6883,6 +7332,7 @@ def gen_json_schema(multi_task: bool = False) -> str:
         JSON schema.
     """
     from deepmd.utils.json_schema import (
+        with_data_groups,
         with_model_presets,
     )
 
@@ -6894,7 +7344,9 @@ def gen_json_schema(multi_task: bool = False) -> str:
     )
     return json.dumps(
         with_model_presets(
-            generate_json_schema(arg), generate_json_schema(model_args()), multi_task
+            with_data_groups(generate_json_schema(arg), multi_task),
+            generate_json_schema(model_args()),
+            multi_task,
         )
     )
 
@@ -6967,17 +7419,86 @@ def validate_no_multitask_lora(data: dict[str, Any], multi_task: bool = False) -
             )
 
 
+def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
+    """Default env_protection to 1e-6 for density models.
+
+    Applied at normalization time so that the recorded model_def_script and
+    the built model agree on this field. Grid points may legitimately
+    coincide with atoms, and the default 0.0 would let the 1/r terms in the
+    environment matrix produce NaN densities. 1e-6 is chosen as the minimal
+    perturbation that keeps those terms finite (order 1e6 at exact
+    coincidence) without shifting normal environments measurably; users can
+    still set any positive value (e.g. 0.1) explicitly. An explicit
+    ``env_protection: 0.0`` cannot be distinguished from the schema default
+    (which normalizes to 0.0) and receives the same override with a warning.
+    """
+
+    def _fix(model: dict[str, Any]) -> None:
+        if model.get("fitting_net", {}).get("type") != "density":
+            return
+        descriptor = model.get("descriptor", {})
+        fill = 1e-6
+        # a hybrid descriptor has no top-level env_protection; each
+        # sub-descriptor carries its own, and the model build requires all
+        # of them to agree. Filling each omitted sub-descriptor with 1e-6
+        # while a sibling carries an explicit value (e.g. 0.1) would produce
+        # a mixed list that the build then rejects, so omitted entries take
+        # the siblings' common explicit value instead.
+        if descriptor.get("type") == "hybrid":
+            sub_descriptors = descriptor.get("list", [])
+            explicit = {sub.get("env_protection", 0.0) for sub in sub_descriptors}
+            explicit.discard(0.0)
+            if len(explicit) == 1:
+                fill = explicit.pop()
+        else:
+            sub_descriptors = [descriptor]
+        for sub in sub_descriptors:
+            if sub.get("env_protection", 0.0) == 0.0:
+                log.warning(
+                    "env_protection is 0.0 for a density model; grid points "
+                    "coincident with atoms would produce NaN densities. "
+                    "Setting env_protection to %s.",
+                    fill,
+                )
+                sub["env_protection"] = fill
+
+    model = data.get("model", {})
+    if "model_dict" in model:
+        for sub_model in model["model_dict"].values():
+            _fix(sub_model)
+    else:
+        _fix(model)
+
+
 def normalize(
     data: dict[str, Any], multi_task: bool = False, *, check: bool = True
 ) -> dict[str, Any]:
     """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
+    training = data.get("training", {})
+    task_configs = training.get("data_dict", {}).values() if multi_task else (training,)
+    group_argument = training_data_args()
+    for task in task_configs:
+        groups = task.get("training_data")
+        if groups is None:
+            continue
+        data_group_configs(groups)
+        if isinstance(groups, list):
+            normalized = [
+                group_argument.normalize_value(group, trim_pattern="_*")
+                for group in groups
+            ]
+            if check:
+                for group in normalized:
+                    group_argument.check_value(group, strict=True)
+            task["training_data"] = normalized
     if check:
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)
     _check_dpa3_chg_spin_migration(data)
     validate_no_multitask_lora(data, multi_task=multi_task)
+    _apply_density_env_protection_default(data)
 
     return data
 

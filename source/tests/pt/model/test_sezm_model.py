@@ -476,7 +476,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         # The compiled eval path must trace, lower and run without tripping
         # ``assert_size_stride`` on the edge tensors.
         out_cmp = model_cmp(coord, atype, box=box)
-        self.assertIn((False, False), model_cmp.compiled_core_compute_cache)
+        self.assertIn(False, model_cmp.compiled_core_compute_cache)
         _assert_close_with_strict_warning(
             out_dyn["energy"],
             out_cmp["energy"],
@@ -505,9 +505,9 @@ class TestSeZMModelCompile(unittest.TestCase):
             model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
         model_cmp.load_state_dict(model_dyn.state_dict())
 
-        # Compile cache key is (training, has_coord_corr).
-        train_key = (True, False)
-        eval_key = (False, False)
+        # Compile cache key is the training mode.
+        train_key = True
+        eval_key = False
 
         # === Step 2. Train-mode forward fills the training slot. ===
         model_cmp.train()
@@ -1081,13 +1081,13 @@ class TestSeZMModelCompile(unittest.TestCase):
         # the module-level ``_SEZM_COMPILE_CACHE``.  This avoids the
         # N x compile-cache OOM / N DDP graph boundary cost on multitask
         # runs.  Step 2 ran every branch in training mode with the default
-        # ``do_atomic_virial=False`` and no coordinate correction, so each
+        # ``do_atomic_virial=False``, so each
         # per-branch cache should hold exactly that one slot, and the
         # compiled callable at that slot must be the *same* object. ===
         cache1 = wrapper_cmp.model["water_1"].compiled_core_compute_cache
         cache2 = wrapper_cmp.model["water_2"].compiled_core_compute_cache
         self.assertIsNot(cache1, cache2)
-        train_key = (True, False)
+        train_key = True
         self.assertIn(train_key, cache1)
         self.assertIn(train_key, cache2)
         c1 = cache1[train_key]
@@ -1304,7 +1304,7 @@ class TestSeZMModelProperty(unittest.TestCase):
                 rtol=forward_tol,
                 msg=f"compiled property mismatch at {key}",
             )
-        self.assertIn((True, False), compiled.compiled_core_compute_cache)
+        self.assertIn(True, compiled.compiled_core_compute_cache)
 
         # === Step 3. Compare parameter gradients ===
         probe = torch.tensor(
@@ -1696,7 +1696,7 @@ class TestSeZMEdgeForceScatter(unittest.TestCase):
 
 
 class TestSeZMNativeSpinModel(unittest.TestCase):
-    """Validate the native (virtual-atom-free) spin SeZM model.
+    """Validate the native spin SeZM model.
 
     The spin vector enters the descriptor as an equivariant feature, so the
     magnetic force is the negative spin gradient of the energy. float64
@@ -2112,7 +2112,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
 
         out_e = model_eager(coord, atype, spin, box=box)
         out_c = model_cmp(coord, atype, spin, box=box)
-        self.assertIn((True, False), model_cmp.compiled_core_compute_cache)
+        self.assertIn(True, model_cmp.compiled_core_compute_cache)
         for key in ["energy", "force", "force_mag"]:
             _assert_close_with_strict_warning(
                 out_c[key],

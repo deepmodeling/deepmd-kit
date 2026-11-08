@@ -158,6 +158,39 @@ class DescrptDPA4C(DescrptDPA4CDP):
         self.use_amp_infer = use_amp_infer()
         self._apply_autocast_policy()
 
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # Back-compat: checkpoints written by DeePMD-kit 3.2 hold the gather
+        # tables of the angular moments, which are formed by broadcasting;
+        # the stale entries are dropped so that the strict load succeeds.
+        for name in ("angular_channel_index", "angular_harmonic_index"):
+            state_dict.pop(prefix + name, None)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+        # The CPU kernel prepares these immutable tables once per storage.
+        # A state load normally copies into their existing storage; assign=True
+        # can also restore aliases of it. Rebind after loading so either path
+        # starts a new snapshot, without consulting tensor version counters.
+        # Do not create inference tensors here: a later ordinary load must
+        # still be able to copy into the buffers.
+        with torch.inference_mode(False), torch.no_grad():
+            for name in ("compress_data", "compress_pair_film", "compress_pair_mixing"):
+                value = self._buffers.get(name)
+                if prefix + name in state_dict and value is not None:
+                    self._buffers[name] = value.clone()
+        # The kernels receive metadata as Python scalars, so loading its
+        # buffer must refresh those values while keeping the configured window.
+        info = self._buffers.get("compress_info")
+        if prefix + "compress_info" in state_dict and info is not None:
+            self._compression_scalars = (
+                *(float(value) for value in info.detach().cpu().tolist()),
+                *self._compression_scalars[info.numel() :],
+            )
+
     def call_graph(
         self,
         graph: Any,
@@ -439,8 +472,8 @@ class DescrptDPA4C(DescrptDPA4CDP):
         if compression is not None:
             obj._set_compression(
                 {
-                    name: torch.as_tensor(compression["@variables"][name])
-                    for name in obj._COMPRESSION_BUFFER_NAMES
+                    name: torch.as_tensor(value)
+                    for name, value in obj._compression_variables(compression).items()
                 }
             )
         return obj

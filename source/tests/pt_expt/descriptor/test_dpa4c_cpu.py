@@ -9,6 +9,7 @@ rank, and the two topology forms -- is covered, because each selects a
 different compiled body or a different addressing mode.
 """
 
+import math
 from typing import (
     Any,
 )
@@ -27,10 +28,16 @@ from deepmd.pt_expt.descriptor.dpa4c import (
     DescrptDPA4C,
 )
 from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+    _portable_inputs,
+    _radial_knots,
     _reference_descriptor,
     build_compression_artifacts,
+    build_low_rank_table,
+    build_radial_table,
+    compressed_operator_arguments,
     contact_radius_input,
     descriptor_profile,
+    dpa4c_graph_compress,
     ensure_registered,
     op_available,
 )
@@ -173,6 +180,8 @@ def _arguments(descriptor: DescrptDPA4C, graph, atype: torch.Tensor) -> tuple:
         graph.destination_row_ptr,
         atype,
         artifacts["data"],
+        artifacts["basis_table"],
+        artifacts["basis_matrix"],
         artifacts["pair_film"],
         artifacts["pair_mixing"],
         artifacts["type_embedding"],
@@ -208,8 +217,13 @@ def _descriptor_backward(
 
 
 def _spin_free(arguments: tuple) -> tuple:
-    """Drop the native spin block, which the CPU kernel does not implement."""
-    return (*arguments[:15], *arguments[18:])
+    """Drop the low-rank table and the native spin block for the CPU reference.
+
+    The reference reads the radial table itself, and the CPU kernel implements
+    no spin.
+    """
+    portable = _portable_inputs(arguments)
+    return (*portable[:15], *portable[18:])
 
 
 def _check_parity(descriptor: DescrptDPA4C, canonical: bool) -> None:
@@ -611,6 +625,236 @@ def test_prepared_table_is_reused_across_calls() -> None:
 
 
 @_CPU
+@pytest.mark.parametrize("canonical", [False, True])
+def test_leading_table_views_keep_their_interval_count(canonical: bool) -> None:
+    """A short leading view must not supply the prepared table for a full one."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=canonical)
+    arguments = _arguments(descriptor, graph, atype)
+    table = arguments[5]
+    short_arguments = (*arguments[:5], table[:1], *arguments[6:])
+    assert short_arguments[5].data_ptr() == table.data_ptr()
+    # Populate the cache using only the first interval. The subsequent call
+    # needs later intervals from the same storage and the same data address.
+    torch.ops.deepmd.dpa4c_graph_compress(
+        torch.zeros_like(graph.edge_vec), *short_arguments
+    )
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
+    reference = _reference_descriptor(reference_edge, *_spin_free(arguments))
+    torch.testing.assert_close(output, reference, atol=3.0e-5, rtol=3.0e-5)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    (reference_gradient,) = torch.autograd.grad(
+        (reference * cotangent).sum(), reference_edge
+    )
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=8.0e-6, rtol=1.0e-4)
+
+
+def _check_cached_table_views(graph: Any, arguments: tuple) -> None:
+    """Compare shared-storage views with freshly prepared native tables."""
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    fresh = tuple(
+        argument.clone() if index in (5, 8, 9) else argument
+        for index, argument in enumerate(arguments)
+    )
+    reference, reference_state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec, *fresh
+    )
+    torch.testing.assert_close(output, reference, atol=0, rtol=0)
+    torch.testing.assert_close(state, reference_state, atol=0, rtol=0)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    reference_gradient = _descriptor_backward(
+        cotangent, reference_state, graph.edge_vec, *fresh
+    )[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=0, rtol=0)
+
+
+@_CPU
+@pytest.mark.parametrize("radial_modes", [0, 2])
+def test_leading_pair_table_views_keep_their_type_count(radial_modes: int) -> None:
+    """The full type table needs pair rows absent from a shorter leading view."""
+    descriptor = _build_descriptor(16, radial_modes=radial_modes)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    short = list(arguments)
+    # The smaller configuration has one real type and one padding type.
+    # Its warm-up graph contains only the real type, so every read is valid.
+    short[4] = torch.zeros_like(atype)
+    short[8] = arguments[8][:4]
+    short[9] = arguments[9][:4]
+    short[10] = arguments[10][:2]
+    short[20] = arguments[20][:2]
+    for index in (5, 8, 9):
+        assert short[index].is_contiguous()
+        assert short[index].data_ptr() == arguments[index].data_ptr()
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *short)
+
+    _check_cached_table_views(graph, arguments)
+
+
+@_CPU
+@pytest.mark.parametrize(
+    ("channels", "radial_modes"), [(8, 4), (16, 2)], ids=["channels", "modes"]
+)
+def test_reshaped_table_views_keep_their_layout(
+    channels: int, radial_modes: int
+) -> None:
+    """Identical storage addresses do not imply identical coefficient packing."""
+    descriptor = _build_descriptor(16, radial_modes=4)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    smaller = list(
+        _arguments(_build_descriptor(channels, radial_modes=radial_modes), graph, atype)
+    )
+    for index in (5, 8, 9):
+        original = arguments[index]
+        target = smaller[index]
+        smaller[index] = original.flatten()[: target.numel()].view(target.shape)
+        assert smaller[index].is_contiguous()
+        assert smaller[index].data_ptr() == original.data_ptr()
+    assert smaller[5].shape[0] == arguments[5].shape[0]
+    # Warm the larger layout first: even a stale cache leaves sufficient
+    # buffer space for the smaller call, but its coefficient packing is wrong.
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    _check_cached_table_views(graph, tuple(smaller))
+
+
+@_CPU
+@pytest.mark.parametrize("rewrite", ["rebound", "in_place"])
+@pytest.mark.parametrize("table", [8, 9], ids=["pair_film", "pair_mixing"])
+def test_new_pair_tables_reach_the_kernel(table: int, rewrite: str) -> None:
+    """New ordered pair tables reach the kernel beside the same radial table.
+
+    A charge-state rebuild leaves the radial table bound and brings new
+    ordered pair tables in one of two ways: the eager descriptor binds new
+    tensors, while a frozen lower has its constants rewritten in place, after
+    which AOTInductor wraps the same bytes in a new tensor, as the DLPack
+    import does here. In neither case may the call be served the tables
+    prepared for the previous contents. The FiLM and mode-mixing tables
+    follow the radial and low-rank tables among the operator arguments.
+    """
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=False)
+    arguments = list(_arguments(descriptor, graph, atype))
+    first, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    contents = 1.5 * arguments[table] + 0.2
+    if rewrite == "in_place":
+        arguments[table] = torch.from_dlpack(arguments[table].copy_(contents))
+    else:
+        arguments[table] = contents
+    second, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference = _reference_descriptor(graph.edge_vec, *_spin_free(tuple(arguments)))
+    torch.testing.assert_close(second, reference, atol=3.0e-5, rtol=3.0e-5)
+    assert (second - first).abs().max() > 1.0e-3
+
+
+@_CPU
+@pytest.mark.parametrize("table", ["data", "pair_film", "pair_mixing"])
+@pytest.mark.parametrize("load", ["copy", "assign", "assign_alias"])
+@pytest.mark.parametrize("inference", [False, True])
+def test_loaded_compression_tables_replace_prepared_tables(
+    table: str, load: str, inference: bool
+) -> None:
+    """Loading a snapshot must not reuse tables prepared before the load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    artifacts = build_compression_artifacts(descriptor, stride=0.01)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    with torch.inference_mode(inference):
+        # Cloning here also covers inference tensors, which have no version
+        # counters for a native cache to consult.
+        descriptor._set_compression(
+            {name: value.clone() for name, value in artifacts.items()}
+        )
+        assert descriptor.compress_data.is_inference() == inference
+
+        def arguments() -> tuple:
+            return (
+                graph.edge_index,
+                graph.edge_mask,
+                graph.destination_order,
+                graph.destination_row_ptr,
+                atype,
+                *compressed_operator_arguments(descriptor),
+                bool(graph.destination_sorted),
+                descriptor.lmax,
+                *descriptor._compression_scalars,
+            )
+
+        ensure_registered()
+        before, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        state = descriptor.state_dict()
+        if load != "assign_alias":
+            state = {name: value.clone() for name, value in state.items()}
+        # The alias case retains the state dict's original shared storage,
+        # including when assign=True restores those very tensors.
+        state[f"compress_{table}"].mul_(1.5).add_(0.2)
+        descriptor.load_state_dict(state, assign=load != "copy")
+        after, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        _check_cached_table_views(graph, arguments())
+        assert (after - before).abs().max() > 1.0e-3
+
+
+@_CPU
+@pytest.mark.parametrize("assign", [False, True])
+@pytest.mark.parametrize("partial", [False, True])
+def test_loaded_compression_metadata_reaches_the_kernel(
+    assign: bool, partial: bool
+) -> None:
+    """A same-shaped replacement table must use its own radial stride."""
+    descriptor = _build_descriptor(16, radial_modes=2, **_WINDOW)
+    replacement = _build_descriptor(16, radial_modes=2, **_WINDOW)
+    # Both valid strides need twelve rows, so an ordinary state load can
+    # replace the coefficients without changing the buffer's shape.
+    descriptor.enable_compression(0.5, table_stride_1=0.25)
+    replacement.enable_compression(0.5, table_stride_1=0.26)
+    assert descriptor.compress_data.shape == replacement.compress_data.shape
+    graph, atype = _build_graph(descriptor, canonical=True)
+    expected = dpa4c_graph_compress(replacement, graph, atype)
+    dpa4c_graph_compress(descriptor, graph, atype)
+    window = descriptor._compression_scalars[-2:]
+
+    # A parent exercises the state-key prefix for full and partial loads.
+    parent = torch.nn.ModuleList([descriptor])
+    state = torch.nn.ModuleList([replacement]).state_dict()
+    if partial:
+        state = {
+            name: value
+            for name, value in state.items()
+            if name in ("0.compress_data", "0.compress_info")
+        }
+    parent.load_state_dict(state, assign=assign, strict=not partial)
+    output = dpa4c_graph_compress(descriptor, graph, atype)
+    torch.testing.assert_close(output, expected, atol=0, rtol=0)
+    assert descriptor._compression_scalars == (
+        *replacement.compress_info.tolist(),
+        *window,
+    )
+
+
+@pytest.mark.parametrize("assign", [False, True])
+def test_compression_state_can_load_after_inference_mode(assign: bool) -> None:
+    """An inference-mode load must not prevent a later ordinary state load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    descriptor.enable_compression(0.5, table_stride_1=0.01)
+    # Load through a parent to exercise the descriptor's state-key prefix.
+    parent = torch.nn.ModuleList([descriptor])
+    # Keep the input ordinary to isolate whether rebinding under the caller's
+    # inference mode creates buffers that the next ordinary load cannot update.
+    # Loading inference tensors themselves is covered by the cache tests above.
+    state = {name: value.clone() for name, value in parent.state_dict().items()}
+    with torch.inference_mode():
+        parent.load_state_dict(state, assign=assign)
+    parent.load_state_dict(state)
+    for name, value in parent.state_dict().items():
+        torch.testing.assert_close(value, state[name], atol=0, rtol=0)
+
+
+@_CPU
 def test_spin_descriptor_keeps_the_reference_path() -> None:
     """A spin-conditioned descriptor is declined rather than mis-evaluated.
 
@@ -660,3 +904,139 @@ def test_empty_graph_produces_the_isolated_atom_descriptor() -> None:
     assert torch.isfinite(state).all()
     torch.testing.assert_close(state[:, 0], torch.full_like(state[:, 0], 0.5))
     torch.testing.assert_close(state[:, 1], torch.full_like(state[:, 1], 0.5))
+
+
+def _restrict_scalar_rank(descriptor: DescrptDPA4C, rank: int) -> None:
+    """Confine the scalar-only radial channels to a span of ``rank`` functions.
+
+    The radial map is the bias-free output layer applied to a shared hidden
+    state, so replacing the output columns from ``C1`` on by combinations of
+    ``rank`` of them confines those channels to the span of ``rank`` functions
+    at every distance.
+    """
+    first = descriptor_profile(descriptor.channels, descriptor.lmax).degree_channels[1]
+    weight = descriptor.radial_embedding.layers[-1].w
+    generator = torch.Generator(device=weight.device).manual_seed(31)
+    mixing = torch.randn(
+        rank,
+        descriptor.channels - first,
+        generator=generator,
+        device=weight.device,
+        dtype=weight.dtype,
+    ) / math.sqrt(rank)
+    with torch.no_grad():
+        weight[:, first:] = weight[:, first : first + rank] @ mixing
+
+
+def _channel_coefficients(table: torch.Tensor, width: int) -> torch.Tensor:
+    """Return the quintic coefficients of a table with shape ``(S, width, 6)``.
+
+    A table row holds the leading four coefficients of every channel, then the
+    trailing two.
+    """
+    quartets = table[:, : 4 * width].reshape(table.shape[0], width, 4)
+    pairs = table[:, 4 * width :].reshape(table.shape[0], width, 2)
+    return torch.cat([quartets, pairs], dim=-1)
+
+
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes"),
+    [(64, 2, 0), (64, 3, 4), (128, 3, 4)],
+)
+def test_low_rank_table_reconstructs_the_radial_table(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+) -> None:
+    """The low-rank basis and its expansion reproduce the scalar-only channels.
+
+    The quintic coefficients are linear in the knot data, so the expansion of
+    the basis coefficients reproduces the coefficients of every scalar-only
+    channel of the radial table up to the rounding of their fp32 storage, and
+    the degree-one channels and the mode profiles are tabulated unchanged.
+    """
+    descriptor = _build_descriptor(channels, lmax, radial_modes)
+    _restrict_scalar_rank(descriptor, rank=8)
+    basis_table, basis_matrix = build_low_rank_table(descriptor)
+    direct, _info = build_radial_table(descriptor)
+    first = descriptor_profile(channels, lmax).degree_channels[1]
+    basis = basis_matrix.shape[0]
+    assert basis_matrix.shape == (32, channels - first)
+    direct_coefficients = _channel_coefficients(
+        direct.double(), channels + radial_modes
+    )
+    basis_coefficients = _channel_coefficients(
+        basis_table.double(), first + basis + radial_modes
+    )
+    assert torch.equal(basis_coefficients[:, :first], direct_coefficients[:, :first])
+    assert torch.equal(
+        basis_coefficients[:, first + basis :], direct_coefficients[:, channels:]
+    )
+    expanded = torch.einsum(
+        "skj,kc->scj",
+        basis_coefficients[:, first : first + basis],
+        basis_matrix.double(),
+    )
+    scalar = direct_coefficients[:, first:channels]
+    scale = scalar.abs().amax(dim=0, keepdim=True).clamp_min(1e-30)
+    torch.testing.assert_close(expanded / scale, scalar / scale, atol=1e-5, rtol=0)
+
+
+@pytest.mark.parametrize("channels", [64, 128])
+def test_full_rank_radial_map_keeps_the_direct_table(channels: int) -> None:
+    """A radial map whose scalar-only channels exceed the basis keeps none.
+
+    The knot data of the scalar-only channels is replaced by independent
+    random samples, which span as many functions as there are such channels,
+    more than the basis holds, so the compression leaves both low-rank
+    artifacts empty and the single-type scans read the radial table.
+    """
+    descriptor = _build_descriptor(channels)
+    first = descriptor_profile(channels, descriptor.lmax).degree_channels[1]
+    generator = torch.Generator().manual_seed(7)
+
+    def full_rank(knot_data: torch.Tensor) -> torch.Tensor:
+        knot_data = knot_data.clone()
+        knot_data[:, first:channels] = torch.randn(
+            knot_data.shape[0],
+            channels - first,
+            dtype=knot_data.dtype,
+            generator=generator,
+        )
+        return knot_data
+
+    knots = tuple(full_rank(data) for data in _radial_knots(descriptor, 0.002))
+    basis_table, basis_matrix = build_low_rank_table(descriptor, knots=knots)
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0
+
+
+def test_coarse_knots_keep_the_direct_table() -> None:
+    """Knots too few to determine the basis leave the direct table in place.
+
+    A stride so coarse that the knots give no more samples than the basis has
+    functions would let any channels pass the reproduction check, so no basis
+    is adopted, while the same descriptor adopts one at the default stride.
+    """
+    descriptor = _build_descriptor(64)
+    _restrict_scalar_rank(descriptor, rank=8)
+    assert build_low_rank_table(descriptor)[1].shape[0] == 32
+    basis_table, basis_matrix = build_low_rank_table(
+        descriptor, stride=descriptor.rcut / 8
+    )
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0
+
+
+def test_unfolded_mode_counts_keep_the_direct_table() -> None:
+    """A descriptor with more modes than the folded scans carry keeps none.
+
+    Its single-type scans read the ordered pair of every edge, so they never
+    read a low-rank table, which compression therefore does not build even
+    for scalar-only channels of low rank.
+    """
+    descriptor = _build_descriptor(64, radial_modes=8)
+    _restrict_scalar_rank(descriptor, rank=8)
+    basis_table, basis_matrix = build_low_rank_table(descriptor)
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0

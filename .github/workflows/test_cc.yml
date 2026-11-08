@@ -88,7 +88,7 @@ jobs:
         if: matrix.enable_paddle
       - run: |
           export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
-          source/install/retry_on_sigterm.sh 3 pytest --cov=deepmd source/lmp/tests
+          source/install/retry_on_sigterm.sh 3 source/install/pytest_with_junit.sh lammps pytest --cov=deepmd source/lmp/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -103,7 +103,7 @@ jobs:
       # test ipi
       - run: |
           export PATH=${{ github.workspace }}/dp_test/bin:$PATH
-          pytest --cov=deepmd source/ipi/tests
+          source/install/pytest_with_junit.sh ipi pytest --cov=deepmd source/ipi/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -119,6 +119,18 @@ jobs:
         continue-on-error: true
         with:
           use_oidc: true
+      - name: Upload C++ test reports
+        if: ${{ always() && hashFiles('source/build_tests/generator-reports/**', 'source/build_tests/gtest-reports/**', 'source/build_tests/pytest-reports/**') != '' }}
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: cpp-cpu-tf-${{ matrix.enable_tensorflow }}-pt-${{ matrix.enable_pytorch }}-pd-${{ matrix.enable_paddle }}-lsan-${{ matrix.check_memleak }}
+          path: |
+            source/build_tests/generator-reports/**
+            source/build_tests/gtest-reports/**
+            source/build_tests/pytest-reports/**
+          if-no-files-found: ignore
+          retention-days: 14
     permissions:
       id-token: write
   pass:
