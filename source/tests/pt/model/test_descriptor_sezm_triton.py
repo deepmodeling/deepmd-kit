@@ -2381,7 +2381,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             import torch
             import torch.distributed._functional_collectives  # noqa: F401
 
-            import deepmd  # noqa: F401  (warms deepmd.lib, see below)
+            import deepmd.lib  # noqa: F401  (plain deepmd is lazy; warm the C ext)
 
             sys.meta_path = [
                 f
@@ -2400,6 +2400,12 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             ]:
                 if _name != "deepmd.lib":
                     del sys.modules[_name]
+            # Re-link the cached C extension onto the freshly imported
+            # parent package: a plain cache-hit import does NOT restore
+            # the submodule attribute, so assign it explicitly.
+            import deepmd
+
+            sys.modules["deepmd"].lib = sys.modules["deepmd.lib"]
             import importlib
 
             import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
