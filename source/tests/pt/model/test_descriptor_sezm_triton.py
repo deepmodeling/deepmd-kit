@@ -2720,7 +2720,15 @@ class TestSeZMFreezeAutotuneRouting(unittest.TestCase):
                 patched,
                 mock.patch("torch.cuda.is_available", return_value=True),
             ):
-                run_autotune(model, device)
+                # Master's run_autotune requires the freeze lower kind
+                # (the SeZM .pt2 freeze exports the graph lower); this
+                # branch predates that signature, so pass it when present.
+                import inspect
+
+                if "lower_kind" in inspect.signature(run_autotune).parameters:
+                    run_autotune(model, device, "graph")
+                else:
+                    run_autotune(model, device)
             self.assertEqual(calls, [(model, 2, device)])
         finally:
             if saved_level is None:
