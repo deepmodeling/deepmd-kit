@@ -122,11 +122,11 @@ class EnergySpinLoss(TaskLoss):
 
         self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
-        self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
-        self.has_fr = (start_pref_fr != 0.0 and limit_pref_fr != 0.0) or inference
-        self.has_fm = (start_pref_fm != 0.0 and limit_pref_fm != 0.0) or inference
-        self.has_v = (start_pref_v != 0.0 and limit_pref_v != 0.0) or inference
-        self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
+        self.has_e = (start_pref_e != 0.0 or limit_pref_e != 0.0) or inference
+        self.has_fr = (start_pref_fr != 0.0 or limit_pref_fr != 0.0) or inference
+        self.has_fm = (start_pref_fm != 0.0 or limit_pref_fm != 0.0) or inference
+        self.has_v = (start_pref_v != 0.0 or limit_pref_v != 0.0) or inference
+        self.has_ae = (start_pref_ae != 0.0 or limit_pref_ae != 0.0) or inference
 
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
