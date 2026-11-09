@@ -11,7 +11,9 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from typing import TextIO
+    from typing import (
+        TextIO,
+    )
 
 import google.protobuf.message
 import numpy as np
