@@ -18,6 +18,7 @@ import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
     attach_edge_csr,
     graph_from_dense_quartet,
 )
@@ -30,7 +31,9 @@ from deepmd.pt_expt.descriptor.dpa4c import (
 from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     _portable_inputs,
     _radial_knots,
+    _reference_backward,
     _reference_descriptor,
+    _reference_forward,
     build_compression_artifacts,
     build_low_rank_table,
     build_radial_table,
@@ -129,9 +132,13 @@ def test_fixed_basis_types_freeze_the_basis() -> None:
 
 
 def test_adam_route_patterns_name_the_first_radial_layer() -> None:
-    """The descriptor routes the layer that reads the radial basis to AdamW."""
+    """The descriptor routes the layer that reads the radial basis to AdamW.
+
+    The attention of a multi-block descriptor stays on the default route.
+    """
     descriptor = DescrptDPA4C(
-        rcut=3.0,
+        rcut=[3.0, 2.5],
+        n_blocks=2,
         ntypes=2,
         channels=8,
         lmax=2,
@@ -904,6 +911,47 @@ def test_empty_graph_produces_the_isolated_atom_descriptor() -> None:
     assert torch.isfinite(state).all()
     torch.testing.assert_close(state[:, 0], torch.full_like(state[:, 0], 0.5))
     torch.testing.assert_close(state[:, 1], torch.full_like(state[:, 1], 0.5))
+
+
+@pytest.mark.parametrize("node_count", [0, 2])
+def test_empty_multiblock_reference_preserves_feature_width(node_count: int) -> None:
+    """Zero-edge graphs retain the declared node and feature axes through backward."""
+    descriptor = _build_descriptor(8, n_blocks=2).cpu()
+    counts = torch.tensor([node_count], dtype=torch.int64, device="cpu")
+    order = torch.empty(0, dtype=torch.int64, device="cpu")
+    rows = torch.zeros(node_count + 1, dtype=torch.int64, device="cpu")
+    graph = NeighborGraph(
+        n_node=counts,
+        n_local=counts,
+        edge_index=torch.empty(2, 0, dtype=torch.int64, device="cpu"),
+        edge_vec=torch.empty(0, 3, dtype=torch.float32, device="cpu"),
+        edge_mask=torch.empty(0, dtype=torch.bool, device="cpu"),
+        destination_order=order,
+        destination_row_ptr=rows,
+        source_order=order,
+        source_row_ptr=rows,
+    )
+    atype = torch.arange(node_count, dtype=torch.int64, device="cpu") % 2
+    expected, _ = descriptor.call_graph(graph, atype)
+    artifacts = build_compression_artifacts(descriptor)
+    arguments = _arguments(descriptor, graph, atype)
+    output, state = _reference_forward(
+        graph.edge_vec, *arguments, blocks_record=artifacts["blocks"]
+    )
+    assert output.shape == (node_count, descriptor.get_dim_out())
+    torch.testing.assert_close(output, expected)
+    gradients = _reference_backward(
+        torch.ones_like(output),
+        state,
+        graph.edge_vec,
+        *arguments,
+        graph.edge_vec.new_empty(0),
+        graph.edge_vec.new_empty(0),
+        blocks_record=artifacts["blocks"],
+    )
+    assert gradients[0].shape == (0, 3)
+    for gradient in gradients:
+        assert torch.isfinite(gradient).all()
 
 
 def _restrict_scalar_rank(descriptor: DescrptDPA4C, rank: int) -> None:

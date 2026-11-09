@@ -2,7 +2,7 @@
 set -ex
 
 # With no arguments, build, generate every fixture, and run CTest as before.
-# The independent Kokkos job needs the installation and only long-range models.
+# The independent Kokkos job needs the installation and its compressed fixtures.
 MODE=${1:-all}
 if [ "$#" -gt 1 ]; then
 	echo "Usage: $0 [--build-only | --models-only=kokkos]" >&2
@@ -55,7 +55,7 @@ if [ "$MODE" != "--models-only=kokkos" ]; then
 		-D USE_PT_PYTHON_LIBS=${ENABLE_PYTORCH:-TRUE} \
 		-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
 		-D BUILD_TESTING:BOOL=${BUILD_TESTING} \
-		-D LAMMPS_VERSION=stable_22Jul2025_update2 \
+		-D LAMMPS_VERSION="${LAMMPS_VERSION:-stable_22Jul2025_update2}" \
 		${CUDA_ARGS} ..
 	cmake --build . -j${NPROC}
 	cmake --install .
@@ -138,6 +138,7 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.pte \
 			${INFER_SCRIPT_PATH}/deeppot_dpa4c_long_range*.expected
 		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py --compressed-only
+		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_canonical.py
 		exit 0
 	fi
 	_FIXTURE_MANIFEST="${INFER_SCRIPT_PATH}/.pt-fixture-cache-manifest"

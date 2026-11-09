@@ -172,6 +172,7 @@ if name == "ctest":
         "MOCK_SCHEDULE_DIR": str(tmp_path / "schedule"),
         "MOCK_SCHEDULE_LOG": str(tmp_path / "schedule.jsonl"),
         "MOCK_CHECK_SCHEDULE": "",
+        "LAMMPS_VERSION": "",
     }
     Path(env["MOCK_SCHEDULE_DIR"]).mkdir()
     return root, script, env
@@ -244,6 +245,7 @@ def test_default_still_builds_all_models_and_runs_ctest(build_tree):
     result, commands = run_script(build_tree)
     assert result.returncode == 0, result.stderr
     assert "BUILD_TESTING:BOOL=TRUE" in commands[0]["args"]
+    assert "LAMMPS_VERSION=stable_22Jul2025_update2" in commands[0]["args"]
     assert [c["name"] for c in commands[:4]] == ["cmake", "cmake", "cmake", "python"]
     assert commands[1]["args"][:2] == ["--build", "."]
     assert commands[2]["args"] == ["--install", "."]
@@ -342,7 +344,20 @@ def test_build_only_installs_without_generating_models_or_running_ctest(
     )
 
 
-def test_kokkos_models_reuse_build_and_preserve_other_fixtures(build_tree):
+def test_build_only_honors_explicit_lammps_version(
+    build_tree: tuple[Path, Path, dict[str, str]],
+) -> None:
+    result, commands = run_script(
+        build_tree, "--build-only", LAMMPS_VERSION="patch_4Jul2026"
+    )
+    assert result.returncode == 0, result.stderr
+    assert "LAMMPS_VERSION=patch_4Jul2026" in commands[0]["args"]
+    assert not generated_models(commands)
+
+
+def test_kokkos_models_reuse_build_and_preserve_other_fixtures(
+    build_tree: tuple[Path, Path, dict[str, str]],
+) -> None:
     root, _, _ = build_tree
     infer = root / "source/tests/infer"
     keep = infer / "other_model.pt2"
@@ -355,14 +370,22 @@ def test_kokkos_models_reuse_build_and_preserve_other_fixtures(build_tree):
         path.touch()
     result, commands = run_script(build_tree, "--models-only=kokkos")
     assert result.returncode == 0, result.stderr
-    assert [c["name"] for c in commands] == ["python", "python"]
+    assert [c["name"] for c in commands] == ["python", "python", "python"]
     assert commands[0]["args"][0] == "-c"
-    assert generated_models(commands) == ["gen_dpa4c_long_range.py"]
+    assert generated_models(commands) == [
+        "gen_dpa4c_long_range.py",
+        "gen_dpa4c_canonical.py",
+    ]
     assert commands[1]["args"][0] == "-u"
     assert commands[1]["args"][2:] == ["--compressed-only"]
+    assert commands[2]["args"][0] == "-u"
+    assert commands[2]["args"][2:] == []
     reports = generator_reports(root)
-    assert len(reports) == 1
-    assert {path.stem for path in reports} == {"gen_dpa4c_long_range"}
+    assert len(reports) == 2
+    assert {path.stem for path in reports} == {
+        "gen_dpa4c_long_range",
+        "gen_dpa4c_canonical",
+    }
     assert {row["exit_status"] for row in reports.values()} == {"0"}
     assert not (root / "source/build_tests/gtest-reports").exists()
     assert (
@@ -422,15 +445,18 @@ def test_default_propagates_generator_failures(build_tree, model):
         assert "gen_corrupt_with_comm.py" not in generated_models(commands)
 
 
-def test_kokkos_models_propagate_generator_failure(build_tree):
+@pytest.mark.parametrize("model", ["gen_dpa4c_long_range.py", "gen_dpa4c_canonical.py"])
+def test_kokkos_models_propagate_generator_failure(
+    build_tree: tuple[Path, Path, dict[str, str]], model: str
+) -> None:
     root, _, _ = build_tree
-    result, _ = run_script(
-        build_tree, "--models-only=kokkos", MOCK_FAIL="gen_dpa4c_long_range.py"
-    )
+    result, _ = run_script(build_tree, "--models-only=kokkos", MOCK_FAIL=model)
     assert result.returncode == 17
-    reports = generator_reports(root)
-    assert len(reports) == 1
-    assert {row["exit_status"] for row in reports.values()} == {"17"}
+    reports = {path.stem: row for path, row in generator_reports(root).items()}
+    assert len(reports) == (1 if model == "gen_dpa4c_long_range.py" else 2)
+    assert reports[Path(model).stem]["exit_status"] == "17"
+    if model == "gen_dpa4c_canonical.py":
+        assert reports["gen_dpa4c_long_range"]["exit_status"] == "0"
 
 
 @pytest.mark.parametrize(

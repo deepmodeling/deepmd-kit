@@ -52,12 +52,15 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
         return self.kernel.evaluate(r_sq, coefficients)
 
     def operator_eligible(self) -> bool:
-        """Whether :meth:`energy_force_from_coord` evaluates this module.
+        """Whether :meth:`energy_force_from_coord` evaluates this configuration.
 
         The operator evaluates the kernels, channel counts and B-spline orders
         it is instantiated for. The compact lower that calls it reads no frame
         input: the charges depend on the descriptor alone, and a constrained
-        channel sums to zero or to the total charge of a folded charge state.
+        channel sums to zero or to the total charge of a folded charge state,
+        so a module that reads the charge state of each frame
+        (:meth:`uses_charge_spin`) is evaluated once the compression of the
+        model has folded it.
         """
         from deepmd.pt_expt.kernels.long_range import (
             MAX_CHANNELS,
@@ -73,7 +76,6 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
             and self.pme_order <= MAX_ORDER
             and self.charge_net.numb_fparam == 0
             and self.charge_net.numb_aparam == 0
-            and not self.uses_charge_spin()
         )
 
     def operator_constraint(

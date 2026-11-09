@@ -250,7 +250,7 @@ By default the pair style stores the precession magnetic force that the LAMMPS S
 ### Restrictions
 
 - The `dpa4spin` pair style requires `atom_style spin`, and on a single MPI rank an atom map (`atom_modify map yes`).
-- `dpa4spin/kk` requires a compressed archive and a LAMMPS build with the KOKKOS package on the GPU backend.
+- `dpa4spin/kk` requires a compressed archive and LAMMPS 4 Jul 2026 or newer with the KOKKOS package on the GPU backend. Earlier releases can corrupt ghost spin-field communication and migrated atom velocities.
 - In [plugin mode](../install/install-lammps.md#install-lammps-plugin-mode), `dpa4spin/kk` requires a DeePMD-kit plugin built with `DEEPMD_LAMMPS_KOKKOS=ON`.
 - The `fix nve/spin` of a stock LAMMPS build does not use the magnetic force of this pair style: the fix evaluates the magnetic force itself, through the pair styles whose names begin with `spin`. With no such pair style, the fix runs silently on a single MPI rank and stops with a sectoring error on several. Spin dynamics needs a LAMMPS build whose integrator reads the magnetic force of the pair style.
 - The `dpa4spin` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.

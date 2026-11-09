@@ -45,7 +45,7 @@ MPI_ARGS=(
 cmake -S "${LAMMPS_SOURCE_ROOT}/cmake" -B "${LAMMPS_BUILD_DIR}" \
 	-D CMAKE_BUILD_TYPE=Release \
 	-D CMAKE_CXX_COMPILER="${NVCC_WRAPPER}" \
-	-D CMAKE_CXX_STANDARD=17 \
+	-D CMAKE_CXX_STANDARD=20 \
 	-D BUILD_SHARED_LIBS=ON \
 	-D BUILD_MPI=ON \
 	-D BUILD_OMP=OFF \
@@ -64,7 +64,7 @@ cmake --build "${LAMMPS_BUILD_DIR}" --target lammps --parallel "${BUILD_JOBS}"
 cmake -S "${REPO_ROOT}/source" -B "${PLUGIN_BUILD_DIR}" \
 	-D CMAKE_BUILD_TYPE=Release \
 	-D CMAKE_CXX_COMPILER="${NVCC_WRAPPER}" \
-	-D CMAKE_CXX_STANDARD=17 \
+	-D CMAKE_CXX_STANDARD=20 \
 	-D CMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
 	-D BUILD_TESTING=OFF \
 	-D DEEPMD_C_ROOT="${DEEPMD_C_ROOT}" \
@@ -125,6 +125,7 @@ mkdir -p "${BUILD_ROOT}/test-reports"
 TEST_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")
 DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
 	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py" \
+	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_multiblock_kokkos.py" \
 	--junitxml="${TEST_REPORT_DIR}/spin.xml"
 # The compressed long-range fixtures come from gen_dpa4c_long_range.py of
 # test_cc_local.sh; the MPI runner of the test launches mpirun from PATH, which

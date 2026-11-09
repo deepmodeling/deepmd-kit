@@ -8,10 +8,14 @@ from __future__ import (
 from dataclasses import (
     dataclass,
 )
+from itertools import (
+    pairwise,
+)
 from typing import (
     TYPE_CHECKING,
 )
 
+import numpy as np
 import torch
 
 if TYPE_CHECKING:
@@ -94,6 +98,136 @@ class CanonicalGraph:
     destination_row_ptr: torch.Tensor
     source_row_ptr: torch.Tensor
     source_order: torch.Tensor
+
+
+@dataclass(frozen=True)
+class BorderPlan:
+    """Store the border plan of the node set of one domain of a decomposed frame.
+
+    The node set holds the owned nodes first, then the halo nodes, images of
+    atoms that other swaps of a LAMMPS brick decomposition deliver. A model
+    whose further message-passing blocks read features of the edge sources
+    refreshes the halo rows of those features from their owners with this
+    plan (``source/op/pt/border_exchange.h``), and evaluates the owned nodes
+    alone. A node set without halo nodes carries a plan without swaps.
+
+    Parameters
+    ----------
+    send_nodes
+        Nodes that the swaps send, the swaps concatenated in order, with shape
+        ``(M,)``, int32, on the device of the graph; entries past the rows of
+        the swaps are unused.
+    swaps
+        Swap table with shape ``(nswap, 5)``, int32, on the CPU: the rank that
+        swap ``s`` sends to, the rank it receives from, the counts of the rows
+        it sends and receives, and the first halo row it receives into.
+    communicator
+        Address of the MPI_Comm handle of the decomposition, an int64 CPU
+        tensor of one element, zero for a single process.
+    """
+
+    send_nodes: torch.Tensor
+    swaps: torch.Tensor
+    communicator: torch.Tensor
+
+    @classmethod
+    def single_domain(cls, device: torch.device) -> BorderPlan:
+        """Return the plan of a node set without halo nodes."""
+        return cls(
+            send_nodes=torch.zeros(2, dtype=torch.int32, device=device),
+            swaps=torch.zeros(0, 5, dtype=torch.int32, device="cpu"),
+            communicator=torch.zeros(1, dtype=torch.int64, device="cpu"),
+        )
+
+
+def validate_reciprocal_canonical_graph(graph: CanonicalGraph) -> None:
+    """Check reverse edges of a complete, single-domain graph at construction.
+
+    Every physical edge must have a reverse edge with opposite displacement.
+    Periodic images sharing a node pair are matched one-to-one within the
+    displacement tolerance. Lexicographic displacement order pairs reciprocal
+    images on the graph device. Groups that do not match within tolerance in
+    this order are compacted before host-side matching. Storage guards are
+    ignored. This check synchronizes the device and belongs at graph
+    construction, not inside a captured inference operator. A partitioned
+    graph cannot be checked locally.
+    """
+    device = graph.source.device
+    destination = torch.repeat_interleave(
+        torch.arange(
+            graph.destination_row_ptr.numel() - 1, dtype=torch.int64, device=device
+        ),
+        graph.destination_row_ptr.diff(),
+    )
+    count = destination.numel()
+    source = canonical_index_words(graph.source)[:count].to(torch.int64)
+    vector = graph.edge_vec[:count]
+
+    def ordered(
+        center: torch.Tensor, neighbor: torch.Tensor, order: torch.Tensor
+    ) -> torch.Tensor:
+        """Group endpoints while preserving the supplied displacement order."""
+        for column in (neighbor, center):
+            order = order[torch.argsort(column[order], stable=True)]
+        return order
+
+    # Negating every displacement reverses its lexicographic order. One
+    # geometry ordering therefore serves both directions, including self-images.
+    geometry_order = torch.arange(count, dtype=torch.int64, device=device)
+    for axis in (2, 1, 0):
+        geometry_order = geometry_order[
+            torch.argsort(vector[geometry_order, axis], stable=True)
+        ]
+    forward = ordered(destination, source, geometry_order)
+    reverse = ordered(source, destination, geometry_order.flip(0))
+    message = (
+        "multi-block DPA4C requires a globally bidirectional graph: "
+        "each edge must have a reverse edge with opposite displacement"
+    )
+    same_pair = (destination[forward] == source[reverse]) & (
+        source[forward] == destination[reverse]
+    )
+    actual, expected = vector[forward], -vector[reverse]
+    aligned = torch.isclose(actual, expected, rtol=2e-6, atol=2e-6).all(dim=1)
+    if bool((same_pair & aligned).all()):
+        return
+    if not bool(same_pair.all()):
+        raise ValueError(message)
+    # A prefix count identifies groups with any mismatch. Keep every edge of
+    # those groups for one-to-one matching, without transferring accepted groups.
+    changes = (destination[forward][1:] != destination[forward][:-1]) | (
+        source[forward][1:] != source[forward][:-1]
+    )
+    ends = torch.cat(
+        (torch.nonzero(changes).flatten() + 1, source.new_full((1,), count))
+    )
+    starts = torch.cat((source.new_zeros(1), ends[:-1]))
+    sizes = ends - starts
+    prefix = torch.cat((source.new_zeros(1), (~aligned).to(torch.int64).cumsum(0)))
+    pending = prefix[ends] != prefix[starts]
+    selected = torch.repeat_interleave(pending, sizes, output_size=count)
+    actual = actual[selected].detach().cpu().numpy()
+    expected = expected[selected].detach().cpu().numpy()
+    starts = np.cumsum([0, *sizes[pending].cpu().tolist()])
+    for begin, end in pairwise(starts):
+        adjacent = np.isclose(
+            actual[begin:end, None], expected[None, begin:end], rtol=2e-6, atol=2e-6
+        ).all(axis=-1)
+        owner = [-1] * (end - begin)
+
+        def augment(node: int, seen: set[int]) -> bool:
+            """Reassign images along a path to an unmatched reverse image."""
+            for target in np.flatnonzero(adjacent[node]):
+                if target in seen:
+                    continue
+                seen.add(target)
+                if owner[target] < 0 or augment(owner[target], seen):
+                    owner[target] = node
+                    return True
+            return False
+
+        if not all(augment(node, set()) for node in range(end - begin)):
+            raise ValueError(message)
 
 
 def validate_canonical_graph_shapes(
@@ -311,4 +445,5 @@ __all__ = [
     "canonical_index_dtype",
     "canonical_index_words",
     "validate_canonical_graph_shapes",
+    "validate_reciprocal_canonical_graph",
 ]
