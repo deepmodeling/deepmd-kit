@@ -2541,14 +2541,16 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         calc0 = WignerDCalculator(lmax=0, dtype=torch.float32).cuda()
         calc0.eval()
         d0, dt0 = calc0.forward(quat)
-        expected = torch.zeros(8, 1, 1, device="cuda")
+        expected = torch.zeros(8, 1, 1, dtype=torch.float32, device="cuda")
         expected[:, 0, 0] = 1.0
         self.assertTrue(torch.equal(d0, expected))
         self.assertTrue(torch.equal(dt0, expected))
 
         calc3 = WignerDCalculator(lmax=3, dtype=torch.float32).cuda()
         calc3.eval()
-        d_empty, dt_empty = calc3.forward(torch.empty(0, 4, device="cuda"))
+        d_empty, dt_empty = calc3.forward(
+            torch.empty(0, 4, dtype=torch.float32, device="cuda")
+        )
         self.assertEqual(tuple(d_empty.shape), (0, 16, 16))
         self.assertEqual(tuple(dt_empty.shape), (0, 16, 16))
 
