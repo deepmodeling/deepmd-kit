@@ -1953,6 +1953,23 @@ def _dpa4_kernel_levels_for_target(
                 os.environ[name] = value
 
 
+def _reject_unmerged_experts(model: torch.nn.Module) -> None:
+    """Refuse a model whose experts are still mixed by a router.
+
+    A deployed model has its experts merged for one scenario by
+    ``dp --pt-expt moe-merge``; the weights of elements may remain.
+    """
+    from deepmd.dpmodel.model.expert_merge import (
+        has_expert_router,
+    )
+
+    if has_expert_router(model):
+        raise ValueError(
+            "the model mixes experts by a router; merge them for a scenario "
+            "with `dp --pt-expt moe-merge` and export the merged model"
+        )
+
+
 def _fold_case_embeddings(model: torch.nn.Module) -> None:
     """Fold the fixed case embedding of every fitting into its first layer.
 
@@ -2396,6 +2413,7 @@ def _trace_and_export_impl(
             f"with_comm_dict=True is unsupported for lower_kind={lower_kind!r}: "
             "this model and lower do not use a separate with-comm artifact."
         )
+    _reject_unmerged_experts(model)
     # The fold rebuilds the first fitting layers on the default device, where
     # the deserialized model resides, so it precedes the move below.
     _fold_case_embeddings(model)

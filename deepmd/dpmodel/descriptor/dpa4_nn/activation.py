@@ -15,6 +15,7 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -32,6 +33,10 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    ExpertContainer,
+    linear_with_experts,
 )
 from deepmd.dpmodel.utils.network import (
     Identity,
@@ -52,9 +57,18 @@ from .indexing import (
 from .so3 import (
     FocusLinear,
 )
+from .utils import (
+    layer_variables,
+    load_layer_variables,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Sequence,
+    )
 
 
-class GatedActivation(NativeOP):
+class GatedActivation(ExpertContainer, NativeOP):
     """
     Gated activation for SO(3) equivariant features with per-l independent gates.
 
@@ -94,6 +108,11 @@ class GatedActivation(NativeOP):
         Tensor layout convention. ``"nfdc"`` means input shape (N, F, D, C);
         ``"ndfc"`` means input shape (N, D, F, C); ``"fndc"`` means input shape
         (F, N, D, C), the focus-major layout used by the SO(2) mixing stack.
+    experts
+        Number of experts and of element increments ``(n_experts, n_elements)``
+        of the gate projection (see
+        :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`); None
+        keeps the plain projection.
     trainable
         Whether parameters are trainable.
     seed
@@ -111,10 +130,12 @@ class GatedActivation(NativeOP):
         activation_function: str = "silu",
         mlp_bias: bool = False,
         layout: str = "nfdc",
+        experts: Sequence[int] | None = None,
         trainable: bool = True,
         seed: int | list[int] | None = None,
     ) -> None:
         self.lmax = int(lmax)
+        self.experts = None if experts is None else [int(n) for n in experts]
         self.mmax = None if mmax is None else int(mmax)
         if self.mmax is not None:
             if self.mmax < 0:
@@ -139,7 +160,9 @@ class GatedActivation(NativeOP):
             else:
                 degree_index = build_m_major_l_index(self.lmax, self.mmax)
                 expand_index = degree_index[1:] - 1
-            self.gate_linear: NativeOP = FocusLinear(
+            self.gate_linear: NativeOP = linear_with_experts(
+                FocusLinear,
+                self.experts,
                 in_channels=self.channels,
                 out_channels=self.lmax * self.channels,
                 n_focus=self.n_focus,
@@ -165,7 +188,10 @@ class GatedActivation(NativeOP):
 
         self.trainable = bool(trainable)
 
-    def call(self, x: Any, gate: Any = None) -> Any:
+    def _expert_members(self) -> list[str]:
+        return ["gate_linear"] if self.lmax > 0 else []
+
+    def call(self, x: Any, gate: Any = None, route: Any = None) -> Any:
         """
         Parameters
         ----------
@@ -179,6 +205,10 @@ class GatedActivation(NativeOP):
             - l=0: x0 * act(g0) (e.g., SwiGLU when act=silu)
             - l>0: sigmoid(Linear(g0)) gates x's vector components
             When None (default), uses standard mode where gates are derived from x itself.
+        route
+            Route of the rows of ``x`` (see
+            :class:`~deepmd.dpmodel.utils.expert_route.UnitRoute`), with the
+            weights of :meth:`expert_maps`; required with ``experts``.
 
         Returns
         -------
@@ -225,8 +255,10 @@ class GatedActivation(NativeOP):
             gate_logits = xp.permute_dims(
                 self.gate_linear(xp.permute_dims(gate_src, (1, 0, 2))), (1, 0, 2)
             )
-        else:
+        elif route is None:
             gate_logits = self.gate_linear(gate_src)
+        else:
+            gate_logits = self.gate_linear(gate_src, route.map(0))
         vectors = self._apply_vector_gate(x[rest_idx], gate_logits, input_dtype)
         return xp.concat([x0, vectors], axis=degree_axis)
 
@@ -253,9 +285,7 @@ class GatedActivation(NativeOP):
     def serialize(self) -> dict[str, Any]:
         variables = {"expand_index": to_numpy_array(self.expand_index)}
         if self.lmax > 0:
-            variables["gate_linear.weight"] = to_numpy_array(self.gate_linear.weight)
-            if self.gate_linear.bias is not None:
-                variables["gate_linear.bias"] = to_numpy_array(self.gate_linear.bias)
+            variables.update(layer_variables({"gate_linear": self.gate_linear}))
         return {
             "@class": "GatedActivation",
             "@version": 1,
@@ -268,6 +298,7 @@ class GatedActivation(NativeOP):
                 "activation_function": self.activation_function,
                 "mlp_bias": self.mlp_bias,
                 "layout": self.layout,
+                "experts": self.experts,
                 "trainable": self.trainable,
                 "seed": None,
             },
@@ -285,19 +316,12 @@ class GatedActivation(NativeOP):
         config = data.pop("config")
         variables = data.pop("@variables")
         obj = cls(**config)
-        prec = PRECISION_DICT[obj.precision.lower()]
         if not np.array_equal(
             variables["expand_index"], to_numpy_array(obj.expand_index)
         ):
             raise ValueError("expand_index must match the configured degree layout")
         if obj.lmax > 0:
-            obj.gate_linear.weight = np.asarray(
-                variables["gate_linear.weight"], dtype=prec
-            )
-            if obj.gate_linear.bias is not None:
-                obj.gate_linear.bias = np.asarray(
-                    variables["gate_linear.bias"], dtype=prec
-                )
+            load_layer_variables(obj, {"gate_linear": obj.gate_linear}, variables)
         return obj
 
 

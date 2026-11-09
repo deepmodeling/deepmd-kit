@@ -392,6 +392,7 @@ class TestParserOutput(unittest.TestCase):
             "embed": ([], "head"),
             "compress": ([], "head"),
             "change-bias": (["INPUT"], "model_branch"),
+            "moe-merge": (["INPUT"], "head"),
         }
         for command, (argv, attribute) in commands.items():
             for option in ("--task", "--head", "--model-branch"):

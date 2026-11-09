@@ -53,6 +53,7 @@ __all__ = [
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
     "relax_views_to_reshapes",
+    "replace_sym_numel_with_method",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
     "traced_output_keys",
@@ -558,6 +559,38 @@ def relax_views_to_reshapes(gm: torch.fx.GraphModule) -> None:
             node.target = reshape
             relaxed = True
     if relaxed:
+        gm.graph.lint()
+        gm.recompile()
+
+
+def replace_sym_numel_with_method(gm: torch.fx.GraphModule) -> None:
+    """Rewrite every ``aten.sym_numel`` in a ``make_fx`` graph to ``Tensor.numel``.
+
+    ``make_fx`` emits ``aten.sym_numel`` for a symbolic size that the trace
+    first meets as the element count of a tensor; the length of an
+    ``index_select`` output, which is the element count of its index, is such
+    a size. ``torch.compile`` retraces the graph with Dynamo for every shape
+    specialization, and Dynamo specializes an axis of length one. The element
+    count of a tensor whose axes are all specialized is a Python integer,
+    which Dynamo does not accept as the result of an ATen operator: it breaks
+    the graph at the node and resumes in a separate frame. ``Tensor.numel``
+    returns the same value; Dynamo folds it to a constant for a specialized
+    shape and keeps it symbolic otherwise, so the rewritten graph is traced as
+    one frame for every specialization.
+
+    Parameters
+    ----------
+    gm : torch.fx.GraphModule
+        The ``make_fx`` graph to rewrite in place.
+    """
+    sym_numel = torch.ops.aten.sym_numel.default
+    replaced = False
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target is sym_numel:
+            node.op = "call_method"
+            node.target = "numel"
+            replaced = True
+    if replaced:
         gm.graph.lint()
         gm.recompile()
 

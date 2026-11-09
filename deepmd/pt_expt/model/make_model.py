@@ -663,6 +663,21 @@ def make_model(
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
 
+        def change_out_bias(self, *args: Any, **kwargs: Any) -> None:
+            """Change the output bias from the statistics of the evaluated model.
+
+            A training forward may differ from the model it trains: merge-aware
+            training evaluates a share of the frames without the element
+            weights of an MoE model. The statistics are those of the model in
+            evaluation mode, whatever the mode it is called in.
+            """
+            training = self.training
+            self.eval()
+            try:
+                super().change_out_bias(*args, **kwargs)
+            finally:
+                self.train(training)
+
         def observe_contacts(self, graph: Any, atype: torch.Tensor) -> None:
             """Record the contacts of a training graph before it is evaluated.
 

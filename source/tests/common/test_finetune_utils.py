@@ -45,6 +45,26 @@ def test_descriptor_normalization_uses_descriptor_type_count():
     assert finetune._infer_synthetic_type_count({"exclude_types": [[0, 3]]}) == 4
 
 
+def test_descriptor_normalization_keeps_the_elements_a_descriptor_names(caplog):
+    assert finetune._infer_synthetic_type_map({"sel": [16, 24, 32]}) == [
+        "Type0",
+        "Type1",
+        "Type2",
+    ]
+    merged = {"type": "dpa4", "moe": {"n_experts": 0, "element": ["O", "H", "C"]}}
+    assert finetune._infer_synthetic_type_map(merged) == ["O", "H", "C"]
+    # The implicit defaults of the plain descriptor are no difference.
+    with caplog.at_level(logging.WARNING):
+        finetune.warn_configuration_mismatch_during_finetune(
+            {"type": "dpa4", "moe": {"n_experts": 0, "element": ["O", "H", "C"]}},
+            merged,
+        )
+    assert not caplog.text
+    normalized = finetune._normalize_descriptor_for_compare(merged)
+    assert normalized["moe"]["element"] == ["O", "H", "C"]
+    assert "n_blocks" in normalized
+
+
 def test_descriptor_config_warning_reports_nested_difference(monkeypatch, caplog):
     monkeypatch.setattr(
         finetune,
@@ -194,6 +214,77 @@ def test_finetune_rule_builder_random_fitting_keeps_target_fitting_net():
     assert updated["descriptor"]["sel"] == [8, 16]
     assert updated["fitting_net"]["neuron"] == [2]
     assert links["Default"].get_random_fitting()
+
+
+@pytest.mark.parametrize("change_model_params", [False, True])
+@pytest.mark.parametrize(
+    ("target_default", "expected"), [(None, [1.0, 2.0]), ([0.0, 1.0], [0.0, 1.0])]
+)
+def test_finetune_rule_builder_inherits_unset_default_chg_spin(
+    target_default: list[float] | None,
+    expected: list[float],
+    change_model_params: bool,
+) -> None:
+    pretrained = _model_config(["O", "H"])
+    pretrained["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[1.0, 2.0])
+    target = _model_config(["O", "H"])
+    target["descriptor"]["add_chg_spin_ebd"] = True
+    if target_default is not None:
+        target["descriptor"]["default_chg_spin"] = target_default
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained, target, change_model_params=change_model_params
+    ).build()
+
+    assert updated["descriptor"]["default_chg_spin"] == expected
+
+
+def test_finetune_rule_builder_keeps_default_chg_spin_off_unconditioned_targets() -> (
+    None
+):
+    pretrained = _model_config(["O", "H"])
+    pretrained["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[1.0, 2.0])
+    target = _model_config(["O", "H"])
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained, target, change_model_params=False
+    ).build()
+
+    assert "default_chg_spin" not in updated["descriptor"]
+
+
+def test_finetune_rule_builder_names_single_task_pretrained_by_task() -> None:
+    pretrained = _model_config(["O", "H"])
+    pretrained["task"] = "omat24"
+    target = {
+        "model_dict": {
+            "omat24": _model_config(["O", "H"]),
+            "omol25": {**_model_config(["O", "H"]), "finetune_head": "omat24"},
+            "matpes": _model_config(["O", "H"]),
+        }
+    }
+
+    _, links = finetune.FinetuneRuleBuilder(
+        pretrained, target, change_model_params=False
+    ).build()
+
+    assert links["omat24"].get_resuming()
+    assert not links["omol25"].get_resuming()
+    assert not links["omol25"].get_random_fitting()
+    assert links["matpes"].get_random_fitting()
+    assert {link.get_model_branch() for link in links.values()} == {"Default"}
+
+
+def test_finetune_rule_builder_rejects_unknown_pretrained_task() -> None:
+    pretrained = _model_config(["O", "H"])
+    pretrained["task"] = "omat24"
+    branch = {**_model_config(["O", "H"]), "finetune_head": "matpes"}
+    target = {"model_dict": {"omol25": branch}}
+
+    with pytest.raises(ValueError, match="matpes"):
+        finetune.FinetuneRuleBuilder(
+            pretrained, target, change_model_params=False
+        ).build()
 
 
 def test_finetune_rule_builder_rejects_unknown_branch_from_single_task():

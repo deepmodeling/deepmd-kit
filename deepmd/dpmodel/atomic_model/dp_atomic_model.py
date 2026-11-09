@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import dataclasses
 from collections.abc import (
     Callable,
 )
@@ -17,6 +18,7 @@ import array_api_compat
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_first_n,
+    xp_uniform,
 )
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -30,6 +32,12 @@ from deepmd.dpmodel.long_range import (
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
+)
+from deepmd.dpmodel.utils.expert_route import (
+    ExpertCondition,
+    frame_type_counts,
+    node_reference_index,
+    reference_keys,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -140,6 +148,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.descriptor = descriptor
         self.fitting_net = fitting
         self.fitting_net.reinit_exclude(self.atom_exclude_types)
+        self._check_experts()
         self.long_range = long_range
         self.type_map = type_map
         self.add_chg_spin_ebd: bool = self.descriptor.has_chg_spin_ebd()
@@ -170,6 +179,30 @@ class DPAtomicModel(BaseAtomicModel):
         # bias of that output; the conditions of the reference atoms follow.
         resolve_vacuum_ref(self.fitting_net, self.preset_out_bias)
         self.init_vacuum_conditions()
+
+    def _check_experts(self) -> None:
+        """Validate what an MoE descriptor requires of the model."""
+        # The reference of an isolated atom takes the weights of the atom it
+        # references, which may follow its frame, so the references are
+        # appended to the graph rather than tabulated by type.
+        if (
+            self.descriptor.has_experts()
+            and not self.descriptor.supports_graph_vacuum()
+        ):
+            raise ValueError(
+                "an MoE descriptor supplies the reference of an "
+                "isolated atom on the graph (`supports_graph_vacuum`)"
+            )
+
+    def has_experts(self) -> bool:
+        """Whether the descriptor or the fitting has MoE."""
+        return self.descriptor.has_experts() or self.fitting_net.has_experts()
+
+    def has_expert_router(self) -> bool:
+        """Whether a router mixes experts in the descriptor or in the fitting."""
+        return (
+            self.descriptor.has_expert_router() or self.fitting_net.has_expert_router()
+        )
 
     def _check_long_range(self) -> None:
         """Validate that the long-range module can join this descriptor and fitting."""
@@ -607,17 +640,18 @@ class DPAtomicModel(BaseAtomicModel):
         atype: Array,
         charge_spin: Array | None,
         spin: Array | None,
+        reference_type: Array | None = None,
     ) -> tuple["NeighborGraph", Array, Array | None, Array | None]:
-        """Append one isolated atom of every type as a single-node frame.
+        """Append isolated reference atoms as single-node frames.
 
         The reference nodes follow the node axis of the real frames, padding
-        included, as single-node frames: one node of every type without
+        included, as single-node frames: one node per reference type without
         neighbors, conditioned as the neutral ground-state atom (zero charge
         and the ground-state multiplicity for the charge/spin conditioning, a
         spin vector of as many Bohr magnetons as unpaired electrons for the
         native spin). Node-wise operations of the descriptor leave the real
         nodes unaffected, so the descriptor rows of the reference nodes are the
-        vacuum descriptor of every type.
+        vacuum descriptors of the reference types.
 
         Parameters
         ----------
@@ -630,6 +664,9 @@ class DPAtomicModel(BaseAtomicModel):
             (1, 2); None takes the descriptor default.
         spin : Array, optional
             Per-node spin vectors with shape (N, 3), or None.
+        reference_type : Array, optional
+            Types of the reference atoms with shape (R,); None appends one
+            atom of every type in type order.
 
         Returns
         -------
@@ -644,13 +681,14 @@ class DPAtomicModel(BaseAtomicModel):
         xp = array_api_compat.array_namespace(atype, graph.edge_vec)
         device = array_api_compat.device(atype)
         dtype = graph.edge_vec.dtype
-        ntypes = self.get_ntypes()
         nf = graph.n_node.shape[0]
         conditions = self.vacuum_conditions()
-        graph = append_isolated_frames(graph, atype.shape[0], ntypes)
-        atype = xp.concat(
-            [atype, xp.arange(ntypes, dtype=atype.dtype, device=device)], axis=0
-        )
+        if reference_type is None:
+            reference_type = xp.arange(
+                self.get_ntypes(), dtype=atype.dtype, device=device
+            )
+        graph = append_isolated_frames(graph, atype.shape[0], reference_type.shape[0])
+        atype = xp.concat([atype, xp.astype(reference_type, atype.dtype)], axis=0)
         if self.add_chg_spin_ebd:
             if charge_spin is None:
                 default_cs = self.descriptor.get_default_chg_spin()
@@ -659,14 +697,20 @@ class DPAtomicModel(BaseAtomicModel):
                 charge_spin = xp.reshape(
                     xp.asarray(default_cs, dtype=dtype, device=device), (1, 2)
                 )
-            # one row per real frame, one for the padding frame, one per type
+            # one row per real frame, one for the padding frame, one per reference
             charge_spin = xp.concat(
                 [
                     xp.broadcast_to(
                         xp.astype(xp.reshape(charge_spin, (-1, 2)), dtype), (nf, 2)
                     ),
                     xp.zeros((1, 2), dtype=dtype, device=device),
-                    xp.asarray(conditions["charge_spin"], dtype=dtype, device=device),
+                    xp.take(
+                        xp.asarray(
+                            conditions["charge_spin"], dtype=dtype, device=device
+                        ),
+                        reference_type,
+                        axis=0,
+                    ),
                 ],
                 axis=0,
             )
@@ -674,7 +718,11 @@ class DPAtomicModel(BaseAtomicModel):
             spin = xp.concat(
                 [
                     xp.reshape(spin, (-1, 3)),
-                    xp.asarray(conditions["spin"], dtype=spin.dtype, device=device),
+                    xp.take(
+                        xp.asarray(conditions["spin"], dtype=spin.dtype, device=device),
+                        reference_type,
+                        axis=0,
+                    ),
                 ],
                 axis=0,
             )
@@ -728,8 +776,9 @@ class DPAtomicModel(BaseAtomicModel):
         topologies
             the topologies of :meth:`required_topologies` by name.
         node_mask
-            flat mask of the real and owned nodes, which carry the fields of
-            the long-range module.
+            flat mask of the real, owned and not excluded nodes: they carry
+            the fields of the long-range module, and an MoE descriptor
+            references the types they hold in every frame.
         return_atomic_feature
             whether the forward stops after the fitting network and returns
             the embeddings of the nodes instead of the fitting output; the
@@ -784,12 +833,35 @@ class DPAtomicModel(BaseAtomicModel):
             fparam, charge_spin_frame = self._frame_conditions(
                 fparam, charge_spin, n_node.shape[0], graph.edge_vec
             )
-        # === Step 2. Vacuum reference nodes ===
+        # === Step 2. Vacuum reference nodes and expert conditions ===
         # Opted-in descriptors evaluate the reference in the same graph call.
         # Legacy descriptors must retain the dense reference used by folding.
+        # The weights of an MoE descriptor follow the frame under a router and
+        # under the merge-aware training (MAT) of a training forward; every
+        # atom is then referenced to an isolated atom of its type in its own
+        # frame.
         vacuum_ref = self.fitting_net.needs_vacuum_descriptor()
         graph_vacuum = vacuum_ref and self.descriptor.supports_graph_vacuum()
-        if graph_vacuum:
+        descriptor_kwargs = {}
+        fitting_kwargs = {}
+        reference_index = None
+        training = getattr(self, "training", False)
+        frame_weights = self.descriptor.has_expert_router() or (
+            training and self.descriptor.has_experts()
+        )
+        if frame_weights or (training and self.fitting_net.has_experts()):
+            condition = self.expert_condition(graph, atype, charge_spin, training)
+            if self.fitting_net.has_experts():
+                fitting_kwargs["condition"] = condition
+        if frame_weights:
+            if vacuum_ref:
+                graph, atype, charge_spin, spin, condition, reference_index = (
+                    self.append_frame_vacuum_frames(
+                        graph, atype, spin, condition, node_mask
+                    )
+                )
+            descriptor_kwargs["condition"] = condition
+        elif graph_vacuum:
             graph, atype, charge_spin, spin = self.append_vacuum_frames(
                 graph, atype, charge_spin, spin
             )
@@ -812,9 +884,19 @@ class DPAtomicModel(BaseAtomicModel):
             comm_dict=comm_dict,
             **spin_kwargs,
             **charge_spin_kwargs,
+            **descriptor_kwargs,
         )
         vacuum_kwargs = {}
-        if graph_vacuum:
+        if reference_index is not None:
+            # The reference rows follow the atoms: the twin of every atom, in
+            # the (N, 1, nd) layout of references that follow the atoms.
+            vacuum_kwargs["vacuum_descriptor"] = xp.take(
+                gg[n_real:], reference_index, axis=0
+            )[:, None, :]
+            gg = gg[:n_real]
+            atype = atype[:n_real]
+            rot_mat = None if rot_mat is None else rot_mat[:n_real]
+        elif graph_vacuum:
             vacuum_kwargs["vacuum_descriptor"] = gg[n_real:]
             gg = gg[:n_real]
             atype = atype[:n_real]
@@ -833,6 +915,7 @@ class DPAtomicModel(BaseAtomicModel):
             aparam=aparam_node,
             **vacuum_kwargs,
             **middle_kwargs,
+            **fitting_kwargs,
         )
         # The embeddings are the descriptor and the last hidden activation of
         # the fitting network, which the long-range module does not change.
@@ -859,6 +942,111 @@ class DPAtomicModel(BaseAtomicModel):
                 charge_spin=charge_spin_frame,
             )
         return ret
+
+    def expert_condition(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        charge_spin: Array | None,
+        training: bool,
+    ) -> ExpertCondition:
+        """
+        Conditions of the frames of the real nodes, which the MoE reads.
+
+        A training forward draws one sample per frame, by which the
+        descriptor and the fitting train the same frames merge-aware (MAT),
+        without their element-specific weights.
+
+        Parameters
+        ----------
+        graph
+            Neighbor graph of the real frames.
+        atype
+            Flat node types with shape (N,).
+        charge_spin
+            Charge/spin condition with shape (nf, 2) or (1, 2), or None for
+            the default.
+        training
+            Whether the forward is a training forward.
+
+        Returns
+        -------
+        ExpertCondition
+            The conditions of the real nodes.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            frame_id_from_n_node,
+        )
+
+        nf = graph.n_node.shape[0]
+        return ExpertCondition(
+            node_frame=frame_id_from_n_node(graph.n_node, n_total=atype.shape[0]),
+            charge_spin=self._frame_charge_spin(charge_spin, nf, graph.edge_vec),
+            mat_draw=xp_uniform(graph.edge_vec, nf) if training else None,
+        )
+
+    def append_frame_vacuum_frames(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        spin: Array | None,
+        condition: ExpertCondition,
+        node_mask: Array | None,
+    ) -> tuple[
+        "NeighborGraph", Array, Array | None, Array | None, ExpertCondition, Array
+    ]:
+        """
+        Append the reference of every atom of an MoE descriptor.
+
+        The reference of an atom is an isolated atom of its type with the
+        MoE weights of the frame of the atom, so one single-node frame is
+        appended per (frame, type) pair present. Its features take the
+        reference state of the type (see :meth:`append_vacuum_frames`).
+
+        Parameters
+        ----------
+        graph
+            Neighbor graph of the real frames.
+        atype
+            Flat node types with shape (N,).
+        spin
+            Per-node spin vectors with shape (N, 3), or None.
+        condition
+            Conditions of the real nodes; its charge/spin conditions are
+            those of the real frames.
+        node_mask
+            Mask of the nodes whose types are referenced, with shape (N,);
+            None references the types of all nodes.
+
+        Returns
+        -------
+        tuple
+            The extended graph, node types, charge/spin conditions, spin
+            vectors and conditions, and the index of the reference of every
+            real node among the appended nodes, with shape (N,).
+        """
+        xp = array_api_compat.array_namespace(atype, graph.edge_vec)
+        ntypes = self.get_ntypes()
+        node_type = xp.maximum(atype, xp.zeros_like(atype))
+        counts = frame_type_counts(
+            node_type,
+            xp.ones_like(node_type) if node_mask is None else node_mask,
+            condition.node_frame,
+            graph.n_node.shape[0],
+            ntypes,
+        )
+        keys, rank = reference_keys(counts)
+        reference_index = node_reference_index(
+            node_type, condition.node_frame, rank, ntypes
+        )
+        graph, atype, charge_spin, spin = self.append_vacuum_frames(
+            graph, atype, condition.charge_spin, spin, reference_type=keys % ntypes
+        )
+        condition = dataclasses.replace(
+            condition,
+            node_frame=xp.concat([condition.node_frame, keys // ntypes], axis=0),
+        )
+        return graph, atype, charge_spin, spin, condition, reference_index
 
     def forward_embedding_graph(
         self,
@@ -909,6 +1097,7 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
+            node_mask=node_mask,
             return_atomic_feature=True,
         )
         atomic_feature = ret["atomic_feature"]
@@ -953,15 +1142,41 @@ class DPAtomicModel(BaseAtomicModel):
                 self.get_default_fparam(), dtype=reference.dtype, device=device
             )
             fparam = xp.tile(xp.reshape(default_fparam, (1, -1)), (nf, 1))
+        return fparam, self._frame_charge_spin(charge_spin, nf, reference)
+
+    def _frame_charge_spin(
+        self, charge_spin: Array | None, nf: int, reference: Array
+    ) -> Array | None:
+        """Charge/spin condition of every frame with its default resolved.
+
+        Parameters
+        ----------
+        charge_spin
+            Charge/spin condition with shape (nf, 2) or (1, 2), or None.
+        nf
+            The number of frames.
+        reference
+            An array giving the namespace, dtype and device of the default.
+
+        Returns
+        -------
+        Array or None
+            The condition with shape (nf, 2), or None when the model takes no
+            charge/spin condition or it has no default.
+        """
         if not self.add_chg_spin_ebd:
-            return fparam, None
+            return None
+        xp = array_api_compat.array_namespace(reference)
         if charge_spin is None:
             default_cs = self.descriptor.get_default_chg_spin()
             if default_cs is None:
-                return fparam, None
-            charge_spin = xp.asarray(default_cs, dtype=reference.dtype, device=device)
-        charge_spin = xp.broadcast_to(xp.reshape(charge_spin, (-1, 2)), (nf, 2))
-        return fparam, charge_spin
+                return None
+            charge_spin = xp.asarray(
+                default_cs,
+                dtype=reference.dtype,
+                device=array_api_compat.device(reference),
+            )
+        return xp.broadcast_to(xp.reshape(charge_spin, (-1, 2)), (nf, 2))
 
     def compute_or_load_stat(
         self,

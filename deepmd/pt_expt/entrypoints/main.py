@@ -970,6 +970,18 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
         )
+    elif FLAGS.command == "moe-merge":
+        from deepmd.pt_expt.entrypoints.moe_merge import (
+            moe_merge,
+        )
+
+        moe_merge(
+            input_file=FLAGS.INPUT,
+            output=FLAGS.output,
+            elements=FLAGS.elements,
+            charge_spin=FLAGS.charge_spin,
+            head=FLAGS.head,
+        )
     elif FLAGS.command == "compress":
         from deepmd.pt_expt.entrypoints.compress import (
             enable_compression,

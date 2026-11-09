@@ -11,6 +11,14 @@ Input files:
 - `input_dpa45.json`: the `dpa4.5-nano-v20261111` preset with ZBL zone bridging
   and the recommended optimizer setting; train it with
   `dp --pt-expt train input_dpa45.json`.
+- `input_dpa45_moe_multitask.json`: the `dpa4.5-nano-v20261111` preset with a
+  mixture of experts (`moe`) in the descriptor and in the fitting network,
+  trained on two tasks that share both; every branch is a task. Train it with
+  `dp --pt-expt train input_dpa45_moe_multitask.json`, then merge the experts
+  of one branch with
+  `dp --pt-expt moe-merge model.ckpt.pt --task water_1 -o plain.pt`, or keep
+  the weights of the elements with `--elements all`, and freeze the merged
+  checkpoint as usual.
 - `input.json`: advanced/manual architecture override example.
 - `input-zbl.json`: energy training with ZBL zone bridging.
 - `input_dens.json`: direct-force denoising training.

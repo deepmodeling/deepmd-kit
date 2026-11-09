@@ -179,8 +179,8 @@ Two starting points, one path to dynamics
       Run inference directly or deploy into molecular dynamics.
 
 Fine-tuning and from-scratch training converge on the same validation, export,
-and deployment toolchain. `DPA-4 LoRA`_ is currently limited to PyTorch
-single-task fine-tuning.
+and deployment toolchain. `DPA-4 LoRA`_ is currently limited to single-task
+fine-tuning with the PyTorch and JAX backends.
 
 Choose a model family
 =====================

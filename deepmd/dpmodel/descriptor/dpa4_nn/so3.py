@@ -3,7 +3,8 @@
 SO(3)-equivariant linear layers for DPA4/SeZM.
 
 This module defines the channel-only and focus-aware linear maps used by SeZM
-SO(3) feature transformations.
+SO(3) feature transformations, and their expert variants of a mixture of
+experts (MoE).
 
 This module is the dpmodel (array-API) port of
 ``deepmd.pt.model.descriptor.sezm_nn.so3``.
@@ -33,6 +34,10 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    EXPERT_VARIANTS,
+    ExpertWeights,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -548,3 +553,154 @@ class SO3Linear(NativeOP):
         if obj.mlp_bias:
             obj.bias = np.asarray(variables["bias"], dtype=prec)
         return obj
+
+
+class ExpertChannelLinear(ExpertWeights, ChannelLinear):
+    """Expert variant of :class:`ChannelLinear`.
+
+    See :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`.
+    """
+
+    PLAIN = ChannelLinear
+
+
+class ExpertFocusLinear(ExpertWeights, FocusLinear):
+    """Expert variant of :class:`FocusLinear`.
+
+    See :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`.
+    """
+
+    PLAIN = FocusLinear
+
+    def _chunk_affine(self, x: Any, weight: Any, bias: Any) -> Any:
+        """
+        Apply one weight and one bias to every chunk of rows.
+
+        The product is batched over the chunks and the focus streams.
+
+        Parameters
+        ----------
+        x
+            Chunks of rows with shape (n_chunks, m, F, C).
+        weight
+            Weight of every chunk with shape (n_chunks, C, F * Cout).
+        bias
+            Bias of every chunk with shape (n_chunks, F * Cout), or None.
+
+        Returns
+        -------
+        Array
+            Chunks of rows with shape (n_chunks, m, F, Cout).
+        """
+        xp = array_api_compat.array_namespace(x)
+        n_chunks = x.shape[0]
+        weight = xp.reshape(
+            weight, (n_chunks, weight.shape[1], self.n_focus, self.out_channels)
+        )
+        out = xp_matmul(
+            xp.permute_dims(x, (0, 2, 1, 3)), xp.permute_dims(weight, (0, 2, 1, 3))
+        )  # (n_chunks, F, m, Cout)
+        if bias is not None:
+            out = out + xp.reshape(bias, (n_chunks, self.n_focus, 1, self.out_channels))
+        return xp.permute_dims(out, (0, 2, 1, 3))
+
+
+class ExpertSO3Linear(ExpertWeights, SO3Linear):
+    """Expert variant of :class:`SO3Linear`.
+
+    Every increment keeps the degree-wise layout of the weight, so the map
+    stays equivariant for any conditions (see
+    :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`).
+    """
+
+    PLAIN = SO3Linear
+
+    def call_scalar(self, x: Any, weights: Any) -> Any:
+        """Project only the ``l=0`` coefficient with the weight of every row.
+
+        Parameters
+        ----------
+        x : Array
+            Input features with shape ``(R, D, F, C_in)``.
+        weights
+            Weight and bias of this map for every chunk of rows.
+
+        Returns
+        -------
+        Array
+            Scalar output with shape ``(R, 1, F, C_out)``.
+        """
+        return self._affine(x[:, 0:1, :, :], weights)
+
+    def _chunk_affine(self, x: Any, weight: Any, bias: Any) -> Any:
+        """
+        Apply one weight and one bias to every chunk of rows.
+
+        The coefficients of a degree are contiguous in the packed layout, so
+        every degree present in ``x`` is one product with the weight of that
+        degree, batched over the chunks and the focus streams. The bias acts
+        on the scalar coefficient alone.
+
+        Parameters
+        ----------
+        x
+            Chunks of rows with shape (n_chunks, m, D, F, C), where ``D``
+            covers whole degrees from ``l = 0`` on.
+        weight
+            Weight of every chunk and degree with shape
+            (n_chunks, lmax + 1, C, F * Cout).
+        bias
+            Bias of every chunk with shape (n_chunks, F * Cout), or None.
+
+        Returns
+        -------
+        Array
+            Chunks of rows with shape (n_chunks, m, D, F, Cout).
+        """
+        xp = array_api_compat.array_namespace(x)
+        n_chunks, n_rows, n_coeff = x.shape[0], x.shape[1], x.shape[2]
+        weight = xp.reshape(
+            weight,
+            (n_chunks, self.lmax + 1, weight.shape[2], self.n_focus, self.out_channels),
+        )
+        outs = []
+        for degree in range(self.lmax + 1):
+            first, last = degree * degree, (degree + 1) * (degree + 1)
+            if first >= n_coeff:
+                break
+            rows = xp.reshape(
+                xp.permute_dims(x[:, :, first:last, :, :], (0, 3, 1, 2, 4)),
+                (n_chunks, self.n_focus, n_rows * (last - first), x.shape[-1]),
+            )
+            out = xp_matmul(
+                rows, xp.permute_dims(weight[:, degree, ...], (0, 2, 1, 3))
+            )  # (n_chunks, F, m * (2l+1), Cout)
+            if degree == 0 and bias is not None:
+                out = out + xp.reshape(
+                    bias, (n_chunks, self.n_focus, 1, self.out_channels)
+                )
+            outs.append(
+                xp.permute_dims(
+                    xp.reshape(
+                        out,
+                        (
+                            n_chunks,
+                            self.n_focus,
+                            n_rows,
+                            last - first,
+                            self.out_channels,
+                        ),
+                    ),
+                    (0, 2, 3, 1, 4),
+                )
+            )
+        return outs[0] if len(outs) == 1 else xp.concat(outs, axis=2)
+
+
+EXPERT_VARIANTS.update(
+    {
+        ChannelLinear: ExpertChannelLinear,
+        FocusLinear: ExpertFocusLinear,
+        SO3Linear: ExpertSO3Linear,
+    }
+)

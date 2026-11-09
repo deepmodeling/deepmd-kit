@@ -214,7 +214,7 @@ input, the second gives every branch an explicit dictionary.
 The reference atom is the neutral atom in its ground state. With charge/spin
 conditioning (`add_chg_spin_ebd`) the reference carries zero charge and the
 ground-state spin multiplicity of the element, and with
-[native spin](dpa4.md#native-scheme) it carries a spin vector of one Bohr
+[native spin](dpa4.md#spin) it carries a spin vector of one Bohr
 magneton per unpaired electron; charged, excited or differently magnetized
 isolated atoms keep the deviation the network learns for them. The type names
 must then be element symbols.

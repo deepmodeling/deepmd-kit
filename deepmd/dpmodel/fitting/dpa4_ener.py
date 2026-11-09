@@ -6,6 +6,9 @@ convention and the pt-state_dict-key serialization contract.
 """
 
 import math
+from collections.abc import (
+    Sequence,
+)
 from typing import (
     Any,
     ClassVar,
@@ -25,6 +28,12 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
     to_numpy_array,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    ExpertContainer,
+    ExpertWeights,
+    linear_with_experts,
+    map_args,
 )
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
@@ -176,7 +185,7 @@ class CaseFiLMConditioner(NativeOP):
         return obj
 
 
-class GLUFittingNet(NativeOP):
+class GLUFittingNet(ExpertContainer, NativeOP):
     r"""
     GLU-based fitting network for SeZM.
 
@@ -223,6 +232,12 @@ class GLUFittingNet(NativeOP):
         Case one-hot width.
     case_film_embd
         Whether to use case FiLM instead of input concatenation.
+    experts
+        Number of experts and of element increments ``(n_experts, n_elements)``
+        of every layer (see
+        :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`); None
+        builds plain layers. The network is then one unit of a route, whose
+        caller enters the route and passes the rows of the layout.
     """
 
     def __init__(
@@ -239,6 +254,7 @@ class GLUFittingNet(NativeOP):
         descriptor_dim: int | None = None,
         dim_case_embd: int = 0,
         case_film_embd: bool = False,
+        experts: Sequence[int] | None = None,
     ) -> None:
         if neuron is None:
             neuron = []
@@ -257,6 +273,7 @@ class GLUFittingNet(NativeOP):
         )
         self.dim_case_embd = int(dim_case_embd)
         self.case_film_embd = bool(case_film_embd and self.dim_case_embd > 0)
+        self.experts = None if experts is None else [int(n) for n in experts]
 
         # === Step 1. Build GLU hidden layers ===
         # Each hidden layer is a linear map to 2*hidden_dim, split into
@@ -265,7 +282,9 @@ class GLUFittingNet(NativeOP):
         dim_in = self.in_dim
         for layer_idx, hidden_dim in enumerate(self.neuron):
             hidden_layers.append(
-                NativeLayer(
+                linear_with_experts(
+                    NativeLayer,
+                    self.experts,
                     dim_in,
                     2 * hidden_dim,
                     bias=True,
@@ -296,7 +315,9 @@ class GLUFittingNet(NativeOP):
         )
 
         # === Step 3. Build output projection ===
-        self.output_layer = NativeLayer(
+        self.output_layer = linear_with_experts(
+            NativeLayer,
+            self.experts,
             dim_in,
             self.out_dim,
             bias=self.bias_out,
@@ -308,8 +329,16 @@ class GLUFittingNet(NativeOP):
             trainable=trainable,
         )
 
-    def call_until_last(self, xx: Array, case_embd: Array | None = None) -> Array:
-        """Return activations before the output projection."""
+    def _expert_members(self) -> list[str]:
+        return ["hidden_layers", "output_layer"]
+
+    def call_until_last(
+        self, xx: Array, case_embd: Array | None = None, route: Any = None
+    ) -> Array:
+        """Return activations before the output projection.
+
+        ``route`` holds the rows of ``xx`` for a network with ``experts``.
+        """
         case_code = None
         if self.case_film_embd:
             assert self.case_film is not None and case_embd is not None
@@ -323,34 +352,42 @@ class GLUFittingNet(NativeOP):
         for index, (hidden_dim, layer) in enumerate(
             zip(self.neuron, self.hidden_layers, strict=True)
         ):
-            yy = layer(xx)
+            yy = layer(xx, *map_args(route, index))
             val, gate = yy[..., :hidden_dim], yy[..., hidden_dim:]
             xx = val * act(gate)
             if case_code is not None:
                 xx = self.case_film.apply(xx, case_code, index + 1)
         return xx
 
-    def call_last(self, xx: Array) -> Array:
+    def call_last(self, xx: Array, route: Any = None) -> Array:
         """Project the activations of :meth:`call_until_last` to the output."""
-        return self.output_layer(xx)
+        return self.output_layer(xx, *map_args(route, -1))
 
-    def call(self, xx: Array, case_embd: Array | None = None) -> Array:
+    def call(
+        self, xx: Array, case_embd: Array | None = None, route: Any = None
+    ) -> Array:
         """Forward pass for the GLU fitting net."""
-        return self.call_last(self.call_until_last(xx, case_embd))
+        return self.call_last(self.call_until_last(xx, case_embd, route), route)
+
+    def _named_layers(self) -> dict[str, Any]:
+        """The layers keyed by the prefix of their variables."""
+        layers = {
+            f"hidden_layers.{index}.linear": layer
+            for index, layer in enumerate(self.hidden_layers)
+        }
+        layers["output_layer"] = self.output_layer
+        return layers
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the network to a dict (pt state_dict key contract)."""
         variables: dict[str, Any] = {}
-        for layer_idx, layer in enumerate(self.hidden_layers):
-            variables[f"hidden_layers.{layer_idx}.linear.matrix"] = to_numpy_array(
-                layer.w
-            )
-            variables[f"hidden_layers.{layer_idx}.linear.bias"] = to_numpy_array(
-                layer.b
-            )
-        variables["output_layer.matrix"] = to_numpy_array(self.output_layer.w)
-        if self.bias_out:
-            variables["output_layer.bias"] = to_numpy_array(self.output_layer.b)
+        for prefix, layer in self._named_layers().items():
+            variables[f"{prefix}.matrix"] = to_numpy_array(layer.w)
+            if layer.b is not None:
+                variables[f"{prefix}.bias"] = to_numpy_array(layer.b)
+            if isinstance(layer, ExpertWeights):
+                for name, value in layer._expert_variables().items():
+                    variables[f"{prefix}.{name}"] = value
         if self.case_film is not None:
             variables.update(
                 {
@@ -372,6 +409,8 @@ class GLUFittingNet(NativeOP):
             "descriptor_dim": self.descriptor_dim,
             "dim_case_embd": self.dim_case_embd,
             "case_film_embd": self.case_film_embd,
+            # A plain network keeps the record of the network without experts.
+            **({} if self.experts is None else {"experts": self.experts}),
             "@variables": variables,
         }
 
@@ -383,12 +422,13 @@ class GLUFittingNet(NativeOP):
         data.pop("@class", None)
         variables = data.pop("@variables", {})
         obj = cls(**data)
-        for layer_idx, layer in enumerate(obj.hidden_layers):
-            layer["matrix"] = variables[f"hidden_layers.{layer_idx}.linear.matrix"]
-            layer["bias"] = variables[f"hidden_layers.{layer_idx}.linear.bias"]
-        obj.output_layer["matrix"] = variables["output_layer.matrix"]
-        if obj.bias_out:
-            obj.output_layer["bias"] = variables["output_layer.bias"]
+        for prefix, layer in obj._named_layers().items():
+            layer["matrix"] = variables[f"{prefix}.matrix"]
+            if layer.b is not None:
+                layer["bias"] = variables[f"{prefix}.bias"]
+            if isinstance(layer, ExpertWeights):
+                for name in layer._expert_variables():
+                    setattr(layer, name, variables[f"{prefix}.{name}"])
         if obj.case_film is not None:
             obj.case_film.set_variables(
                 {
@@ -654,10 +694,12 @@ class SeZMEnergyFittingNet(InvarFitting):
                     descriptor_dim=self.dim_descrpt,
                     dim_case_embd=self.dim_case_embd,
                     case_film_embd=self.case_film_embd,
+                    experts=self._expert_counts(),
                 )
                 for idx in range(n_networks)
             ],
         )
+        self._init_experts(self.seed)
 
     def _call_common(
         self,
@@ -670,6 +712,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
         return_middle_output: bool = False,
+        condition: Any = None,
     ) -> dict[str, Array]:
         if not self.case_film_embd:
             return super()._call_common(
@@ -682,6 +725,7 @@ class SeZMEnergyFittingNet(InvarFitting):
                 aparam,
                 vacuum_descriptor=vacuum_descriptor,
                 return_middle_output=return_middle_output,
+                condition=condition,
             )
         return self._call_case_film(
             descriptor,
@@ -837,11 +881,12 @@ class SeZMEnergyFittingNet(InvarFitting):
         data.pop("var_name")
         data.pop("dim_out")
         obj = cls(**data)
-        for kk in variables.keys():
-            obj[kk] = variables[kk]
         obj.nets = SeZMNetworkCollection.deserialize(
             _with_default_trainable(nets, obj.trainable)
         )
+        variables = obj._load_task_and_router(variables)
+        for kk in variables.keys():
+            obj[kk] = variables[kk]
         return obj
 
     def serialize(self) -> dict:

@@ -100,6 +100,29 @@ def test_finalize_compiled_lower_relaxes_views(monkeypatch) -> None:
     assert torch.ops.aten.reshape.default in targets
 
 
+@REQUIRES_SUPPORTED_COMPILE
+def test_finalize_compiled_lower_traces_element_counts_in_one_frame(
+    monkeypatch,
+) -> None:
+    """Dynamo traces the element count of a one-element tensor without a break."""
+    graph = torch.fx.Graph()
+    index = graph.placeholder("index")
+    count = graph.call_function(torch.ops.aten.sym_numel.default, (index,))
+    graph.output(graph.call_function(torch.ops.aten.add.Tensor, (index, count)))
+    traced = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    monkeypatch.setattr(training_module, "apply_global_compile_patches", lambda: None)
+    with monkeypatch.context() as patch:
+        patch.setattr(torch, "compile", lambda module, **_kwargs: module)
+        lowered = training_module._finalize_compiled_lower(traced, compile_opts=None)
+
+    # Dynamo specializes an axis of length one, so the count is an integer;
+    # ``fullgraph`` turns a graph break into an error.
+    compiled = torch.compile(lowered, backend="eager", dynamic=True, fullgraph=True)
+    index = torch.arange(1, device="cpu")
+    torch.testing.assert_close(compiled(index), index + 1)
+
+
 # Descriptor configs used to extend compile-correctness tests to non-trivial
 # architectures.  ``precision: float64`` is set so the strict ``atol=rtol=1e-10``
 # comparison holds at machine epsilon.

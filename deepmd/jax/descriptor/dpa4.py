@@ -31,6 +31,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
 from deepmd.dpmodel.train.inference import (
     infer_amp_enabled,
 )
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
+)
 from deepmd.dpmodel.utils.network import (
     softplus_t,
 )
@@ -381,6 +384,7 @@ register_dpmodel_mapping(
 @flax_module
 class DescrptDPA4(DescrptDPA4DP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        reject_moe(kwargs, "DPA4 descriptor")
         super().__init__(*args, **kwargs)
         self.deterministic = True
         rng_seed = int(np.random.SeedSequence(self.seed).generate_state(1)[0])
@@ -444,6 +448,7 @@ class DescrptDPA4(DescrptDPA4DP):
         edge_cache: Any,
         radial_feat_per_block: list[jax.Array],
         comm_dict: dict[str, jax.Array] | None = None,
+        unit_routes: list[Any] | None = None,
     ) -> jax.Array:
         """Use BF16 multiplicands with FP32 training activations.
 
@@ -459,8 +464,16 @@ class DescrptDPA4(DescrptDPA4DP):
         if enabled and x.dtype == jnp.float32:
             with autocast_matmul(fp32_output=not self.deterministic):
                 return super()._forward_blocks(
-                    x, edge_cache, radial_feat_per_block, comm_dict=comm_dict
+                    x,
+                    edge_cache,
+                    radial_feat_per_block,
+                    comm_dict=comm_dict,
+                    unit_routes=unit_routes,
                 )
         return super()._forward_blocks(
-            x, edge_cache, radial_feat_per_block, comm_dict=comm_dict
+            x,
+            edge_cache,
+            radial_feat_per_block,
+            comm_dict=comm_dict,
+            unit_routes=unit_routes,
         )

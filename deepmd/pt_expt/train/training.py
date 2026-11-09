@@ -46,6 +46,12 @@ try:
 except ImportError:
     fully_shard = None  # type: ignore[assignment]
 
+from deepmd.dpmodel.model.expert_merge import (
+    branch_local_parameters,
+    check_slot_elements,
+    element_banks,
+    fitting_has_experts,
+)
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
@@ -75,6 +81,7 @@ from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
 )
+from deepmd.dpmodel.utils.contact_clamp import ContactClamp as ContactClampDP
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
@@ -109,6 +116,7 @@ from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
     relax_views_to_reshapes,
+    replace_sym_numel_with_method,
 )
 from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
@@ -139,6 +147,9 @@ from deepmd.pt_expt.model.edge_transform_output import (
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
 )
+from deepmd.pt_expt.train.element_rows import (
+    ElementRowReduction,
+)
 from deepmd.pt_expt.train.ema import (
     EMA_CHECKPOINT_KEY,
     ModelEMA,
@@ -147,6 +158,7 @@ from deepmd.pt_expt.train.ema import (
 from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+    separate_gradient_storage,
 )
 from deepmd.pt_expt.train.utils import (
     MatmulPrecisionPolicy,
@@ -298,6 +310,14 @@ def _warn_compiled_attention(model: torch.nn.Module, task_key: str) -> None:
             )
 
 
+def _branch_local_names(model: torch.nn.Module) -> list[str]:
+    """Names, relative to the model, of the parameters that a branch owns."""
+    owned = {id(parameter) for parameter in branch_local_parameters(model)}
+    return [
+        name for name, parameter in model.named_parameters() if id(parameter) in owned
+    ]
+
+
 def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     """Return a key that is identical iff two tasks can safely share a compiled graph.
 
@@ -325,7 +345,9 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     ``has_spin()`` leads the key because native-spin models trace an extra
     per-node moment input and return additional magnetic outputs. A spin task
     must therefore never reuse a spin-free task's compiled graph even when the
-    descriptor and fitting parameters are shared.
+    descriptor and fitting parameters are shared. Native-spin replicas may
+    differ in their magnetic types, whose masks the trace bakes in, so the
+    per-type spin flags of the descriptor are part of the key as well.
 
     The fitting's vacuum-reference state selects static branches in the
     atomic model and fitting. Shared weights do not make those branches
@@ -335,23 +357,35 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     Block cutoffs are baked into edge filtering and normalization, so shared
     parameter identities do not make different schedules interchangeable.
 
+    The task increments and the task embedding of an MoE model are
+    branch-local and the trace bakes them in, so their identities are part of
+    the key.
+
     A long-range module is part of the traced computation and of its input
     schema, so its identity (that of its first parameter) is part of the key;
     tasks share a graph only when they share the module as well.
     """
     descriptor_id: int = 0
-    clamp_id = 0
     block_cutoffs: tuple = ()
+    contact_clamps: tuple = ()
+    spin_flags: tuple = ()
+    branch_local: tuple = ()
     try:
         desc = model.get_descriptor()
-        clamp = getattr(desc, "contact_clamp", None)
-        if clamp is not None:
-            clamp_id = id(clamp)
+        spin_flags = tuple(getattr(desc, "use_spin", None) or ())
         block_cutoffs = tuple(
             (name, tuple(module.block_rcut))
             for name, module in desc.named_modules()
             if hasattr(module, "block_rcut")
         )
+        contact_clamps = tuple(
+            id(module)
+            for module in desc.modules()
+            if isinstance(module, ContactClampDP)
+        )
+        # Parameters a branch of a multi-task model owns (the task of its MoE)
+        # make the traced graph specific to the branch.
+        branch_local = tuple(id(p) for p in branch_local_parameters(model))
         for _, p in desc.named_parameters():
             descriptor_id = id(p)
             break
@@ -379,12 +413,14 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
         long_range_id = next((id(p) for p in long_range.parameters()), id(long_range))
     return (
         int(model.has_spin()),
+        spin_flags,
         descriptor_id,
-        clamp_id,
         fitting_id,
         *vacuum_state,
         long_range_id,
         block_cutoffs,
+        contact_clamps,
+        branch_local,
     )
 
 
@@ -778,6 +814,10 @@ def _finalize_compiled_lower(
     # is invalid for a runtime transpose. Keep view-compatible cases free and
     # permit a materializing reshape only when the runtime layout requires it.
     relax_views_to_reshapes(traced_lower)
+    # Dynamo breaks the graph at an aten.sym_numel of a tensor whose shape it
+    # has specialized, which happens in a batch of one frame. Tensor.numel is
+    # traced within the frame for every shape.
+    replace_sym_numel_with_method(traced_lower)
     # Rebuild into a fresh graph to eliminate stale C-level node pointers
     # left by erase_node(), which can cause segfaults during dynamo re-trace.
     traced_lower = _rebuild_graph_module(traced_lower)
@@ -1985,6 +2025,7 @@ class Trainer(AbstractTrainer):
 
         # Model ---------------------------------------------------------------
         self.models: dict[str, torch.nn.Module] = {}
+        self._element_rows: ElementRowReduction | None = None
         do_case_embd, case_embd_index = (
             _get_case_embd_config(model_params) if self.multi_task else (False, {})
         )
@@ -2376,7 +2417,20 @@ class Trainer(AbstractTrainer):
                     source_key = finetune_rule.get_model_branch()
                     model = self._unwrapped.model[model_key]
                     source_model = pretrained_wrapper.model[source_key]
+                    check_slot_elements(model, source_model)
                     prefix = f"model.{model_key}."
+                    # A branch that names no pretrained task is a new task.
+                    # The parameters of its own task keep their initial
+                    # state. An MoE fitting network holds the task in these
+                    # parameters, so the new task takes the pretrained
+                    # network; any other fitting network is initialized anew.
+                    new_task = finetune_rule.get_random_fitting()
+                    task_keys = (
+                        {prefix + name for name in _branch_local_names(model)}
+                        if new_task
+                        else set()
+                    )
+                    fresh_fitting = new_task and not fitting_has_experts(model)
                     if finetune_rule.convert_to_native_spin:
                         log.info(
                             "Initialize native-spin branch '%s' from spin-free branch '%s'.",
@@ -2386,10 +2440,14 @@ class Trainer(AbstractTrainer):
                         converted = get_native_spin_finetune_state(
                             model,
                             source_model,
-                            random_fitting=finetune_rule.get_random_fitting(),
+                            random_fitting=fresh_fitting,
                         )
                         new_state.update(
-                            {prefix + key: value for key, value in converted.items()}
+                            {
+                                prefix + key: value
+                                for key, value in converted.items()
+                                if prefix + key not in task_keys
+                            }
                         )
                         continue
 
@@ -2409,9 +2467,8 @@ class Trainer(AbstractTrainer):
                             pretrained_key = _move_learned_key(
                                 pretrained_key, path, source_path
                             )
-                        use_random = (
-                            finetune_rule.get_random_fitting()
-                            and ".descriptor." not in key
+                        use_random = key in task_keys or (
+                            fresh_fitting and ".descriptor." not in key
                         )
                         if use_random or pretrained_key not in pretrained_state:
                             if ".long_range." in key:
@@ -2493,6 +2550,21 @@ class Trainer(AbstractTrainer):
                         zip(self.model_keys, self.model_prob, strict=True)
                     ),
                 )
+
+        # Task parameters -----------------------------------------------------
+        # A model trained alone is the only task of its weights: the task
+        # increments of its MoE would repeat the gradient of the shared
+        # weights, so they keep their values.
+        if not self.multi_task:
+            for parameter in branch_local_parameters(self.models[DEFAULT_TASK_KEY]):
+                parameter.requires_grad_(False)
+        # An MoE map sums its shared weight and its task increment in one
+        # table, whose backward hands slices of one buffer to both.
+        separate_gradient_storage(
+            parameter
+            for model in self.models.values()
+            for parameter in branch_local_parameters(model)
+        )
 
         # Distribution --------------------------------------------------------
         # The weights are in place, so a sharding strategy may cut them up.
@@ -2972,10 +3044,10 @@ class Trainer(AbstractTrainer):
         """
         if not self.sharding.enabled:
             return
-        if self.multi_task:
+        if self.multi_task and self.sharding.shards_parameters:
             raise ValueError(
-                "training.zero_stage is currently only supported in single-task "
-                "training."
+                "training.zero_stage >= 2 is currently only supported in "
+                "single-task training."
             )
         if self.change_bias_after_training:
             raise ValueError(
@@ -3020,6 +3092,16 @@ class Trainer(AbstractTrainer):
             self.wrapper = torch.nn.parallel.DistributedDataParallel(
                 self.wrapper, **kwargs
             )
+            # The element banks of an MoE hold most of the parameters, and a
+            # step trains the rows of the elements in its batches alone.
+            components = [
+                component
+                for model in self.models.values()
+                for component in element_banks(model)
+            ]
+            if components:
+                self._element_rows = ElementRowReduction(components, DEVICE)
+                self.wrapper.register_comm_hook(None, self._element_rows.hook)
             return
 
         if fully_shard is None:
@@ -3647,6 +3729,8 @@ class Trainer(AbstractTrainer):
         task_key = task.key
         self.optimizer.zero_grad(set_to_none=True)
         input_dict, label_dict = self.get_data(is_train=True, task_key=task_key)
+        if self._element_rows is not None:
+            self._element_rows.observe(input_dict["atype"])
 
         cur_lr_sched = self.scheduler.get_last_lr()[0]
         _model_pred, loss, more_loss = self.wrapper(

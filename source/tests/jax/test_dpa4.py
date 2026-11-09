@@ -21,6 +21,12 @@ from deepmd.jax.env import (
     jnp,
     nnx,
 )
+from deepmd.jax.fitting.dpa4_ener import (
+    SeZMEnergyFittingNet,
+)
+from deepmd.jax.fitting.fitting import (
+    EnergyFittingNet,
+)
 from deepmd.jax.utils.network import (
     ArrayAPIParam,
 )
@@ -73,6 +79,15 @@ def test_optional_dpa4_weights_are_jax_parameters() -> None:
         for block in interaction_blocks
         for scale in block.adam_ffn_layer_scales
     )
+
+
+def test_moe_is_refused() -> None:
+    """MoE belongs to the PyTorch Exportable backend."""
+    with pytest.raises(NotImplementedError, match="pt-expt"):
+        DescrptDPA4(ntypes=2, sel=4, rcut=4.0, moe={})
+    for fitting in (EnergyFittingNet, SeZMEnergyFittingNet):
+        with pytest.raises(NotImplementedError, match="pt-expt"):
+            fitting(ntypes=2, dim_descrpt=8, mixed_types=True, moe={})
 
 
 @pytest.mark.parametrize("family", ["bessel", "gaussian"])

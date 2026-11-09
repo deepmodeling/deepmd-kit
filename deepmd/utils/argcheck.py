@@ -639,6 +639,98 @@ def descrpt_dpa4c_args() -> list[Argument]:
     ]
 
 
+def moe_argument(doc: str) -> Argument:
+    """
+    The ``moe`` section of a descriptor or of a fitting network.
+
+    Parameters
+    ----------
+    doc : str
+        Description of the section in the component that takes it.
+
+    Returns
+    -------
+    Argument
+        The section with its options, which both components share.
+    """
+    doc_n_experts = (
+        "Number of experts that a router mixes for every atom. The router reads "
+        "the task of the model and, when `element` gives elements weights of "
+        "their own, the element of the atom. `0` uses no router."
+    )
+    doc_element = (
+        "Elements with weights of their own. `true` gives them to every element "
+        "of the type map and `false` to none; a list of element symbols gives "
+        "them to the listed elements, and the other elements use the weights "
+        "shared by all elements."
+    )
+    doc_mat_prob = (
+        "Probability of merge-aware training (MAT): the fraction of the "
+        "training frames that are computed as the model merged without "
+        "`--elements` computes them, with the weights shared by all elements. "
+        "MAT makes that merged model accurate for every element. With `0`, "
+        "`dp --pt-expt moe-merge` cannot merge the model without the weights of "
+        "its elements."
+    )
+    doc_router = "Shape of the router."
+    doc_router_dim = "Width of the router."
+    doc_router_layers = "Depth of the router: the number of its activation layers."
+    return Argument(
+        "moe",
+        dict,
+        [
+            Argument("n_experts", int, optional=True, default=8, doc=doc_n_experts),
+            Argument(
+                "element",
+                [bool, list[str]],
+                optional=True,
+                default=True,
+                doc=doc_element,
+            ),
+            Argument(
+                "mat_prob",
+                float,
+                optional=True,
+                default=0.37,
+                doc=doc_mat_prob,
+            ),
+            Argument(
+                "router",
+                dict,
+                [
+                    Argument("dim", int, optional=True, default=64, doc=doc_router_dim),
+                    Argument(
+                        "layers",
+                        int,
+                        optional=True,
+                        default=1,
+                        doc=doc_router_layers,
+                    ),
+                ],
+                optional=True,
+                default=None,
+                doc=doc_router,
+            ),
+        ],
+        optional=True,
+        default=None,
+        doc=supported_backends("pt_expt") + doc,
+    )
+
+
+doc_fitting_moe = (
+    "Mixture of experts (MoE) of the fitting network: every atom is fitted "
+    "with weights that depend on the task of the model and on its element. "
+    "Every branch of a multi-task model is a task, and a single-task model is "
+    "one task. A router mixes experts by the task and the element of the atom, "
+    "so a positive `n_experts` requires `element`. Requires a mixed-type "
+    "descriptor, with which all elements share one fitting network, and "
+    "excludes `dim_case_embd`. Before freezing, `dp --pt-expt moe-merge` merges "
+    "the experts into a fitting network without MoE, or into one that keeps "
+    "the weights of chosen elements."
+)
+
+
 @descrpt_args_plugin.register(
     "dpa4",
     alias=["DPA4", "SeZM", "sezm"],
@@ -646,7 +738,7 @@ def descrpt_dpa4c_args() -> list[Argument]:
 )
 def descrpt_se_zm_args() -> list[Argument]:
     # Follows exact order of docstring in sezm.py DescrptSeZM class
-    doc_sel = 'The neighbor-search capacity, with a default of 256. The conservative energy path keeps every neighbor within `rcut` regardless of this value, so `sel` only sets the initial search capacity of the O(N) `nvalchemiops` builder (which grows on demand) and never truncates the energy-path neighbor list. The denoising (`dens`) and spin paths still cap the neighbor list at `sum(sel)`, so for those modes `sel` must cover the true maximum neighbor count. It can be:\n\n\
+    doc_sel = 'The neighbor-search capacity, with a default of 256. The conservative energy path keeps every neighbor within `rcut` regardless of this value, so `sel` only sets the initial search capacity of the O(N) `nvalchemiops` builder (which grows on demand) and never truncates the energy-path neighbor list. The denoising (`dens`) path still caps the neighbor list at `sum(sel)`, so for that mode `sel` must cover the true maximum neighbor count. It can be:\n\n\
     - `int`: the total capacity across all atom types.\n\n\
     - `list[int]`: `sel[i]` is the type-i capacity; only `sum(sel)` is used.\n\n\
     - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
@@ -977,7 +1069,19 @@ def descrpt_se_zm_args() -> list[Argument]:
         "Default frame-level charge and spin conditions `[charge, spin]`. "
         "This option is used only when `add_chg_spin_ebd` is enabled. "
         "If set, the value is used when explicit `charge_spin` data are "
-        "not provided, including during `.pt2` inference."
+        "not provided, including during `.pt2` inference. Fine-tuning takes "
+        "the value of the pretrained model unless it is set here."
+    )
+    doc_moe = (
+        "Mixture of experts (MoE) of the feed-forward networks of the "
+        "interaction blocks and of the read-out: every atom is computed with "
+        "weights that depend on the task of the model, on its element and, "
+        "through a router, on the charge and spin multiplicity of its frame "
+        "(with `add_chg_spin_ebd`). Every branch of a multi-task model is a "
+        "task, and a single-task model is one task. An empty section `{}` uses "
+        "all of them with the defaults. Before freezing, `dp --pt-expt "
+        "moe-merge` merges the experts into a model without MoE, or into one "
+        "that keeps the weights of chosen elements."
     )
 
     doc_exclude_types = (
@@ -1382,6 +1486,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         ),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
+        moe_argument(doc_moe),
     ]
 
 
@@ -3176,6 +3281,7 @@ def fitting_ener() -> list[Argument]:
             default=False,
             doc=doc_use_aparam_as_mask,
         ),
+        moe_argument(doc_fitting_moe),
     ]
 
 
@@ -3279,6 +3385,7 @@ def fitting_sezm_ener() -> list[Argument]:
             default=False,
             doc=doc_use_aparam_as_mask,
         ),
+        moe_argument(doc_fitting_moe),
         Argument(
             "case_film_embd",
             bool,
@@ -4105,6 +4212,14 @@ def model_args(
         "preset; explicit `--bias-value` values override the bias directly. "
         "Dipole models apply no output bias and take no preset."
     )
+    doc_task = (
+        "The name of the task of a single-task model. Fine-tuning identifies a "
+        "task by its name: in a multi-task model the branch key names the "
+        "task. A multi-task fine-tuning from a single-task model continues it "
+        "in the branch of the same name, and starts other branches from it "
+        "when their `finetune_head` is that name. Without a name the task is "
+        "`Default`."
+    )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
         "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
@@ -4230,6 +4345,13 @@ def model_args(
                 optional=True,
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
                 + doc_finetune_head,
+            ),
+            Argument(
+                "task",
+                str,
+                optional=True,
+                default=None,
+                doc=supported_backends("pt_expt") + doc_task,
             ),
         ],
         [
@@ -4441,14 +4563,14 @@ def sezm_model_args() -> Argument:
     )
     doc_model = (
         "DPA4/SeZM model scaffold with the SeZM descriptor. It supports energy "
-        "fitting in PyTorch and PyTorch Exportable, plus invariant-property "
-        "fitting in PyTorch."
+        "fitting in PyTorch, PyTorch Exportable and JAX, plus invariant-property "
+        "fitting in PyTorch and JAX."
     )
 
     # ``get_argument`` constructs a fresh Argument, so narrowing this label does
     # not change the generic property fitting used by standard models.
     dpa4_property_fitting = fitting_args_plugin.get_argument("property")
-    dpa4_property_fitting.doc = supported_backends("pt")
+    dpa4_property_fitting.doc = supported_backends("pt", "jax")
 
     ca = Argument(
         "dpa4",
@@ -4467,7 +4589,7 @@ def sezm_model_args() -> Argument:
                         doc="The type of the descriptor.",
                     )
                 ],
-                doc=supported_backends("pt", "pt_expt") + doc_descrpt,
+                doc=supported_backends("pt", "jax", "pt_expt") + doc_descrpt,
             ),
             Argument(
                 "fitting_net",
@@ -4485,7 +4607,7 @@ def sezm_model_args() -> Argument:
                         doc="The type of the fitting.",
                     )
                 ],
-                doc=supported_backends("pt", "pt_expt") + doc_fitting,
+                doc=supported_backends("pt", "jax", "pt_expt") + doc_fitting,
             ),
             Argument(
                 "use_compile",
@@ -6690,7 +6812,9 @@ def training_args(
         "50% more communication (3x model size) due to parameter all-gather in "
         "both forward and backward passes. "
         "Default is 0. Requires distributed launch via torchrun. "
-        "Currently supports single-task training; does not support LKF or change_bias_after_training. "
+        "Does not support LKF or change_bias_after_training. "
+        "The PyTorch backend supports single-task training only; the PyTorch "
+        "Exportable backend also supports multi-task training at stage 1. "
         "In the PyTorch Exportable backend, stages 2 and 3 additionally exclude "
         "`enable_compile`, whose traced graph cannot carry sharded parameters."
     )
@@ -7499,6 +7623,61 @@ def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
             )
 
 
+def validate_moe_configuration(data: dict[str, Any]) -> None:
+    """Validate the ``moe`` sections of every descriptor and fitting network.
+
+    The shape of a section is checked by the normalizer the components
+    themselves use, so an unusable configuration is refused before any model
+    is built: unknown options, values out of range, a router with nothing to
+    read, elements outside the type map, and MoE of a fitting network next
+    to a case embedding.
+
+    Raises
+    ------
+    ValueError
+        If a ``moe`` section is unusable.
+    """
+    from deepmd.dpmodel.utils.expert_route import (
+        normalize_moe,
+    )
+
+    model = data.get("model", {}) if isinstance(data, dict) else {}
+    if not isinstance(model, dict):
+        return
+    branches = (
+        {"": model} if "descriptor" in model else dict(model.get("model_dict", {}))
+    )
+    for key, branch in branches.items():
+        if not isinstance(branch, dict):
+            continue
+        where = f" of branch '{key}'" if key else ""
+        type_map = branch.get("type_map")
+        for name in ("descriptor", "fitting_net"):
+            component = branch.get(name)
+            if not isinstance(component, dict) or component.get("moe") is None:
+                continue
+            # The router of a descriptor reads the charge/spin of a frame.
+            charge_spin = name == "descriptor" and bool(
+                component.get("add_chg_spin_ebd")
+            )
+            try:
+                moe = normalize_moe(component["moe"], charge_spin=charge_spin)
+            except ValueError as err:
+                raise ValueError(f"`moe` of the {name}{where}: {err}") from err
+            if isinstance(moe["element"], list) and isinstance(type_map, list):
+                unknown = sorted(set(moe["element"]) - set(type_map))
+                if unknown:
+                    raise ValueError(
+                        f"`moe.element` of the {name}{where} names {unknown}, "
+                        "which the type map does not hold"
+                    )
+            if name == "fitting_net" and component.get("dim_case_embd"):
+                raise ValueError(
+                    f"the fitting network{where} configures `moe`, whose task is "
+                    "the branch itself; leave `dim_case_embd` at 0"
+                )
+
+
 def validate_no_multitask_lora(
     data: dict[str, Any], multi_task: bool = False, *, backend: str | None = None
 ) -> None:
@@ -7603,6 +7782,7 @@ def normalize(
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)
     _check_dpa3_chg_spin_migration(data)
+    validate_moe_configuration(data)
     validate_no_multitask_lora(data, multi_task=multi_task, backend=backend)
     _apply_density_env_protection_default(data)
 

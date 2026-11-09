@@ -161,6 +161,7 @@ _LEARNED_CHILD_KEYS = (
     "modifier",
     "compress",
     "finetune_head",
+    "task",
 )
 _NON_CHILD_KEYS = _COMPOSITION_KEYS + _CONSUMED_KEYS + _TRAINER_KEYS
 # The routing tables are pairwise disjoint: a key has exactly one owner.

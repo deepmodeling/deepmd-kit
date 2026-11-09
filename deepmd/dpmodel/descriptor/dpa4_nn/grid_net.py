@@ -42,10 +42,16 @@ from deepmd.dpmodel.array_api import (
     xp_einsum,
     xp_matmul,
     xp_sigmoid,
+    xp_softmax,
 )
 from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    ExpertContainer,
+    linear_with_experts,
+    map_args,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -71,10 +77,15 @@ from .so3 import (
     ChannelLinear,
     FocusLinear,
 )
+from .utils import (
+    layer_variables,
+    load_layer_variables,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
+        Sequence,
     )
 
 GridNetLayout = Literal["ndfc", "nfdc", "fndc", "flat"]
@@ -123,7 +134,12 @@ def _build_so3_scalar_product_weight(
     return valid_frame.astype(dtype) * degree_weight
 
 
-def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
+def _project_frames(
+    coeff: Any,
+    proj: ChannelLinear,
+    n_frames: int,
+    *expert_args: Any,
+) -> Any:
     """
     Apply a channel-only linear map to each Wigner-D frame independently.
 
@@ -135,6 +151,10 @@ def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
         Linear map acting on the per-frame channel axis (``C_in -> C_out``).
     n_frames : int
         Number of Wigner-D frames packed along the trailing axis.
+    *expert_args
+        The route of an expert map (see
+        :func:`~deepmd.dpmodel.utils.expert_linear.map_args`); none for a
+        plain map.
 
     Returns
     -------
@@ -153,7 +173,8 @@ def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
     projected = proj(
         xp.reshape(
             coeff, (n_batch, coeff_dim, n_focus, n_frames, n_channels // n_frames)
-        )
+        ),
+        *expert_args,
     )
     return xp.reshape(
         projected, (n_batch, coeff_dim, n_focus, n_frames * projected.shape[-1])
@@ -196,8 +217,11 @@ def _project_pair(
     return to_grid(left), to_grid(right)
 
 
-class GridProduct(NativeOP):
+class GridProduct(ExpertContainer, NativeOP):
     """Parameter-free quadratic grid product ``u(g) * v(g)``."""
+
+    # The product has no parameters, hence no expert maps.
+    experts = None
 
     def call(
         self,
@@ -210,6 +234,7 @@ class GridProduct(NativeOP):
         pair_grid: Callable[[Any, Any], Any | None] | None = None,
         project_pair: Callable[[Any, Any], tuple[Any, Any]] | None = None,
         scalar_product: Callable[[Any, Any], Any] | None = None,
+        route: Any = None,
     ) -> Any:
         """
         Combine two coefficient operands by a point-wise grid product.
@@ -225,6 +250,8 @@ class GridProduct(NativeOP):
         pair_grid, project_pair, scalar_product : Callable, optional
             Optional fused full composition, paired forward projection, and
             direct scalar coefficient contraction.
+        route : UnitRoute, optional
+            Unused; the product has no parameters.
 
         Returns
         -------
@@ -246,7 +273,7 @@ class GridProduct(NativeOP):
         return from_grid(left_grid * right_grid)
 
 
-class GridMLP(NativeOP):
+class GridMLP(ExpertContainer, NativeOP):
     """Polynomial point-wise MLP applied independently at every grid point."""
 
     def __init__(
@@ -256,6 +283,7 @@ class GridMLP(NativeOP):
         mode: GridNetMode,
         n_frames: int,
         precision: str = DEFAULT_PRECISION,
+        experts: Sequence[int] | None = None,
         trainable: bool,
         seed: int | list[int] | None = None,
     ) -> None:
@@ -265,12 +293,15 @@ class GridMLP(NativeOP):
             raise ValueError("`mode` must be either 'self' or 'cross'")
         self.n_frames = int(n_frames)
         self.precision = precision
+        self.experts = None if experts is None else [int(n) for n in experts]
         self.trainable = bool(trainable)
         self.input_channels = (
             2 * self.channels if self.mode == "self" else self.channels
         )
         self.hidden_channels = 2 * self.channels
-        self.left_proj = ChannelLinear(
+        self.left_proj = linear_with_experts(
+            ChannelLinear,
+            self.experts,
             in_channels=self.input_channels,
             out_channels=self.hidden_channels,
             precision=precision,
@@ -278,7 +309,9 @@ class GridMLP(NativeOP):
             trainable=trainable,
             seed=child_seed(seed, 0),
         )
-        self.right_proj = ChannelLinear(
+        self.right_proj = linear_with_experts(
+            ChannelLinear,
+            self.experts,
             in_channels=self.input_channels,
             out_channels=self.hidden_channels,
             precision=precision,
@@ -286,7 +319,9 @@ class GridMLP(NativeOP):
             trainable=trainable,
             seed=child_seed(seed, 1),
         )
-        self.out_proj = ChannelLinear(
+        self.out_proj = linear_with_experts(
+            ChannelLinear,
+            self.experts,
             in_channels=self.hidden_channels,
             out_channels=self.channels,
             precision=precision,
@@ -306,6 +341,7 @@ class GridMLP(NativeOP):
         pair_grid: Callable[[Any, Any], Any | None] | None = None,
         project_pair: Callable[[Any, Any], tuple[Any, Any]] | None = None,
         scalar_product: Callable[[Any, Any], Any] | None = None,
+        route: Any = None,
     ) -> Any:
         """
         Apply the polynomial point-wise MLP on coefficient operands.
@@ -326,6 +362,9 @@ class GridMLP(NativeOP):
         pair_grid, project_pair, scalar_product : Callable, optional
             Optional fused full composition, paired forward projection, and
             direct scalar coefficient contraction.
+        route : UnitRoute, optional
+            Route of the rows with the weights of :meth:`expert_maps`;
+            required with ``experts``.
 
         Returns
         -------
@@ -334,7 +373,7 @@ class GridMLP(NativeOP):
             ``(N, 1, F, C)``; other paths retain ``n_frames * C`` channels.
         """
         # === Step 1. Channel projections at coefficient resolution ===
-        left, right = self._project_operands(left, right)
+        left, right = self._project_operands(left, right, route)
 
         # === Step 2. Quadratic product on the grid, projected back ===
         if scalar_product is not None:
@@ -349,14 +388,16 @@ class GridMLP(NativeOP):
                     project_pair=project_pair,
                 )
                 coeff = from_grid(left_grid * right_grid)
+        out_args = map_args(route, 2)
         if scalar_product is not None:
-            return self.out_proj(coeff)
-        return _project_frames(coeff, self.out_proj, self.n_frames)
+            return self.out_proj(coeff, *out_args)
+        return _project_frames(coeff, self.out_proj, self.n_frames, *out_args)
 
     def _project_operands(
         self,
         left: Any,
         right: Any,
+        route: Any = None,
     ) -> tuple[Any, Any]:
         """Apply the two coefficient-space channel projections."""
         xp = array_api_compat.array_namespace(left)
@@ -367,12 +408,22 @@ class GridMLP(NativeOP):
                 xp.concat([xp.reshape(left, shape), xp.reshape(right, shape)], axis=-1),
                 (*left.shape[:-1], 2 * n_channels),
             )  # per-frame concat -> (N, D, F, K*2C)
-            left = _project_frames(fused, self.left_proj, self.n_frames)
-            right = _project_frames(fused, self.right_proj, self.n_frames)
-        else:
-            left = _project_frames(left, self.left_proj, self.n_frames)
-            right = _project_frames(right, self.right_proj, self.n_frames)
+            left = right = fused
+        left = _project_frames(left, self.left_proj, self.n_frames, *map_args(route, 0))
+        right = _project_frames(
+            right, self.right_proj, self.n_frames, *map_args(route, 1)
+        )
         return left, right
+
+    def _sub_layers(self) -> dict[str, NativeOP]:
+        return {
+            "left_proj": self.left_proj,
+            "right_proj": self.right_proj,
+            "out_proj": self.out_proj,
+        }
+
+    def _expert_members(self) -> list[str]:
+        return ["left_proj", "right_proj", "out_proj"]
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the GridMLP to a dict."""
@@ -384,14 +435,11 @@ class GridMLP(NativeOP):
                 "mode": self.mode,
                 "n_frames": self.n_frames,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "experts": self.experts,
                 "trainable": self.trainable,
                 "seed": None,
             },
-            "@variables": {
-                "left_proj.weight": to_numpy_array(self.left_proj.weight),
-                "right_proj.weight": to_numpy_array(self.right_proj.weight),
-                "out_proj.weight": to_numpy_array(self.out_proj.weight),
-            },
+            "@variables": layer_variables(self._sub_layers()),
         }
 
     @classmethod
@@ -409,13 +457,10 @@ class GridMLP(NativeOP):
         return obj
 
     def _load_variables(self, variables: dict[str, Any]) -> None:
-        prec = PRECISION_DICT[self.precision.lower()]
-        self.left_proj.weight = np.asarray(variables["left_proj.weight"], dtype=prec)
-        self.right_proj.weight = np.asarray(variables["right_proj.weight"], dtype=prec)
-        self.out_proj.weight = np.asarray(variables["out_proj.weight"], dtype=prec)
+        load_layer_variables(self, self._sub_layers(), variables)
 
 
-class GridBranch(NativeOP):
+class GridBranch(ExpertContainer, NativeOP):
     """
     Scalar-routed polynomial mixer over grid product branches.
 
@@ -431,6 +476,7 @@ class GridBranch(NativeOP):
         n_branches: int,
         n_frames: int,
         precision: str = DEFAULT_PRECISION,
+        experts: Sequence[int] | None = None,
         trainable: bool,
         seed: int | list[int] | None = None,
     ) -> None:
@@ -441,8 +487,11 @@ class GridBranch(NativeOP):
             raise ValueError("`n_branches` must be positive")
         self.n_frames = int(n_frames)
         self.precision = precision
+        self.experts = None if experts is None else [int(n) for n in experts]
         self.trainable = bool(trainable)
-        self.left_proj = ChannelLinear(
+        self.left_proj = linear_with_experts(
+            ChannelLinear,
+            self.experts,
             in_channels=self.channels,
             out_channels=self.n_branches * self.channels,
             precision=precision,
@@ -450,7 +499,9 @@ class GridBranch(NativeOP):
             trainable=trainable,
             seed=child_seed(seed, 0),
         )
-        self.right_proj = ChannelLinear(
+        self.right_proj = linear_with_experts(
+            ChannelLinear,
+            self.experts,
             in_channels=self.channels,
             out_channels=self.n_branches * self.channels,
             precision=precision,
@@ -463,8 +514,11 @@ class GridBranch(NativeOP):
         # every path, and the fused grid product skips it altogether. Freezing
         # it states that, and keeps DDP from waiting for a gradient that never
         # arrives -- which aborts the step unless ``find_unused_parameters`` is
-        # paid for. The parameter itself stays, so checkpoints round-trip.
-        self.router = ChannelLinear(
+        # paid for. The parameter itself stays, so checkpoints round-trip; it
+        # takes no MoE weights for the same reason.
+        self.router = linear_with_experts(
+            ChannelLinear,
+            self.experts if self.n_branches > 1 else None,
             in_channels=2 * self.channels,
             out_channels=self.n_branches,
             precision=precision,
@@ -472,7 +526,9 @@ class GridBranch(NativeOP):
             trainable=trainable and self.n_branches > 1,
             seed=child_seed(seed, 2),
         )
-        self.out_proj = ChannelLinear(
+        self.out_proj = linear_with_experts(
+            ChannelLinear,
+            self.experts,
             in_channels=self.channels,
             out_channels=self.channels,
             precision=precision,
@@ -492,6 +548,7 @@ class GridBranch(NativeOP):
         pair_grid: Callable[[Any, Any], Any | None] | None = None,
         project_pair: Callable[[Any, Any], tuple[Any, Any]] | None = None,
         scalar_product: Callable[[Any, Any], Any] | None = None,
+        route: Any = None,
     ) -> Any:
         """
         Apply scalar-routed grid branch mixing on coefficient operands.
@@ -507,6 +564,9 @@ class GridBranch(NativeOP):
         pair_grid, project_pair, scalar_product : Callable, optional
             Optional fused full composition, paired forward projection, and
             direct scalar coefficient contraction.
+        route : UnitRoute, optional
+            Route of the rows with the weights of :meth:`expert_maps`;
+            required with ``experts``.
 
         Returns
         -------
@@ -516,8 +576,10 @@ class GridBranch(NativeOP):
         """
         xp = array_api_compat.array_namespace(left)
         # === Step 1. Branch channel projections at coefficient resolution ===
-        left = _project_frames(left, self.left_proj, self.n_frames)
-        right = _project_frames(right, self.right_proj, self.n_frames)
+        left = _project_frames(left, self.left_proj, self.n_frames, *map_args(route, 0))
+        right = _project_frames(
+            right, self.right_proj, self.n_frames, *map_args(route, 1)
+        )
 
         # === Step 2. Quadratic branches on the grid, routed by scalars ===
         # A single branch makes the router softmax identically one, which
@@ -536,9 +598,7 @@ class GridBranch(NativeOP):
                     self.channels,
                 ),
             )
-            router = self.router(scalar_pair)
-            router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
-            router = router / xp.sum(router, axis=-1, keepdims=True)
+            router = self._branch_weights(scalar_pair, route)
             coeff = xp.sum(value * router[:, None, :, :, None], axis=3)
         else:
             coeff = (
@@ -559,9 +619,7 @@ class GridBranch(NativeOP):
             value = xp.reshape(
                 value, (n_batch, n_grid, n_focus, self.n_branches, self.channels)
             )
-            router = self.router(scalar_pair)
-            router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
-            router = router / xp.sum(router, axis=-1, keepdims=True)
+            router = self._branch_weights(scalar_pair, route)
             out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
             coeff = from_grid(out)
 
@@ -578,18 +636,36 @@ class GridBranch(NativeOP):
                     self.channels,
                 ),
             )
-            router = self.router(scalar_pair)
-            router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
-            router = router / xp.sum(router, axis=-1, keepdims=True)
+            router = self._branch_weights(scalar_pair, route)
             coeff = xp.reshape(
                 xp_einsum("ndfkhc,nfh->ndfkc", value, router),
                 (n_batch, coeff_dim, n_focus, self.n_frames * self.channels),
             )
 
         # === Step 3. Project back to coefficients and mix output channels ===
+        out_args = map_args(route, -1)
         if scalar_product is not None:
-            return self.out_proj(coeff)
-        return _project_frames(coeff, self.out_proj, self.n_frames)
+            return self.out_proj(coeff, *out_args)
+        return _project_frames(coeff, self.out_proj, self.n_frames, *out_args)
+
+    def _branch_weights(self, scalar_pair: Any, route: Any) -> Any:
+        """Softmax weights of the branches with shape (N, F, n_branches)."""
+        # The router of a single branch is a plain map.
+        router_args = map_args(route, 2) if self.n_branches > 1 else ()
+        return xp_softmax(self.router(scalar_pair, *router_args))
+
+    def _sub_layers(self) -> dict[str, NativeOP]:
+        return {
+            "left_proj": self.left_proj,
+            "right_proj": self.right_proj,
+            "router": self.router,
+            "out_proj": self.out_proj,
+        }
+
+    def _expert_members(self) -> list[str]:
+        # The router of a single branch is frozen and stays a plain map.
+        router = ["router"] if self.n_branches > 1 else []
+        return ["left_proj", "right_proj", *router, "out_proj"]
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the GridBranch to a dict."""
@@ -601,15 +677,11 @@ class GridBranch(NativeOP):
                 "n_branches": self.n_branches,
                 "n_frames": self.n_frames,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "experts": self.experts,
                 "trainable": self.trainable,
                 "seed": None,
             },
-            "@variables": {
-                "left_proj.weight": to_numpy_array(self.left_proj.weight),
-                "right_proj.weight": to_numpy_array(self.right_proj.weight),
-                "router.weight": to_numpy_array(self.router.weight),
-                "out_proj.weight": to_numpy_array(self.out_proj.weight),
-            },
+            "@variables": layer_variables(self._sub_layers()),
         }
 
     @classmethod
@@ -627,11 +699,7 @@ class GridBranch(NativeOP):
         return obj
 
     def _load_variables(self, variables: dict[str, Any]) -> None:
-        prec = PRECISION_DICT[self.precision.lower()]
-        self.left_proj.weight = np.asarray(variables["left_proj.weight"], dtype=prec)
-        self.right_proj.weight = np.asarray(variables["right_proj.weight"], dtype=prec)
-        self.router.weight = np.asarray(variables["router.weight"], dtype=prec)
-        self.out_proj.weight = np.asarray(variables["out_proj.weight"], dtype=prec)
+        load_layer_variables(self, self._sub_layers(), variables)
 
 
 class FrameContract(NativeOP):
@@ -813,7 +881,7 @@ class FrameExpand(NativeOP):
         return obj
 
 
-class BaseGridNet(NativeOP):
+class BaseGridNet(ExpertContainer, NativeOP):
     """
     Shared implementation for S2 and SO(3) grid nets.
 
@@ -821,6 +889,11 @@ class BaseGridNet(NativeOP):
     branches.  ``mode='cross'`` expects query and context inputs; the query side
     is the source of attention queries and SwiGLU gates, while the context side
     is the key/value or second product branch.
+
+    With ``experts`` the scalar gate and the maps of the grid operation are
+    expert maps (see
+    :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`), which the
+    route passed to :meth:`call` selects for every row.
     """
 
     CONFIG_DERIVED_ARRAYS = (
@@ -851,8 +924,17 @@ class BaseGridNet(NativeOP):
         frame_expand: NativeOP | None = None,
         frame_contract: NativeOP | None = None,
         residual_scale_init: float | None = None,
+        experts: Sequence[int] | None = None,
         seed: int | list[int] | None = None,
     ) -> None:
+        self.experts = None if experts is None else [int(n) for n in experts]
+        if self.experts is not None and (
+            frame_expand is not None or residual_scale_init is not None
+        ):
+            raise ValueError(
+                "the expert maps cover the scalar gate and the grid operation; a "
+                "grid net with frame maps or a residual scale takes none"
+            )
         self.projector = projector
         self.parity = bool(parity)
         self.lmax = int(projector.lmax)
@@ -921,7 +1003,9 @@ class BaseGridNet(NativeOP):
         self._grid_pair_train_fn = None
 
         self.scalar_act = SwiGLU()
-        self.scalar_gate = FocusLinear(
+        self.scalar_gate = linear_with_experts(
+            FocusLinear,
+            self.experts,
             in_channels=2 * self.channels,
             out_channels=self.channels,
             n_focus=self.n_focus,
@@ -937,6 +1021,7 @@ class BaseGridNet(NativeOP):
                 mode=self.mode,
                 n_frames=self.n_frames,
                 precision=self.precision,
+                experts=self.experts,
                 trainable=trainable,
                 seed=child_seed(seed, 1),
             )
@@ -946,6 +1031,7 @@ class BaseGridNet(NativeOP):
                 n_branches=grid_branches,
                 n_frames=self.n_frames,
                 precision=self.precision,
+                experts=self.experts,
                 trainable=trainable,
                 seed=child_seed(seed, 1),
             )
@@ -1002,11 +1088,31 @@ class BaseGridNet(NativeOP):
         self._grid_size = int(to_grid.shape[0])
         self._from_grid_t = np.ascontiguousarray(from_grid.T)
 
-    def call(self, query: Any, context: Any = None) -> Any:
-        """Apply the configured grid net and restore the input layout."""
-        return self._forward(query, context, scalar_only=False)
+    def _expert_members(self) -> list[str]:
+        return ["scalar_gate", "grid_op"]
 
-    def call_scalar(self, query: Any, context: Any = None) -> Any:
+    def call(self, query: Any, context: Any = None, route: Any = None) -> Any:
+        """
+        Apply the configured grid net and restore the input layout.
+
+        Parameters
+        ----------
+        query : Array
+            Query coefficient tensor in the configured layout.
+        context : Array, optional
+            Context coefficient tensor for cross mode.
+        route : UnitRoute, optional
+            Route of the rows of ``query`` with the weights of
+            :meth:`expert_maps`; required with ``experts``.
+
+        Returns
+        -------
+        Array
+            Grid-net output in the configured layout.
+        """
+        return self._forward(query, context, route, scalar_only=False)
+
+    def call_scalar(self, query: Any, context: Any = None, route: Any = None) -> Any:
         """Apply the grid net and return only the scalar coefficient.
 
         Parameters
@@ -1015,6 +1121,9 @@ class BaseGridNet(NativeOP):
             Query coefficient tensor in the configured layout.
         context : Array, optional
             Optional context coefficient tensor for cross mode.
+        route : UnitRoute, optional
+            Route of the rows of ``query`` with the weights of
+            :meth:`expert_maps`; required with ``experts``.
 
         Returns
         -------
@@ -1031,13 +1140,14 @@ class BaseGridNet(NativeOP):
         that fused operator.
         """
         if self._grid_pair_fn is not None and not getattr(self, "training", False):
-            return self._slice_scalar_layout(self.call(query, context))
-        return self._forward(query, context, scalar_only=True)
+            return self._slice_scalar_layout(self.call(query, context, route))
+        return self._forward(query, context, route, scalar_only=True)
 
     def _forward(
         self,
         query: Any,
         context: Any,
+        route: Any,
         *,
         scalar_only: bool,
     ) -> Any:
@@ -1072,6 +1182,7 @@ class BaseGridNet(NativeOP):
             if scalar_only and not self._project_inversion
             else self._pair_grid,
             scalar_product=self._scalar_so3_product if direct_scalar else None,
+            route=None if route is None else route.maps(1),
         )
 
         if scalar_only and self._project_inversion and not direct_scalar:
@@ -1081,6 +1192,7 @@ class BaseGridNet(NativeOP):
         coeff_out = self._apply_scalar_path(
             coeff_out,
             scalar_pair,
+            route,
             compact_scalar=direct_scalar,
         )
         coeff_out = self._contract_frames(coeff_out, scalar_only=scalar_only)
@@ -1170,12 +1282,13 @@ class BaseGridNet(NativeOP):
         self,
         coeff: Any,
         scalar_pair: Any,
+        route: Any = None,
         *,
         compact_scalar: bool,
     ) -> Any:
         xp = array_api_compat.array_namespace(coeff)
         scalar_out = self.scalar_act(scalar_pair)
-        scalar_gate = xp_sigmoid(self.scalar_gate(scalar_pair))
+        scalar_gate = xp_sigmoid(self.scalar_gate(scalar_pair, *map_args(route, 0)))
         if compact_scalar:
             scalar_coeff = coeff * scalar_gate[:, None, :, :]
             scalar_coeff = scalar_coeff + scalar_out[:, None, :, :]
@@ -1583,11 +1696,7 @@ class BaseGridNet(NativeOP):
 
     def _variables(self) -> dict[str, Any]:
         """Collect weights keyed by the pt ``state_dict`` key names."""
-        variables: dict[str, Any] = {
-            "scalar_gate.weight": to_numpy_array(self.scalar_gate.weight)
-        }
-        if self.mlp_bias:
-            variables["scalar_gate.bias"] = to_numpy_array(self.scalar_gate.bias)
+        variables = layer_variables({"scalar_gate": self.scalar_gate})
         if self.op_type in {"mlp", "branch"}:
             for key, value in self.grid_op.serialize()["@variables"].items():
                 variables[f"grid_op.{key}"] = value
@@ -1604,13 +1713,7 @@ class BaseGridNet(NativeOP):
     def _load_variables(self, variables: dict[str, Any]) -> None:
         """Load weights keyed by the pt ``state_dict`` key names."""
         prec = PRECISION_DICT[self.precision.lower()]
-        self.scalar_gate.weight = np.asarray(
-            variables["scalar_gate.weight"], dtype=prec
-        )
-        if self.mlp_bias:
-            self.scalar_gate.bias = np.asarray(
-                variables["scalar_gate.bias"], dtype=prec
-            )
+        load_layer_variables(self, {"scalar_gate": self.scalar_gate}, variables)
         if self.op_type in {"mlp", "branch"}:
             self.grid_op._load_variables(
                 {
@@ -1652,6 +1755,7 @@ class S2GridNet(BaseGridNet):
         grid_branches: int = 1,
         residual_scale_init: float | None = None,
         mlp_bias: bool = False,
+        experts: Sequence[int] | None = None,
         trainable: bool,
         seed: int | list[int] | None = None,
     ) -> None:
@@ -1680,6 +1784,7 @@ class S2GridNet(BaseGridNet):
             trainable=trainable,
             grid_branches=grid_branches,
             residual_scale_init=residual_scale_init,
+            experts=experts,
             seed=seed,
         )
 
@@ -1704,6 +1809,7 @@ class S2GridNet(BaseGridNet):
                 "grid_branches": self.grid_branches,
                 "residual_scale_init": self.residual_scale_init,
                 "mlp_bias": self.mlp_bias,
+                "experts": self.experts,
                 "trainable": self.trainable,
                 "seed": None,
             },
@@ -1746,6 +1852,7 @@ class SO3GridNet(BaseGridNet):
         grid_branches: int = 1,
         residual_scale_init: float | None = None,
         mlp_bias: bool = False,
+        experts: Sequence[int] | None = None,
         trainable: bool,
         seed: int | list[int] | None = None,
     ) -> None:
@@ -1800,6 +1907,7 @@ class SO3GridNet(BaseGridNet):
             frame_expand=frame_expand,
             frame_contract=frame_contract,
             residual_scale_init=residual_scale_init,
+            experts=experts,
             seed=seed,
         )
 
@@ -1824,6 +1932,7 @@ class SO3GridNet(BaseGridNet):
                 "grid_branches": self.grid_branches,
                 "residual_scale_init": self.residual_scale_init,
                 "mlp_bias": self.mlp_bias,
+                "experts": self.experts,
                 "trainable": self.trainable,
                 "seed": None,
             },

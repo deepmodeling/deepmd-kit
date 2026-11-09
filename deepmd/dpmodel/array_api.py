@@ -536,6 +536,26 @@ def xp_sigmoid(x: Array) -> Array:
     return 1 / (1 + xp.exp(-x))
 
 
+def xp_softmax(logits: Array) -> Array:
+    """Compute the softmax over the last axis.
+
+    The logits are shifted by their maximum, so large logits do not overflow.
+
+    Parameters
+    ----------
+    logits : Array
+        Input array with shape (..., K).
+
+    Returns
+    -------
+    Array
+        Weights with shape (..., K), summing to one over the last axis.
+    """
+    xp = array_api_compat.array_namespace(logits)
+    shifted = xp.exp(logits - xp.max(logits, axis=-1, keepdims=True))
+    return shifted / xp.sum(shifted, axis=-1, keepdims=True)
+
+
 def xp_erf(x: Array) -> Array:
     """Compute the error function.
 

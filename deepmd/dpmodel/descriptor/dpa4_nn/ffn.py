@@ -14,6 +14,7 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -23,6 +24,11 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    ExpertContainer,
+    linear_with_experts,
+    map_args,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -48,8 +54,13 @@ from .utils import (
     get_promoted_dtype,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import (
+        Sequence,
+    )
 
-class EquivariantFFN(NativeOP):
+
+class EquivariantFFN(ExpertContainer, NativeOP):
     """
     Full equivariant FFN operating on all spherical harmonic degrees.
 
@@ -66,6 +77,15 @@ class EquivariantFFN(NativeOP):
         -> project grid features back to packed SO(3) coefficients
         -> add scalar LinearSwiGLU branch to l=0
         -> SO3 linear (hidden -> out)
+
+    With ``experts`` every learnable map of the network (the two SO3 linear
+    maps and the maps inside the nonlinearity) is an expert map (see
+    :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`): the route
+    passed to :meth:`call` gives every row the increment of the task, the
+    increment of its element and the coefficients of the routed experts, so
+    every condition selects a complete set of network weights. The network is
+    one unit of the route: its rows enter the layout of the route once and
+    every map works on that layout.
 
     GatedActivation serves as the unified "activation" for equivariant networks,
     analogous to SiLU in standard MLPs, but respecting SO(3) equivariance:
@@ -109,6 +129,9 @@ class EquivariantFFN(NativeOP):
         Whether to use bias in SO3Linear (l=0 bias), GatedActivation
         (gate linear bias), and the scalar point-wise projection when
         ``grid_mlp=True``.
+    experts
+        Number of experts and of element increments ``(n_experts, n_elements)``
+        of every learnable map; None builds a plain network.
     trainable
         Whether parameters are trainable.
     seed
@@ -132,11 +155,13 @@ class EquivariantFFN(NativeOP):
         glu_activation: bool = True,
         mlp_bias: bool = False,
         precision: str = DEFAULT_PRECISION,
+        experts: Sequence[int] | None = None,
         trainable: bool = True,
         seed: int | list[int] | None = None,
     ) -> None:
         self.parity = bool(parity)
         self.lmax = int(lmax)
+        self.experts = None if experts is None else [int(n) for n in experts]
         self.channels = int(channels)
         self.hidden_channels = int(hidden_channels)
         self.kmax = int(kmax)
@@ -185,7 +210,9 @@ class EquivariantFFN(NativeOP):
                 if self.glu_activation
                 else self.hidden_channels
             )
-        self.so3_linear_1 = SO3Linear(
+        self.so3_linear_1 = linear_with_experts(
+            SO3Linear,
+            self.experts,
             lmax=self.lmax,
             in_channels=self.channels,
             out_channels=linear1_out_channels,
@@ -216,6 +243,7 @@ class EquivariantFFN(NativeOP):
                     layout="ndfc",
                     grid_branches=max(1, self.grid_branch),
                     mlp_bias=self.mlp_bias,
+                    experts=self.experts,
                     trainable=trainable,
                     seed=seed_act,
                 )
@@ -234,6 +262,7 @@ class EquivariantFFN(NativeOP):
                     grid_method=self.s2_grid_method,
                     grid_branches=max(1, self.grid_branch),
                     mlp_bias=self.mlp_bias,
+                    experts=self.experts,
                     trainable=trainable,
                     seed=seed_act,
                 )
@@ -245,13 +274,16 @@ class EquivariantFFN(NativeOP):
                 activation_function=activation_function,
                 mlp_bias=self.mlp_bias,
                 layout="ndfc",
+                experts=self.experts,
                 trainable=trainable,
                 seed=seed_act,
             )
 
         # === Second SO3Linear for channel mixing ===
         # Zero-initialized so residual path starts near-identity.
-        self.so3_linear_2 = SO3Linear(
+        self.so3_linear_2 = linear_with_experts(
+            SO3Linear,
+            self.experts,
             lmax=self.lmax,
             in_channels=self.grid_n_frames * self.hidden_channels,
             out_channels=self.channels,
@@ -265,63 +297,85 @@ class EquivariantFFN(NativeOP):
 
         self.trainable = bool(trainable)
 
-    def call(self, x: Any) -> Any:
+    def _expert_members(self) -> list[str]:
+        return ["so3_linear_1", "act", "so3_linear_2"]
+
+    def call(self, x: Any, route: Any = None) -> Any:
         """
         Parameters
         ----------
         x
             Input with shape (N, D, F, C) where D=(lmax+1)^2.
+        route
+            Route of the rows of ``x`` for this unit (see
+            :class:`~deepmd.dpmodel.utils.expert_route.UnitRoute`), with the
+            weights of :meth:`expert_maps`; required with ``experts``.
 
         Returns
         -------
         Array
             Output with shape (N, D, F, C).
         """
-        hidden = self._activate_hidden(x, scalar_only=False)
+        return self._forward(x, route, scalar_only=False)
 
-        # === Step 3. Per-degree output projection ===
-        return self.so3_linear_2(hidden)
-
-    def call_scalar(self, x: Any) -> Any:
+    def call_scalar(self, x: Any, route: Any = None) -> Any:
         """Evaluate the FFN for the ``l=0`` output only.
 
         Parameters
         ----------
         x : Array
             Input with shape ``(N, D, F, C)``.
+        route
+            Route of the rows of ``x`` for this unit; required with
+            ``experts``.
 
         Returns
         -------
         Array
             Scalar output with shape ``(N, 1, F, C)``.
         """
-        hidden = self._activate_hidden(x, scalar_only=True)
+        return self._forward(x, route, scalar_only=True)
 
-        # === Step 3. Scalar output projection ===
-        return self.so3_linear_2.call_scalar(hidden)
+    def _forward(self, x: Any, route: Any, *, scalar_only: bool) -> Any:
+        """Run the network on the rows of its route, for all or the scalar output."""
+        if route is not None:
+            x = route.enter(x)
+        hidden = self._activate_hidden(x, route, scalar_only=scalar_only)
+
+        # === Step 3. Per-degree output projection ===
+        project = self.so3_linear_2.call_scalar if scalar_only else self.so3_linear_2
+        out = project(hidden, *map_args(route, -1))
+        return out if route is None else route.leave(out)
 
     def _activate_hidden(
         self,
         x: Any,
+        route: Any = None,
         *,
         scalar_only: bool,
     ) -> Any:
         """Apply the input projection and equivariant nonlinearity."""
         # === Step 1. Input up projection ===
-        x = self.so3_linear_1(x)
+        x = self.so3_linear_1(x, *map_args(route, 0))
 
         # === Step 2. Equivariant nonlinearity ===
+        # The maps of the nonlinearity lie between the two projections.
+        act_route = None if route is None else route.maps(1, -1)
         if self.use_grid_net:
-            x = self.act.call_scalar(x) if scalar_only else self.act(x)
+            x = (
+                self.act.call_scalar(x, route=act_route)
+                if scalar_only
+                else self.act(x, route=act_route)
+            )
         elif self.glu_activation:
             # Split into value and gate branches along channel dimension
             nc = (x.shape[-1] + 1) // 2
             x_val = x[..., :nc]
             x_gate = x[..., nc:]
             # Pass gate to GatedActivation for GLU-style gating
-            x = self.act(x_val, gate=x_gate)
+            x = self.act(x_val, gate=x_gate, route=act_route)
         else:
-            x = self.act(x)
+            x = self.act(x, route=act_route)
 
         if scalar_only and not self.use_grid_net:
             x = x[:, 0:1, :, :]
@@ -378,6 +432,7 @@ class EquivariantFFN(NativeOP):
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,
                 "mlp_bias": self.mlp_bias,
+                "experts": self.experts,
                 "trainable": self.trainable,
                 "seed": None,
             },

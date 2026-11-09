@@ -27,6 +27,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as SO2LinearDP
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
+)
 from deepmd.tf2.common import (
     register_dpmodel_mapping,
     tf,
@@ -305,6 +308,7 @@ register_dpmodel_mapping(
 @tf2_module
 class DescrptDPA4(DescrptDPA4DP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        reject_moe(kwargs, "DPA4 descriptor")
         super().__init__(*args, **kwargs)
         self._tf2_training_mode = False
         _promote_trainable_tree(self)

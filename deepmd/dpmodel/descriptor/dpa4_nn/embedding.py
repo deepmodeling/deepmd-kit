@@ -452,7 +452,31 @@ def spin_environment_invariants(moments: Any, axis_dim: int) -> Any:
     )
 
 
-class EnvironmentInitialEmbedding(NativeOP):
+class SharesLearnedLayers:
+    """Sharing of the learned layers an embedding builds.
+
+    An embedding whose layers depend on its configuration lists the shared
+    ones in ``LEARNED_LAYERS``; the flags that select them stay those of the
+    replica, so replicas of differing configuration share every common layer.
+    """
+
+    LEARNED_LAYERS: tuple[str, ...] = ()
+
+    def share_params(self, base: SharesLearnedLayers) -> None:
+        """
+        Take the learned layers of ``base`` that this embedding builds.
+
+        Parameters
+        ----------
+        base : SharesLearnedLayers
+            Embedding of the same class that owns the shared layers.
+        """
+        for name in self.LEARNED_LAYERS:
+            if getattr(self, name, None) is not None:
+                setattr(self, name, getattr(base, name))
+
+
+class EnvironmentInitialEmbedding(SharesLearnedLayers, NativeOP):
     """
     Environment matrix initial embedding for l=0 features.
 
@@ -515,6 +539,16 @@ class EnvironmentInitialEmbedding(NativeOP):
     """
 
     CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+    # Learned layers; ``spin_output_proj`` exists only with native spin.
+    LEARNED_LAYERS = (
+        "rbf_proj_layer1",
+        "rbf_proj_layer2",
+        "env_type_embed",
+        "g_layer1",
+        "g_layer2",
+        "output_proj",
+        "spin_output_proj",
+    )
 
     def __init__(
         self,
@@ -1063,7 +1097,7 @@ def spin_pair_invariants(
     return xp.stack(features, axis=-1)
 
 
-class SpinEmbedding(NativeOP):
+class SpinEmbedding(SharesLearnedLayers, NativeOP):
     r"""Embed time-even on-site and pair spin invariants.
 
     ``exchange`` uses the two squared moments and their signed dot product.
@@ -1081,6 +1115,7 @@ class SpinEmbedding(NativeOP):
     """
 
     CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+    LEARNED_LAYERS = ("mag_layer1", "mag_layer2", "pair_layer")
 
     def __init__(
         self,

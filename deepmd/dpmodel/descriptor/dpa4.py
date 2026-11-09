@@ -40,6 +40,7 @@ import math
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
 )
 
 import array_api_compat
@@ -64,6 +65,10 @@ from deepmd.dpmodel.utils.contact_clamp import (
 )
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.dpmodel.utils.expert_route import (
+    ExpertComponent,
+    UnitRoute,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
@@ -147,6 +152,10 @@ if TYPE_CHECKING:
 
     from deepmd.dpmodel.array_api import (
         Array,
+    )
+    from deepmd.dpmodel.utils.expert_route import (
+        ExpertCondition,
+        ExpertScenario,
     )
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
@@ -243,7 +252,7 @@ def _graph_from_padded_nlist(
 @BaseDescriptor.register("sezm")
 @BaseDescriptor.register("DPA4")
 @BaseDescriptor.register("dpa4")
-class DescrptDPA4(NativeOP, BaseDescriptor):
+class DescrptDPA4(ExpertComponent, NativeOP, BaseDescriptor):
     r"""
     SeZM descriptor.
 
@@ -648,6 +657,23 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Default frame-level charge/spin condition `[charge, spin]`. This value is
         used when `add_chg_spin_ebd=True` and no explicit `charge_spin` tensor is
         provided at the descriptor or SeZM model boundary.
+    moe
+        Mixture of experts (MoE) of the feed-forward networks of the
+        interaction blocks and of the read-out (see
+        :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`), as
+        ``{"n_experts": K, "element": ..., "mat_prob": p, "router":
+        {...}}`` with the defaults of
+        :func:`~deepmd.dpmodel.utils.expert_route.normalize_moe`. Every map of
+        these networks computes the atom ``i`` with the weight
+        ``W + V_task + U_element(i) + sum_k c_k A_k``: the shared weight, the
+        increment of the task of the model, the increment of the element of
+        the atom and ``K`` experts mixed by a router. The router reads the
+        charge and spin multiplicity of the frame (with ``add_chg_spin_ebd``),
+        the task and the element of the atom, and every network has
+        coefficients of its own. The increments of the task and the task
+        embedding of the router belong to the descriptor of a model, so that
+        models sharing the networks are tasks of them. None builds plain
+        networks.
     parity : bool, optional
         Preserve spatial inversion with natural parity ``(-1)**l`` for degree
         ``l``. The default is False. Native spin always enables parity.
@@ -734,6 +760,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         use_spin: list[bool] | None = None,
         spin_mode: str = "orbit",
         parity: bool = False,
+        moe: dict[str, Any] | None = None,
     ) -> None:
         self.version = float(self.LATEST_VERSION)
         self._graph_lower_disabled = False
@@ -885,6 +912,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             else validate_charge_state(default_chg_spin)
         )
 
+        # === Mixture of experts of the feed-forward networks ===
+        self._init_moe(moe, charge_spin=self.add_chg_spin_ebd)
+        experts = self._expert_counts()
+
         # === Native per-atom spin embedding ===
         # Moments enter through time-even on-site and pair scalars. Per-type
         # ``use_spin`` flags enable the native spin embedding.
@@ -935,6 +966,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         seed_block_attn = child_seed(self.seed, 6)
         seed_charge_spin = child_seed(self.seed, 7)
         seed_spin_embedding = child_seed(self.seed, 8)
+        seed_router = child_seed(self.seed, 9)
 
         # === L/M schedules ===
         self._init_lm_schedules(lmax, n_blocks, l_schedule, mmax, m_schedule)
@@ -951,6 +983,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             self.envelope_mass = np.ones(
                 len(self.block_rcut), dtype=PRECISION_DICT[self.precision]
             )
+            # Number of atoms the measured mass averages; it weights the masses
+            # of replicas merged by ``share_params``.
+            self.envelope_count = 0.0
         self.kmax = int(kmax)
         if self.kmax < 0:
             raise ValueError("`kmax` must be non-negative")
@@ -1292,6 +1327,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     mlp_bias=self.mlp_bias,
                     eps=self.eps,
                     precision=self.precision,
+                    experts=experts,
                     seed=child_seed(seed_blocks, block_idx),
                     trainable=self.trainable,
                 )
@@ -1360,6 +1396,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             "activation_function": self.out_activation_function,
             "glu_activation": self.out_glu_activation,
             "mlp_bias": self.mlp_bias,
+            "experts": experts,
             "trainable": self.trainable,
         }
         # Intermediate tensors preserve natural parity. The final quadratic
@@ -1383,6 +1420,16 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
             if self.use_readout_norm
             else None
+        )
+
+        # === Task increments and router of the MoE ===
+        # Replicas sharing the networks keep their own task (see
+        # :meth:`share_params`).
+        self._init_task_and_router(
+            chg_spin_dim=self.channels if self.add_chg_spin_ebd else 0,
+            precision=self.compute_precision,
+            seed=seed_router,
+            trainable=self.trainable,
         )
 
         # === Statistics buffers (interface compatibility) ===
@@ -1519,6 +1566,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         comm_dict: dict[str, Array] | None = None,
         spin: Array | None = None,
         charge_spin: Array | None = None,
+        condition: ExpertCondition | None = None,
     ) -> tuple[Array, None]:
         """Graph-native descriptor forward on the flat node axis.
 
@@ -1555,6 +1603,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             ``torch.export``); each frame's node block must therefore hold
             exactly ``N // nf`` nodes, which single-rank carry-all graphs
             built from a rectangular ``(nf, nloc)`` input always satisfy.
+        condition
+            Conditions of the frames of the nodes, which an MoE descriptor
+            reads (see :meth:`has_experts`); required with a router and
+            unused without MoE.
 
         Returns
         -------
@@ -1576,7 +1628,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             ref=graph.edge_vec,
         )
         x_scalar, _ = self._run_graph(
-            graph, atype, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
+            graph,
+            atype,
+            charge_spin=charge_spin,
+            spin=spin,
+            comm_dict=comm_dict,
+            condition=condition,
         )
         # ``_run_graph`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
@@ -1595,6 +1652,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
+        condition: ExpertCondition | None = None,
     ) -> tuple[Array, Array]:
         """Graph-native descriptor forward shared by both descriptor entries.
 
@@ -1637,6 +1695,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         comm_dict
             MPI communication metadata forwarded to the interaction blocks;
             ``None`` for single-rank inference.
+        condition
+            Conditions of the frames of the nodes, which an MoE descriptor
+            reads; required with a router.
 
         Returns
         -------
@@ -1658,6 +1719,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # graph-BUILD transform already folded into the incoming graph.)
         if self.exclude_types:
             graph = apply_pair_exclusion(graph, atype_flat, self.emask)
+        owned_rows_only = n_out_nodes is not None
         if n_out_nodes is None:
             n_out_nodes = atype_flat.shape[0]
         edge_index = graph.edge_index
@@ -1823,6 +1885,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x = xp.astype(x, get_xp_precision(xp, self.precision))  # (N, D, 1, C)
         if force_embedding is not None:
             x = x + xp.astype(force_embedding, get_xp_precision(xp, self.precision))
+        route = self._expert_route(atype_flat, condition)
         if self.blocks:
             cast_caches = {
                 radius: edge_cache_to_dtype(cache, get_xp_precision(xp, self.precision))
@@ -1832,7 +1895,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             }
             block_caches = [cast_caches[radius] for radius in self.block_rcut]
             x = self._forward_blocks(
-                x, block_caches, rad_feat_per_block, comm_dict=comm_dict
+                x,
+                block_caches,
+                rad_feat_per_block,
+                comm_dict=comm_dict,
+                unit_routes=(
+                    None
+                    if route is None
+                    else self._unit_routes(route, stop=self._n_block_units())
+                ),
             )
 
         # === Step 11. Keep the owned-atom rows for the read-out ===
@@ -1844,7 +1915,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x = x[:n_out_nodes, ...]
 
         # === Step 12. Final l=0 output mixing ===
-        x_scalar = self._apply_readout(x, n_out_nodes)
+        readout_routes = None
+        if route is not None:
+            if owned_rows_only:
+                route = self._expert_route(atype_flat, condition, n_out_nodes)
+            readout_routes = self._unit_routes(route, first=self._n_block_units())
+        x_scalar = self._apply_readout(x, n_out_nodes, readout_routes)
         return xp.astype(x_scalar, get_xp_precision(xp, "global")), x
 
     def _density_floor(self, radius: float) -> Any:
@@ -1930,6 +2006,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         edge_caches: list[EdgeCache],
         radial_feat_per_block: list[Array],
         comm_dict: dict[str, Array] | None = None,
+        unit_routes: list[UnitRoute] | None = None,
     ) -> Array:
         """
         Run the interaction blocks with optional depth attention.
@@ -1948,6 +2025,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             input — the descriptor's only cross-node operation — so message
             passing always reads up-to-date neighbours regardless of the
             (per-node) attention-residual history.
+        unit_routes
+            Route of the nodes for every FFN subblock of the blocks (see
+            :meth:`_unit_routes`); None without MoE.
 
         Returns
         -------
@@ -1955,6 +2035,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             Output features with shape (N, D, 1, C).
         """
         xp = array_api_compat.array_namespace(x)
+
+        def ffn_routes(i: int) -> list[UnitRoute] | None:
+            """Routes of the FFN subblocks of block ``i``."""
+            if unit_routes is None:
+                return None
+            return unit_routes[i * self.ffn_blocks : (i + 1) * self.ffn_blocks]
+
         if not self.use_full_attn_res and not self.use_block_attn_res:
             # === Fast path without descriptor-level attention residuals ===
             for i, block in enumerate(self.blocks):
@@ -1966,6 +2053,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     edge_caches[i],
                     blk_radial,
                     comm_dict=self._block_comm(i, comm_dict),
+                    ffn_routes=ffn_routes(i),
                 )
                 # Rows above the block degree that later stages read pass on.
                 x = (
@@ -1999,6 +2087,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     blk_radial,
                     unit_history=truncated_unit_history,
                     comm_dict=self._block_comm(i, comm_dict),
+                    ffn_routes=ffn_routes(i),
                 )
                 unit_history.append(so2_unit_output)
                 unit_history.extend(ffn_unit_outputs)
@@ -2034,6 +2123,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 blk_radial,
                 unit_history=truncated_block_history,
                 comm_dict=self._block_comm(i, comm_dict),
+                ffn_routes=ffn_routes(i),
             )
             block_history.append(block_summary)
             x = block_output
@@ -2051,7 +2141,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         )
         return x
 
-    def _apply_readout(self, x: Array, n_rows: int) -> Array:
+    def _apply_readout(
+        self,
+        x: Array,
+        n_rows: int,
+        routes: list[UnitRoute] | None = None,
+    ) -> Array:
         """Fold the node tensor into the scalar (``l=0``) descriptor.
 
         Runs the ``readout_layers`` stack of equivariant residual read-out FFNs.
@@ -2074,6 +2169,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             there.
         n_rows
             Number of node rows fed to the read-out.
+        routes
+            Route of the rows for every read-out FFN, the ``output_ffn`` last;
+            None without MoE.
 
         Returns
         -------
@@ -2093,11 +2191,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         if self.readout_norm is not None:
             x_ro = self.readout_norm(x_ro)
-        for layer in self.readout_pre_layers:
-            x_ro = x_ro + layer(x_ro)
+        if routes is None:
+            routes = [None] * (len(self.readout_pre_layers) + 1)
+        for layer, route in zip(self.readout_pre_layers, routes[:-1], strict=True):
+            x_ro = x_ro + layer(x_ro, route)
         if self.so3_readout == "none":
-            return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
-        return x_ro[:, 0:1, :, :] + self.output_ffn.call_scalar(x_ro)
+            return (x_ro + self.output_ffn(x_ro, routes[-1]))[:, 0:1, :, :]
+        return x_ro[:, 0:1, :, :] + self.output_ffn.call_scalar(x_ro, routes[-1])
 
     def _edge_quaternion(self, edge_cache: EdgeCache) -> Array:
         """
@@ -2500,6 +2600,74 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """Return the charge/spin condition width."""
         return 2 if self.add_chg_spin_ebd else 0
 
+    def _expert_units(self) -> list[EquivariantFFN]:
+        """
+        The MoE feed-forward networks.
+
+        Each network is a unit of the route with coefficients of its own: the
+        FFN subblocks in block order, then the read-out networks with the
+        ``output_ffn`` last.
+        """
+        if self.moe is None:
+            return []
+        return [
+            *(ffn for block in self.blocks for ffn in block.ffns),
+            *self.readout_pre_layers,
+            self.output_ffn,
+        ]
+
+    def _n_block_units(self) -> int:
+        """Number of units that are FFN subblocks of the blocks."""
+        return len(self.blocks) * self.ffn_blocks
+
+    def _router_reads_state(self) -> bool:
+        """Whether the router reads the charge/spin state of the frames."""
+        return self.expert_router is not None and self.add_chg_spin_ebd
+
+    def _state_embedding(self, charge_spin: Array) -> Array:
+        """The charge/spin embedding of states with shape (nf, 2)."""
+        xp = array_api_compat.array_namespace(charge_spin)
+        return self.charge_spin_embedding(
+            xp.astype(charge_spin, get_xp_precision(xp, self.compute_precision))
+        )
+
+    def _scenario_charge_spin(self, scenario: ExpertScenario) -> list[float] | None:
+        """
+        Charge/spin state at which the router is merged.
+
+        Returns
+        -------
+        list[float] or None
+            The state of the scenario, or the default state of the
+            descriptor; None for a router that reads none.
+
+        Raises
+        ------
+        ValueError
+            If the scenario gives a state that no router reads, or lacks one
+            without a default.
+        """
+        if not self._router_reads_state():
+            if scenario.charge_spin is not None:
+                raise ValueError(
+                    "no router of the descriptor reads the charge and spin "
+                    "multiplicity of a frame, so the scenario takes none"
+                )
+            return None
+        state = (
+            self.default_chg_spin
+            if scenario.charge_spin is None
+            else scenario.charge_spin
+        )
+        if state is None:
+            raise ValueError("the descriptor has no default charge/spin; give one")
+        return validate_charge_state(state)
+
+    def _finish_merge(self, charge_spin: list[float] | None) -> None:
+        """Take the charge/spin state of the merge as the default state."""
+        if charge_spin is not None:
+            self.default_chg_spin = [float(value) for value in charge_spin]
+
     def get_default_chg_spin(self) -> list[float] | None:
         """Return default charge/spin conditions."""
         return self.default_chg_spin
@@ -2609,12 +2777,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     def _in_training_mode(self) -> bool:
         """Whether the descriptor is currently in training mode.
 
-        Gates the training-only random local-Z roll
-        (``random_gamma``): the roll is applied only when the descriptor is
-        training, mirroring pt's ``self.random_gamma and self.training``.
-        dpmodel is an inference/reference backend with no training mode, so
-        this returns ``False`` (deterministic, fixed gamma); the pt_expt
-        wrapper overrides it with the torch module's ``training`` flag.
+        Gates the training-only random local-Z roll (``random_gamma``): the
+        roll is applied only when the descriptor is training, mirroring pt's
+        ``self.random_gamma and self.training``. dpmodel is an
+        inference/reference backend with no training mode, so this returns
+        ``False`` (deterministic, fixed gamma); the pt_expt wrapper overrides
+        it with the torch module's ``training`` flag.
         """
         return False
 
@@ -2648,40 +2816,131 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     def dim_emb(self) -> int:
         return self.get_dim_emb()
 
+    # Every learned or measured member, shared by a sharing replica. The
+    # pair-exclusion mask, the contact clamp, which records the contacts of
+    # the training data of its branch, and the task increments and task
+    # embedding of the MoE stay branch-local.
+    _SHARED_ATTRIBUTES: ClassVar[tuple[str, ...]] = (
+        "type_embedding",
+        "charge_spin_embedding",
+        "spin_embedding",
+        "env_seed_embedding",
+        "film_scale_norm",
+        "film_shift_norm",
+        "film_scale_strength_log",
+        "film_shift_strength_log",
+        "radial_basis",
+        "radial_embedding",
+        "blocks",
+        "final_full_attn_res",
+        "final_block_attn_res",
+        "readout_norm",
+        "readout_pre_layers",
+        "output_ffn",
+        "expert_router",
+        "mean",
+        "stddev",
+        "envelope_mass",
+    )
+    # Members built from the native-spin flags, which may differ between
+    # replicas; they share their common learned layers.
+    _SPIN_ADAPTED_ATTRIBUTES: ClassVar[tuple[str, ...]] = (
+        "spin_embedding",
+        "env_seed_embedding",
+    )
+
     def share_params(
-        self, base_class: Any, shared_level: int, resume: bool = False
+        self,
+        base_class: Any,
+        shared_level: int,
+        model_prob: float = 1.0,
+        resume: bool = False,
     ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
 
-        SeZM does not rely on running mean/stddev statistics in ``forward``
-        (``EquivariantRMSNorm`` is used instead), so only submodules and
-        the optional FiLM strength parameters need to be linked.
+        At level 0 the replica takes every learned or measured member of the
+        base that its configuration builds (``_SHARED_ATTRIBUTES``): the
+        embeddings, the radial stack, the interaction blocks, the read-out,
+        the expert router and the descriptor statistics. The pair-exclusion
+        mask, the contact clamp and the task increments and task embedding of
+        the MoE stay branch-local, so every branch is a task of the
+        shared networks. The native-spin switches
+        may differ between the replicas (see :meth:`structure_signature`): the
+        spin and environment-seed embeddings share their common learned layers
+        and keep the spin flags of the replica, so a spin-free replica of a
+        native-spin base holds no spin layers and its state is that of its own
+        configuration.
 
         Parameters
         ----------
         base_class
             The base class to share parameters with. Must be the same class as self.
-
         shared_level
-            The level of sharing.
-
-            - ``0``: share every learnable submodule and FiLM strength parameter
-              (type_embedding, env_seed_embedding, film_*_norm,
-              film_*_strength_log, radial_basis, radial_embedding,
-              edge_envelope, wigner_calc, gie, blocks, final_*_attn_res,
-              output_ffn).
-            - ``1``: share ``type_embedding`` and optional condition embedding.
-
+            The level of sharing; only ``0`` is supported.
+        model_prob
+            Sampling probability of this replica relative to the base, which
+            weights its envelope-mass statistics in the merged statistics.
         resume
-            Unused for SeZM; kept for interface compatibility.
+            Whether the sharing is restored from a checkpoint, whose
+            statistics are merged already.
 
         Raises
         ------
+        TypeError
+            If ``base_class`` is not a DPA4 descriptor.
         NotImplementedError
-            If ``shared_level`` is not ``0`` or ``1``.
+            If ``shared_level`` is not ``0``.
+        ValueError
+            If the structural configurations differ, or a native-spin replica
+            has a spin-free base or a base of another spin mode.
         """
-        raise NotImplementedError("share_params is not yet implemented for DescrptDPA4")
+        if self.__class__ != base_class.__class__:
+            raise TypeError("Only DPA4 descriptors can share parameters.")
+        if shared_level != 0:
+            raise NotImplementedError("DPA4 supports only shared_level=0.")
+        signature = self.structure_signature()
+        base_signature = base_class.structure_signature()
+        if signature != base_signature:
+            differing = sorted(
+                key
+                for key in signature.keys() | base_signature.keys()
+                if signature.get(key) != base_signature.get(key)
+            )
+            raise ValueError(
+                "DPA4 parameter sharing requires identical structural parameters; "
+                f"they differ in {differing}"
+            )
+        if self.use_spin is not None and (
+            base_class.use_spin is None or base_class.spin_mode != self.spin_mode
+        ):
+            raise ValueError(
+                "a native-spin branch shares the spin layers of its base, the "
+                "first branch sharing the descriptor; list a native-spin branch "
+                "of the same spin mode first"
+            )
+        if self.density_floor is not None and not resume:
+            base_class._merge_envelope_mass(self, model_prob)
+        for name in self._SHARED_ATTRIBUTES:
+            member = getattr(self, name, None)
+            if member is None:
+                continue
+            if name in self._SPIN_ADAPTED_ATTRIBUTES:
+                member.share_params(getattr(base_class, name))
+            else:
+                setattr(self, name, getattr(base_class, name))
+
+    def structure_signature(self) -> dict[str, Any]:
+        """Configuration that must agree between sharing replicas.
+
+        The native-spin switches are left out: the replica of a spin-free task
+        shares the spin-capable modules of its base and never passes moments,
+        so the spin paths stay inactive for it. The seed is left out as well.
+        """
+        config = self._config()
+        for key in ("use_spin", "spin_mode", "seed"):
+            config.pop(key)
+        return config
 
     def enable_compression(
         self,
@@ -2762,7 +3021,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         if self.density_floor is None:
             return
-        mass, _ = load_or_measure_envelope_mass(
+        mass, count = load_or_measure_envelope_mass(
             merged,
             path,
             radii=self.block_rcut,
@@ -2776,10 +3035,34 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             dtype=self.envelope_mass.dtype,
             device=array_api_compat.device(self.envelope_mass),
         )
+        self.envelope_count = float(count)
+        self._init_null_masses()
+
+    def _init_null_masses(self) -> None:
+        """Start the attention null mass of every block at its density floor."""
         for block, radius in zip(self.blocks, self.block_rcut, strict=False):
             null_mass = block.so2_conv.adamw_attn_z_bias_raw
             if null_mass is not None:
                 null_mass[...] = inverse_softplus(float(self._density_floor(radius)))
+
+    def _merge_envelope_mass(self, replica: DescrptDPA4, weight: float) -> None:
+        """
+        Merge the envelope mass measured by a sharing replica into this one.
+
+        The masses average over the atoms each descriptor measured, the atoms
+        of the replica weighted by its sampling probability relative to this
+        descriptor, as the shared statistics of other descriptors; the null
+        masses then start at the merged floor.
+        """
+        total = self.envelope_count + weight * replica.envelope_count
+        if total == 0.0:
+            return
+        self.envelope_mass[...] = (
+            self.envelope_count * self.envelope_mass
+            + weight * replica.envelope_count * replica.envelope_mass
+        ) / total
+        self.envelope_count = total
+        self._init_null_masses()
 
     def _variables(self) -> dict[str, np.ndarray]:
         """Variables keyed by the pt ``state_dict`` key names."""
@@ -2878,6 +3161,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # === Output FFN ===
         for key, value in self.output_ffn._variables().items():
             variables[f"output_ffn.{key}"] = value
+        # === Task increments and router of the MoE (optional) ===
+        variables.update(self._task_and_router_variables())
         # === Contact record and data edges (bridged descriptors only) ===
         if self.contact_clamp is not None:
             for name in ("edges", "contacts"):
@@ -2968,6 +3253,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             layer._load_variables(take_prefix(f"readout_pre_layers.{i}."))
         # === Output FFN ===
         self.output_ffn._load_variables(take_prefix("output_ffn."))
+        # === Task increments and router of the MoE (optional) ===
+        self._load_task_and_router(variables)
 
     def _migrate_version(self, version: float) -> float:
         """Return the forward version for structurally compatible weights.
@@ -2985,90 +3272,93 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             "@class": "Descriptor",
             "type": "SeZM",
             "@version": self.version,
-            "config": {
-                "ntypes": self.ntypes,
-                "sel": self.sel,
-                "rcut": (
-                    list(self.block_rcut) if self._variable_cutoffs else self.rcut
-                ),
-                "env_exp": self.env_exp,
-                "type_map": self.type_map,
-                "lmax": self.lmax,
-                "n_blocks": self.n_blocks,
-                "l_schedule": self.l_schedule,
-                "mmax": self.mmax,
-                "kmax": self.kmax,
-                "m_schedule": self.m_schedule,
-                "extra_node_l": self.extra_node_l,
-                "channels": self.channels,
-                "basis_type": self.basis_type,
-                "n_radial": self.n_radial,
-                "radial_mlp": self.radial_mlp,
-                "edge_norm": [
-                    self.radial_norm,
-                    self.film_norm,
-                    self.focus_norm,
-                ],
-                "density_floor": self.density_floor,
-                "use_env_seed": self.use_env_seed,
-                "random_gamma": self.random_gamma,
-                "use_amp": self.use_amp,
-                "edge_cartesian": self.edge_cartesian,
-                "node_cartesian": self.node_cartesian,
-                "so2_norm": self.so2_norm,
-                "mixing_layers": self.mixing_layers,
-                "so2_attn_res": self.so2_attn_res_mode,
-                "radial_so2_mode": self.radial_so2_mode,
-                "radial_so2_rank": self.radial_so2_rank,
-                "n_focus": self.n_focus,
-                "focus_dim": self.focus_dim,
-                "ffn_neurons": self.ffn_neurons,
-                "grid_mlp": self.grid_mlp,
-                "grid_branch": self.grid_branch,
-                "ffn_blocks": self.ffn_blocks,
-                "layer_scale": self.layer_scale,
-                "n_atten_head": self.n_atten_head,
-                "atten_f_mix": self.atten_f_mix,
-                "atten_v_proj": self.use_atten_v_proj,
-                "atten_o_proj": self.use_atten_o_proj,
-                "sandwich_norm": self.sandwich_norm,
-                "full_attn_res": self.full_attn_res_mode,
-                "block_attn_res": self.block_attn_res_mode,
-                "s2_activation": self.s2_activation,
-                "ffn_so3_grid": self.ffn_so3_grid,
-                "node_wise_s2": self.node_wise_s2,
-                "node_wise_so3": self.node_wise_so3,
-                "message_node_s2": self.message_node_s2,
-                "message_node_so3": self.message_node_so3,
-                "so3_readout": self.so3_readout,
-                "readout_kmax": self.readout_kmax,
-                "readout_layers": self.readout_layers,
-                "readout_norm": self.use_readout_norm,
-                "lebedev_quadrature": self.lebedev_quadrature,
-                "activation_function": self.activation_function,
-                "glu_activation": self.glu_activation,
-                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
-                "mlp_bias": self.mlp_bias,
-                "exclude_types": self.exclude_types,
-                "eps": self.eps,
-                "trainable": self.trainable,
-                "seed": self.seed,
-                "contact_clamp": (
-                    None if self.contact_clamp is None else self.contact_clamp.inner
-                ),
-                "contact_support": (
-                    DEFAULT_SUPPORT
-                    if self.contact_clamp is None
-                    else self.contact_clamp.support
-                ),
-                "add_chg_spin_ebd": self.add_chg_spin_ebd,
-                "default_chg_spin": self.default_chg_spin,
-                "use_spin": self.use_spin,
-                "parity": self.parity,
-                "spin_mode": self.spin_mode,
-            },
+            "config": self._config(),
             "@variables": self._variables(),
             "env_mat": EnvMat(self.rcut, self.rcut, self.eps).serialize(),
+        }
+
+    def _config(self) -> dict[str, Any]:
+        """Constructor arguments that rebuild this descriptor."""
+        return {
+            "ntypes": self.ntypes,
+            "sel": self.sel,
+            "rcut": (list(self.block_rcut) if self._variable_cutoffs else self.rcut),
+            "env_exp": self.env_exp,
+            "type_map": self.type_map,
+            "lmax": self.lmax,
+            "n_blocks": self.n_blocks,
+            "l_schedule": self.l_schedule,
+            "mmax": self.mmax,
+            "kmax": self.kmax,
+            "m_schedule": self.m_schedule,
+            "extra_node_l": self.extra_node_l,
+            "channels": self.channels,
+            "basis_type": self.basis_type,
+            "n_radial": self.n_radial,
+            "radial_mlp": self.radial_mlp,
+            "edge_norm": [
+                self.radial_norm,
+                self.film_norm,
+                self.focus_norm,
+            ],
+            "density_floor": self.density_floor,
+            "use_env_seed": self.use_env_seed,
+            "random_gamma": self.random_gamma,
+            "use_amp": self.use_amp,
+            "edge_cartesian": self.edge_cartesian,
+            "node_cartesian": self.node_cartesian,
+            "so2_norm": self.so2_norm,
+            "mixing_layers": self.mixing_layers,
+            "so2_attn_res": self.so2_attn_res_mode,
+            "radial_so2_mode": self.radial_so2_mode,
+            "radial_so2_rank": self.radial_so2_rank,
+            "n_focus": self.n_focus,
+            "focus_dim": self.focus_dim,
+            "ffn_neurons": self.ffn_neurons,
+            "grid_mlp": self.grid_mlp,
+            "grid_branch": self.grid_branch,
+            "ffn_blocks": self.ffn_blocks,
+            "layer_scale": self.layer_scale,
+            "n_atten_head": self.n_atten_head,
+            "atten_f_mix": self.atten_f_mix,
+            "atten_v_proj": self.use_atten_v_proj,
+            "atten_o_proj": self.use_atten_o_proj,
+            "sandwich_norm": self.sandwich_norm,
+            "full_attn_res": self.full_attn_res_mode,
+            "block_attn_res": self.block_attn_res_mode,
+            "s2_activation": self.s2_activation,
+            "ffn_so3_grid": self.ffn_so3_grid,
+            "node_wise_s2": self.node_wise_s2,
+            "node_wise_so3": self.node_wise_so3,
+            "message_node_s2": self.message_node_s2,
+            "message_node_so3": self.message_node_so3,
+            "so3_readout": self.so3_readout,
+            "readout_kmax": self.readout_kmax,
+            "readout_layers": self.readout_layers,
+            "readout_norm": self.use_readout_norm,
+            "lebedev_quadrature": self.lebedev_quadrature,
+            "activation_function": self.activation_function,
+            "glu_activation": self.glu_activation,
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+            "mlp_bias": self.mlp_bias,
+            "exclude_types": self.exclude_types,
+            "eps": self.eps,
+            "trainable": self.trainable,
+            "seed": self.seed,
+            "contact_clamp": (
+                None if self.contact_clamp is None else self.contact_clamp.inner
+            ),
+            "contact_support": (
+                DEFAULT_SUPPORT
+                if self.contact_clamp is None
+                else self.contact_clamp.support
+            ),
+            "add_chg_spin_ebd": self.add_chg_spin_ebd,
+            "default_chg_spin": self.default_chg_spin,
+            "use_spin": self.use_spin,
+            "parity": self.parity,
+            "spin_mode": self.spin_mode,
+            "moe": self.moe,
         }
 
     @classmethod

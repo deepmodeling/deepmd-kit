@@ -32,6 +32,15 @@ from deepmd.dpmodel.utils import (
     FittingNet,
     NetworkCollection,
 )
+from deepmd.dpmodel.utils.expert_route import (
+    ExpertComponent,
+    ExpertCondition,
+    UnitRoute,
+    element_slots,
+)
+from deepmd.dpmodel.utils.network import (
+    ExpertFittingNet,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -57,7 +66,7 @@ from .base_fitting import (
 )
 
 
-class GeneralFitting(NativeOP, BaseFitting):
+class GeneralFitting(ExpertComponent, NativeOP, BaseFitting):
     r"""General fitting class.
 
     Parameters
@@ -121,6 +130,20 @@ class GeneralFitting(NativeOP, BaseFitting):
     default_fparam: list[float], optional
         The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
         this value will be used as the default value for the frame parameter in the fitting net.
+    moe: dict, optional
+        Mixture of experts (MoE) of the fitting network (see
+        :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`), as
+        ``{"n_experts": K, "element": ..., "mat_prob": p, "router":
+        {...}}`` with the defaults of
+        :func:`~deepmd.dpmodel.utils.expert_route.normalize_moe`. Every layer
+        computes the atom ``i`` with the weight
+        ``W + V_task + U_element(i) + sum_k c_k A_k``: the shared weight, the
+        increment of the task of the model, the increment of the element of
+        the atom and ``K`` experts mixed by a router that reads the task and
+        the element of the atom. The increments of the task and the task
+        embedding of the router belong to the fitting of a model, so that
+        models sharing the network are tasks of it. MoE requires
+        ``mixed_types`` and excludes the case embedding.
     """
 
     # Deployment constants kept out of checkpoints; see
@@ -154,6 +177,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         default_fparam: list[float] | None = None,
+        moe: dict[str, Any] | None = None,
     ) -> None:
         self.var_name = var_name
         self.ntypes = ntypes
@@ -190,6 +214,18 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.remove_vaccum_contribution = remove_vaccum_contribution
         self.vacuum_ref = vacuum_ref
         self.eval_return_middle_output = False
+        # === Mixture of experts of the fitting network ===
+        self._init_moe(moe, charge_spin=False)
+        if self.moe is not None and not self.mixed_types:
+            raise ValueError(
+                "MoE selects the weights of an atom by its element, so the "
+                "fitting takes one network for all types (`mixed_types` true)"
+            )
+        if self.moe is not None and self.dim_case_embd:
+            raise ValueError(
+                "the task of an MoE fitting is its task increment; the "
+                "fitting takes no case embedding (`dim_case_embd` 0)"
+            )
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -231,12 +267,15 @@ class GeneralFitting(NativeOP, BaseFitting):
             + (0 if self.use_aparam_as_mask else self.numb_aparam)
             + self.dim_case_embd
         )
+        net_kwargs = {} if self.moe is None else {"experts": self._expert_counts()}
         self.nets = NetworkCollection(
             1 if not self.mixed_types else 0,
             self.ntypes,
-            network_type="fitting_network",
+            network_type=(
+                "fitting_network" if self.moe is None else "expert_fitting_network"
+            ),
             networks=[
-                FittingNet(
+                (FittingNet if self.moe is None else ExpertFittingNet)(
                     in_dim,
                     net_dim_out,
                     self.neuron,
@@ -246,9 +285,130 @@ class GeneralFitting(NativeOP, BaseFitting):
                     bias_out=True,
                     seed=child_seed(seed, ii),
                     trainable=trainable,
+                    **net_kwargs,
                 )
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
+        )
+        self._init_experts(seed)
+
+    def _expert_units(self) -> list[Any]:
+        """The fitting network, which is the one unit of the fitting."""
+        return [] if self.moe is None else [self.nets[()]]
+
+    def _init_experts(self, seed: int | list[int] | None) -> None:
+        """
+        Build the task increments and the router of the MoE.
+
+        The router of a fitting reads no charge/spin state.
+        """
+        self._init_task_and_router(
+            chg_spin_dim=0,
+            precision=self.precision,
+            seed=child_seed(seed, self.ntypes),
+            trainable=all(self.trainable),
+        )
+
+    def _finish_merge(self, charge_spin: list[float] | None) -> None:
+        """Hold plain fitting networks after a merge that keeps no element."""
+        if self.moe is None and issubclass(self.nets.network_type, ExpertFittingNet):
+            self.nets.network_type = self.nets.NETWORK_TYPE_MAP["fitting_network"]
+
+    def _run_expert_net(
+        self, x: Array, route: UnitRoute, *, return_middle: bool = False
+    ) -> tuple[Array | None, Array]:
+        """
+        Evaluate the expert network on the rows of a route.
+
+        The network is one unit of the route: the rows enter the layout of
+        the route once and every layer works on that layout.
+
+        Parameters
+        ----------
+        x
+            Network input with shape (R, in_dim).
+        route
+            Route of the rows.
+        return_middle
+            Whether the activation before the output layer is returned.
+
+        Returns
+        -------
+        middle : Array or None
+            The activation before the output layer with shape (R, width), or
+            None when not requested.
+        out : Array
+            The network output with shape (R, dim_out).
+        """
+        net = self.nets[()]
+        hidden = net.call_until_last(route.enter(x), route=route)
+        out = route.leave(net.call_last(hidden, route=route))
+        return (route.leave(hidden) if return_middle else None), out
+
+    def _call_experts(
+        self,
+        xx: Array,
+        xx_zeros: Array | None,
+        xx_vac: Array | None,
+        atype: Array,
+        condition: ExpertCondition | None,
+        return_middle: bool,
+    ) -> tuple[Array | None, Array]:
+        """
+        Evaluate the expert network on the atoms and on their references.
+
+        A reference of an atom, the zero descriptor or the isolated atom of
+        its type, is evaluated with the weights of the atom itself.
+
+        Parameters
+        ----------
+        xx
+            Fitting input of the atoms with shape (nf, nloc, in_dim).
+        xx_zeros
+            Fitting input of the zero-descriptor references with the shape of
+            ``xx``, or None.
+        xx_vac
+            Fitting input of the vacuum references with shape
+            (ntypes, in_dim) per type or (nf, nloc, in_dim) per atom, or None.
+        atype
+            Atom types with shape (nf, nloc).
+        condition
+            Conditions of the frames of the atoms, or None.
+        return_middle
+            Whether the activation before the output layer is returned.
+
+        Returns
+        -------
+        middle : Array or None
+            The activation before the output layer with shape
+            (nf, nloc, width), or None when not requested.
+        outs : Array
+            The referenced network output with shape (nf, nloc, dim_out).
+        """
+        xp = array_api_compat.array_namespace(xx, atype)
+        nf, nloc, _ = xx.shape
+        atype_flat = xp.reshape(atype, (nf * nloc,))
+        (route,) = self._unit_routes(self._expert_route(atype_flat, condition))
+
+        def flat(inputs: Array) -> Array:
+            return xp.reshape(inputs, (nf * nloc, inputs.shape[-1]))
+
+        middle, outs = self._run_expert_net(
+            flat(xx), route, return_middle=return_middle
+        )
+        if xx_zeros is not None:
+            outs = outs - self._run_expert_net(flat(xx_zeros), route)[1]
+        if xx_vac is not None:
+            # One reference row per type becomes the reference of every atom.
+            reference = (
+                xp.take(xx_vac, atype_flat, axis=0)
+                if xx_vac.ndim == 2
+                else flat(xx_vac)
+            )
+            outs = outs - self._run_expert_net(reference, route)[1]
+        return (
+            None if middle is None else xp.reshape(middle, (nf, nloc, -1)),
+            xp.reshape(outs, (nf, nloc, -1)),
         )
 
     def compute_input_stats(
@@ -513,6 +673,14 @@ class GeneralFitting(NativeOP, BaseFitting):
         )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        if self.moe is not None:
+            # The element increments stay with their elements, which are
+            # named before the types change.
+            if self.moe["element"] is True:
+                self.moe = {**self.moe, "element": list(self.type_map)}
+            self.element_slot = element_slots(
+                self.moe["element"], len(type_map), type_map
+            )
         self.type_map = type_map
         self.ntypes = len(type_map)
         self.reinit_exclude(map_atom_exclude_types(self.exclude_types, remap_index))
@@ -579,6 +747,7 @@ class GeneralFitting(NativeOP, BaseFitting):
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
+            **({} if self.moe is None else {"moe": self.moe}),
             "@class": "Fitting",
             "@version": 5,
             "var_name": self.var_name,
@@ -604,6 +773,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
                 "aparam_inv_std": to_numpy_array(self.aparam_inv_std),
+                **self._task_and_router_variables(),
             },
             "type_map": self.type_map,
             # not supported
@@ -622,9 +792,10 @@ class GeneralFitting(NativeOP, BaseFitting):
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
+        obj.nets = NetworkCollection.deserialize(nets)
+        variables = obj._load_task_and_router(variables)
         for kk in variables.keys():
             obj[kk] = variables[kk]
-        obj.nets = NetworkCollection.deserialize(nets)
         return obj
 
     def needs_vacuum_descriptor(self) -> bool:
@@ -752,15 +923,18 @@ class GeneralFitting(NativeOP, BaseFitting):
         The vacuum reference of an atom is an isolated atom of its type under
         the conditioning of the atom itself. With frame or atomic parameters
         the conditioning differs between atoms and the rows follow the atoms,
-        with shape (nf, nloc, in_dim). Otherwise one row per type suffices,
-        with shape (ntypes, in_dim), and :meth:`vacuum_output` gathers the
-        network output by type.
+        with shape (nf, nloc, in_dim); so do they when the reference
+        descriptor is given per atom rather than per type. Otherwise one row
+        per type
+        suffices, with shape (ntypes, in_dim), and :meth:`vacuum_output`
+        gathers the network output by type.
 
         Parameters
         ----------
         vacuum_descriptor : Array, optional
             Descriptor of an isolated atom of every type with shape
-            (ntypes, dim_descrpt); None takes the table stored by
+            (ntypes, dim_descrpt), or of the reference of every atom with
+            shape (nf, nloc, dim_descrpt); None takes the table stored by
             :meth:`fold_vacuum_reference`.
         atype : Array
             Atom types with shape (nf, nloc).
@@ -793,6 +967,17 @@ class GeneralFitting(NativeOP, BaseFitting):
                 dtype=get_xp_precision(xp, self.precision),
                 device=array_api_compat.device(atype),
             )
+        if vacuum_descriptor.ndim == 3:
+            # One reference row per atom, which carries no case embedding.
+            expected = (*tuple(atype.shape), self.dim_descrpt)
+            if tuple(vacuum_descriptor.shape) != expected:
+                raise ValueError(
+                    f"vacuum descriptor of shape {tuple(vacuum_descriptor.shape)} "
+                    f"does not match {expected}"
+                )
+            if cond is None:
+                return vacuum_descriptor
+            return xp.concat([vacuum_descriptor, cond], axis=-1)
         if tuple(vacuum_descriptor.shape) != (self.ntypes, self.dim_descrpt):
             raise ValueError(
                 f"vacuum descriptor of shape {tuple(vacuum_descriptor.shape)} "
@@ -839,7 +1024,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         Array
             The reference output of every atom with shape (nf, nloc, dim_out).
         """
-        if not self.uniform_conditioning():
+        if vacuum_property.ndim == 3:
             return vacuum_property
         xp = array_api_compat.array_namespace(vacuum_property, atype)
         nf, nloc = atype.shape
@@ -883,7 +1068,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             atype,
             None,
         )
-        if self.mixed_types:
+        if self.moe is not None:
+            (route,) = self._unit_routes(self._expert_route(atype, None))
+            out = self._run_expert_net(xx_vac, route)[1]
+        elif self.mixed_types:
             out = self.nets[()](xx_vac)
         else:
             out = xp.concat(
@@ -979,6 +1167,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
         return_middle_output: bool = False,
+        condition: ExpertCondition | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -1003,13 +1192,17 @@ class GeneralFitting(NativeOP, BaseFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
         vacuum_descriptor
             The descriptor of an isolated atom of every type, required by
-            ``vacuum_ref``. shape: ntypes x nd
+            ``vacuum_ref``. shape: ntypes x nd, or nf x nloc x nd for
+            references that follow the atoms
         return_middle_output
             Whether this call also returns the input of the output layer under
             the ``middle_output`` key: the activation after the last hidden
             layer, or the fitting input for a fitting without hidden layers.
             The key is declared by the output definition only when
             :meth:`set_return_middle_output` requests it for every call.
+        condition
+            Conditions of the frames of the atoms, by which an MoE fitting
+            finds the frames of the merge-aware training (MAT).
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
@@ -1076,9 +1269,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     # the references are per type, and on the per-atom rows
                     # otherwise.
                     reference = (
-                        xx_vac[type_i : type_i + 1]
-                        if self.uniform_conditioning()
-                        else xx_vac
+                        xx_vac if xx_vac.ndim == 3 else xx_vac[type_i : type_i + 1]
                     )
                     atom_property = atom_property - self.nets[(type_i,)](reference)
                 atom_property = xp.where(
@@ -1093,6 +1284,10 @@ class GeneralFitting(NativeOP, BaseFitting):
                     middle_outs = middle_outs + xp.where(
                         mid_mask, hidden, xp.zeros_like(hidden)
                     )
+        elif self.moe is not None:
+            middle_outs, outs = self._call_experts(
+                xx, xx_zeros, xx_vac, atype, condition, return_middle_output
+            )
         else:
             middle_outs = self.nets[()].call_until_last(xx)
             outs = self.nets[()].call_last(middle_outs)
@@ -1134,6 +1329,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
         return_middle_output: bool = False,
+        condition: ExpertCondition | None = None,
     ) -> dict[str, Array]:
         """Graph-native (flat node axis) fitting forward.
 
@@ -1161,11 +1357,15 @@ class GeneralFitting(NativeOP, BaseFitting):
             atomic parameter. N x nap
         vacuum_descriptor
             the descriptor of an isolated atom of every type, required by
-            ``vacuum_ref``. ntypes x nd
+            ``vacuum_ref``. ntypes x nd, or N x 1 x nd for references that
+            follow the nodes
         return_middle_output
             whether this call also returns the input of the output layer under
             the ``middle_output`` key: the activation after the last hidden
             layer, or the fitting input for a fitting without hidden layers.
+        condition
+            conditions of the frames of the nodes, by which an MoE fitting
+            finds the frames of the merge-aware training (MAT).
 
         Returns
         -------
@@ -1199,6 +1399,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             else {"vacuum_descriptor": vacuum_descriptor}
         )
         middle_kwargs = {"return_middle_output": True} if return_middle_output else {}
+        if condition is not None:
+            middle_kwargs["condition"] = condition
         ret = self.__call__(
             d1,
             a1,

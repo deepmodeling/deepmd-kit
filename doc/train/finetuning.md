@@ -92,6 +92,10 @@ The model section will be overwritten (except the `type_map` subsection) by that
     }
 ```
 
+With or without `--use-pretrain-script`, a descriptor with `add_chg_spin_ebd`
+uses the `default_chg_spin` set in input.json; an unset one takes the value of
+the pretrained model.
+
 #### Initializing native spin from a spin-free checkpoint
 
 PyTorch DPA4/SeZM and PyTorch Exportable DPA4/DPA4C models support spin-free
@@ -314,3 +318,26 @@ regular PyTorch-Exportable training. `--use-pretrain-script` requires the
 pre-trained model to embed full model parameters: a `.pte` file frozen with
 older code that lacks `model_def_script` must be re-frozen before it can be
 used with that option.
+
+### Continuing a single-task model in a multi-task fine-tuning
+
+Set `model.task` in the input of a single-task model to name its task. When
+that model is the pretrained model of a multi-task fine-tuning, the branch of
+`model_dict` whose key is that name continues it, and every other branch can
+start from it by setting `finetune_head` to the name. The new model does not
+need a branch with that name. Without `model.task` the task is named
+`Default`.
+
+### New tasks of an MoE model
+
+A branch whose key is no pretrained task and that sets no `finetune_head`, or
+sets it to `RANDOM`, is a new task. In an
+[MoE model](../model/dpa4.md#mixture-of-experts-moe), a new task starts from
+the weights shared by the pretrained tasks, with no weights of a task of its
+own yet. An MoE fitting network (`fitting_net.moe`) is shared by the tasks, so
+the new task takes it from the pretrained model; a fitting network without MoE
+is initialized anew, as for any new branch.
+
+The elements with weights of their own are those of the pretrained model, so
+`moe.element` of the fine-tuned model names the same elements in the same
+order.

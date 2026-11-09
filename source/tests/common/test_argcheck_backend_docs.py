@@ -142,7 +142,7 @@ class TestBackendDocumentation(unittest.TestCase):
             "type"
         ]
         dpa4_property = dpa4_fitting_variant.choice_dict["property"]
-        self.assertEqual(dpa4_property.doc, "(Supported Backend: PyTorch) ")
+        self.assertEqual(dpa4_property.doc, "(Supported Backend: PyTorch, JAX) ")
 
     def test_embedded_labels_have_single_spacing(self) -> None:
         smooth_type_embedding = argcheck.descrpt_args_plugin.get_argument("se_atten")[

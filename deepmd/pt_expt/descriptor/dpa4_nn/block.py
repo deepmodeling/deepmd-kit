@@ -161,12 +161,17 @@ class SeZMInteractionBlock(SeZMInteractionBlockDP):
             )
         return self._run_so2_unit_impl(x, edge_cache, radial_feat)
 
-    def _run_ffn_unit(self, x: torch.Tensor, unit_idx: int) -> torch.Tensor:
+    def _run_ffn_unit(
+        self,
+        x: torch.Tensor,
+        unit_idx: int,
+        route: Any = None,
+    ) -> torch.Tensor:
         if self._use_infer_activation_checkpoint(x):
             return checkpoint(
-                lambda x_: self._run_ffn_unit_impl(x_, unit_idx),
+                lambda x_: self._run_ffn_unit_impl(x_, unit_idx, route),
                 x,
                 use_reentrant=False,
                 preserve_rng_state=True,
             )
-        return self._run_ffn_unit_impl(x, unit_idx)
+        return self._run_ffn_unit_impl(x, unit_idx, route)

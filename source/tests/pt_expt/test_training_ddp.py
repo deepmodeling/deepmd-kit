@@ -13,8 +13,10 @@ Verifies that:
 6. Finetune + DDP with random fitting: descriptor from pretrained, fitting random
 7. Finetune + DDP with new type: exercises _unwrapped.model["Default"] + stat broadcast
 8. DDP + torch.compile: single-task and multi-task compile under DDP
+9. DPA4.5 with MoE: the MoE weights and the tasks train in lockstep
 """
 
+import copy
 import os
 import shutil
 import socket
@@ -35,6 +37,9 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
+from deepmd.dpmodel.model.expert_merge import (
+    branch_local_parameters,
+)
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
@@ -1909,6 +1914,268 @@ def _worker_multitask_compile_train(rank, world_size, port, data_dir, result_dic
             shutil.rmtree(tmpdir, ignore_errors=True)
     finally:
         dist.destroy_process_group()
+
+
+_EXPERTS_PRESET = "dpa4.5-nano-v20261111"
+_EXPERTS_DESCRIPTOR = {
+    "sel": 40,
+    "seed": 1,
+    "use_amp": False,
+    # The router of the descriptor reads the frame charge/spin state.
+    "add_chg_spin_ebd": True,
+    "default_chg_spin": [0.0, 1.0],
+    # Every frame uses the weights of its elements, so the few steps of a
+    # test train them.
+    "moe": {"n_experts": 3, "mat_prob": 0.0},
+}
+_EXPERTS_FITTING = {"seed": 1, "moe": {"n_experts": 2, "mat_prob": 0.0}}
+
+
+def _make_experts_config(
+    data_dir: str, multi_task: bool, compiled: bool, zero_stage: int
+) -> dict:
+    """DPA4.5-Nano with MoE, on the DDP configuration."""
+    if multi_task:
+        config = _make_multitask_config(data_dir, numb_steps=4)
+        config["model"]["preset"] = _EXPERTS_PRESET
+        config["model"]["shared_dict"].update(
+            my_descriptor=copy.deepcopy(_EXPERTS_DESCRIPTOR),
+            my_fitting=copy.deepcopy(_EXPERTS_FITTING),
+        )
+        for branch in config["model"]["model_dict"].values():
+            branch.update(
+                descriptor="my_descriptor",
+                fitting_net="my_fitting",
+                data_stat_nbatch=1,
+            )
+    else:
+        config = _make_config(data_dir, numb_steps=4)
+        config["model"] = {
+            "preset": _EXPERTS_PRESET,
+            "type_map": ["O", "H"],
+            "descriptor": copy.deepcopy(_EXPERTS_DESCRIPTOR),
+            "fitting_net": copy.deepcopy(_EXPERTS_FITTING),
+            "data_stat_nbatch": 1,
+        }
+    config["optimizer"] = {"type": "HybridMuon", "weight_decay": 0.03}
+    config["training"]["enable_compile"] = compiled
+    config["training"]["zero_stage"] = zero_stage
+    return config
+
+
+def _worker_experts_train(
+    rank, world_size, port, data_dir, multi_task, compiled, zero_stage, result_dict
+):
+    """Worker: DDP training of a DPA4.5 MoE model."""
+    from deepmd.utils.model_preset import (
+        expand_model_preset,
+    )
+
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
+    try:
+        tmpdir = tempfile.mkdtemp(prefix=f"ddp_experts_rank{rank}_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = _make_experts_config(data_dir, multi_task, compiled, zero_stage)
+            config["model"] = expand_model_preset(config["model"])
+            shared_links = None
+            if multi_task:
+                config["model"], shared_links = preprocess_shared_params(
+                    config["model"]
+                )
+            config = update_deepmd_input(config, warning=False)
+            config = normalize(config, multi_task=multi_task)
+            trainer = get_trainer(config, shared_links=shared_links)
+            trainer.run()
+
+            # A compiled branch keeps its eager model as ``original_model``.
+            models = {
+                key: getattr(model, "original_model", model)
+                for key, model in trainer._unwrapped.model.items()
+            }
+            result_dict[rank] = {
+                "weights": {
+                    name: p.detach().cpu().clone()
+                    for name, p in trainer._unwrapped.named_parameters()
+                },
+                "task_shared": len(
+                    {
+                        id(parameter)
+                        for model in models.values()
+                        for parameter in branch_local_parameters(model)
+                    }
+                )
+                < sum(len(branch_local_parameters(model)) for model in models.values()),
+            }
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    finally:
+        dist.destroy_process_group()
+
+
+def _worker_experts_gradients(rank, world_size, port, data_dir, result_dict):
+    """Worker: reduced gradients of one step against their average over the ranks."""
+    from deepmd.utils.model_preset import (
+        expand_model_preset,
+    )
+
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
+    try:
+        tmpdir = tempfile.mkdtemp(prefix=f"ddp_experts_rank{rank}_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = _make_experts_config(
+                data_dir, multi_task=False, compiled=False, zero_stage=0
+            )
+            # No rank sees B or C.
+            config["model"]["type_map"] = ["O", "H", "B", "C"]
+            config["model"] = expand_model_preset(config["model"])
+            config = normalize(update_deepmd_input(config, warning=False))
+            trainer = get_trainer(config)
+            inputs, labels = trainer.get_data(is_train=True)
+            if rank == 1:
+                # Only the other rank sees H.
+                inputs["atype"] = torch.zeros_like(inputs["atype"])
+            parameters = [p for p in trainer.wrapper.parameters() if p.requires_grad]
+
+            def loss(module):
+                torch.manual_seed(rank)
+                _, value, _ = module(
+                    **inputs, cur_lr=1e-3, label=labels, task_key="Default"
+                )
+                return value
+
+            expected = []
+            for parameter, gradient in zip(
+                parameters,
+                torch.autograd.grad(
+                    loss(trainer._unwrapped), parameters, allow_unused=True
+                ),
+                strict=True,
+            ):
+                whole = torch.zeros_like(
+                    parameter, memory_format=torch.contiguous_format
+                )
+                if gradient is not None:
+                    whole.copy_(gradient)
+                dist.all_reduce(whole)
+                expected.append(whole / world_size)
+
+            reduced = 0
+            all_reduce = dist.all_reduce
+
+            def counting_all_reduce(tensor, *args, **kwargs):
+                nonlocal reduced
+                reduced += tensor.numel()
+                return all_reduce(tensor, *args, **kwargs)
+
+            trainer._element_rows.observe(inputs["atype"])
+            with patch.object(dist, "all_reduce", counting_all_reduce):
+                loss(trainer.wrapper).backward()
+            errors = [
+                float((parameter.grad - whole).abs().max() / whole.abs().max())
+                for parameter, whole in zip(parameters, expected, strict=True)
+                if bool(whole.any())
+            ]
+            result_dict[rank] = {
+                "error": max(errors),
+                "reduced": reduced,
+                "whole": sum(parameter.numel() for parameter in parameters),
+            }
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    finally:
+        dist.destroy_process_group()
+
+
+class TestDDPExperts(unittest.TestCase):
+    """DDP training of DPA4.5 with MoE, with HybridMuon."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not os.path.isdir(_PT_DATA):
+            raise unittest.SkipTest(f"Test data not found: {_PT_DATA}")
+        cls.data_dir = _PT_DATA
+
+    def _train(self, multi_task: bool, compiled: bool, zero_stage: int = 0) -> None:
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        mp.spawn(
+            launch_worker,
+            args=(
+                "_worker_experts_train",
+                2,
+                port,
+                self.data_dir,
+                multi_task,
+                compiled,
+                zero_stage,
+                result_dict,
+            ),
+            nprocs=2,
+            join=True,
+        )
+        results = dict(result_dict)
+        weights = results[0]["weights"]
+        for name in weights:
+            torch.testing.assert_close(
+                weights[name],
+                results[1]["weights"][name],
+                msg=f"Weights differ across ranks: {name}",
+            )
+        # The MoE weights start at zero; training moves them.
+        trained = {name for name, value in weights.items() if value.abs().max() > 0}
+        for key in ("element_weight", "expert_weight"):
+            self.assertTrue(any(key in name for name in trained), key)
+        # The task of a model trained alone repeats its shared weights and
+        # stays fixed; several tasks train theirs.
+        task = [
+            name
+            for name in weights
+            if "task_weight" in name or "adam_task_embedding" in name
+        ]
+        self.assertTrue(task)
+        self.assertEqual(any(name in trained for name in task), multi_task)
+        self.assertFalse(results[0]["task_shared"])
+
+    def test_element_rows_reduce_to_the_whole_average(self) -> None:
+        """Reducing the rows of the present elements gives the full average."""
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        mp.spawn(
+            launch_worker,
+            args=("_worker_experts_gradients", 2, port, self.data_dir, result_dict),
+            nprocs=2,
+            join=True,
+        )
+        for result in dict(result_dict).values():
+            self.assertLess(result["error"], 1e-4)
+            self.assertGreater(result["reduced"], 0)
+            self.assertLess(result["reduced"], result["whole"])
+
+    def test_single_task(self) -> None:
+        self._train(multi_task=False, compiled=False)
+
+    def test_multi_task(self) -> None:
+        self._train(multi_task=True, compiled=False)
+
+    def test_multi_task_zero_stage_1(self) -> None:
+        self._train(multi_task=True, compiled=False, zero_stage=1)
+
+    def test_single_task_zero_stage_1(self) -> None:
+        self._train(multi_task=False, compiled=False, zero_stage=1)
+
+    @REQUIRES_SUPPORTED_COMPILE
+    def test_single_task_compiled(self) -> None:
+        self._train(multi_task=False, compiled=True)
 
 
 @REQUIRES_SUPPORTED_COMPILE

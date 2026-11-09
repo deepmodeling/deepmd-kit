@@ -968,13 +968,13 @@ class TestPtExptLoadPtMultiTask(unittest.TestCase):
             "may be loading the wrong weights",
         )
 
-    def test_missing_head_raises(self) -> None:
-        with self.assertRaisesRegex(ValueError, "Head 'no_such_head' not found"):
+    def test_missing_task_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Task 'no_such_head' not found"):
             DeepPot(self.pt_path, head="no_such_head")
 
-    def test_no_head_when_no_default_raises(self) -> None:
-        # Neither head is named "Default", so omitting --head must raise.
-        with self.assertRaisesRegex(ValueError, "pass --head to select one"):
+    def test_no_task_when_no_default_raises(self) -> None:
+        # Neither branch is named "Default", so omitting --task must raise.
+        with self.assertRaisesRegex(ValueError, "pass --task to select one"):
             DeepPot(self.pt_path)
 
     def test_select_head_compiled_layout_matches(self) -> None:

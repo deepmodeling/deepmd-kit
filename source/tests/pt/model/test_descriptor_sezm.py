@@ -1206,6 +1206,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             {"parity": True},
             {"rcut": [2.0, 3.0]},
             {"mixing_layers": [1, 2]},
+            {"moe": {}},
         ):
             config = _descriptor_kwargs(**options)
             for build in (

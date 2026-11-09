@@ -17,12 +17,17 @@ from deepmd.dpmodel.fitting.dpa4_ener import (
     SeZMNetworkCollection as SeZMNetworkCollectionDP,
 )
 from deepmd.pt_expt.common import (
+    promote_buffers,
     register_dpmodel_mapping,
     torch_module,
 )
 
 from .base_fitting import (
     BaseFitting,
+)
+from .invar_fitting import (
+    ExpertFittingParameters,
+    SharesInvarParams,
 )
 
 
@@ -33,12 +38,7 @@ class CaseFiLMConditioner(CaseFiLMConditionerDP):
         self._promote_parameters()
 
     def _promote_parameters(self) -> None:
-        for name in self.PARAMETER_ATTRIBUTES:
-            if name in self._buffers:
-                value = self._buffers.pop(name)
-                self.register_parameter(
-                    name, torch.nn.Parameter(value, requires_grad=self.trainable)
-                )
+        promote_buffers(self, self.PARAMETER_ATTRIBUTES, self.trainable)
         for name in self.PARAMETER_LIST_ATTRIBUTES:
             for parameter in getattr(self, name):
                 parameter.requires_grad_(self.trainable)
@@ -93,6 +93,8 @@ register_dpmodel_mapping(
 @BaseFitting.register("dpa4_ener")
 @BaseFitting.register("sezm_ener")
 @torch_module
-class SeZMEnergyFittingNet(SeZMEnergyFittingNetDP):
+class SeZMEnergyFittingNet(
+    SharesInvarParams, ExpertFittingParameters, SeZMEnergyFittingNetDP
+):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)

@@ -61,8 +61,15 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Sequence,
+    )
+
     from deepmd.dpmodel.array_api import (
         Array,
+    )
+    from deepmd.dpmodel.utils.expert_route import (
+        UnitRoute,
     )
 
     from .edge_cache import (
@@ -287,6 +294,12 @@ class SeZMInteractionBlock(NativeOP):
         Small epsilon for numerical stability.
     precision
         Parameter precision.
+    experts
+        Number of experts and of element increments ``(n_experts, n_elements)``
+        of the maps of every FFN subblock (see
+        :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`); None
+        builds plain subblocks. Every subblock is a unit of the route with
+        coefficients of its own.
     seed
         Random seed for weight initialization.
     trainable
@@ -349,10 +362,12 @@ class SeZMInteractionBlock(NativeOP):
         mlp_bias: bool = False,
         eps: float = 1e-7,
         precision: str = DEFAULT_PRECISION,
+        experts: Sequence[int] | None = None,
         seed: int | list[int] | None,
         trainable: bool,
     ) -> None:
         self.parity = bool(parity)
+        self.experts = None if experts is None else [int(n) for n in experts]
         self.lmax = int(lmax)
         self.node_lmax = self.lmax if node_lmax is None else int(node_lmax)
         if self.node_lmax < self.lmax:
@@ -572,6 +587,7 @@ class SeZMInteractionBlock(NativeOP):
                     activation_function=self.ffn_activation_function,
                     glu_activation=self.ffn_glu_activation,
                     mlp_bias=self.mlp_bias,
+                    experts=self.experts,
                     trainable=trainable,
                     seed=seed_ffn_i,
                 )
@@ -654,6 +670,7 @@ class SeZMInteractionBlock(NativeOP):
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
+        ffn_routes: Sequence[UnitRoute] | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -680,6 +697,9 @@ class SeZMInteractionBlock(NativeOP):
             refreshed from owner ranks; the depth-attention history may carry
             stale ghost rows because the exchange happens at the convolution
             input, after the (per-node) aggregation that consumes it.
+        ffn_routes
+            Route of the nodes for every FFN subblock; required with
+            ``experts``.
 
         Returns
         -------
@@ -698,14 +718,14 @@ class SeZMInteractionBlock(NativeOP):
         # from a parameter tree, disconnecting that tree from the computation.
         if self.use_full_attn_res:
             return self._forward_with_full_attn_res(
-                x, edge_cache, radial_feat, unit_history, comm_dict
+                x, edge_cache, radial_feat, unit_history, comm_dict, ffn_routes
             )
         if self.use_block_attn_res:
             return self._forward_with_block_attn_res(
-                x, edge_cache, radial_feat, unit_history, comm_dict
+                x, edge_cache, radial_feat, unit_history, comm_dict, ffn_routes
             )
         return self._forward_with_residual_shortcuts(
-            x, edge_cache, radial_feat, unit_history, comm_dict
+            x, edge_cache, radial_feat, unit_history, comm_dict, ffn_routes
         )
 
     def _extract_l0_from_canonical(self, value: Array) -> Array:
@@ -785,7 +805,19 @@ class SeZMInteractionBlock(NativeOP):
         )
         return output
 
-    def _run_ffn_unit(self, x: Array, unit_idx: int) -> Array:
+    @staticmethod
+    def _ffn_route(
+        ffn_routes: Sequence[UnitRoute] | None, unit_idx: int
+    ) -> UnitRoute | None:
+        """Route of one FFN subblock, or None for plain subblocks."""
+        return None if ffn_routes is None else ffn_routes[unit_idx]
+
+    def _run_ffn_unit(
+        self,
+        x: Array,
+        unit_idx: int,
+        route: UnitRoute | None = None,
+    ) -> Array:
         """
         Run one FFN subblock without the outer unit-level residual shortcut.
 
@@ -795,15 +827,22 @@ class SeZMInteractionBlock(NativeOP):
             Canonical node features with shape `(N, D, 1, C)`.
         unit_idx
             FFN subblock index.
+        route
+            Route of the nodes for the subblock; required with ``experts``.
 
         Returns
         -------
         Array
             FFN unit output with shape `(N, D, 1, C)`.
         """
-        return self._run_ffn_unit_impl(x, unit_idx)
+        return self._run_ffn_unit_impl(x, unit_idx, route)
 
-    def _run_ffn_unit_impl(self, x: Array, unit_idx: int) -> Array:
+    def _run_ffn_unit_impl(
+        self,
+        x: Array,
+        unit_idx: int,
+        route: UnitRoute | None = None,
+    ) -> Array:
         """Run one FFN subblock implementation."""
         xp = array_api_compat.array_namespace(x)
         n_node = x.shape[0]
@@ -811,7 +850,7 @@ class SeZMInteractionBlock(NativeOP):
         channels = self.channels
         x_ffn = xp.reshape(x, (n_node, ebed_dim, 1, channels))  # (N, D, 1, C)
         x_pre = self.pre_ffn_norms[unit_idx](x_ffn)
-        y: Array = self.ffns[unit_idx](x_pre)
+        y: Array = self.ffns[unit_idx](x_pre, route)
         y = self.post_ffn_norms[unit_idx](y)
         if self.layer_scale:
             device = array_api_compat.device(x)
@@ -827,6 +866,7 @@ class SeZMInteractionBlock(NativeOP):
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
+        ffn_routes: Sequence[UnitRoute] | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -861,7 +901,9 @@ class SeZMInteractionBlock(NativeOP):
 
         ffn_state = so2_state
         for i in range(self.ffn_blocks):
-            ffn_unit_output = self._run_ffn_unit(ffn_state, i)
+            ffn_unit_output = self._run_ffn_unit(
+                ffn_state, i, self._ffn_route(ffn_routes, i)
+            )
             ffn_state = ffn_state + ffn_unit_output
 
         block_output = ffn_state
@@ -874,6 +916,7 @@ class SeZMInteractionBlock(NativeOP):
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
+        ffn_routes: Sequence[UnitRoute] | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -923,7 +966,9 @@ class SeZMInteractionBlock(NativeOP):
                 scalar_extractor=self._extract_l0_from_canonical,
                 current_x=current_x,
             )
-            ffn_unit_output = self._run_ffn_unit(ffn_input, i)
+            ffn_unit_output = self._run_ffn_unit(
+                ffn_input, i, self._ffn_route(ffn_routes, i)
+            )
             ffn_unit_outputs.append(ffn_unit_output)
             completed_units.append(ffn_unit_output)
             current_x = ffn_unit_output
@@ -938,6 +983,7 @@ class SeZMInteractionBlock(NativeOP):
         radial_feat: Array,
         unit_history: list[Array] | None = None,
         comm_dict: dict[str, Array] | None = None,
+        ffn_routes: Sequence[UnitRoute] | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -986,7 +1032,9 @@ class SeZMInteractionBlock(NativeOP):
                 scalar_extractor=self._extract_l0_from_canonical,
                 current_x=current_x,
             )
-            ffn_unit_output = self._run_ffn_unit(ffn_input, i)
+            ffn_unit_output = self._run_ffn_unit(
+                ffn_input, i, self._ffn_route(ffn_routes, i)
+            )
             partial_block = partial_block + ffn_unit_output
             current_x = ffn_unit_output
 
@@ -1142,6 +1190,7 @@ class SeZMInteractionBlock(NativeOP):
                 "layer_scale": self.layer_scale,
                 "eps": self.eps,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "experts": self.experts,
                 "trainable": self.trainable,
                 "seed": None,
             },

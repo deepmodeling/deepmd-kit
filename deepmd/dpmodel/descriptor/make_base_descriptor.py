@@ -7,6 +7,7 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
     NoReturn,
 )
@@ -27,6 +28,11 @@ from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.expert_route import (
+        ExpertScenario,
+    )
 
 
 def make_base_descriptor(
@@ -203,6 +209,77 @@ def make_base_descriptor(
             input override this method to return ``True``.
             """
             return False
+
+        def has_experts(self) -> bool:
+            """Returns whether the descriptor has a mixture of experts (MoE).
+
+            MoE makes the weights of a linear map depend on the
+            task of the model, on the element of the atom and on the
+            conditions of the frame (see
+            :mod:`deepmd.dpmodel.utils.expert_linear`). Declaring ``True``
+            obliges ``call_graph`` to accept a ``condition`` keyword carrying
+            the :class:`~deepmd.dpmodel.utils.expert_route.ExpertCondition`
+            of the nodes, which the atomic model builds, and obliges the
+            descriptor to implement :meth:`merge_experts` and
+            :meth:`expert_options`. The reference of an isolated atom then
+            follows its frame, so the descriptor also declares
+            ``supports_graph_vacuum``. Concrete default ``False``.
+            """
+            return False
+
+        def has_expert_router(self) -> bool:
+            """Returns whether a router mixes experts by the conditions of the frames.
+
+            Such a descriptor is merged for a scenario before it is exported
+            (:meth:`merge_experts`). Concrete default ``False``.
+            """
+            return False
+
+        def merge_experts(self, scenario: "ExpertScenario") -> "BD":
+            """Returns the descriptor this descriptor is in one scenario.
+
+            The merge adds the increments of the task and the experts at the
+            coefficients of the scenario to the shared weights, and keeps the
+            increments of the elements the scenario names. The merged
+            descriptor has no router and no task of its own; without kept
+            elements it has no MoE at all. A descriptor with a
+            charge/spin condition takes that of the scenario as its default
+            (:meth:`get_default_chg_spin`). A descriptor without MoE is
+            its own merge, the concrete default.
+            """
+            return self
+
+        def expert_options(self) -> dict[str, Any]:
+            """Returns the input options that configure the MoE.
+
+            The keys are options of the input of the descriptor and the
+            values their present state, so that the input of a merged model
+            follows from its descriptor. Concrete default ``{}``.
+            """
+            return {}
+
+        def branch_local_parameters(self) -> list[Any]:
+            """Returns the parameters that a shared replica keeps per branch.
+
+            Branches of a multi-task model that share this descriptor hold
+            their own copies of these parameters (see :meth:`share_params`),
+            so what a branch computes is specific to the branch. They are
+            trained only when several branches share the remaining
+            parameters. Concrete default ``[]``.
+            """
+            return []
+
+        def element_banks(self) -> tuple[list[Any], list[int]]:
+            """Returns the parameters with one row per element slot, and the slot of every type.
+
+            Row ``z - 1`` of a bank belongs to the element slot ``z``, which
+            the atom types listed with that slot select; slot 0 has no row.
+            The descriptor reads the row of a slot only for the atoms of its
+            types, so the gradient of the rows of the types absent from a
+            batch is zero, which data-parallel training uses to reduce the
+            rows of the present types alone. Concrete default ``([], [])``.
+            """
+            return [], []
 
         def uses_graph_lower(self) -> bool:
             """Returns whether the descriptor supports the graph-native (NeighborGraph) lower.

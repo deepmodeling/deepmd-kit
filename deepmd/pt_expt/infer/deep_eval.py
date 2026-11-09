@@ -629,12 +629,8 @@ class DeepEval(DeepEvalBackend):
 
     def _load_pt(self, model_file: str, head: str | None = None) -> None:
         """Load a `.pt` training checkpoint (eager mode, no torch.export)."""
-        from copy import (
-            deepcopy,
-        )
-
-        from deepmd.pt_expt.model import (
-            get_model,
+        from deepmd.pt_expt.entrypoints.main import (
+            load_checkpoint_model,
         )
 
         # Match the training resume path (training.py:712) — weights_only=True
@@ -669,37 +665,6 @@ class DeepEval(DeepEvalBackend):
                 "load it with `dp --pt` instead. If this is an exported model, "
                 "use a `.pte` or `.pt2` artifact."
             )
-        model_params = deepcopy(extra["model_params"])
-
-        if "model_dict" in model_params:
-            # Multi-task: pick the requested head (defaults to "Default" if present).
-            heads = list(model_params["model_dict"].keys())
-            if head is None:
-                if "Default" in heads:
-                    head = "Default"
-                else:
-                    raise ValueError(
-                        f"Multi-task checkpoint '{model_file}' has heads "
-                        f"{heads}; pass --head to select one."
-                    )
-            if head not in heads:
-                raise ValueError(
-                    f"Head '{head}' not found in checkpoint '{model_file}'. "
-                    f"Available heads: {heads}."
-                )
-            head_params = model_params["model_dict"][head]
-            # Restrict state_dict to the chosen head and rename to "Default".
-            # No tensor cloning needed: load_state_dict copies into the
-            # destination parameters and does not mutate the input dict.
-            head_state = {"_extra_state": state_dict["_extra_state"]}
-            prefix = f"model.{head}."
-            for key, value in state_dict.items():
-                if key.startswith(prefix):
-                    head_state[key.replace(prefix, "model.Default.")] = value
-            state_dict = head_state
-            model_params = head_params
-
-        model = get_model(deepcopy(model_params)).to(self._device)
 
         # Strip the `_CompiledModel` wrapper that pt_expt training applies
         # after compilation.  The saved state_dict has
@@ -725,15 +690,26 @@ class DeepEval(DeepEvalBackend):
             cleaned[key] = value
         state_dict = cleaned
 
-        # Load weights into a {"Default": model} wrapper to match the
-        # `model.Default.*` key prefix used in the saved state_dict.
-        from deepmd.pt_expt.train.wrapper import (
-            ModelWrapper,
-        )
+        params = extra["model_params"]
+        if "model_dict" in params:
+            # Multi-task: pick the requested task (defaults to "Default" if present).
+            heads = list(params["model_dict"].keys())
+            if head is None:
+                if "Default" in heads:
+                    head = "Default"
+                else:
+                    raise ValueError(
+                        f"Multi-task checkpoint '{model_file}' has tasks "
+                        f"{heads}; pass --task to select one."
+                    )
+            if head not in heads:
+                raise ValueError(
+                    f"Task '{head}' not found in checkpoint '{model_file}'. "
+                    f"Available tasks: {heads}."
+                )
 
-        wrapper = ModelWrapper(model)
-        wrapper.load_state_dict(state_dict)
-        model = wrapper.model["Default"].eval()
+        model, model_params = load_checkpoint_model(state_dict, head)
+        model = model.to(self._device).eval()
 
         from deepmd.pt_expt.model.graph_lower import (
             model_uses_graph_lower,

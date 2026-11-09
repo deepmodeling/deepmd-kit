@@ -139,8 +139,8 @@ def _reject_exportable_options(options: dict[str, Any]) -> None:
     ------
     NotImplementedError
         If a per-block ``rcut`` or ``mixing_layers`` list, a ``density_floor``,
-        ``readout_norm``, a ``readout_kmax`` or ``parity`` without native spin
-        is requested.
+        ``readout_norm``, a ``readout_kmax``, ``parity`` without native spin,
+        or a mixture of experts (``moe``) is requested.
     """
     layers = options.get("so2_layers")
     if layers is None:
@@ -152,6 +152,7 @@ def _reject_exportable_options(options: dict[str, Any]) -> None:
         "readout_norm": bool(options.get("readout_norm")),
         "parity": bool(options.get("parity")) and options.get("use_spin") is None,
         "readout_kmax": options.get("readout_kmax") is not None,
+        "moe": options.get("moe") is not None,
     }
     refused = [name for name, value in requested.items() if value]
     if refused:
@@ -480,7 +481,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Default frame-level charge/spin condition `[charge, spin]`. This value is
         used when `add_chg_spin_ebd=True` and no explicit `charge_spin` tensor is
         provided at the descriptor or SeZM model boundary.
-    density_floor, readout_norm, readout_kmax, parity
+    density_floor, readout_norm, readout_kmax, parity, moe
         Options of the exportable backend, accepted here at their defaults so
         that every normalized input and serialized record of a model without
         them loads. ``parity`` follows native spin, which always preserves
@@ -568,6 +569,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         readout_norm: bool = False,
         readout_kmax: int | None = None,
         parity: bool = False,
+        moe: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
         _reject_exportable_options(
@@ -580,6 +582,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "readout_kmax": readout_kmax,
                 "parity": parity,
                 "use_spin": use_spin,
+                "moe": moe,
             }
         )
 
@@ -2772,6 +2775,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "use_spin": self.use_spin,
                 "parity": self.use_spin is not None,
                 "spin_mode": self.spin_mode,
+                "moe": None,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
             "env_mat": DPEnvMat(self.rcut, self.rcut, self.eps).serialize(),

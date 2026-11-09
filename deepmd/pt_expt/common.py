@@ -449,6 +449,32 @@ def register_buffer_replacing_slot(
     torch.nn.Module.register_buffer(obj, name, tensor)
 
 
+def promote_buffers(
+    module: torch.nn.Module, names: Iterable[str], trainable: bool
+) -> None:
+    """Re-register float buffers of a module as parameters.
+
+    ``dpmodel_setattr`` registers every numpy attribute as a buffer; the
+    learned ones among them are promoted here once the module is built or
+    loaded.
+
+    Parameters
+    ----------
+    module : torch.nn.Module
+        The module that owns the buffers.
+    names : Iterable[str]
+        Names of the buffers; a name without a float buffer is skipped.
+    trainable : bool
+        Whether the parameters require gradients.
+    """
+    for name in names:
+        buf = module._buffers.get(name)
+        if buf is None or not buf.is_floating_point():
+            continue
+        del module._buffers[name]
+        setattr(module, name, torch.nn.Parameter(buf, requires_grad=trainable))
+
+
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------

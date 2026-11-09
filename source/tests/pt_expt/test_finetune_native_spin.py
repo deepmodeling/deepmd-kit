@@ -19,6 +19,9 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.model.expert_merge import (
+    branch_local_parameters,
+)
 from deepmd.pt.entrypoints.main import main as pt_main
 from deepmd.pt.model.model import get_model as get_pt_model
 from deepmd.pt.train.wrapper import ModelWrapper as PTModelWrapper
@@ -665,6 +668,23 @@ def test_spin_free_native_finetune_cli_options(
     )
 
 
+@pytest.mark.parametrize("multitask", [False, True])
+def test_native_spin_new_task_with_moe(
+    multitask: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run_spin_free_native_finetune_cli(
+        "pt_expt",
+        "dpa4",
+        "dpa4_ener",
+        False,
+        multitask,
+        "random",
+        tmp_path,
+        monkeypatch,
+        with_moe=True,
+    )
+
+
 @pytest.mark.parametrize("mode", ["transfer", "random", "pretrain_script"])
 @pytest.mark.parametrize("multitask", [False, True])
 def test_dpa4c_auto_width_finetune_cli(
@@ -712,11 +732,15 @@ def _run_spin_free_native_finetune_cli(
     *,
     auto_width: bool = False,
     canonical: bool = False,
+    with_moe: bool = False,
 ) -> None:
     source_config = _config(descriptor, False)
     source_config["fitting_net"]["type"] = fitting_type
     if auto_width:
         source_config["fitting_net"].pop("neuron")
+    if with_moe:
+        for section in ("descriptor", "fitting_net"):
+            source_config[section]["moe"] = {"n_experts": 2}
     source = _pretrained(backend, source_config)
     wrapper_cls = PTModelWrapper if backend == "pt" else ModelWrapper
     wrapper = wrapper_cls(
@@ -760,6 +784,9 @@ def _run_spin_free_native_finetune_cli(
     target_config["fitting_net"]["type"] = fitting_type
     if auto_width:
         target_config["fitting_net"].pop("neuron")
+    if with_moe:
+        for section in ("descriptor", "fitting_net"):
+            target_config[section]["moe"] = {"n_experts": 2}
     expected_bias_sum = torch.tensor(1.75, dtype=torch.float64, device=DEVICE)
     if descriptor == "dpa4" and not bridged and mode != "random":
         projected = _build(backend, target_config)
@@ -835,7 +862,24 @@ def _run_spin_free_native_finetune_cli(
         assert len(trainers) == 1
         model = trainers[0].model
         trained = model["magnetic"] if multitask else model
-        for key, value in _learned(trained).fitting_net.named_parameters():
+        fitting = dict(_learned(trained).fitting_net.named_parameters())
+        if with_moe:
+            # A new task keeps the parameters of its own at zero and takes
+            # the fitting network that the tasks share.
+            task = branch_local_parameters(trained)
+            assert task and all(not bool(value.any()) for value in task)
+            task_ids = {id(value) for value in task}
+            shared = {
+                key: value
+                for key, value in fitting.items()
+                if id(value) not in task_ids
+            }
+            assert any("expert_weight" in key for key in shared)
+            pretrained = dict(_learned(source).fitting_net.named_parameters())
+            for key, value in shared.items():
+                torch.testing.assert_close(value, pretrained[key], rtol=0, atol=0)
+            return
+        for key, value in fitting.items():
             torch.testing.assert_close(value, initial_fitting[key], rtol=0, atol=0)
         assert torch.count_nonzero(trained(**inputs, spin=spin)["force_mag"]) == 0
         return

@@ -969,6 +969,61 @@ def main_parser() -> argparse.ArgumentParser:
         help="Task (aliases: head, model branch) chosen for changing bias if multi-task model.",
     )
 
+    # * merge an MoE model ****************************************************************
+    parser_moe_merge = subparsers.add_parser(
+        "moe-merge",
+        parents=[parser_log],
+        help="(Supported backend: PyTorch Exportable) Merge the experts of an MoE "
+        "model for one scenario.",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp --pt-expt moe-merge model.ckpt.pt -o plain.pt
+            dp --pt-expt moe-merge model.ckpt.pt --elements H C N O -o merged.pt
+            dp --pt-expt moe-merge model.ckpt.pt --elements all --charge-spin 0 1 -o merged.pt
+            dp --pt-expt moe-merge model.ckpt.pt --task water -o plain.pt
+        """
+        ),
+    )
+    parser_moe_merge.add_argument(
+        "INPUT", help="The training checkpoint of the MoE model"
+    )
+    parser_moe_merge.add_argument(
+        "--elements",
+        nargs="+",
+        default=None,
+        help="Elements that keep weights of their own in the merged model, or "
+        "`all` alone for every element that has them. The other elements use "
+        "the weights shared by all elements. Default: no element, which gives "
+        "a model without MoE.",
+    )
+    parser_moe_merge.add_argument(
+        "--charge-spin",
+        nargs=2,
+        type=float,
+        default=None,
+        help="Frame charge and spin multiplicity of the scenario, for a model "
+        "whose router reads them. Default: the default of the model.",
+    )
+    parser_moe_merge.add_argument(
+        "--task",
+        "--head",
+        "--model-branch",
+        dest="head",
+        default=None,
+        type=str,
+        help="Task (aliases: head, model branch) to merge if multi-task; it is "
+        "the task of the merged model.",
+    )
+    parser_moe_merge.add_argument(
+        "-o",
+        "--output",
+        default="merged.pt",
+        type=str,
+        help="The checkpoint of the merged model, which holds its weights.",
+    )
+
     # --version
     parser.add_argument(
         "--version", action="version", version=f"DeePMD-kit v{__version__}"
@@ -1211,6 +1266,7 @@ def main(args: list[str] | None = None) -> None:
         "convert-from",
         "train-nvnmd",
         "change-bias",
+        "moe-merge",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

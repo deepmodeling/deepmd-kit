@@ -8,6 +8,7 @@ import torch
 
 from deepmd.dpmodel.fitting.invar_fitting import InvarFitting as InvarFittingDP
 from deepmd.pt_expt.common import (
+    promote_buffers,
     torch_module,
 )
 from deepmd.pt_expt.fitting.base_fitting import (
@@ -16,11 +17,38 @@ from deepmd.pt_expt.fitting.base_fitting import (
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
+from deepmd.pt_expt.utils.expert_route import (  # noqa: F401
+    ConditionRouter,
+)
+
+
+class ExpertFittingParameters:
+    """Trainable MoE state of a fitting network.
+
+    The task increments, the task embedding and the router of an MoE fitting
+    are parameters, which follow the trainability of the fitting network.
+    """
+
+    def _init_experts(self, seed: Any) -> None:
+        super()._init_experts(seed)
+        self._promote_expert_parameters()
+
+    def _load_task_and_router(self, variables: dict[str, Any]) -> dict[str, Any]:
+        variables = super()._load_task_and_router(variables)
+        self._promote_expert_parameters()
+        return variables
+
+    def _promote_expert_parameters(self) -> None:
+        """Register the expert state as parameters of the fitting."""
+        trainable = all(self.trainable)
+        promote_buffers(self, ("adam_task_embedding",), trainable)
+        for parameter in self.branch_local_parameters():
+            parameter.requires_grad_(trainable)
 
 
 @BaseFitting.register("invar")
 @torch_module
-class InvarFitting(InvarFittingDP):
+class InvarFitting(ExpertFittingParameters, InvarFittingDP):
     def share_params(
         self,
         base_class: Any,
@@ -33,7 +61,9 @@ class InvarFitting(InvarFittingDP):
 
         Level 0: share all sub-modules and buffers except bias_atom_e
         and case_embd.  When not resuming, fparam/aparam statistics are
-        merged using probability-weighted averaging (matching PT).
+        merged using probability-weighted averaging (matching PT).  The task
+        increments and the task embedding of the MoE stay with the
+        branch, so every branch is a task of the shared network.
         """
         assert self.__class__ == base_class.__class__, (
             "Only fitting nets of the same type can share params!"
@@ -116,7 +146,7 @@ class InvarFitting(InvarFittingDP):
 
             # --- share modules and remaining buffers ---
             for item in list(self._modules):
-                if item in ("bias_atom_e", "case_embd"):
+                if item in ("bias_atom_e", "case_embd", "task_weight", "task_bias"):
                     continue
                 self._modules[item] = base_class._modules[item]
             for item in list(self._buffers):
@@ -132,3 +162,40 @@ class InvarFitting(InvarFittingDP):
                 self._buffers[item] = base_class._buffers[item]
         else:
             raise NotImplementedError
+
+
+class SharesInvarParams:
+    """Parameter sharing of a fitting network built from the InvarFitting layers.
+
+    The energy fitting networks are auto-wrapped dpmodel classes rather than
+    subclasses of :class:`InvarFitting`, while holding the same layers,
+    statistics and biases, so they share parameters by its implementation.
+    """
+
+    def share_params(
+        self,
+        base_class: Any,
+        shared_level: int,
+        model_prob: float = 1.0,
+        protection: float = 1e-2,
+        resume: bool = False,
+    ) -> None:
+        """Share parameters with ``base_class`` for multi-task training.
+
+        Parameters
+        ----------
+        base_class : BaseFitting
+            Fitting network of the same class that owns the shared parameters.
+        shared_level : int
+            Sharing level; only level 0 is implemented (see
+            :meth:`InvarFitting.share_params`).
+        model_prob : float
+            Branch probability, which weights the merged input statistics.
+        protection : float
+            Lower bound of a merged standard deviation.
+        resume : bool
+            Whether the run resumes, which keeps the statistics as they are.
+        """
+        InvarFitting.share_params(
+            self, base_class, shared_level, model_prob, protection, resume
+        )

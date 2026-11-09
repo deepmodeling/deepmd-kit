@@ -16,6 +16,9 @@ from deepmd.dpmodel.fitting.dpa4_ener import (
 from deepmd.dpmodel.fitting.dpa4_ener import (
     SeZMNetworkCollection as SeZMNetworkCollectionDP,
 )
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
+)
 from deepmd.jax.common import (
     flax_module,
     to_jax_array,
@@ -72,4 +75,6 @@ class SeZMNetworkCollection(SeZMNetworkCollectionDP):
 @BaseFitting.register("sezm_ener")
 @flax_module
 class SeZMEnergyFittingNet(SeZMEnergyFittingNetDP):
-    pass
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        reject_moe(kwargs, "fitting network")
+        super().__init__(*args, **kwargs)
