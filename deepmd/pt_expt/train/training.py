@@ -3698,7 +3698,7 @@ class Trainer(AbstractTrainer):
 
         self._optimizer_step()
         if self.model_ema is not None:
-            self.model_ema.update(self.model)
+            self.model_ema.update()
         return TrainStepResult(
             task_key=task_key,
             step=step,
