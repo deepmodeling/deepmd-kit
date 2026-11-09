@@ -304,3 +304,57 @@ def test_rejected_rebind_after_compatible_parameter() -> None:
     ema.update()
     for name, tensor in expected.items():
         torch.testing.assert_close(ema.shadow_params[name], tensor)
+
+
+@pytest.mark.parametrize("rebind", [False, True])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_colliding_multitask_names_preserve_scalar_order(device, rebind) -> None:
+    """Colliding flattened keys retain sequential EMA semantics without races."""
+    nested = torch.nn.Module()
+    nested.add_module("b", torch.nn.Linear(3, 2, bias=False, device=device))
+    direct = torch.nn.Linear(3, 2, bias=False, device=device)
+    unique = torch.nn.Linear(3, 2, bias=False, device=device)
+    # Deliberately reverse dictionary insertion order: binding sorts task names.
+    models = {"z": unique, "a.b": direct, "a": nested}
+    ema = ModelEMA(models, decay=0.5)
+    if rebind:
+        nested.b = torch.nn.Linear(3, 2, bias=False, device=device)
+        direct = torch.nn.Linear(3, 2, bias=False, device=device)
+        models["a.b"] = direct
+        ema.rebind(models)
+    collision = ema.shadow_params["a.b.weight"]
+    assert len(ema._update_fallback) == 2
+    assert all(shadow is collision for shadow, _ in ema._update_fallback)
+    grouped_shadows = [
+        shadow for shadows, _ in ema._update_groups for shadow in shadows
+    ]
+    assert len(grouped_shadows) == 1
+    assert grouped_shadows[0] is ema.shadow_params["z.weight"]
+    expected = {name: shadow.clone() for name, shadow in ema.shadow_params.items()}
+    values = torch.arange(6, dtype=torch.float32, device=device).reshape(2, 3)
+    for step in range(5):
+        with torch.no_grad():
+            nested.b.weight.copy_(values + step)
+            direct.weight.copy_(values * 3 - step)
+            unique.weight.copy_(values * 2 + step)
+            for key in sorted(models):
+                for name, param in models[key].named_parameters():
+                    expected[f"{key}.{name}"].lerp_(param, 0.5)
+        ema.update()
+        for name, shadow in ema.shadow_params.items():
+            torch.testing.assert_close(shadow, expected[name])
+    state = ema.state_dict()
+    torch.testing.assert_close(
+        state["model"]["a.b.weight"], expected["a.b.weight"].cpu()
+    )

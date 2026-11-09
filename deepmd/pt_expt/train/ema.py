@@ -6,6 +6,9 @@ from __future__ import (
 )
 
 import logging
+from collections import (
+    Counter,
+)
 from contextlib import (
     contextmanager,
 )
@@ -149,11 +152,11 @@ class ModelEMA:
         """Bind live parameter refs into foreach groups for the hot update path.
 
         Group compatible strided pairs by ``(device, dtype)``. Other strided
-        pairs use scalar lerp. Validate the complete structure before replacing
+        pairs and duplicate names use ordered scalar lerp. Validate the complete structure before replacing
         the plan, so a rejected rebind leaves the previous binding intact.
         """
         named_parameters = self._named_model_parameters(model)
-        names = [name for name, _ in named_parameters]
+        names = Counter(name for name, _ in named_parameters)
         current_keys = set(self.shadow_params)
         model_keys = set(names)
         if current_keys != model_keys:
@@ -183,7 +186,9 @@ class ModelEMA:
                     f"EMA parameter {name!r} device/dtype mismatch: expected "
                     f"{shadow.device}/{shadow.dtype}, got {param.device}/{param.dtype}."
                 )
-            if not _foreach_compatible(shadow, param):
+            # Flattened multitask names can collide. Preserve the original ordered
+            # scalar updates instead of racing writes to one shadow on CUDA.
+            if names[name] > 1 or not _foreach_compatible(shadow, param):
                 fallback.append((shadow, param))
                 continue
             key = (param.device, param.dtype)
