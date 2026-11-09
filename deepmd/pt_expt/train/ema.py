@@ -291,7 +291,8 @@ class ModelEMA:
         """Temporarily replace model parameters with the EMA shadow state."""
         named_parameters = self._named_model_parameters(model)
         with torch.no_grad():
-            backups = {name: param.detach().clone() for name, param in named_parameters}
+            # Snapshot every entry before applying any shadow, including aliases.
+            backups = [(param, param.detach().clone()) for _, param in named_parameters]
         try:
             with torch.no_grad():
                 for name, param in named_parameters:
@@ -304,5 +305,5 @@ class ModelEMA:
             yield
         finally:
             with torch.no_grad():
-                for name, param in named_parameters:
-                    param.copy_(backups[name])
+                for param, backup in backups:
+                    param.copy_(backup)

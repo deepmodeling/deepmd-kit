@@ -358,3 +358,43 @@ def test_colliding_multitask_names_preserve_scalar_order(device, rebind) -> None
     torch.testing.assert_close(
         state["model"]["a.b.weight"], expected["a.b.weight"].cpu()
     )
+
+
+@pytest.mark.parametrize("shared", [False, True])
+@pytest.mark.parametrize("raise_inside", [False, True])
+def test_apply_shadow_restores_colliding_names(shared, raise_inside) -> None:
+    """Restore distinct or shared parameters even after an exceptional exit."""
+    nested = torch.nn.Module()
+    nested.add_module("b", torch.nn.Linear(3, 2, bias=False))
+    direct = torch.nn.Linear(3, 2, bias=False)
+    if shared:
+        direct.weight = nested.b.weight
+    with torch.no_grad():
+        nested.b.weight.copy_(torch.arange(6, dtype=torch.float32).reshape(2, 3))
+        if not shared:
+            direct.weight.copy_(nested.b.weight + 10.0)
+    models = {"a": nested, "a.b": direct}
+    original_nested = nested.b.weight.detach().clone()
+    original_direct = direct.weight.detach().clone()
+    ema = ModelEMA(models, decay=0.5)
+    ema.shadow_params["a.b.weight"].fill_(-1.0)
+
+    def apply() -> None:
+        with ema.apply_shadow(models):
+            torch.testing.assert_close(
+                nested.b.weight, torch.full_like(original_nested, -1.0)
+            )
+            torch.testing.assert_close(
+                direct.weight, torch.full_like(original_direct, -1.0)
+            )
+            if raise_inside:
+                raise RuntimeError("validation failed")
+
+    if raise_inside:
+        with pytest.raises(RuntimeError, match="validation failed"):
+            apply()
+    else:
+        apply()
+    torch.testing.assert_close(nested.b.weight, original_nested)
+    torch.testing.assert_close(direct.weight, original_direct)
+    assert (nested.b.weight is direct.weight) == shared
