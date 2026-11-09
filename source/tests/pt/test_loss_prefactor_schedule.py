@@ -31,6 +31,7 @@ from deepmd.pt.utils.env import (
     ],
 )
 def test_energy_schedule_label_requirements(term, labels, start, limit):
+    """Request the labels needed whenever a scheduled term is active."""
     loss = EnergyStdLoss(
         **{f"start_pref_{term}": start, f"limit_pref_{term}": limit},
         numb_generalized_coord=1,
@@ -53,6 +54,7 @@ def test_energy_schedule_label_requirements(term, labels, start, limit):
     ],
 )
 def test_spin_schedule_label_requirements(term, label, start, limit):
+    """Request spin labels for either nonzero endpoint."""
     loss = EnergySpinLoss(**{f"start_pref_{term}": start, f"limit_pref_{term}": limit})
     required = {item.key for item in loss.label_requirement}
     assert required == ({label} if start or limit else set())
@@ -63,6 +65,7 @@ def test_spin_schedule_label_requirements(term, label, start, limit):
 )
 @pytest.mark.parametrize("term", ["dos", "cdf", "ados", "acdf"])
 def test_dos_schedule_label_requirements(term, start, limit):
+    """Request DOS labels for either nonzero endpoint."""
     prefs = {
         f"{bound}_pref_{name}": 0.0
         for name in ("dos", "cdf", "ados", "acdf")
@@ -84,6 +87,7 @@ def test_dos_schedule_label_requirements(term, start, limit):
 def test_energy_schedule_contributes_to_loss_and_gradient(
     loss_type, start, limit, learning_rate
 ):
+    """Apply the interpolated energy weight to the loss and gradient."""
     loss_fn = loss_type(start_pref_e=start, limit_pref_e=limit)
     prediction = torch.tensor(
         [[2.0]], dtype=torch.float64, device=DEVICE, requires_grad=True
@@ -100,6 +104,7 @@ def test_energy_schedule_contributes_to_loss_and_gradient(
 
 @pytest.mark.parametrize("start,limit", [(0.0, 1.0), (1.0, 0.0)])
 def test_spin_energy_coefficients_are_requested_and_used(start, limit):
+    """Load and apply the coefficients used by spin energy loss."""
     loss_fn = EnergySpinLoss(
         start_pref_e=start, limit_pref_e=limit, enable_atom_ener_coeff=True
     )
@@ -132,6 +137,7 @@ def test_spin_energy_coefficients_are_requested_and_used(start, limit):
 @pytest.mark.parametrize("start,limit", [(0.0, 1.0), (1.0, 0.0)])
 @pytest.mark.parametrize("term", ["f", "pf", "gf"])
 def test_force_schedule_contributes_to_loss_and_gradient(term, start, limit):
+    """Apply force, prefactor-force and generalized-force schedules."""
     loss_fn = EnergyStdLoss(
         **{f"start_pref_{term}": start, f"limit_pref_{term}": limit},
         numb_generalized_coord=1,
@@ -164,6 +170,7 @@ def test_force_schedule_contributes_to_loss_and_gradient(term, start, limit):
 
 @pytest.mark.parametrize("start,limit", [(0.0, 1.0), (1.0, 0.0)])
 def test_magnetic_force_schedule_contributes_to_loss_and_gradient(start, limit):
+    """Apply the scheduled magnetic-force weight to loss and gradient."""
     loss_fn = EnergySpinLoss(start_pref_fm=start, limit_pref_fm=limit)
     prediction = torch.tensor(
         [[[1.0, 2.0, 3.0]]], dtype=torch.float64, device=DEVICE, requires_grad=True
@@ -187,6 +194,7 @@ def test_magnetic_force_schedule_contributes_to_loss_and_gradient(start, limit):
 def test_dos_schedule_contributes_to_loss_and_gradient(
     term, start, limit, learning_rate
 ):
+    """Apply the scheduled DOS or cumulative-DOS weight."""
     prefs = {
         f"{bound}_pref_{name}": 0.0
         for name in ("dos", "cdf", "ados", "acdf")

@@ -11,6 +11,7 @@ from deepmd.utils.data import (
 @pytest.mark.parametrize("nframes", [1, 2])
 @pytest.mark.parametrize("backend", ["torch", "paddle"])
 def test_single_frame_repeat_matches_batch(tmp_path, present, nframes, backend):
+    """Single-frame and batch loaders repeat atomic labels identically."""
     np.savetxt(tmp_path / "type.raw", [1, 0], fmt="%d")
     set_path = tmp_path / "set.000"
     set_path.mkdir()

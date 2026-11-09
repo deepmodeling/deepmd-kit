@@ -448,7 +448,7 @@ class EnergyStdLoss(TaskLoss):
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape([-1, 9])
-            if self.loss_func == "mse":
+            if self.loss_func == "mse" or self.use_huber:
                 l2_virial_loss = paddle.mean(paddle.square(diff_v))
                 if not self.inference:
                     more_loss["l2_virial_loss"] = self.display_if_exist(
