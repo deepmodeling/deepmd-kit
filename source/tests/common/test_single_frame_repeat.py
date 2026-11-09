@@ -2,7 +2,9 @@
 import numpy as np
 import pytest
 
-from deepmd.utils.data import DeepmdData
+from deepmd.utils.data import (
+    DeepmdData,
+)
 
 
 @pytest.mark.parametrize("present", [False, True])
