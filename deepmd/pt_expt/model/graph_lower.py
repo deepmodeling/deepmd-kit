@@ -130,11 +130,10 @@ def resolve_stat_free_selections(config: dict) -> dict:
     from deepmd.utils.argcheck import (
         DEFAULT_DPA4_SEL,
     )
-    from deepmd.utils.bridging import (
-        expand_bridging_method,
-    )
 
-    config = copy.deepcopy(expand_bridging_method(config))
+    # Bridging expansion is a constructor detail, not a training config.
+    # Preserve concise models and trainer-owned keys for dump/checkpoint reload.
+    config = copy.deepcopy(config)
     if config.get("type") == "linear_ener":
         config["models"] = [resolve_stat_free_selections(m) for m in config["models"]]
     descriptor = config.get("descriptor", {})

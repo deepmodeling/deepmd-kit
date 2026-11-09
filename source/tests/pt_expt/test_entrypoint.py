@@ -272,3 +272,87 @@ def test_graph_default_skip_after_normalization(monkeypatch, tmp_path, model):
     if descriptor["type"] == "dpa4":
         assert descriptor["sel"] == DEFAULT_DPA4_SEL
     assert json.loads(output.read_text()) == normalized
+
+
+@pytest.mark.parametrize("restore", ["json", "init_model", "finetune"])
+def test_bridging_auto_selection_preserves_reloadable_model_params(
+    monkeypatch, tmp_path, restore
+):
+    """Do not persist constructor-only bridging expansion in training artifacts."""
+    import copy
+    import json
+
+    import torch
+
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+    from deepmd.utils.argcheck import (
+        normalize,
+    )
+
+    config = {
+        "model": {
+            "type": "dpa4",
+            "type_map": ["H"],
+            "descriptor": {
+                "type": "dpa4",
+                "sel": "auto",
+                "channels": 8,
+                "n_radial": 4,
+                "lmax": 2,
+                "mmax": 1,
+                "n_blocks": 1,
+                "seed": 1,
+            },
+            "fitting_net": {"neuron": [8], "seed": 1},
+            "bridging_method": "zbl",
+            "data_stat_nbatch": 3,
+            "data_stat_protect": 0.02,
+        },
+        "learning_rate": {"type": "exp", "start_lr": 0.001, "stop_lr": 0.0001},
+        "loss": {"type": "ener"},
+        "training": {"training_data": {"systems": "must-not-open"}, "numb_steps": 1},
+    }
+    original = normalize(config)
+    entrypoint = PTExptTrainEntrypoint()
+
+    def unexpected(*args):
+        raise AssertionError(
+            "eligible bridging model must not scan neighbor statistics"
+        )
+
+    monkeypatch.setattr(
+        "deepmd.pt_expt.entrypoints.main.get_neighbor_stat_data", unexpected
+    )
+    updated, distance = entrypoint.update_neighbor_stat(
+        copy.deepcopy(original),
+        TrainEntrypointOptions(input_file="unused.json"),
+        multi_task=False,
+    )
+    expected = copy.deepcopy(original["model"])
+    expected["descriptor"]["sel"] = 256
+    assert updated["model"] == expected
+    assert distance is None
+    assert original["model"]["descriptor"]["sel"] == "auto"
+    assert updated["model"]["data_stat_nbatch"] == 3
+    assert updated["model"]["data_stat_protect"] == 0.02
+
+    if restore == "json":
+        output = tmp_path / "out.json"
+        entrypoint.dump_config(updated, str(output))
+        reloaded = json.loads(output.read_text())
+    else:
+        model = get_model(updated["model"])
+        wrapper = ModelWrapper(model, model_params=updated["model"])
+        checkpoint = tmp_path / "model.pt"
+        torch.save({"model": wrapper.state_dict()}, checkpoint)
+        options = TrainEntrypointOptions(
+            input_file="unused.json", use_pretrain_script=True
+        )
+        setattr(options, restore, str(checkpoint))
+        reloaded = entrypoint.preprocess_config(copy.deepcopy(original), options)
+    assert normalize(reloaded)["model"] == expected
