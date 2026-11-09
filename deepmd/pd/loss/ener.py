@@ -304,16 +304,11 @@ class EnergyStdLoss(TaskLoss):
                 l1_ener_loss = F.l1_loss(
                     energy_pred.reshape([-1]),
                     energy_label.reshape([-1]),
-                    reduction="sum",
+                    reduction="mean",
                 )
-                loss += pref_e * l1_ener_loss
+                loss += atom_norm * (pref_e * l1_ener_loss)
                 more_loss["mae_e"] = self.display_if_exist(
-                    F.l1_loss(
-                        energy_pred.reshape([-1]),
-                        energy_label.reshape([-1]),
-                        reduction="mean",
-                    ).detach(),
-                    find_energy,
+                    l1_ener_loss.detach() * atom_norm, find_energy
                 )
                 # more_loss['log_keys'].append('rmse_e')
             else:
@@ -367,11 +362,10 @@ class EnergyStdLoss(TaskLoss):
                         rmse_f.detach(), find_force
                     )
                 elif self.loss_func == "mae":
-                    l1_force_loss = F.l1_loss(force_label, force_pred, reduction="mean")
+                    l1_force_loss = paddle.mean(paddle.abs(diff_f))
                     more_loss["mae_f"] = self.display_if_exist(
                         l1_force_loss.detach(), find_force
                     )
-                    l1_force_loss = l1_force_loss.sum(-1).mean(-1).sum()
                     loss += (pref_f * l1_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
                 else:
                     raise NotImplementedError(
@@ -386,7 +380,8 @@ class EnergyStdLoss(TaskLoss):
             if self.has_pf and "atom_pref" in label:
                 atom_pref = label["atom_pref"]
                 find_atom_pref = label.get("find_atom_pref", 0.0)
-                pref_pf = pref_pf * find_atom_pref
+                effective_find_pf = find_force * find_atom_pref
+                pref_pf = pref_pf * effective_find_pf
                 atom_pref_reshape = atom_pref.reshape([-1])
 
                 if self.loss_func == "mse":
@@ -395,18 +390,18 @@ class EnergyStdLoss(TaskLoss):
                     ).mean()
                     if not self.inference:
                         more_loss["l2_pref_force_loss"] = self.display_if_exist(
-                            l2_pref_force_loss.detach(), find_atom_pref
+                            l2_pref_force_loss.detach(), effective_find_pf
                         )
                     loss += (pref_pf * l2_pref_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
                     rmse_pf = l2_pref_force_loss.sqrt()
                     more_loss["rmse_pf"] = self.display_if_exist(
-                        rmse_pf.detach(), find_atom_pref
+                        rmse_pf.detach(), effective_find_pf
                     )
                 elif self.loss_func == "mae":
                     l1_pref_force_loss = (paddle.abs(diff_f) * atom_pref_reshape).mean()
                     loss += (pref_pf * l1_pref_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
                     more_loss["mae_pf"] = self.display_if_exist(
-                        l1_pref_force_loss.detach(), find_atom_pref
+                        l1_pref_force_loss.detach(), effective_find_pf
                     )
                 else:
                     raise NotImplementedError(
@@ -416,7 +411,8 @@ class EnergyStdLoss(TaskLoss):
             if self.has_gf and "drdq" in label:
                 drdq = label["drdq"]
                 find_drdq = label.get("find_drdq", 0.0)
-                pref_gf = pref_gf * find_drdq
+                effective_find_gf = find_force * find_drdq
+                pref_gf = pref_gf * effective_find_gf
                 force_reshape_nframes = force_pred.reshape([-1, natoms * 3])
                 force_label_reshape_nframes = force_label.reshape([-1, natoms * 3])
                 drdq_reshape = drdq.reshape(
@@ -440,34 +436,47 @@ class EnergyStdLoss(TaskLoss):
                 l2_gen_force_loss = paddle.square(diff_gen_force).mean()
                 if not self.inference:
                     more_loss["l2_gen_force_loss"] = self.display_if_exist(
-                        l2_gen_force_loss.detach(), find_drdq
+                        l2_gen_force_loss.detach(), effective_find_gf
                     )
                 loss += (pref_gf * l2_gen_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
                 rmse_gf = l2_gen_force_loss.sqrt()
                 more_loss["rmse_gf"] = self.display_if_exist(
-                    rmse_gf.detach(), find_drdq
+                    rmse_gf.detach(), effective_find_gf
                 )
 
         if self.has_v and "virial" in model_pred and "virial" in label:
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape([-1, 9])
-            l2_virial_loss = paddle.mean(paddle.square(diff_v))
-            if not self.inference:
-                more_loss["l2_virial_loss"] = self.display_if_exist(
-                    l2_virial_loss.detach(), find_virial
+            if self.loss_func == "mse":
+                l2_virial_loss = paddle.mean(paddle.square(diff_v))
+                if not self.inference:
+                    more_loss["l2_virial_loss"] = self.display_if_exist(
+                        l2_virial_loss.detach(), find_virial
+                    )
+                if not self.use_huber:
+                    loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_norm * model_pred["virial"].reshape([-1]),
+                        atom_norm * label["virial"].reshape([-1]),
+                        delta=self._huber_delta_virial,
+                    )
+                    loss += pref_v * l_huber_loss
+                rmse_v = l2_virial_loss.sqrt() * atom_norm
+                more_loss["rmse_v"] = self.display_if_exist(
+                    rmse_v.detach(), find_virial
                 )
-            if not self.use_huber:
-                loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
+            elif self.loss_func == "mae":
+                l1_virial_loss = paddle.mean(paddle.abs(diff_v))
+                loss += atom_norm * (pref_v * l1_virial_loss)
+                more_loss["mae_v"] = self.display_if_exist(
+                    l1_virial_loss.detach() * atom_norm, find_virial
+                )
             else:
-                l_huber_loss = custom_huber_loss(
-                    atom_norm * model_pred["virial"].reshape([-1]),
-                    atom_norm * label["virial"].reshape([-1]),
-                    delta=self._huber_delta_virial,
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for virial loss."
                 )
-                loss += pref_v * l_huber_loss
-            rmse_v = l2_virial_loss.sqrt() * atom_norm
-            more_loss["rmse_v"] = self.display_if_exist(rmse_v.detach(), find_virial)
             if mae:
                 mae_v = paddle.mean(paddle.abs(diff_v)) * atom_norm
                 more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)

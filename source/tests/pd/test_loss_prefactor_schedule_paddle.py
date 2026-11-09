@@ -67,3 +67,65 @@ def test_force_schedule_contributes_to_loss_and_gradient(term, start, limit):
     expected = [2.0, 0.0, 0.0] if term == "gf" else [2.0 / 3] * 3
     (gradient,) = paddle.grad(loss, prediction)
     np.testing.assert_allclose(gradient.numpy(), np.asarray([[expected]]) * weight)
+
+
+@pytest.mark.parametrize("term", ["pf", "gf"])
+def test_force_terms_ignore_missing_force_labels(term):
+    loss_fn = EnergyStdLoss(
+        **{f"start_pref_{term}": 1.0, f"limit_pref_{term}": 1.0},
+        numb_generalized_coord=1,
+    )
+    prediction = paddle.ones((1, 1, 3), dtype="float64")
+    prediction.stop_gradient = False
+    label = {
+        "force": paddle.zeros_like(prediction),
+        "find_force": 0.0,
+        "atom_pref": paddle.ones_like(prediction),
+        "find_atom_pref": 1.0,
+        "drdq": paddle.to_tensor([[[1.0], [0.0], [0.0]]], dtype="float64"),
+        "find_drdq": 1.0,
+    }
+    _, loss, metrics = loss_fn({}, lambda: {"force": prediction}, label, 1, 0.25)
+    np.testing.assert_allclose(loss.numpy(), 0.0)
+    (gradient,) = paddle.grad(loss, prediction)
+    np.testing.assert_allclose(gradient.numpy(), 0.0)
+    assert np.isnan(metrics[f"rmse_{term}"].numpy())
+
+
+@pytest.mark.parametrize("start,limit", [(0.0, 1.0), (1.0, 0.0)])
+@pytest.mark.parametrize("term,key,width", [("e", "energy", 1), ("v", "virial", 9)])
+def test_mae_extensive_terms_are_normalized(term, key, width, start, limit):
+    loss_fn = EnergyStdLoss(
+        **{f"start_pref_{term}": start, f"limit_pref_{term}": limit}, loss_func="mae"
+    )
+    prediction = paddle.to_tensor([[2.0] * width, [6.0] * width], dtype="float64")
+    prediction.stop_gradient = False
+    label = {key: paddle.zeros_like(prediction), f"find_{key}": 1.0}
+    _, loss, metrics = loss_fn({}, lambda: {key: prediction}, label, 2, 0.25)
+    weight = limit + (start - limit) * 0.25
+    np.testing.assert_allclose(loss.numpy(), 2.0 * weight)
+    np.testing.assert_allclose(metrics[f"mae_{term}"].numpy(), 2.0)
+    (gradient,) = paddle.grad(loss, prediction)
+    np.testing.assert_allclose(gradient.numpy(), weight / (4 * width))
+
+
+@pytest.mark.parametrize("start,limit", [(0.0, 1.0), (1.0, 0.0)])
+def test_mae_force_uses_relative_error(start, limit):
+    loss_fn = EnergyStdLoss(
+        start_pref_f=start, limit_pref_f=limit, relative_f=1.0, loss_func="mae"
+    )
+    prediction = paddle.to_tensor([[[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]], dtype="float64")
+    prediction.stop_gradient = False
+    label = {
+        "force": paddle.to_tensor(
+            [[[3.0, 4.0, 0.0], [0.0, 0.0, 0.0]]], dtype="float64"
+        ),
+        "find_force": 1.0,
+    }
+    _, loss, metrics = loss_fn({}, lambda: {"force": prediction}, label, 2, 0.25)
+    weight = limit + (start - limit) * 0.25
+    np.testing.assert_allclose(loss.numpy(), 25 / 36 * weight)
+    np.testing.assert_allclose(metrics["mae_f"].numpy(), 25 / 36)
+    (gradient,) = paddle.grad(loss, prediction)
+    expected = [[[-1 / 36, -1 / 36, 0.0], [1 / 6, 1 / 6, 1 / 6]]]
+    np.testing.assert_allclose(gradient.numpy(), np.asarray(expected) * weight)

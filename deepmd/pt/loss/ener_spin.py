@@ -597,6 +597,18 @@ class EnergySpinLoss(TaskLoss):
                     high_prec=False,
                 )
             )
+        if self.enable_atom_ener_coeff:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atom_ener_coeff",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    default=1.0,
+                    source_policy="default",
+                )
+            )
         return label_requirement
 
     def serialize(self) -> dict:

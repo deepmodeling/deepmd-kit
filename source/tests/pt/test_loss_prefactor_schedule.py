@@ -99,6 +99,37 @@ def test_energy_schedule_contributes_to_loss_and_gradient(
 
 
 @pytest.mark.parametrize("start,limit", [(0.0, 1.0), (1.0, 0.0)])
+def test_spin_energy_coefficients_are_requested_and_used(start, limit):
+    loss_fn = EnergySpinLoss(
+        start_pref_e=start, limit_pref_e=limit, enable_atom_ener_coeff=True
+    )
+    requirements = {item.key: item for item in loss_fn.label_requirement}
+    coeff = requirements["atom_ener_coeff"]
+    assert coeff.atomic and coeff.default == 1.0 and coeff.source_policy == "default"
+    prediction = torch.tensor(
+        [[[2.0], [3.0]]], dtype=torch.float64, device=DEVICE, requires_grad=True
+    )
+    label = {
+        "energy": torch.zeros((1, 1), dtype=prediction.dtype, device=DEVICE),
+        "find_energy": 1.0,
+        "atom_ener_coeff": torch.tensor(
+            [[2.0, 0.0]], dtype=prediction.dtype, device=DEVICE
+        ),
+    }
+    model_pred = {"energy": prediction.sum(dim=1), "atom_energy": prediction}
+    _, loss, _ = loss_fn({}, lambda: model_pred, label, 2, 0.25)
+    weight = limit + (start - limit) * 0.25
+    torch.testing.assert_close(
+        loss, torch.tensor(8.0 * weight, dtype=loss.dtype, device=DEVICE)
+    )
+    (gradient,) = torch.autograd.grad(loss, prediction)
+    torch.testing.assert_close(
+        gradient,
+        torch.tensor([[[8.0], [0.0]]], dtype=prediction.dtype, device=DEVICE) * weight,
+    )
+
+
+@pytest.mark.parametrize("start,limit", [(0.0, 1.0), (1.0, 0.0)])
 @pytest.mark.parametrize("term", ["f", "pf", "gf"])
 def test_force_schedule_contributes_to_loss_and_gradient(term, start, limit):
     loss_fn = EnergyStdLoss(
