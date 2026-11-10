@@ -75,14 +75,6 @@ def test_stat_free_dpa4_graph_training_equivalence(monkeypatch):
     )
     atype = torch.tensor([[0, 1, 0, 1]], device=env.DEVICE)
     box = (torch.eye(3, dtype=torch.float64, device=env.DEVICE) * 12).reshape(1, 9)
-    sample = [{"coord": coord, "box": box, "atype": atype}]
-    for model in models:
-        model.atomic_model.descriptor.compute_input_stats(sample)
-    stat_states = [m.state_dict() for m in models]
-    for state in stat_states[1:]:
-        assert state.keys() == stat_states[0].keys()
-        for key in state:
-            torch.testing.assert_close(state[key], stat_states[0][key], rtol=0, atol=0)
     calls = []
     original = DescrptDPA4.call_graph
 

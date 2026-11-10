@@ -9,6 +9,7 @@ Verifies that:
 """
 
 import copy
+import json
 import math
 import os
 import platform
@@ -30,6 +31,9 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.train import (
+    TrainEntrypointOptions,
+)
 from deepmd.dpmodel.utils.dist_check import (
     compute_min_pair_margin_batch,
     pair_half_thresholds,
@@ -38,6 +42,7 @@ from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
 )
 from deepmd.pt_expt.entrypoints.main import (
+    PTExptTrainEntrypoint,
     get_trainer,
 )
 from deepmd.pt_expt.model import (
@@ -611,13 +616,48 @@ class TestTraining(unittest.TestCase):
         self.assertIsNone(trainer.ema_full_validator)
 
     def test_training_loop_dpa4(self) -> None:
-        """Run a few DPA4/SeZM training steps (model type "dpa4" dispatch)."""
+        """The auto-skip entrypoint still initializes stats and trains normally."""
         config = _make_config(self.data_dir, numb_steps=5)
         config["model"] = copy.deepcopy(_MODEL_DPA4)
-        config = update_deepmd_input(config, warning=False)
-        config = normalize(config)
-        self.assertEqual(config["model"]["type"], "dpa4")
-        self._run_training(config)
+        config["model"]["descriptor"]["sel"] = "auto"
+        config["model"]["data_stat_protect"] = 0.02
+
+        def checked_trainer(*args, **kwargs):
+            trainer = get_trainer(*args, **kwargs)
+            model_config = args[0]["model"]
+            self.assertEqual(model_config["data_stat_nbatch"], 1)
+            self.assertEqual(model_config["data_stat_protect"], 0.02)
+            # Water labels are nonzero. A skipped statistics initialization
+            # leaves this buffer at zero, even though training can still run.
+            bias = trainer.model.atomic_model.out_bias
+            self.assertTrue(torch.isfinite(bias).all())
+            self.assertGreater(bias.abs().max().item(), 1.0)
+            return trainer
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(tmpdir)
+                with open("input.json", "w") as f:
+                    json.dump(config, f)
+                with (
+                    patch(
+                        "deepmd.pt_expt.entrypoints.main.get_neighbor_stat_data",
+                        side_effect=AssertionError("unexpected neighbor-stat scan"),
+                    ),
+                    patch(
+                        "deepmd.pt_expt.entrypoints.main.get_trainer",
+                        side_effect=checked_trainer,
+                    ) as factory,
+                ):
+                    PTExptTrainEntrypoint().run(
+                        TrainEntrypointOptions(input_file="input.json")
+                    )
+                factory.assert_called_once()
+                self.assertTrue(Path("lcurve.out").is_file())
+                self.assertTrue(list(Path().glob("*.pt")))
+            finally:
+                os.chdir(old_cwd)
 
     @REQUIRES_SUPPORTED_COMPILE
     def test_training_loop_compiled(self) -> None:

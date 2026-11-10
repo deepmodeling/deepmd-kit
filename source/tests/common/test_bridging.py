@@ -464,3 +464,33 @@ def test_an_unbridged_model_without_a_floor_registers_no_filter() -> None:
     assert requirement is not None
     assert requirement.default == 0.5
     assert requirement.length_scale == "absolute"
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        {"type": "dpa4"},
+        {"type": "DPA4"},
+        {"type": "SeZM"},
+        {"descriptor": {"type": "dpa4"}},
+        {"descriptor": {"type": "dpa4c"}},
+    ],
+)
+@pytest.mark.parametrize("method", ["none", "zbl"])
+def test_dpa4_rejects_legacy_tabulated_zbl(model, method):
+    """An inert or dense table must never masquerade as analytical bridging."""
+    model = {**model, "use_srtab": "unused-table.txt", "bridging_method": method}
+    with pytest.raises(ValueError, match="legacy tabulated ZBL"):
+        expand_bridging_method(model)
+    # Backends such as JAX dispatch directly through the shared factory.
+    from deepmd.dpmodel.model.model_factory import (
+        get_model,
+    )
+
+    with pytest.raises(ValueError, match="legacy tabulated ZBL"):
+        get_model(model, base_model=None, standard_model_factory=None)
+
+
+def test_other_descriptors_keep_legacy_tabulated_zbl():
+    model = {"descriptor": {"type": "se_e2_a"}, "use_srtab": "table.txt"}
+    assert expand_bridging_method(model) is model

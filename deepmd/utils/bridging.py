@@ -34,6 +34,7 @@ __all__ = [
     "is_bridged_sezm_config",
     "migrate_inner_clamp_keys",
     "resolve_bridging_window",
+    "validate_tabulated_zbl",
     "window_midpoint",
 ]
 
@@ -311,6 +312,22 @@ def concise_bridging_window(data: dict) -> dict:
     }
 
 
+def validate_tabulated_zbl(data: dict) -> None:
+    """Reject legacy tabulated switching for DPA4-family model configs."""
+    # Legacy tabulated switching is not the DPA4 analytical inner potential:
+    # reject it rather than silently ignoring it in the dedicated model builder.
+    model_type = str(data.get("type", "standard")).lower()
+    descriptor_type = str(data.get("descriptor", {}).get("type", "")).lower()
+    if "use_srtab" in data and (
+        model_type in _DPA4_FAMILY_TYPES
+        or descriptor_type in (*_DPA4_FAMILY_TYPES, "dpa4c")
+    ):
+        raise ValueError(
+            "DPA4/DPA4C do not support the legacy tabulated ZBL (`use_srtab`). "
+            "Use `bridging_method: zbl` for analytical inner-potential bridging."
+        )
+
+
 def expand_bridging_method(data: dict) -> dict:
     """Expand the ``bridging_method`` sugar into a ``linear_ener`` config.
 
@@ -342,9 +359,11 @@ def expand_bridging_method(data: dict) -> dict:
     ------
     ValueError
         If ``bridging_method`` is set on a model type that does not
-        support it, or if ``pair_exclude_types`` and
+        support it, if a DPA4-family model requests legacy ``use_srtab``,
+        or if ``pair_exclude_types`` and
         ``descriptor.exclude_types`` are both given and differ.
     """
+    validate_tabulated_zbl(data)
     method = str(data.get("bridging_method", "none"))
     if method.lower() in ("none", ""):
         return data

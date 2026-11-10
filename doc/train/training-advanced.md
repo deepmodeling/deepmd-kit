@@ -274,6 +274,9 @@ unnecessary. The decision is made separately for each training task; composition
 skip the scan only when all components use the graph route. Input/output
 normalization statistics are still computed as usual.
 
+DPA4/DPA4C do not support legacy tabulated ZBL switching (`use_srtab`);
+use `bridging_method: "zbl"` for analytical inner-potential bridging instead.
+
 For these models, `sel: "auto"` (with or without a ratio) uses the ordinary
 DPA4 default capacity of 256 instead of scanning the dataset. This capacity is
 unused by the graph forward and its input statistics; numeric selections are

@@ -13,6 +13,7 @@ from typing import (
 from deepmd.utils.bridging import (
     resolve_bridging_window,
     route_canonical_learned_options,
+    validate_tabulated_zbl,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -188,6 +189,7 @@ def get_zbl_model(
     backend_name: str,
 ) -> Any:
     """Construct a ZBL model from backend-native atomic model classes."""
+    validate_tabulated_zbl(data)
     if data.get("long_range") is not None:
         raise NotImplementedError(
             "a long-range module is not supported with the tabulated ZBL "
@@ -552,6 +554,7 @@ def get_model(
     Any
         The backend-native model instance.
     """
+    validate_tabulated_zbl(data)
     model_type = data.get("type", "standard")
     if model_type == "standard":
         if "spin" in data:
