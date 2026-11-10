@@ -276,6 +276,11 @@ normalization statistics are still computed as usual.
 
 DPA4/DPA4C do not support legacy tabulated ZBL switching (`use_srtab`);
 use `bridging_method: "zbl"` for analytical inner-potential bridging instead.
+This restriction also applies to `type: "standard"` models using these descriptors
+and to learned children of compositions. Existing checkpoints configured with
+DPA4/DPA4C and `use_srtab` must be evaluated with the version that created them;
+changing the config to analytical bridging is not an equivalent conversion of
+the trained potential. Other descriptor families retain tabulated ZBL support.
 
 For these models, `sel: "auto"` (with or without a ratio) uses the ordinary
 DPA4 default capacity of 256 instead of scanning the dataset. This capacity is

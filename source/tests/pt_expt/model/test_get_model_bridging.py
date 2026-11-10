@@ -399,3 +399,19 @@ def test_nonempty_shared_dict_raises() -> None:
     cfg["shared_dict"] = {"my_descriptor": "descriptor"}
     with pytest.raises(NotImplementedError, match="shared_dict"):
         get_model(cfg)
+
+
+@pytest.mark.parametrize("location", ["composition", "child"])
+@pytest.mark.parametrize("backend", ["dpmodel", "pt_expt"])
+def test_canonical_rejects_tabulated_zbl(location, backend):
+    from deepmd.utils.bridging import expand_bridging_method
+
+    config = expand_bridging_method(_bridged(_dpa4_standard_config()))
+    target = config if location == "composition" else config["models"][0]
+    target["use_srtab"] = "unused-table.txt"
+    if backend == "dpmodel":
+        from deepmd.dpmodel.model.model import get_model as build
+    else:
+        build = get_model
+    with pytest.raises(ValueError, match="legacy tabulated ZBL"):
+        build(config)

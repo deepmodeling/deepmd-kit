@@ -434,3 +434,23 @@ def test_spin_requires_native_scheme(canonical: bool, scheme: str | None) -> Non
         cfg["spin"]["scheme"] = scheme
     with pytest.raises(ValueError, match=r"require model\.spin\.scheme='native'"):
         get_model(cfg)
+
+
+@pytest.mark.parametrize("location", ["composition", "child"])
+def test_canonical_rejects_tabulated_zbl(location):
+    config = _canonical_config()
+    target = config if location == "composition" else config["models"][0]
+    target["use_srtab"] = "unused-table.txt"
+    with pytest.raises(ValueError, match="legacy tabulated ZBL"):
+        get_model(config)
+
+
+def test_training_dispatch_rejects_tabulated_zbl():
+    from deepmd.pt.train.training import get_single_model
+
+    config = _sugar_config()
+    config.pop("type")
+    config.pop("bridging_method")
+    config["use_srtab"] = "unused-table.txt"
+    with pytest.raises(ValueError, match="legacy tabulated ZBL"):
+        get_single_model(config)

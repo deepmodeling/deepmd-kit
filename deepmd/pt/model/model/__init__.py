@@ -43,6 +43,7 @@ from deepmd.utils.bridging import (
     expand_bridging_method,
     resolve_bridging_window,
     route_canonical_learned_options,
+    validate_tabulated_zbl,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -362,6 +363,7 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
             "match the bridged linear_ener composition's `type_map`."
         )
     route_canonical_learned_options(model_params, learned)
+    validate_tabulated_zbl(learned)
     inner_cfg = inner_cfgs[0]
     learned["type"] = "dpa4"
     learned["type_map"] = copy.deepcopy(model_params["type_map"])
@@ -383,6 +385,7 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
 
 
 def get_zbl_model(model_params: dict) -> DPZBLModel:
+    validate_tabulated_zbl(model_params)
     _reject_long_range(model_params)
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])

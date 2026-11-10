@@ -406,6 +406,7 @@ def get_linear_atomic_model(
                 "child's type_map to match the composition type_map."
             )
         if "descriptor" in sub:
+            validate_tabulated_zbl(sub)
             child = None
             if descriptor_child_builder is not None:
                 child = descriptor_child_builder(sub)
