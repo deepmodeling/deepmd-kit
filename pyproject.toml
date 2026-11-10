@@ -193,7 +193,7 @@ pin_pytorch_cpu = [
   "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_pytorch_gpu = [
-  "torch==2.10.0",
+  "torch>=2.11.0,<2.12.0",
 ]
 pin_jax_cpu = [
   "jax==0.6.2; python_version=='3.10'",
