@@ -568,26 +568,6 @@ shipping built in. On other GPUs the kernels fall back to conservative
 configurations, and `dp --pt freeze` tunes the missing entries on the local GPU
 before exporting, a one-off sweep of a few minutes baked into the `.pt2`.
 
-Level `2` saves the focus-competition scalars on supported inference paths
-into independent storage during the existing rotate-and-mix launch. This lets
-the full rotation output die after its mixing consumer, rather than remain
-live for competition backward. It does not change model weights or precision.
-Selection is internal and currently applies only to evaluation with level `2`,
-CUDA float32, `lmax=3`, two focuses, 32 channels per focus and focus competition.
-Other layouts and training retain the original path. PT freeze selects this
-branch from the CUDA deployment target even though tracing runs on CPU;
-existing `.pt2` artifacts must be regenerated. CPU targets and `pt_expt` export
-retain the original path. The latter already releases the large rotation
-storage, so capture adds no measured peak-memory benefit there. This is a
-capacity optimization: the extra scalar store can increase latency. Measurements
-on RTX 5090 with the Neo checkpoint found about 12.35%/12.38% lower peak allocated
-memory for PT export at 1000/4096 atoms, with about 0.338%/0.453% higher latency
-in the [updated measurement round](https://github.com/deepmodeling/deepmd-kit/pull/6114#issuecomment-6635037675)
-(PyTorch 2.11.0+cu128, Triton 3.6.0, TF32/AMP off, 12 warmups and 30 samples).
-These measurements do not imply the same benefit for other execution paths.
-The manual full-API benchmark is
-`source/tests/pt_expt/benchmark_so2_scalar_capture.py` (`--help` lists inputs).
-
 `DP_CUTILE_INFER` replaces the whole SeZM edge pipeline — Wigner monomials,
 rotate-and-mix, the gated SO(2) mixing stack, the attention aggregation and the
 force / virial assembly — with kernels written in the `cuda.tile` DSL. On an
