@@ -173,7 +173,8 @@ def test_freeze_compression_changes_snapshot_before_export(
         atol=1e-7,
     )
     assert captured["options"]["with_comm"] is False
-    assert captured["options"]["lower_kind"] == ("auto" if compress else "graph")
+    # a .pt2 archive of a graph model selects its lower schema at export
+    assert captured["options"]["lower_kind"] == "auto"
     assert checkpoint.read_bytes() == original
 
 

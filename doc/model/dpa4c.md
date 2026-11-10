@@ -644,23 +644,23 @@ communication and host/device synchronization. Build the DeePMD-kit plugin
 against the same LAMMPS and Kokkos build used to run it; see the
 [Kokkos build instructions](../install/install-lammps.md#install-lammps-plugin-mode).
 
-By default the pair styles store the precession magnetic force that the LAMMPS
-SPIN package expects, the negative energy gradient `-dE/dS` scaled by the
-moment magnitude over `hbar`. `min_style spin` reads this force and relaxes the
-moment directions. The `fix nve/spin` of a stock LAMMPS build does not use this
-force: the fix evaluates the magnetic force itself, through the pair styles
-whose names begin with `spin`, and `dpa4spin` and `dpa4spin/kk` are not among
-them. With no such pair style, the fix runs silently on a single MPI rank and
-stops with a sectoring error on several. Spin dynamics therefore needs a LAMMPS
-build whose integrator reads the magnetic force of these pair styles.
-
-A Newtonian integrator of the Cartesian spin vector needs `-dE/dS` itself
-rather than the precession force. The keyword `magnetic_force cartesian`
-selects `-dE/dS` and requires `units metal`:
+The pair styles store the magnetic force in the convention of the LAMMPS SPIN
+package: the negative energy gradient `-dE/dS` with respect to the moment, all
+three components of it, scaled by the moment magnitude over `hbar`.
+`min_style spin` reads this force and relaxes the moment directions. The TSPIN
+fixes of the SPIN package, `fix nve/tspin` and its thermostats, which LAMMPS
+provides in its releases after 30 Sep 2026, integrate the direction and the
+magnitude of every moment from it:
 
 ```lammps
-pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
+fix               integrate all nve/tspin spinmass 0.0075
 ```
+
+The `fix nve/spin` of the SPIN package does not use this force: the fix
+evaluates the magnetic force itself, through the pair styles whose names begin
+with `spin`, and `dpa4spin` and `dpa4spin/kk` are not among them. With no such
+pair style, the fix runs silently on a single MPI rank and stops with a
+sectoring error on several.
 
 A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
 is provided in `examples/spin/dpa4c/lmp/`.

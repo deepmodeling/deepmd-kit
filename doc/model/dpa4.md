@@ -423,18 +423,44 @@ The element names in `pair_coeff` map LAMMPS atom types to model elements.
 See [the water example](../../examples/water/dpa4/lmp/) and
 [the LAMMPS interface](../third-party/lammps-command.md) for complete inputs.
 
-For a DPA4 spin model, use `atom_style spin` and the `deepspin` pair style:
+For a DPA4 spin model frozen with `dp --pt-expt freeze`, use `atom_style spin`
+and the `dpa4spin` pair style:
 
 ```lammps
 atom_style spin
 atom_modify map yes
-pair_style deepspin frozen_spin_model.pt2
+pair_style dpa4spin frozen_spin_model.pt2
 pair_coeff * * Ni O
 ```
 
-The pair style reads the spin representation from the model, which uses only
-physical atoms. See
-[the spin pair-style reference](../third-party/lammps-command.md#pair_style-deepspin).
+The pair style passes the magnetic moment of each atom to the model, which uses
+only physical atoms, on one MPI rank or several, in single or double precision
+and on a GPU or a CPU. See
+[its reference](../third-party/lammps-command.md#pair_style-dpa4spin). The
+`deepspin` pair style runs the same models, and it is the one for a model
+frozen with `dp --pt freeze` and for a model with atomic parameters or with
+frame parameters that have no default; see
+[its reference](../third-party/lammps-command.md#pair_style-deepspin).
+
+Several models on the `pair_style` line form an ensemble: the first one drives
+the dynamics, and the deviation among all of them is written every `out_freq`
+steps, with every pair style of this section; see
+[the model deviation](../third-party/lammps-command.md#pair_style-deepmd).
+
+### KOKKOS on a GPU
+
+A single-precision model frozen with `dp --pt-expt freeze` on a GPU keeps the
+neighbor list and every step on the GPU when LAMMPS runs with the KOKKOS
+package on its GPU backend:
+
+```bash
+lmp -k on g 1 -sf kk -in in.lammps
+```
+
+`-sf kk` turns `pair_style deepmd` into `deepmd/kk` and, for a spin model,
+`pair_style dpa4spin` into `dpa4spin/kk`. Zone bridging and multi-rank runs
+work as with the host pair styles. A model frozen with `dp --pt freeze` runs
+with the host pair styles.
 
 ### Multiple GPUs
 
@@ -444,6 +470,7 @@ Use one MPI rank per GPU and make all participating GPUs visible:
 CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
 ```
 
+With KOKKOS, run `mpirun -np 4 lmp -k on g 4 -sf kk -in in.lammps` instead.
 Both PyTorch backends export models that support multi-rank LAMMPS, including
 native spin and zone bridging.
 Use CUDA-aware MPI for GPU communication and a nonzero neighbor skin, for

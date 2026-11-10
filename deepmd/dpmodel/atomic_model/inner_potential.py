@@ -676,6 +676,10 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
         """The term is a pair potential with no learned part."""
         return None, self.potential
 
+    def supports_canonical_graph(self) -> bool:
+        """The term sums over the edges of any graph, without pair exclusion."""
+        return self.pair_excl is None
+
     def enable_compression(
         self,
         min_nbor_dist: float,

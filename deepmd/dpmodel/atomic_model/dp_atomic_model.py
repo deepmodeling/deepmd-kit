@@ -345,6 +345,12 @@ class DPAtomicModel(BaseAtomicModel):
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.supports_graph_export())
 
+    def supports_canonical_graph(self) -> bool:
+        """Delegates to this model's own descriptor, without pair exclusion."""
+        return self.pair_excl is None and bool(
+            self.descriptor.supports_canonical_graph()
+        )
+
     def compression_needs_min_nbor_dist(self) -> bool:
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.compression_needs_min_nbor_dist())

@@ -371,16 +371,19 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_frz.add_argument(
         "--lower-kind",
-        default="nlist",
+        default="auto",
         type=str,
-        choices=["nlist", "graph"],
+        choices=["auto", "nlist", "graph"],
         help="(Supported backend: PyTorch Exportable) Lower-level export form of the "
-        "frozen .pt2: 'nlist' (dense neighbor-list lower) or 'graph' "
-        "(NeighborGraph edge-list lower, which selects the C++ graph inference "
-        "path). Only consulted for models that cannot use the graph lower: a "
-        "graph-capable model (DPA1/DPA2/DPA4, and every DPA model in future) "
-        "always freezes to 'graph', since the dense lower is deprecated in this "
-        "backend -- requesting 'nlist' for one logs a warning and is overridden.",
+        "frozen model: 'auto' (default) selects the graph lower for a "
+        "graph-capable model (DPA1/DPA2/DPA4, and every DPA model in future) and "
+        "the dense neighbor-list lower otherwise; 'nlist' (dense neighbor-list "
+        "lower) or 'graph' (NeighborGraph edge-list lower, which selects the C++ "
+        "graph inference path) request one. The dense lower is deprecated for a "
+        "graph-capable model, so requesting 'nlist' for one logs a warning and "
+        "is overridden. On a CUDA device, the graph lower of a single-precision "
+        "DPA4 model takes the compact canonical schema that the LAMMPS Kokkos "
+        "pair styles evaluate.",
     )
     parser_frz.add_argument(
         "--compress",

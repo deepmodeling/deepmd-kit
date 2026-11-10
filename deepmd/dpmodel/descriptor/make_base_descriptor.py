@@ -274,6 +274,18 @@ def make_base_descriptor(
             """
             return True
 
+        def supports_canonical_graph(self) -> bool:
+            """Whether the graph lower evaluates the compact canonical graph.
+
+            A compact canonical lower that runs the graph forward of a model
+            views its graph, whose bond vectors are single precision, as a
+            destination-major ``NeighborGraph`` and passes the border plan of
+            a decomposed node set as ``comm_dict``, through which a descriptor
+            that reads features of ghost nodes refreshes them. Concrete
+            default ``False``.
+            """
+            return False
+
         def graph_type_embedding_table(self) -> Any | None:
             """Full type-embedding table consumed by the graph-route forward.
 

@@ -14,7 +14,9 @@ data edge 2.20 A at the covalent start, frozen below 1.65 A).  The analytical
 term and the clamp read the types of both ends of every edge, and the source
 of an edge that crosses the boundary is a ghost row, so the close-pair test
 is the geometry that exercises the ghost handling of both, besides the
-per-block ghost feature exchange of the with-comm artifact.
+per-block ghost feature exchange that the graph lower carries in its main
+program.  The multi-rank runs go through ``pair_style deepspin`` and
+``dpa4spin`` alike.
 
 Reference (energy / force / force_mag / virial) values are computed LIVE at
 test-setup time via ``deepmd.infer.DeepPot.eval`` on the archive for the
@@ -133,16 +135,21 @@ def test_pair_deepspin_virial(lammps) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Multi-rank: the spin+ZBL graph .pt2 carries the nested with-comm artifact,
-# so a 2-rank run must REPRODUCE the 1-rank result (energy, force and
-# force_mag) rather than fail fast.
+# Multi-rank: the graph lower of the spin+ZBL .pt2 carries the halo exchange
+# of its further blocks, so a 2-rank run must REPRODUCE the 1-rank result
+# (energy, force and force_mag) rather than fail fast.
 # ---------------------------------------------------------------------------
 
 
-def _run_mpi(data_path: Path, nprocs: int, processors: str) -> dict:
+def _run_mpi(data_path: Path, nprocs: int, processors: str, pair_style: str) -> dict:
     """This module's binding of the shared runner (archive + runner fixed)."""
     return run_mpi_spin_runner(
-        mpi_runner, pb_file, data_path, nprocs=nprocs, processors=processors
+        mpi_runner,
+        pb_file,
+        data_path,
+        nprocs=nprocs,
+        processors=processors,
+        extra_args=["--pair-style", pair_style],
     )
 
 
@@ -152,24 +159,24 @@ def _run_mpi(data_path: Path, nprocs: int, processors: str) -> dict:
 @pytest.mark.skipif(
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
-def test_pair_deepspin_mpi_matches_single_rank() -> None:
+@pytest.mark.parametrize("pair_style", ["deepspin", "dpa4spin"])
+def test_pair_deepspin_mpi_matches_single_rank(pair_style: str) -> None:
     """A 2-rank MPI run must reproduce the 1-rank result on the SAME archive.
 
-    The spin+ZBL DPA4 graph ``.pt2`` carries the nested with-comm artifact,
-    so ``DeepSpinPTExpt::compute_inner`` drives a real domain-decomposed run
-    through ``run_model_graph_with_comm``: the per-block ghost FEATURE
-    refresh rides ``border_op`` /
-    ``border_op_backward`` while ghost SPINS arrive via the LAMMPS ``sp``
-    forward-comm.  Both the conservative force and the MAGNETIC force must
-    be rank-count invariant.
+    The graph lower of the spin+ZBL DPA4 ``.pt2`` refreshes the ghost
+    FEATURES of every further block through the border plan its main
+    program takes, with the gradients of the halo rows returned to their
+    owners, while ghost SPINS arrive via the LAMMPS ``sp`` forward-comm.
+    Both the conservative force and the MAGNETIC force must be rank-count
+    invariant.
 
     With this (unshifted) geometry the close Ni-Ni pair sits entirely on
     one rank's subdomain, so this test pins the baseline multi-rank route;
     the boundary-straddling close pair is exercised by
     ``test_pair_deepspin_mpi_close_pair_across_ranks`` below.
     """
-    single = _run_mpi(data_file, 1, "1 1 1")
-    multi = _run_mpi(data_file, 2, "2 1 1")
+    single = _run_mpi(data_file, 1, "1 1 1", pair_style)
+    multi = _run_mpi(data_file, 2, "2 1 1", pair_style)
     assert_mpi_matches_single_rank(single, multi)
 
 
@@ -179,7 +186,8 @@ def test_pair_deepspin_mpi_matches_single_rank() -> None:
 @pytest.mark.skipif(
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
-def test_pair_deepspin_mpi_close_pair_across_ranks() -> None:
+@pytest.mark.parametrize("pair_style", ["deepspin", "dpa4spin"])
+def test_pair_deepspin_mpi_close_pair_across_ranks(pair_style: str) -> None:
     """2-rank vs 1-rank parity with the close Ni-Ni pair straddling the rank
     boundary.
 
@@ -198,6 +206,6 @@ def test_pair_deepspin_mpi_close_pair_across_ranks() -> None:
         f"boundary: Ni x = {x_lo}, {x_hi}, lx/2 = {half_lx}"
     )
 
-    single = _run_mpi(data_file_close_pair, 1, "1 1 1")
-    multi = _run_mpi(data_file_close_pair, 2, "2 1 1")
+    single = _run_mpi(data_file_close_pair, 1, "1 1 1", pair_style)
+    multi = _run_mpi(data_file_close_pair, 2, "2 1 1", pair_style)
     assert_mpi_matches_single_rank(single, multi)

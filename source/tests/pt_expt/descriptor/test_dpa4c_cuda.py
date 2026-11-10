@@ -4241,7 +4241,7 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
         fitting_routes._ROUTE_TABLES[(fingerprint, key)] = tuple(table)
         exported, _metadata, _model_json, _output_keys = _trace_and_export(
             {"model": model.serialize()},
-            lower_kind="dpa4c_canonical",
+            lower_kind="dpa_canonical",
             do_atomic_virial=True,
         )
         # The table is the ``fitting_routes`` argument of the schema; a call
@@ -4262,7 +4262,7 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
             archive,
             {"model": model.serialize()},
             do_atomic_virial=True,
-            lower_kind="dpa4c_canonical",
+            lower_kind="dpa_canonical",
             with_comm=False,
         )
         runner = aoti_load_package(archive)

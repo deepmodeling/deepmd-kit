@@ -106,6 +106,14 @@ void PairDeepBaseModel::parse_spin_vector_option(
     bool (*is_key)(const string&)) {
   // PairDeepMD and PairDeepSpin intentionally share this parser so their
   // bounds checks, keyword rejection, and numeric validation cannot drift.
+  // The option takes one value per spin type the model declares; a model that
+  // declares none, a model of the pt backend, takes no such option.
+  if (numb_types_spin == 0) {
+    error->all(FLERR, "Illegal " + option +
+                          ", the model carries its spin parameters and takes "
+                          "no " +
+                          option + " option");
+  }
   values.resize(numb_types_spin);
   for (int ii = 0; ii < numb_types_spin; ++ii) {
     if (iarg + ii + 1 >= narg || is_key(arg[iarg + ii + 1])) {
@@ -351,16 +359,10 @@ void PairDeepBaseModel::cum_sum(std::map<int, int>& sum,
   }
 }
 
-PairDeepBaseModel::PairDeepBaseModel(
-    LAMMPS* lmp,
-    const char* cite_user_package,
-    deepmd_compat::DeepBaseModel& deep_model,
-    deepmd_compat::DeepBaseModelDevi& deep_model_devi)
-    : Pair(lmp),
-      deep_base(deep_model),
-      deep_base_model_devi(deep_model_devi)
-
-{
+PairDeepBaseModel::PairDeepBaseModel(LAMMPS* lmp,
+                                     const char* cite_user_package,
+                                     deepmd_compat::DeepBaseModel& deep_model)
+    : Pair(lmp), deep_base(deep_model), model_deviation(lmp) {
   if (lmp->citeme) {
     lmp->citeme->add(cite_user_package);
   }
@@ -388,20 +390,6 @@ PairDeepBaseModel::PairDeepBaseModel(
   cutoff = 0.;
   numb_types = 0;
   numb_types_spin = 0;
-  numb_models = 0;
-  out_freq = 0;
-  out_each = 0;
-  out_rel = 0;
-  out_rel_v = 0;
-  stdf_comm_buff_size = 0;
-  counts = nullptr;
-  displacements = nullptr;
-  tagsend = nullptr;
-  tagrecv = nullptr;
-  stdfsend = nullptr;
-  stdfrecv = nullptr;
-  eps = 0.;
-  eps_v = 0.;
   scale = NULL;
   do_ttm = false;
   dim_fparam = 0;
@@ -411,9 +399,6 @@ PairDeepBaseModel::PairDeepBaseModel(
   do_fix_fparam = false;
   fix_fparam_index = -1;
   do_compute_aparam = false;
-  single_model = false;
-  multi_models_mod_devi = false;
-  multi_models_no_mod_devi = false;
   is_restart = false;
   // set comm size needed by this Pair
   comm_reverse = 1;
@@ -448,38 +433,11 @@ void PairDeepBaseModel::print_summary(const string pre) const {
 }
 
 PairDeepBaseModel::~PairDeepBaseModel() {
-  destroy_model_deviation_buffers();
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
     memory->destroy(scale);
   }
-}
-
-void PairDeepBaseModel::ensure_model_deviation_buffers() {
-  if (counts == nullptr) {
-    memory->create(counts, comm->nprocs, "deepmd:counts");
-    memory->create(displacements, comm->nprocs, "deepmd:displacements");
-  }
-
-  const int ntotal = atom->natoms;
-  if (ntotal > stdf_comm_buff_size) {
-    memory->grow(stdfsend, ntotal, "deepmd:stdfsendall");
-    memory->grow(stdfrecv, ntotal, "deepmd:stdfrecvall");
-    memory->grow(tagsend, ntotal, "deepmd:tagsendall");
-    memory->grow(tagrecv, ntotal, "deepmd:tagrecvall");
-    stdf_comm_buff_size = ntotal;
-  }
-}
-
-void PairDeepBaseModel::destroy_model_deviation_buffers() {
-  memory->destroy(counts);
-  memory->destroy(displacements);
-  memory->destroy(stdfsend);
-  memory->destroy(stdfrecv);
-  memory->destroy(tagsend);
-  memory->destroy(tagrecv);
-  stdf_comm_buff_size = 0;
 }
 
 void PairDeepBaseModel::allocate() {
@@ -518,6 +476,7 @@ void PairDeepBaseModel::write_restart(FILE*) {
 }
 
 void PairDeepBaseModel::init_style() {
+  model_deviation.start_run();
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
 #else
@@ -526,9 +485,6 @@ void PairDeepBaseModel::init_style() {
   neighbor->requests[irequest]->full = 1;
   // neighbor->requests[irequest]->newton = 2;
 #endif
-  if (out_each == 1) {
-    ensure_model_deviation_buffers();
-  }
 }
 
 double PairDeepBaseModel::init_one(int i, int j) {
@@ -560,28 +516,6 @@ void* PairDeepBaseModel::extract(const char* str, int& dim) {
     return (void*)scale;
   }
   return NULL;
-}
-
-void ana_st(double& max,
-            double& min,
-            double& sum,
-            const vector<double>& vec,
-            const int& nloc) {
-  if (nloc == 0) {
-    return;
-  }
-  max = vec[0];
-  min = vec[0];
-  sum = vec[0];
-  for (unsigned ii = 1; ii < nloc; ++ii) {
-    if (vec[ii] > max) {
-      max = vec[ii];
-    }
-    if (vec[ii] < min) {
-      min = vec[ii];
-    }
-    sum += vec[ii];
-  }
 }
 
 void make_uniform_aparam(vector<double>& daparam,

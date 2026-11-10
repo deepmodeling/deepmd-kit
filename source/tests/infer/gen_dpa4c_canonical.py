@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate the compressed DPA4C .pt2 test models of the compact canonical lower.
+"""Generate the .pt2 test models of the compact canonical lower.
 
-A compressed DPA4C frozen with the compact canonical lower is served by two
-entry points: the host ones, which build the compact canonical graph from
+A model frozen with the compact canonical lower is served by two entry
+points: the host ones, which build the compact canonical graph from
 coordinates, and the device-resident ``compute_canonical_graph_gpu``, which
 LAMMPS + Kokkos calls with the graph and the outputs already on the model
-device. Two archives reach it: an energy model, which ``DeepPotPTExpt``
-serves, and a native-spin model, which ``NativeSpinPTExpt`` serves. The C++
-cases built on them (``dpa4c_canonical_test_common.h``) evaluate the graph
-of the host entry points through the device-resident one, including the
-replay of repeated evaluations of a graph without halo nodes and a charge
-state applied at run time, and check the host entry points against the
-references written here.
+device. Energy models reach it through ``DeepPotPTExpt`` and native-spin
+models through ``NativeSpinPTExpt``. The C++ cases built on them
+(``dpa4c_canonical_test_common.h``) evaluate the graph of the host entry
+points through the device-resident one, including the replay of repeated
+evaluations of a graph without halo nodes and a charge state applied at run
+time, and check the host entry points against the references written here.
 
-The single-block descriptors are charge-conditioned and carry the rebuild of
-their frozen tables that ``set_charge_spin`` runs. Two-block counterparts
-without conditioning exercise halo exchange in the C/C++ and Kokkos suites.
-The compressed operators are fp32 CUDA kernels, so the fixtures are generated
-only where the suite has a GPU.
+Two model families are frozen. The fused operators of a compressed DPA4C
+evaluate it: its single-block descriptors are charge-conditioned and carry
+the rebuild of their frozen tables that ``set_charge_spin`` runs, and
+two-block counterparts without conditioning exercise halo exchange in the
+C/C++ and Kokkos suites. The graph forward of a DPA4 evaluates it: its
+two-block descriptors read the charge/spin condition as an input and the
+features of halo nodes through the border plan. The operators are fp32 CUDA
+kernels, so the fixtures are generated only where the suite has a GPU.
 """
 
 from __future__ import (
@@ -80,6 +82,33 @@ CANONICAL_CONFIG = {
 SPIN_CONFIG = copy.deepcopy(CANONICAL_CONFIG)
 SPIN_CONFIG["type_map"] = ["Ni", "O"]
 SPIN_CONFIG["spin"] = {"use_spin": [True, False], "scheme": "native"}
+
+# Small single-precision DPA4 with the same cutoff and conditioning, and its
+# native-spin counterpart.
+DPA4_CONFIG = {
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "dpa4",
+        "rcut": 4.0,
+        "sel": 40,
+        "channels": 16,
+        "n_radial": 8,
+        "lmax": 2,
+        "precision": "float32",
+        "add_chg_spin_ebd": True,
+        "default_chg_spin": [0.0, 1.0],
+        "seed": 11,
+    },
+    "fitting_net": {
+        "type": "dpa4_ener",
+        "neuron": [16],
+        "precision": "float32",
+        "seed": 11,
+    },
+}
+DPA4_SPIN_CONFIG = copy.deepcopy(DPA4_CONFIG)
+DPA4_SPIN_CONFIG["type_map"] = ["Ni", "O"]
+DPA4_SPIN_CONFIG["spin"] = {"use_spin": [True, False], "scheme": "native"}
 
 # Jittered simple cubic lattice of 27 atoms with a spacing of 3 Å in a 9 Å
 # box: every atom has its six nearest neighbours within the 4 Å cutoff, and
@@ -187,10 +216,55 @@ def _build_spin_model(
     return _compress(model)
 
 
+def _build_dpa4(
+    config: dict, n_blocks: int, charge_conditioned: bool
+) -> torch.nn.Module:
+    """Build a DPA4 model of ``config`` and open its zero-initialized parameters."""
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+
+    config = copy.deepcopy(config)
+    config["descriptor"].update(n_blocks=n_blocks, add_chg_spin_ebd=charge_conditioned)
+    model = get_model(config).eval()
+    _activate_zero_parameters(model, _SPIN_REDRAW_SEED)
+    return model
+
+
+def _build_dpa4_model(n_blocks: int, charge_conditioned: bool) -> torch.nn.Module:
+    """Build the DPA4 energy model."""
+    return _build_dpa4(DPA4_CONFIG, n_blocks, charge_conditioned)
+
+
+def _build_dpa4_spin_model(n_blocks: int, charge_conditioned: bool) -> torch.nn.Module:
+    """Build the native-spin DPA4 model."""
+    return _build_dpa4(DPA4_SPIN_CONFIG, n_blocks, charge_conditioned)
+
+
+# The archives, grouped by the evaluator their metadata records: stem, builder,
+# spin, blocks and charge conditioning of the model.
+_CASES = {
+    "dpa4c": (
+        ("deeppot_dpa4c_canonical", _build_model, False, 1, True),
+        ("deeppot_dpa4c_canonical_spin", _build_spin_model, True, 1, True),
+        ("deeppot_dpa4c_canonical_multiblock", _build_model, False, 2, False),
+        ("deeppot_dpa4c_canonical_spin_multiblock", _build_spin_model, True, 2, False),
+    ),
+    "graph": (
+        ("deeppot_dpa4_canonical", _build_dpa4_model, False, 2, True),
+        ("deeppot_dpa4_canonical_spin", _build_dpa4_spin_model, True, 2, True),
+    ),
+}
+
+
 def _check_metadata(
-    pt2_path: str, spin: bool, n_blocks: int, charge_conditioned: bool
+    pt2_path: str,
+    spin: bool,
+    n_blocks: int,
+    charge_conditioned: bool,
+    evaluator: str,
 ) -> None:
-    """Check the canonical ABI, halo capability and optional charge-state rebuild."""
+    """Check the canonical ABI, halo capability and the charge-state route."""
     with zipfile.ZipFile(pt2_path) as zf:
         md = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
         names = zf.namelist()
@@ -212,20 +286,29 @@ def _check_metadata(
             indent=2,
         )
     )
-    assert md["lower_input_kind"] == "dpa4c_canonical"
+    assert md["lower_input_kind"] == "dpa_canonical"
+    assert md["canonical_evaluator"] == evaluator
+    # Only the fused operators of several DPA4C blocks read reverse edges.
+    assert md["canonical_requires_reciprocal"] is (
+        evaluator == "dpa4c" and n_blocks > 1
+    )
     assert md["do_atomic_virial"] is True
     assert md["has_message_passing"] is (n_blocks > 1)
     assert md["has_comm_artifact"] is False
     assert not any(name.endswith("forward_lower_with_comm.pt2") for name in names)
-    # The compact canonical lower takes no condition per call; the state is
-    # frozen into its tables, which ``set_charge_spin`` rebuilds. Without the
-    # rebuild a runtime charge state cannot be served, and the C++ cases built
+    # The fused DPA4C operators take no condition per call; the state is
+    # frozen into their tables, which ``set_charge_spin`` rebuilds. The graph
+    # forward of DPA4 reads the condition as an input instead. Without either
+    # route a runtime charge state cannot be served, and the C++ cases built
     # on it would not reach the replay.
-    if charge_conditioned:
+    if charge_conditioned and evaluator == "dpa4c":
         assert md.get("charge_state_constants"), (
             "the archive carries no charge-state rebuild"
         )
         assert any(name.endswith("charge_state.pt2") for name in names)
+    if charge_conditioned and evaluator == "graph":
+        assert md["dim_chg_spin"] == 2
+        assert not md.get("charge_state_constants")
     if spin:
         # The dispatch serves a native-spin archive without a with-comm
         # artifact through NativeSpinPTExpt, whose device entry is the one
@@ -317,25 +400,21 @@ def main() -> None:
     load_custom_ops()
 
     base_dir = os.path.dirname(__file__)
-    for stem, build, spin, n_blocks, conditioned in (
-        ("deeppot_dpa4c_canonical", _build_model, False, 1, True),
-        ("deeppot_dpa4c_canonical_spin", _build_spin_model, True, 1, True),
-        ("deeppot_dpa4c_canonical_multiblock", _build_model, False, 2, False),
-        ("deeppot_dpa4c_canonical_spin_multiblock", _build_spin_model, True, 2, False),
-    ):
-        pt2_path = os.path.join(base_dir, f"{stem}.pt2")
-        print(f"Exporting to {pt2_path} (lower_kind='dpa4c_canonical') ...")  # noqa: T201
-        pt_expt_deserialize_to_file(
-            pt2_path,
-            {"model": build(n_blocks, conditioned).serialize()},
-            lower_kind="dpa4c_canonical",
-            do_atomic_virial=True,
-        )
-        print("Export done.")  # noqa: T201
-        _check_metadata(pt2_path, spin, n_blocks, conditioned)
-        _write_ref(
-            pt2_path, os.path.join(base_dir, f"{stem}.expected"), spin, conditioned
-        )
+    for evaluator, cases in _CASES.items():
+        for stem, build, spin, n_blocks, conditioned in cases:
+            pt2_path = os.path.join(base_dir, f"{stem}.pt2")
+            print(f"Exporting to {pt2_path} (lower_kind='dpa_canonical') ...")  # noqa: T201
+            pt_expt_deserialize_to_file(
+                pt2_path,
+                {"model": build(n_blocks, conditioned).serialize()},
+                lower_kind="dpa_canonical",
+                do_atomic_virial=True,
+            )
+            print("Export done.")  # noqa: T201
+            _check_metadata(pt2_path, spin, n_blocks, conditioned, evaluator)
+            _write_ref(
+                pt2_path, os.path.join(base_dir, f"{stem}.expected"), spin, conditioned
+            )
     print("\nDone!")  # noqa: T201
 
 

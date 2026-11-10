@@ -514,14 +514,16 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
         for method in ("dense", "ase", "cell", "vesin", "nv"):
             with self.subTest(method=method):
                 self.assertEqual(
-                    PtExptDeepEval._resolve_neighbor_graph_method(method),
+                    PtExptDeepEval._resolve_neighbor_graph_method(
+                        method, torch.device("cpu")
+                    ),
                     method,
                 )
 
     def test_auto_deferred_until_nf_known(self) -> None:
         """Construction-time resolve leaves ``auto`` unresolved without ``nf``."""
         self.assertEqual(
-            PtExptDeepEval._resolve_neighbor_graph_method("auto"),
+            PtExptDeepEval._resolve_neighbor_graph_method("auto", torch.device("cpu")),
             "auto",
         )
 
@@ -562,10 +564,6 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
             ):
                 with (
                     mock.patch(
-                        "deepmd.pt_expt.utils.env.DEVICE",
-                        torch.device(device_type),
-                    ),
-                    mock.patch(
                         "deepmd.pt.utils.nv_nlist.is_nv_available",
                         return_value=nv_available,
                     ),
@@ -588,11 +586,11 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                             level="WARNING",
                         ):
                             actual = PtExptDeepEval._resolve_neighbor_graph_method(
-                                "auto", nf=nf
+                                "auto", torch.device(device_type), nf=nf
                             )
                     else:
                         actual = PtExptDeepEval._resolve_neighbor_graph_method(
-                            "auto", nf=nf
+                            "auto", torch.device(device_type), nf=nf
                         )
                 self.assertEqual(actual, expected)
 

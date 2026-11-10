@@ -875,11 +875,88 @@ struct CompactCanonicalSwapPlan : public CommKokkos {
 // result is the same in every bit. Where the package uses its device path, or
 // with a communication style other than the Kokkos brick communication, it
 // communicates as it would.
+//
+// Besides the outputs the pair packs, the fold folds rows that the pair
+// fills on the host: the centroid per-atom virial, or the outputs of the
+// models of an ensemble. While it folds them the pair packs and unpacks the
+// rows through ``pack_rows`` and ``unpack_rows``.
 template <class DeviceType, class Buffer>
 class CompactCanonicalGhostFold {
   using Value = std::remove_const_t<typename Buffer::t_dev::value_type>;
 
  public:
+  // Fold ``rows``, ``width`` values for every local and ghost atom in atom
+  // order on the host. Afterwards the rows of the local atoms hold their
+  // folded values.
+  template <class PairKokkos>
+  void fold(Comm* comm,
+            MPI_Comm world,
+            PairKokkos* pair,
+            std::vector<double>& rows,
+            const int width) {
+    if (k_rows.extent(0) < rows.size()) {
+      k_rows = DAT::tdual_double_1d("compact_canonical:fold_rows", rows.size());
+    }
+    k_rows.modify_host();
+    std::copy(rows.begin(), rows.end(), k_rows.view_host().data());
+    k_rows.template sync<DeviceType>();
+    row_width = width;
+    fold(comm, world, pair, width);
+    row_width = 0;
+    k_rows.sync_host();
+    std::copy_n(k_rows.view_host().data(), rows.size(), rows.begin());
+  }
+
+  // Whether the fold runs on rows rather than on the outputs of the pair.
+  bool folds_rows() const { return row_width > 0; }
+
+  // Pack and unpack the rows: on the host for a communication style other
+  // than the Kokkos brick communication, on the device otherwise.
+  int pack_rows(const int n, const int first, double* buf) const {
+    const auto h_rows = k_rows.view_host();
+    std::copy_n(h_rows.data() + static_cast<std::size_t>(first) * row_width,
+                static_cast<std::size_t>(n) * row_width, buf);
+    return n * row_width;
+  }
+  void unpack_rows(const int n, const int* list, const double* buf) {
+    k_rows.modify_host();
+    auto h_rows = k_rows.view_host();
+    for (int i = 0; i < n; ++i) {
+      for (int k = 0; k < row_width; ++k) {
+        h_rows(static_cast<std::size_t>(list[i]) * row_width + k) +=
+            buf[i * row_width + k];
+      }
+    }
+  }
+  int pack_rows(const int n, const int first, Buffer& buf) {
+    auto d_buf = buf.template view<DeviceType>();
+    auto d_rows = k_rows.template view<DeviceType>();
+    const int width = row_width;
+    Kokkos::parallel_for(
+        "compact_canonical:pack_rows", Kokkos::RangePolicy<DeviceType>(0, n),
+        KOKKOS_LAMBDA(const int i) {
+          for (int k = 0; k < width; ++k) {
+            d_buf(width * i + k) = d_rows(width * (first + i) + k);
+          }
+        });
+    return n * width;
+  }
+  void unpack_rows(const int n, DAT::tdual_int_1d list, Buffer& buf) {
+    k_rows.template modify<DeviceType>();
+    auto d_buf = buf.template view<DeviceType>();
+    auto d_list = list.template view<DeviceType>();
+    auto d_rows = k_rows.template view<DeviceType>();
+    const int width = row_width;
+    Kokkos::parallel_for(
+        "compact_canonical:unpack_rows", Kokkos::RangePolicy<DeviceType>(0, n),
+        KOKKOS_LAMBDA(const int i) {
+          const int j = d_list(i);
+          for (int k = 0; k < width; ++k) {
+            d_rows(width * j + k) += d_buf(width * i + k);
+          }
+        });
+  }
+
   template <class PairKokkos>
   void fold(Comm* comm, MPI_Comm world, PairKokkos* pair, const int size) {
     // The condition under which CommKokkos::reverse_comm(Pair*) takes its
@@ -964,6 +1041,9 @@ class CompactCanonicalGhostFold {
   // only the packed values of a swap are staged in the pinned host views.
   Buffer send, recv;
   Kokkos::View<Value*, Kokkos::SharedHostPinnedSpace> h_send, h_recv;
+  // The rows of a fold of rows, and their width, zero outside such a fold.
+  DAT::tdual_double_1d k_rows;
+  int row_width = 0;
 };
 
 // Halo exchange of the extended node set of a decomposed system, the forward
@@ -1401,6 +1481,10 @@ class CompactCanonicalGraphKokkos : protected Pointers {
       // candidate total cannot overflow before the next rebuild and the edge
       // count can stay on the device. Systems whose candidate storage exceeds
       // the bound read the count back instead, which their step amortizes.
+      // A model that reads the source CSR takes the counted storage, which
+      // follows the edge count: a model evaluated by its graph forward, which
+      // reads the source CSR, computes every storage row, while the fused
+      // operators skip the rows past the edges.
       const bool bounded =
           !source_csr && static_cast<std::uint64_t>(candidate_total) <=
                              bounded_storage_bytes() / edge_storage_bytes;
@@ -1850,9 +1934,11 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     }
     const std::size_t required = static_cast<std::size_t>(storage);
     if (edge_capacity < required) {
-      // A reserve of 2% covers thermal fluctuations without retaining large
-      // unused buffers, bounded by the addressable size of its arrays.
-      const std::size_t slack = required / 50 + 64;
+      // A reserve of 1/256 covers the thermal fluctuations of the count, and
+      // stays small because a model evaluated by its graph forward reads the
+      // reserved guard rows like edges; the addressable size of the arrays
+      // bounds it.
+      const std::size_t slack = required / 256 + 64;
       edge_capacity = std::min<std::size_t>(required + slack, max_storage);
       d_source = Kokkos::View<std::uint32_t*, DeviceType>(
           "compact_canonical:source", edge_capacity);

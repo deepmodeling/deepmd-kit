@@ -1081,8 +1081,8 @@ def test_native_spin_with_bridging_graph_freeze_and_deep_eval(tmp_path) -> None:
 
     model_file = tmp_path / "dpa4_native_spin_zbl_graph.pt2"
     # native spin has no dense lower at all, so the graph kind is the only
-    # valid one here; the graph lower additionally carries a with-comm twin
-    # (only the dense lower stays single-rank for spin).
+    # valid one here; its graph lower runs the cross-rank ghost exchange in
+    # the main program, so the archive holds a single artifact.
     deserialize_to_file(
         str(model_file), {"model": model.serialize()}, lower_kind="graph"
     )
@@ -1090,8 +1090,8 @@ def test_native_spin_with_bridging_graph_freeze_and_deep_eval(tmp_path) -> None:
         md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
         names = z.namelist()
     assert md["is_spin"] is True
-    assert md["has_comm_artifact"] is True
-    assert "model/extra/forward_lower_with_comm.pt2" in names
+    assert md["has_comm_artifact"] is False
+    assert "model/extra/forward_lower_with_comm.pt2" not in names
     assert md["use_spin"] == [True, False]
 
     dp = DeepPot(str(model_file))

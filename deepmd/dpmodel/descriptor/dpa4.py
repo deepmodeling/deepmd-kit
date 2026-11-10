@@ -2534,10 +2534,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     def has_message_passing_across_ranks(self) -> bool:
         """SeZM reads ghost-neighbour features at every interaction block.
 
-        The GRAPH lower implements the exchange via per-block ``border_op``
-        (pt_expt ``exchange_ghost_features``), so multi-rank inference always
-        needs the with-comm artifact. Whether multi-rank is POSSIBLE at all
-        is :meth:`supports_edge_parallel`.
+        The GRAPH lower implements the exchange per block (pt_expt
+        ``exchange_ghost_features``), so multi-rank inference always exchanges
+        ghost features: through the with-comm artifact of an energy model, or
+        through the border plan that the main program of a native-spin model
+        or of the compact canonical lower takes. Whether multi-rank is
+        POSSIBLE at all is :meth:`supports_edge_parallel`.
 
         The DENSE (nlist) lower remains comm-less — see
         :meth:`dense_lower_supports_comm`; the freeze machinery consults both
@@ -2587,6 +2589,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     def uses_compact_edge_pairs(self) -> bool:
         """DPA4 attention is a per-edge scatter softmax; no pair axis."""
         return False
+
+    def supports_canonical_graph(self) -> bool:
+        """Whether the graph lower evaluates the compact canonical graph.
+
+        The compact canonical graph carries single-precision bond vectors,
+        which a descriptor computing in single precision reads without loss;
+        its interaction blocks refresh the ghost rows through the border plan.
+        """
+        return self.compute_precision == "float32"
 
     def _rotation_angles(self, edge_vec: Array) -> Array | None:
         """Supply explicit random rolls for backends with functional RNGs.

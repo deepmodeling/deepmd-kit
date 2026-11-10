@@ -560,7 +560,8 @@ def _build_spin_graph_sample(
 class TestDPA4NativeSpinGraphLowerExportable:
     """``forward_lower_graph_exportable`` establishes the positional ``.pt2``
     ABI for graph-spin models (spin at index 10, conditional ``charge_spin``
-    tail at slot 13, no with-comm variant) -- the C++/serialization seams
+    tail at slot 13, then the communicator and the border plan of a model
+    with further message-passing blocks) -- the C++/serialization seams
     mirror this ABI.
     """
 
@@ -1401,7 +1402,7 @@ class TestNativeSpinModelPairExcludeContract:
     Exclusion is a BUILD-time transform owned by the neighbor-graph
     construction (decision #18/A4): the exported lower consumes a pre-excluded
     ``edge_mask``, so every external feeder (Python ``DeepEval``, C++
-    ``DeepSpinPTExpt::compute``) must fold it in from the
+    ``NativeSpinPTExpt::compute``) must fold it in from the
     ``pair_exclude_types`` metadata field.  These tests pin the two properties
     the C++ regression
     (``source/api_cc/tests/test_deepspin_dpa4_pairexcl_ptexpt.cc``) depends on:

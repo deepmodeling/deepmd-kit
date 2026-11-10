@@ -88,7 +88,7 @@ def test_multiblock_communication_is_specific_to_the_lower() -> None:
     for kind, needs_sibling in (
         ("graph", True),
         ("nlist", False),
-        ("dpa4c_canonical", False),
+        ("dpa_canonical", False),
     ):
         assert _needs_with_comm_artifact(model, kind) is needs_sibling
         metadata = _collect_metadata(model, lower_kind=kind)
@@ -666,11 +666,12 @@ def test_compact_canonical_graph_export(
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     exported, metadata, _model_json, _output_keys = _trace_and_export(
         {"model": model.serialize()},
-        lower_kind="dpa4c_canonical",
+        lower_kind="dpa_canonical",
         do_atomic_virial=True,
     )
     assert isinstance(exported, torch.export.ExportedProgram)
-    assert metadata["lower_input_kind"] == "dpa4c_canonical"
+    assert metadata["lower_input_kind"] == "dpa_canonical"
+    assert metadata["canonical_evaluator"] == "dpa4c"
     assert metadata["graph_edge_dtype"] == "float32"
     assert metadata["canonical_index_dtype"] == "auto"
     assert metadata["canonical_index_storage"] == "byte_words"
@@ -698,7 +699,7 @@ def test_compact_canonical_export_accepts_source_csr_placeholders(
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     exported, _metadata, _model_json, _output_keys = _trace_and_export(
         {"model": model.serialize()},
-        lower_kind="dpa4c_canonical",
+        lower_kind="dpa_canonical",
         do_atomic_virial=True,
     )
     # Storage past the real edges holds guard rows, so a generous edge axis
@@ -732,7 +733,8 @@ def test_a_multi_block_export_reads_its_border_plan(
     that took them for long-range inputs would ignore the halo rows of a
     decomposed frame and give wrong energies on several ranks. Each of them
     must reach the fused operator, and the metadata must announce the message
-    passing, from which the C++ interface decides to pass a border plan.
+    passing, from which the C++ interface decides to pass a border plan, and
+    the reverse edges that the fused operator of several blocks reads.
     """
     monkeypatch.setenv("DP_CUDA_INFER", "2")
     config = _compressed_config(8)
@@ -741,10 +743,11 @@ def test_a_multi_block_export_reads_its_border_plan(
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     exported, metadata, _model_json, _output_keys = _trace_and_export(
         {"model": model.serialize()},
-        lower_kind="dpa4c_canonical",
+        lower_kind="dpa_canonical",
         do_atomic_virial=True,
     )
     assert metadata["has_message_passing"]
+    assert metadata["canonical_requires_reciprocal"]
     user_inputs = exported.graph_signature.user_inputs
     placeholders = {
         node.name: node
@@ -876,7 +879,7 @@ def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     model = get_model(_compressed_config(channels)).to("cpu").eval()
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     data = {"model": model.serialize()}
-    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
+    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa_canonical"
 
 
 def test_a_case_embedding_reaches_the_fused_fitting_operator(
@@ -930,10 +933,10 @@ def test_a_case_embedding_deploys_on_the_compact_canonical_lower(
     model.get_fitting_net().set_case_embd(1)
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     data = {"model": model.serialize()}
-    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
+    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa_canonical"
     exported, _metadata, _model_json, _output_keys = _trace_and_export(
         data,
-        lower_kind="dpa4c_canonical",
+        lower_kind="dpa_canonical",
         do_atomic_virial=True,
     )
 
@@ -1076,7 +1079,7 @@ def test_a_baked_charge_state_reaches_the_compact_canonical_lower() -> None:
     descriptor.enable_compression(min_nbor_dist=0.5)
     assert model.get_dim_chg_spin() == 0
     assert _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto") == (
-        "dpa4c_canonical"
+        "dpa_canonical"
     )
 
 

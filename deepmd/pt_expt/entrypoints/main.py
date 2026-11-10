@@ -526,7 +526,7 @@ def freeze(
     model: str,
     output: str = "frozen_model",
     head: str | None = None,
-    lower_kind: str = "nlist",
+    lower_kind: str = "auto",
     *,
     with_comm: bool = True,
     compress: bool = False,
@@ -545,8 +545,11 @@ def freeze(
     head : str or None
         Head to freeze in multi-task mode.
     lower_kind : str
-        Lower-level export form: ``"nlist"`` (default, dense neighbor-list lower)
-        or ``"graph"`` (NeighborGraph edge-list lower). ``"graph"`` is only valid
+        Lower-level export form: ``"auto"`` (default) resolves to ``"graph"``
+        for a graph-capable model and to ``"nlist"`` otherwise; ``"nlist"``
+        (dense neighbor-list lower) or ``"graph"`` (NeighborGraph edge-list
+        lower) request one, and a requested ``"nlist"`` for a graph-capable
+        model is overridden with a warning. ``"graph"`` is only valid
         for graph-eligible models (``mixed_types`` and ``uses_graph_lower``:
         dpa1/se_atten with concat type embedding) and selects the C++ graph inference path;
         the per-atom virial is enabled for it (near-free in the graph path:
@@ -560,6 +563,9 @@ def freeze(
         graph lower, so ``lower_kind`` is resolved to ``"graph"`` for it
         regardless of the requested value -- before the export ABI and the
         default output suffix are selected.
+        On a CUDA device, the ``.pt2`` graph lower of a single-precision DPA4
+        model takes the compact canonical schema, which the LAMMPS Kokkos
+        pair styles feed from their device-resident neighbor lists.
     with_comm : bool, optional
         Include a communication artifact for models with cross-rank message
         passing, by default True. Disable for single-process inference.
@@ -612,14 +618,17 @@ def freeze(
     # graph-capable, so "can use graph" is deliberately the whole condition --
     # a separate "graph-required" capability would encode a distinction that
     # stops existing. It is also load-bearing: for native spin and for an
-    # analytical bridging term no dense lower exists at all, so the public
-    # default would otherwise fail deep inside the dense trace. Resolved HERE,
-    # before the export ABI and the default output suffix are chosen.
+    # analytical bridging term no dense lower exists at all. The default
+    # resolves to it silently; only a dense lower the caller requested is
+    # overridden with a warning. Resolved HERE, before the export ABI and
+    # the default output suffix are chosen.
     from deepmd.pt_expt.model.graph_lower import (
         model_uses_graph_lower,
     )
 
-    if lower_kind != "graph" and model_uses_graph_lower(m):
+    if lower_kind == "auto":
+        lower_kind = "graph" if model_uses_graph_lower(m) else "nlist"
+    elif lower_kind == "nlist" and model_uses_graph_lower(m):
         # WARNING, not info: this overrides what the caller asked for, and
         # the two lowers are not numerically identical (dpa1's graph and
         # dense attention semantics differ by ~1e-4), so the override must
@@ -627,8 +636,9 @@ def freeze(
         log.warning(
             "Requested lower_kind=%r is being OVERRIDDEN to 'graph': the "
             "dense (nlist) lower is deprecated in the pt_expt backend and "
-            "this model is graph-lower capable. The frozen artifact will be "
-            "a graph-kind .pt2, and its outputs may differ slightly from the "
+            "this model is graph-lower capable. The frozen artifact will take "
+            "the graph lower or, where it serves the model, the compact "
+            "canonical lower, and its outputs may differ slightly from the "
             "dense lower.",
             lower_kind,
         )
@@ -670,14 +680,18 @@ def freeze(
         return
 
     model_dict_serialized = m.serialize()
+    # A .pt2 archive of the graph lower takes the compact canonical schema
+    # where that serves the model on the target, as compression selects it.
     deserialize_to_file(
         output,
         {"model": model_dict_serialized, "model_def_script": single_model_params},
         do_atomic_virial=do_atomic_virial,
-        lower_kind=lower_kind,
+        lower_kind=(
+            "auto" if lower_kind == "graph" and output.endswith(".pt2") else lower_kind
+        ),
         with_comm=with_comm,
     )
-    log.info("Saved frozen model to %s (lower_kind=%s)", output, lower_kind)
+    log.info("Saved frozen model to %s", output)
 
 
 def change_bias(
@@ -726,6 +740,9 @@ def change_bias(
     )
     from deepmd.pt_expt.train.wrapper import (
         ModelWrapper,
+    )
+    from deepmd.pt_expt.utils.canonical_graph import (
+        CANONICAL_LOWER_KIND,
     )
     from deepmd.pt_expt.utils.env import (
         DEVICE,
@@ -864,7 +881,7 @@ def change_bias(
         # as compression selects it: it stays on a CUDA device, and a host
         # without one exports the graph lower.
         lower_kind = pte_data["lower_input_kind"]
-        if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
+        if lower_kind == CANONICAL_LOWER_KIND:
             lower_kind = "auto"
         deserialize_to_file(
             output_path,
@@ -939,7 +956,7 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             model=FLAGS.model,
             output=FLAGS.output,
             head=FLAGS.head,
-            lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
+            lower_kind=getattr(FLAGS, "lower_kind", "auto"),
             compress=getattr(FLAGS, "compress", False),
         )
     elif FLAGS.command == "change-bias":

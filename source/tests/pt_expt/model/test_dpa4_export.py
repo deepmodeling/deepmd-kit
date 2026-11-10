@@ -11,11 +11,11 @@ sidecar for the ``"graph"`` kind only; the ``"nlist"`` kind stays a SINGLE
 compiled artifact and multi-rank inference on it must fail fast at the C++
 dispatch instead of silently skipping the exchange.
 
-Task 8 parametrizes the freeze over ``lower_kind``: ``"auto"`` now resolves
-to ``"graph"`` (``_resolve_lower_kind`` sees ``model_uses_graph_lower() is
-True``; ``canonical_model_eligible`` is dpa1-specific so DPA4 never takes the
-``"dpa1_canonical"`` branch), while ``"nlist"`` stays reachable for
-back-compat. This test verifies, per ``lower_kind``:
+Task 8 parametrizes the freeze over ``lower_kind``: ``"auto"`` resolves to
+``"graph"`` (``_resolve_lower_kind`` sees ``model_uses_graph_lower() is
+True``, and the compact canonical lower serves single-precision descriptors
+alone, not this double-precision model), while ``"nlist"`` stays reachable
+for back-compat. This test verifies, per ``lower_kind``:
   1. The .pt2 archive is produced and the with-comm artifact is PRESENT for
      the ``"graph"`` kind (cross-rank exchange) and ABSENT for the
      ``"nlist"`` kind (dense lower is comm-less).
@@ -957,7 +957,7 @@ def _freeze_native_spin(model_file) -> None:
     reason="AOTInductor compile is slow (minutes); run locally only by default.",
 )
 def test_native_spin_graph_freeze(tmp_path) -> None:
-    """Native-spin DPA4 freezes to a graph-kind .pt2 with its comm sidecar."""
+    """Native-spin DPA4 freezes to a single graph-kind .pt2 artifact."""
     model_file = tmp_path / "dpa4_spin_graph.pt2"
     _freeze_native_spin(model_file)
 
@@ -975,19 +975,19 @@ def test_native_spin_graph_freeze(tmp_path) -> None:
     assert md["type_map"] == NATIVE_SPIN_CONFIG["type_map"]
     assert md["lower_input_kind"] == "graph"
     assert md["is_spin"] is True
-    # Native spin participates in the with-comm artifact on the GRAPH lower
-    # (pt's SeZMNativeSpinModel does not override supports_edge_parallel):
-    # the spin input is per-node with ghost rows delivered by the LAMMPS
-    # ``sp`` forward-comm, so only the per-block ghost FEATURE refresh needs
-    # border_op -- the same one the energy model drives.
-    assert md["has_comm_artifact"] is True
+    # The spin input is per-node with ghost rows delivered by the LAMMPS
+    # ``sp`` forward-comm, so only the per-block ghost FEATURE refresh crosses
+    # ranks. The graph lower of a native-spin model takes the border plan as
+    # inputs and runs that exchange in its main program, so no with-comm
+    # artifact is embedded.
+    assert md["has_comm_artifact"] is False
     assert md["has_message_passing"] is True
     assert md["ntypes_spin"] == 1  # use_spin=[True, False]
     assert md["use_spin"] == [True, False]
     assert "force_mag" in md["output_keys"]
     for key in ("atom_energy", "energy", "force", "virial"):
         assert key in md["output_keys"]
-    assert any(n.endswith("forward_lower_with_comm.pt2") for n in names)
+    assert not any(n.endswith("forward_lower_with_comm.pt2") for n in names)
 
 
 def test_native_spin_nlist_deserialize_rejected(tmp_path) -> None:
@@ -1044,17 +1044,21 @@ def test_native_spin_default_freeze_routes_to_graph(tmp_path) -> None:
     assert md["is_spin"] is True
 
 
-def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
+@pytest.mark.parametrize("requested", ["nlist", None])
+def test_lower_kind_override_warns_only_when_requested(
+    tmp_path, caplog, requested
+) -> None:
     """Overriding the caller's lower_kind must be WARNED, not silent.
 
     The dense lower is deprecated here, so a graph-capable model is forced
     onto the graph lower even when the caller asked for "nlist". The two
     lowers are not numerically identical, so the override has to be visible
-    in the log rather than inferred from the output suffix.
+    in the log rather than inferred from the output suffix. The default
+    (``requested=None``) resolves to the graph lower without a warning, since
+    the caller asked for nothing to override.
 
-    The export itself is stubbed: this pins the resolution and its log, and
-    a real compile would only add minutes (and this workstation's inductor
-    bug) without testing anything extra.
+    The export itself is stubbed: this pins the resolution and its log, which
+    a real compile would not test further.
     """
     import copy
     import logging
@@ -1089,14 +1093,20 @@ def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
         mock.patch("deepmd.pt_expt.utils.serialization.deserialize_to_file", _stub),
         caplog.at_level(logging.WARNING, logger="deepmd.pt_expt.entrypoints.main"),
     ):
-        freeze(model=str(ckpt), output=str(tmp_path / "frozen"), lower_kind="nlist")
+        freeze(
+            model=str(ckpt),
+            output=str(tmp_path / "frozen"),
+            **({} if requested is None else {"lower_kind": requested}),
+        )
 
     warned = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("OVERRIDDEN" in m for m in warned), (
-        f"the lower_kind override was not warned about; got {warned}"
+    overridden = any("OVERRIDDEN" in m for m in warned)
+    assert overridden == (requested is not None), (
+        f"requested lower_kind={requested!r}: override warnings {warned}"
     )
-    # ... and it really did override, both in the export call and the suffix
-    assert seen["lower_kind"] == "graph"
+    # ... and it really did override, both in the export call, which selects
+    # the schema of the graph lower, and the suffix
+    assert seen["lower_kind"] == "auto"
     assert seen["model_file"].endswith(".pt2")
 
 
@@ -1105,8 +1115,8 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
 
     The dense lower is deprecated in this backend, and for a bridged model
     it does not exist at all: the analytical term's ``forward_atomic``
-    raises on the dense route. The default ``lower_kind="nlist"`` is
-    therefore resolved by the graph-lower capability of the model, which a
+    raises on the dense route. The default ``lower_kind="auto"`` therefore
+    resolves through the graph-lower capability of the model, which a
     bridged composition answers like a native-spin model does.
     """
     import copy
@@ -1142,7 +1152,8 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
     assert args[0] == str(output.with_suffix(".pt2")), (
         "default suffix must follow the resolved graph kind"
     )
-    assert kwargs["lower_kind"] == "graph"
+    # The export selects the schema of the graph lower.
+    assert kwargs["lower_kind"] == "auto"
 
 
 def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:

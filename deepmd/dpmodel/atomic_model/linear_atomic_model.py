@@ -267,6 +267,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """All children trace into one artifact; each must be exportable."""
         return all(m.supports_graph_export() for m in self.models)
 
+    def supports_canonical_graph(self) -> bool:
+        """All children read one graph without pair exclusion; each must serve it."""
+        return self.pair_excl is None and all(
+            m.supports_canonical_graph() for m in self.models
+        )
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
         return True

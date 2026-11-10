@@ -220,6 +220,13 @@ def test_pair_deepmd(lammps) -> None:
     lammps.run(1)
 
 
+@pytest.mark.parametrize("option", ["virtual_len", "spin_norm"])
+def test_pair_deepspin_rejects_spin_vector_option(lammps, option: str) -> None:
+    """A model of the pt backend declares no spin types for these options."""
+    with pytest.raises(Exception, match=f"takes no {option} option"):
+        lammps.pair_style(f"deepspin {pb_file.resolve()} {option} 0.4")
+
+
 def test_pair_deepmd_virial(lammps) -> None:
     lammps.pair_style(f"deepspin {pb_file.resolve()}")
     lammps.pair_coeff("* *")
