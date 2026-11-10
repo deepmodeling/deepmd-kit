@@ -31,6 +31,7 @@
 #endif
 
 #include "deepmd_version.h"
+#include "modify_lookup.h"
 #include "pair_base.h"
 
 using namespace LAMMPS_NS;
@@ -119,16 +120,10 @@ void PairDeepBaseModel::parse_spin_vector_option(
 void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
   assert(do_compute_fparam);
 
-  int icompute = modify->find_compute(compute_fparam_id);
-  if (icompute < 0) {
-    error->all(FLERR,
-               "compute " + compute_fparam_id + " for fparam is not found");
-  }
-
-  Compute* compute = modify->compute[icompute];
+  Compute* compute = deepmd_compute_by_id(modify, compute_fparam_id);
   if (!compute) {
     error->all(FLERR,
-               "compute " + compute_fparam_id + " for fparam is invalid");
+               "compute " + compute_fparam_id + " for fparam is not found");
   }
   fparam.resize(dim_fparam);
 
@@ -171,12 +166,7 @@ void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
 void PairDeepBaseModel::make_fparam_from_fix(vector<double>& fparam) {
   assert(do_fix_fparam);
 
-  int ifix = modify->find_fix(fix_fparam_id);
-  if (ifix < 0) {
-    error->all(FLERR, "fix id is not found: " + fix_fparam_id);
-  }
-  Fix* fix = modify->fix[ifix];
-
+  Fix* fix = deepmd_fix_by_id(modify, fix_fparam_id);
   if (!fix) {
     error->all(FLERR, "fix id is not found: " + fix_fparam_id);
   }
@@ -217,16 +207,10 @@ void PairDeepBaseModel::make_fparam_from_fix(vector<double>& fparam) {
 void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
   assert(do_compute_aparam);
 
-  int icompute = modify->find_compute(compute_aparam_id);
-  if (icompute < 0) {
-    error->all(FLERR,
-               "compute " + compute_aparam_id + " for aparam is not found");
-  }
-
-  Compute* compute = modify->compute[icompute];
+  Compute* compute = deepmd_compute_by_id(modify, compute_aparam_id);
   if (!compute) {
     error->all(FLERR,
-               "compute " + compute_aparam_id + " for aparam is invalid");
+               "compute " + compute_aparam_id + " for aparam is not found");
   }
   if (!compute->peratom_flag) {
     error->all(FLERR, "compute " + compute_aparam_id +
@@ -284,12 +268,8 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
 void PairDeepBaseModel::make_ttm_fparam(vector<double>& fparam) {
   assert(do_ttm);
   // get ttm_fix
-  const FixTTMDP* ttm_fix = NULL;
-  for (int ii = 0; ii < modify->nfix; ii++) {
-    if (string(modify->fix[ii]->id) == ttm_fix_id) {
-      ttm_fix = dynamic_cast<FixTTMDP*>(modify->fix[ii]);
-    }
-  }
+  const FixTTMDP* ttm_fix =
+      dynamic_cast<FixTTMDP*>(deepmd_fix_by_id(modify, ttm_fix_id));
   if (!ttm_fix) {
     error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
   }
@@ -325,12 +305,8 @@ void PairDeepBaseModel::make_ttm_fparam(vector<double>& fparam) {
 void PairDeepBaseModel::make_ttm_aparam(vector<double>& daparam) {
   assert(do_ttm);
   // get ttm_fix
-  const FixTTMDP* ttm_fix = NULL;
-  for (int ii = 0; ii < modify->nfix; ii++) {
-    if (string(modify->fix[ii]->id) == ttm_fix_id) {
-      ttm_fix = dynamic_cast<FixTTMDP*>(modify->fix[ii]);
-    }
-  }
+  const FixTTMDP* ttm_fix =
+      dynamic_cast<FixTTMDP*>(deepmd_fix_by_id(modify, ttm_fix_id));
   if (!ttm_fix) {
     error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
   }
