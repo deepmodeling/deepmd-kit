@@ -1172,7 +1172,17 @@ def test_unsupported_combinations_fail() -> None:
     config = _config("les")
     config["use_srtab"] = "table.txt"
     config["sw_rmin"], config["sw_rmax"] = 0.5, 1.0
-    with pytest.raises(NotImplementedError, match="ZBL"):
+    with pytest.raises(ValueError, match="legacy tabulated ZBL"):
+        get_model(config)
+    # DPA4C rejects tabulated ZBL regardless of long range. Use an otherwise
+    # supported descriptor to exercise the separate long-range/ZBL boundary.
+    config["descriptor"] = {
+        "type": "se_e2_a",
+        "sel": [4, 4],
+        "rcut": 3.0,
+        "rcut_smth": 2.5,
+    }
+    with pytest.raises(NotImplementedError, match=r"long-range.*tabulated ZBL"):
         get_model(config)
     config = _config("les")
     config["type_map"] = ["O", "H"]
