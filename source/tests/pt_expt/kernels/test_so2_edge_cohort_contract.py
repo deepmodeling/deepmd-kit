@@ -91,6 +91,10 @@ class _LaunchRecorder:
 
 @pytest.mark.parametrize("changed", [1, 5, 6, 7])
 @pytest.mark.parametrize("kind", ["precision", "stride"])
+@pytest.mark.skipif(
+    not torch.backends.cuda.is_built(),
+    reason="Fake CUDA views require a CUDA-enabled PyTorch build",
+)
 def test_unsupported_parameters_keep_native(monkeypatch, changed, kind):
     """FP32 outputs alone do not qualify every parameter dtype or layout."""
 
@@ -135,6 +139,10 @@ def test_unsupported_parameters_keep_native(monkeypatch, changed, kind):
 
 @pytest.mark.parametrize("inside", [False, True])
 @pytest.mark.parametrize("edges", [0, 37, 8193, 16385])
+@pytest.mark.skipif(
+    not torch.backends.cuda.is_built(),
+    reason="Fake CUDA views require a CUDA-enabled PyTorch build",
+)
 def test_scratch_is_cohort_bounded_and_reused(monkeypatch, inside, edges):
     """Check allocation sizes/identities at live launches using fake CUDA inputs.
 
