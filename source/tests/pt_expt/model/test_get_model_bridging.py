@@ -404,7 +404,9 @@ def test_nonempty_shared_dict_raises() -> None:
 @pytest.mark.parametrize("location", ["composition", "child"])
 @pytest.mark.parametrize("backend", ["dpmodel", "pt_expt"])
 def test_canonical_rejects_tabulated_zbl(location, backend):
-    from deepmd.utils.bridging import expand_bridging_method
+    from deepmd.utils.bridging import (
+        expand_bridging_method,
+    )
 
     config = expand_bridging_method(_bridged(_dpa4_standard_config()))
     target = config if location == "composition" else config["models"][0]

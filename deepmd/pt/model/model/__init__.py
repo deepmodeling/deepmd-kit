@@ -252,6 +252,7 @@ def get_linear_model(model_params: dict) -> BaseModel:
         if "type_map" not in sub_model_params:
             sub_model_params["type_map"] = model_params["type_map"]
         if "descriptor" in sub_model_params:
+            validate_tabulated_zbl(sub_model_params)
             # descriptor
             sub_ntypes = len(sub_model_params["type_map"])
             sub_model_params["descriptor"]["ntypes"] = sub_ntypes

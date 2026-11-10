@@ -446,7 +446,9 @@ def test_canonical_rejects_tabulated_zbl(location):
 
 
 def test_training_dispatch_rejects_tabulated_zbl():
-    from deepmd.pt.train.training import get_single_model
+    from deepmd.pt.train.training import (
+        get_single_model,
+    )
 
     config = _sugar_config()
     config.pop("type")
@@ -454,3 +456,11 @@ def test_training_dispatch_rejects_tabulated_zbl():
     config["use_srtab"] = "unused-table.txt"
     with pytest.raises(ValueError, match="legacy tabulated ZBL"):
         get_single_model(config)
+
+
+def test_unbridged_linear_rejects_tabulated_zbl_child():
+    config = _canonical_config()
+    config["models"].pop()
+    config["models"][0]["use_srtab"] = "unused-table.txt"
+    with pytest.raises(ValueError, match="legacy tabulated ZBL"):
+        get_model(config)
