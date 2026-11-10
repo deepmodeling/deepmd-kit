@@ -490,6 +490,7 @@ class Trainer(AbstractTrainer):
         )
 
         return TF2FullValidator(
+            symm_virial=getattr(self.losses[DEFAULT_TASK_KEY], "symm_virial", False),
             validating_params=self.validating_params,
             validation_data=self.validation_data_by_task[DEFAULT_TASK_KEY],
             model=self.models[DEFAULT_TASK_KEY],

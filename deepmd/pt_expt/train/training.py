@@ -2613,6 +2613,7 @@ class Trainer(AbstractTrainer):
             validation_model = self._unwrapped.model[DEFAULT_TASK_KEY]
         return build_full_validators(
             validating_params=validating_params,
+            symm_virial=getattr(self.loss, "symm_virial", False),
             validation_data=validation_data,
             model=validation_model,
             state_store=self._unwrapped.train_infos,

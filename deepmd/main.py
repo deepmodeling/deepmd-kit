@@ -439,6 +439,11 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
     parser_tst.add_argument(
+        "--symm-virial",
+        action="store_true",
+        help="Compare symmetric virials and stresses for energy and spin-energy models.",
+    )
+    parser_tst.add_argument(
         "-S",
         "--set-prefix",
         action=DeprecateAction,

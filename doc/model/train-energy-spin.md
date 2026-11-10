@@ -160,6 +160,12 @@ The {ref}`intensive_ener_virial <loss[ener_spin]/intensive_ener_virial>` option 
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` to 0.
 
+For symmetric stress or virial labels, set `loss.symm_virial` to `true` in
+PyTorch Exportable or JAX training. This supervises only the symmetric virial;
+the default is `false`. Training validation inherits the setting. Use
+`dp test --symm-virial` for the same comparison in a separate evaluation.
+See [symmetric virial labels](train-energy.md#symmetric-virial-labels).
+
 ## Data format
 
 > [!NOTE]

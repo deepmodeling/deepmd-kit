@@ -5424,6 +5424,7 @@ def loss_ener() -> list[Argument]:
         "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
+        symm_virial_argument("pt_expt", "jax", "tf2"),
         Argument(
             "start_pref_e",
             [float, int],
@@ -5705,6 +5706,21 @@ def loss_dens() -> list[Argument]:
     ]
 
 
+def symm_virial_argument(*backends: str) -> Argument:
+    """Declare the shared energy and spin-energy virial comparison option."""
+    return Argument(
+        "symm_virial",
+        bool,
+        optional=True,
+        default=False,
+        doc=supported_backends(*backends)
+        + "Compare only the symmetric part of predicted and labeled virials. "
+        "Training validation uses the same convention. Model outputs remain "
+        "unchanged. Use --symm-virial for the same comparison in dp test. "
+        "Not supported by the PyTorch, TensorFlow 1 or Paddle training backends.",
+    )
+
+
 @loss_args_plugin.register("ener_spin", doc=supported_backends("tf", "pt", "pt_expt"))
 def loss_ener_spin() -> list[Argument]:
     doc_start_pref_e = start_pref("energy")
@@ -5736,6 +5752,7 @@ def loss_ener_spin() -> list[Argument]:
         "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
+        symm_virial_argument("pt_expt", "jax"),
         Argument(
             "start_pref_e",
             [float, int],
