@@ -34,7 +34,9 @@ jobs:
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           source/install/uv_with_retry.sh pip install --system -e .[test,jax,torch] mpi4py --group pin_jax_cpu
-          source/install/uv_with_retry.sh pip install --system --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cpu/paddlepaddle/" --index-url https://pypi.org/simple --trusted-host www.paddlepaddle.org.cn --trusted-host paddlepaddle.org.cn paddlepaddle==3.4.0.dev20260310
+          # Fetch the pinned Linux x86_64 wheel directly: the nightly index can return HTTP 502.
+          paddle_python_tag=$(python -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')
+          source/install/uv_with_retry.sh pip install --system --index-url https://pypi.org/simple "https://paddle-whl.bj.bcebos.com/nightly/cpu/paddlepaddle/paddlepaddle-3.4.0.dev20260310-${paddle_python_tag}-${paddle_python_tag}-linux_x86_64.whl"
         env:
           # Please note that uv has some issues with finding
           # existing TensorFlow package. Currently, it uses

@@ -5,28 +5,30 @@
 # https://github.com/astral-sh/uv/issues/3456
 # https://github.com/astral-sh/uv/issues/3514
 # https://github.com/astral-sh/uv/issues/4402
-tmpstderr=$(mktemp)
-max_retry=3
+tmpstderr=$(mktemp) || exit 1
+trap 'rm -f "${tmpstderr}"' EXIT
+max_attempts=3
+attempt=1
+delay=5
 while true; do
-	uv "$@" 2> >(tee -a "${tmpstderr}" >&2)
-	exit_code=$?
-	# exit if ok
-	if [ $exit_code -eq 0 ]; then
-		rm -f "${tmpstderr}"
+	# Keep stdout separate and wait for tee before inspecting this attempt's stderr.
+	{
+		uv "$@" 2>&1 >&3 | tee "${tmpstderr}" >&2
+		exit_code=${PIPESTATUS[0]}
+	} 3>&1
+	if [ "$exit_code" -eq 0 ]; then
 		exit 0
 	fi
-	# check if a retryable network error is in the stderr
-	if grep -qE "error decoding response body|network timeout|I/O operation failed during extraction|Failed to download distribution" "${tmpstderr}"; then
-		echo "Retrying uv in 5 s..."
-		max_retry=$((max_retry - 1))
-		if [ $max_retry -eq 0 ]; then
-			echo "Max retry reached, exiting..."
-			rm -f "${tmpstderr}"
-			exit 1
-		fi
-		sleep 5
-	else
-		rm -f "${tmpstderr}"
-		exit $exit_code
+	# Retry transient network failures, including errors fetching --find-links.
+	if ! grep -qE "error decoding response body|network timeout|I/O operation failed during extraction|Failed to download distribution|HTTP status (server|client) error \((5[0-9]{2}|429)([[:space:]]|\))" "${tmpstderr}"; then
+		exit "$exit_code"
 	fi
+	if [ "$attempt" -ge "$max_attempts" ]; then
+		echo "Max retry reached, exiting..."
+		exit "$exit_code"
+	fi
+	echo "Retrying uv in $delay s..."
+	sleep "$delay"
+	attempt=$((attempt + 1))
+	delay=$((delay * 2))
 done
