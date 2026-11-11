@@ -1925,16 +1925,31 @@ class Trainer(AbstractTrainer):
         self.is_distributed = dist.is_available() and dist.is_initialized()
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
-        # Rank-local data draws must not change the shared task-selection sequence.
-        self._task_rng = np.random.default_rng(
+        self.task_sampling = training_params.get("task_sampling", "synchronized")
+        if self.task_sampling not in ("synchronized", "independent"):
+            raise ValueError(
+                "training.task_sampling must be synchronized or independent"
+            )
+        # Keep task draws separate from rank-local data-loader draws.
+        task_seed = (
             None
             if self._configured_data_seed is None
             else self._configured_data_seed % (2**32)
+        )
+        if self.task_sampling == "independent" and task_seed is not None:
+            task_seed = [task_seed, self.rank]
+        self._task_rng = np.random.default_rng(task_seed)
+        log.info(
+            "Task sampling: %s, rank %d/%d",
+            self.task_sampling,
+            self.rank,
+            self.world_size,
         )
         if (
             self.is_distributed
             and self.multi_task
             and self._configured_data_seed is None
+            and self.task_sampling == "synchronized"
         ):
             self._task_rng.bit_generator.state = self._broadcast_value_from_rank0(
                 self._task_rng.bit_generator.state if self.rank == 0 else None
@@ -3205,12 +3220,16 @@ class Trainer(AbstractTrainer):
     def _collect_data_progress(self) -> dict[str, Any]:
         """Gather compact rank-local progress only at a checkpoint boundary."""
         local_progress = collect_training_data_progress(self.training_data_by_task)
+        sampling = getattr(self, "task_sampling", "synchronized")
+        if sampling == "independent":
+            local_progress["task_rng"] = self._task_rng.bit_generator.state
         ranks: list[Any] = [local_progress]
         if self.is_distributed:
             ranks = [None] * self.world_size
             dist.all_gather_object(ranks, local_progress)
         return {
-            "version": 1,
+            "version": 2 if sampling == "independent" else 1,
+            **({"task_sampling": sampling} if sampling == "independent" else {}),
             "world_size": self.world_size,
             "configured_seed": self._configured_data_seed,
             "task_rng": self._task_rng.bit_generator.state,
@@ -3230,7 +3249,12 @@ class Trainer(AbstractTrainer):
             return
         if not isinstance(progress, Mapping):
             raise ValueError("Data-progress checkpoint must be a mapping.")
-        if type(progress.get("version")) is not int or progress["version"] != 1:
+        if type(progress.get("version")) is not int or progress["version"] not in (
+            1,
+            2,
+        ):
+            raise ValueError("Unsupported distributed data-progress version.")
+        if progress["version"] == 2 and progress.get("task_sampling") != "independent":
             raise ValueError("Unsupported distributed data-progress version.")
         saved_world_size = progress.get("world_size")
         if type(saved_world_size) is not int or saved_world_size < 1:
@@ -3273,8 +3297,22 @@ class Trainer(AbstractTrainer):
                 "Training data progress is incompatible: training.seed changed; "
                 "set training.reset_data_progress=true to restart data sampling."
             )
+        sampling = getattr(self, "task_sampling", "synchronized")
+        if progress.get("task_sampling", "synchronized") != sampling:
+            raise ValueError(
+                "Task sampling changed; set training.reset_data_progress=true."
+            )
+        rng_state = progress["task_rng"]
+        if sampling == "independent":
+            if progress["version"] != 2 or any(
+                "task_rng" not in state for state in ranks
+            ):
+                raise ValueError(
+                    "Independent task sampling requires every rank's RNG state."
+                )
+            rng_state = ranks[self.rank]["task_rng"]
         task_rng = np.random.default_rng(0)
-        task_rng.bit_generator.state = progress["task_rng"]
+        task_rng.bit_generator.state = rng_state
         restore_training_data_progress(self.training_data_by_task, ranks[self.rank])
         self._task_rng = task_rng
 

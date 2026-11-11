@@ -961,13 +961,16 @@ def test_malformed_rank_envelope_is_rejected(
     assert "training.reset_data_progress is true" not in caplog.text
 
 
-def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -> None:
+def _ddp_restart_worker(
+    rank: int, directory: str, rendezvous: str, mode: str, sampling: str
+) -> None:
     torch.set_num_threads(1)
     root = Path(directory)
     dist.init_process_group("gloo", init_method=rendezvous, rank=rank, world_size=2)
     try:
         path = root / ("data" if mode == "directory" else "data.lmdb")
         config = _config(path, mode=mode)
+        config["training"]["task_sampling"] = sampling
         config["training"].update(
             save_ckpt=str(root / "model.ckpt"),
             disp_file=str(root / "lcurve.out"),
@@ -977,11 +980,11 @@ def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -
             unseeded_config["training"]["seed"] = None
             unseeded = get_trainer(unseeded_config)
             choices = [
-                unseeded.select_task(unseeded.training_tasks).key for _ in range(8)
+                unseeded.select_task(unseeded.training_tasks).key for _ in range(64)
             ]
             ranks = [None, None]
             dist.all_gather_object(ranks, choices)
-            assert ranks[0] == ranks[1]
+            assert (ranks[0] == ranks[1]) == (sampling == "synchronized")
             unseeded._close_data_systems()
         dp_random.seed(19)
         trainer = get_trainer(deepcopy(config))
@@ -993,7 +996,7 @@ def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -
         assert ranks[0] != ranks[1]
         expected = _record_training(trainer, data_rng_draws=rank + 1)
         dist.all_gather_object(ranks, [record[0] for record in expected])
-        assert ranks[0] == ranks[1]
+        assert (ranks[0] == ranks[1]) == (sampling == "synchronized")
         dist.barrier()
         dp_random.seed(9876)
         restarted = get_trainer(
@@ -1007,7 +1010,10 @@ def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -
 
 @pytest.mark.skipif(not dist.is_gloo_available(), reason="Requires Gloo")
 @pytest.mark.parametrize("mode", ["directory", "lmdb"])
-def test_two_rank_restart_preserves_each_rank(tmp_path, monkeypatch, mode) -> None:
+@pytest.mark.parametrize("sampling", ["synchronized", "independent"])
+def test_two_rank_restart_preserves_each_rank(
+    tmp_path, monkeypatch, mode, sampling
+) -> None:
     """Chief-only statistics/display do not desynchronize saved rank cursors."""
     monkeypatch.setenv("DEVICE", "cpu")
     monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
@@ -1017,7 +1023,7 @@ def test_two_rank_restart_preserves_each_rank(tmp_path, monkeypatch, mode) -> No
         _write_lmdb(tmp_path / "data.lmdb", mixed=False)
     mp.spawn(
         _ddp_restart_worker,
-        args=(str(tmp_path), (tmp_path / "rendezvous").as_uri(), mode),
+        args=(str(tmp_path), (tmp_path / "rendezvous").as_uri(), mode, sampling),
         nprocs=2,
         join=True,
     )
