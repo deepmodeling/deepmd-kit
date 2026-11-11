@@ -40,6 +40,7 @@ Specifically, there are several parts that need to be modified:
 - {ref}`model/shared_dict <model/shared_dict>`: The parameter definition of the shared part, including various descriptors,
   type maps (or even fitting nets can be shared). Each module can be defined with a user-defined `part_key`, such as `my_descriptor`.
   The content needs to align with the corresponding definition in the single-task training model component, such as the definition of the descriptor.
+  The {ref}`spin <model/spin>` and `preset_out_bias` settings can be defined here as well, so that branches with the same magnetic elements or the same reference energies write them once.
 
 - {ref}`model/model_dict <model/model_dict>`: The core definition of the model part and the explanation of sharing rules,
   starting with user-defined model name keys `model_key`, such as `my_model_1`.
@@ -58,6 +59,7 @@ Specifically, there are several parts that need to be modified:
       - Level 1: Shares type embedding only
     - Not all descriptors support all levels (e.g., se_a only supports level 0)
   - For fitting nets, we only support the default `shared_level`=0, where all parameters will be shared except for `bias_atom_e` and `case_embd`.
+  - `spin` and `preset_out_bias` are filled in the same way, such as `"spin": "my_spin"`. Each branch that names the entry uses it as if it were written in the branch; a branch that does not name it is unaffected.
   - To conduct multitask training, there are two typical approaches:
     1. **Descriptor sharing only**: Share the descriptor with `shared_level`=0. See [here](../../examples/water_multi_task/pytorch_example/input_torch.json) for an example.
     1. **Descriptor and fitting network sharing with data identification**:

@@ -97,7 +97,9 @@ def resolve_preset_out_bias_tables(model_config: dict[str, Any]) -> dict[str, An
     model_config
         A model configuration, or a multi-task configuration whose branches
         live under ``model_dict``; a preset next to ``model_dict`` is resolved
-        as well.
+        as well. A branch that names an entry of ``shared_dict`` as its
+        preset is left as it is: the multi-task preprocessing replaces the
+        name by the entry.
 
     Returns
     -------
@@ -107,7 +109,9 @@ def resolve_preset_out_bias_tables(model_config: dict[str, Any]) -> dict[str, An
         the configuration is self-contained.
     """
     preset = model_config.get("preset_out_bias")
-    if preset and any(isinstance(spec, str) for spec in preset.values()):
+    if isinstance(preset, dict) and any(
+        isinstance(spec, str) for spec in preset.values()
+    ):
         resolved = {
             key: load_preset_out_bias_table(spec) if isinstance(spec, str) else spec
             for key, spec in preset.items()

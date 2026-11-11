@@ -7,11 +7,12 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.utils.multi_task import (
+    SHARED_ENTRIES,
+)
 from deepmd.utils.model_preset_data import (
     MODEL_PRESETS,
 )
-
-_REGIONS = ("type_map", "descriptor", "fitting_net")
 
 
 def with_data_groups(schema: dict[str, Any], multi_task: bool) -> dict[str, Any]:
@@ -84,7 +85,7 @@ def _with_defaults(
             properties[name] = {**field, "default": defaults[name]}
         else:
             properties[name] = {"$ref": pointer}
-        if multi_task and merge_regions and name in _REGIONS:
+        if multi_task and merge_regions and name in SHARED_ENTRIES:
             properties[name] = {"anyOf": [properties[name], {"type": "string"}]}
     result["properties"] = properties
     result["required"] = [

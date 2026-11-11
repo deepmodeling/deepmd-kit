@@ -14,6 +14,14 @@ from typing import (
 
 log = logging.getLogger(__name__)
 
+# Branch entries that a string replaces by an entry of ``shared_dict``. The
+# branches that reference one descriptor or fitting network also share its
+# parameters; the other entries are settings, which every branch receives as
+# a copy.
+SHARED_COMPONENTS = ("descriptor", "fitting_net")
+SHARED_SETTINGS = ("type_map", "spin", "preset_out_bias")
+SHARED_ENTRIES = (*SHARED_SETTINGS, *SHARED_COMPONENTS)
+
 
 def cascade_top_level_defaults(model_config: dict[str, Any]) -> None:
     """Lower model-wide entries into each multi-task branch in-place."""
@@ -42,7 +50,8 @@ def preprocess_shared_params(
     model_config : dict[str, Any]
         Multi-task model configuration containing ``model_dict`` and an optional
         ``shared_dict``. String references to shared descriptors, fitting
-        networks, and type maps are replaced in-place by their configurations.
+        networks, type maps, spin settings and preset output biases are
+        replaced in-place by their configurations.
     get_class_name : Callable[[str, dict[str, Any]], type]
         Backend-specific callback that resolves the class for a shared
         descriptor or fitting-network configuration.
@@ -60,9 +69,9 @@ def preprocess_shared_params(
     model_config : dict[str, Any]
         The input configuration with shared references expanded.
     shared_links : dict[str, Any]
-        Sharing metadata keyed by entries in ``shared_dict``. Each entry records
-        the resolved class and the model components linked to it, sorted by
-        sharing level.
+        Sharing metadata keyed by the entries of ``shared_dict`` referenced as
+        a descriptor or a fitting network. Each entry records the resolved
+        class and the model components linked to it, sorted by sharing level.
 
     Raises
     ------
@@ -74,7 +83,6 @@ def preprocess_shared_params(
     if cascade_defaults:
         cascade_top_level_defaults(model_config)
 
-    supported_types = ["type_map", "descriptor", "fitting_net"]
     shared_dict = model_config.get("shared_dict", {})
     shared_links: dict[str, Any] = {}
     type_map_keys: list[str] = []
@@ -105,7 +113,7 @@ def preprocess_shared_params(
         if shared_type == "type_map":
             if key_in_dict not in type_map_keys:
                 type_map_keys.append(key_in_dict)
-        else:
+        elif shared_type in SHARED_COMPONENTS:
             if shared_key not in shared_links:
                 shared_links[shared_key] = {
                     "type": get_class_name(shared_type, shared_dict[shared_key]),
@@ -122,7 +130,7 @@ def preprocess_shared_params(
     for model_key in model_config["model_dict"]:
         model_params_item = model_config["model_dict"][model_key]
         for item_key in model_params_item:
-            if item_key not in supported_types:
+            if item_key not in SHARED_ENTRIES:
                 continue
             item_params = model_params_item[item_key]
             if isinstance(item_params, str):

@@ -222,6 +222,16 @@ class TestResolvePresetOutBiasTables(unittest.TestCase):
             self.assertIs(out["model_dict"]["b"], multi["model_dict"]["b"])
             self.assertIs(out["model_dict"]["c"], multi["model_dict"]["c"])
 
+    def test_shared_reference(self) -> None:
+        # A branch that names an entry of shared_dict receives its preset
+        # from the multi-task preprocessing.
+        multi = {
+            "shared_dict": {"bias": {"energy": {"H": -13.6}}},
+            "model_dict": {"a": {"type_map": ["H"], "preset_out_bias": "bias"}},
+        }
+        out = resolve_preset_out_bias_tables(multi)
+        self.assertIs(out["model_dict"]["a"], multi["model_dict"]["a"])
+
     def test_without_tables(self) -> None:
         config = {"type_map": ["H"], "preset_out_bias": {"energy": [1.0]}}
         self.assertIs(resolve_preset_out_bias_tables(config), config)

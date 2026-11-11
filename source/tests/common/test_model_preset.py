@@ -466,6 +466,57 @@ def test_shared_dict_role_is_recognised_through_a_branch_default() -> None:
     assert expanded["model_dict"]["water_1"]["descriptor"] == "desc"
 
 
+def test_multi_task_shared_settings_match_inline_entries() -> None:
+    """A branch that names a shared `spin` or `preset_out_bias` entry is
+    processed as the branch that writes the entry out.
+    """
+    spin = {"scheme": "native", "use_spin": ["O"]}
+    bias = {"energy": "omat24"}
+
+    def preprocess(spin_entry: dict | str, bias_entry: dict | str) -> tuple[dict, dict]:
+        plain = {
+            "descriptor": "descriptor",
+            "fitting_net": {"seed": 1},
+            "preset_out_bias": bias_entry,
+        }
+        magnetic = {**plain, "spin": spin_entry}
+        model = {
+            "preset": "dpa4-nano-v20260911",
+            "type_map": ["O", "H"],
+            "shared_dict": {"descriptor": {"rcut": 6.0}, "spin": spin, "bias": bias},
+            "model_dict": {"a": magnetic, "b": magnetic, "c": plain},
+        }
+        return preprocess_shared_params(
+            expand_model_preset(copy.deepcopy(model)), lambda item_key, params: dict
+        )
+
+    def normalized_branches(model: dict) -> dict:
+        tasks = list(model["model_dict"])
+        config = {
+            "model": model,
+            "loss_dict": {task: {} for task in tasks},
+            "training": {
+                "data_dict": {
+                    task: {"training_data": {"systems": ["fake"]}} for task in tasks
+                },
+                "numb_steps": 10,
+            },
+        }
+        config = update_deepmd_input(config, warning=False)
+        return normalize(config, multi_task=True)["model"]["model_dict"]
+
+    shared, shared_links = preprocess("spin", "bias")
+    inline, _ = preprocess(spin, bias)
+    # Only the networks are linked; every branch owns a copy of a setting.
+    assert set(shared_links) == {"descriptor"}
+    branches = shared["model_dict"]
+    assert branches["a"]["spin"] == branches["b"]["spin"] == spin
+    assert branches["a"]["spin"] is not branches["b"]["spin"]
+    assert "spin" not in branches["c"]
+    assert branches["c"]["preset_out_bias"] == bias
+    assert normalized_branches(shared) == normalized_branches(inline)
+
+
 def test_update_deepmd_input_expands_presets() -> None:
     jdata = {
         "model": {"preset": "dpa4c-mini-v20260911"},
