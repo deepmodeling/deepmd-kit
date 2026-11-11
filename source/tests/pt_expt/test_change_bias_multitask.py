@@ -62,7 +62,10 @@ def checkpoint(tmp_path):
     state[other_key] = state[descriptor_key]
     checkpoint = {
         "model": state,
-        "optimizer": {"step": torch.tensor(12), "shared": state[descriptor_key]},
+        "optimizer": {
+            "step": torch.tensor(12, device=DEVICE),
+            "shared": state[descriptor_key],
+        },
         "lr_scheduler": {"last_epoch": 12},
     }
     path = tmp_path / "multi.pt"

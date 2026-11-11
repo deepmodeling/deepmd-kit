@@ -99,6 +99,14 @@ dp --pt-expt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-
 ```
 
 The output checkpoint retains all branches and training state. Only the selected branch's output statistics are updated. User-defined bias values follow that branch's `type_map` order.
+
+Prediction for statistical bias adjustment runs without gradient recording and uses inference batches. `DP_INFER_BATCH_SIZE` limits the number of atoms per batch (`nframes * natoms`), independently of the number of frames sampled for statistics. For example:
+
+```sh
+DP_INFER_BATCH_SIZE=4096 dp --pt-expt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-branch model_1
+```
+
+CUDA out-of-memory errors trigger retries with smaller batches. A single frame is never split across batches; if it still exceeds available memory, the command reports an error.
 :::
 
 ::::
