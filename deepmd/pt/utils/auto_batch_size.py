@@ -65,15 +65,14 @@ class AutoBatchSize(AutoBatchSizeBase):
                     msgs.append(first)
             cur = cur.__cause__ or cur.__context__
 
-        # Several sources treat CUSOLVER_STATUS_INTERNAL_ERROR as an OOM, e.g.
-        # https://github.com/JuliaGPU/CUDA.jl/issues/1924
-        # https://github.com/deepmodeling/deepmd-kit/issues/4594
+        # Internal library errors alone do not establish memory exhaustion.
+        # In particular, cuSOLVER handle creation can fail before any model
+        # forward; preserve that error unless its chain explicitly reports OOM.
         plain_oom_markers = (
             "CUDA out of memory.",
             "CUDA driver error: out of memory",
             "CUDA error: out of memory",
             "CUBLAS_STATUS_ALLOC_FAILED",
-            "cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR",
         )
         if any(m in msg for msg in msgs for m in plain_oom_markers):
             torch.cuda.empty_cache()
