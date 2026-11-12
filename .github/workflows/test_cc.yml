@@ -124,7 +124,7 @@ jobs:
       - name: Cache generated PyTorch C++ fixtures
         id: pt-fixture-cache
         if: matrix.enable_pytorch
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: |
             source/tests/infer/*.pth
@@ -136,7 +136,7 @@ jobs:
           key: pt-cxx-fixtures-v4-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
       - name: Cache TorchInductor
         if: matrix.enable_pytorch
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: .cache/torchinductor
           key: torchinductor-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
