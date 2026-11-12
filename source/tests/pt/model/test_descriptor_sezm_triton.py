@@ -2108,11 +2108,11 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
 
     @_GPU_KERNELS
     def test_lazy_pack_then_prepare_hook_coexist(self):
-        """A lazy pack must not collide with a later prepare call.
+        """A hook-less flow must not collide with a later prepare call.
 
-        The lazy path caches under the hook's buffer names; a plain
-        attribute would make a subsequent ``prepare_inference_weights``
-        raise KeyError when registering the same names.
+        The hook-less flow leaves no state behind; the prepare hook then
+        registers its own non-persistent buffers, and a further hook-less
+        call reads them without interference.
         """
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
@@ -2126,13 +2126,21 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         )
 
         with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            fused(x, cache, radial)  # lazy pack + cache
+            fused(x, cache, radial)  # hook-less fold
             fused.prepare_inference_weights()  # must not raise
             fused(x, cache, radial)  # still consistent afterwards
 
     @_GPU_KERNELS
-    def test_lazy_packing_is_cached(self):
-        """A hook-less flow packs once and caches under the hook's names."""
+    def test_hookless_flow_repacks_from_live_weights(self):
+        """A hook-less flow re-packs per call, so weights never go stale.
+
+        The trainer interleaves eval validation forwards with optimizer
+        steps on the same module; a cached snapshot would freeze the
+        validation-time radial head at whatever step packed it first --
+        silent wrong numbers while training continues.  The hook-less flow
+        therefore re-packs from the live weights on every call, like
+        ``_pack_weights``' fallback to ``_assemble_weights``.
+        """
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
         )
@@ -2140,9 +2148,6 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         value_path_cls = TestSeZMTritonValuePath
         conv = value_path_cls._build_conv(self, *self.CASE)
         fused = make_triton_value_path(conv)
-        self.assertIsNotNone(fused)
-        # No prepare_inference_weights: the lazy path must engage, pack
-        # exactly once across two calls, and leave the cached attributes.
         x, cache, radial = value_path_cls._edge_inputs(
             self, conv, self.CASE[0], self.CASE[1]
         )
@@ -2158,9 +2163,28 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
             with mock.patch.object(fused, "_pack_radial_weights", _spy):
                 fused(x, cache, radial)
                 fused(x, cache, radial)
-        self.assertEqual(len(calls), 1, "the lazy pack must be cached")
-        self.assertIsNotNone(getattr(conv, "_triton_radial_weff", None))
-        self.assertIsNotNone(getattr(conv, "_triton_radial_wh", None))
+        self.assertEqual(len(calls), 2, "the hook-less flow re-packs per call")
+        # No snapshot is registered for a later prepare call to collide
+        # with or to serve stale values from.
+        self.assertIsNone(getattr(conv, "_triton_radial_weff", None))
+        self.assertIsNone(getattr(conv, "_triton_radial_wh", None))
+
+        # The stale-weights regression itself: an optimizer-style in-place
+        # update between two eval forwards must reach the next forward --
+        # the packed and unpacked heads must still agree afterwards.
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            fused(x, cache, radial)
+            with torch.no_grad():
+                conv.radial_degree_mixer.weight.add_(0.5)
+            out_packed = fused(x, cache, radial)
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "0"}):
+            out_unpacked = fused(x, cache, radial)
+        # The folded head emits only the consumed l=0 rows of the radial
+        # surface, so compare that slice; the local features compare whole.
+        torch.testing.assert_close(out_packed[0], out_unpacked[0], atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(
+            out_packed[1], out_unpacked[1][:, :1, :], atol=1e-5, rtol=1e-5
+        )
 
     @_GPU_KERNELS
     def test_truncated_radial_slice_folds(self):

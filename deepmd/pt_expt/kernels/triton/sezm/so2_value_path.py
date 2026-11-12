@@ -5319,26 +5319,18 @@ class _TritonSO2ValuePath:
             # (only the pt2/freeze serialization does), so fall back to
             # packing from the live weights here, mirroring how
             # ``_pack_weights`` falls back to ``_assemble_weights``.  The
-            # result is cached under the same attributes the hook uses, so
-            # a hook-less flow packs once instead of on every call; under
+            # hook-less flow re-packs on every call -- the product of two
+            # small weight matrices -- so the packed head can never serve
+            # a stale snapshot after an optimizer step, a
+            # ``load_state_dict`` copy, or a train/eval interleave, and
+            # nothing is registered for a later ``prepare_inference_weights``
+            # call to collide with or to serve stale values from.  Under
             # compilation the fold runs once at trace time and the
             # effective weight becomes a graph constant.
             packed = self._pack_radial_weights()
             if packed is None:
                 return None
             weff, wh = packed
-            # Register like the prepare hook does (non-persistent
-            # buffers): plain attributes would collide with a later
-            # prepare_inference_weights call that registers the same
-            # names.
-            for name, weight in (
-                ("_triton_radial_weff", weff),
-                ("_triton_radial_wh", wh),
-            ):
-                if name in self._conv._buffers:
-                    self._conv._buffers[name] = weight
-                else:
-                    self._conv.register_buffer(name, weight, persistent=False)
         # The device resolves through the trace-time pin when one is set:
         # export flows trace on CPU, and the runtime check would otherwise
         # resolve a CUDA-target artifact to the unpacked head.  The folded
