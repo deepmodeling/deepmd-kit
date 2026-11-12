@@ -3140,9 +3140,9 @@ class TestSourceFreezePropagationGate(TestDescriptorEnergyCurveSmoothness):
     "the packed Wigner layout engages on CUDA with Triton",
 )
 class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
-    """End-to-end coverage with ``DP_PACKED_D_INFER`` actually set.
+    """End-to-end coverage with the banded layout actually engaged.
 
-    Drives the whole chain with the flag on: the edge-cache build, the
+    Drives the whole chain with the level-admitted band: the edge-cache build, the
     per-block gate in ``sezm.py``, and the consumers in ``so2.py`` /
     ``embedding.py`` all run against the banded storage, and the outputs
     must match the same model built through the dense layout.
@@ -3182,16 +3182,11 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
             _freeze_parameters_for_export,
         )
 
-        saved_flag = os.environ.get("DP_PACKED_D_INFER")
         saved_level = os.environ.get("DP_TRITON_INFER")
-        os.environ["DP_PACKED_D_INFER"] = "1"
         os.environ["DP_TRITON_INFER"] = "2"
 
         def restore():
-            for key, old in (
-                ("DP_PACKED_D_INFER", saved_flag),
-                ("DP_TRITON_INFER", saved_level),
-            ):
+            for key, old in (("DP_TRITON_INFER", saved_level),):
                 if old is None:
                     os.environ.pop(key, None)
                 else:
@@ -3221,16 +3216,11 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
         """
         import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
 
-        saved_flag = os.environ.get("DP_PACKED_D_INFER")
         saved_level = os.environ.get("DP_TRITON_INFER")
-        os.environ["DP_PACKED_D_INFER"] = "1"
         os.environ["DP_TRITON_INFER"] = "2"
 
         def restore():
-            for key, old in (
-                ("DP_PACKED_D_INFER", saved_flag),
-                ("DP_TRITON_INFER", saved_level),
-            ):
+            for key, old in (("DP_TRITON_INFER", saved_level),):
                 if old is None:
                     os.environ.pop(key, None)
                 else:
@@ -3281,16 +3271,11 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
     def test_flag_on_builds_band_and_matches_dense(self):
         import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
 
-        saved_flag = os.environ.get("DP_PACKED_D_INFER")
         saved_level = os.environ.get("DP_TRITON_INFER")
-        os.environ["DP_PACKED_D_INFER"] = "1"
         os.environ["DP_TRITON_INFER"] = "2"
 
         def restore():
-            for key, old in (
-                ("DP_PACKED_D_INFER", saved_flag),
-                ("DP_TRITON_INFER", saved_level),
-            ):
+            for key, old in (("DP_TRITON_INFER", saved_level),):
                 if old is None:
                     os.environ.pop(key, None)
                 else:
@@ -3325,7 +3310,7 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
         with mock.patch.object(edge_cache_mod, "_build_edge_wigner", spy):
             with torch.no_grad():
                 packed_out = model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
-            # The flag-on cache carries the band and never materializes the
+            # The admitted cache carries the band and never materializes the
             # dense surfaces: D = (E, D_dim, D_dim) with D_dim = (lmax+1)^2,
             # band = (E, 3 * D_dim - 2).
             d_dense, dt_dense, _quat, d_packed = records[-1]
@@ -3334,7 +3319,7 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
             self.assertIsNotNone(d_packed)
             self.assertEqual(d_packed, (3, 10))
 
-            # Training keeps the dense layout even with the flag on: the
+            # Training keeps the dense layout even when admitted: the
             # parameter-gradient consumers address the dense surface.
             model.train()
             model(coord, atype, nlist, mapping=None, comm_dict=None)
@@ -3344,11 +3329,13 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
             self.assertIsNotNone(dt_dense_t)
             model.eval()
 
-            # Same model, flag off: the dense layout through the same
-            # consumers, bitwise-equal outputs.
-            os.environ.pop("DP_PACKED_D_INFER", None)
-            with torch.no_grad():
-                dense_out = model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
+            # Same model, structural gate closed: the dense layout through
+            # the same consumers, bitwise-equal outputs.
+            with mock.patch.object(model, "_packed_wigner_ok", lambda: False):
+                with torch.no_grad():
+                    dense_out = model(
+                        coord, atype, nlist, mapping=None, comm_dict=None
+                    )[0]
             d_dense_o, _dt, _quat_o, d_packed_o = records[-1]
             self.assertIsNone(d_packed_o)
             self.assertIsNotNone(d_dense_o)
@@ -3364,16 +3351,11 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
         """
         import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
 
-        saved_flag = os.environ.get("DP_PACKED_D_INFER")
         saved_level = os.environ.get("DP_TRITON_INFER")
-        os.environ["DP_PACKED_D_INFER"] = "1"
         os.environ["DP_TRITON_INFER"] = "2"
 
         def restore():
-            for key, old in (
-                ("DP_PACKED_D_INFER", saved_flag),
-                ("DP_TRITON_INFER", saved_level),
-            ):
+            for key, old in (("DP_TRITON_INFER", saved_level),):
                 if old is None:
                     os.environ.pop(key, None)
                 else:

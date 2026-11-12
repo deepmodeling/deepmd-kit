@@ -2531,8 +2531,8 @@ def _rotate_mix_impl(
     if not _use_triton(x):
         if packed:
             raise RuntimeError(
-                "the banded Wigner layout requires the Triton rotate-mix kernels; "
-                "unset DP_PACKED_D_INFER or enable the Triton inference path"
+                "the banded Wigner layout requires the Triton rotate-mix kernels "
+                "on CUDA operands; run the inference levels on a CUDA device"
             )
         return _rotate_mix_reference(x, src, wigner, kc, cb, lmax, n_focus, rank)
     n_edge = src.shape[0]
@@ -2580,8 +2580,8 @@ def _rotate_mix_bwd_impl(
     if not _use_triton(x):
         if packed:
             raise RuntimeError(
-                "the banded Wigner layout requires the Triton rotate-mix kernels; "
-                "unset DP_PACKED_D_INFER or enable the Triton inference path"
+                "the banded Wigner layout requires the Triton rotate-mix kernels "
+                "on CUDA operands; run the inference levels on a CUDA device"
             )
         return _rotate_mix_backward_reference(
             grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank

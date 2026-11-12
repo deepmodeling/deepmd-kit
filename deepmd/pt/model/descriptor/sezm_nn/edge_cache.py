@@ -26,10 +26,6 @@ from einops import (
     rearrange,
 )
 
-from deepmd.pt_expt.kernels.utils import (
-    use_packed_d_infer,
-)
-
 from .utils import (
     get_promoted_dtype,
     nvtx_range,
@@ -700,8 +696,7 @@ def _build_edge_wigner(
     packed_wigner
         Whether every selected rotation consumer addresses the banded
         layout. The banded storage is only chosen when this holds; any
-        dense-layout consumer keeps the dense surfaces even with
-        ``DP_PACKED_D_INFER`` set.  See
+        dense-layout consumer keeps the dense surfaces.  See
         :func:`deepmd.pt.model.descriptor.sezm.block_supports_packed_wigner`
         for the full exclusion set (the cuTile value path, the fused CUDA
         convolution, the CUDA training value path, the plain SO2 reference
@@ -740,31 +735,29 @@ def _build_edge_wigner(
     # ``nn.Module.__call__``) or as a bound forward; accept both.
     calc = getattr(wigner_calc, "__self__", wigner_calc)
     if (
-        use_packed_d_infer()
-        and packed_wigner
+        packed_wigner
         and callable(getattr(calc, "forward_band", None))
         and calc.band_supported()
     ):
         # Banded inference storage: the fused reduced-layout consumers (the
         # rotate-mix operator and the flash aggregation) read only the three
         # structural rows per degree block, so the dense surfaces are never
-        # materialized. Reference paths that need the dense layout must not
-        # enable the flag.
+        # materialized. The admission rides the inference level's structural
+        # gate (every consumer band-capable, eval, uniform degree), not a
+        # per-optimization opt-in.
         return None, None, edge_quat, calc.forward_band_fused(edge_quat)
-    if use_packed_d_infer() and packed_wigner:
+    if packed_wigner:
         global _warned_packed_inert
         if not _warned_packed_inert:
             # The admission gate said yes but the resolved calculator cannot
-            # produce the band -- typically ``DP_CUDA_INFER`` selected the
-            # CUDA Wigner path (no ``forward_band``), or the ladder degree
-            # exceeds the band support.  Dense surfaces are built instead;
-            # say so once instead of leaving the flag silently inert.
+            # produce the band -- typically the ladder degree exceeds the
+            # band support.  Dense surfaces are built instead; say so once
+            # instead of leaving the band silently unbuilt.
             _warned_packed_inert = True
             log.warning(
-                "DP_PACKED_D_INFER is set and the blocks admit the banded "
-                "layout, but the resolved Wigner calculator cannot produce "
-                "it (a CUDA inference calculator or an unsupported degree); "
-                "building dense Wigner surfaces."
+                "The blocks admit the banded Wigner layout, but the "
+                "resolved Wigner calculator cannot produce it (an "
+                "unsupported degree); building dense Wigner surfaces."
             )
     D_full, Dt_full = wigner_calc(edge_quat)
     return D_full, Dt_full, edge_quat, None

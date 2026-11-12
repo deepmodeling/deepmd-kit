@@ -2298,24 +2298,15 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
             )
 
         cuda_fn = object()
-        with mock.patch.dict(os.environ, {"DP_PACKED_D_INFER": "1"}, clear=False):
-            self.assertIsNone(
-                DescrptSeZM._inference_wigner_fn(_descriptor([3, 3], 3, cuda_fn, True)),
-                "an admitted band must resolve the band-capable calculator",
-            )
-            self.assertIs(
-                DescrptSeZM._inference_wigner_fn(
-                    _descriptor([3, 2], 3, cuda_fn, False)
-                ),
-                cuda_fn,
-                "a dense-consuming build keeps the CUDA pair",
-            )
-        with mock.patch.dict(os.environ, {"DP_PACKED_D_INFER": "0"}, clear=False):
-            self.assertIs(
-                DescrptSeZM._inference_wigner_fn(_descriptor([3, 3], 3, cuda_fn, True)),
-                cuda_fn,
-                "the flag off keeps the CUDA pair",
-            )
+        self.assertIsNone(
+            DescrptSeZM._inference_wigner_fn(_descriptor([3, 3], 3, cuda_fn, True)),
+            "an admitted band must resolve the band-capable calculator",
+        )
+        self.assertIs(
+            DescrptSeZM._inference_wigner_fn(_descriptor([3, 2], 3, cuda_fn, False)),
+            cuda_fn,
+            "a dense-consuming build keeps the CUDA pair",
+        )
         training_desc = _descriptor([3, 3], 3, cuda_fn, True)
         training_desc.training = True
         self.assertIsNone(
@@ -2772,7 +2763,7 @@ class TestSeZMWignerBandOp(unittest.TestCase):
         torch.testing.assert_close(fused, calc.forward_band(quat), atol=0.0, rtol=0.0)
 
     def test_packed_flag_warns_once_when_the_calculator_cannot_band(self):
-        """A set-but-inert ``DP_PACKED_D_INFER`` says so instead of silence."""
+        """An admitted-but-unbuildable band says so instead of silence."""
         from unittest import (
             mock,
         )
@@ -2806,10 +2797,7 @@ class TestSeZMWignerBandOp(unittest.TestCase):
                 packed_wigner=True,
             )
 
-        with (
-            mock.patch.dict(os.environ, {"DP_PACKED_D_INFER": "1"}, clear=False),
-            mock.patch.object(ec, "_warned_packed_inert", False),
-        ):
+        with mock.patch.object(ec, "_warned_packed_inert", False):
             with self.assertLogs(
                 "deepmd.pt.model.descriptor.sezm_nn.edge_cache", level="WARNING"
             ) as logged:
@@ -2817,7 +2805,7 @@ class TestSeZMWignerBandOp(unittest.TestCase):
             # second call stays silent: the warning fires once
             run()
         self.assertEqual(len(logged.records), 1)
-        self.assertIn("DP_PACKED_D_INFER", logged.records[0].getMessage())
+        self.assertIn("cannot produce it", logged.records[0].getMessage())
 
     def test_band_rejects_lmax_at_poly_lmin(self):
         """`lmax >= poly_lmin` has no per-degree ladder below the tail."""

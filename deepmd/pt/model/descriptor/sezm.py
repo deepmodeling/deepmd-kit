@@ -68,7 +68,6 @@ from deepmd.pt.utils.update_sel import (
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
-    use_packed_d_infer,
 )
 from deepmd.utils.bridging import (
     BRIDGING_RECORD_VERSION,
@@ -2151,22 +2150,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     def _inference_wigner_fn(self) -> Any:
         """The fused CUDA Wigner pair to substitute, if it serves this build.
 
-        The CUDA calculator produces the dense pair only.  When the banded
-        layout is requested and every block admits it, substituting that
-        calculator would veto the band at the cache build (it has no
+        The CUDA calculator produces the dense pair only.  When every block
+        admits the banded layout (the structural gate of the inference
+        levels -- no per-optimization opt-in), substituting that calculator
+        would veto the band at the cache build (it has no
         ``forward_band``), so the module's own band-capable ``wigner_calc``
         resolves instead -- the dense pair is never materialized on that
         path, so the CUDA dense speedup is not lost, it is unused.  Any
         dense-consuming build (a dense-layout consumer selected, training,
-        or the flag off) keeps the CUDA calculator.
+        or the gate closed) keeps the CUDA calculator.
         """
         if self.training:
             return None
-        if (
-            self._cuda_wigner_fn is not None
-            and use_packed_d_infer()
-            and self._packed_wigner_ok()
-        ):
+        if self._cuda_wigner_fn is not None and self._packed_wigner_ok():
             return None
         return self._cuda_wigner_fn
 
