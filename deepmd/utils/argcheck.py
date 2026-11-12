@@ -6687,6 +6687,15 @@ def training_args(
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
+            "task_sampling",
+            str,
+            optional=True,
+            default="synchronized",
+            extra_check=lambda x: x in ("synchronized", "independent"),
+            doc=supported_backends("pt_expt")
+            + "Multitask selection across ranks: synchronized or independent.",
+        ),
+        Argument(
             "disp_file", str, optional=True, default="lcurve.out", doc=doc_disp_file
         ),
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
