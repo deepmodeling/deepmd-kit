@@ -1082,3 +1082,164 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+@unittest.skipUnless(
+    torch.cuda.is_available(),
+    "CUDA is required to freeze and replay a CUDA-target artifact",
+)
+class TestSeZMZonalScatterFreezeArtifact(_ClearDefaultDeviceTestCase):
+    """The freeze pin bakes the fused Triton scatter into a CUDA ``.pt2``.
+
+    The row-pointer guard cannot survive the AOTI codegen (the triton_op is
+    inlined at compile time and the deferred assert is never emitted), so
+    the shipped artifact is guarded by construction instead: this class
+    freezes an ``lmax=3`` fp32 model with the Triton path selected
+    (``DP_TRITON_INFER >= 1`` and ``DP_CUDA_INFER=0``, the documented
+    override) to a CUDA-target ``.pt2``, inspects the package -- the
+    generated code must carry the fused kernel, not the reference
+    composition the unpinned CPU trace would bake -- and then loads and
+    replays the artifact at a node count the trace never saw.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        import os
+        import zipfile
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            GIE_SCATTER_TRITON_AVAILABLE,
+        )
+
+        if not GIE_SCATTER_TRITON_AVAILABLE:
+            raise unittest.SkipTest(
+                "Triton is unavailable; the fused scatter cannot be baked"
+            )
+        cls.artifact_markers = None
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        try:
+            tmp_root = Path(cls._tmpdir.name)
+            params = copy.deepcopy(_tiny_sezm_model_params())
+            params["descriptor"]["l_schedule"] = [3]
+            params["descriptor"]["precision"] = "float32"
+            params["descriptor"]["s2_activation"] = [False, False]
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_root, params)
+            out_path = tmp_root / "fused_zonal.pt2"
+            with mock.patch.dict(
+                os.environ,
+                {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "0"},
+                clear=False,
+            ):
+                freeze_sezm_to_pt2(
+                    str(ckpt_path), str(out_path), device=torch.device("cuda")
+                )
+            markers = set()
+            with zipfile.ZipFile(out_path) as zf:
+                cls.names = zf.namelist()
+                for name in zf.namelist():
+                    if name.endswith((".py", ".cu", ".cpp", ".json")):
+                        blob = zf.read(name)
+                        try:
+                            text = blob.decode("utf-8", errors="ignore")
+                        except Exception:  # binary-safe read, skip non-text entries
+                            continue
+                        if "_gie_scatter_fwd_kernel" in text:
+                            markers.add("fused_kernel")
+                        if "gie_zonal_scatter" in text:
+                            markers.add("operator_name")
+            cls.artifact_markers = markers
+            cls.out_path = out_path
+            cls.params = params
+            cls.ckpt_path = ckpt_path
+        except Exception:
+            cls._cleanup_artifact_fixture()
+            super().tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            cls._cleanup_artifact_fixture()
+        finally:
+            super().tearDownClass()
+
+    @classmethod
+    def _cleanup_artifact_fixture(cls) -> None:
+        for attr in ("artifact_markers", "names", "out_path", "params", "ckpt_path"):
+            if hasattr(cls, attr):
+                delattr(cls, attr)
+        if hasattr(cls, "_tmpdir"):
+            cls._tmpdir.cleanup()
+            delattr(cls, "_tmpdir")
+
+    def test_artifact_carries_the_fused_scatter(self) -> None:
+        """The pinned trace must bake the fused kernel, not the reference."""
+        self.assertIn(
+            "fused_kernel",
+            self.artifact_markers,
+            "the CUDA-target .pt2 generated code carries no fused GIE "
+            "kernel; the pin failed and the reference composition was "
+            "exported instead",
+        )
+
+    def test_artifact_names_the_operator(self) -> None:
+        """The packaged metadata references the operator by name."""
+        self.assertIn("operator_name", self.artifact_markers)
+
+    def test_artifact_replays_at_an_unseen_node_count(self) -> None:
+        """The baked launch follows the runtime row pointer, not a constant.
+
+        The freeze traces at ``nloc=7``; replaying at ``nloc=11`` with a
+        different frame offset exercises the dynamic node count through the
+        fused scatter.  A launch grid baked to a constant would under-write
+        output rows here and drift from the eager CUDA forward -- the gap a
+        name-only grep cannot see.
+        """
+        import os
+        from unittest import (
+            mock,
+        )
+
+        from torch._inductor import (
+            aoti_load_package,
+        )
+
+        # Build the eager reference with runtime compilation off so the
+        # comparison is independent of the ambient DP_COMPILE_INFER.
+        with mock.patch.dict(os.environ, {"DP_COMPILE_INFER": "0"}):
+            model = get_model(copy.deepcopy(self.params))
+        wrapper = ModelWrapper(model, model_params=copy.deepcopy(self.params))
+        raw = torch.load(str(self.ckpt_path), map_location=_CPU, weights_only=False)
+        wrapper.load_state_dict(raw["model"])
+        model.eval().to(torch.device("cuda"))
+
+        sample = _make_sample(model, nloc=11, start=3)
+        cuda_inputs = tuple(t.cuda() if torch.is_tensor(t) else t for t in sample)
+        eager = _eager_forward(model, cuda_inputs)
+
+        loader = aoti_load_package(str(self.out_path))
+        outs = loader(*cuda_inputs)
+        if hasattr(outs, "items"):
+            out_map = dict(outs.items())
+        else:
+            with zipfile.ZipFile(str(self.out_path), "r") as zf:
+                output_keys = json.loads(
+                    zf.read("model/extra/metadata.json").decode("utf-8")
+                )["output_keys"]
+            out_map = dict(zip(output_keys, outs, strict=True))
+
+        self.assertEqual(set(out_map.keys()), set(eager.keys()))
+        for key, ref in eager.items():
+            torch.testing.assert_close(
+                out_map[key],
+                ref,
+                rtol=1e-5,
+                atol=1e-7,
+                msg=key,
+            )
