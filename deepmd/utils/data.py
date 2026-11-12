@@ -1428,6 +1428,8 @@ class DeepmdData:
             else:
                 # For non-atomic data, shape should be [ndof]
                 data = np.full([ndof], vv["default"], dtype=dtype)
+            if vv["repeat"] != 1 and vv.get("special_shape") != "frame_major":
+                data = np.repeat(data, vv["repeat"], axis=-1)
             return np.float32(0.0), data
 
         # Branch 2: Data loading
@@ -1526,6 +1528,8 @@ class DeepmdData:
             else:
                 data = data.reshape([ndof])
 
+            if vv["repeat"] != 1:
+                data = np.repeat(data, vv["repeat"], axis=-1)
             # Atomic: return [natoms, ndof] or flattened hessian above
             # Non-atomic: return [ndof]
             return np.float32(1.0), data
