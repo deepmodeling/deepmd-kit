@@ -324,7 +324,6 @@ class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
 
     def test_isolated_atoms_and_reference_subtraction(self) -> None:
         from deepmd.utils.vacuum_reference import (
-            reference_charge_spin,
             reference_spin,
         )
 
@@ -336,11 +335,12 @@ class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
         iso_coord = np.zeros((2, 1, 3))
         iso_atype = np.array([[0], [1]])
         iso_spin = reference_spin(TYPE_MAP)[:, None, :]
-        iso_charge_spin = reference_charge_spin(TYPE_MAP)
         vac = self.make_model(True)
         ref = self.make_model(False)
+        # the preset names no condition, so the reference is the default one
+        iso_charge_spin = vac.atomic_model.vacuum_charge_spin.cpu().numpy()
 
-        # an isolated neutral ground-state atom contributes exactly its bias
+        # an isolated atom under its reference condition contributes exactly its bias
         np.testing.assert_allclose(
             self.atom_energies(vac, iso_coord, iso_atype, iso_spin, iso_charge_spin),
             BIAS[:, 0][:, None],
@@ -356,7 +356,7 @@ class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
         expected = e_ref - (iso_ref - BIAS[:, 0])[atype]
         np.testing.assert_allclose(e_vac, expected, rtol=1e-10, atol=1e-10)
 
-        # the fold evaluates the reference under the ground-state conditions
+        # the fold evaluates the reference under the stored conditions
         vac.fold_vacuum_reference()
         self.assertFalse(vac.atomic_model.fitting_net.vacuum_ref)
         np.testing.assert_allclose(
@@ -368,7 +368,6 @@ class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
 
     def test_reference_atom_takes_the_spin_moment_of_the_preset(self) -> None:
         from deepmd.utils.vacuum_reference import (
-            reference_charge_spin,
             reference_spin,
         )
 
@@ -391,7 +390,7 @@ class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
                     )
         iso_coord = np.zeros((2, 1, 3))
         iso_atype = np.array([[0], [1]])
-        iso_charge_spin = reference_charge_spin(TYPE_MAP)
+        iso_charge_spin = model.atomic_model.vacuum_charge_spin.cpu().numpy()
         # the direction of the moment is immaterial for an isolated atom
         named = np.array([[[moment, 0.0, 0.0]], [[0.0, 0.0, 0.0]]])
         ground = reference_spin(TYPE_MAP)[:, None, :]

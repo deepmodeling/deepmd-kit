@@ -607,6 +607,20 @@ def torch_module(
                 state_dict.pop(prefix + name, None)
             super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
+    # A statistics prediction covers every frame of a sampled system, and the
+    # reference rows of a vacuum reference beside them; evaluate it in bounded,
+    # gradient-free inference batches.
+    if hasattr(module, "_get_forward_wrapper_func"):
+
+        def _get_forward_wrapper_func(self: Any) -> Callable:
+            from deepmd.pt_expt.utils.stat import (
+                batch_stat_forward,
+            )
+
+            return batch_stat_forward(module._get_forward_wrapper_func(self))
+
+        TorchModule._get_forward_wrapper_func = _get_forward_wrapper_func
+
     # Auto-generate forward -> call redirect if not explicitly defined
     if hasattr(module, "call") and "forward" not in module.__dict__:
 

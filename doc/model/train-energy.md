@@ -212,18 +212,54 @@ multi-task setup on the water example, whose reference calculation is not one
 of the bundled tables: the first reads the table from `e0.json` next to the
 input, the second gives every branch an explicit dictionary.
 
-The reference atom is the neutral atom in its ground state. With charge/spin
-conditioning (`add_chg_spin_ebd`) the reference carries zero charge and the
-ground-state spin multiplicity of the element, and with
-[native spin](dpa4.md#spin) it carries a spin vector of one Bohr
-magneton per unpaired electron; charged, excited or differently magnetized
-isolated atoms keep the deviation the network learns for them. The type names
-must then be element symbols.
+With charge/spin conditioning (`add_chg_spin_ebd`) the condition of the
+reference atom comes from the table. A table computed from one electronic
+state of every element names that state per element with `charge` and
+`multiplicity`; a table computed under one common setting names none, and
+every element with a preset energy is then referenced to `default_chg_spin`.
+An atom without neighbors in the condition of its reference atom has exactly
+its preset energy. A type with a preset energy but no condition of its own and
+no `default_chg_spin` is an error, while a type without a preset energy needs
+none, which lets a table of a subset of the elements sit on a type map of all
+of them; an atom of such a type that occurs in the data is an error when the
+model is built or when the data are read.
 
-The energy of an isolated atom depends on its spin moment, so a table computed
-at other moments names them. An entry of `preset_out_bias` then holds the
-value together with the magnitude of the moment, in the units of the spin
-input of the model:
+The bundled `omol25` table is configured with the neutral ground state of each
+atom (charge zero and the Hund multiplicity), which is the convention of the
+UMA reference it holds, and an isolated ion or excited atom is a learned
+difference from it. The materials tables (`omat24`, `omc25`, `odac25`,
+`openmd`, `mptraj`) name no condition, and their isolated atoms are pinned at
+the table values when `default_chg_spin` is the condition their data take.
+
+The resolved condition belongs to the model. When an element's entry names
+none, it is filled in from `default_chg_spin` once, when the model is built,
+and stored with the preset; a later change of the default condition, such as
+the one `moe-merge --charge-spin` writes, does not move the reference. An
+element the table does not assign has no reference atom and keeps no stored
+condition, so a later preset names the state of that element itself. Fine-
+tuning resolves the reference of the target model from its own preset, so a
+target that names the condition of an element uses it, one that names none
+takes the default condition of the target, and one without a preset at all
+runs without the reference.
+
+The scheme leaves a defect worth knowing under a table that names a ground
+state. The charge and spin multiplicity describe a frame as a whole, so atoms
+pulled apart inside a frame still carry the condition of the frame while their
+reference atoms are ground-state atoms, and the difference for each element
+and condition is learned rather than exact; the dissociation limit of a
+neutral molecule is therefore not pinned to the table. A reference computed
+under one condition, which is also the condition of every frame, is pinned
+exactly.
+
+With [native spin](dpa4.md#spin) the reference atom carries a spin vector of
+one Bohr magneton per unpaired electron of the neutral ground-state atom; a
+differently magnetized isolated atom keeps the deviation the network learns
+for it. The type names must then be element symbols.
+
+An entry of `preset_out_bias` names the isolated atom its value belongs to.
+The charge and spin condition of the atom is given with `charge` and
+`multiplicity`, and the magnitude of its spin moment with `spin`, in the units
+of the spin input of the model:
 
 ```json
 {
@@ -232,6 +268,11 @@ input of the model:
       "Fe": {
         "value": -3.4,
         "spin": 3.0
+      },
+      "H": {
+        "value": -13.4,
+        "charge": 0,
+        "multiplicity": 2
       },
       "O": -1.5
     }
@@ -245,8 +286,7 @@ The magnitude alone is given, for collinear and non-collinear moments alike,
 because the energy of an isolated atom does not depend on the direction of its
 moment. An element whose entry names no moment keeps the unpaired-electron
 count. A type that is not an element symbol, such as a separate type for a
-Hubbard-corrected species, names its moment when native spin is the only
-condition of the reference atom.
+Hubbard-corrected species, names its moment and its condition.
 
 The reference follows the network parameters at every training step. Freezing
 evaluates the vacuum descriptor of every type once and removes the reference

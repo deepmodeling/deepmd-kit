@@ -844,10 +844,12 @@ def change_bias(
         if numb_batch != 0:
             nbatches = numb_batch
         else:
-            # Cap at the minimum across systems so no system wraps and
-            # overweights short systems (matching PT behavior).
-            nbatches = min(data.get_nbatches())
-        sampled_data = make_stat_input(data, nbatches)
+            # Zero means every frame of every system. Each system is capped
+            # separately at its own pass length, so a short system does not
+            # wrap around and overweight its frames while a long one keeps
+            # contributing all of its frames.
+            nbatches = max(data.get_nbatches())
+        sampled_data = make_stat_input(data, nbatches, one_pass=True)
         model_to_change = model_change_out_bias(
             model_to_change,
             sampled_data,

@@ -413,10 +413,13 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     long_range = getattr(getattr(model, "atomic_model", None), "long_range", None)
     if long_range is not None:
         long_range_id = next((id(p) for p in long_range.parameters()), id(long_range))
-    reference_spins = tuple(
-        tuple(module.vacuum_spin.flatten().tolist())
+    # The reference conditions follow the task: the spin moments and the
+    # charge/spin conditions its preset names, and the default condition of
+    # the descriptor for every element it leaves unnamed.
+    reference_conditions = tuple(
+        (name, tuple(condition.flatten().tolist()))
         for module in model.modules()
-        if getattr(module, "vacuum_spin", None) is not None
+        for name, condition in getattr(module, "vacuum_conditions", dict)().items()
     )
     return (
         int(model.has_spin()),
@@ -424,7 +427,7 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
         descriptor_id,
         fitting_id,
         *vacuum_state,
-        reference_spins,
+        reference_conditions,
         long_range_id,
         block_cutoffs,
         contact_clamps,

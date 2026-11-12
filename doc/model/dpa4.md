@@ -109,6 +109,16 @@ be trained with the JAX backend:
 | ----------- | -------------------------------------------------- |
 | `v20261111` | `nano`, `mini`, `neo`, `air`, `plus`, `pro`, `max` |
 
+Every DPA4.5 preset conditions its descriptor on the charge and spin
+multiplicity of the frame (`add_chg_spin_ebd`, default `[0, 1]`) and asks its
+fitting network for the isolated-atom energy reference
+([`vacuum_ref`](train-energy.md#isolated-atom-energy-reference)), which takes
+effect on an input that assigns the isolated-atom energies
+(`preset_out_bias`). An element is then referenced to the condition its table
+entry names, or to the default condition when the entry names none, so the
+table decides whether an atom without neighbors is pinned or keeps the
+deviation learned for another electronic state.
+
 Train DPA4.5 models with the HybridMuon optimizer and a weight decay of 0.03:
 
 ```json
@@ -460,7 +470,12 @@ dp --pt-expt freeze -c merged.pt -o frozen_model.pt2
 | `--charge-spin 0 1`  | Merge for this charge and spin multiplicity, which also become the default of the merged model. Without it, the model is merged for the default state of the trained model. It applies to a model with `moe` in the descriptor.                                                     |
 
 A merged model matches the trained model in the charge and spin state it was
-merged for; merge once for every state you need.
+merged for; merge once for every state you need. The state becomes the
+inference default of the merged model, but it does not move the reference of
+the preset: an element whose table entry names no condition keeps the
+condition it was referenced to when the model was built. Continue training
+from the merged model as from any model; a fine-tuning task that defines its
+own reference takes the one of its own input.
 
 Without `--elements`, the merged model has no MoE and serves every element of
 the type map. It runs at the speed of a model trained without MoE and is the

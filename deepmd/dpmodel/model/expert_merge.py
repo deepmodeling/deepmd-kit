@@ -290,4 +290,8 @@ def merged_model_params(params: dict[str, Any], model: Any) -> dict[str, Any]:
         params["descriptor"]["default_chg_spin"] = (
             atomic_model.descriptor.get_default_chg_spin()
         )
+    # The merge changes the inference default, not the reference the preset
+    # already resolved: carry the resolved preset of the model, which holds
+    # the reference condition of every element.
+    params["preset_out_bias"] = deepcopy(atomic_model.preset_out_bias)
     return params

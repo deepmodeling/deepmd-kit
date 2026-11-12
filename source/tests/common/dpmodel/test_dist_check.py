@@ -600,6 +600,19 @@ class TestStatisticsFilter(unittest.TestCase):
         np.testing.assert_array_equal(packed[0]["coord"][:, 0], [0.0, 1.0, 2.0])
         np.testing.assert_array_equal(packed[1]["coord"][:, 0], [0.0, 1.0, 0.0])
 
+    def test_one_pass_caps_each_system_at_its_own_length(self) -> None:
+        # A short system keeps its frames without wrapping around, and a long
+        # one still contributes all of its frames.
+        data = _CyclicDataSystem([[1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 1.0]])
+        packed = make_stat_input(data, nbatches=5, one_pass=True)
+        np.testing.assert_array_equal(packed[0]["coord"][:, 0], [0.0, 1.0])
+        np.testing.assert_array_equal(packed[1]["coord"][:, 0], [0, 1, 2, 3, 4])
+        # Without the cap every system is asked for the same count and the
+        # short one wraps.
+        wrapped = _CyclicDataSystem([[1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 1.0]])
+        packed = make_stat_input(wrapped, nbatches=5)
+        np.testing.assert_array_equal(packed[0]["coord"][:, 0], [0, 1, 0, 1, 0])
+
     def test_dataset_without_valid_frames_is_reported(self) -> None:
         data = _CyclicDataSystem([[0.2, 0.3], [0.1]])
         with self.assertRaisesRegex(RuntimeError, "beyond the filter radius"):

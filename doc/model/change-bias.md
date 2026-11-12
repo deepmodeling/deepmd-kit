@@ -37,6 +37,13 @@ its composition-correlated component into `E_bias`, so the forward pass may add
 that component again. Use `change` to fit the residual against the complete
 model prediction.
 
+A model with `vacuum_ref` references every atom to an isolated atom of its
+type (see [the isolated-atom energy
+reference](train-energy.md#isolated-atom-energy-reference)). Its prediction
+includes that reference, so `change` keeps the isolated atom at the adjusted
+bias; `set` assigns the bias from the raw labels alone and loses that
+meaning. Use `change` for such a model.
+
 The `dp change-bias` command supports the following methods for adjusting the bias:
 
 ::::{tab-set}

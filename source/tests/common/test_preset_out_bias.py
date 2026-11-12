@@ -13,6 +13,7 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
 )
 from deepmd.utils.preset_out_bias import (
+    REFERENCE_CHARGE_SPIN_KEY,
     REFERENCE_SPIN_KEY,
     bundled_preset_out_bias_tables,
     check_preset_out_bias,
@@ -184,6 +185,81 @@ class TestNormalizePresetOutBias(unittest.TestCase):
             with self.assertRaises(ValueError):
                 normalize_preset_out_bias(bad, self.type_map)
 
+    def test_charge_spin_condition_entries(self) -> None:
+        # the condition of the isolated atom is named with the value, in the
+        # dict and in the list form
+        for preset in (
+            {
+                "energy": {
+                    "O": {"value": -3.0, "charge": 0, "multiplicity": 3},
+                    "H": -13.6,
+                }
+            },
+            {
+                "energy": [
+                    {"value": [-3.0], "charge": 0, "multiplicity": 3},
+                    -13.6,
+                    None,
+                ]
+            },
+        ):
+            out = normalize_preset_out_bias(preset, self.type_map)
+            self.assertEqual(out["energy"], [[-3.0], [-13.6], None])
+            self.assertEqual(out[REFERENCE_CHARGE_SPIN_KEY], [[0.0, 3.0], None, None])
+            check_preset_out_bias(out, ["energy"])
+            self.assertEqual(normalize_preset_out_bias(out, self.type_map), out)
+            self.assertEqual(
+                normalize_preset_out_bias(json.loads(json.dumps(out)), self.type_map),
+                out,
+            )
+        # a value, a moment and a condition belong to one atom
+        out = normalize_preset_out_bias(
+            {
+                "energy": {
+                    "B": {"value": -3.0, "spin": 1.0, "charge": 0, "multiplicity": 2}
+                }
+            },
+            self.type_map,
+        )
+        self.assertEqual(out[REFERENCE_SPIN_KEY], [None, None, 1.0])
+        self.assertEqual(out[REFERENCE_CHARGE_SPIN_KEY], [None, None, [0.0, 2.0]])
+        # outputs that name the same condition of a type agree
+        out = normalize_preset_out_bias(
+            {
+                "energy": {"O": {"value": -3.0, "charge": 1, "multiplicity": 2}},
+                "dos": {"O": {"value": 1.0, "charge": 1, "multiplicity": 2}},
+            },
+            self.type_map,
+        )
+        self.assertEqual(out[REFERENCE_CHARGE_SPIN_KEY], [[1.0, 2.0], None, None])
+        self.assertNotIn(
+            REFERENCE_CHARGE_SPIN_KEY,
+            normalize_preset_out_bias(
+                {"energy": {"O": {"value": -3.0}}}, self.type_map
+            ),
+        )
+
+    def test_charge_spin_condition_errors(self) -> None:
+        for bad in (
+            # a condition is a pair
+            {"energy": {"O": {"value": -3.0, "charge": 0}}},
+            {"energy": {"O": {"value": -3.0, "multiplicity": 3}}},
+            # no table row answers a non-integral state
+            {"energy": {"O": {"value": -3.0, "charge": 0, "multiplicity": 2.5}}},
+            {"energy": {"O": {"value": -3.0, "charge": 0.5, "multiplicity": 3}}},
+            # a boolean is not an integer, although it converts like one
+            {"energy": {"O": {"value": -3.0, "charge": True, "multiplicity": 3}}},
+            {"energy": {"O": {"value": -3.0, "charge": 0, "multiplicity": True}}},
+            # one type names two conditions
+            {
+                "energy": {"O": {"value": -3.0, "charge": 0, "multiplicity": 3}},
+                "dos": {"O": {"value": 1.0, "charge": 0, "multiplicity": 1}},
+            },
+            {"energy": {"O": -3.0}, REFERENCE_CHARGE_SPIN_KEY: [[0.0, 3.0]]},
+        ):
+            with self.assertRaises(ValueError):
+                normalize_preset_out_bias(bad, self.type_map)
+
     def test_errors(self) -> None:
         for bad in (
             {"energy": [None]},
@@ -199,6 +275,31 @@ class TestNormalizePresetOutBias(unittest.TestCase):
 
 
 class TestBundledTables(unittest.TestCase):
+    def test_omol25_names_the_neutral_ground_state(self) -> None:
+        # the table is computed from neutral ground-state atoms, so every
+        # entry names the charge and the Hund multiplicity of its atom
+        from deepmd.utils.vacuum_reference import (
+            unpaired_electrons,
+        )
+
+        table = load_preset_out_bias_table("omol25")
+        elements = list(table)
+        multiplicities = (unpaired_electrons(elements) + 1).tolist()
+        for name, multiplicity in zip(elements, multiplicities, strict=True):
+            self.assertEqual(
+                table[name],
+                {
+                    "value": table[name]["value"],
+                    "charge": 0,
+                    "multiplicity": multiplicity,
+                },
+            )
+        # the tables of materials data are computed under one common setting
+        # and name no condition
+        for name in ("omat24", "omc25", "odac25", "openmd", "mptraj"):
+            for value in load_preset_out_bias_table(name).values():
+                self.assertNotIsInstance(value, dict, name)
+
     def test_domain_cluster(self) -> None:
         table = load_preset_out_bias_table("domain_cluster")
         self.assertEqual(

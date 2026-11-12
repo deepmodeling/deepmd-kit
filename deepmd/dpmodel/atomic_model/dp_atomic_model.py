@@ -46,6 +46,7 @@ from deepmd.utils.vacuum_reference import (
     reference_charge_spin,
     reference_spin,
     resolve_vacuum_ref,
+    store_reference_charge_spin,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -245,16 +246,32 @@ class DPAtomicModel(BaseAtomicModel):
         """Build the conditioning inputs of the reference atoms for the type map.
 
         A table exists for every condition the descriptor takes when the
-        fitting references the isolated atoms; the type names must then be
-        element symbols, except for a type whose spin moment the preset names
-        when the native spin is the only condition.
+        fitting references the isolated atoms (see
+        :mod:`deepmd.utils.vacuum_reference`). With the native spin, a type
+        whose spin moment the preset does not name must be named by its
+        element symbol. A type whose charge/spin condition the preset does not
+        name is referenced to the default condition of the model; that
+        condition is stored with the preset, so it belongs to the model from
+        then on rather than following a later change of the default condition.
         """
         vacuum_ref = self.fitting_net.vacuum_ref
         self.vacuum_charge_spin = (
-            reference_charge_spin(self.type_map)
+            reference_charge_spin(
+                self.type_map,
+                self.preset_out_bias,
+                self.get_default_chg_spin(),
+                self.fitting_net.var_name,
+            )
             if vacuum_ref and self.add_chg_spin_ebd
             else None
         )
+        if self.vacuum_charge_spin is not None:
+            store_reference_charge_spin(
+                self.type_map,
+                self.preset_out_bias,
+                self.vacuum_charge_spin,
+                self.fitting_net.var_name,
+            )
         self.vacuum_spin = (
             reference_spin(self.type_map, self.preset_out_bias)
             if vacuum_ref and self.add_spin_ebd
@@ -563,10 +580,9 @@ class DPAtomicModel(BaseAtomicModel):
         """Descriptor of an isolated atom of every type.
 
         Every type is evaluated as a single-atom frame without neighbors,
-        conditioned as the neutral ground-state atom: zero charge with the
-        ground-state multiplicity when the descriptor takes the charge/spin
-        condition, and the spin vector of its reference atom when it takes
-        the native spin (see
+        conditioned as its reference atom: the charge/spin condition of
+        :meth:`vacuum_conditions` when the descriptor takes it, and the spin
+        vector of its reference atom when it takes the native spin (see
         :func:`~deepmd.utils.vacuum_reference.reference_spin`).
 
         Descriptors that opt into graph vacuum evaluation use isolated nodes,
@@ -650,9 +666,10 @@ class DPAtomicModel(BaseAtomicModel):
 
         The reference nodes follow the node axis of the real frames, padding
         included, as single-node frames: one node per reference type without
-        neighbors, conditioned as the neutral ground-state atom (zero charge
-        and the ground-state multiplicity for the charge/spin conditioning,
-        the spin vector of its reference atom for the native spin). Node-wise
+        neighbors, conditioned as its reference atom (the charge/spin
+        condition of :meth:`vacuum_conditions` for the charge/spin
+        conditioning, the spin vector of its reference atom for the native
+        spin). Node-wise
         operations of the descriptor leave the real nodes unaffected, so the
         descriptor rows of the reference nodes are the vacuum descriptors of
         the reference types.

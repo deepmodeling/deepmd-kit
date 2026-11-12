@@ -33,6 +33,9 @@ from deepmd.pt_expt.entrypoints.main import (
 from deepmd.pt_expt.entrypoints.moe_merge import (
     moe_merge,
 )
+from deepmd.pt_expt.model import (
+    BaseModel,
+)
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -382,6 +385,40 @@ def test_merge_entry_point(tmp_path) -> None:
         name: tuple(value.shape)
         for name, value in get_model(plain).state_dict().items()
     }
+
+
+def test_merge_at_another_state_keeps_the_reference(tmp_path) -> None:
+    """Merging for another state keeps the reference the preset resolved.
+
+    The merge writes the state as the inference default of the merged model,
+    but the reference of the preset belongs to the model: the merged model
+    evaluates a structure at that state exactly as the trained model did.
+    """
+    params = model_params(EXPERTS, EXPERTS)
+    model = trained_like(get_model(copy.deepcopy(params)).to(DEVICE).eval())
+    checkpoint = tmp_path / "moe.pt"
+    save_checkpoint(checkpoint, model, params)
+    state_cs = torch.tensor([[1.0, 2.0]] * 2, device=DEVICE)
+
+    moe_merge(str(checkpoint), str(tmp_path / "ion.pt"), ["all"], charge_spin=[1, 2])
+    merged, merged_params = load_checkpoint(tmp_path / "ion.pt")
+    assert merged_params["descriptor"]["default_chg_spin"] == [1.0, 2.0]
+    # the resolved reference of the preset does not follow the default
+    np.testing.assert_array_equal(
+        merged_params["preset_out_bias"]["@charge_spin"], [[0.0, 1.0]] * 3
+    )
+    assert_same_output(
+        merged(COORD, ATYPE, BOX), model(COORD, ATYPE, BOX, charge_spin=state_cs)
+    )
+    # A continued training saves the resolved reference with the model, and a
+    # reload evaluates the same structure the same way.
+    restored = BaseModel.deserialize(merged.serialize()).to(DEVICE).eval()
+    np.testing.assert_array_equal(
+        restored.atomic_model.vacuum_charge_spin.cpu().numpy(), [[0.0, 1.0]] * 3
+    )
+    assert_same_output(
+        restored(COORD, ATYPE, BOX), model(COORD, ATYPE, BOX, charge_spin=state_cs)
+    )
 
 
 def test_merged_models_freeze(tmp_path) -> None:
