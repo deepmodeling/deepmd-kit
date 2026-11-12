@@ -1084,6 +1084,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMGridLayoutExport(_ClearDefaultDeviceTestCase):
     """Export coverage for the routed grid branches with the flag baked on.
 
