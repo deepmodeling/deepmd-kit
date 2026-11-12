@@ -1274,9 +1274,7 @@ class TestGridLayoutSwitch(unittest.TestCase):
 
         outs = {}
         for flag in ("0", "1"):
-            with mock.patch.dict(
-                os.environ, {"DP_GRID_LAYOUT_INFER": flag}, clear=False
-            ):
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": flag}, clear=False):
                 outs[flag] = branch(
                     left,
                     right,
@@ -1317,16 +1315,16 @@ class TestGridLayoutSwitch(unittest.TestCase):
             return torch.einsum("dg,ngfk->ndfk", b, y)
 
         from deepmd.pt_expt.kernels.utils import (
-            use_grid_layout_infer,
+            triton_infer_level,
         )
 
         class _Owner:
-            def _to_grid(self, x):  # grid-major (G, N, F, K) under the flag
+            def _to_grid(self, x):  # grid-major (G, N, F, K) under the level
                 y = _to_grid_documented(x)
-                return y.transpose(0, 1) if use_grid_layout_infer() else y
+                return y.transpose(0, 1) if triton_infer_level() >= 1 else y
 
-            def _from_grid(self, y):  # flag-aware inverse of _to_grid
-                if use_grid_layout_infer():
+            def _from_grid(self, y):  # level-aware inverse of _to_grid
+                if triton_infer_level() >= 1:
                     y = y.transpose(0, 1)
                 return _from_grid_documented(y)
 
@@ -1398,12 +1396,46 @@ class TestGridLayoutSwitch(unittest.TestCase):
         outs, grads = {}, {}
         for flag in ("0", "1"):
             q = query.clone().requires_grad_(True)
-            with mock.patch.dict(
-                os.environ, {"DP_GRID_LAYOUT_INFER": flag}, clear=False
-            ):
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": flag}, clear=False):
                 out = net(q)
                 grad = torch.autograd.grad(out, q, seed_t)[0]
             outs[flag] = out.detach()
             grads[flag] = grad
         torch.testing.assert_close(outs["1"], outs["0"], atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(grads["1"], grads["0"], atol=1e-5, rtol=1e-5)
+
+    def test_the_layout_follows_the_triton_level_and_training_mode(self) -> None:
+        """The layout rides the cumulative level and never trains.
+
+        With the level off the previous default layout must hold exactly;
+        with the level on, an eval forward takes the grid-major composition
+        while a training forward keeps the reference layout, like every
+        other level consumer.
+        """
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+            _grid_layout_infer,
+        )
+
+        branch = GridBranch(
+            channels=8,
+            n_branches=2,
+            n_frames=1,
+            dtype=torch.float32,
+            trainable=True,
+            seed=11,
+        ).cpu()
+        branch.eval()
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "0"}, clear=False):
+            self.assertFalse(_grid_layout_infer(branch))
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            self.assertTrue(_grid_layout_infer(branch))
+            branch.train()
+            self.assertFalse(
+                _grid_layout_infer(branch),
+                "a training forward keeps the reference layout",
+            )

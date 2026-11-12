@@ -79,7 +79,6 @@ INFER_GATES = (
     "DP_CUDA_INFER",
     "DP_CUTILE_INFER",
     "DP_CUTE_INFER",
-    "DP_GRID_LAYOUT_INFER",
 )
 
 

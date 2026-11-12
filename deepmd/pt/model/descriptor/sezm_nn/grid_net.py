@@ -38,8 +38,8 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    triton_infer_level,
     triton_train_level,
-    use_grid_layout_infer,
 )
 
 from .activation import (
@@ -68,6 +68,22 @@ if TYPE_CHECKING:
 GridNetLayout = Literal["ndfc", "nfdc", "fndc", "flat"]
 GridNetMode = Literal["self", "cross"]
 GridNetOp = Literal["glu", "mlp", "branch"]
+
+
+def _grid_layout_infer(module: nn.Module) -> bool:
+    """Whether the routed grid composition uses the grid-major layout.
+
+    The layout rides the cumulative Triton inference level -- the levels are
+    the single control, with no per-optimization opt-in -- and never applies
+    to a training forward, matching how every other level consumer gates by
+    mode. Read per call so a compiled graph bakes the value observed at
+    trace time. The branch count of the routed product is tiny, so a
+    broadcast multiply plus a sum over the branch axis fuses into one
+    kernel, while the einsum formulation lowers to a bmm whose output
+    layout then needs a full-tensor transpose copy; the grid-major
+    projections let the projector GEMMs write their outputs directly.
+    """
+    return triton_infer_level() >= 1 and not module.training
 
 
 def _build_frame_degree_index(
@@ -491,7 +507,7 @@ class GridBranch(nn.Module):
                 self.channels,
             )
             router = torch.softmax(self.router(scalar_pair), dim=-1)
-            if use_grid_layout_infer():
+            if _grid_layout_infer(self):
                 # The branch axis is tiny: a broadcast product plus a sum
                 # fuses into one kernel, while the einsum lowers to a bmm
                 # whose output then needs a full-tensor layout copy.
@@ -523,7 +539,7 @@ class GridBranch(nn.Module):
             # through Dynamo's hasattr path and silently read as absent,
             # so an identity check always evaluates False under
             # torch.compile while the projectors still emit grid-major.
-            if use_grid_layout_infer() and grid_major:
+            if _grid_layout_infer(self) and grid_major:
                 # Grid-major operands from the projector (G, N, F, Nb * C):
                 # the broadcast weight aligns on the node axis and the whole
                 # combination stays grid-major for the from-grid projection.
@@ -901,7 +917,7 @@ class BaseGridNet(nn.Module):
             from_grid=self._from_grid_scalar if scalar_only else self._from_grid,
             pair_grid=None if scalar_only else self._pair_grid,
             scalar_product=self._scalar_so3_product if direct_scalar else None,
-            grid_major=use_grid_layout_infer(),
+            grid_major=_grid_layout_infer(self),
         )
 
         # === Step 3. Apply scalar gating and contract Wigner-D frames ===
@@ -1141,7 +1157,7 @@ class BaseGridNet(nn.Module):
             coeff_dim,
             self.n_frames,
         )
-        if use_grid_layout_infer():
+        if _grid_layout_infer(self):
             # Grid-major output: the projector GEMM writes (G, N*F*C) rows
             # directly, so no full-tensor output transpose is needed. The
             # pair product and the routed combination are layout agnostic,
@@ -1151,7 +1167,7 @@ class BaseGridNet(nn.Module):
 
     def _from_grid(self, grid: torch.Tensor) -> torch.Tensor:
         # Channel width is inferred to match the (possibly widened) grid field.
-        if use_grid_layout_infer():
+        if _grid_layout_infer(self):
             # Grid-major input (G, N, F, C): the flattened (G, N*F*C) view has
             # contiguous rows and serves the projector GEMM directly, leaving
             # one fused transpose copy on the coefficient side.
@@ -1175,7 +1191,7 @@ class BaseGridNet(nn.Module):
 
     def _from_grid_scalar(self, grid: torch.Tensor) -> torch.Tensor:
         """Project a grid field to the ``l=0`` coefficient only."""
-        if use_grid_layout_infer():
+        if _grid_layout_infer(self):
             g_size, n_batch, n_focus, n_channels = grid.shape
             proj = self.projector.from_grid_mat[
                 0 : self.n_frames

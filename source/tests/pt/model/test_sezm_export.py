@@ -1086,14 +1086,14 @@ if __name__ == "__main__":
 
 @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMGridLayoutExport(_ClearDefaultDeviceTestCase):
-    """Export coverage for the routed grid branches with the flag baked on.
+    """Export coverage for the routed grid branches with the level baked on.
 
     ``grid_branch > 0`` constructs the routed ``GridBranch`` this PR
     optimizes; the tiny export fixtures default it off, so the switch is
     inert there.  This class traces and ``torch.export``-exports a
-    routing-enabled model under ``DP_GRID_LAYOUT_INFER=1`` and replays
-    the exported module: the baked flag-on graph must agree with the
-    flag-off trace (values are mathematically identical) and with its
+    routing-enabled model under ``DP_TRITON_INFER=1`` and replays
+    the exported module: the baked level-on graph must agree with the
+    level-off trace (values are mathematically identical) and with its
     own traced module.
     """
 
@@ -1109,7 +1109,7 @@ class TestSeZMGridLayoutExport(_ClearDefaultDeviceTestCase):
         model = get_model(params).to(_CPU).eval()
         sample_inputs = _make_sample(model, nloc=7, start=2)
 
-        with mock.patch.dict(os.environ, {"DP_GRID_LAYOUT_INFER": "1"}, clear=False):
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
             traced_on = model.forward_common_lower_exportable(*sample_inputs)
         exported = torch.export.export(
             traced_on,
@@ -1120,7 +1120,7 @@ class TestSeZMGridLayoutExport(_ClearDefaultDeviceTestCase):
         )
         replay_on = exported.module()(*sample_inputs)
 
-        with mock.patch.dict(os.environ, {"DP_GRID_LAYOUT_INFER": "0"}, clear=False):
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "0"}, clear=False):
             traced_off = model.forward_common_lower_exportable(*sample_inputs)
         replay_off = traced_off(*sample_inputs)
 
