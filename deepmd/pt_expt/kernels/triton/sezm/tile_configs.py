@@ -138,6 +138,7 @@ TILE_CONFIG_FAMILIES = (
     "rotate_mix_bwd_block",
     "stack_fp32",
     "stack_m0_gate",
+    "stack_bwd_fused",
     "stack_fp16x3",
 )
 
@@ -486,6 +487,30 @@ def stack_fp32_configs(
         conservative configuration measured on H20.
     """
     return _lookup("stack_fp32", (focus_dim, lmax)) or _STACK_FP32_DEFAULT
+
+
+def stack_bwd_fused_config(
+    focus_dim: int, lmax: int
+) -> tuple[int, int, int, int] | None:
+    """Return the tuned fused mixing-stack backward launch configuration.
+
+    Parameters
+    ----------
+    focus_dim
+        Per-focus channel width ``Cf``.
+    lmax
+        Maximum spherical harmonic degree.
+
+    Returns
+    -------
+    tuple or None
+        The ``(BLOCK_M, BLOCK_N, num_warps, num_stages)`` configuration the
+        sweep measured as the winner, or ``None`` to keep the unfused
+        relay.  ``None`` covers both "the sweep ran and the relay won" and
+        "never swept on this GPU", so an untuned environment never engages
+        the fused kernel.
+    """
+    return _lookup("stack_bwd_fused", (focus_dim, lmax))
 
 
 def stack_fp16x3_configs(
