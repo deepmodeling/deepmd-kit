@@ -69,12 +69,16 @@ def _ensure_pt_expt_model_suffix(model_path: str | None) -> str | None:
 def _update_changed_model_tensors(
     target_state_dict: dict[str, Any],
     source_state_dict: dict[str, Any],
+    *,
+    key_prefix: str | None = None,
 ) -> None:
     """Copy changed tensors into an existing state dict without breaking aliases."""
     import torch
 
     for key, source_value in source_state_dict.items():
-        if key == "_extra_state":
+        if key == "_extra_state" or (
+            key_prefix is not None and not key.startswith(key_prefix)
+        ):
             continue
         if key not in target_state_dict:
             target_state_dict[key] = (
@@ -753,14 +757,21 @@ def change_bias(
     if input_file.endswith(".pt"):
         multi_task = "model_dict" in model_params
         if multi_task:
-            raise NotImplementedError(
-                "Multi-task change-bias is not yet supported for the pt_expt backend."
-            )
-        type_map = model_params["type_map"]
-        model = get_model(model_params)
+            branches = model_params["model_dict"]
+            if model_branch not in branches:
+                raise ValueError(
+                    "For a multi-task checkpoint, model_branch must select a branch; "
+                    f"got {model_branch!r}. Available branches: {list(branches)}."
+                )
+            model = {key: get_model(params) for key, params in branches.items()}
+            model_to_change = model[model_branch]
+            log.info(f"Changing out bias for model {model_branch}.")
+        else:
+            model = get_model(model_params)
+            model_to_change = model
+        type_map = model_to_change.get_type_map()
         wrapper = ModelWrapper(model)
         wrapper.load_state_dict(model_state_dict)
-        model_to_change = model
 
     if input_file.endswith((".pte", ".pt2")):
         type_map = model_to_change.get_type_map()
@@ -814,19 +825,25 @@ def change_bias(
                 )
             pair_filter = None
         else:
-            pair_filter = min_pair_dist_requirement(model_params, 0.0)
+            pair_filter = min_pair_dist_requirement(
+                model_params["model_dict"][model_branch]
+                if input_file.endswith(".pt") and multi_task
+                else model_params,
+                0.0,
+            )
         if pair_filter is not None:
             data.add_data_requirements([pair_filter])
         if numb_batch != 0:
             nbatches = numb_batch
         else:
-            # Cap at the minimum across systems so no system wraps and
-            # overweights short systems (matching PT behavior).
-            nbatches = min(data.get_nbatches())
+            # Zero means all frames of every system, not an equal-size sample.
+            # The sampler caps each system separately to prevent wrapping.
+            nbatches = max(data.get_nbatches())
         sampled_data = make_stat_input(
             data,
             nbatches,
             0.0 if pair_filter is None else float(pair_filter.default),
+            one_pass=True,
         )
         model_to_change = model_change_out_bias(
             model_to_change,
@@ -839,8 +856,16 @@ def change_bias(
         output_path = (
             output if output is not None else input_file.replace(".pt", "_updated.pt")
         )
-        wrapper = ModelWrapper(model_to_change)
-        _update_changed_model_tensors(model_state_dict, wrapper.state_dict())
+        if multi_task:
+            model[model_branch] = model_to_change
+        else:
+            model = model_to_change
+        wrapper = ModelWrapper(model)
+        _update_changed_model_tensors(
+            model_state_dict,
+            wrapper.state_dict(),
+            key_prefix=f"model.{model_branch}." if multi_task else None,
+        )
         torch.save(old_state_dict, output_path)
     elif input_file.endswith((".pte", ".pt2")):
         output_path = (

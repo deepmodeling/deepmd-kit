@@ -340,6 +340,28 @@ class TestAutoBatchSize(unittest.TestCase):
         self.assertTrue(auto_batch_size.is_oom_error(error))
         empty_cache.assert_called_once()
 
+    @mock.patch("deepmd.pt.utils.auto_batch_size.torch.cuda.empty_cache")
+    def test_cusolver_internal_error_is_not_oom(self, empty_cache) -> None:
+        error = RuntimeError(
+            "cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR, "
+            "when calling `cusolverDnCreate(handle)`"
+        )
+        controller = AutoBatchSize(256, 2.0)
+        self.assertFalse(controller.is_oom_error(error))
+        forward = mock.Mock(side_effect=error)
+        with self.assertRaises(RuntimeError) as caught:
+            controller.execute_all(forward, 4, 58, np.zeros((4, 58, 3)))
+        self.assertIs(caught.exception, error)
+        self.assertEqual(forward.call_count, 1)
+        empty_cache.assert_not_called()
+
+    @mock.patch("deepmd.pt.utils.auto_batch_size.torch.cuda.empty_cache")
+    def test_cusolver_with_explicit_oom_cause(self, empty_cache) -> None:
+        error = RuntimeError("cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR")
+        error.__cause__ = RuntimeError("CUDA out of memory.")
+        self.assertTrue(AutoBatchSize().is_oom_error(error))
+        empty_cache.assert_called_once()
+
     def test_execute_all(self) -> None:
         dd0 = np.zeros((10000, 2, 1, 3, 4))
         dd1 = np.ones((10000, 2, 1, 3, 4))

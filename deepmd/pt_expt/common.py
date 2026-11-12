@@ -524,6 +524,8 @@ def torch_module(
     - If the wrapped class has a ``call_lower()`` method but does not explicitly
       define ``forward_lower()``, a ``forward_lower()`` method will be auto-generated
       that delegates to ``call_lower()``.
+    - Atomic-model statistics forwards use gradient-free inference batches
+      controlled by ``DP_INFER_BATCH_SIZE``.
     - Explicit ``forward()`` or ``forward_lower()`` definitions in the wrapped class
       are always respected and will not be overridden.
 
@@ -580,6 +582,17 @@ def torch_module(
             for name in self._non_persistent_buffers_set:
                 state_dict.pop(prefix + name, None)
             super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+    if hasattr(module, "_get_forward_wrapper_func"):
+
+        def _get_forward_wrapper_func(self: Any) -> Callable:
+            from deepmd.pt_expt.utils.stat import (
+                batch_stat_forward,
+            )
+
+            return batch_stat_forward(module._get_forward_wrapper_func(self))
+
+        TorchModule._get_forward_wrapper_func = _get_forward_wrapper_func
 
     # Auto-generate forward -> call redirect if not explicitly defined
     if hasattr(module, "call") and "forward" not in module.__dict__:

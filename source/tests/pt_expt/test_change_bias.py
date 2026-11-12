@@ -136,8 +136,8 @@ def _make_subset_dataset(src_system: str, dst_system: str, n_frames: int) -> Non
     over only ``n_frames`` frames.  Why this matters: the in-process
     ``main(cmds)`` path runs the model forward over ``nbatches`` frames
     via ``compute_output_stats``, and each frame leaks ~50 MB into
-    torch's caching allocator.  At ``n_frames=80`` (the default,
-    ``min(data.get_nbatches()) = 80``) peak RSS hits ~5 GB which OOMs
+    torch's caching allocator.  At ``n_frames=80`` (the full example
+    system) peak RSS hits ~5 GB which OOMs
     the 7 GB GitHub-hosted CI runner.  Shrinking to ``n_frames=5`` keeps
     peak at ~800 MB while preserving **determinism**: the test
     ``test_change_bias_pt2_pte_consistency`` asserts ``atol=1e-10``
@@ -174,7 +174,7 @@ class TestChangeBias(unittest.TestCase):
 
         # Shrink the water example dataset (80 frames) to a 5-frame
         # subset.  ``dp change-bias`` defaults to enumerating every
-        # frame (``nbatches = min(data.get_nbatches())``), and each
+        # frame of each system, and each
         # frame's forward pass leaks ~50 MB into torch's allocator; at
         # 80 frames peak RSS pushes the 7 GB CI runner into OOM.  See
         # the docstring of ``_make_subset_dataset`` for why we keep

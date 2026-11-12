@@ -92,8 +92,23 @@ dp --pt-expt change-bias model.pte -s data_dir -o model_updated.pte
 dp --pt-expt change-bias model.pt -b -92.523 -187.66 -o model_updated.pt
 ```
 
-> [!NOTE]
-> Multi-task change-bias is not yet supported in the PyTorch-Exportable backend.
+For multi-task `.pt` checkpoints, select the branch with `--model-branch`:
+
+```sh
+dp --pt-expt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-branch model_1
+```
+
+The output checkpoint retains all branches and training state. Only the selected branch's output statistics are updated. User-defined bias values follow that branch's `type_map` order.
+
+For statistical adjustment, the default `--numb-batch 0` uses every frame of each system, including when systems have different lengths. A positive value uses up to that many frames per system, without repeating frames from shorter systems. These sampling limits match the PyTorch backend; any configured frame filter still applies.
+
+Prediction for statistical bias adjustment runs without gradient recording and uses inference batches. `DP_INFER_BATCH_SIZE` limits the number of atoms per batch (`nframes * natoms`), independently of the number of frames sampled for statistics. For example:
+
+```sh
+DP_INFER_BATCH_SIZE=4096 dp --pt-expt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-branch model_1
+```
+
+CUDA out-of-memory errors trigger retries with smaller batches. A single frame is never split across batches; if it still exceeds available memory, the command reports an error.
 :::
 
 ::::
