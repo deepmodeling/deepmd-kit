@@ -64,6 +64,9 @@ from deepmd.dpmodel.atomic_model.inner_potential import (
 from deepmd.pt.model.model.sezm_model import (
     SeZMModel,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 if TYPE_CHECKING:
     from pathlib import (
@@ -586,7 +589,9 @@ class DPA4Wrapper(nn.Module, BaseModelMixin):
         state_dict = torch.load(checkpoint_path, map_location=device, weights_only=True)
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        model_params = state_dict["_extra_state"]["model_params"]
+        model_params = normalize_pt_model_params(
+            state_dict["_extra_state"]["model_params"]
+        )
 
         if "model_dict" in model_params:
             if head is None:
