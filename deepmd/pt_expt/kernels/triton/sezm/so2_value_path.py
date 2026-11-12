@@ -104,10 +104,6 @@ from torch.library import (
     wrap_triton,
 )
 
-from deepmd.pt_expt.kernels.utils import (
-    use_radial_head_packed,
-)
-
 from .gated_activation import (
     gated_activation_second_order,
     gated_activation_second_order_reference,
@@ -5309,8 +5305,20 @@ class _TritonSO2ValuePath:
     def _radial_packed_weights(
         self, radial_feat: Tensor
     ) -> tuple[Tensor, Tensor] | None:
-        """Return the packed radial weights when the folded path applies."""
-        if self._conv.training or not use_radial_head_packed():
+        """Return the packed radial weights when the folded path applies.
+
+        The fold rides the inference level that bound this value path
+        (``DP_TRITON_INFER >= 2``): there is no per-optimization opt-in, the
+        cumulative levels are the single control, and training keeps the
+        two-step math. When the convolution carries both the hidden
+        up-projection and the degree mixer, the inference value path
+        contracts the per-edge radial features against a pre-packed
+        effective weight ``(lmax + 1) * C -> degree-kernel columns``
+        instead of materializing the up-projected ``(E, lmax + 1, C_wide)``
+        surface and then projecting it -- algebraically the same product,
+        differing only in fp32 summation order.
+        """
+        if self._conv.training:
             return None
         weff = getattr(self._conv, "_triton_radial_weff", None)
         wh = getattr(self._conv, "_triton_radial_wh", None)
@@ -5387,8 +5395,9 @@ class _TritonSO2ValuePath:
             degree-expanded ``(E, D_m, C_wide)`` layout of the reference path
             is never materialized: the mixer projection and the mixer-free
             multiply read only the ``lmax + 1`` per-degree rows.  When the
-            folded radial head applies (``DP_RADIAL_HEAD_PACKED_INFER`` with
-            the packed weights prepared), only the consumed ``l = 0`` rows are
+            folded radial head applies (an eval forward of this level-bound
+            value path with the foldable two-module head), only the consumed
+            ``l = 0`` rows are
             materialized, with shape (E, 1, C_wide); readers addressing
             ``[:, 0, :]`` see identical values.
         """

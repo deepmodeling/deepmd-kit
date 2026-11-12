@@ -2125,10 +2125,9 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
             self, conv, self.CASE[0], self.CASE[1]
         )
 
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            fused(x, cache, radial)  # hook-less fold
-            fused.prepare_inference_weights()  # must not raise
-            fused(x, cache, radial)  # still consistent afterwards
+        fused(x, cache, radial)  # hook-less fold (level-bound, on by default)
+        fused.prepare_inference_weights()  # must not raise
+        fused(x, cache, radial)  # still consistent afterwards
 
     @_GPU_KERNELS
     def test_hookless_flow_repacks_from_live_weights(self):
@@ -2159,10 +2158,9 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
             calls.append(1)
             return real()
 
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            with mock.patch.object(fused, "_pack_radial_weights", _spy):
-                fused(x, cache, radial)
-                fused(x, cache, radial)
+        with mock.patch.object(fused, "_pack_radial_weights", _spy):
+            fused(x, cache, radial)
+            fused(x, cache, radial)
         self.assertEqual(len(calls), 2, "the hook-less flow re-packs per call")
         # No snapshot is registered for a later prepare call to collide
         # with or to serve stale values from.
@@ -2172,12 +2170,12 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         # The stale-weights regression itself: an optimizer-style in-place
         # update between two eval forwards must reach the next forward --
         # the packed and unpacked heads must still agree afterwards.
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            fused(x, cache, radial)
-            with torch.no_grad():
-                conv.radial_degree_mixer.weight.add_(0.5)
-            out_packed = fused(x, cache, radial)
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "0"}):
+        fused(x, cache, radial)
+        with torch.no_grad():
+            conv.radial_degree_mixer.weight.add_(0.5)
+        out_packed = fused(x, cache, radial)
+        # The unpacked arm disables the fold at the seam it selects at.
+        with mock.patch.object(fused, "_radial_packed_weights", lambda radial: None):
             out_unpacked = fused(x, cache, radial)
         # The folded head emits only the consumed l=0 rows of the radial
         # surface, so compare that slice; the local features compare whole.
@@ -2199,16 +2197,15 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         self.assertFalse(sliced.is_contiguous())
         # Simulate the per-block packed weights of a pyramid schedule: the
         # slice keeps the low-degree row blocks of the packed weight.
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            weff = conv._triton_radial_weff
-            # Row blocks are stacked by degree; drop the highest one.
-            rows = sliced.shape[1] * weff.shape[0] // (conv.lmax + 1)
-            weff_sliced = weff[:rows]
-            conv._triton_radial_weff = weff_sliced
-            try:
-                packed = fused._radial_packed_weights(sliced)
-            finally:
-                conv._triton_radial_weff = weff
+        weff = conv._triton_radial_weff
+        # Row blocks are stacked by degree; drop the highest one.
+        rows = sliced.shape[1] * weff.shape[0] // (conv.lmax + 1)
+        weff_sliced = weff[:rows]
+        conv._triton_radial_weff = weff_sliced
+        try:
+            packed = fused._radial_packed_weights(sliced)
+        finally:
+            conv._triton_radial_weff = weff
         self.assertIsNotNone(packed, "a truncated view must still fold")
         weff_used, wh = packed
         kc = torch.matmul(sliced.flatten(1), weff_used)
@@ -2238,28 +2235,27 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
             setattr(cache, name, getattr(cache, name).cpu())
         # The guard reads only the conv and the radial operand, so drive it
         # directly instead of moving the whole cache to CPU.
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            self.assertIsNone(
-                fused._radial_packed_weights(cpu_radial),
-                "CPU tensors without the pin keep the unpacked head",
-            )
-            conv._force_radial_packed = True
-            try:
-                pinned = fused._radial_packed_weights(cpu_radial)
-            finally:
-                conv._force_radial_packed = None
+        self.assertIsNone(
+            fused._radial_packed_weights(cpu_radial),
+            "CPU tensors without the pin keep the unpacked head",
+        )
+        conv._force_radial_packed = True
+        try:
+            pinned = fused._radial_packed_weights(cpu_radial)
+        finally:
+            conv._force_radial_packed = None
         self.assertIsNotNone(pinned, "the pin must select the fold for exports")
 
     @_GPU_KERNELS
     def test_forward_and_backward_match_unpacked(self):
         conv, fused, x, cache, radial = self._build(self.CASE)
 
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "0"}):
+        # The unpacked arm disables the fold at the seam it selects at.
+        with mock.patch.object(fused, "_radial_packed_weights", lambda radial: None):
             rad_ref = radial.clone().requires_grad_(True)
             out_ref, feat_ref = fused(x, cache, rad_ref)
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            rad_packed = radial.clone().requires_grad_(True)
-            out_packed, feat_packed = fused(x, cache, rad_packed)
+        rad_packed = radial.clone().requires_grad_(True)
+        out_packed, feat_packed = fused(x, cache, rad_packed)
 
         # The folded head materializes only the l = 0 rows the attention reads.
         self.assertEqual(feat_ref.shape[1], conv.lmax + 1)
@@ -2284,12 +2280,13 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         )
 
     @_GPU_KERNELS
-    def test_dispatch_follows_flag(self):
+    def test_dispatch_follows_the_level_bound_fold(self):
         conv, fused, x, cache, radial = self._build(self.CASE)
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            _, feat_on = fused(x, cache, radial)
+        _, feat_on = fused(x, cache, radial)
         self.assertEqual(feat_on.shape[1], 1)
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "0"}):
+        # The unpacked arm disables the fold at the seam it selects at;
+        # with the level-bound fold on by default, this is the off state.
+        with mock.patch.object(fused, "_radial_packed_weights", lambda radial: None):
             _, feat_off = fused(x, cache, radial)
         self.assertEqual(feat_off.shape[1], conv.lmax + 1)
 
@@ -2297,8 +2294,7 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
     def test_fallback_without_hidden_projection(self):
         conv, fused, x, cache, radial = self._build(self.NO_PROJ_CASE)
         self.assertIsNone(conv.radial_hidden_proj)
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            _, feat = fused(x, cache, radial)
+        _, feat = fused(x, cache, radial)
         self.assertEqual(feat.shape[1], conv.lmax + 1)
 
     @_GPU_KERNELS
@@ -2316,8 +2312,7 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         x, cache, radial = value_path_cls._edge_inputs(
             self, conv, self.CASE[0], self.CASE[1]
         )
-        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
-            _, feat = fused(x, cache, radial)
+        _, feat = fused(x, cache, radial)
         self.assertEqual(feat.shape[1], 1)
 
     @_GPU_KERNELS
