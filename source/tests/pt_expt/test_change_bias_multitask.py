@@ -174,3 +174,55 @@ def test_statistical_bias(checkpoint, tmp_path, mode):
             )
             changed |= not torch.equal(value, before["model"][key])
     assert changed
+
+
+@pytest.mark.parametrize("numb_batch", [0, 1, 5])
+@pytest.mark.parametrize("mode", ["set", "change"])
+def test_unequal_system_lengths(checkpoint, tmp_path, numb_batch, mode):
+    """All-frame calibration visits each system fully without wrapping short ones."""
+    path, before, descriptor_key, other_key = checkpoint
+    systems = []
+    for index, length in enumerate((3, 7)):
+        system = tmp_path / f"system_{index}"
+        _make_subset_dataset(
+            str(Path(EXAMPLE_DIR) / "data" / "data_0"), str(system), length
+        )
+        # Distinct frame labels let the test detect repeated draws as well as
+        # the former shortest-system truncation.
+        np.save(
+            system / "set.000" / "energy.npy",
+            (np.arange(length, dtype=float) + index * 100).reshape(-1, 1),
+        )
+        systems.append(system)
+    datafile = tmp_path / "systems.txt"
+    datafile.write_text("\n".join(str(p) for p in systems) + "\n")
+    output = tmp_path / "updated.pt"
+    captured = []
+
+    def capture(model, sampled, **kwargs):
+        captured.extend(sampled)
+        return model
+
+    with patch(
+        "deepmd.pt_expt.train.training.model_change_out_bias", side_effect=capture
+    ):
+        change_bias(
+            str(path),
+            mode=mode,
+            datafile=str(datafile),
+            numb_batch=numb_batch,
+            model_branch="water",
+            output=str(output),
+        )
+    assert len(captured) == 2
+    for index, (sample, length) in enumerate(zip(captured, (3, 7), strict=True)):
+        labels = np.asarray(sample["energy"]).reshape(-1)
+        expected_count = length if numb_batch == 0 else min(numb_batch, length)
+        assert len(labels) == expected_count
+        assert len(np.unique(labels)) == expected_count
+        assert set(labels) <= set(np.arange(length) + index * 100)
+        if numb_batch == 0:
+            np.testing.assert_array_equal(
+                np.sort(labels), np.arange(length) + index * 100
+            )
+    assert_preserved(before, load(output), descriptor_key, other_key)

@@ -172,6 +172,8 @@ def make_stat_input(
     data: Any,
     nbatches: int,
     min_pair_dist: float = 0.0,
+    *,
+    one_pass: bool = False,
 ) -> list[dict[str, np.ndarray]]:
     """Pack data for statistics using DeepmdDataSystem.
 
@@ -198,6 +200,11 @@ def make_stat_input(
         the batches are drawn, a batch left empty is replaced by the next one
         of its system, and a system without any valid frame is skipped, so the
         statistics see the frames the optimizer sees.
+    one_pass : bool
+        Cap the requested batches separately at each system's pass length.
+        This prevents short systems from wrapping without truncating longer
+        systems to the length of the shortest one. Defaults to False to retain
+        the sampling behavior of training statistics.
 
     Returns
     -------
@@ -209,7 +216,10 @@ def make_stat_input(
 
     lst: list[dict[str, np.ndarray]] = []
     for ii in range(nsystems):
-        batches = _collect_stat_batches(data, ii, nbatches, min_pair_dist)
+        system_batches = (
+            min(nbatches, _get_stat_pass_length(data, ii)) if one_pass else nbatches
+        )
+        batches = _collect_stat_batches(data, ii, system_batches, min_pair_dist)
         if not batches:
             reason = (
                 "no frame keeps every atom pair beyond the filter radius"

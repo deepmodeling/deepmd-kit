@@ -100,6 +100,8 @@ dp --pt-expt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-
 
 The output checkpoint retains all branches and training state. Only the selected branch's output statistics are updated. User-defined bias values follow that branch's `type_map` order.
 
+For statistical adjustment, the default `--numb-batch 0` uses every frame of each system, including when systems have different lengths. A positive value uses up to that many frames per system, without repeating frames from shorter systems. These sampling limits match the PyTorch backend; any configured frame filter still applies.
+
 Prediction for statistical bias adjustment runs without gradient recording and uses inference batches. `DP_INFER_BATCH_SIZE` limits the number of atoms per batch (`nframes * natoms`), independently of the number of frames sampled for statistics. For example:
 
 ```sh
