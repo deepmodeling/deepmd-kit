@@ -50,7 +50,9 @@ try:
         Final,
     )
 except ImportError:
-    from torch.jit import Final
+    from torch.jit import (
+        Final,
+    )
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.network.mlp import (

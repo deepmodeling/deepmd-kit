@@ -628,7 +628,9 @@ def _ensure_registrations() -> None:
     converters are registered before any descriptors/fittings try to use them.
     """
     # Import triggers registration of NetworkCollection, ExcludeMask, EnvMat
-    from deepmd.pt_expt import utils  # noqa: F401
+    from deepmd.pt_expt import (  # noqa: F401
+        utils,
+    )
 
 
 _ensure_registrations()
