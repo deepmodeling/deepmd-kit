@@ -659,18 +659,26 @@ void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
 void DeepPotBackend::compute_canonical_graph_gpu(
     double* d_atom_energy,
     double* d_force,
+    double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::uint32_t* d_source_order,
-    const int nloc,
-    const int nall_nodes,
-    const std::int64_t edge_storage) {
+    const std::int64_t* d_source_order,
+    const double* d_coord,
+    void* world,
+    const DP_HaloExchange* halo,
+    const double* box,
+    const std::int64_t nloc,
+    const std::int64_t nall_nodes,
+    const std::int64_t edge_storage,
+    void* stream) {
   (void)d_atom_energy;
   (void)d_force;
+  (void)d_virial;
   (void)d_atom_virial;
   (void)d_atype;
   (void)d_source;
@@ -678,9 +686,14 @@ void DeepPotBackend::compute_canonical_graph_gpu(
   (void)d_destination_row_ptr;
   (void)d_source_row_ptr;
   (void)d_source_order;
+  (void)d_coord;
+  (void)world;
+  (void)halo;
+  (void)box;
   (void)nloc;
   (void)nall_nodes;
   (void)edge_storage;
+  (void)stream;
   throw deepmd::deepmd_exception(
       "compact canonical graph inference is only supported by a compatible "
       "PyTorch Exportable backend.");
@@ -688,9 +701,17 @@ void DeepPotBackend::compute_canonical_graph_gpu(
 
 bool DeepPotBackend::uses_fp32_edge_vectors() const { return false; }
 
+bool DeepPotBackend::canonical_graph_requires_source_csr() const {
+  return false;
+}
+
+bool DeepPotBackend::canonical_graph_requires_halo() const { return false; }
+
 bool DeepPotBackend::supports_device_edge_inference() const { return false; }
 
 bool DeepPotBackend::uses_canonical_graph_inference() const { return false; }
+
+bool DeepPotBackend::has_long_range() const { return false; }
 
 void DeepPot::compute_edges_gpu(double* d_atom_energy,
                                 double* d_force,
@@ -748,20 +769,28 @@ void DeepPot::compute_edges_gpu(double* d_atom_energy,
 void DeepPot::compute_canonical_graph_gpu(
     double* d_atom_energy,
     double* d_force,
+    double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::uint32_t* d_source_order,
-    const int nloc,
-    const int nall_nodes,
-    const std::int64_t edge_storage) {
+    const std::int64_t* d_source_order,
+    const double* d_coord,
+    void* world,
+    const DP_HaloExchange* halo,
+    const double* box,
+    const std::int64_t nloc,
+    const std::int64_t nall_nodes,
+    const std::int64_t edge_storage,
+    void* stream) {
   dp->compute_canonical_graph_gpu(
-      d_atom_energy, d_force, d_atom_virial, d_atype, d_source, d_edge_vec,
-      d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc, nall_nodes,
-      edge_storage);
+      d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
+      index_width, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+      d_source_order, d_coord, world, halo, box, nloc, nall_nodes, edge_storage,
+      stream);
 }
 
 bool DeepPot::uses_fp32_edge_vectors() const {
@@ -775,6 +804,16 @@ bool DeepPot::supports_device_edge_inference() const {
 bool DeepPot::uses_canonical_graph_inference() const {
   return dp->uses_canonical_graph_inference();
 }
+
+bool DeepPot::canonical_graph_requires_source_csr() const {
+  return dp->canonical_graph_requires_source_csr();
+}
+
+bool DeepPot::canonical_graph_requires_halo() const {
+  return dp->canonical_graph_requires_halo();
+}
+
+bool DeepPot::has_long_range() const { return dp->has_long_range(); }
 
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }
 
@@ -921,6 +960,25 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<float>& aparam,
     const std::vector<double>& charge_spin);
 
+// LAMMPS hands a model with a long-range module no cell for a non-periodic
+// system, whereas the neighbor-list entries of other models, such as those of
+// the TensorFlow backend, read the cell of the region.
+template <typename VALUETYPE>
+void DeepPotModelDevi::check_ensemble_box(
+    const std::vector<VALUETYPE>& dbox) const {
+  if (!dbox.empty() || !has_long_range()) {
+    return;
+  }
+  for (const auto& model : dps) {
+    if (!model->has_long_range()) {
+      throw deepmd::deepmd_exception(
+          "an ensemble that holds a model with a long-range module evaluates "
+          "a non-periodic system only when every model carries one; use "
+          "models with long-range modules throughout, or a periodic system.");
+    }
+  }
+}
+
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                std::vector<std::vector<VALUETYPE>>& all_force,
@@ -937,6 +995,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   if (numb_models == 0) {
     return;
   }
+  check_ensemble_box(dbox);
   all_energy.resize(numb_models);
   all_force.resize(numb_models);
   all_virial.resize(numb_models);
@@ -999,6 +1058,7 @@ void DeepPotModelDevi::compute(
   all_virial.resize(numb_models);
   all_atom_energy.resize(numb_models);
   all_atom_virial.resize(numb_models);
+  check_ensemble_box(dbox);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     dps[ii]->compute(all_energy[ii], all_force[ii], all_virial[ii],
                      all_atom_energy[ii], all_atom_virial[ii], dcoord_, datype_,

@@ -124,7 +124,7 @@ _DPA4_GRADES: dict[str, dict[str, dict[str, Any]]] = {
         "descriptor": {
             "channels": 128,
             "lmax": 6,
-            "n_blocks": 10,
+            "n_blocks": 8,
             "mixing_layers": 4,
             "radial_so2_rank": 4,
             "n_focus": 3,
@@ -195,12 +195,32 @@ _DPA4C_GRADES: dict[str, dict[str, dict[str, Any]]] = {
         "fitting_net": {"neuron": [384, 384, 384]},
     },
 }
+# A two-block grade ``<grade>-duo`` adds one message-passing block to its
+# single-block grade. Nano has none, since the single-block Mini is more
+# accurate at the same cost.
+_DPA4C_DUO_BASES = ("mini", "neo", "air", "plus")
+_DPA4C_GRADES.update(
+    {
+        f"{grade}-duo": {
+            **_DPA4C_GRADES[grade],
+            "descriptor": {**_DPA4C_GRADES[grade]["descriptor"], "n_blocks": 2},
+        }
+        for grade in _DPA4C_DUO_BASES
+    }
+)
 _DPA4C_VERSIONS: dict[str, dict[str, Any]] = {
     "v20260901": {"grades": ("nano", "mini", "neo", "air", "plus")},
     # Fixed Gaussian centres in place of trainable Bessel frequencies.
     "v20260911": {
         "descriptor": {"basis_type": "gaussian/fix"},
-        "grades": ("nano", "mini", "neo", "air", "plus"),
+        "grades": (
+            "nano",
+            "mini",
+            "neo",
+            "air",
+            "plus",
+            *(f"{grade}-duo" for grade in _DPA4C_DUO_BASES),
+        ),
     },
 }
 

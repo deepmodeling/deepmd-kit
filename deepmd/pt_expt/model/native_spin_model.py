@@ -316,6 +316,9 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         source_row_ptr: torch.Tensor,
         source_order: torch.Tensor,
         spin: torch.Tensor,
+        communicator: torch.Tensor | None = None,
+        halo_send: torch.Tensor | None = None,
+        halo_swaps: torch.Tensor | None = None,
         *,
         do_atomic_virial: bool,
         **make_fx_kwargs: Any,
@@ -325,14 +328,16 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         THIS METHOD OWNS the positional ``.pt2`` ABI for compact canonical
         spin models (mirrored verbatim by the C++ / serialization seams):
         ``spin`` sits at index 8, directly after the dual-CSR block, which is
-        the same placement rule the graph ABI uses at index 10. The compact ABI
-        has no conditional tail, so index 8 is the last slot.
+        the same placement rule the graph ABI uses at index 10. A model with
+        further message-passing blocks takes the communicator and the border
+        plan at indices 9 to 11, and the lower of any other model ends at
+        index 8.
 
         The magnetic force is a value here rather than an autograd result: the
-        fused operator emits the on-site half from the node kernel and the
-        neighbour half per edge, and the deployment path reduces the second
-        onto source nodes. ``mask_mag`` is derived from the types by the same
-        single owner the eager translation uses.
+        fused operator closes the on-site part in its node kernel and
+        accumulates the neighbour part of every edge onto the edge's source
+        node before it returns. ``mask_mag`` is derived from the types by the
+        same single owner the eager translation uses.
 
         Parameters
         ----------
@@ -342,6 +347,9 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             Compact dual-CSR topology.
         spin
             ``(N, 3)`` per-node moment. Ghost rows carry their owner's moment.
+        communicator, halo_send, halo_swaps
+            For a model with further message-passing blocks, a sample
+            communicator and border plan, given together; ``None`` otherwise.
         do_atomic_virial
             Whether the traced output includes per-node virial.
         **make_fx_kwargs
@@ -350,10 +358,68 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         Returns
         -------
         torch.nn.Module
-            Traced nine-input compact deployment module whose output dict adds
+            Traced compact deployment module of nine inputs, or twelve with
+            the communicator and the border plan, whose output dict adds
             ``force_mag`` and ``mask_mag`` to the spin-free key set.
         """
         model = self
+        border = (communicator, halo_send, halo_swaps)
+        if any(value is None for value in border) and any(
+            value is not None for value in border
+        ):
+            raise ValueError(
+                "the compact spin lower takes the communicator and the border "
+                "plan of further message-passing blocks together"
+            )
+
+        if halo_send is not None:
+
+            def fn_message_passing(
+                atype: torch.Tensor,
+                n_node: torch.Tensor,
+                n_local: torch.Tensor,
+                source: torch.Tensor,
+                edge_vec: torch.Tensor,
+                destination_row_ptr: torch.Tensor,
+                source_row_ptr: torch.Tensor,
+                source_order: torch.Tensor,
+                spin: torch.Tensor,
+                communicator: torch.Tensor,
+                halo_send: torch.Tensor,
+                halo_swaps: torch.Tensor,
+            ) -> dict[str, torch.Tensor]:
+                result = model.forward_lower_canonical_graph(
+                    atype,
+                    n_node,
+                    n_local,
+                    source,
+                    edge_vec,
+                    destination_row_ptr,
+                    source_row_ptr,
+                    source_order,
+                    do_atomic_virial=do_atomic_virial,
+                    spin=spin,
+                    communicator=communicator,
+                    halo_send=halo_send,
+                    halo_swaps=halo_swaps,
+                )
+                result["mask_mag"] = model._spin_active_mask(atype)
+                return result
+
+            return make_fx(fn_message_passing, **make_fx_kwargs)(
+                atype,
+                n_node,
+                n_local,
+                source,
+                edge_vec,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
+                spin,
+                communicator,
+                halo_send,
+                halo_swaps,
+            )
 
         def fn(
             atype: torch.Tensor,

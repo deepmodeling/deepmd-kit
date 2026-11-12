@@ -3,15 +3,20 @@
 
 ``bridging_method: zbl`` on a DPA4C model builds the same linear composition
 as DPA4 (``LinearEnergyModel`` over ``[learned, InnerPotentialAtomicModel]``).
-DPA4C has no message passing and carries the edge envelope in every edge term,
-so its bridging window is one inner switch on that envelope, paired with a
-clamp of the length the radial features read: a pair at or below the inner
-radius leaves the learned model exactly as if its edge were deleted, and the
-analytical term supplies the whole pair interaction.
+A single-block DPA4C carries the edge envelope in every edge term, so its
+bridging window is one inner switch on that envelope, paired with a clamp of
+the length the radial features read: a pair at or below the inner radius
+leaves the learned model exactly as if its edge were deleted, and the
+analytical term supplies the whole pair interaction. A further block that
+reads its neighbors adds the source gate of DPA4, which keeps the pair out of
+every third environment.
 """
 
 import copy
 import math
+from typing import (
+    ClassVar,
+)
 
 import numpy as np
 import pytest
@@ -268,6 +273,78 @@ class TestDPA4CZBLBridging:
         )
 
 
+class TestDPA4CZBLBridgingMultiBlock:
+    """A further block that reads its neighbors keeps the frozen pair out.
+
+    The neighbor state of a third atom sees both atoms of a close pair, so
+    without the source gate it would hand the pair back to either atom. The
+    gate mutes every edge a frozen atom emits towards a third atom, so both
+    atoms of the pair leave every other environment.
+    """
+
+    MULTI_BLOCK: ClassVar[dict] = {"rcut": [4.0, 3.5], "n_blocks": 2}
+
+    def setup_method(self) -> None:
+        config = copy.deepcopy(ZBL_CONFIG)
+        config["descriptor"].update(self.MULTI_BLOCK)
+        self.model = get_model(config).eval()
+        _perturb(self.model)
+
+    def _learned_twin(self, window: bool) -> torch.nn.Module:
+        """The learned child as a standalone model, with or without its window."""
+        config = copy.deepcopy(PLAIN_CONFIG)
+        config["descriptor"].update(self.MULTI_BLOCK)
+        if window:
+            config["descriptor"].update(
+                inner_clamp_f_inner=R_INNER,
+                inner_clamp_f_outer=R_OUTER,
+                inner_clamp_scale="absolute",
+            )
+        twin = get_model(config).eval()
+        twin.atomic_model.load_state_dict(
+            self.model.atomic_model.models[0].state_dict()
+        )
+        return twin
+
+    @staticmethod
+    def _atom_energy(model: torch.nn.Module, coord: np.ndarray) -> np.ndarray:
+        return _evaluate(model, coord)["atom_energy"].detach().cpu().numpy()[0, :, 0]
+
+    @pytest.mark.parametrize("distance", [0.2, 0.45])
+    def test_frozen_pair_does_not_reach_the_other_atoms(self, distance: float) -> None:
+        coord = _cluster(distance)
+        moved = coord.copy()
+        moved[1] = coord[0] + distance * np.array([0.0, -0.6, 0.8])
+        windowed = self._learned_twin(window=True)
+        delta = self._atom_energy(windowed, moved) - self._atom_energy(windowed, coord)
+        # The learned energies of the O atom and of both third atoms ignore
+        # where the He atom sits inside the frozen zone, while the He atom
+        # sees its own new environment.
+        np.testing.assert_allclose(delta[[0, 2, 3]], 0.0, atol=1e-12)
+        assert abs(delta[1]) > 1e-6
+        # Without the window the third atoms read the motion of the He atom,
+        # so the contract is not vacuous.
+        plain = self._learned_twin(window=False)
+        plain_delta = self._atom_energy(plain, moved) - self._atom_energy(plain, coord)
+        assert np.abs(plain_delta[[2, 3]]).max() > 1e-6
+
+    @pytest.mark.parametrize("distance", [0.3, 0.5, 0.65, 0.8, 1.1])
+    def test_force_matches_finite_difference(self, distance: float) -> None:
+        coord = _cluster(distance)
+        force = _evaluate(self.model, coord)["force"]
+        step = 1.0e-5
+        for atom in (0, 1, 2):
+            for axis in range(3):
+                shift = np.zeros_like(coord)
+                shift[atom, axis] = step
+                upper = _evaluate(self.model, coord + shift)["energy"].item()
+                lower = _evaluate(self.model, coord - shift)["energy"].item()
+                expected = -(upper - lower) / (2.0 * step)
+                assert force[0, atom, axis].item() == pytest.approx(
+                    expected, rel=1e-6, abs=1e-6
+                )
+
+
 def _native_spin(base: dict) -> dict:
     """The same configuration with a magnetic moment on every type."""
     return {
@@ -388,6 +465,22 @@ def _compressed_config(window: tuple[float, float] | None) -> dict:
             bridging_r_outer=window[1],
         )
     return config
+
+
+def test_compression_keeps_the_default_charge_state() -> None:
+    """A bridged model reports the charge state its compressed tables hold.
+
+    Compression folds the default condition of the learned model into its
+    tables, after which the model reads no condition input. The composition
+    still reports that default, which an archive of it serves when a caller
+    names no condition.
+    """
+    config = _compressed_config((0.5, 0.8))
+    config["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[0.0, 1.0])
+    model = get_model(config).eval()
+    model.atomic_model.enable_compression(0.5, 1.0, 0.002, 0.002)
+    assert model.get_dim_chg_spin() == 0
+    assert model.get_default_chg_spin() == [0.0, 1.0]
 
 
 class TestCompressedDPA4CZBLBridging:
@@ -544,7 +637,7 @@ class TestCompressedDPA4CZBLBridging:
             edge_vec[:physical].contiguous(),
             destination_row_ptr,
             source_row_ptr,
-            source_order[:physical].to(torch.uint32).contiguous(),
+            source_order[:physical].to(torch.int64).contiguous(),
             do_atomic_virial=True,
         )
         for key, reference_key in (

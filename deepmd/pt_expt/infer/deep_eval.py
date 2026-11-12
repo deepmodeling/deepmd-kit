@@ -22,6 +22,14 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
+    build_topologies,
+    check_complete_frames,
+    check_periodic_cells,
+    flatten_topologies,
+    unflatten_topologies,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -241,6 +249,9 @@ class DeepEval(DeepEvalBackend):
         # Only a compressed ``.pt2`` folds its charge state into constants; a
         # model that reads the condition as an ordinary input needs no rebuild.
         self._charge_state_fold: ChargeStateFold | None = None
+        # The charge state the folded tables of the deserialized model were
+        # last rebuilt for; ``None`` before the first rebuild.
+        self._dpmodel_charge_state: tuple[float, ...] | None = None
 
         if self._is_pt2:
             self._load_pt2(model_file)
@@ -259,6 +270,17 @@ class DeepEval(DeepEvalBackend):
         # above (_load_pt2 / _load_pte / _load_pt), so this is the one
         # place that sees every model load regardless of archive kind.
         _warn_legacy_edge_vec(self.metadata)
+        if self.metadata.get("lower_input_kind") in (
+            "dpa1_canonical",
+            "dpa4c_canonical",
+        ) and (
+            self.metadata.get("canonical_index_dtype") != "auto"
+            or self.metadata.get("canonical_index_storage") != "byte_words"
+        ):
+            raise ValueError(
+                "Compact canonical graph artifacts require automatic-width byte "
+                "indices; re-freeze the model with the current DeePMD-kit version."
+            )
 
         # ``neighbor_graph_method`` selects searches for graph and edge-vector
         # inputs. Extended-coordinate inputs use ``nlist_backend`` instead.
@@ -445,6 +467,7 @@ class DeepEval(DeepEvalBackend):
             # declare spin via the base-model capability method.
             self._dpmodel = BaseModel.deserialize(model_data)
             self._is_spin = self._dpmodel.has_spin()
+        self._dpmodel.eval()
 
         self._rcut = self._dpmodel.get_rcut()
         self._type_map = self._dpmodel.get_type_map()
@@ -710,6 +733,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         use_graph_lower = model_uses_graph_lower(model)
+        topology_names = model.atomic_model.required_topologies()
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -764,6 +788,9 @@ class DeepEval(DeepEvalBackend):
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
+        if topology_names:
+            self.metadata["topologies"] = list(topology_names)
+            self.metadata["topology_params"] = model.atomic_model.topology_params()
         if use_graph_lower:
             from deepmd.pt_expt.model.graph_lower import (
                 graph_edge_dtype,
@@ -781,7 +808,8 @@ class DeepEval(DeepEvalBackend):
         # ``communicate_extended_output``, while the graph runner emits local
         # public keys consumed directly by ``_eval_model_graph``.
         #
-        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin)
+        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin,
+        #              *topology inputs)
         # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
         # Nlist:      (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
         # Nlist spin: (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
@@ -851,6 +879,7 @@ class DeepEval(DeepEvalBackend):
                     fparam: torch.Tensor | None,
                     aparam: torch.Tensor | None,
                     charge_spin: torch.Tensor | None = None,
+                    *topology_vals: torch.Tensor,
                 ) -> dict[str, torch.Tensor]:
                     model_ret = model.forward_common_lower_graph(
                         atype,
@@ -868,6 +897,7 @@ class DeepEval(DeepEvalBackend):
                         fparam=fparam,
                         aparam=aparam,
                         charge_spin=charge_spin,
+                        topologies=unflatten_topologies(topology_names, topology_vals),
                     )
                     return _translate_energy_keys(
                         model_ret,
@@ -949,6 +979,12 @@ class DeepEval(DeepEvalBackend):
         if self._dpmodel is not None:
             return self._dpmodel.get_dim_fparam()
         return int(self.metadata["dim_fparam"])
+
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        if self._dpmodel is not None:
+            return bool(self._dpmodel.has_default_fparam())
+        return bool(self.metadata.get("has_default_fparam", False))
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -1040,30 +1076,68 @@ class DeepEval(DeepEvalBackend):
         ValueError
             If the loaded model cannot serve the requested condition.
         """
+        state = self._folded_charge_state(charge_spin)
+        if state is not None:
+            self._charge_state_fold.apply(state)
+
+    def _apply_dpmodel_charge_state(self, charge_spin: np.ndarray | None) -> None:
+        """Serve a charge/spin condition to the folded tables of the deserialized model.
+
+        The deserialized model of an archive with a fold carries the
+        compressed descriptor of the archive, whose fused kernel reads the
+        frozen tables in place of its condition argument. Those tables are
+        rebuilt whenever another state is requested, so that the kernel and
+        the reference path evaluate the same condition.
+
+        Parameters
+        ----------
+        charge_spin : np.ndarray, optional
+            The requested condition. A folded model falls back to the state
+            its snapshot was frozen against when none is given.
+
+        Raises
+        ------
+        ValueError
+            If the loaded model cannot serve the requested condition.
+        """
+        state = self._folded_charge_state(charge_spin)
+        if state is None or state == self._dpmodel_charge_state:
+            return
+        learned, _ = self._dpmodel.atomic_model.fused_decomposition()
+        learned.descriptor.apply_charge_state(state)
+        self._dpmodel_charge_state = state
+
+    def _folded_charge_state(
+        self, charge_spin: np.ndarray | None
+    ) -> tuple[float, ...] | None:
+        """Resolve the charge state the folded tables serve for a request.
+
+        Parameters
+        ----------
+        charge_spin : np.ndarray, optional
+            The requested condition. A folded model falls back to the state
+            its snapshot was frozen against when none is given.
+
+        Returns
+        -------
+        tuple[float, ...] or None
+            The state, or ``None`` when the model folds no condition.
+
+        Raises
+        ------
+        ValueError
+            If the loaded model cannot serve the requested condition.
+        """
         fold = self._charge_state_fold
         if fold is None:
             if charge_spin is not None and self.get_dim_chg_spin() == 0:
                 raise ValueError(
                     f"charge_spin was given, but {self._no_runtime_condition_reason()}"
                 )
-            return
+            return None
         if charge_spin is None:
             charge_spin = self.metadata["default_chg_spin"]
-        fold.apply(single_charge_state(charge_spin, fold.width))
-
-    @property
-    def _dpmodel_dim_chg_spin(self) -> int:
-        """Width of the condition the deserialized model reads as an argument.
-
-        An archive that ships its model dict is deserialized into an ordinary
-        implementation beside the compiled lower, and the introspection
-        methods evaluate that one. It reads the condition as an argument even
-        where the lower reads none, so the two widths part company exactly
-        when a fold exists, and the fold carries the width.
-        """
-        if self._charge_state_fold is not None:
-            return self._charge_state_fold.width
-        return self.get_dim_chg_spin()
+        return single_charge_state(charge_spin, fold.width)
 
     def _make_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
@@ -1104,12 +1178,11 @@ class DeepEval(DeepEvalBackend):
     def _make_dpmodel_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
     ) -> torch.Tensor | None:
-        """Build the condition the deserialized model reads.
+        """Serve the condition to the deserialized model used for introspection.
 
-        The introspection methods evaluate that model rather than the compiled
-        lower, so they condition it through this argument; folding the state
-        into the compressed tables would not reach them, as those tables are
-        read only by the fused kernel behind the lower.
+        A compressed descriptor reads its stored state and folded tables,
+        whereas an uncompressed descriptor reads a runtime tensor. All
+        introspection routes use this boundary to select the requested state.
 
         Parameters
         ----------
@@ -1125,8 +1198,9 @@ class DeepEval(DeepEvalBackend):
             The condition with shape ``(nframes, dim_chg_spin)``, or ``None``
             for a model that carries no charge/spin conditioning.
         """
+        self._apply_dpmodel_charge_state(charge_spin)
         return self._charge_spin_tensor(
-            nframes, charge_spin, self._dpmodel_dim_chg_spin
+            nframes, charge_spin, self._dpmodel.get_dim_chg_spin()
         )
 
     def _charge_spin_tensor(
@@ -1234,6 +1308,12 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
+        if self._dpmodel is not None:
+            return int(self._dpmodel.get_numb_dos())
+        # Metadata-only mode: the width is the shape of the ``dos`` output.
+        out_defs = self._model_output_def.get_data()
+        if "dos" in out_defs:
+            return int(out_defs["dos"].shape[0])
         return 0
 
     def get_var_name(self) -> str:
@@ -2126,9 +2206,12 @@ class DeepEval(DeepEvalBackend):
     ) -> tuple[np.ndarray, ...]:
         """Evaluate generic graph or compact canonical inputs.
 
-        Exported artifacts accept a dynamic edge axis. Input preparation uses
-        the artifact's geometry dtype and layout; both forwards return local
-        public outputs without extended-atom communication.
+        Exported artifacts accept a dynamic edge axis, and the inputs of a
+        model with a long-range module, the fields of every topology that the
+        ``topologies`` metadata names, follow the graph inputs. Input
+        preparation uses the artifact's geometry dtype and layout; both
+        forwards return local public outputs without extended-atom
+        communication.
         """
         model_inputs, nframes, natoms = self._prepare_graph_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
@@ -2151,18 +2234,39 @@ class DeepEval(DeepEvalBackend):
                 )
         return tuple(results)
 
-    def _prepare_graph_inputs(
+    def _build_device_graph(
         self,
         coords: np.ndarray,
         cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: np.ndarray | None,
-        aparam: np.ndarray | None,
-        charge_spin: np.ndarray | None,
         *,
-        spins: np.ndarray | None = None,
-    ) -> tuple[tuple[torch.Tensor | None, ...], int, int]:
-        """Pack local graph inputs according to the exported artifact's ABI."""
+        canonical: bool,
+    ) -> tuple["NeighborGraph | CanonicalGraph", torch.Tensor, int, int]:
+        """Build the local graph of the frames on the model device.
+
+        Parameters
+        ----------
+        coords
+            Coordinates reshape-compatible with ``(nframes, natoms, 3)``.
+        cells
+            Cells reshape-compatible with ``(nframes, 9)``, or ``None`` for
+            non-periodic frames.
+        atom_types
+            Atom types with shape ``(natoms,)`` or ``(nframes, natoms)``.
+        canonical
+            Whether the graph takes the compact canonical layout.
+
+        Returns
+        -------
+        graph
+            The graph, with the edge vectors in the edge dtype of the artifact.
+        atype
+            Flat atom types with shape ``(nframes * natoms,)``.
+        nframes
+            Number of frames.
+        natoms
+            Number of atoms in every frame.
+        """
         from deepmd.dpmodel.utils.neighbor_graph import (
             NeighborGraph,
         )
@@ -2185,13 +2289,10 @@ class DeepEval(DeepEvalBackend):
             atom_types,
             cells.reshape(nframes, 9) if cells is not None else None,
             DEVICE,
+            canonical=canonical,
         )
         atype_t = torch.as_tensor(
             atom_types.reshape(-1), dtype=torch.int64, device=DEVICE
-        )
-        canonical = self.metadata.get("lower_input_kind") in (
-            "dpa1_canonical",
-            "dpa4c_canonical",
         )
         edge_dtype = (
             torch.float32
@@ -2228,7 +2329,41 @@ class DeepEval(DeepEvalBackend):
             )
             if canonical:
                 graph = canonical_graph_from_neighbor_graph(graph)
+        return graph, atype_t, nframes, natoms
+
+    def _prepare_graph_inputs(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
+        *,
+        spins: np.ndarray | None = None,
+    ) -> tuple[tuple[torch.Tensor | None, ...], int, int]:
+        """Pack local graph inputs according to the exported artifact's ABI."""
+        from deepmd.pt_expt.utils.canonical_graph import (
+            BorderPlan,
+            canonical_index_bytes,
+            validate_reciprocal_canonical_graph,
+        )
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        canonical = self.metadata.get("lower_input_kind") in (
+            "dpa1_canonical",
+            "dpa4c_canonical",
+        )
+        graph, atype_t, nframes, natoms = self._build_device_graph(
+            coords, cells, atom_types, canonical=canonical
+        )
         if canonical:
+            if self.metadata.get(
+                "lower_input_kind"
+            ) == "dpa4c_canonical" and self.metadata.get("has_message_passing", False):
+                validate_reciprocal_canonical_graph(graph)
             # The compact ABI has no conditional input slots. Compressed charge
             # conditioning instead updates the constants through its fold.
             if (
@@ -2246,7 +2381,7 @@ class DeepEval(DeepEvalBackend):
                 atype_t,
                 graph.n_node,
                 graph.n_local,
-                graph.source,
+                canonical_index_bytes(graph.source),
                 graph.edge_vec,
                 graph.destination_row_ptr,
                 graph.source_row_ptr,
@@ -2285,7 +2420,98 @@ class DeepEval(DeepEvalBackend):
                 aparam_t,
                 self._make_charge_spin_input(nframes, charge_spin),
             )
+        topology_names = self.metadata.get("topologies", ())
+        if topology_names:
+            box_input = cells.reshape(nframes, 9) if cells is not None else None
+            model_inputs = (
+                *model_inputs,
+                *self._long_range_inputs(
+                    topology_names,
+                    coords.reshape(nframes * natoms, 3),
+                    box_input,
+                    atype_t,
+                    graph.n_node,
+                    canonical,
+                    graph.edge_vec.dtype,
+                    DEVICE,
+                ),
+            )
+        if canonical and self.metadata.get("has_message_passing", False):
+            # Frames held whole carry no halo nodes, so the border plan of a
+            # model with further message-passing blocks has no swaps. The
+            # inputs of a long-range module, which the compact lower reads
+            # first, hold the communicator already.
+            border = BorderPlan.single_domain(DEVICE)
+            model_inputs = (
+                *model_inputs,
+                *(() if topology_names else (border.communicator,)),
+                border.send_nodes,
+                border.swaps,
+            )
         return model_inputs, nframes, natoms
+
+    def _long_range_inputs(
+        self,
+        topology_names: tuple[str, ...],
+        coord: np.ndarray,
+        box_input: np.ndarray | None,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        canonical: bool,
+        edge_dtype: torch.dtype,
+        device: "torch.device",
+    ) -> tuple[torch.Tensor | None, ...]:
+        """Inputs that the lower of a model with a long-range module reads after the graph.
+
+        The compact lower reads the positions and the cells of the frames, and
+        the zero communicator of frames held whole; a module that serves no
+        periodic system takes no cell, and the zero cell that marks a
+        non-periodic frame is never one a caller passes. The graph lower reads
+        the fields of the topologies, built with the ``topology_params`` of
+        the archive, or those of the live model of a checkpoint.
+        """
+        nframes = n_node.shape[0]
+        if canonical:
+            if PME_MESH not in topology_names:
+                check_complete_frames(box_input)
+            elif box_input is not None:
+                check_periodic_cells(box_input)
+            box_t = (
+                torch.zeros(nframes, 9, dtype=torch.float64, device="cpu")
+                if box_input is None
+                else torch.as_tensor(
+                    np.asarray(box_input, dtype=np.float64).reshape(nframes, 9)
+                )
+            )
+            return (
+                torch.as_tensor(coord, dtype=torch.float64, device=device),
+                torch.zeros(1, dtype=torch.int64, device="cpu"),
+                box_t,
+            )
+        # Padding slots of a mixed-type batch are no atoms and join no pair.
+        # The cell is torch like the coordinates: the topologies it
+        # namespaces feed the torch graph lower directly (a numpy cell would
+        # produce numpy leaves).
+        box_t = (
+            torch.as_tensor(
+                np.asarray(box_input).reshape(nframes, 3, 3),
+                dtype=edge_dtype,
+                device=device,
+            )
+            if box_input is not None
+            else None
+        )
+        topologies = build_topologies(
+            topology_names,
+            torch.as_tensor(coord, dtype=edge_dtype, device=device),
+            n_node,
+            box_t,
+            node_mask=atype >= 0,
+            atype=atype,
+            pair_excl=self._model_pair_excl(),
+            topology_params=self.metadata.get("topology_params"),
+        )
+        return flatten_topologies(topologies)
 
     def _build_eval_graph(
         self,
@@ -2293,6 +2519,8 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         box_input: np.ndarray | None,
         device: "torch.device",
+        *,
+        canonical: bool = False,
     ) -> "NeighborGraph | CanonicalGraph":
         """Build the local graph for the artifact's input layout.
 
@@ -2307,8 +2535,15 @@ class DeepEval(DeepEvalBackend):
         and results are unchanged. The result is canonicalized to the
         destination-major graph-form ``.pt2`` ABI after construction; the
         caller transfers its fields to the model device. Vesin emits the
-        compact canonical layout directly when no pair exclusions are needed.
+        compact canonical layout directly when ``canonical`` asks for it and no
+        pair exclusions are needed.
         """
+        # A caller may pass broadcast views, whose zero strides survive the
+        # zero-copy conversion to torch; the Warp neighbor search on the
+        # device rejects arrays whose inner strides are not contiguous.
+        coord_input = np.ascontiguousarray(coord_input)
+        if box_input is not None:
+            box_input = np.ascontiguousarray(box_input)
         method = self._neighbor_graph_method
         if method == "auto":
             coord_arr = np.asarray(coord_input)
@@ -2418,10 +2653,7 @@ class DeepEval(DeepEvalBackend):
                     build_neighbor_graph_vesin,
                 )
 
-                if pair_excl is None and self.metadata.get("lower_input_kind") in (
-                    "dpa1_canonical",
-                    "dpa4c_canonical",
-                ):
+                if pair_excl is None and canonical:
                     return build_canonical_graph_vesin(
                         cc,
                         bb.reshape(-1, 3, 3) if bb is not None else None,
@@ -2562,18 +2794,19 @@ class DeepEval(DeepEvalBackend):
         """Guard for features that need a deserialised dpmodel instance.
 
         ``eval_descriptor`` / ``eval_typeebd`` / ``eval_fitting_last_layer``
-        all introspect the dpmodel's internal sub-modules, which requires
-        ``model.json`` to have been present at load time.  Archives
-        shipped without ``model.json`` (metadata-only mode) can still run
-        the main ``eval`` inference path but cannot expose these hooks.
+        introspect the dpmodel's internal sub-modules and ``eval_embedding``
+        evaluates it, which requires ``model.json`` to have been present at
+        load time.  Archives shipped without ``model.json`` (metadata-only
+        mode) can still run the main ``eval`` inference path but cannot
+        expose these features.
         """
         if self._dpmodel is None:
             raise NotImplementedError(
                 f"{feature} requires the dpmodel instance, which is only "
                 "available when the .pt2 / .pte archive contains "
-                "'model.json'. The loaded archive is metadata-only; "
-                "re-export with the full dpmodel serialisation to enable "
-                "this feature."
+                "'model.json'. The loaded archive is metadata-only; evaluate "
+                "the training checkpoint of the model, or an archive frozen "
+                "with `dp --pt-expt freeze`, which stores 'model.json'."
             )
 
     def eval_typeebd(self) -> np.ndarray:
@@ -2675,9 +2908,8 @@ class DeepEval(DeepEvalBackend):
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
-        # The lower's condition is not the one this path reads: it evaluates
-        # the deserialized model, which takes the condition as an argument
-        # even where the lower has it folded into constants.
+        # The deserialized descriptor owns its conditioning state separately
+        # from the compiled lower prepared above.
         charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, *_ = dp_am.descriptor(
@@ -2752,9 +2984,8 @@ class DeepEval(DeepEvalBackend):
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
-        # The lower's condition is not the one this path reads: it evaluates
-        # the deserialized model, which takes the condition as an argument
-        # even where the lower has it folded into constants.
+        # The deserialized descriptor owns its conditioning state separately
+        # from the compiled lower prepared above.
         charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
@@ -2780,3 +3011,144 @@ class DeepEval(DeepEvalBackend):
             finally:
                 fitting_net.set_return_middle_output(False)
         return ret["middle_output"].detach().cpu().numpy()
+
+    def eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
+        dtype: str = "fp32",
+        **kwargs: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the descriptor, atomic feature, and structural feature.
+
+        A single forward on the neighbor graph produces all three embeddings
+        without any force or virial autograd. The descriptor is the per-atom
+        local-environment representation; the atomic feature is the activation
+        after the last fitting hidden layer; the structural feature is the
+        masked atom-sum of the atomic feature, a whole-structure summary.
+
+        Parameters
+        ----------
+        coords
+            Coordinates, shape ``(nframes, natoms, 3)``.
+        cells
+            Cell vectors, shape ``(nframes, 3, 3)`` or ``None``.
+        atom_types
+            Atom types, shape ``(natoms,)`` or ``(nframes, natoms)``.
+        fparam
+            Frame parameters, optional.
+        aparam
+            Atom parameters, optional.
+        charge_spin
+            Frame-level charge and spin multiplicity, one pair per frame with
+            shape ``(nframes, 2)``, or ``None`` for the default condition of
+            the model. A compressed model serves one condition at a time, so
+            all frames of a call share it.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
+        **kwargs
+            Additional backend-compatible evaluation options.
+
+        Returns
+        -------
+        descriptor
+            The per-atom descriptor, shape ``(nframes, natoms, dim_descriptor)``.
+        atomic_feature
+            The per-atom last hidden activation, shape
+            ``(nframes, natoms, dim_hidden)``.
+        structural_feature
+            The per-structure pooled feature, shape ``(nframes, dim_hidden)``.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model is a spin model, the archive is metadata-only, or
+            the model is not evaluated on the neighbor graph.
+        ValueError
+            If ``dtype`` is not one of the supported values, or if the model
+            cannot serve the requested ``charge_spin``.
+        """
+        if self._is_spin_model():
+            raise NotImplementedError(
+                "eval_embedding is not supported for spin models."
+            )
+        self._require_dpmodel("eval_embedding")
+        if not (
+            self._dpmodel.mixed_types()
+            and self._dpmodel.atomic_model.uses_graph_lower()
+        ):
+            raise NotImplementedError(
+                "eval_embedding evaluates the neighbor-graph forward, which "
+                f"this model ({type(self._dpmodel).__name__}) does not support."
+            )
+        if dtype not in ("fp32", "fp64", "native"):
+            raise ValueError("dtype must be one of 'fp32', 'fp64', or 'native'.")
+        atom_types = np.array(atom_types, dtype=np.int32)
+        coords = np.array(coords)
+        if cells is not None:
+            cells = np.array(cells)
+        natoms, numb_test = self._get_natoms_and_nframes(
+            coords, atom_types, len(atom_types.shape) > 1
+        )
+        # Validate the whole request before batching can split distinct states.
+        self._folded_charge_state(charge_spin)
+        return self._eval_func(self._eval_embedding, numb_test, natoms)(
+            coords, cells, atom_types, fparam, aparam, charge_spin, dtype
+        )
+
+    def _eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
+        dtype: str,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the embeddings of one batch of frames, see :meth:`eval_embedding`."""
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        graph, atype_t, nframes, natoms = self._build_device_graph(
+            coords, cells, atom_types, canonical=False
+        )
+        fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+            fparam, aparam, nframes, natoms, DEVICE
+        )
+        if aparam_t is not None:
+            # Graph inputs flatten frame and atom axes into one node axis.
+            aparam_t = aparam_t.reshape(nframes * natoms, self.get_dim_aparam())
+        charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
+        with torch.no_grad():
+            ret = self._dpmodel.atomic_model.forward_common_embedding_graph(
+                graph,
+                atype_t,
+                fparam=fparam_t,
+                aparam=aparam_t,
+                charge_spin=charge_spin_t,
+            )
+
+        def emit(value: torch.Tensor, shape: tuple[int, ...]) -> np.ndarray:
+            # The cast precedes the device transfer, which then moves the
+            # emitted precision only.
+            if dtype != "native":
+                value = value.to(torch.float32 if dtype == "fp32" else torch.float64)
+            return value.cpu().numpy().reshape(shape)
+
+        return (
+            emit(ret["descriptor"], (nframes, natoms, ret["descriptor"].shape[-1])),
+            emit(
+                ret["atomic_feature"],
+                (nframes, natoms, ret["atomic_feature"].shape[-1]),
+            ),
+            emit(
+                ret["structural_feature"],
+                (nframes, ret["structural_feature"].shape[-1]),
+            ),
+        )

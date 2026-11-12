@@ -13,10 +13,12 @@ preserve the quadratic channel information, and low-rank Cartesian bispectrum
 probes couple every non-scalar degree triple allowed by the O(3) triangle and
 parity rules.
 
-Evaluation is a single destination-local scan: one payload carries both
-envelope masses and every degree-wise moment. The descriptor therefore
-constructs no neighbor pairs, Wigner rotations, or source-node features, and
-reduces the edge axis exactly once.
+With one message-passing block, evaluation is a single destination-local
+scan: one payload carries both envelope masses and every degree-wise moment.
+The descriptor then constructs no neighbor pairs, Wigner rotations, or
+source-node features, and reduces the edge axis exactly once. Every further
+block reads per-node features of the edge sources through an attention and
+reduces the same edges once more.
 """
 
 from __future__ import (
@@ -24,6 +26,7 @@ from __future__ import (
 )
 
 import dataclasses
+import itertools
 import math
 from typing import (
     TYPE_CHECKING,
@@ -58,6 +61,9 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.block_cutoff import (
+    resolve_block_cutoffs,
+)
 from deepmd.utils.bridging import (
     check_window_inside_cutoff,
 )
@@ -81,16 +87,17 @@ from .dpa4_nn import (
     RadialBasis,
     SeZMTypeEmbedding,
     SwiGLUMLP,
+    compute_source_gates,
     pair_contact,
     resolve_swiglu_hidden_width,
 )
 from .dpa4c_nn import (
+    BlockAttention,
     ChargeStateEmbedding,
     InvariantReadout,
     OrderedPairFiLM,
     SpinChannels,
     build_angular_basis,
-    build_moment_indices,
     canonicalize_charge_spin,
     degree_offsets,
     derive_bispectrum_ranks,
@@ -140,7 +147,22 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     fixed O(3)-even Cartesian bispectrum over low-rank probes, and the
     projected quartic.
 
-    Two further blocks close the output. The divisors
+    Every block after the first passes one message from the edge sources.
+    Block :math:`k` rescales every amplitude of the first block by the attention
+    factor :math:`m^k_{ijc}\in(0,2)` of the edge source in block :math:`k-1`,
+    which relaxes to one at the cutoff of block :math:`k`, reduces every
+    degree again under the neighborhood normalizers of the first block, and
+    adds the keys of the neighbors that the attention transports
+    (:class:`~deepmd.dpmodel.descriptor.dpa4c_nn.BlockAttention`):
+
+    .. math::
+
+       X^{(\ell),k}_{ic}=n^{(+)}_i\sum_j\chi_{ij}m^{k}_{ijc}\phi_{ijc}
+       B^{(\ell)}(\hat{\mathbf r}_{ij})+\Delta X^{(\ell),k}_{ic}.
+
+    The readout acts on the moments of the last block.
+
+    Two further output blocks close the descriptor. The divisors
     :math:`1/n^{(0)}` and :math:`1/n^{(+)}` are emitted alongside the
     invariants, because normalization is otherwise irreversible and the
     effective coordination they encode would reach neither the readout nor the
@@ -150,7 +172,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     Parameters
     ----------
     rcut
-        Outer cutoff radius in Å.
+        Cutoff radius in Å shared by every block, or one non-increasing cutoff
+        per block. The first cutoff bounds the neighbor graph and the radial
+        representation; the cutoff of every further block is where its factor
+        relaxes to one.
     ntypes
         Number of atom types.
     channels
@@ -168,6 +193,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         Number :math:`R` of shared radial mode profiles that every ordered
         atom-type pair mixes with its own coefficients. Zero leaves each pair
         with a rescaled copy of one shared radial function.
+    n_blocks
+        Number of message-passing blocks. The first block is the one-hop
+        reduction; every further block passes one message from the edge
+        sources.
     use_amp
         Whether the per-edge stage runs under bfloat16 automatic mixed
         precision on CUDA during training. This is an execution policy rather
@@ -222,9 +251,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     TypeError
         If ``channels`` or ``lmax`` is not an integer.
     ValueError
-        If ``rcut``, ``ntypes``, or ``n_radial`` is not positive, if
-        ``radial_modes`` is negative, if ``channels`` or ``lmax`` is outside
-        its supported set, if only one bridging radius is given, if
+        If a cutoff, ``n_blocks``, ``ntypes``, or ``n_radial`` is not
+        positive, if ``rcut`` lists a cutoff count other than ``n_blocks``,
+        if the cutoffs increase, if ``radial_modes`` is negative, if
+        ``channels`` or ``lmax`` is outside its supported set, if only one
+        bridging radius is given, if
         ``inner_clamp_scale`` is neither ``"covalent"`` nor ``"absolute"``, or
         if a covalent window is asked for without a ``type_map`` covering every
         type.
@@ -245,6 +276,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     _STAT_FRAMES_PER_SAMPLE = 64
     _COMPRESSION_BUFFER_NAMES = (
         "data",
+        "basis_table",
+        "basis_matrix",
         "info",
         "pair_film",
         "pair_mixing",
@@ -257,11 +290,18 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         "coupling_value",
         "output_mean",
         "output_inv_std",
+        "blocks",
     )
+    # The low-rank radial table and its expansion, which a payload compressed
+    # without that table does not carry; empty artifacts select the radial
+    # table itself, so such a payload loads as the snapshot it was. A payload
+    # of a single-block descriptor compressed before further blocks existed
+    # carries no block records either, and an empty array denotes one block.
+    _OPTIONAL_COMPRESSION_BUFFER_NAMES = ("basis_table", "basis_matrix", "blocks")
 
     def __init__(
         self,
-        rcut: float,
+        rcut: float | list[float],
         ntypes: int,
         channels: int = 32,
         lmax: int = 2,
@@ -281,6 +321,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         inner_clamp_f_inner: float | None = None,
         inner_clamp_f_outer: float | None = None,
         inner_clamp_scale: str = "covalent",
+        n_blocks: int = 1,
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
         if spin is not None:
@@ -288,8 +329,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 "DPA4C configures native spin through `use_spin`; the `spin` "
                 "argument of the common descriptor ABI is not supported."
             )
-        if rcut <= 0.0:
-            raise ValueError(f"`rcut` must be positive, got {rcut}")
+        block_rcut = resolve_block_cutoffs(rcut, n_blocks)
+        if any(inner > outer for outer, inner in itertools.pairwise(block_rcut)):
+            raise ValueError(
+                f"The block cutoffs in `rcut` must not increase, got {rcut}"
+            )
         if ntypes <= 0:
             raise ValueError(f"`ntypes` must be positive, got {ntypes}")
         if n_radial <= 0:
@@ -321,7 +365,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         bispectrum_ranks = derive_bispectrum_ranks(degree_channels)
 
         # === Step 2. Resolve the scalar configuration ===
-        self.rcut = float(rcut)
+        # The first cutoff bounds the neighbor graph and the radial
+        # representation; every further block acts on a subset of its edges.
+        self.block_rcut = block_rcut
+        self.n_blocks = len(block_rcut)
+        self.rcut = block_rcut[0]
         self.ntypes = int(ntypes)
         self.channels = int(channels)
         self.lmax = int(lmax)
@@ -458,15 +506,35 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             if self.add_chg_spin_ebd
             else None
         )
+        # Every further block owns its attention and the C³ envelope of its
+        # cutoff. The encoders read the complete calibrated descriptor of the
+        # previous block, spin invariants included.
+        descriptor_dim = self.get_dim_out()
+        attention_seed = child_seed(seed, 7)
+        self.attentions = [
+            BlockAttention(
+                self.degree_channels,
+                descriptor_dim,
+                precision=self.precision,
+                trainable=self.trainable,
+                seed=child_seed(attention_seed, block),
+            )
+            for block in range(1, self.n_blocks)
+        ]
+        self.block_envelopes = [
+            C3CutoffEnvelope(
+                rcut=block_cutoff,
+                exponent=self._ENVELOPE_EXPONENT,
+                precision=self.precision,
+            )
+            for block_cutoff in self.block_rcut[1:]
+        ]
 
         # === Step 4. Lay out the flat moment payload ===
         # Degree zero owns the leading `channels` entries of the flat layout,
-        # so the non-scalar block is exactly its complement and needs no
-        # separate degree index. The spin families, when present, are appended
-        # after the geometric degrees, leaving every geometric offset intact.
-        channel_index, harmonic_index = build_moment_indices(self.degree_channels)
-        self.angular_channel_index = channel_index[self.channels :]
-        self.angular_harmonic_index = harmonic_index[self.channels :]
+        # and every higher degree follows in its own harmonic-major block. The
+        # spin families, when present, are appended after the geometric
+        # degrees, leaving every geometric offset intact.
         self.degree_offsets = degree_offsets(self.degree_channels)
 
         # === Step 5. Initialize the output calibration state ===
@@ -512,9 +580,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             ``(ntypes + 1, channels)``. If omitted, the descriptor
             evaluates its type-embedding module.
         comm_dict
-            Communication metadata accepted by the common graph ABI. DPA4C
-            does not read source-node features, so no halo-feature exchange is
-            required and this argument is unused.
+            Border-exchange tensors of a domain-decomposed graph whose nodes
+            are the owned atoms followed by ghost images. A single-block
+            descriptor reads no source-node feature and ignores it; every
+            further block refreshes the ghost rows of the source features
+            from their owners through it, and a bridged multi-block descriptor
+            completes its source gate through it.
         spin
             Per-node spin vectors with shape ``(N, 3)`` on the same flat node
             axis as ``atype``, including ghost and padding rows. Mandatory
@@ -540,7 +611,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             If the descriptor is spin conditioned and ``spin`` is absent, or
             charge conditioned with neither ``charge_spin`` nor a default.
         """
-        del comm_dict
         # === Step 1. Resolve type features and compute precision ===
         if type_embedding is None:
             type_embedding = self.type_embedding.call()
@@ -562,6 +632,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             self.require_charge_spin(
                 charge_spin, graph.n_node.shape[0], graph.edge_vec
             ),
+            comm_dict=comm_dict,
         )
 
         # === Step 3. Restore the graph input dtype ===
@@ -669,8 +740,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         fparam
             Frame parameters accepted by the common descriptor ABI; unused.
         comm_dict
-            Communication metadata accepted by the common descriptor ABI;
-            unused.
+            Communication metadata; unsupported by this dense adapter.
+            Cross-rank exchange requires the graph lower.
         charge_spin
             Frame-level total charge and spin multiplicity with shape
             ``(F, 2)``. Read only when the descriptor is configured with
@@ -695,7 +766,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             graph_from_dense_quartet,
         )
 
-        del fparam, comm_dict
+        del fparam
+        if comm_dict is not None:
+            raise NotImplementedError(
+                "DPA4C cross-rank communication requires the graph lower; "
+                "the dense adapter does not support comm_dict."
+            )
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         nf, nloc, nnei = nlist.shape
 
@@ -731,11 +807,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         type_embedding: Array,
         spin: Array | None = None,
         charge_spin: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array]:
         """Evaluate the graph-native descriptor equations.
 
         The pipeline is edge amplitudes, one destination reduction into
-        degree-wise moments, and the fixed invariant readout.
+        degree-wise moments, one further reduction per further
+        message-passing block, and the fixed invariant readout.
 
         Parameters
         ----------
@@ -751,6 +829,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         charge_spin
             Canonical frame conditions with shape ``(nf, 2)``, mandatory for
             a charge-conditioned descriptor and ignored otherwise.
+        comm_dict
+            Border-exchange tensors of a domain-decomposed graph, or ``None``.
+            Without communication, every source node must carry its complete
+            neighborhood. ``n_local`` specifies energy ownership, not whether
+            a node has a complete neighborhood.
 
         Returns
         -------
@@ -824,6 +907,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             pair_latent,
             edge_hidden_bias,
             conditioned_spin,
+            comm_dict,
         )
 
         # === Step 5. Reduce the degree-wise moments ===
@@ -839,7 +923,20 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             n_total,
         )
 
-        # === Step 6. Build calibrated invariant features ===
+        # === Step 6. Run the further message-passing blocks ===
+        if self.attentions:
+            moments = self.run_further_blocks(
+                graph,
+                moments,
+                center_type_embedding,
+                divisors,
+                amplitude,
+                basis,
+                envelope,
+                comm_dict,
+            )
+
+        # === Step 7. Build calibrated invariant features ===
         return (
             self.build_invariant_descriptor(
                 moments,
@@ -848,6 +945,79 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             ),
             envelope[:, None],
         )
+
+    def run_further_blocks(
+        self,
+        graph: Any,
+        moments: Array,
+        center_type_embedding: Array,
+        divisors: Array,
+        amplitude: Array,
+        basis: Array,
+        envelope: Array,
+        comm_dict: dict | None,
+    ) -> Array:
+        """Run every block after the first and return the final moments.
+
+        Each block rescales the amplitudes of the first one by the attention
+        of the edge source in the previous block, reduces every degree again
+        under the envelope masses and normalizers of the first one, and adds
+        the transported keys of the neighbors. The ghost rows of a
+        domain-decomposed graph receive no edges, so their source features
+        are refreshed from the owners.
+
+        Parameters
+        ----------
+        graph
+            Neighbor graph in descriptor compute precision.
+        moments
+            Moments of the first block with shape ``(N, S')``.
+        center_type_embedding
+            Center type features with shape ``(N, channels)``.
+        divisors
+            Neighborhood divisors of the first block with shape ``(N, 2)``.
+        amplitude
+            Enveloped first-block edge amplitudes with shape ``(E, channels)``.
+        basis
+            Masked Cartesian harmonics with shape ``(E, (lmax + 1) ** 2)``.
+        envelope
+            Masked C³ envelope of the first block with shape ``(E,)``.
+        comm_dict
+            Border-exchange tensors of a domain-decomposed graph, or ``None``.
+
+        Returns
+        -------
+        Array
+            Moments of the last block with the shape of ``moments``.
+        """
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        src, dst = graph.edge_index[0], graph.edge_index[1]
+        distance = xp.sqrt(
+            xp.sum(graph.edge_vec * graph.edge_vec, axis=-1) + self._EPS * self._EPS
+        )
+        for attention, block_envelope in zip(
+            self.attentions, self.block_envelopes, strict=True
+        ):
+            invariants = self.build_invariant_descriptor(
+                moments, center_type_embedding, divisors
+            )
+            sources = attention.source_features(moments, invariants)
+            if comm_dict is not None:
+                sources = self.exchange_ghost_rows(sources, comm_dict)
+            block_amplitude, transport = attention.call(
+                sources,
+                attention.center_features(invariants),
+                amplitude,
+                basis,
+                envelope,
+                block_envelope.call(distance),
+                src,
+                dst,
+            )
+            moments = self.reduce_moments(
+                block_amplitude, basis, envelope, dst, divisors, moments, transport
+            )
+        return moments
 
     def build_center_type_features(
         self,
@@ -938,6 +1108,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         pair_latent: tuple[Array, Array],
         edge_hidden_bias: Array | None = None,
         conditioned_spin: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array, Array, Array | None]:
         r"""Build the enveloped edge amplitudes, harmonics, and spin payload.
 
@@ -973,6 +1144,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         conditioned_spin
             Conditioned per-node spin with shape ``(N, 3)``, or
             ``None`` for a spin-free descriptor.
+        comm_dict
+            Border-exchange tensors of a domain-decomposed graph, through
+            which a bridged multi-block descriptor completes its source gate, or
+            ``None``.
 
         Returns
         -------
@@ -1019,10 +1194,33 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # switch reads the true pair length, and the radial features read the
         # clamped one, which moves at the rate the switch has opened. The
         # direction keeps the true geometry.
+        #
+        # A further block reads the state of the edge source, so it would
+        # carry a close pair to third atoms: a neighbor C of A sees both A and
+        # B, and its features would return B to the environment of A. A
+        # multi-block descriptor therefore also mutes every edge that a frozen
+        # atom emits towards a third atom, through the leave-one-out source
+        # gate of DPA4, so a frozen atom leaves every other environment while
+        # its own pair edge is closed by the switch of that edge.
         inner_switch = None
         if self.bridging_switch is not None:
             contact = self.pair_contact(center_type, neighbor_type, distance.dtype)
             inner_switch = self.bridging_switch.call(distance, contact)
+            if self.attentions:
+                _, source_gate = compute_source_gates(
+                    edge_len=distance,
+                    edge_contact=contact,
+                    src=src,
+                    n_nodes=atype.shape[0],
+                    bridging_switch=self.bridging_switch.call,
+                    edge_keep_f=mask,
+                    node_partial_exchange=None
+                    if comm_dict is None
+                    else lambda partials: self.complete_node_partials(
+                        partials, comm_dict
+                    ),
+                )
+                inner_switch = inner_switch * source_gate
             distance = self.bridging_clamp.call(distance, contact)
         envelope = self.evaluate_cutoff_envelope(distance)
         if inner_switch is not None:
@@ -1146,30 +1344,16 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         )
 
         xp = array_api_compat.array_namespace(amplitude)
-        device = array_api_compat.device(amplitude)
-        channel_index = xp_asarray_nodetach(
-            xp,
-            self.angular_channel_index,
-            device=device,
-        )
-        harmonic_index = xp_asarray_nodetach(
-            xp,
-            self.angular_harmonic_index,
-            device=device,
-        )
 
         # Payload layout: [chi^2, chi^4, degree zero (C_0), degrees one and
         # above (S - C_0)]. Degree zero is the whole edge amplitude under its
-        # single envelope, while the non-scalar block gathers an amplitude and
-        # a harmonic per flat moment coordinate and carries a second envelope.
+        # single envelope; every higher degree carries a second envelope.
         envelope_squared = envelope * envelope
         parts = [
             envelope_squared[:, None],
             (envelope_squared * envelope_squared)[:, None],
             amplitude,
-            xp.take(amplitude, channel_index, axis=1)
-            * xp.take(basis, harmonic_index, axis=1)
-            * envelope[:, None],
+            self.build_angular_payload(amplitude, basis, envelope),
         ]
         if spin_payload is not None:
             parts.append(spin_payload)
@@ -1185,6 +1369,109 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         if spin_onsite is not None:
             normalized.append(spin_onsite)
         return xp.concat(normalized, axis=1), divisors
+
+    def reduce_moments(
+        self,
+        amplitude: Array,
+        basis: Array,
+        envelope: Array,
+        dst: Array,
+        divisors: Array,
+        moments: Array,
+        transport: Array,
+    ) -> Array:
+        """Reduce the geometric moments of a further block.
+
+        The block rescales the amplitudes but keeps the envelope masses of the
+        first reduction, so it reuses their divisors, and the moments equal
+        those of :meth:`aggregate_moments` when every factor is one and the
+        transport vanishes. The spin moments, when present, are not rescaled
+        and keep the values of the previous block.
+
+        Parameters
+        ----------
+        amplitude
+            Rescaled edge amplitudes with shape ``(E, channels)``.
+        basis
+            Masked Cartesian harmonics with shape ``(E, (lmax + 1) ** 2)``.
+        envelope
+            Masked C³ envelope with shape ``(E,)``.
+        dst
+            Destination node indices with shape ``(E,)``.
+        divisors
+            Neighborhood divisors of :meth:`aggregate_moments` with shape
+            ``(N, 2)``.
+        moments
+            Moments of the previous block with shape ``(N, S')``, whose
+            columns past the geometric degrees are carried over.
+        transport
+            Transported non-scalar moments added after normalization, with
+            shape ``(N, S - channels)``.
+
+        Returns
+        -------
+        Array
+            Moments with the shape of ``moments``.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(amplitude)
+        payload = xp.concat(
+            [amplitude, self.build_angular_payload(amplitude, basis, envelope)],
+            axis=1,
+        )
+        reduced = segment_sum(payload, dst, divisors.shape[0])
+        directional = reduced[:, self.channels :] / divisors[:, 1:] + transport
+        return xp.concat(
+            [
+                reduced[:, : self.channels] / divisors[:, :1],
+                directional,
+                moments[:, self.degree_offsets[-1] :],
+            ],
+            axis=1,
+        )
+
+    def build_angular_payload(
+        self,
+        amplitude: Array,
+        basis: Array,
+        envelope: Array,
+    ) -> Array:
+        """Build the enveloped edge payload of every non-scalar degree.
+
+        Degree l is the outer product of its 2l + 1 harmonics with the leading
+        C_l channels of the amplitude, laid out harmonic-major and carrying a
+        second envelope factor. The products are formed by broadcasting, so
+        their backward reduces over the broadcast axes.
+
+        Parameters
+        ----------
+        amplitude
+            Masked edge amplitudes with shape ``(E, channels)``.
+        basis
+            Masked Cartesian harmonics with shape ``(E, (lmax + 1) ** 2)``.
+        envelope
+            Masked C³ envelope with shape ``(E,)``.
+
+        Returns
+        -------
+        Array
+            Payload with shape ``(E, S - channels)``.
+        """
+        xp = array_api_compat.array_namespace(amplitude)
+        n_edge = amplitude.shape[0]
+        angular = [
+            xp.reshape(
+                basis[:, degree * degree : (degree + 1) * (degree + 1), None]
+                * amplitude[:, None, :width],
+                (n_edge, (2 * degree + 1) * width),
+            )
+            for degree, width in enumerate(self.degree_channels)
+            if degree > 0
+        ]
+        return xp.concat(angular, axis=1) * envelope[:, None]
 
     def build_invariant_descriptor(
         self,
@@ -1259,6 +1546,58 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     # === Backend primitives ===
     # A backend wrapper overrides these to reach native kernels; the equations
     # above stay array-API neutral.
+
+    def exchange_ghost_rows(self, values: Array, comm_dict: dict) -> Array:
+        """Refresh the ghost rows of a node feature from their owner ranks.
+
+        Parameters
+        ----------
+        values
+            Node features with shape ``(N, W)``, the owned rows leading.
+        comm_dict
+            Border-exchange tensors of the domain decomposition.
+
+        Returns
+        -------
+        Array
+            ``values`` with every ghost row replaced by its owner's row.
+
+        Raises
+        ------
+        NotImplementedError
+            Always in the backend-neutral reference, which runs on one
+            process.
+        """
+        raise NotImplementedError(
+            "Multi-rank DPA4C message passing (comm_dict) is not supported in "
+            "the dpmodel backend."
+        )
+
+    def complete_node_partials(self, partials: Array, comm_dict: dict) -> Array:
+        """Sum per-node partials across ranks and broadcast the totals.
+
+        Parameters
+        ----------
+        partials
+            Per-node partial sums with shape ``(N, W)``.
+        comm_dict
+            Border-exchange tensors of the domain decomposition.
+
+        Returns
+        -------
+        Array
+            Completed sums on every owned and ghost row.
+
+        Raises
+        ------
+        NotImplementedError
+            Always in the backend-neutral reference, which runs on one
+            process.
+        """
+        raise NotImplementedError(
+            "Multi-rank DPA4C source gating (comm_dict) is not supported in "
+            "the dpmodel backend."
+        )
 
     def gather_rows(
         self,
@@ -1359,6 +1698,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "radial_mode_head",
             "pair_film",
             "readout",
+            "attentions",
             "spin",
             "charge_spin_embedding",
         ):
@@ -1372,20 +1712,20 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         The signature compares two live descriptors and is never persisted,
         so it may reference execution policy as well as persisted structure.
 
-        It covers every field that fixes the shape or the meaning
-        of a shared module. ``rcut``, ``basis_type``, and ``n_radial`` define
-        the radial basis; ``ntypes`` defines the type table and the ordered
-        pair index space; ``channels``, ``lmax``, and ``radial_modes`` define
-        every remaining width;         ``use_amp`` selects the precision policy that a
-        backend attaches to the shared layers, so a replica that autocasts
-        against layers configured without it would silently lose the effect;
-        ``trainable`` decides whether
-        those layers carry gradients at all; ``type_map`` fixes what the rows
-        of the shared type table mean; ``use_spin`` fixes both the presence
-        and the row meaning of the shared spin tables; ``add_chg_spin_ebd``
-        fixes the presence of the condition module and the width of the pair
-        encoder head it drives. Precision itself enters through its resolved
-        dtype so that equivalent spellings agree.
+        It covers every field that fixes the shape or the meaning of a shared
+        module. The block cutoffs, ``basis_type``, and ``n_radial`` define the
+        radial basis and the message-passing blocks; ``ntypes`` defines the type
+        table and the ordered pair index space; ``channels``, ``lmax``, and
+        ``radial_modes`` define every remaining width; ``use_amp`` selects the
+        precision policy that a backend attaches to the shared layers, so a
+        replica that autocasts against layers configured without it would
+        silently lose the effect; ``trainable`` decides whether those layers
+        carry gradients at all; ``type_map`` fixes what the rows of the shared
+        type table mean; ``use_spin`` fixes both the presence and the row
+        meaning of the shared spin tables; ``add_chg_spin_ebd`` fixes the
+        presence of the condition module and the width of the pair encoder head
+        it drives. Precision itself enters through its resolved dtype so that
+        equivalent spellings agree.
 
         ``default_chg_spin`` is deliberately absent: it is a fallback for a
         missing input rather than a property of the shared parameters, so two
@@ -1402,7 +1742,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Structural configuration of the shareable modules.
         """
         return (
-            self.rcut,
+            tuple(self.block_rcut),
             self.ntypes,
             self.channels,
             self.lmax,
@@ -1479,6 +1819,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         geometric coordinate is measured independently, while the center type
         tail is left unchanged. No sample-dependent normalization is evaluated
         during training or inference.
+
+        The measurement runs with the identity calibration, and the attention
+        of every further block reads the calibrated invariants of the previous
+        block. It is therefore exact for blocks at their initialization, whose
+        output maps are zero, so that every block reproduces the moments of
+        the first; the trainer calibrates a freshly built model, before any
+        pretrained weights are loaded.
 
         Parameters
         ----------
@@ -1825,8 +2172,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa4c",
-            "@version": 2,
-            "rcut": self.rcut,
+            "@version": 3,
+            "rcut": (
+                self.rcut if len(set(self.block_rcut)) == 1 else list(self.block_rcut)
+            ),
+            "n_blocks": self.n_blocks,
             "ntypes": self.ntypes,
             "channels": self.channels,
             "lmax": self.lmax,
@@ -1861,6 +2211,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             ),
             "pair_film": self.pair_film.serialize(),
             "readout": self.readout.serialize(),
+            "attentions": [attention.serialize() for attention in self.attentions],
             "@variables": {
                 "mean": to_numpy_array(self.mean),
                 "stddev": to_numpy_array(self.stddev),
@@ -1890,9 +2241,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Reconstructed descriptor with restored trainable components.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
+        # Records of format 2 and earlier hold one block.
+        data.setdefault("n_blocks", 1)
         compression = data.pop("compress", None)
         variables = data.pop("@variables")
         type_embedding = data.pop("type_embedding")
@@ -1901,6 +2254,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         radial_mode_head = data.pop("radial_mode_head")
         pair_film = data.pop("pair_film")
         readout = data.pop("readout")
+        # Records of format 2 and earlier carry one cutoff and one block.
+        attentions = data.pop("attentions", [])
         spin_channels = data.pop("spin_channels")
         charge_spin_embedding = data.pop("charge_spin_embedding")
 
@@ -1915,6 +2270,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         )
         obj.pair_film = OrderedPairFiLM.deserialize(pair_film)
         obj.readout = InvariantReadout.deserialize(readout)
+        if len(attentions) != len(obj.attentions):
+            raise ValueError(
+                f"Serialized descriptor holds {len(attentions)} further "
+                f"blocks, but `n_blocks` = {len(obj.attentions) + 1} needs "
+                f"{len(obj.attentions)}."
+            )
+        obj.attentions = [BlockAttention.deserialize(record) for record in attentions]
         obj.spin = (
             None if spin_channels is None else SpinChannels.deserialize(spin_channels)
         )
@@ -1931,11 +2293,36 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             obj._load_compression(compression)
         return obj
 
+    @classmethod
+    def _compression_variables(cls, compression: dict) -> dict:
+        """Return every compressed-inference artifact of a payload.
+
+        Parameters
+        ----------
+        compression
+            The ``compress`` entry of a serialized descriptor.
+
+        Returns
+        -------
+        dict
+            The artifact of every name in ``_COMPRESSION_BUFFER_NAMES``, an
+            empty float32 array for an optional one the payload omits.
+        """
+        variables = compression["@variables"]
+        return {
+            name: (
+                np.empty(0, dtype=np.float32)
+                if name in cls._OPTIONAL_COMPRESSION_BUFFER_NAMES
+                and name not in variables
+                else variables[name]
+            )
+            for name in cls._COMPRESSION_BUFFER_NAMES
+        }
+
     def _load_compression(self, compression: dict) -> None:
         """Restore the compressed-inference artifact payload."""
-        variables = compression["@variables"]
-        for name in self._COMPRESSION_BUFFER_NAMES:
-            setattr(self, f"compress_{name}", variables[name])
+        for name, value in self._compression_variables(compression).items():
+            setattr(self, f"compress_{name}", value)
         self.compress = True
 
     @classmethod
@@ -2065,10 +2452,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         """Return whether source-node features are exchanged.
 
         The spin branch reads the raw source spin, which is a node input
-        rather than a derived feature, so a spin-conditioned descriptor
-        remains message-passing free.
+        rather than a derived feature, so a single-block descriptor remains
+        message-passing free. Every further block reads derived features of
+        the edge source.
         """
-        return False
+        return bool(self.attentions)
 
     def supports_native_spin(self) -> bool:
         """Return whether ``call_graph`` conditions on a per-node spin."""
@@ -2108,6 +2496,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
 
     def has_message_passing_across_ranks(self) -> bool:
         """Return whether intermediate halo communication is required."""
+        return bool(self.attentions)
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Cross-rank feature exchange is implemented only by the graph lower."""
         return False
 
     def need_sorted_nlist_for_lower(self) -> bool:

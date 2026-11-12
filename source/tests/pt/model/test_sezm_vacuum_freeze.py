@@ -139,7 +139,9 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
             ckpt = Path(tmp) / "vacuum.pt"
             torch.save({"model": wrapper.state_dict()}, ckpt)
             out = Path(tmp) / "vacuum.pt2"
-            freeze_sezm_to_pt2(str(ckpt), str(out), device=device)
+            # These checks consume only the single-process artifact. Parallel
+            # export and communication parity have their own tests.
+            freeze_sezm_to_pt2(str(ckpt), str(out), device=device, with_comm=False)
             # the evaluator runs on the device the archive is compiled for
             saved_device = pt_expt_env.DEVICE
             pt_expt_env.DEVICE = device

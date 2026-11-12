@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Multi-rank LAMMPS driver for DPA3 .pt2 (Phase 5 of GNN MPI).
+"""Multi-rank LAMMPS driver for exported DeePMD energy models.
 
 Run via ``mpirun -n N python run_mpi_pair_deepmd_dpa3_pt2.py DATAFILE PB_FILE OUTPUT``.
-Mirrors ``run_mpi_pair_deepmd.py`` but targets a GNN model whose .pt2 archive
-carries the with-comm artifact (Phase 3 dual-artifact layout). The C++
-``DeepPotPTExpt`` (Phase 4) routes to the with-comm artifact when LAMMPS
-reports nswap > 0 (multi-rank), driving MPI ghost-atom exchange via
-``deepmd_export::border_op`` per layer.
+The C++ backend selects the model's regular, with-comm or compact canonical
+entry point and exchanges intermediate features when the model requires it.
 
 Rank 0 writes potential energy + per-atom forces (3 cols) + per-atom
 virial (9 cols, from ``compute centroid/stress/atom NULL pair`` in
@@ -22,7 +19,7 @@ import argparse
 
 import numpy as np
 from lammps import (
-    PyLammps,
+    lammps,
 )
 from mpi4py import (
     MPI,
@@ -50,6 +47,13 @@ parser.add_argument(
     help="LAMMPS processors grid. Default '2 1 1' forces multi-rank "
     "domain decomposition (nswap>0). Pass '1 1 1' for a single-rank "
     "reference run on the same archive (single-artifact dispatch).",
+)
+parser.add_argument(
+    "--boundary",
+    type=str,
+    default="p p p",
+    help="LAMMPS boundary style. Default 'p p p'; a model with a long-range "
+    "module takes 'f f f', or 'p p p' when its module serves periodic systems.",
 )
 parser.add_argument(
     "--pair-coeff",
@@ -127,18 +131,37 @@ parser.add_argument(
     "to exercise sendlist composition changes from real-atom motion "
     "rather than only from NULL motion.",
 )
+parser.add_argument(
+    "--kokkos",
+    action="store_true",
+    help="Run pair_style deepmd/kk on the Kokkos CUDA device of each rank, "
+    "with a full neighbor list, newton off and host communication, as the "
+    "device path of LAMMPS + Kokkos runs it without a CUDA-aware MPI. Rank r "
+    "takes device r modulo the visible devices, as DeepPotPTExpt does.",
+)
+parser.add_argument(
+    "--check-halo-cadence",
+    action="store_true",
+    help="Check owned/ghost participation and the rebuild/reuse sequence of "
+    "three Kokkos steps with --neigh-every 2.",
+)
 args = parser.parse_args()
+if args.check_halo_cadence:
+    assert args.kokkos and args.nsteps == 3 and args.neigh_every == 2
 
-lammps = PyLammps()
-# Force the requested domain decomposition. The default "2 1 1"
-# combined with the simulation box guarantees nswap > 0 on the C++
-# side, so DeepPotPTExpt routes to the with-comm AOTI artifact. Pass
-# "1 1 1" to obtain a single-rank reference using the same archive
-# (the regular artifact handles nswap==0).
-lammps.processors(args.processors)
-lammps.units("metal")
-lammps.boundary("p p p")
-lammps.atom_style("atomic")
+cmdargs = None
+if args.kokkos:
+    import torch
+
+    devices = min(comm.Get_size(), torch.cuda.device_count())
+    cmdargs = ["-k", "on", "g", str(devices), "-sf", "kk", "-pk", "kokkos"]
+    cmdargs += ["neigh", "full", "newton", "off", "comm", "host", "gpu/aware", "off"]
+lmp = lammps(cmdargs=cmdargs)
+# Fix the domain decomposition; one rank provides the complete-system reference.
+lmp.command(f"processors {args.processors}")
+lmp.command("units metal")
+lmp.command(f"boundary {args.boundary}")
+lmp.command("atom_style atomic")
 # ``atom_modify map yes`` is required when single-rank dispatch goes
 # through the regular artifact of a use_loc_mapping=False .pt2: the
 # C++ side needs the LAMMPS global-id->local-index map to build the
@@ -148,81 +171,96 @@ lammps.atom_style("atomic")
 # branches can be exercised — LAMMPS rejects ``atom_modify map no``,
 # so omitting the command is the only way to leave the map disabled.
 if not args.no_atom_map:
-    lammps.atom_modify("map yes")
-lammps.neighbor("2.0 bin")
-lammps.neigh_modify(f"every {args.neigh_every} delay 0 check no")
-lammps.read_data(args.DATAFILE)
-lammps.mass("1 16")
-lammps.mass("2 2")
+    lmp.command("atom_modify map yes")
+lmp.command("neighbor 2.0 bin")
+lmp.command(f"neigh_modify every {args.neigh_every} delay 0 check no")
+lmp.command(f"read_data {args.DATAFILE}")
+lmp.command("mass 1 16")
+lmp.command("mass 2 2")
 if args.mass3 is not None:
     # Used by the NULL-type test where the data file has a 3rd LAMMPS
     # type that maps to a NULL deepmd atype (filtered before model
     # evaluation). The mass value is physically irrelevant — these
     # atoms get zero force from the deepmd model.
-    lammps.mass(f"3 {args.mass3}")
-lammps.timestep(0.0005)
-lammps.fix("1 all nve")
+    lmp.command(f"mass 3 {args.mass3}")
+lmp.command("timestep 0.0005")
+lmp.command("fix 1 all nve")
 # Initial velocities. Order matters: thermalize real atoms first
 # (``velocity all create`` would also affect type 3, so we restrict
 # it to a real-atom group), then set the NULL bias on type 3.
 if args.real_temp is not None:
-    lammps.group("realgroup type 1 2")
-    lammps.velocity(f"realgroup create {args.real_temp:.6f} 12345 mom yes rot yes")
+    lmp.command("group realgroup type 1 2")
+    lmp.command(f"velocity realgroup create {args.real_temp:.6f} 12345 mom yes rot yes")
 if args.null_vx is not None:
     # Restrict initial velocity to LAMMPS type 3 atoms (NULL-type
     # in the deepmd plugin's pair_coeff mapping). Real atoms stay
     # at v=0 (or thermal); only the NULL atoms get the high vx, so
     # the deepmd model's force outputs on real atoms remain bounded
     # and the NVE integrator stays stable.
-    lammps.group("nullgroup type 3")
+    lmp.command("group nullgroup type 3")
     if args.null_vx_split:
         # Send NULL atoms with even/odd LAMMPS atom-id in opposite
         # directions. Hardcoded to the null_type fixture's NULL ids
         # (7, 8); sufficient because the runner is only used by this
         # branch's tests, not as a general utility.
-        lammps.group("null_id7 id 7")
-        lammps.group("null_id8 id 8")
-        lammps.velocity(f"null_id7 set {-args.null_vx:.6f} 0.0 0.0 units box")
-        lammps.velocity(f"null_id8 set {args.null_vx:.6f} 0.0 0.0 units box")
+        lmp.command("group null_id7 id 7")
+        lmp.command("group null_id8 id 8")
+        lmp.command(f"velocity null_id7 set {-args.null_vx:.6f} 0.0 0.0 units box")
+        lmp.command(f"velocity null_id8 set {args.null_vx:.6f} 0.0 0.0 units box")
     else:
-        lammps.velocity(f"nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
+        lmp.command(f"velocity nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
 
-pair_style_line = f"deepmd {args.PB_FILE}"
+# The Kokkos style is named explicitly, so that a plugin without it fails
+# instead of falling back to the host style.
+pair_style_line = f"{'deepmd/kk' if args.kokkos else 'deepmd'} {args.PB_FILE}"
 if args.pair_extra:
     pair_style_line += f" {args.pair_extra}"
-lammps.pair_style(pair_style_line)
-lammps.pair_coeff(args.pair_coeff)
+lmp.command(f"pair_style {pair_style_line}")
+lmp.command(f"pair_coeff {args.pair_coeff}")
 # Per-atom virial from the pair contribution. ``centroid/stress/atom``
 # is parallel-safe (rank-local data, gathered below). LAMMPS computes
 # stress*volume per atom in internal units; the parent test reverses
 # the unit conversion (divide by ``constants.nktv2p``) before comparing
 # against the reference virial.
-lammps.compute("virial all centroid/stress/atom NULL pair")
-lammps.run(0)
+lmp.command("compute virial all centroid/stress/atom NULL pair")
+lmp.command("run 0")
 
 # Optional: run additional MD steps to exercise the with-comm
 # dispatch across neighbor-list rebuilds (LAMMPS rebuilds every
 # 10 steps with our neigh_modify config, so any nsteps >= 10
 # triggers at least one rebuild).
-if args.nsteps > 0:
-    lammps.run(args.nsteps)
+if args.check_halo_cadence:
+    assert lmp.extract_global("pair_style") == "deepmd/kk"
+    assert lmp.extract_setting("kokkos_active") == 1
+    counts = [comm.allgather(lmp.extract_setting("nlocal"))]
+    assert min(counts[0]) > 0
+    if comm.size > 1:
+        assert min(comm.allgather(lmp.extract_setting("nghost"))) > 0
+    ages = [lmp.extract_setting("neigh_ago")]
+    for _ in range(args.nsteps):
+        lmp.command("run 1 pre no post no")
+        ages.append(lmp.extract_setting("neigh_ago"))
+        counts.append(comm.allgather(lmp.extract_setting("nlocal")))
+    assert ages == [0, 1, 0, 1], ages
+    assert counts[0] == counts[1] and counts[2] == counts[3], counts
+    if comm.size > 1:
+        assert counts[0] != counts[2], counts
+elif args.nsteps > 0:
+    lmp.command(f"run {args.nsteps}")
 
-# Forces need to be gathered across ranks. PyLammps's ``atoms[i]``
-# only exposes rank-local atoms; ``gather_atoms`` returns the global,
-# id-ordered array on every rank. We also gather ``id`` and reorder
+# Gather global arrays on every rank. Also gather ``id`` and reorder
 # explicitly by id rather than trusting an implicit ordering — this
 # is robust against subdomain layout, empty subdomains, and any
 # future LAMMPS change in gather ordering.
-forces_global = lammps.lmp.gather_atoms("f", 1, 3)
-ids_global = lammps.lmp.gather_atoms("id", 0, 1)
+forces_global = lmp.gather_atoms("f", 1, 3)
+ids_global = lmp.gather_atoms("id", 0, 1)
 # Gather the per-atom virial across ranks. ``lmp.gather`` accepts
 # named per-atom computes (``c_<id>``) and returns the global,
 # id-ordered array on every rank.
-virial_global = lammps.lmp.gather("c_virial", 1, 9)
-# ``PyLammps.eval`` is rank-0-only.
+virial_global = lmp.gather("c_virial", 1, 9)
+pe_global = lmp.get_thermo("pe")
+natoms = lmp.get_natoms()
 if rank == 0:
-    pe_global = lammps.eval("pe")
-    natoms = lammps.atoms.natoms
     forces = np.array(forces_global, dtype=np.float64).reshape(natoms, 3)
     virials = np.array(virial_global, dtype=np.float64).reshape(natoms, 9)
     ids = np.array(ids_global, dtype=np.int64).reshape(natoms)
@@ -237,8 +275,9 @@ if rank == 0:
             row = np.concatenate([fi, vi])
             f.write(" ".join(f"{v:.16e}" for v in row) + "\n")
 
-# Tear down LAMMPS before MPI.Finalize() — see the matching comment in
-# ``run_mpi_pair_deepmd_spin_dpa3_pt2.py``.  Same teardown-order race
-# class; spin happens to hit it more often on CUDA CI.
-del lammps
+# Release the model and Kokkos runtime before finalizing their communicator.
+library = lmp.lib
+lmp.close()
+if args.kokkos:
+    library.lammps_kokkos_finalize()
 MPI.Finalize()

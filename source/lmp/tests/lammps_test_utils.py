@@ -12,6 +12,7 @@ from __future__ import (
 )
 
 import os
+import signal
 import subprocess as sp
 import sys
 import tempfile
@@ -19,18 +20,21 @@ from pathlib import (
     Path,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import constants
 import numpy as np
 import pytest
-from lammps import (
-    PyLammps,
-)
 from write_lmp_data import (
     write_lmp_data,
 )
+
+if TYPE_CHECKING:
+    from lammps import (
+        PyLammps,
+    )
 
 
 def require_backend(environment_variable: str, backend_name: str) -> None:
@@ -79,6 +83,10 @@ def make_atomic_lammps(
     rejects ``atom_modify map no``; this preserves the no-map failure-path
     tests used by the graph-model fixtures.
     """
+    from lammps import (
+        PyLammps,
+    )
+
     if units not in {"metal", "real", "si"}:
         raise ValueError("units should be metal, real, or si")
 
@@ -108,6 +116,10 @@ def make_spin_lammps(
     boundary: str = "p p p",
 ) -> PyLammps:
     """Create the standard two-type DeepSpin LAMMPS test system."""
+    from lammps import (
+        PyLammps,
+    )
+
     if units != "metal":
         raise ValueError("units for spin should be metal")
 
@@ -136,6 +148,7 @@ def run_mpi_pair_runner(
     runner_args: list[str] | None = None,
     output_columns: tuple[tuple[str, int], ...] = (("forces", 3), ("virials", 9)),
     capture: bool = False,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     """Invoke a DPA MPI runner and parse its energy/per-atom output.
 
@@ -144,7 +157,9 @@ def run_mpi_pair_runner(
     model-specific wrapper retains its own defaults and explanatory docstring.
 
     If ``capture`` is true, skip parsing and return the subprocess result as
-    ``{"returncode": int, "stdout": str, "stderr": str}``.
+    ``{"returncode": int, "stdout": str, "stderr": str}``. ``timeout`` bounds
+    the run in seconds, after which the launcher and its ranks are killed and
+    ``subprocess.TimeoutExpired`` is raised; ``None`` leaves it unbounded.
     """
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         output_path = Path(f.name)
@@ -167,15 +182,30 @@ def run_mpi_pair_runner(
             argv.extend(extra_args)
         if runner_args:
             argv.extend(runner_args)
+        # The launcher and the ranks of a bounded run share a process group of
+        # their own, so that a timeout ends the ranks with it rather than
+        # leaving them holding their devices.
+        with sp.Popen(
+            argv,
+            stdout=sp.PIPE if capture else None,
+            stderr=sp.PIPE if capture else None,
+            text=True,
+            start_new_session=timeout is not None,
+        ) as process:
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except sp.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+                raise
         if capture:
-            proc = sp.run(argv, capture_output=True, text=True)
             return {
-                "returncode": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
+                "returncode": process.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
             }
-
-        sp.check_call(argv)
+        if process.returncode != 0:
+            raise sp.CalledProcessError(process.returncode, argv)
         lines = output_path.read_text().strip().splitlines()
         rows = np.array(
             [list(map(float, line.split())) for line in lines[1:]],
