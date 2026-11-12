@@ -894,6 +894,7 @@ def sweep_rotate_fwd(
             kc,
             cb,
             u,
+            u,  # scalar output is disabled during the original rotate sweep
             n_edge,
             x.stride(0),
             x.stride(1),
@@ -902,6 +903,7 @@ def sweep_rotate_fwd(
             CW=c_wide,
             BC=triton.next_power_of_2(c_wide),
             RANK=1,
+            SAVE_SCALAR=False,
             num_warps=warps,
             num_stages=stages,
         )
