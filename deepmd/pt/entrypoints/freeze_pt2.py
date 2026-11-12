@@ -870,6 +870,18 @@ def _kernel_level_defaults(target_device: torch.device) -> Iterator[None]:
                 os.environ[name] = value
 
 
+def _freeze_parameters_for_export(model: torch.nn.Module) -> None:
+    """Clear every parameter's requires-grad flag for the export trace.
+
+    An exported artifact treats parameters as constants; the frozen state
+    also opens the inference contracts that gate on it (the packed-Wigner
+    admission among them).  The rebuilt freeze model is export-only, so no
+    restore is needed.
+    """
+    for param in model.parameters():
+        param.requires_grad_(False)
+
+
 def freeze_sezm_to_pt2(
     ckpt_path: str,
     out_path: str,
@@ -957,6 +969,7 @@ def _freeze_sezm_to_pt2(
             "training alone and is not exported."
         )
     model.eval()
+    _freeze_parameters_for_export(model)
     # The vacuum reference is resolved on the target device, folded into the
     # fitting bias or stored as a per-type table, so the exported graph
     # carries no reference atoms.
