@@ -353,6 +353,8 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     atomic model and fitting. Shared weights do not make those branches
     interchangeable: tasks without a preset bias disable the reference,
     while a folded reference no longer appends isolated atoms to the graph.
+    The spin moments of the reference atoms follow the preset of the branch
+    and the trace bakes them in, so they are part of the key as well.
 
     Block cutoffs are baked into edge filtering and normalization, so shared
     parameter identities do not make different schedules interchangeable.
@@ -411,12 +413,18 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     long_range = getattr(getattr(model, "atomic_model", None), "long_range", None)
     if long_range is not None:
         long_range_id = next((id(p) for p in long_range.parameters()), id(long_range))
+    reference_spins = tuple(
+        tuple(module.vacuum_spin.flatten().tolist())
+        for module in model.modules()
+        if getattr(module, "vacuum_spin", None) is not None
+    )
     return (
         int(model.has_spin()),
         spin_flags,
         descriptor_id,
         fitting_id,
         *vacuum_state,
+        reference_spins,
         long_range_id,
         block_cutoffs,
         contact_clamps,

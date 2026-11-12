@@ -3,6 +3,9 @@ import unittest
 
 import numpy as np
 
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+)
 from deepmd.utils.vacuum_reference import (
     reference_charge_spin,
     reference_spin,
@@ -27,6 +30,36 @@ class TestVacuumReference(unittest.TestCase):
         self.assertEqual(charge_spin.dtype, np.float64)
         spin = reference_spin(type_map)
         np.testing.assert_array_equal(spin, [[0.0, 0.0, 2.0], [0.0, 0.0, 1.0]])
+
+    def test_reference_spin_named_with_the_preset(self) -> None:
+        # a named moment replaces the unpaired-electron count of its type only
+        type_map = ["O", "H", "Fe_U"]
+        preset = normalize_preset_out_bias(
+            {
+                "energy": {
+                    "O": {"value": -3.0, "spin": 1.25},
+                    "H": -13.6,
+                    "Fe_U": {"value": -4.0, "spin": 0.0},
+                }
+            },
+            type_map,
+        )
+        np.testing.assert_array_equal(
+            reference_spin(type_map, preset),
+            [[0.0, 0.0, 1.25], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]],
+        )
+        # a preset without moments leaves every type at its ground state
+        plain = normalize_preset_out_bias(
+            {"energy": {"O": -3.0, "H": -13.6}}, ["O", "H"]
+        )
+        np.testing.assert_array_equal(
+            reference_spin(["O", "H"], plain), reference_spin(["O", "H"])
+        )
+        # a type that is no element needs its moment named
+        with self.assertRaisesRegex(ValueError, "Fe_U"):
+            reference_spin(
+                type_map, normalize_preset_out_bias({"energy": {}}, type_map)
+            )
 
 
 if __name__ == "__main__":

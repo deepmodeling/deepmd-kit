@@ -278,12 +278,16 @@ class TestSeZMVacuumRef(unittest.TestCase):
 class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
     """The reference atom carries the ground-state charge/spin condition and spin."""
 
-    def make_model(self, vacuum_ref: bool) -> torch.nn.Module:
+    def make_model(
+        self, vacuum_ref: bool, preset: dict | None = None
+    ) -> torch.nn.Module:
         params = copy.deepcopy(MODEL_PARAMS)
         params["descriptor"]["add_chg_spin_ebd"] = True
         params["descriptor"]["default_chg_spin"] = [0, 1]
         params["fitting_net"]["vacuum_ref"] = vacuum_ref
         params["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        if preset is not None:
+            params["preset_out_bias"] = preset
         model = get_model(params).to(env.DEVICE)
         fitting = model.atomic_model.fitting_net
         with torch.no_grad():
@@ -361,6 +365,65 @@ class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
             rtol=1e-10,
             atol=1e-10,
         )
+
+    def test_reference_atom_takes_the_spin_moment_of_the_preset(self) -> None:
+        from deepmd.utils.vacuum_reference import (
+            reference_charge_spin,
+            reference_spin,
+        )
+
+        moment = 1.25
+        entries = dict(zip(TYPE_MAP, BIAS[:, 0].tolist(), strict=True))
+        entries[TYPE_MAP[0]] = {"value": entries[TYPE_MAP[0]], "spin": moment}
+        model = self.make_model(True, {"energy": entries})
+        # The on-site spin map starts at zero, which leaves the energy
+        # independent of the moment; a trained map does not.
+        rng = np.random.default_rng(0)
+        with torch.no_grad():
+            for weight in model.atomic_model.descriptor.spin_embedding.parameters():
+                if not weight.any():
+                    weight.copy_(
+                        torch.as_tensor(
+                            rng.normal(size=tuple(weight.shape)) * 0.1,
+                            dtype=weight.dtype,
+                            device=weight.device,
+                        )
+                    )
+        iso_coord = np.zeros((2, 1, 3))
+        iso_atype = np.array([[0], [1]])
+        iso_charge_spin = reference_charge_spin(TYPE_MAP)
+        # the direction of the moment is immaterial for an isolated atom
+        named = np.array([[[moment, 0.0, 0.0]], [[0.0, 0.0, 0.0]]])
+        ground = reference_spin(TYPE_MAP)[:, None, :]
+
+        def energies(spin: np.ndarray) -> np.ndarray:
+            return self.atom_energies(
+                model, iso_coord, iso_atype, spin, iso_charge_spin
+            )[:, 0]
+
+        np.testing.assert_allclose(energies(named), BIAS[:, 0], rtol=1e-10, atol=1e-10)
+        # the unpaired-electron count is another moment, with a learned deviation
+        self.assertGreater(abs(energies(ground)[0] - BIAS[0, 0]), 1e-8)
+        model.fold_vacuum_reference()
+        np.testing.assert_allclose(energies(named), BIAS[:, 0], rtol=1e-10, atol=1e-10)
+
+    def test_compiled_graphs_follow_the_reference_moment(self) -> None:
+        """Branches sharing their networks share a compiled graph only at equal moments."""
+        from deepmd.pt.model.model.sezm_model import (
+            _sezm_structure_key,
+        )
+
+        def branch(moment: float) -> torch.nn.Module:
+            entries = dict(zip(TYPE_MAP, BIAS[:, 0].tolist(), strict=True))
+            entries[TYPE_MAP[0]] = {"value": entries[TYPE_MAP[0]], "spin": moment}
+            return self.make_model(True, {"energy": entries})
+
+        first, twin, other = branch(1.0), branch(1.0), branch(3.0)
+        for model in (twin, other):
+            model.atomic_model.descriptor = first.atomic_model.descriptor
+            model.atomic_model.fitting_net = first.atomic_model.fitting_net
+        self.assertEqual(_sezm_structure_key(twin), _sezm_structure_key(first))
+        self.assertNotEqual(_sezm_structure_key(other), _sezm_structure_key(first))
 
 
 class TestSeZMDeNSVacuumRef(unittest.TestCase):

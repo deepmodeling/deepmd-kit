@@ -72,13 +72,13 @@ CONFIG = {
 PRESET = {"energy": {"O": float(BIAS[0, 0]), "H": float(BIAS[1, 0])}}
 
 
-def make_model(vacuum_ref: bool, preset: bool = True) -> EnergyModel:
+def make_model(vacuum_ref: bool, preset: bool | dict = True) -> EnergyModel:
     config = {
         **CONFIG,
         "fitting_net": {**CONFIG["fitting_net"], "vacuum_ref": vacuum_ref},
     }
     if preset:
-        config["preset_out_bias"] = PRESET
+        config["preset_out_bias"] = PRESET if preset is True else preset
     model = get_model(config)
     data = jitter_zero_arrays(
         model.atomic_model.descriptor.serialize(), np.random.default_rng(3)
@@ -176,6 +176,52 @@ def test_isolated_atoms_and_reference_subtraction() -> None:
         np.zeros((2, 1, 3)),
     )
     assert np.abs(other[0, 0] - BIAS[0, 0]) > 1e-8
+
+
+def test_reference_atom_takes_the_spin_moment_of_the_preset() -> None:
+    """An isolated atom carries its preset energy at the moment named with it."""
+    moment = 1.25
+    preset = {"energy": {"O": {"value": float(BIAS[0, 0]), "spin": moment}, "H": 0.5}}
+    model = make_model(True, preset)
+    iso_coord = np.zeros((2, 1, 3))
+    iso_atype = np.array([[0], [1]])
+    iso_charge_spin = reference_charge_spin(TYPE_MAP)
+    # the direction of the moment is immaterial for an isolated atom
+    named = np.array([[[moment, 0.0, 0.0]], [[0.0, 0.0, 0.0]]])
+    ground = reference_spin(TYPE_MAP)[:, None, :]
+
+    def energies(spin: np.ndarray) -> np.ndarray:
+        return atom_energies(model, iso_coord, iso_atype, iso_charge_spin, spin)[:, 0]
+
+    np.testing.assert_allclose(energies(named), BIAS[:, 0], rtol=1e-10, atol=1e-10)
+    # the unpaired-electron count is another moment, with a learned deviation
+    assert abs(energies(ground)[0] - BIAS[0, 0]) > 1e-8
+    # the record keeps the moment, and the fold evaluates the reference at it
+    restored = EnergyModel.deserialize(model.serialize()).to(env.DEVICE).eval()
+    np.testing.assert_array_equal(
+        restored.atomic_model.vacuum_spin.cpu().numpy()[:, 2], [moment, 1.0]
+    )
+    model.fold_vacuum_reference()
+    np.testing.assert_allclose(energies(named), BIAS[:, 0], rtol=1e-10, atol=1e-10)
+
+
+def test_compiled_graphs_follow_the_reference_moment() -> None:
+    """Branches sharing their networks share a compiled graph only at equal moments."""
+    from deepmd.pt_expt.train.training import (
+        _get_model_structure_key,
+    )
+
+    def branch(moment: float) -> EnergyModel:
+        return make_model(
+            True, {"energy": {"O": {"value": -3.0, "spin": moment}, "H": 0.5}}
+        )
+
+    first, twin, other = branch(1.0), branch(1.0), branch(3.0)
+    for model in (twin, other):
+        model.atomic_model.descriptor = first.atomic_model.descriptor
+        model.atomic_model.fitting_net = first.atomic_model.fitting_net
+    assert _get_model_structure_key(twin) == _get_model_structure_key(first)
+    assert _get_model_structure_key(other) != _get_model_structure_key(first)
 
 
 def test_fold_reproduces_the_referenced_model() -> None:

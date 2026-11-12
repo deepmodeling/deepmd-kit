@@ -246,7 +246,8 @@ class DPAtomicModel(BaseAtomicModel):
 
         A table exists for every condition the descriptor takes when the
         fitting references the isolated atoms; the type names must then be
-        element symbols.
+        element symbols, except for a type whose spin moment the preset names
+        when the native spin is the only condition.
         """
         vacuum_ref = self.fitting_net.vacuum_ref
         self.vacuum_charge_spin = (
@@ -255,11 +256,13 @@ class DPAtomicModel(BaseAtomicModel):
             else None
         )
         self.vacuum_spin = (
-            reference_spin(self.type_map) if vacuum_ref and self.add_spin_ebd else None
+            reference_spin(self.type_map, self.preset_out_bias)
+            if vacuum_ref and self.add_spin_ebd
+            else None
         )
 
     def vacuum_conditions(self) -> dict[str, Array]:
-        """Conditioning inputs of one isolated neutral ground-state atom per type.
+        """Conditioning inputs of the isolated reference atom of every type.
 
         Returns
         -------
@@ -562,8 +565,9 @@ class DPAtomicModel(BaseAtomicModel):
         Every type is evaluated as a single-atom frame without neighbors,
         conditioned as the neutral ground-state atom: zero charge with the
         ground-state multiplicity when the descriptor takes the charge/spin
-        condition, and a spin vector of one Bohr magneton per unpaired
-        electron when it takes the native spin.
+        condition, and the spin vector of its reference atom when it takes
+        the native spin (see
+        :func:`~deepmd.utils.vacuum_reference.reference_spin`).
 
         Descriptors that opt into graph vacuum evaluation use isolated nodes,
         independently of their advertised neighbor capacity; other descriptors
@@ -647,11 +651,11 @@ class DPAtomicModel(BaseAtomicModel):
         The reference nodes follow the node axis of the real frames, padding
         included, as single-node frames: one node per reference type without
         neighbors, conditioned as the neutral ground-state atom (zero charge
-        and the ground-state multiplicity for the charge/spin conditioning, a
-        spin vector of as many Bohr magnetons as unpaired electrons for the
-        native spin). Node-wise operations of the descriptor leave the real
-        nodes unaffected, so the descriptor rows of the reference nodes are the
-        vacuum descriptors of the reference types.
+        and the ground-state multiplicity for the charge/spin conditioning,
+        the spin vector of its reference atom for the native spin). Node-wise
+        operations of the descriptor leave the real nodes unaffected, so the
+        descriptor rows of the reference nodes are the vacuum descriptors of
+        the reference types.
 
         Parameters
         ----------

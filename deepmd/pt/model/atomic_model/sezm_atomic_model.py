@@ -140,7 +140,8 @@ class SeZMAtomicModel(DPAtomicModel):
 
         A table exists for every condition the descriptor takes when the
         fitting references the isolated atoms; the type names must then be
-        element symbols.
+        element symbols, except for a type whose spin moment the preset names
+        when the native spin is the only condition.
         """
         vacuum_ref = self.fitting_net.vacuum_ref
         dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -153,14 +154,16 @@ class SeZMAtomicModel(DPAtomicModel):
         )
         self.vacuum_spin = (
             torch.as_tensor(
-                reference_spin(self.type_map), dtype=dtype, device=env.DEVICE
+                reference_spin(self.type_map, self.preset_out_bias),
+                dtype=dtype,
+                device=env.DEVICE,
             )
             if vacuum_ref and self.add_spin_ebd
             else None
         )
 
     def vacuum_conditions(self) -> dict[str, torch.Tensor]:
-        """Conditioning inputs of one isolated neutral ground-state atom per type.
+        """Conditioning inputs of the isolated reference atom of every type.
 
         Returns
         -------

@@ -220,6 +220,34 @@ magneton per unpaired electron; charged, excited or differently magnetized
 isolated atoms keep the deviation the network learns for them. The type names
 must then be element symbols.
 
+The energy of an isolated atom depends on its spin moment, so a table computed
+at other moments names them. An entry of `preset_out_bias` then holds the
+value together with the magnitude of the moment, in the units of the spin
+input of the model:
+
+```json
+{
+  "preset_out_bias": {
+    "energy": {
+      "Fe": {
+        "value": -3.4,
+        "spin": 3.0
+      },
+      "O": -1.5
+    }
+  }
+}
+```
+
+A native-spin model gives the reference atom of such an element this moment,
+so an atom without neighbors that carries it has exactly the preset energy.
+The magnitude alone is given, for collinear and non-collinear moments alike,
+because the energy of an isolated atom does not depend on the direction of its
+moment. An element whose entry names no moment keeps the unpaired-electron
+count. A type that is not an element symbol, such as a separate type for a
+Hubbard-corrected species, names its moment when native spin is the only
+condition of the reference atom.
+
 The reference follows the network parameters at every training step. Freezing
 evaluates the vacuum descriptor of every type once and removes the reference
 atoms from the exported model: a fitting without frame or atomic parameters

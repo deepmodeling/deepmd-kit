@@ -623,7 +623,13 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         _int_tuple(fitting.exclude_types),
         bool(fitting.needs_vacuum_descriptor()),
     )
-    atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
+    vacuum_spin = atomic_model.vacuum_spin
+    atomic_state = (
+        _int_tuple(atomic_model.atom_exclude_types),
+        # The spin moments of the reference atoms follow the preset of the
+        # branch, and the trace bakes them in.
+        None if vacuum_spin is None else tuple(vacuum_spin.flatten().tolist()),
+    )
     model_state = (
         str(model.bridging_method),
         None if model.inter_potential is None else model.inter_potential.truncation,

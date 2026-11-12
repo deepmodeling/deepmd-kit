@@ -13,7 +13,9 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
 )
 from deepmd.utils.preset_out_bias import (
+    REFERENCE_SPIN_KEY,
     bundled_preset_out_bias_tables,
+    check_preset_out_bias,
     load_preset_out_bias_table,
     normalize_preset_out_bias,
     override_assigned_bias,
@@ -129,6 +131,58 @@ class TestNormalizePresetOutBias(unittest.TestCase):
                 normalize_preset_out_bias(
                     {"energy": str(Path(tmp) / "list.json")}, self.type_map
                 )
+
+    def test_spin_moment_entries(self) -> None:
+        # a moment is named with the value, in the dict and in the list form
+        for preset in (
+            {"energy": {"O": {"value": -3.0, "spin": 2}, "H": -13.6}},
+            {"energy": [{"value": [-3.0], "spin": 2.0}, -13.6, None]},
+        ):
+            out = normalize_preset_out_bias(preset, self.type_map)
+            self.assertEqual(out["energy"], [[-3.0], [-13.6], None])
+            self.assertEqual(out[REFERENCE_SPIN_KEY], [2.0, None, None])
+            # the moments are not an output of the model
+            check_preset_out_bias(out, ["energy"])
+            self.assertEqual(normalize_preset_out_bias(out, self.type_map), out)
+            self.assertEqual(
+                normalize_preset_out_bias(json.loads(json.dumps(out)), self.type_map),
+                out,
+            )
+        # outputs that name the same moment of a type agree
+        out = normalize_preset_out_bias(
+            {
+                "energy": {"O": {"value": -3.0, "spin": 2.0}},
+                "dos": {"O": {"value": 1.0, "spin": 2.0}, "B": {"value": 0.5}},
+            },
+            self.type_map,
+        )
+        self.assertEqual(out[REFERENCE_SPIN_KEY], [2.0, None, None])
+        self.assertEqual(out["dos"], [[1.0], None, [0.5]])
+        # a preset without a moment keeps the plain canonical form
+        self.assertNotIn(
+            REFERENCE_SPIN_KEY,
+            normalize_preset_out_bias(
+                {"energy": {"O": {"value": -3.0}}}, self.type_map
+            ),
+        )
+
+    def test_spin_moment_errors(self) -> None:
+        for bad in (
+            {"energy": {"O": {"spin": 2.0}}},
+            {"energy": {"O": {"value": None, "spin": 2.0}}},
+            {"energy": {"O": {"value": -3.0, "moment": 2.0}}},
+            {"energy": {"O": {"value": -3.0, "spin": -1.0}}},
+            {"energy": {"O": {"value": -3.0, "spin": np.inf}}},
+            {"energy": {"O": {"value": -3.0, "spin": [0.0, 0.0, 2.0]}}},
+            {"energy": {"O": {"value": -3.0, "spin": True}}},
+            {
+                "energy": {"O": {"value": -3.0, "spin": 2.0}},
+                "dos": {"O": {"value": 1.0, "spin": 1.0}},
+            },
+            {"energy": {"O": -3.0}, REFERENCE_SPIN_KEY: [2.0]},
+        ):
+            with self.assertRaises(ValueError):
+                normalize_preset_out_bias(bad, self.type_map)
 
     def test_errors(self) -> None:
         for bad in (
@@ -328,6 +382,22 @@ class TestRemapPresetOutBias(unittest.TestCase):
                     self.assertIsNone(got)
                 else:
                     self.assertEqual(got, [want])
+
+    def test_spin_moments_follow_their_types(self) -> None:
+        old_map = ["O", "H", "Fe"]
+        preset = normalize_preset_out_bias(
+            {
+                "energy": {
+                    "O": {"value": 1.0, "spin": 2.0},
+                    "Fe": {"value": 3.0, "spin": 4.0},
+                }
+            },
+            old_map,
+        )
+        remap_index, _ = get_index_between_two_maps(old_map, ["Fe", "N", "O"])
+        remapped = remap_preset_out_bias(preset, remap_index)
+        self.assertEqual(remapped["energy"], [[3.0], None, [1.0]])
+        self.assertEqual(remapped[REFERENCE_SPIN_KEY], [4.0, None, 2.0])
 
     def test_none(self) -> None:
         self.assertIsNone(remap_preset_out_bias(None, [0, 1]))

@@ -1580,8 +1580,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             Number of owned (local) atoms per frame. Required when ``comm_dict``
             is provided; the final scalar read-out is restricted to these atoms.
         vacuum_conditions
-            Conditioning inputs of one isolated atom per type, the neutral
-            ground-state atom, under ``charge_spin`` with shape (ntypes, 2)
+            Conditioning inputs of one isolated atom per type, the reference
+            atom of the type, under ``charge_spin`` with shape (ntypes, 2)
             and ``spin`` with shape (ntypes, 3) as the descriptor takes them.
             When given, the reference atoms are carried through the same
             forward as additional nodes and their vacuum descriptor is
@@ -1622,7 +1622,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 1b. Vacuum reference nodes ===
         # One isolated atom of every type follows the real nodes, conditioned
-        # as the neutral ground-state atom. Every node-wise operation leaves
+        # as the reference atom of the type. Every node-wise operation leaves
         # the real nodes unaffected, so the read-out rows of the reference
         # nodes are the vacuum descriptor of every type.
         vacuum_ref = vacuum_conditions is not None

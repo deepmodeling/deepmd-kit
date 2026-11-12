@@ -4205,6 +4205,10 @@ def model_args(
         "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
         "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
         "for tensor outputs, e.g. `{'dipole': [null, [0., 1., 2.]]}`. "
+        "An entry may also give the magnitude of the spin moment of the isolated atom the value belongs to, "
+        "e.g. `{'energy': {'Fe': {'value': -3.4, 'spin': 3.0}}}`, in the units of the spin input; a native-spin "
+        "model with `vacuum_ref` then gives exactly this energy to an atom without neighbors that carries this "
+        "moment. An element without it takes the number of unpaired electrons of its neutral ground-state atom. "
         "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
         "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
         "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
@@ -4293,7 +4297,12 @@ def model_args(
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[float | list | None] | dict[str, float | list] | str],
+                dict[
+                    str,
+                    list[float | list | dict | None]
+                    | dict[str, float | list | dict]
+                    | str,
+                ],
                 optional=True,
                 default=None,
                 doc=supported_backends("pt", "pd", "pt_expt", "jax")

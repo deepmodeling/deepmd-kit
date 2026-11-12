@@ -4,10 +4,11 @@
 The isolated-atom energy reference (``vacuum_ref``) pins the energy of an
 atom without neighbors to its preset bias. The reference atom is the neutral
 atom in its ground state: zero charge, the ground-state spin multiplicity as
-the charge/spin condition of the descriptor, and a spin vector whose magnitude
-is the number of unpaired electrons for the native-spin descriptors. Every
-quantity derives from the spin-resolved orbital occupation table of the
-elements.
+the charge/spin condition of the descriptor, and a spin vector for the
+native-spin descriptors. The magnitude of that vector is the spin moment the
+preset names with the energy of the type, and the number of unpaired
+electrons otherwise. The ground-state quantities derive from the
+spin-resolved orbital occupation table of the elements.
 """
 
 from typing import (
@@ -20,6 +21,7 @@ from deepmd.utils.econf_embd import (
     electronic_configuration_embedding,
 )
 from deepmd.utils.preset_out_bias import (
+    REFERENCE_SPIN_KEY,
     preset_assigns,
 )
 
@@ -80,23 +82,48 @@ def reference_charge_spin(type_map: list[str]) -> np.ndarray:
     return np.stack([np.zeros_like(unpaired), unpaired + 1], axis=-1).astype(np.float64)
 
 
-def reference_spin(type_map: list[str]) -> np.ndarray:
-    """Spin vector of the isolated neutral ground-state atom of every type.
+def reference_spin(
+    type_map: list[str], preset_out_bias: dict[str, Any] | None = None
+) -> np.ndarray:
+    """Spin vector of the isolated atom that every type is referenced to.
+
+    The energy of an isolated atom depends on its spin moment, so the
+    reference atom carries the moment its preset energy belongs to.
 
     Parameters
     ----------
     type_map : list[str]
-        Element symbol of every type.
+        Name of every type.
+    preset_out_bias : dict[str, Any], optional
+        Normalized preset bias of the atomic model. A type whose entry names
+        a spin moment takes that magnitude, in the units of the spin input;
+        every other type takes the unpaired-electron count of the neutral
+        ground-state atom, in Bohr magnetons, and is named by its element
+        symbol.
 
     Returns
     -------
     np.ndarray
-        Spin vectors with shape (ntypes, 3) in Bohr magnetons, of magnitude
-        equal to the unpaired-electron count and directed along ``z``; the
-        energy of an isolated atom does not depend on the direction.
+        Spin vectors with shape (ntypes, 3), directed along ``z``; the energy
+        of an isolated atom does not depend on the direction.
+
+    Raises
+    ------
+    ValueError
+        If a type without a named moment is not named by an element symbol.
     """
+    moments: list[float | None] = (preset_out_bias or {}).get(
+        REFERENCE_SPIN_KEY, [None] * len(type_map)
+    )
+    unnamed = [
+        name for name, moment in zip(type_map, moments, strict=True) if moment is None
+    ]
+    ground = dict(zip(unnamed, unpaired_electrons(unnamed).tolist(), strict=True))
     spin = np.zeros((len(type_map), 3), dtype=np.float64)
-    spin[:, 2] = unpaired_electrons(type_map)
+    spin[:, 2] = [
+        ground[name] if moment is None else moment
+        for name, moment in zip(type_map, moments, strict=True)
+    ]
     return spin
 
 
