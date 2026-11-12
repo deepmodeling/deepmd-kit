@@ -2223,6 +2223,106 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
             )
         )
 
+    def test_gate_admits_a_no_grad_forward(self):
+        """``requires_grad`` alone must not veto a no-grad forward.
+
+        ``torch.no_grad()`` suppresses graph recording, so the forward
+        cannot produce the dense-only channel-basis backward this guard
+        protects; a plain eval inference call (no freezing context) then
+        takes the band instead of silently falling back to dense.
+        """
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt.model.descriptor.sezm import (
+            block_supports_packed_wigner,
+        )
+
+        self._with_levels("2", "0")
+        conv = self._conv(
+            _triton_value_path=object(),
+            _flash_atten_fn=object(),
+            radial_degree_mixer=SimpleNamespace(
+                rank=2,
+                channel_basis=SimpleNamespace(requires_grad=True),
+            ),
+        )
+        self.assertFalse(
+            block_supports_packed_wigner(conv, False),
+            "precondition: a grad-enabled eval backward keeps dense",
+        )
+        with torch.no_grad():
+            self.assertTrue(
+                block_supports_packed_wigner(conv, False),
+                "a no-grad forward admits the band without freezing",
+            )
+
+    def test_inference_wigner_fn_defers_to_the_band(self):
+        """The dense-only CUDA Wigner pair steps aside for the band.
+
+        The CUDA calculator has no ``forward_band``; substituting it while
+        the banded layout is requested and admitted would veto the band at
+        the cache build and silently keep a CUDA ``.pt2`` dense (the freeze
+        policy binds that calculator by default through ``DP_CUDA_INFER=1``).
+        """
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        self._with_levels("2", "0")
+
+        def _descriptor(schedule, mp_lmax, cuda_fn, packed_ok):
+            return SimpleNamespace(
+                training=False,
+                _blocks_have_so2_conv=True,
+                mp_init_lmax=mp_lmax,
+                _cuda_wigner_fn=cuda_fn,
+                # The gate itself is covered by the uniform-degree test;
+                # stub its verdict so this test isolates the selection.
+                _packed_wigner_ok=lambda: packed_ok,
+                blocks=[
+                    SimpleNamespace(
+                        so2_conv=self._conv(
+                            lmax=lmax,
+                            _triton_value_path=object(),
+                            _flash_atten_fn=object(),
+                        )
+                    )
+                    for lmax in schedule
+                ],
+            )
+
+        cuda_fn = object()
+        with mock.patch.dict(os.environ, {"DP_PACKED_D_INFER": "1"}, clear=False):
+            self.assertIsNone(
+                DescrptSeZM._inference_wigner_fn(_descriptor([3, 3], 3, cuda_fn, True)),
+                "an admitted band must resolve the band-capable calculator",
+            )
+            self.assertIs(
+                DescrptSeZM._inference_wigner_fn(
+                    _descriptor([3, 2], 3, cuda_fn, False)
+                ),
+                cuda_fn,
+                "a dense-consuming build keeps the CUDA pair",
+            )
+        with mock.patch.dict(os.environ, {"DP_PACKED_D_INFER": "0"}, clear=False):
+            self.assertIs(
+                DescrptSeZM._inference_wigner_fn(_descriptor([3, 3], 3, cuda_fn, True)),
+                cuda_fn,
+                "the flag off keeps the CUDA pair",
+            )
+        training_desc = _descriptor([3, 3], 3, cuda_fn, True)
+        training_desc.training = True
+        self.assertIsNone(
+            DescrptSeZM._inference_wigner_fn(training_desc),
+            "training never substitutes the fused pair",
+        )
+
     def test_gate_follows_mode_and_captured_levels(self):
         """The gate derives from the per-block captured levels, like dispatch."""
         from deepmd.pt.model.descriptor.sezm import (

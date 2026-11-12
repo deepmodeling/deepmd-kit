@@ -68,6 +68,7 @@ from deepmd.pt.utils.update_sel import (
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
+    use_packed_d_infer,
 )
 from deepmd.utils.bridging import (
     BRIDGING_RECORD_VERSION,
@@ -166,12 +167,16 @@ def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     # cotangent through the dense-only helper whenever the basis still
     # requires grad.  ``.eval()`` alone does not freeze parameters, so an
     # eval-mode backward against trainable parameters (e.g. validation
-    # losses) must also keep the dense layout.
+    # losses) must also keep the dense layout.  A no-grad forward, however,
+    # cannot build that backward at all, so a ``torch.no_grad()`` inference
+    # call admits the band without freezing anything -- ``requires_grad``
+    # alone is not the discriminator.
     mixer = getattr(so2_conv, "radial_degree_mixer", None)
     if (
         mixer is not None
         and getattr(mixer, "rank", 0) > 0
         and getattr(getattr(mixer, "channel_basis", None), "requires_grad", False)
+        and torch.is_grad_enabled()
     ):
         return False
     # Dispatch resolves against the per-block levels captured at
@@ -1798,7 +1803,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
                 fused_radial=(None if self.training else self._cuda_radial_fn),
-                fused_wigner=(None if self.training else self._cuda_wigner_fn),
+                fused_wigner=self._inference_wigner_fn(),
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
                 # Random local-Z roll is a training-only augmentation;
@@ -2142,6 +2147,28 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             block_supports_packed_wigner(block.so2_conv, self.training)
             for block in self.blocks
         )
+
+    def _inference_wigner_fn(self) -> Any:
+        """The fused CUDA Wigner pair to substitute, if it serves this build.
+
+        The CUDA calculator produces the dense pair only.  When the banded
+        layout is requested and every block admits it, substituting that
+        calculator would veto the band at the cache build (it has no
+        ``forward_band``), so the module's own band-capable ``wigner_calc``
+        resolves instead -- the dense pair is never materialized on that
+        path, so the CUDA dense speedup is not lost, it is unused.  Any
+        dense-consuming build (a dense-layout consumer selected, training,
+        or the flag off) keeps the CUDA calculator.
+        """
+        if self.training:
+            return None
+        if (
+            self._cuda_wigner_fn is not None
+            and use_packed_d_infer()
+            and self._packed_wigner_ok()
+        ):
+            return None
+        return self._cuda_wigner_fn
 
     def _build_full_wigner(self) -> bool:
         """Return whether the active execution path needs dense Wigner blocks."""
