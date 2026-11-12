@@ -210,6 +210,7 @@ minimum-version = "1.0"
 cmake.source-dir = "source"
 sdist.include = [
     "/deepmd/_version.py",
+    "/skills/**",
 ]
 sdist.exclude = [
     "/source/tests",
@@ -222,10 +223,8 @@ sdist.exclude = [
     "/data",
     "/.github",
 ]
-wheel.packages = [
-    "deepmd",
-    "dpa_adapt",
-]
+wheel.packages = ["deepmd", "dpa_adapt"]
+wheel.force-include = {"skills" = "deepmd/_skills"}
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
 
@@ -270,6 +269,9 @@ test-command = [
     "python -m deepmd -h",
     """python -c "import deepmd.tf;import deepmd.pt;import deepmd.pd" """,
     "dp -h",
+    # Wheel tests run in an installed environment: validate forced-in guide files.
+    "dp skills list",
+    "dp skills read deepmd-train",
     "dp_ipi",
     "pytest {project}/source/tests/common/test_lammps.py"
 ]
@@ -329,6 +331,8 @@ test-extras = ["cpu", "torch", "paddle"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
+    "dp skills list",
+    "dp skills read deepmd-train",
 ]
 [tool.cibuildwheel.windows.environment]
 PIP_PREFER_BINARY = "1"
