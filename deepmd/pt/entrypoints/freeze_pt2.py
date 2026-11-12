@@ -974,6 +974,11 @@ def _freeze_sezm_to_pt2(
             module._force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
             module._force_fused_scatter = force_fused_scatter
+        if isinstance(module, SO2Convolution):
+            # The folded radial head resolves its device through the same
+            # pin: the CPU tracing inputs would otherwise keep the fold out
+            # of the CUDA-target artifact.
+            module._force_radial_packed = force_fused_scatter
 
     # Sweep any Triton launch-table keys this checkpoint needs that are not
     # covered for the local GPU, so the traced graph bakes tuned launches.
