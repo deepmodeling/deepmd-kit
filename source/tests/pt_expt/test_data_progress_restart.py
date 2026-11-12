@@ -961,6 +961,63 @@ def test_malformed_rank_envelope_is_rejected(
     assert "training.reset_data_progress is true" not in caplog.text
 
 
+@pytest.mark.parametrize("saved_mode", ["synchronized", "independent"])
+@pytest.mark.parametrize("reset", [False, True])
+def test_task_sampling_mode_change_requires_reset(saved_mode, reset) -> None:
+    """A restart cannot silently switch the meaning of its saved task stream."""
+    trainer = Trainer.__new__(Trainer)
+    trainer.rank = 0
+    trainer.world_size = 1
+    trainer._configured_data_seed = 19
+    trainer.task_sampling = (
+        "independent" if saved_mode == "synchronized" else "synchronized"
+    )
+    trainer._task_rng = np.random.default_rng(19)
+    before = deepcopy(trainer._task_rng.bit_generator.state)
+    progress = {
+        "version": 2 if saved_mode == "independent" else 1,
+        "task_sampling": saved_mode,
+        "configured_seed": 19,
+        "world_size": 1,
+        "task_rng": np.random.default_rng(91).bit_generator.state,
+        "ranks": [{}],
+    }
+    with patch(
+        "deepmd.pt_expt.train.training.restore_training_data_progress"
+    ) as restore:
+        if reset:
+            trainer._restore_data_progress(progress, reset=True)
+        else:
+            with pytest.raises(ValueError, match="Task sampling changed"):
+                trainer._restore_data_progress(progress)
+    restore.assert_not_called()
+    assert trainer._task_rng.bit_generator.state == before
+
+
+@pytest.mark.parametrize("missing_rank", [0, 1])
+def test_independent_restart_requires_every_rank_rng(missing_rank) -> None:
+    """Do not fall back to the chief's RNG when another rank's state is absent."""
+    trainer = Trainer.__new__(Trainer)
+    trainer.rank = 0
+    trainer.world_size = 2
+    trainer._configured_data_seed = 19
+    trainer.task_sampling = "independent"
+    rng = np.random.default_rng(19).bit_generator.state
+    ranks = [{"task_rng": rng}, {"task_rng": rng}]
+    ranks[missing_rank] = {}
+    with pytest.raises(ValueError, match="every rank's RNG state"):
+        trainer._restore_data_progress(
+            {
+                "version": 2,
+                "task_sampling": "independent",
+                "configured_seed": 19,
+                "world_size": 2,
+                "task_rng": rng,
+                "ranks": ranks,
+            }
+        )
+
+
 def _ddp_restart_worker(
     rank: int, directory: str, rendezvous: str, mode: str, sampling: str
 ) -> None:
