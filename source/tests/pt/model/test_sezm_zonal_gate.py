@@ -56,11 +56,11 @@ class TestSeZMZonalLevelGate(unittest.TestCase):
         self.assertFalse(emb._cuda_scatter)
 
     def test_cuda_suite_binds(self):
+        import os
+
         from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
             op_available,
         )
-
-        import os
 
         os.environ["DP_CUDA_INFER"] = "1"
         emb = _seeded_embedding()
@@ -70,11 +70,11 @@ class TestSeZMZonalLevelGate(unittest.TestCase):
             self.skipTest("compiled zonal scatter operator unavailable")
 
     def test_triton_level_binds_without_the_cuda_suite(self):
+        import os
+
         from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
             op_available,
         )
-
-        import os
 
         os.environ["DP_TRITON_INFER"] = "1"
         os.environ["DP_CUDA_INFER"] = "0"
