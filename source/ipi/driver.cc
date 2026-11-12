@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#include <algorithm>
 #include <cstdint>
 #include <exception>
 #include <fstream>
@@ -162,11 +163,33 @@ int main(int argc, char* argv[]) {
       }
     } else if (header_str == "INIT") {
       assert(4 == sizeof(int32_t));
+      int32_t replica_id;
+      readbuffer_(&socket, (char*)(&replica_id), sizeof(int32_t));
       readbuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
-      readbuffer_(&socket, initbuffer, cbuf);
-      if (b_verb) {
-        std::cout << "Init sys from wrapper, using " << initbuffer << std::endl;
+      if (cbuf < 0) {
+        std::cerr << "dp_ipi: INIT payload length must be nonnegative."
+                  << std::endl;
+        return 1;
       }
+      if (b_verb) {
+        std::cout << "Init sys from wrapper, using ";
+      }
+      // This driver is configured by its input file. Consume the optional
+      // initialization string without imposing a fixed payload-size limit.
+      while (cbuf > 0) {
+        const int chunk =
+            std::min(cbuf, static_cast<int32_t>(sizeof(initbuffer)));
+        readbuffer_(&socket, initbuffer, chunk);
+        if (b_verb) {
+          std::cout.write(initbuffer, chunk);
+        }
+        cbuf -= chunk;
+      }
+      if (b_verb) {
+        std::cout << std::endl;
+      }
+      isinit = true;
+      hasdata = false;
     } else if (header_str == "POSDATA") {
       assert(8 == sizeof(double));
 
@@ -179,6 +202,12 @@ int main(int argc, char* argv[]) {
 
       // get number of atoms
       readbuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
+      if (cbuf <= 0 || static_cast<size_t>(cbuf) != dtype.size()) {
+        std::cerr << "dp_ipi: POSDATA atom count " << cbuf
+                  << " does not match configured atom count " << dtype.size()
+                  << "." << std::endl;
+        return 1;
+      }
       if (natoms < 0) {
         natoms = cbuf;
         if (b_verb) {
@@ -225,6 +254,8 @@ int main(int argc, char* argv[]) {
       writebuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
       writebuffer_(&socket, msg_nothing, 7);
       hasdata = false;
+    } else if (header_str == "EXIT") {
+      break;
     } else {
       std::cerr << "unexpected header " << std::endl;
       return 1;
