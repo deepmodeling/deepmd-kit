@@ -164,8 +164,10 @@ class TestDescrptSeA(TestCaseSingleFrameWithNlist):
         assert result_ref.shape == result_cmp.shape
         torch.testing.assert_close(result_ref, result_cmp, atol=atol, rtol=atol)
 
+    @pytest.mark.parametrize("em", [[], [[0, 1]]])  # exclude_types
+    @pytest.mark.parametrize("tos", [True, False])  # type_one_side
     @pytest.mark.parametrize("prec", ["float64"])  # precision
-    def test_make_fx(self, prec) -> None:
+    def test_make_fx(self, prec, tos, em) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
@@ -179,6 +181,8 @@ class TestDescrptSeA(TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
             precision=prec,
+            type_one_side=tos,
+            exclude_types=em,
             seed=GLOBAL_SEED,
         ).to(self.device)
         dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
