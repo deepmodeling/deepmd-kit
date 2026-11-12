@@ -2924,3 +2924,164 @@ class TestSeZMGieScatter(unittest.TestCase):
         torch.testing.assert_close(out_train, out_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(gdp, gd_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(grad_train, gr_ref, atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
+    def test_wide_channels_keep_the_reference_composition(self):
+        """Channel counts beyond the tiled limit never reach the kernels.
+
+        The kernels tile channels into one padded power-of-two block;
+        beyond MAX_TILED_CHANNELS the tile exceeds Triton's per-tensor
+        element limit, so both the constructor binding and the operator's
+        internal predicate must keep the reference composition instead of
+        failing to compile at the first forward.
+        """
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            MAX_TILED_CHANNELS,
+            gie_zonal_scatter,
+        )
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            bound = GeometricInitialEmbedding(
+                lmax=3, channels=32, dtype=torch.float32
+            ).cuda()
+            wide = GeometricInitialEmbedding(
+                lmax=3, channels=MAX_TILED_CHANNELS + 1, dtype=torch.float32
+            ).cuda()
+        self.assertIsNotNone(bound._triton_scatter, "precondition: narrow binds")
+        self.assertIsNone(
+            wide._triton_scatter,
+            "a channel count above the tiled limit must not bind",
+        )
+
+        # A direct wide call must fall back inside the operator rather than
+        # die at Triton compilation.
+        generator = torch.Generator(device="cuda").manual_seed(19)
+        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
+            8, 3, generator, channels=MAX_TILED_CHANNELS + 1
+        )
+        out = gie_zonal_scatter(zonal, radial, dst, order, row_ptr, 3, 3)
+        ref = self._reference(zonal, radial, dst, 3)
+        torch.testing.assert_close(out, ref, atol=0.0, rtol=0.0)
+
+    @_GPU_KERNELS
+    def test_higher_order_grads_route_through_the_reference_chain(self):
+        """Second-order differentiation must not hit the fused backward op.
+
+        Hessian mode drives the backward with ``create_graph=True`` (grad
+        mode stays on), so the autograd formula must take its
+        differentiable reference chain; the opaque backward operator
+        carries no autograd formula and would raise.  Both orders must
+        agree with the plain reference composition.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(23)
+        n_nodes = 8
+        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
+            64, n_nodes, generator, channels=16
+        )
+        cot = torch.randn(
+            n_nodes,
+            self._ROWS + 1,
+            16,
+            device="cuda",
+            generator=torch.Generator(device="cuda").manual_seed(29),
+        )
+        gz_cot = torch.randn(
+            zonal.shape,
+            device="cuda",
+            generator=torch.Generator(device="cuda").manual_seed(31),
+        )
+        gr_cot = torch.randn(
+            radial.shape,
+            device="cuda",
+            generator=torch.Generator(device="cuda").manual_seed(37),
+        )
+
+        def double_grad(forward_fn):
+            z = zonal.clone().requires_grad_(True)
+            r = radial.clone().requires_grad_(True)
+            out = forward_fn(z, r)
+            g1 = torch.autograd.grad(out, (z, r), cot, create_graph=True)
+            g2 = torch.autograd.grad(g1, (z, r), (gz_cot, gr_cot))
+            return g1, g2
+
+        g1_fused, g2_fused = double_grad(
+            lambda z, r: gie_zonal_scatter(z, r, dst, order, row_ptr, n_nodes, 3)
+        )
+        g1_ref, g2_ref = double_grad(lambda z, r: self._reference(z, r, dst, n_nodes))
+        for fused, ref in zip(g1_fused, g1_ref, strict=True):
+            torch.testing.assert_close(fused, ref, atol=1e-5, rtol=1e-5)
+        for fused, ref in zip(g2_fused, g2_ref, strict=True):
+            torch.testing.assert_close(fused, ref, atol=1e-4, rtol=1e-4)
+
+    @_GPU_KERNELS
+    def test_reference_paths_do_not_build_the_destination_csr(self):
+        """Only a selected fused backend may pay for the destination sort.
+
+        ``cached_edge_csr`` mutates ``edge_cache.csr_cache``; the reference
+        composition must leave it untouched so the common paths (training,
+        a joined spin message) never pay the O(E log E) stable sort.  The
+        fused selection is the positive control that would go red if the
+        CSR build were ever hoisted above the dispatch guard.
+        """
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(41)
+        n_edge, n_nodes, channels = 512, 16, 8
+        dst = torch.randint(0, n_nodes, (n_edge,), device="cuda", generator=generator)
+        d_full = torch.randn(n_edge, 16, 16, device="cuda", generator=generator)
+        radial = torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+        spin = torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+        edge_vec = torch.zeros(n_edge, 3, device="cuda")
+        inv_sqrt_deg = torch.rand(n_nodes, 1, 1, device="cuda", generator=generator)
+
+        class _Cache:
+            pass
+
+        def make_cache():
+            cache = _Cache()
+            cache.dst = dst
+            cache.edge_vec = edge_vec
+            cache.inv_sqrt_deg = inv_sqrt_deg
+            cache.csr_cache = {}
+            cache.edge_src_gate = None
+            cache.Dt_full = d_full
+            return cache
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            module = GeometricInitialEmbedding(
+                lmax=3, channels=channels, dtype=torch.float32
+            ).cuda()
+        module.eval()
+        self.assertIsNotNone(module._triton_scatter, "precondition: bound on host")
+
+        # A joined spin message keeps the reference composition even with
+        # the ladder bound -- and must not pay for the destination sort.
+        cache = make_cache()
+        module(
+            n_nodes=n_nodes,
+            edge_cache=cache,
+            radial_feat=radial,
+            spin_l1_message=spin,
+        )
+        self.assertNotIn("dst", cache.csr_cache)
+
+        # Training keeps the reference composition with the ladder bound.
+        module.train()
+        cache = make_cache()
+        module(n_nodes=n_nodes, edge_cache=cache, radial_feat=radial)
+        self.assertNotIn("dst", cache.csr_cache)
+
+        # Positive control: the fused selection is what builds the entry.
+        module.eval()
+        cache = make_cache()
+        module(n_nodes=n_nodes, edge_cache=cache, radial_feat=radial)
+        self.assertIn("dst", cache.csr_cache)

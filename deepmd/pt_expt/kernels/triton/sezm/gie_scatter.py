@@ -48,8 +48,18 @@ try:
 except ImportError:  # pragma: no cover - exercised only without triton
     GIE_SCATTER_TRITON_AVAILABLE = False
 
+# The kernels tile the channel axis into one padded power-of-two block
+# (``BC = next_power_of_2(C)``) and keep per-degree accumulators of
+# ``(rows, BC)``.  Triton rejects a single tensor above 2**20 elements, and
+# the padded block rides every accumulator, so the widest usable channel
+# count is ``next_power_of_2(C) <= 2**17``, i.e. ``C <= 131072``.  Wider
+# models fall back to the reference composition instead of failing to
+# compile at the first forward.
+MAX_TILED_CHANNELS = 131072
+
 __all__ = [
     "GIE_SCATTER_TRITON_AVAILABLE",
+    "MAX_TILED_CHANNELS",
     "gie_zonal_scatter",
 ]
 
@@ -322,6 +332,7 @@ if GIE_SCATTER_TRITON_AVAILABLE:
             and zonal.is_cuda
             and zonal.dtype is torch.float32
             and lmax == 3
+            and radial.shape[2] <= MAX_TILED_CHANNELS
         ):
             return _reference(zonal, radial, dst, n_nodes)
         # The CUDA sibling enforces the same invariant (TORCH_CHECK in
@@ -393,6 +404,7 @@ if GIE_SCATTER_TRITON_AVAILABLE:
             and zonal.is_cuda
             and zonal.dtype is torch.float32
             and lmax == 3
+            and radial.shape[2] <= MAX_TILED_CHANNELS
         ):
             return _backward_reference(grad_out, zonal, radial, dst, int(lmax))
         n_edge, n_row = zonal.shape
@@ -474,6 +486,17 @@ if GIE_SCATTER_TRITON_AVAILABLE:
 
     def _backward(ctx, grad_out):
         zonal, radial, dst = ctx.saved_tensors
+        # The fused backward op registers no derivative of its own.  A
+        # higher-order request (Hessian mode drives this formula with
+        # ``create_graph=True``, so grad mode stays on, and the incoming
+        # cotangent may itself require grad) must keep the differentiable
+        # reference chain instead of the opaque kernel -- otherwise the
+        # inner differentiation dies on the backward operator.
+        if torch.is_grad_enabled() and (
+            grad_out.requires_grad or zonal.requires_grad or radial.requires_grad
+        ):
+            gz, gr = _backward_reference(grad_out, zonal, radial, dst, ctx.lmax)
+            return gz, gr, None, None, None, None, None
         gz, gr = _gie_scatter_bwd_op(
             grad_out.contiguous(), zonal, radial, dst, ctx.lmax
         )

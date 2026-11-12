@@ -246,6 +246,7 @@ class GeometricInitialEmbedding(nn.Module):
             # single source of truth for the capability check below.
             from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
                 GIE_SCATTER_TRITON_AVAILABLE,
+                MAX_TILED_CHANNELS,
                 gie_zonal_scatter,
             )
 
@@ -261,6 +262,11 @@ class GeometricInitialEmbedding(nn.Module):
             if (
                 GIE_SCATTER_TRITON_AVAILABLE
                 and torch.cuda.is_available()
+                # The kernel tiles channels into one padded power-of-two
+                # block; beyond MAX_TILED_CHANNELS the tile exceeds Triton's
+                # per-tensor element limit and cannot compile, so such a
+                # model keeps the reference composition.
+                and self.channels <= MAX_TILED_CHANNELS
                 and torch.equal(self.non_scalar_row_index, packed_rows)
                 and torch.equal(self.radial_slot_index_for_row, packed_slots)
             ):
@@ -328,9 +334,11 @@ class GeometricInitialEmbedding(nn.Module):
         # operator folds the degree normalization into its kernel, the
         # Triton one leaves the scale in the traced graph so its cotangent
         # keeps flowing).  Training keeps the reference composition for the
-        # Triton backend: the fused backward registers no next-derivative
-        # formula, and force-loss training differentiates the backward
-        # itself.
+        # Triton backend: force-loss training differentiates the backward
+        # itself, which routes the fused op through its differentiable
+        # reference chain; keeping training on the reference composition
+        # leaves that fallback to the eval Hessian path and one autograd
+        # code path under training.
         if spin_l1_message is None and edge_cache.csr_cache is not None:
             cuda_selected = self._can_fuse_scatter(zonal_coupling)
             # The Triton operator serves the same CUDA-only contract: the
