@@ -121,6 +121,16 @@ def make_base_fitting(
             """
             return [], []
 
+        def adam_route_patterns(self) -> list[str]:
+            """Returns the name patterns that take the AdamW path under HybridMuon.
+
+            The patterns are relative to the fitting and name matrices whose
+            rows only a small part of the data constrains, so that an
+            orthogonalized step, which moves every row at the same rate, would
+            grow them beyond what the data measure. Concrete default ``[]``.
+            """
+            return []
+
         def __new__(cls: type, *args: Any, **kwargs: Any) -> Any:
             if cls is BF:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))

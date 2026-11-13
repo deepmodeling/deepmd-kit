@@ -1203,6 +1203,25 @@ class ExpertComponent:
             banks.append(router.adamw_element)
         return banks, list(self.element_slot)
 
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the component, of the tensors that take the
+        AdamW path under HybridMuon.
+
+        The task increments of the maps are part of it: a task constrains them
+        only on the geometries its own data covers, so an orthogonalized step,
+        which moves every row of a matrix at the same rate, would grow them
+        into the directions no task labels. Adam moves a row in proportion to
+        its own gradient history, and the decoupled decay pulls an increment
+        that no data pushes back toward the shared weights.
+
+        Returns
+        -------
+        list[str]
+            One pattern naming the task increments, or nothing without MoE.
+        """
+        return [] if self.moe is None else ["task_weight."]
+
     # === Charge/spin state of the frames ===
 
     def _router_reads_state(self) -> bool:

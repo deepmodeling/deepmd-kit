@@ -14,6 +14,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProduc
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
+from deepmd.dpmodel.utils.expert_linear import (
+    MAP_EXPERT_ATTRS,
+)
 from deepmd.pt_expt.common import (
     promote_buffers,
     register_dpmodel_mapping,
@@ -88,7 +91,7 @@ register_dpmodel_mapping(GridProductDP, lambda v: GridProduct())
 # to trainable ``ParameterList`` by ``_try_convert_list``.
 # ---------------------------------------------------------------------------
 # Element increments and routed experts of an expert map.
-_EXPERT_ATTRS = ("element_weight", "element_bias", "expert_weight", "expert_bias")
+_EXPERT_ATTRS = MAP_EXPERT_ATTRS
 _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     # dpa4_nn.norm
     "RMSNorm": ("adam_scale",),
@@ -172,11 +175,12 @@ class DescrptDPA4(DescrptDPA4DP):
         AdamW path under HybridMuon: the first layer of the radial embedding and
         the radial projection of the environment seed, which read the radial
         basis and whose rows for rarely visited separations receive almost no
-        gradient.
+        gradient, and the task increments of the expert maps.
         """
         return [
             "radial_embedding.net.0.",
             "env_seed_embedding.rbf_proj_layer1.",
+            *super().adam_route_patterns(),
         ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

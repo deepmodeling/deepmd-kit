@@ -61,6 +61,47 @@ if TYPE_CHECKING:
         Sequence,
     )
 
+#: Attributes that only a map with element increments or experts holds.
+MAP_EXPERT_ATTRS: tuple[str, ...] = (
+    "element_weight",
+    "element_bias",
+    "expert_weight",
+    "expert_bias",
+)
+
+#: Leaf names of every parameter that only MoE holds: the attributes of the
+#: maps above and the task of a component. A plain model therefore keeps every
+#: key of the same model with MoE, and the parameters MoE adds are exactly the
+#: keys whose leaf carries one of these names.
+EXPERT_PARAMETER_NAMES: tuple[str, ...] = (
+    "task_weight",
+    "task_bias",
+    *MAP_EXPERT_ATTRS,
+    "adam_task_embedding",
+    "expert_router",
+)
+
+
+def is_expert_parameter(name: str) -> bool:
+    """Whether a parameter name carries a term that only MoE holds.
+
+    The name of a term is the leaf of its parameter, except for the router,
+    whose own parameters carry names of their own under the segment
+    ``expert_router``.
+
+    Parameters
+    ----------
+    name
+        Parameter name, relative to the model or to a component of it.
+
+    Returns
+    -------
+    bool
+        Whether a segment of the name is one of
+        :data:`EXPERT_PARAMETER_NAMES`.
+    """
+    return any(segment in EXPERT_PARAMETER_NAMES for segment in name.lower().split("."))
+
 
 @dataclasses.dataclass(frozen=True)
 class ChunkWeights:

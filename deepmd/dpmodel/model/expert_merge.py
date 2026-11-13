@@ -27,11 +27,18 @@ from deepmd.dpmodel.atomic_model.dp_atomic_model import (
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     LinearEnergyAtomicModel,
 )
+from deepmd.dpmodel.utils.expert_linear import (
+    is_expert_parameter,
+)
 from deepmd.dpmodel.utils.expert_route import (
     element_names,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Sequence,
+    )
+
     from deepmd.dpmodel.utils.expert_route import (
         ExpertScenario,
     )
@@ -191,6 +198,51 @@ def check_slot_elements(model: Any, source: Any) -> None:
                 f"{theirs}, in this order, and those of this model to {ours}; "
                 "state `moe.element` as the list of the pretrained model"
             )
+
+
+def check_expert_state(
+    missing: Sequence[str],
+    unexpected: Sequence[str],
+) -> None:
+    """
+    Check that a model state differs from another only by the terms of MoE.
+
+    Every term MoE adds starts at zero, so the state of a model without MoE to
+    the same architecture differs from the state of the model with MoE by the
+    keys of those terms alone. Such a source can initialize or fine-tune the
+    target as it is, because the target begins at the plain model. A source
+    that lacks other keys, holds keys the target lacks, or replaces the MoE of
+    the target with a shape of its own is refused.
+
+    Parameters
+    ----------
+    missing
+        Keys of the target that the source does not hold.
+    unexpected
+        Keys of the source that the target does not hold.
+
+    Raises
+    ------
+    ValueError
+        If a missing key is not a term of MoE, or the source holds a key that
+        the target lacks.
+    """
+    plain_missing = sorted(name for name in missing if not is_expert_parameter(name))
+    if plain_missing:
+        shown = ", ".join(plain_missing[:5])
+        more = "" if len(plain_missing) <= 5 else f" and {len(plain_missing) - 5} more"
+        raise ValueError(
+            "the pretrained model lacks parameters of this model that MoE does "
+            f"not add: {shown}{more}"
+        )
+    if unexpected:
+        shown = ", ".join(sorted(unexpected)[:5])
+        more = "" if len(unexpected) <= 5 else f" and {len(unexpected) - 5} more"
+        raise ValueError(
+            "the pretrained model holds parameters that this model does not "
+            f"have: {shown}{more}; MoE adds weights to a model, so start from "
+            "a model whose MoE is part of this one"
+        )
 
 
 def merge_experts(model: Any, scenario: ExpertScenario) -> None:

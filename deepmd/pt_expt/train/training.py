@@ -48,6 +48,7 @@ except ImportError:
 
 from deepmd.dpmodel.model.expert_merge import (
     branch_local_parameters,
+    check_expert_state,
     check_slot_elements,
     element_banks,
     fitting_has_experts,
@@ -2476,7 +2477,18 @@ class Trainer(AbstractTrainer):
                                 owner = key[: key.index(".long_range.")]
                                 fresh_long_range[owner] = model_key
                         else:
-                            new_state[key] = pretrained_state[pretrained_key]
+                            source_value = pretrained_state[pretrained_key]
+                            if source_value.shape != target_state[key].shape:
+                                raise ValueError(
+                                    f"the pretrained parameter {pretrained_key!r} "
+                                    f"has shape {tuple(source_value.shape)}, but "
+                                    f"{key!r} has shape "
+                                    f"{tuple(target_state[key].shape)}; MoE adds "
+                                    "weights to a model, so its expert count and "
+                                    "its elements have to match the pretrained "
+                                    "model"
+                                )
+                            new_state[key] = source_value
                 self._unwrapped.load_state_dict(new_state)
 
                 # A long-range module added to the pretrained model takes the
@@ -2540,7 +2552,15 @@ class Trainer(AbstractTrainer):
                 )
             else:
                 # --- Normal resume (init_model / restart) --------------------
-                self._unwrapped.load_state_dict(state_dict)
+                # MoE starts at zero, so the state of a model without it to
+                # the same architecture initializes the plain part of an MoE
+                # model; the terms of MoE keep their initial zero.
+                target_state = self._unwrapped.state_dict()
+                check_expert_state(
+                    [name for name in target_state if name not in state_dict],
+                    [name for name in state_dict if name not in target_state],
+                )
+                self._unwrapped.load_state_dict(state_dict, strict=False)
 
             if shared_links is not None:
                 # Re-apply sharing after loading checkpoint

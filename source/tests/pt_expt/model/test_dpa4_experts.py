@@ -13,8 +13,12 @@ from torch.fx.experimental.proxy_tensor import (
 from deepmd.dpmodel.model.base_model import BaseModel as BaseModelDP
 from deepmd.dpmodel.model.expert_merge import (
     branch_local_parameters,
+    check_expert_state,
     element_banks,
     learned_atomic_models,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    is_expert_parameter,
 )
 from deepmd.dpmodel.utils.expert_route import (
     frame_states,
@@ -24,6 +28,9 @@ from deepmd.infer import (
 )
 from deepmd.main import (
     parse_args,
+)
+from deepmd.pt.optimizer.hybrid_muon import (
+    adam_route_patterns,
 )
 from deepmd.pt_expt.entrypoints.main import (
     change_bias,
@@ -630,3 +637,69 @@ def test_magnetic_types_separate_compiled_graphs() -> None:
     )
     gas, bulk = (_get_model_structure_key(models[key]) for key in ("gas", "bulk"))
     assert gas[1] != bulk[1]
+
+
+def test_task_increments_take_the_adam_path() -> None:
+    """HybridMuon grows the task increments only where a task labels them.
+
+    An orthogonalized step moves every row of a matrix at the same rate, so a
+    task increment on the Muon route grows into the directions no task covers.
+    The descriptor and the fitting declare their increments, and the decoupled
+    decay pulls the ones no data push back toward the shared weights.
+    """
+    models, _ = multitask_models()
+    model = models["gas"]
+    patterns = tuple(pattern.lower() for pattern in adam_route_patterns([model]))
+    assert any(pattern.endswith("descriptor.task_weight.") for pattern in patterns)
+    assert any(pattern.endswith("fitting_net.task_weight.") for pattern in patterns)
+
+    def routed(name: str) -> bool:
+        return any(pattern in name.lower() for pattern in patterns)
+
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            continue
+        if ".task_weight." in name:
+            assert routed(name), name
+        elif ".task_bias." in name or "task_embedding" in name:
+            # Leaf names that name no matrix keep the undecayed Adam path.
+            assert not routed(name), name
+        elif "element_weight" in name or "expert_weight" in name:
+            assert not routed(name), name
+
+
+def _plain_parameters() -> dict:
+    """Model parameters of the MoE model without the ``moe`` options."""
+    model = model_params(EXPERTS, EXPERTS)
+    for region in ("descriptor", "fitting_net"):
+        model[region].pop("moe")
+    return model
+
+
+def test_a_plain_state_is_the_start_of_every_moe_model() -> None:
+    """Loading a plain state leaves the MoE model the plain function.
+
+    Every term MoE adds starts at zero, so a model trained without MoE is the
+    state a model with MoE starts from: the increments keep their zeros and
+    the energy and force are those of the plain model.
+    """
+    target = model_params(EXPERTS, EXPERTS)
+    plain_params = _plain_parameters()
+    with pytest.raises(RuntimeError, match="Missing key"):
+        get_model(copy.deepcopy(target)).to(DEVICE).load_state_dict(
+            get_model(copy.deepcopy(plain_params)).to(DEVICE).state_dict()
+        )
+    moe = get_model(copy.deepcopy(target)).to(DEVICE).eval()
+    plain = get_model(copy.deepcopy(plain_params)).to(DEVICE).eval()
+    plain_state = plain.state_dict()
+    moe_state = moe.state_dict()
+    check_expert_state(
+        [key for key in moe_state if key not in plain_state],
+        [key for key in plain_state if key not in moe_state],
+    )
+    moe.load_state_dict(plain_state, strict=False)
+    # The increments keep their zeros, and the function is the plain one.
+    for name, parameter in moe.named_parameters():
+        if is_expert_parameter(name) and ".expert_router." not in name:
+            assert float(parameter.abs().max()) == 0.0, name
+    assert_same_output(moe(COORD, ATYPE, BOX), plain(COORD, ATYPE, BOX), atol=1e-10)

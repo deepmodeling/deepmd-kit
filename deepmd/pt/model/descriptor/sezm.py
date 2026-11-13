@@ -2449,11 +2449,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         AdamW path under HybridMuon: the first layer of the radial embedding and
         the radial projection of the environment seed, which read the radial
         basis and whose rows for rarely visited separations receive almost no
-        gradient.
+        gradient, and the task increments of the expert maps.
         """
         return [
             "radial_embedding.net.0.",
             "env_seed_embedding.rbf_proj_layer1.",
+            *super().adam_route_patterns(),
         ]
 
     def get_rcut(self) -> float:

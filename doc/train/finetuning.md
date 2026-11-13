@@ -341,3 +341,39 @@ is initialized anew, as for any new branch.
 The elements with weights of their own are those of the pretrained model, so
 `moe.element` of the fine-tuned model names the same elements in the same
 order.
+
+### Adding MoE to a model trained without it
+
+A model trained without MoE, or a model merged from an MoE model, has no
+weights of a task or of an element. Writing a `moe` section in the input of a
+fine-tuning or an initialization adds them, and every one of them starts at
+zero, so the training begins at the model it started from:
+
+```json
+{
+  "model": {
+    "preset": "dpa4.5-mini-v20261111",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "moe": {}
+    },
+    "fitting_net": {
+      "moe": {}
+    }
+  }
+}
+```
+
+The same holds for a model that already has MoE: adding `element` or more
+experts gives the new weights the same zero start. Wherever both models have a
+weight of the same name, the expert count and the elements have to agree,
+since MoE adds weights to a model and never removes them.
+
+`--init-model` takes a checkpoint without MoE as the start of an MoE model,
+which keeps the function of the checkpoint at the first step. `--finetune`
+does the same and adjusts the output bias to the new data. With
+`--use-pretrain-script`, a `moe` section written in the input is kept when the
+pretrained model has none; a pretrained model that has MoE keeps its own.

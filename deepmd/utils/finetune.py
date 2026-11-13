@@ -20,7 +20,7 @@ from deepmd.utils.spin import (
 
 log = logging.getLogger(__name__)
 
-_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable"})
+_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable", "moe"})
 _MISSING = object()
 _MAX_DESCRIPTOR_CONFIG_DIFFS = 20
 _MAX_CONFIG_VALUE_LENGTH = 200
@@ -632,11 +632,28 @@ class FinetuneRuleBuilder:
             "fitting_net": single_config.get("fitting_net", {}).get("trainable", True),
         }
         default_chg_spin = single_config.get("descriptor", {}).get("default_chg_spin")
+        target_moe = {
+            region: single_config.get(region, {}).get("moe")
+            for region in ("descriptor", "fitting_net")
+        }
         single_config["descriptor"] = deepcopy(pretrained_config["descriptor"])
         if default_chg_spin is not None:
             single_config["descriptor"]["default_chg_spin"] = default_chg_spin
+        # MoE adds weights to a model, so an input may add it to a pretrained
+        # model that has none; a pretrained model with MoE keeps its own, which
+        # carries the increments it trained.
+        for region, moe in target_moe.items():
+            if moe is not None and single_config[region].get("moe") is None:
+                single_config[region]["moe"] = deepcopy(moe)
         if not random_fitting:
             single_config["fitting_net"] = deepcopy(pretrained_config["fitting_net"])
+            if (
+                target_moe["fitting_net"] is not None
+                and single_config["fitting_net"].get("moe") is None
+            ):
+                single_config["fitting_net"]["moe"] = deepcopy(
+                    target_moe["fitting_net"]
+                )
             # A long-range module reads the descriptor beside the fitting and
             # is carried over with it; the trainability set in the input
             # applies to its parts as to the descriptor and the fitting.

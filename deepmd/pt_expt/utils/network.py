@@ -13,6 +13,7 @@ from deepmd.dpmodel.common import (
 )
 from deepmd.dpmodel.utils.expert_linear import (
     EXPERT_VARIANTS,
+    MAP_EXPERT_ATTRS,
 )
 from deepmd.dpmodel.utils.network import EmbeddingNet as EmbeddingNetDP
 from deepmd.dpmodel.utils.network import ExpertFittingNet as ExpertFittingNetDP
@@ -278,12 +279,9 @@ class ExpertLayer(ExpertLayerDP, NativeLayer):
     follows it is that of the plain PyTorch layer.
     """
 
-    _PARAMETER_NAMES: ClassVar[frozenset[str]] = NativeLayer._PARAMETER_NAMES | {
-        "element_weight",
-        "element_bias",
-        "expert_weight",
-        "expert_bias",
-    }
+    _PARAMETER_NAMES: ClassVar[frozenset[str]] = NativeLayer._PARAMETER_NAMES | set(
+        MAP_EXPERT_ATTRS
+    )
 
     def forward(self, x: torch.Tensor, weights: Any) -> torch.Tensor:
         return self.call(x, weights)

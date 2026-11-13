@@ -484,3 +484,51 @@ def test_finetune_rule_builder_rejects_changed_magnetic_element_set():
         assert "active magnetic element set" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def _moe_config(moe: dict | None, region: str = "descriptor") -> dict:
+    """Return a model config that states ``moe`` in one region."""
+    config = _model_config(["O", "H"])
+    config[region]["moe"] = deepcopy(moe)
+    return config
+
+
+def test_finetune_rule_adds_the_target_moe_to_a_plain_pretrained_model():
+    """An input may add MoE to a pretrained model that has none."""
+    pretrained = _model_config(["O", "H"])
+    target = _moe_config({"n_experts": 3})
+    target["fitting_net"]["moe"] = {"n_experts": 3}
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["descriptor"]["moe"] == {"n_experts": 3}
+    assert updated["fitting_net"]["moe"] == {"n_experts": 3}
+
+
+def test_finetune_rule_keeps_the_pretrained_moe():
+    """A pretrained model that has MoE keeps the increments it trained."""
+    pretrained = _moe_config({"n_experts": 4})
+    target = _moe_config({"n_experts": 3})
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["descriptor"]["moe"] == {"n_experts": 4}
+
+
+def test_finetune_rule_leaves_moe_out_of_the_configuration_warnings(caplog):
+    """Adding MoE is not a descriptor mismatch, since its terms start at zero."""
+    plain = _model_config(["O", "H"])
+    target = _moe_config({"n_experts": 3})
+    with caplog.at_level(logging.WARNING, logger="deepmd.utils.finetune"):
+        finetune.warn_configuration_mismatch_during_finetune(
+            target["descriptor"], plain["descriptor"]
+        )
+    assert "moe" not in caplog.text

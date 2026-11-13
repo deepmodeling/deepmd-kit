@@ -28,6 +28,7 @@ from deepmd.dpmodel.fitting.ener_fitting import (
 )
 from deepmd.dpmodel.model.base_model import BaseModel as BaseModelDP
 from deepmd.dpmodel.model.expert_merge import (
+    check_expert_state,
     check_slot_elements,
     merge_experts,
     slot_elements,
@@ -37,6 +38,7 @@ from deepmd.dpmodel.model.model import (
 )
 from deepmd.dpmodel.utils.expert_linear import (
     ExpertWeights,
+    is_expert_parameter,
     linear_with_experts,
 )
 from deepmd.dpmodel.utils.expert_route import (
@@ -965,3 +967,72 @@ def test_sharing_keeps_the_task_and_merges_the_envelope_mass() -> None:
     # The first share already merged the two counts (100 + 2 * 50).
     np.testing.assert_allclose(base.envelope_mass, 3.5)
     assert base.envelope_count == 200.0
+
+
+def _array_names(model) -> set[str]:
+    """Names of the stored arrays of a dpmodel model."""
+    names: set[str] = set()
+
+    def collect(node, path):
+        if isinstance(node, np.ndarray):
+            names.add(path)
+        elif isinstance(node, dict):
+            for key, value in node.items():
+                collect(value, f"{path}.{key}" if path else str(key))
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                collect(value, f"{path}.{index}")
+
+    collect(model.serialize(), "")
+    return names
+
+
+def _states(source, target):
+    """Missing and unexpected keys between the states of two models."""
+    ours = _array_names(target)
+    theirs = _array_names(source)
+    return (
+        [name for name in sorted(ours) if name not in theirs],
+        [name for name in sorted(theirs) if name not in ours],
+    )
+
+
+@pytest.mark.parametrize("variant", ["task", "element", "descriptor", "full"])
+def test_a_plain_model_starts_any_moe_model(variant) -> None:
+    """Every term MoE adds starts at zero, so the plain state is the start."""
+    plain = build_model()
+    moe = build_model(variant)
+    missing, unexpected = _states(plain, moe)
+    assert not unexpected
+    assert any("task_weight" in name for name in missing)
+    check_expert_state(missing, unexpected)
+
+
+@pytest.mark.parametrize(("variant", "grown"), [("task", "full"), ("element", "full")])
+def test_a_task_model_starts_a_model_with_more_moe(variant, grown) -> None:
+    """MoE grows from the task to the elements and the experts."""
+    source = build_model(variant)
+    target = build_model(grown)
+    missing, unexpected = _states(source, target)
+    assert not unexpected
+    check_expert_state(missing, unexpected)
+
+
+def test_a_state_check_refuses_a_model_that_lacks_plain_parameters() -> None:
+    """A source missing a shared weight cannot start the target."""
+    with pytest.raises(ValueError, match="does not add"):
+        check_expert_state(["atomic_model.descriptor.blocks.0.ffns.0.weight"], [])
+
+
+def test_a_state_check_refuses_a_source_with_extra_parameters() -> None:
+    """MoE adds weights to a model; it never drops them."""
+    with pytest.raises(ValueError, match="holds parameters that this model"):
+        check_expert_state([], ["atomic_model.descriptor.task_weight.0"])
+
+
+def test_every_moe_parameter_is_recognized() -> None:
+    """The state of a model differs from the plain state by MoE terms only."""
+    plain = build_model()
+    full = build_model("full")
+    missing, _ = _states(plain, full)
+    assert all(is_expert_parameter(name) for name in missing)

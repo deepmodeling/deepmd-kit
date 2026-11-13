@@ -116,7 +116,13 @@ def multi_task_config(branches: dict[str, dict], fitting: dict = _FITTING) -> di
     }
 
 
-def build_trainer(config: dict, finetune_model: str | None = None):
+def build_trainer(
+    config: dict,
+    finetune_model: str | None = None,
+    *,
+    restart_model: str | None = None,
+    init_model: str | None = None,
+):
     config = deepcopy(config)
     config["model"] = expand_model_preset(config["model"])
     multi_task = "model_dict" in config["model"]
@@ -132,6 +138,8 @@ def build_trainer(config: dict, finetune_model: str | None = None):
     config = normalize(config, multi_task=multi_task)
     return get_trainer(
         config,
+        init_model=init_model,
+        restart_model=restart_model,
         finetune_model=finetune_model,
         finetune_links=finetune_links,
         shared_links=shared_links,
@@ -338,6 +346,64 @@ class TestExpertTasks(unittest.TestCase):
                     state[name.replace("model.Default.", "model.vapor.")], value
                 )
 
+    def test_an_unmerged_model_continues_training(self) -> None:
+        """A checkpoint that still holds MoE restarts and initializes a model.
 
-if __name__ == "__main__":
-    unittest.main()
+        MoE is part of the model, so a checkpoint of a model that has it holds
+        the increments and the router along with the shared weights, and a
+        training that starts from it continues the MoE model rather than a
+        plain one.
+        """
+        trainer = build_trainer(single_task_config("water"))
+        trainer.run()
+        checkpoint = os.path.join(self.tmpdir, "model.ckpt.pt")
+        saved = torch.load(checkpoint, map_location=DEVICE, weights_only=True)["model"]
+        expert = {
+            name
+            for name in saved
+            if any(
+                key in name
+                for key in ("task_weight", "element_weight", "expert_weight")
+            )
+        }
+        self.assertTrue(expert)
+        self.assertTrue(any(bool(saved[name].any()) for name in expert))
+        self.assertTrue(any("expert_router" in name for name in saved))
+
+        for mode in ("restart_model", "init_model"):
+            resumed = build_trainer(single_task_config("water"), **{mode: checkpoint})
+            state = resumed._unwrapped.state_dict()
+            for name in expert:
+                torch.testing.assert_close(state[name], saved[name], msg=name)
+            resumed.run()
+
+    def test_a_multi_task_model_continues_training(self) -> None:
+        """A multi-task checkpoint keeps the MoE of every branch.
+
+        The branches share the descriptor, so they share its MoE as well; a
+        restart and an initialization restore those weights along with the
+        task increments of every branch.
+        """
+        branches = {"water": {}, "vapor": {}}
+        trainer = build_trainer(multi_task_config(branches, _PLAIN_FITTING))
+        trainer.run()
+        checkpoint = os.path.join(self.tmpdir, "model.ckpt.pt")
+        saved = torch.load(checkpoint, map_location=DEVICE, weights_only=True)["model"]
+        expert = {
+            name
+            for name in saved
+            if any(
+                key in name
+                for key in ("task_weight", "element_weight", "expert_weight")
+            )
+        }
+        self.assertTrue(expert)
+        for mode in ("restart_model", "init_model"):
+            resumed = build_trainer(
+                multi_task_config(branches, _PLAIN_FITTING), **{mode: checkpoint}
+            )
+            self.assertEqual(set(resumed.model_keys), set(branches))
+            state = resumed._unwrapped.state_dict()
+            for name in expert:
+                torch.testing.assert_close(state[name], saved[name], msg=name)
+            resumed.run()
