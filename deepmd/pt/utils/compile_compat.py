@@ -42,6 +42,7 @@ __all__ = [
     "SUPPORTED_COMPILE_TORCH",
     "apply_global_compile_patches",
     "build_inductor_compile_options",
+    "build_make_fx_decompositions",
     "check_compile_torch_version",
     "get_task_buffer_names",
     "get_task_buffer_values",
@@ -593,6 +594,40 @@ def replace_sym_numel_with_method(gm: torch.fx.GraphModule) -> None:
     if replaced:
         gm.graph.lint()
         gm.recompile()
+
+
+def build_make_fx_decompositions() -> dict[Any, Any]:
+    """Return the operator decompositions required when tracing force graphs.
+
+    ``make_fx`` materializes the first-order force ``autograd.grad`` into the
+    forward FX graph before ``torch.compile`` differentiates that graph a
+    second time for parameter gradients. Two ATen operators require explicit
+    decomposition at trace time:
+
+    * ``aten.silu_backward.default`` has no registered higher-order autograd
+      formula; decomposing it into ``sigmoid`` and pointwise products makes the
+      traced first derivative twice differentiable.
+    * ``aten.sgn.default`` (emitted by ``aten.abs`` backward) queries concrete
+      ``aten.size.default`` in its C++ backward formula, which forces symbolic
+      node and edge dimensions to specialize to constants during AOTAutograd
+      joint tracing. Decomposing it lowers real inputs to ``aten.sign.default``,
+      whose backward preserves symbolic shapes.
+
+    Returns
+    -------
+    dict[Any, Any]
+        Mapping suitable for ``make_fx(..., decomposition_table=...)``.
+    """
+    from torch._decomp import (
+        get_decompositions,
+    )
+
+    return get_decompositions(
+        [
+            torch.ops.aten.silu_backward.default,
+            torch.ops.aten.sgn.default,
+        ]
+    )
 
 
 def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]:

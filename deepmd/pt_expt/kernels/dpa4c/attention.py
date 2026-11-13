@@ -381,11 +381,16 @@ def build_block_artifacts(
 
 
 def _soft_saturate(value: torch.Tensor, knee: float) -> torch.Tensor:
-    scale = value.abs().clamp_min(knee)
+    knee_scalar = value.new_full((), knee)
+    scale = torch.where(
+        value >= knee_scalar,
+        value,
+        torch.where(value <= -knee_scalar, -value, knee_scalar),
+    )
     scaled_value = value / scale
-    scaled_knee = knee / scale
+    scaled_knee = knee_scalar / scale
     return (
-        knee
+        knee_scalar
         * scaled_value
         / torch.sqrt(scaled_value * scaled_value + scaled_knee * scaled_knee)
     )

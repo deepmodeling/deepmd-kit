@@ -110,6 +110,7 @@ from deepmd.pt.optimizer.hybrid_muon import (
 from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
     build_inductor_compile_options,
+    build_make_fx_decompositions,
     check_compile_torch_version,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
@@ -771,15 +772,7 @@ def _trace_and_compile(
     if charge_spin is not None:
         charge_spin = _trace_pad_dim(charge_spin[:1], 0, trace_nf)
 
-    # Decompose silu_backward into primitive ops (sigmoid + mul + ...)
-    # so that inductor can compile the graph without requiring a
-    # higher-order derivative that PyTorch does not register for
-    # the fused silu backward kernel.
-    from torch._decomp import (
-        get_decompositions,
-    )
-
-    decomp_table = get_decompositions([torch.ops.aten.silu_backward.default])
+    decomp_table = build_make_fx_decompositions()
 
     traced_lower = make_fx(
         fn,
@@ -899,9 +892,6 @@ def _trace_and_compile_graph(
         Per-task buffers promoted to FX placeholders (see
         :func:`_detect_task_buffers`).
     """
-    from torch._decomp import (
-        get_decompositions,
-    )
     from torch.fx.experimental.proxy_tensor import (
         make_fx,
     )
@@ -1116,7 +1106,7 @@ def _trace_and_compile_graph(
                     if _fitting is not None:
                         _fitting._buffers[name] = orig
 
-    decomp_table = get_decompositions([torch.ops.aten.silu_backward.default])
+    decomp_table = build_make_fx_decompositions()
 
     traced_lower = make_fx(
         fn,

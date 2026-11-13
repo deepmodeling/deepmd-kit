@@ -9,7 +9,10 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.compile_compat import (
     build_inductor_compile_options,
+    build_make_fx_decompositions,
     forbidden_dims_from_model,
+    rebuild_graph_module,
+    strip_saved_tensor_detach,
 )
 
 
@@ -125,3 +128,53 @@ def test_fusion_size_rejects_invalid_values(monkeypatch, value: str) -> None:
 
     with pytest.raises(ValueError, match="DP_FUSION_SIZE must be a positive integer"):
         build_inductor_compile_options()
+
+
+def test_make_fx_decompositions_keep_abs_double_backward_dynamic() -> None:
+    """``build_make_fx_decompositions`` keeps ``abs`` + ``silu`` dynamic in 2nd backward."""
+    from torch.fx.experimental.proxy_tensor import (
+        make_fx,
+    )
+
+    weight = torch.nn.Parameter(
+        torch.linspace(-1.5, 1.5, 4, dtype=torch.float64, device="cpu")
+    )
+
+    def eager_step(x: torch.Tensor) -> torch.Tensor:
+        y = torch.nn.functional.silu(torch.abs(x * weight))
+        (grad_x,) = torch.autograd.grad(y.sum(), x, create_graph=True)
+        return y.square().sum() + grad_x.square().sum()
+
+    traced = make_fx(
+        eager_step,
+        tracing_mode="symbolic",
+        _allow_non_fake_inputs=True,
+        decomposition_table=build_make_fx_decompositions(),
+    )(torch.randn(7, 4, dtype=torch.float64, device="cpu", requires_grad=True))
+    strip_saved_tensor_detach(traced, remove_all=True)
+    traced = rebuild_graph_module(traced)
+
+    torch._dynamo.reset()
+    torch._dynamo.utils.counters.clear()
+    compiled = torch.compile(traced, backend="aot_eager", dynamic=True)
+    for index, rows in enumerate((8, 13, 19)):
+        generator = torch.Generator(device="cpu").manual_seed(100 + index)
+        sample = torch.randn(
+            rows, 4, dtype=torch.float64, device="cpu", generator=generator
+        )
+
+        x_ref = sample.clone().requires_grad_(True)
+        weight.grad = None
+        loss_ref = eager_step(x_ref)
+        loss_ref.backward()
+        grad_w_ref = weight.grad.detach().clone()
+
+        x_got = sample.clone().requires_grad_(True)
+        weight.grad = None
+        loss_got = compiled(x_got)
+        loss_got.backward()
+        torch.testing.assert_close(loss_got, loss_ref)
+        torch.testing.assert_close(weight.grad, grad_w_ref)
+
+    assert torch._dynamo.utils.counters["frames"]["ok"] == 1
+    torch._dynamo.reset()
