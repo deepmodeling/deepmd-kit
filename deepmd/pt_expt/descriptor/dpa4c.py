@@ -488,9 +488,11 @@ class DescrptDPA4C(DescrptDPA4CDP):
         shared_level
             Sharing level. Only level zero is supported.
         model_prob
-            Model sampling probability accepted by the common ABI; unused.
+            Model sampling probability accepted by the common ABI; it weights
+            the envelope mass this replica measured in the merged floor.
         resume
-            Checkpoint-restoration flag accepted by the common ABI; unused.
+            Checkpoint-restoration flag accepted by the common ABI; a resumed
+            model already carries the merged mass.
 
         Raises
         ------

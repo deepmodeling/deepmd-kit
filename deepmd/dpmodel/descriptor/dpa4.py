@@ -112,7 +112,9 @@ from .dpa4_nn.edge_cache import (
     _edge_cache_from_arrays,
     edge_cache_to_dtype,
     load_or_measure_envelope_mass,
+    merge_envelope_mass,
     restrict_edge_cache,
+    store_envelope_mass,
 )
 from .dpa4_nn.embedding import (
     ChargeSpinEmbedding,
@@ -3029,13 +3031,7 @@ class DescrptDPA4(ExpertComponent, NativeOP, BaseDescriptor):
             ntypes=self.ntypes,
             exclude_types=self.exclude_types,
         )
-        xp = array_api_compat.array_namespace(self.envelope_mass)
-        self.envelope_mass[...] = xp.asarray(
-            mass,
-            dtype=self.envelope_mass.dtype,
-            device=array_api_compat.device(self.envelope_mass),
-        )
-        self.envelope_count = float(count)
+        store_envelope_mass(self, mass, count)
         self._init_null_masses()
 
     def _init_null_masses(self) -> None:
@@ -3054,14 +3050,7 @@ class DescrptDPA4(ExpertComponent, NativeOP, BaseDescriptor):
         descriptor, as the shared statistics of other descriptors; the null
         masses then start at the merged floor.
         """
-        total = self.envelope_count + weight * replica.envelope_count
-        if total == 0.0:
-            return
-        self.envelope_mass[...] = (
-            self.envelope_count * self.envelope_mass
-            + weight * replica.envelope_count * replica.envelope_mass
-        ) / total
-        self.envelope_count = total
+        merge_envelope_mass(self, replica, weight)
         self._init_null_masses()
 
     def _variables(self) -> dict[str, np.ndarray]:

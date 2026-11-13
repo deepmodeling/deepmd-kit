@@ -239,6 +239,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         Rank, counted from the smallest, of the distinct per-frame shortest
         separation of a pair that becomes its data edge (see
         :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`).
+    density_floor
+        Floor of the two neighborhood normalizers in units of the mean
+        envelope mass of the training neighborhoods, or zero for the absolute
+        default ``1/4``. :meth:`compute_input_stats` measures the mass and
+        stores it with the model, so the normalizers read
+        ``(d + density_floor * m_bar)``.
 
     Raises
     ------
@@ -256,6 +262,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
 
     _update_sel_cls = UpdateSel
     _ENVELOPE_EXPONENT = 5
+    # Absolute floor of the neighborhood normalizers, read by the default and
+    # by a record written before ``density_floor`` existed.
     _DEGREE_NORM_FLOOR = 0.25
     _EPS = 1.0e-7
     _STAT_EPS = 1.0e-12
@@ -313,6 +321,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         n_blocks: int = 1,
         contact_clamp: float | None = None,
         contact_support: int = DEFAULT_SUPPORT,
+        density_floor: float = 0.0,
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
         if spin is not None:
@@ -339,6 +348,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             raise ValueError(
                 "A contact clamp starts every pair at its covalent bond length, "
                 "so it needs a `type_map` of element symbols."
+            )
+        if not 0.0 <= density_floor < math.inf:
+            raise ValueError(
+                f"`density_floor` must be non-negative and finite, got {density_floor}"
             )
         default_chg_spin = (
             None
@@ -513,7 +526,29 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.mean = mean
         self.stddev = np.ones_like(mean)
         self.compress = False
+        # Mean envelope mass of the training neighborhoods, set by
+        # ``compute_input_stats``; one neighbor until then. Only a descriptor
+        # whose floor reads the mass carries the buffer, so a record of the
+        # absolute default keeps the state it had before the floor existed.
+        self.density_floor = float(density_floor)
+        if self.density_floor > 0.0:
+            self.envelope_mass = np.ones(1, dtype=PRECISION_DICT[self.precision])
+            # Number of atoms the measured mass averages; it weights the
+            # masses of replicas merged by ``share_params``.
+            self.envelope_count = 0.0
         self.reinit_exclude(exclude_types)
+
+    def _degree_floor(self) -> Any:
+        """Floor of the two neighborhood normalizers.
+
+        With ``density_floor`` set, the floor is that multiple of the measured
+        mean envelope mass; zero keeps the absolute default of the record. The
+        mass stays a backend array so that a forward pass reads it without a
+        host synchronization.
+        """
+        if self.density_floor == 0.0:
+            return self._DEGREE_NORM_FLOOR
+        return self.density_floor * self.envelope_mass[0]
 
     # === Descriptor evaluation ===
 
@@ -1304,7 +1339,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         reduced = segment_sum(xp.concat(parts, axis=1), dst, n_total)
 
         scalar_end = 2 + self.channels
-        floor = self._DEGREE_NORM_FLOOR
+        floor = xp.asarray(self._degree_floor(), dtype=amplitude.dtype)
         divisors = xp.sqrt(reduced[:, :2] + floor)
         normalized = [
             reduced[:, 2:scalar_end] / divisors[:, :1],
@@ -1592,12 +1627,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Sharing level. DPA4C supports only level ``0``, which shares the
             complete descriptor.
         model_prob
-            Model sampling probability accepted by the common multitask ABI;
-            unused because DPA4C has no mergeable input statistics.
+            Model sampling probability accepted by the common multitask ABI.
+            It weights the envelope mass this replica measured when the masses
+            of the replicas are merged.
         resume
-            Whether sharing occurs during checkpoint restoration; unused.
+            Whether sharing occurs during checkpoint restoration, in which
+            case the masses are already merged and are not merged again.
         """
-        del model_prob, resume
         if self.__class__ != base_class.__class__:
             raise TypeError("Only DPA4C descriptors can share parameters.")
         signature = self.structure_signature()
@@ -1609,6 +1645,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             )
         if shared_level != 0:
             raise NotImplementedError("DPA4C supports only shared_level=0.")
+        if self.density_floor > 0.0:
+            from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+                merge_envelope_mass,
+            )
+
+            if not resume:
+                merge_envelope_mass(base_class, self, model_prob)
         for name in (
             "type_embedding",
             "radial_basis",
@@ -1621,6 +1664,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "charge_spin_embedding",
         ):
             setattr(self, name, getattr(base_class, name))
+        if self.density_floor > 0.0:
+            # After the merge the mass is a shared statistic, like the
+            # calibration of the output.
+            self.envelope_mass = base_class.envelope_mass
+            self.envelope_count = base_class.envelope_count
         self.mean = base_class.mean
         self.stddev = base_class.stddev
 
@@ -1649,6 +1697,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         missing input rather than a property of the shared parameters, so two
         branches may legitimately default to different charge states.
 
+        ``density_floor`` is present, because it sets the scale of the
+        normalizers every shared module reads; only its measured mass is
+        merged across replicas.
+
         Branch-local state is deliberately absent: ``exclude_types`` configures
         the parameter-free pair-exclusion mask, and the contact clamp records
         the data edges of the branch's own training data, which each replica
@@ -1673,6 +1725,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             None if self.use_spin is None else tuple(self.use_spin),
             self.spin_mode,
             self.add_chg_spin_ebd,
+            self.density_floor,
             np.dtype(PRECISION_DICT[self.precision]).name,
         )
 
@@ -1746,6 +1799,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         the first; the trainer calibrates a freshly built model, before any
         pretrained weights are loaded.
 
+        A descriptor with a ``density_floor`` additionally measures the mean
+        envelope mass of the sampled neighborhoods, which sets the floor of
+        its two normalizers.
+
         Parameters
         ----------
         merged
@@ -1754,7 +1811,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             moment on every system, under either ``model_spin`` or ``spin``.
         path
             Optional statistics path. Model-dependent calibration is always
-            recomputed and therefore does not consume this path.
+            recomputed and therefore does not consume this path; the envelope
+            mass of a ``density_floor`` is recorded there so that a later run
+            on the same data reads it back.
 
         Raises
         ------
@@ -1763,11 +1822,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             spin-conditioned descriptor is calibrated on a system that carries
             no moment.
         """
+        from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+            load_or_measure_envelope_mass,
+            store_envelope_mass,
+        )
         from deepmd.dpmodel.utils.neighbor_graph import (
             build_neighbor_graph,
         )
 
-        del path
         sampled = merged() if callable(merged) else merged
         if not sampled:
             return
@@ -1777,6 +1839,20 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # are measured.
         if self.spin is not None:
             self.spin.set_spin_reference(self._measure_spin_reference(sampled))
+
+        # The floor of the normalizers is a property of the architecture, not
+        # of the calibration, so it is measured before the identity
+        # calibration that the output measurement below requires.
+        if self.density_floor > 0.0:
+            mass, count = load_or_measure_envelope_mass(
+                sampled,
+                path,
+                radii=[self.rcut],
+                exponent=self._ENVELOPE_EXPONENT,
+                ntypes=self.ntypes,
+                exclude_types=self.exclude_types,
+            )
+            store_envelope_mass(self, mass, count)
 
         xp = array_api_compat.array_namespace(self.stddev)
         device = array_api_compat.device(self.stddev)
@@ -2091,7 +2167,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa4c",
-            "@version": 4,
+            "@version": 5,
             "rcut": (
                 self.rcut if len(set(self.block_rcut)) == 1 else list(self.block_rcut)
             ),
@@ -2115,6 +2191,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "contact_clamp": (
                 None if self.contact_clamp is None else self.contact_clamp.serialize()
             ),
+            "density_floor": self.density_floor,
             "spin_channels": (None if self.spin is None else self.spin.serialize()),
             "charge_spin_embedding": (
                 None
@@ -2135,6 +2212,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "@variables": {
                 "mean": to_numpy_array(self.mean),
                 "stddev": to_numpy_array(self.stddev),
+                **(
+                    {"envelope_mass": to_numpy_array(self.envelope_mass)}
+                    if self.density_floor > 0.0
+                    else {}
+                ),
             },
         }
         if self.compress:
@@ -2162,7 +2244,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         """
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 4, 1)
+        check_version_compatibility(version, 5, 1)
         data.pop("@class")
         data.pop("type")
         # Records of format 2 and earlier hold one block.
@@ -2220,6 +2302,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             variables["mean"],
             variables["stddev"],
         )
+        # Records written before the floor was configurable carry no mass; the
+        # constructor has already put the unit mass the default floor reads.
+        if "envelope_mass" in variables:
+            obj.envelope_mass = np.asarray(
+                variables["envelope_mass"], dtype=PRECISION_DICT[obj.precision]
+            )
         if compression is not None:
             obj._load_compression(compression)
         return obj

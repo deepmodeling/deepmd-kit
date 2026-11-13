@@ -157,6 +157,7 @@ is the general-purpose starting point:
 
 | Version     | Available sizes                                                                    |
 | ----------- | ---------------------------------------------------------------------------------- |
+| `v20261111` | `nano`, `mini`, `neo`, `air`, `plus`, `mini-duo`, `neo-duo`, `air-duo`, `plus-duo` |
 | `v20260911` | `nano`, `mini`, `neo`, `air`, `plus`, `mini-duo`, `neo-duo`, `air-duo`, `plus-duo` |
 | `v20260901` | `nano`, `mini`, `neo`, `air`, `plus`                                               |
 
@@ -167,6 +168,11 @@ as its single-block size; compressed, roughly five to ten times as much on
 large systems, because compression speeds up the second block far less than
 the first. There is no `nano-duo`, because the single-block `mini` is more
 accurate at the same cost.
+
+`v20261111` adds a measured neighborhood floor and the reference of every atom
+to the isolated atom of its type, which takes effect on a model whose input
+gives the isolated-atom energies (`preset_out_bias`), for example
+`dpa4c-neo-v20261111`.
 
 Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
 and `fitting_net`. Run-specific settings are written alongside the preset:

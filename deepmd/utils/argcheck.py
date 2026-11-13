@@ -635,6 +635,17 @@ def descrpt_dpa4c_args() -> list[Argument]:
             ),
         ),
         Argument(
+            "density_floor",
+            float,
+            optional=True,
+            default=0.0,
+            doc=(
+                "Floor of the neighborhood normalization in units of the mean "
+                "envelope mass of the training data, which training measures "
+                "and stores with the model. `0` keeps the fixed default floor."
+            ),
+        ),
+        Argument(
             "seed",
             [int, None],
             optional=True,

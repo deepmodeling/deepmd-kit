@@ -330,6 +330,15 @@ _DPA4C_VERSIONS: dict[str, dict[str, Any]] = {
             *(f"{grade}-duo" for grade in _DPA4C_DUO_BASES),
         ),
     },
+    # The neighborhood floor of DPA4.5, set in units of the mean envelope mass
+    # of the training data, and its fitting, which references every atom to
+    # the isolated atom of its type and takes effect on a model whose input
+    # gives the isolated-atom energies (``preset_out_bias``).
+    "v20261111": {
+        "descriptor": {"basis_type": "gaussian/fix", "density_floor": 8.0},
+        "fitting_net": {"vacuum_ref": True},
+        "grades": tuple(_DPA4C_GRADES),
+    },
 }
 
 

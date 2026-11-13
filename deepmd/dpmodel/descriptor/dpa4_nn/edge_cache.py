@@ -875,3 +875,56 @@ def load_or_measure_envelope_mass(
         [round(float(value), 4) for value in mass],
     )
     return mass, count
+
+
+def store_envelope_mass(descriptor: Any, mass: np.ndarray, count: int) -> None:
+    """Write a measured mean envelope mass into a descriptor's buffer.
+
+    The buffer is a backend array, so the stored value takes its dtype and
+    device; the atom count is kept beside it as the weight of the mean when
+    the measurements of several replicas are merged.
+
+    Parameters
+    ----------
+    descriptor
+        DPA4-family descriptor carrying ``envelope_mass`` and
+        ``envelope_count``.
+    mass
+        Mean envelope mass at every radius the descriptor reads, with shape
+        ``(len(radii),)``.
+    count
+        Number of atoms averaged.
+    """
+    xp = array_api_compat.array_namespace(descriptor.envelope_mass)
+    descriptor.envelope_mass[...] = xp.asarray(
+        mass,
+        dtype=descriptor.envelope_mass.dtype,
+        device=array_api_compat.device(descriptor.envelope_mass),
+    )
+    descriptor.envelope_count = float(count)
+
+
+def merge_envelope_mass(descriptor: Any, replica: Any, weight: float) -> None:
+    """Merge the envelope mass measured by a sharing replica into a descriptor.
+
+    The masses average over the atoms each descriptor measured, the atoms of
+    the replica weighted by its sampling probability relative to this
+    descriptor, as the shared statistics of other descriptors.
+
+    Parameters
+    ----------
+    descriptor
+        Descriptor that owns the shared parameters and receives the merge.
+    replica
+        Descriptor whose measurement is merged in.
+    weight
+        Sampling probability of the replica relative to this descriptor.
+    """
+    total = descriptor.envelope_count + weight * replica.envelope_count
+    if total == 0.0:
+        return
+    descriptor.envelope_mass[...] = (
+        descriptor.envelope_count * descriptor.envelope_mass
+        + weight * replica.envelope_count * replica.envelope_mass
+    ) / total
+    descriptor.envelope_count = total

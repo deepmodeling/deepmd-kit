@@ -167,6 +167,17 @@ def test_preset_catalog() -> None:
             "air-duo",
             "plus-duo",
         ),
+        ("dpa4c", "v20261111"): (
+            "nano",
+            "mini",
+            "neo",
+            "air",
+            "plus",
+            "mini-duo",
+            "neo-duo",
+            "air-duo",
+            "plus-duo",
+        ),
     }
     assert set(MODEL_PRESETS) == {
         f"{family}-{grade}-{version}"
@@ -212,6 +223,11 @@ def test_preset_catalog() -> None:
         ),
         ("dpa4c", "v20260901", {"basis_type": "bessel"}),
         ("dpa4c", "v20260911", {"basis_type": "gaussian/fix"}),
+        (
+            "dpa4c",
+            "v20261111",
+            {"basis_type": "gaussian/fix", "density_floor": 8.0},
+        ),
     ],
 )
 def test_version_descriptor_options(family: str, version: str, options: dict) -> None:
@@ -235,18 +251,20 @@ def test_presets_carry_no_runtime_options() -> None:
             for key in ("use_amp", "seed", "sel", "trainable"):
                 assert key not in preset[region], (name, region, key)
         assert "so2_layers" not in preset["descriptor"], name
-        # The charge/spin pair belongs to the architecture of the DPA4.5
-        # family, which conditions its descriptor on the state of the frame
-        # and references its atoms to the isolated atoms; the other families
-        # leave these options to the input.
+        # DPA4.5 conditions its descriptor on the state of the frame, and every
+        # family above DPA4C references its atoms to the isolated atoms; the
+        # charge/spin pair stays with DPA4.5 alone, because the other families
+        # take it from the input.
         if not name.startswith("dpa4.5-"):
             for key in ("add_chg_spin_ebd", "default_chg_spin"):
                 assert key not in preset["descriptor"], (name, key)
-            assert "vacuum_ref" not in preset["fitting_net"], name
-        else:
+        if name.startswith("dpa4.5-"):
             assert preset["descriptor"]["add_chg_spin_ebd"] is True, name
             assert preset["descriptor"]["default_chg_spin"] == [0.0, 1.0], name
+        if name.startswith("dpa4.5-") or name.endswith("-v20261111"):
             assert preset["fitting_net"]["vacuum_ref"] is True, name
+        else:
+            assert "vacuum_ref" not in preset["fitting_net"], name
 
 
 def test_periodic_table_matches_econf_type_map() -> None:

@@ -759,7 +759,7 @@ def build_radial_table(
             (values.shape[0] - 1) * float(stride),
             float(descriptor.rcut),
             float(descriptor._EPS),
-            float(descriptor._DEGREE_NORM_FLOOR),
+            float(descriptor._degree_floor()),
         ],
         dtype=torch.float64,
         device="cpu",
