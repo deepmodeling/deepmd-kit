@@ -206,6 +206,8 @@ def build_canonical_graph_vesin(
     rcut: float,
     search: VesinNeighborSearch,
     node_mask: torch.Tensor | None = None,
+    *,
+    with_source_csr: bool = True,
 ) -> CanonicalGraph:
     """Build the compact deployment graph directly from Vesin displacements.
 
@@ -223,6 +225,10 @@ def build_canonical_graph_vesin(
         Active-node mask with shape (nf, nloc), on the coordinate device.
         None includes all nodes. Inactive nodes remain in the node axis but
         have no incoming or outgoing edges.
+    with_source_csr : bool
+        Whether to build the source CSR. ``False`` returns two-entry zero
+        placeholders for a DPA4C consumer that declines the per-atom virial;
+        the destination CSR, geometry, and node counts are unchanged.
 
     Returns
     -------
@@ -268,4 +274,5 @@ def build_canonical_graph_vesin(
         edge_vec,
         torch.full((nf,), nloc, dtype=torch.int64, device=coord.device),
         nf * nloc,
+        with_source_csr=with_source_csr,
     )
