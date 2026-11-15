@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import shutil
+import tempfile
 import unittest
+from pathlib import (
+    Path,
+)
 
 import dpdata
 import numpy as np
@@ -73,6 +77,41 @@ class TestNeighborStat(unittest.TestCase):
                     if not mixed_type:
                         ret.append(0)
                     np.testing.assert_array_equal(max_nbor_size, ret)
+
+        self.run_virtual_neighbor_stat(backend)
+
+    def run_virtual_neighbor_stat(self, backend) -> None:
+        """The same virtual-center/neighbor geometry must pass every backend."""
+        with tempfile.TemporaryDirectory() as temporary:
+            for periodic in (False, True):
+                root = Path(temporary) / str(periodic)
+                set_dir = root / "set.000"
+                set_dir.mkdir(parents=True)
+                np.savetxt(root / "type.raw", [0, 0, 0, 0], fmt="%d")
+                (root / "type_map.raw").write_text("TYPE\nSECOND\n")
+                if not periodic:
+                    (root / "nopbc").touch()
+                np.save(
+                    set_dir / "coord.npy",
+                    np.array([[0, 0, 0, 0, 0, 0, 1, 0, 0, 3, 0, 0]], dtype=float),
+                )
+                np.save(set_dir / "box.npy", 10.0 * np.eye(3).reshape(1, 9))
+                np.save(set_dir / "real_atom_types.npy", [[0, -1, 0, 1]])
+                for mixed_type in (False, True):
+                    with self.subTest(
+                        virtual=True, periodic=periodic, mixed=mixed_type
+                    ):
+                        distance, neighbors = neighbor_stat(
+                            system=str(root),
+                            rcut=1.1,
+                            type_map=["TYPE", "SECOND"],
+                            mixed_type=mixed_type,
+                            backend=backend,
+                        )
+                        self.assertAlmostEqual(distance, 1.0)
+                        np.testing.assert_array_equal(
+                            neighbors, [1] if mixed_type else [1, 0]
+                        )
 
     @unittest.skipUnless(INSTALLED_TF, "tensorflow is not installed")
     def test_neighbor_stat_tf(self) -> None:
