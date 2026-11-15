@@ -137,6 +137,7 @@ PairDeepMD::PairDeepMD(LAMMPS* lmp)
           std::getenv("DP_LAMMPS_DISABLE_COMPACT_PACKING") != nullptr),
       compact_packing_valid_(false),
       deep_pot_cache_representation_(-1),
+      compact_packing_state_(0.0),
       compact_packing_nlocal_(0),
       compact_packing_nghost_(0),
       commdata_(nullptr) {
@@ -145,6 +146,14 @@ PairDeepMD::PairDeepMD(LAMMPS* lmp)
 
 PairDeepMD::~PairDeepMD() {
   // Ensure base class destructor is called
+}
+
+void* PairDeepMD::extract(const char* name, int& dim) {
+  if (strcmp(name, "compact_packing") == 0) {
+    dim = 0;
+    return &compact_packing_state_;
+  }
+  return PairDeepBaseModel::extract(name, dim);
 }
 
 std::vector<tagint> PairDeepMD::allgather_unique_tagints(
@@ -392,6 +401,7 @@ bool PairDeepMD::can_use_compact_packing() const {
 
 void PairDeepMD::update_deep_pot_cache_representation(bool compact_packing,
                                                       int& ago) {
+  compact_packing_state_ = compact_packing ? 1.0 : 0.0;
   const int representation = compact_packing ? 1 : 0;
   if (deep_pot_cache_representation_ != representation) {
     // The same DeepPot instance serves packed force evaluations and generic

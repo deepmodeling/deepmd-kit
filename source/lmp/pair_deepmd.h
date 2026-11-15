@@ -49,6 +49,7 @@ class PairDeepMD : public PairDeepBaseModel {
   void compute(int, int) override;
   void init_style() override;
   double init_one(int, int) override;
+  void* extract(const char*, int&) override;
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   double eval_energy_with_fparam(const std::vector<double>& fparam_override);
@@ -91,6 +92,8 @@ class PairDeepMD : public PairDeepBaseModel {
   // whether that cache was built from full LAMMPS indices or compact packed
   // indices so callers that share ``deep_pot`` cannot cross-reuse it.
   int deep_pot_cache_representation_;
+  // Scalar-double storage matches LAMMPS extract_pair's Python interface.
+  double compact_packing_state_;
   int compact_packing_nlocal_;
   int compact_packing_nghost_;
   std::vector<int> compact_packing_old_to_new_;

@@ -58,6 +58,9 @@ def _make_system(
     compact: bool,
     triclinic: bool,
     deviation_file: Path | None = None,
+    include_molecule: bool = True,
+    interleave: bool = False,
+    with_molecule_tail: bool = True,
 ) -> PyLammps:
     """Build a core, one selected molecule, and an optional distant molecule.
 
@@ -72,8 +75,9 @@ def _make_system(
     atom_rows = [
         (1, 0.5 + boundary_shift, 5.0, 5.0, 1),
         (2, 29.5 + boundary_shift, 5.0, 5.0, 10),
-        (1, 20.0, 10.0, 5.0, 10),
     ]
+    if with_molecule_tail:
+        atom_rows.append((1, 20.0, 10.0, 5.0, 10))
     if with_inactive_molecule:
         atom_rows.extend(
             [
@@ -82,6 +86,15 @@ def _make_system(
             ]
         )
 
+    if interleave:
+        atom_rows = [
+            atom_rows[3],
+            atom_rows[0],
+            atom_rows[4],
+            atom_rows[1],
+            atom_rows[2],
+        ]
+
     lammps = PyLammps()
     if plugin := os.environ.get("DEEPMD_TEST_PLUGIN"):
         lammps.lmp.command(f"plugin load {plugin}")
@@ -89,6 +102,9 @@ def _make_system(
     lammps.boundary("p p p")
     lammps.atom_style("molecular")
     lammps.atom_modify("map array")
+    if interleave:
+        # Preserve the deliberately interleaved owned-atom indices.
+        lammps.atom_modify("sort 0 0.0")
     if triclinic:
         lammps.region("box prism 0 30 0 30 0 30 3 1 2 units box")
     else:
@@ -99,7 +115,7 @@ def _make_system(
     for atom_id, (_, _, _, _, molecule_id) in enumerate(atom_rows, start=1):
         lammps.set(f"atom {atom_id} mol {molecule_id}")
     assert lammps.lmp.get_natoms() == len(atom_rows)
-    lammps.group("qm id 1")
+    lammps.group(f"qm id {2 if interleave else 1}")
     lammps.mass("1 16")
     lammps.mass("2 2")
     lammps.neighbor("2.0 bin")
@@ -109,7 +125,8 @@ def _make_system(
     if deviation_file is not None:
         style += f" out_file {deviation_file.resolve()} out_freq 1 atomic"
     if compact:
-        style += " center_group qm environment_cutoff 1.5 include_molecule yes"
+        style += " center_group qm environment_cutoff 1.5 include_molecule "
+        style += "yes" if include_molecule else "no"
     lammps.pair_style(style)
     lammps.pair_coeff("* *")
     lammps.compute("peatom all pe/atom pair")
@@ -371,8 +388,9 @@ def test_compact_matches_explicit_selected_subsystem(
         reference_lmp.close()
 
 
+@pytest.mark.parametrize("interleave", [False, True])
 def test_compact_packing_matches_generic_backend_selection(
-    compact_models: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    compact_models: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, interleave: bool
 ) -> None:
     """LAMMPS-side packing matches the generic type-minus-one fallback."""
     model, _ = compact_models
@@ -382,6 +400,7 @@ def test_compact_packing_matches_generic_backend_selection(
         with_inactive_molecule=True,
         compact=True,
         triclinic=True,
+        interleave=interleave,
     )
     monkeypatch.setenv("DP_LAMMPS_DISABLE_COMPACT_PACKING", "1")
     generic_lmp = _make_system(
@@ -389,16 +408,165 @@ def test_compact_packing_matches_generic_backend_selection(
         with_inactive_molecule=True,
         compact=True,
         triclinic=True,
+        interleave=interleave,
     )
     try:
+        assert packed_lmp.lmp.extract_pair("compact_packing") == 1.0
+        assert generic_lmp.lmp.extract_pair("compact_packing") == 0.0
         packed = _snapshot(packed_lmp, 5)
         generic = _snapshot(generic_lmp, 5)
         assert packed[0] == pytest.approx(generic[0])
         assert packed[1] == pytest.approx(generic[1])
         assert packed[2] == pytest.approx(generic[2])
+        if interleave:
+            atom_ids = np.array(packed_lmp.lmp.numpy.extract_atom("id")[:5])
+            selected_positions = np.flatnonzero(np.isin(atom_ids, [2, 4, 5]))
+            assert not np.array_equal(selected_positions, np.arange(3))
+            assert packed[2][[0, 2]] == pytest.approx(0.0)
+            reference_lmp = _make_system(
+                (model,),
+                with_inactive_molecule=False,
+                compact=False,
+                triclinic=True,
+            )
+            try:
+                reference = _snapshot(reference_lmp, 3)
+                assert packed[0] == pytest.approx(reference[0])
+                assert packed[1][[1, 3, 4]] == pytest.approx(reference[1])
+                assert packed[2][[1, 3, 4]] == pytest.approx(reference[2])
+            finally:
+                reference_lmp.close()
     finally:
         packed_lmp.close()
         generic_lmp.close()
+
+
+def test_compact_no_molecule_promotion(
+    compact_models: tuple[Path, Path],
+) -> None:
+    """The no mode must omit the distant member of a selected molecule."""
+    model, _ = compact_models
+    compact_lmp = _make_system(
+        (model,),
+        with_inactive_molecule=True,
+        compact=True,
+        triclinic=False,
+        include_molecule=False,
+    )
+    reference_lmp = _make_system(
+        (model,),
+        with_inactive_molecule=False,
+        compact=False,
+        triclinic=False,
+        with_molecule_tail=False,
+    )
+    try:
+        compact = _snapshot(compact_lmp, 5)
+        reference = _snapshot(reference_lmp, 2)
+        assert compact[0] == pytest.approx(reference[0])
+        assert compact[1][:2] == pytest.approx(reference[1])
+        assert compact[2][:2] == pytest.approx(reference[2])
+        assert compact[1][2:] == pytest.approx(0.0)
+        assert compact[2][2:] == pytest.approx(0.0)
+    finally:
+        compact_lmp.close()
+        reference_lmp.close()
+
+
+def test_compact_environment_cutoff_is_strict(
+    compact_models: tuple[Path, Path],
+) -> None:
+    """Exclude the exact boundary and the annulus inside the model cutoff."""
+    model, _ = compact_models
+    systems = []
+    try:
+        for compact in (True, False):
+            lammps = PyLammps()
+            systems.append(lammps)
+            if plugin := os.environ.get("DEEPMD_TEST_PLUGIN"):
+                lammps.lmp.command(f"plugin load {plugin}")
+            lammps.lmp.commands_list(
+                [
+                    "units metal",
+                    "boundary p p p",
+                    "atom_style atomic",
+                    "atom_modify map array",
+                    "region box block 0 20 0 20 0 20 units box",
+                    "create_box 2 box",
+                    "create_atoms 1 single 5 5 5 units box",
+                    "create_atoms 2 single 6.4 5 5 units box",
+                    "group qm id 1",
+                    "mass 1 16",
+                    "mass 2 2",
+                ]
+            )
+            if compact:
+                lammps.create_atoms("1 single 6.5 5 5 units box")
+                lammps.create_atoms("2 single 8 5 5 units box")
+            style = f"deepmd {model.resolve()}"
+            if compact:
+                style += " center_group qm environment_cutoff 1.5 include_molecule no"
+            lammps.lmp.commands_list(
+                [
+                    f"pair_style {style}",
+                    "pair_coeff * *",
+                    "compute peatom all pe/atom pair",
+                    "variable peatom atom c_peatom",
+                    "run 0",
+                ]
+            )
+        compact = _snapshot(systems[0], 4)
+        reference = _snapshot(systems[1], 2)
+        assert compact[0] == pytest.approx(reference[0])
+        assert compact[1][:2] == pytest.approx(reference[1])
+        assert compact[2][:2] == pytest.approx(reference[2])
+        assert compact[1][2:] == pytest.approx(0.0)
+        assert compact[2][2:] == pytest.approx(0.0)
+    finally:
+        for lammps in systems:
+            lammps.close()
+
+
+@pytest.mark.parametrize("hybrid", [False, True])
+def test_deepmd_pppm_cutoff_compatibility(
+    compact_models: tuple[Path, Path], hybrid: bool
+) -> None:
+    """Keep standalone PPPM working without imposing its cutoff on hybrids."""
+    model, _ = compact_models
+    lammps = PyLammps()
+    try:
+        if plugin := os.environ.get("DEEPMD_TEST_PLUGIN"):
+            lammps.lmp.command(f"plugin load {plugin}")
+        lammps.lmp.commands_list(
+            [
+                "units metal",
+                "boundary p p p",
+                "atom_style charge",
+                "region box block 0 20 0 20 0 20 units box",
+                "create_box 2 box",
+                "create_atoms 1 single 5 5 5 units box",
+                "create_atoms 2 single 6 5 5 units box",
+                "set atom 1 charge 1.0",
+                "set atom 2 charge -1.0",
+                "mass 1 16",
+                "mass 2 2",
+            ]
+        )
+        if hybrid:
+            lammps.pair_style(f"hybrid/overlay deepmd {model.resolve()} coul/long 9.0")
+            lammps.pair_coeff("* * deepmd")
+            lammps.pair_coeff("* * coul/long")
+        else:
+            lammps.pair_style(f"deepmd {model.resolve()}")
+            lammps.pair_coeff("* *")
+        lammps.kspace_style("pppm 1.0e-5")
+        lammps.run(0)
+        assert np.isfinite(lammps.eval("pe"))
+        assert lammps.lmp.extract_pair("cut_coul") == pytest.approx(
+            9.0 if hybrid else 6.0
+        )
+    finally:
+        lammps.close()
 
 
 def test_compact_model_deviation_uses_selected_atoms_only(
@@ -461,6 +629,8 @@ def test_auxiliary_fparam_evaluation_invalidates_packed_backend_cache(
     monkeypatch.setenv("DP_LAMMPS_DISABLE_COMPACT_PACKING", "1")
     generic_lmp = _make_fparam_cache_system(compact_fparam_model)
     try:
+        assert packed_lmp.lmp.extract_pair("compact_packing") == 1.0
+        assert generic_lmp.lmp.extract_pair("compact_packing") == 0.0
         results = []
         for lammps in (packed_lmp, generic_lmp):
             lammps.run(1)
