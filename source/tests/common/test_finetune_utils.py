@@ -180,6 +180,20 @@ def test_finetune_rule_builder_updates_single_task_config_preserving_trainable()
     assert rule.get_has_new_type()
 
 
+def test_finetune_rule_builder_carries_descriptor_use_amp():
+    pretrained = _model_config(["O", "H"])
+    target = _model_config(["O", "H"])
+    target["descriptor"]["use_amp"] = True
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["descriptor"]["use_amp"] is True
+
+
 def test_finetune_rule_builder_carries_long_range_preserving_trainable():
     long_range = {"type": "latent_charge", "kernel": {"type": "les", "alpha": 0.7}}
     pretrained = _model_config(["O", "H"])

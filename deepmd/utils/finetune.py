@@ -582,11 +582,17 @@ class FinetuneRuleBuilder:
                 pretrained_config["descriptor"],
                 model_branch_chosen,
             )
+        input_descriptor = single_config.get("descriptor", {})
         trainable_param = {
-            "descriptor": single_config.get("descriptor", {}).get("trainable", True),
+            "descriptor": input_descriptor.get("trainable", True),
             "fitting_net": single_config.get("fitting_net", {}).get("trainable", True),
         }
         single_config["descriptor"] = deepcopy(pretrained_config["descriptor"])
+        # use_amp is an execution policy rather than a checkpoint parameter, so
+        # it cannot come from the pretrained descriptor; carry the input value
+        # across the overwrite just like trainable.
+        if "use_amp" in input_descriptor:
+            single_config["descriptor"]["use_amp"] = input_descriptor["use_amp"]
         if not random_fitting:
             single_config["fitting_net"] = deepcopy(pretrained_config["fitting_net"])
             # A long-range module reads the descriptor beside the fitting and
