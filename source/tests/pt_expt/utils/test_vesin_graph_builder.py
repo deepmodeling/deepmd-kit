@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import weakref
 from dataclasses import (
     replace,
 )
 from unittest import (
     mock,
 )
-import weakref
 
 import numpy as np
 import pytest
@@ -19,8 +19,8 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     build_neighbor_graph,
 )
 from deepmd.pt_expt.utils.canonical_graph import (
-    canonical_graph_from_pairs,
     canonical_graph_from_neighbor_graph,
+    canonical_graph_from_pairs,
     validate_canonical_graph_shapes,
 )
 

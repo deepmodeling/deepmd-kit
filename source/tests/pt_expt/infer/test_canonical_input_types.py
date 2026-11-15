@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Do not transfer unused types to the direct canonical Vesin builder."""
 
-from unittest.mock import patch
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import pytest
 import torch
-from deepmd.pt_expt.infer.deep_eval import DeepEval
+
+from deepmd.pt_expt.infer.deep_eval import (
+    DeepEval,
+)
 
 
 def make_evaluator(method):
