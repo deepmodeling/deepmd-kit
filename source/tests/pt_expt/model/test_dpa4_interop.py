@@ -168,9 +168,7 @@ class TestDPA4Interop:
                 bridging_method="ZBL", bridging_r_inner=0.8, bridging_r_outer=1.2
             )
         elif layout == "spin":
-            config["type"] = "standard"
-            config["fitting_net"] = hybrid["fitting_net"]
-            config["spin"] = {"use_spin": [True, False], "virtual_scale": [0.3]}
+            config["spin"] = {"use_spin": [True, False], "scheme": "native"}
         elif layout == "default":
             config = hybrid
             config["descriptor"] = config["descriptor"]["list"][0]

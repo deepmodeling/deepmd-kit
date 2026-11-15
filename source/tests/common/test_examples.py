@@ -53,7 +53,6 @@ input_files = (
     p_examples / "spin" / "se_e2_a" / "input_tf.json",
     p_examples / "spin" / "se_e2_a" / "input_torch.json",
     p_examples / "spin" / "dpa4" / "input.json",
-    p_examples / "spin" / "dpa4" / "input-deepspin.json",
     p_examples / "spin" / "dpa4c" / "input.json",
     p_examples / "dprc" / "normal" / "input.json",
     p_examples / "dprc" / "pairwise" / "input.json",
@@ -78,6 +77,8 @@ input_files = (
     p_examples / "hessian" / "single_task" / "input.json",
     p_examples / "water" / "se_e2_a" / "input_torch_num_epoch.json",
     p_examples / "lmdb_downsample_data" / "input_lmdb.json",
+    p_examples / "density" / "dpa2" / "input.json",
+    p_examples / "density" / "dpa3" / "input.json",
 )
 
 input_files_multi = (

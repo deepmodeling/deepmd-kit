@@ -29,8 +29,9 @@ from deepmd.pt_expt.utils import (
 )
 
 # Structural variants exercised by the backend-agnostic contracts. They span
-# both angular profiles and both radial function classes, and one bridging
-# window whose transition zone holds several pairs of the test cluster.
+# both angular profiles and both radial function classes, one bridging window
+# whose transition zone holds several pairs of the test cluster, and two and
+# three message-passing blocks with and without that window.
 STRUCTURES = [
     {"channels": 16, "lmax": 2, "radial_modes": 0},
     {"channels": 32, "lmax": 4, "radial_modes": 0},
@@ -44,7 +45,59 @@ STRUCTURES = [
         "inner_clamp_f_outer": 1.25,
         "inner_clamp_scale": "absolute",
     },
+    {"channels": 16, "lmax": 3, "radial_modes": 3, "rcut": [3.0, 2.5], "n_blocks": 2},
+    {
+        "channels": 16,
+        "lmax": 3,
+        "radial_modes": 3,
+        "rcut": [3.0, 2.5],
+        "n_blocks": 2,
+        "inner_clamp_f_inner": 1.0,
+        "inner_clamp_f_outer": 1.25,
+        "inner_clamp_scale": "absolute",
+    },
+    {
+        "channels": 16,
+        "lmax": 3,
+        "radial_modes": 3,
+        "rcut": 3.0,
+        "n_blocks": 3,
+    },
 ]
+
+
+def test_soft_saturation_preserves_float16_values_and_derivatives() -> None:
+    from deepmd.dpmodel.descriptor.dpa4c_nn.attention import (
+        soft_saturate,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.attention import (
+        _soft_saturate,
+    )
+
+    for saturate in (soft_saturate, _soft_saturate):
+        value = torch.tensor(
+            [-65504.0, -600.0, -2.0, -1.0, 0.0, 1.0, 2.0, 600.0, 65504.0],
+            dtype=torch.float16,
+            device=env.DEVICE,
+            requires_grad=True,
+        )
+        result = saturate(value, 2.0)
+        (first,) = torch.autograd.grad(result.sum(), value, create_graph=True)
+        (second,) = torch.autograd.grad(first.sum(), value)
+        reference = value.detach().double().requires_grad_(True)
+        expected = reference / torch.sqrt(1.0 + (reference / 2.0) ** 2)
+        (expected_first,) = torch.autograd.grad(
+            expected.sum(), reference, create_graph=True
+        )
+        (expected_second,) = torch.autograd.grad(expected_first.sum(), reference)
+        for actual, target in zip(
+            (result, first, second),
+            (expected, expected_first, expected_second),
+            strict=True,
+        ):
+            torch.testing.assert_close(
+                actual, target.to(torch.float16), rtol=3e-3, atol=5e-4
+            )
 
 
 class TestDPA4C:
@@ -77,18 +130,32 @@ class TestDPA4C:
         Mixed-precision tests must override it, because CUDA autocast ignores
         double operands and would otherwise leave the region untouched.
         """
-        return DescrptDPA4C(
-            rcut=3.0,
+        descriptor = DescrptDPA4C(
             ntypes=2,
             n_radial=4,
             seed=17,
             **{
+                "rcut": 3.0,
                 "channels": 16,
                 "lmax": 2,
                 "precision": "float64",
                 **structure,
             },
         ).to(env.DEVICE)
+        # The output maps of the further blocks start at zero, which makes
+        # every block the identity, so the contracts would not reach them.
+        # Every zero map is drawn at random to exercise the blocks.
+        generator = torch.Generator().manual_seed(17)
+        with torch.no_grad():
+            for block in descriptor.attentions:
+                for weight in block.parameters():
+                    if not torch.any(weight):
+                        weight.copy_(
+                            torch.randn(
+                                weight.shape, generator=generator, dtype=weight.dtype
+                            ).to(weight.device)
+                        )
+        return descriptor
 
     def _inputs(
         self,
@@ -254,6 +321,60 @@ class TestDPA4C:
             self._evaluate(restored, self.coord), reference, rtol=1.3e-6, atol=1e-5
         )
 
+    def test_compressed_fallback_keeps_the_applied_charge_state(self) -> None:
+        descriptor = self.build(
+            precision="float32",
+            n_blocks=2,
+            add_chg_spin_ebd=True,
+            default_chg_spin=[0.0, 1.0],
+        ).eval()
+        head = descriptor.charge_spin_embedding.network.layers[-1]
+        with torch.no_grad():
+            head.w.fill_(0.1)
+        reference = (
+            DescrptDPA4C.deserialize(descriptor.serialize()).to(env.DEVICE).eval()
+        )
+        reference.default_chg_spin = [2.0, 3.0]
+        expected = self._evaluate(reference, self.coord)
+        assert not torch.allclose(expected, self._evaluate(descriptor, self.coord))
+        descriptor.enable_compression(0.5)
+        descriptor.apply_charge_state([2.0, 3.0])
+        restored = (
+            DescrptDPA4C.deserialize(descriptor.serialize()).to(env.DEVICE).eval()
+        )
+        for candidate in (descriptor, restored):
+            assert candidate.get_default_chg_spin() == [2.0, 3.0]
+            # The descriptor computes in fp32 before the dense ABI casts its output.
+            torch.testing.assert_close(
+                self._evaluate(candidate, self.coord), expected, rtol=1.3e-6, atol=1e-5
+            )
+            coord, atype, mapping, nlist = self._inputs(self.coord)
+            actual = candidate(
+                coord,
+                atype,
+                nlist,
+                mapping=mapping,
+                charge_spin=torch.tensor([[0.0, 1.0]], device=env.DEVICE),
+            )[0]
+            torch.testing.assert_close(actual, expected, rtol=1.3e-6, atol=1e-5)
+
+    def test_complete_source_neighborhoods_do_not_require_ownership(self) -> None:
+        descriptor = self.build(n_blocks=2).eval()
+        coord, atype, mapping, nlist = self._inputs(self.coord)
+        graph, atype = graph_from_dense_quartet(coord, atype, nlist, mapping)
+        reference, _ = descriptor.call_graph(graph, atype)
+        subset = dataclasses.replace(graph, n_local=graph.n_node - 1)
+        actual, _ = descriptor.call_graph(subset, atype)
+        # CUDA node reductions may accumulate the same edges in another order.
+        torch.testing.assert_close(actual, reference, atol=1e-12, rtol=1e-12)
+
+    def test_dense_adapter_rejects_cross_rank_communication(self) -> None:
+        descriptor = self.build(n_blocks=2).eval()
+        coord, atype, mapping, nlist = self._inputs(self.coord)
+        assert not descriptor.dense_lower_supports_comm()
+        with pytest.raises(NotImplementedError, match="graph lower"):
+            descriptor(coord, atype, nlist, mapping=mapping, comm_dict={})
+
     def test_serialization_preserves_parameters(self) -> None:
         restored = DescrptDPA4C.deserialize(self.descriptor.serialize()).to(env.DEVICE)
         original_parameters = dict(self.descriptor.named_parameters())
@@ -264,6 +385,22 @@ class TestDPA4C:
                 restored_parameters[name],
                 original_parameters[name],
             )
+
+    def test_state_dict_of_version_3_2_loads(self) -> None:
+        """A checkpoint holding the gather tables of DeePMD-kit 3.2 loads strictly."""
+        state = self.descriptor.state_dict()
+        width = 32
+        state["angular_channel_index"] = torch.arange(width)
+        state["angular_harmonic_index"] = torch.arange(width)
+        restored = self.build()
+        restored.load_state_dict(state)
+        torch.testing.assert_close(
+            self._evaluate(restored, self.coord),
+            self._evaluate(self.descriptor, self.coord),
+        )
+        state["unknown"] = torch.zeros(1)
+        with pytest.raises(RuntimeError, match="unknown"):
+            restored.load_state_dict(state)
 
     def test_deserialization_preserves_version_one_raw_radial_basis(self) -> None:
         data = self.descriptor.serialize()
@@ -343,6 +480,12 @@ class TestDPA4C:
             create_graph=True,
         )
         named_parameters = list(descriptor.named_parameters())
+        registered = dict(named_parameters)
+        for index, block in enumerate(descriptor.attentions):
+            name = f"attentions.{index}.adam_field_gain"
+            assert name in registered
+            assert registered[name] is block.adam_field_gain
+            assert registered[name].requires_grad
         parameter_gradients = torch.autograd.grad(
             force_gradient.square().mean(),
             tuple(parameter for _, parameter in named_parameters),
@@ -455,6 +598,22 @@ class TestDPA4C:
         assert inside[2].abs() < 2e-8
         assert inside[3].abs() < 5e-4
 
+    def test_block_cutoff_is_c3_continuous(self) -> None:
+        """The factor of a further block relaxes to one at its own cutoff."""
+        descriptor = self.build(channels=16, lmax=3, rcut=[3.0, 2.0], n_blocks=2).eval()
+        single = self.build(channels=16, lmax=3).eval()
+        below = self._dimer_derivatives(descriptor, 2.0 - 1.0e-5)
+        boundary = self._dimer_derivatives(descriptor, 2.0)
+        beyond = self._dimer_derivatives(descriptor, 2.0 + 1.0e-5)
+        reference = self._dimer_derivatives(single, 2.0 + 1.0e-5)
+        # Beyond the block cutoff the descriptor is the single-block one, and
+        # the value and first three derivatives join it continuously.
+        for order in range(4):
+            torch.testing.assert_close(beyond[order], reference[order])
+            torch.testing.assert_close(
+                boundary[order], below[order], atol=2e-4, rtol=0.0
+            )
+
     def test_cutoff_edge_matches_removed_topology(self) -> None:
         descriptor = self.build().eval()
         radius = torch.tensor(
@@ -538,12 +697,16 @@ class TestDPA4C:
 @pytest.mark.parametrize("precision", ["float32", "float64"])
 @pytest.mark.parametrize("channels", [8, 32])
 @pytest.mark.parametrize("node_count", [0, 2])
+@pytest.mark.parametrize("n_blocks", [1, 2])
 def test_native_spin_graph_without_edges(
-    precision: str, channels: int, node_count: int
+    precision: str, channels: int, node_count: int, n_blocks: int
 ) -> None:
     """The reference spin path supports zero nodes as well as isolated atoms."""
     descriptor = TestDPA4C.build(
-        precision=precision, channels=channels, use_spin=[True, False]
+        precision=precision,
+        channels=channels,
+        n_blocks=n_blocks,
+        use_spin=[True, False],
     ).eval()
     with torch.no_grad():
         descriptor.spin.spin_gate.fill_(1.0)
@@ -753,6 +916,28 @@ class TestDPA4CSpin:
         self.descriptor._apply_autocast_policy()
         for layer in self.descriptor.radial_embedding.layers:
             assert layer.autocast_output is False
+
+    def test_compression_packs_further_blocks(self) -> None:
+        """A descriptor with further blocks compresses, one record per block."""
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+            compression_ineligibility_reason,
+            mega_eligible,
+        )
+
+        descriptor = DescrptDPA4C(
+            rcut=[3.0, 2.5],
+            n_blocks=2,
+            ntypes=2,
+            channels=8,
+            lmax=2,
+            n_radial=4,
+            precision="float32",
+            seed=23,
+        ).to(env.DEVICE)
+        assert mega_eligible(descriptor)
+        assert compression_ineligibility_reason(descriptor) is None
+        descriptor.enable_compression(0.5)
+        assert descriptor.compress_blocks.shape[0] == 1
 
     def test_compression_covers_the_spin_families(self) -> None:
         """Spin follows the degree profile, so compression covers it.

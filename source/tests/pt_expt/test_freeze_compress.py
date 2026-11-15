@@ -29,6 +29,7 @@ from deepmd.main import (
 )
 from deepmd.pt_expt.entrypoints import compress as compression
 from deepmd.pt_expt.entrypoints import main as entrypoints
+from deepmd.pt_expt.kernels.dpa4c import canonical as dpa4c_canonical
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -176,9 +177,14 @@ def test_freeze_compression_changes_snapshot_before_export(
     assert checkpoint.read_bytes() == original
 
 
-@pytest.mark.parametrize("case", ["precision", "exclusions", "charge_state", "widths"])
+@pytest.mark.parametrize(
+    "case", ["precision", "exclusions", "charge_state", "widths", "blocks"]
+)
 def test_ase_falls_back_but_explicit_compression_reports_ineligibility(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, case: str
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
 ) -> None:
     config = _config("dpa4c")
     if case == "precision":
@@ -191,6 +197,13 @@ def test_ase_falls_back_but_explicit_compression_reports_ineligibility(
     elif case == "widths":
         config["descriptor"]["radial_modes"] = 3
         error = "radial_modes"
+    elif case == "blocks":
+        # On a CUDA target, the compact canonical operators alone evaluate a
+        # compressed model of several blocks, and they exclude no type pair.
+        monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+        config["descriptor"]["n_blocks"] = 2
+        config["pair_exclude_types"] = [[0, 1]]
+        error = "pair_exclude_types"
     else:
         config["descriptor"]["add_chg_spin_ebd"] = True
         config["descriptor"]["default_chg_spin"] = None

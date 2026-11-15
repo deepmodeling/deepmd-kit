@@ -79,6 +79,10 @@ def make_native_spin_model(T_Model: type) -> type:
 
         def __init__(self, *args: Any, spin: Spin, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
+            if self.atomic_model.has_long_range():
+                raise NotImplementedError(
+                    "native spin is not supported for a model with a long-range module"
+                )
             self.spin = spin
             self.ntypes_real = self.spin.ntypes_real
             # Per-real-type 0/1 spin gate, derived from ``use_spin`` and hence

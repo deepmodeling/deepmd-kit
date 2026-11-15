@@ -15,6 +15,7 @@ from typing import (
     ClassVar,
 )
 from unittest.mock import (
+    Mock,
     patch,
 )
 
@@ -495,6 +496,40 @@ class TestDpdataFormatConversion(unittest.TestCase):
         batches = [data.get_batch(), data.get_batch()]
         self.assertEqual({float(batch["find_box"]) for batch in batches}, {0.0, 1.0})
 
+    def test_dp_test_partitions_equal_nloc_by_periodicity(self) -> None:
+        """The real test router must never send mixed PBC to one evaluator."""
+        lmdb_path = self.root / "mixed-pbc.lmdb"
+        _write_mixed_pbc_lmdb(str(lmdb_path))
+        for shuffle in (False, True):
+            observed = []
+
+            def evaluate(data, *args, **kwargs):
+                batch = data.get_test()
+                observed.append(data.pbc)
+                self.assertEqual(bool(batch["find_box"]), data.pbc)
+                self.assertEqual(batch["coord"].shape[0], 1)
+                return {}
+
+            model = Mock()
+            model.get_type_map.return_value = ["H"]
+            tester = Mock()
+            tester.run.side_effect = evaluate
+            with (
+                patch("deepmd.entrypoints.test.DeepEval", return_value=model),
+                patch("deepmd.entrypoints.test.build_tester", return_value=tester),
+            ):
+                run_model_test(
+                    model="unused.pb",
+                    system=str(lmdb_path),
+                    datafile=None,
+                    numb_test=0,
+                    rand_seed=17,
+                    shuffle_test=shuffle,
+                    detail_file=None,
+                    atomic=False,
+                )
+            self.assertCountEqual(observed, [False, True])
+
     def test_multiple_conversion_inputs_use_grouped_readers(self) -> None:
         """Each input has its own cache and composes through the native API."""
         second = self.root / "second.extxyz"
@@ -557,6 +592,31 @@ class TestDpdataFormatConversion(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "agree on mixed_type"):
                     get_data(config, 0, ["H"], None, lmdb_factory=factory)
                 self.assertTrue(acquired[-1]._closed)
+
+    def test_pt_expt_composition_rejects_mixed_type_mismatch(self) -> None:
+        """A backend-provided LMDB factory must obey the same stat invariant."""
+        from deepmd.pt_expt.utils.lmdb_dataset import (
+            LmdbDataSystem as PtExptLmdbDataSystem,
+        )
+
+        native = self.root / "native.hdf5"
+        _write_minimal_deepmd_hdf5(str(native))
+        path = self.root / "data.lmdb"
+        _write_minimal_lmdb(str(path))
+
+        def factory(path, batch_size, auto_prob):
+            return PtExptLmdbDataSystem(
+                path, ["H"], batch_size, auto_prob, num_workers=0
+            )
+
+        with self.assertRaisesRegex(ValueError, "agree on mixed_type"):
+            get_data(
+                {"systems": [str(path), str(native)]},
+                0,
+                ["H"],
+                None,
+                lmdb_factory=factory,
+            )
 
     def test_legacy_lmdb_task_weights_count_retained_frames(self) -> None:
         """Automatic task weights use frame counts, including filtering."""
@@ -844,6 +904,57 @@ class TestDpdataFormatConversion(unittest.TestCase):
                             self.assertEqual(_FakeMultiSystems.write_count, before + 1)
                             process_systems(str(source), fmt="extxyz")
                             self.assertEqual(_FakeMultiSystems.write_count, before + 1)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires named pipes")
+    def test_source_signature_does_not_open_special_files(self) -> None:
+        """A FIFO, even through a symlink, must not block source discovery."""
+        source = self.root / "pipe-tree"
+        source.mkdir()
+        pipe = source / "events.pipe"
+        os.mkfifo(pipe)
+        (source / "pipe-link").symlink_to(pipe)
+        with patch.object(Path, "open", side_effect=AssertionError("opened a pipe")):
+            signature = data_conversion._source_signature(
+                source, self.root / ".deepmd_dpdata_cache" / "output.lmdb"
+            )
+        self.assertEqual(len(signature), 64)
+
+    def test_conversion_globs_exclude_cache_artifacts_on_repeat(self) -> None:
+        """Broad globs must not turn caches, sidecars or locks into inputs."""
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            first = process_systems(str(self.root), ["data*"], fmt="extxyz")
+            second = process_systems(str(self.root), ["data*"], fmt="extxyz")
+        self.assertEqual(first, second)
+        self.assertEqual(_FakeMultiSystems.write_count, 1)
+        self.assertEqual(len(_FakeMultiSystems.load_calls), 1)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX ownership")
+    def test_conversion_cache_is_private_and_rejects_unsafe_permissions(self) -> None:
+        cache = self.root / ".deepmd_dpdata_cache"
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            process_systems(str(self.source), fmt="extxyz")
+            self.assertEqual(cache.stat().st_mode & 0o777, 0o700)
+            cache.chmod(0o777)
+            with self.assertRaisesRegex(PermissionError, "Unsafe dpdata cache"):
+                process_systems(str(self.source), fmt="extxyz")
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX ownership")
+    def test_conversion_cache_rejects_foreign_owner(self) -> None:
+        cache = self.root / ".deepmd_dpdata_cache"
+        cache.mkdir(mode=0o700)
+        metadata = types.SimpleNamespace(st_mode=0o40700, st_uid=os.geteuid() + 1)
+        with patch.object(Path, "lstat", return_value=metadata):
+            with self.assertRaisesRegex(PermissionError, "Unsafe dpdata cache"):
+                data_conversion._ensure_private_conversion_cache(cache)
+
+    def test_conversion_cache_rejects_symlink(self) -> None:
+        target = self.root / "untrusted-cache"
+        target.mkdir(mode=0o700)
+        cache = self.root / ".deepmd_dpdata_cache"
+        cache.symlink_to(target, target_is_directory=True)
+        with self.assertRaisesRegex(PermissionError, "Unsafe dpdata cache"):
+            process_systems(str(self.source), fmt="extxyz")
+        self.assertFalse(_FakeMultiSystems.load_calls)
 
     def test_source_signature_tracks_tree_membership_and_excludes_cache(self) -> None:
         """Publishing within the source directory cannot invalidate itself."""

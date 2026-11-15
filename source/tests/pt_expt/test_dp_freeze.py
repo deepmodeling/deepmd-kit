@@ -99,12 +99,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmpdir)
 
-    def test_freeze_pte(self) -> None:
-        """Freeze to .pte and verify the file is created."""
-        output = os.path.join(self.tmpdir, "frozen_model.pte")
-        freeze(model=self.ckpt_file, output=output)
-        self.assertTrue(os.path.exists(output))
-
     def test_freeze_main_dispatcher(self) -> None:
         """Test main() CLI dispatcher with freeze command."""
         output_file = os.path.join(self.tmpdir, "frozen_via_main.pte")
@@ -226,34 +220,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
             metadata = json.loads(zf.read(meta_name))
         self.assertEqual(metadata["lower_input_kind"], "graph")
 
-    def test_freeze_pt2(self) -> None:
-        """Freeze to .pt2 (AOTInductor) and verify the file is loadable."""
-        self.assertTrue(os.path.exists(self.shared_pt2))
-
-        # Verify the .pt2 can be loaded and evaluated via DeepPot
-        import numpy as np
-
-        from deepmd.infer import (
-            DeepPot,
-        )
-
-        dp = DeepPot(self.shared_pt2)
-        self.assertEqual(dp.get_type_map(), ["O", "H", "B"])
-        rcut = dp.get_rcut()
-        self.assertGreater(rcut, 0.0)
-
-        # Quick smoke-test eval
-        coord = np.array(
-            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
-            dtype=np.float64,
-        )
-        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
-        atype = [0, 1, 2]
-        e, f, v = dp.eval(coord, box, atype)
-        self.assertEqual(e.shape, (1, 1))
-        self.assertEqual(f.shape, (1, 3, 3))
-        self.assertEqual(v.shape, (1, 9))
-
     def test_freeze_pt2_eval_consistency(self) -> None:
         """Verify .pte and .pt2 produce identical results."""
         import numpy as np
@@ -269,11 +235,18 @@ class TestDPFreezePtExpt(unittest.TestCase):
         box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
         atype = [0, 1, 2]
 
+        self.assertTrue(os.path.exists(self.shared_pte))
+        self.assertTrue(os.path.exists(self.shared_pt2))
         dp_pte = DeepPot(self.shared_pte)
         dp_pt2 = DeepPot(self.shared_pt2)
+        self.assertEqual(dp_pt2.get_type_map(), ["O", "H", "B"])
+        self.assertGreater(dp_pt2.get_rcut(), 0.0)
 
         e_pte, f_pte, v_pte = dp_pte.eval(coord, box, atype)
         e_pt2, f_pt2, v_pt2 = dp_pt2.eval(coord, box, atype)
+        self.assertEqual(e_pt2.shape, (1, 1))
+        self.assertEqual(f_pt2.shape, (1, 3, 3))
+        self.assertEqual(v_pt2.shape, (1, 9))
 
         np.testing.assert_allclose(e_pte, e_pt2, atol=1e-10)
         np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
@@ -319,9 +292,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
             DeepPot,
         )
 
-        pt2_path = os.path.join(self.tmpdir, "nonspin_reject.pt2")
-        freeze(model=self.ckpt_file, output=pt2_path)
-
         coord = np.array(
             [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
             dtype=np.float64,
@@ -330,7 +300,7 @@ class TestDPFreezePtExpt(unittest.TestCase):
         atype = [0, 1, 2]
         spin = np.zeros(9, dtype=np.float64)
 
-        dp = DeepPot(pt2_path)
+        dp = DeepPot(self.shared_pt2)
         with self.assertRaises(ValueError):
             dp.eval(coord, box, atype, spin=spin)
 

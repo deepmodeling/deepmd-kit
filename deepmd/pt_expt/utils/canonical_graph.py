@@ -8,10 +8,14 @@ from __future__ import (
 from dataclasses import (
     dataclass,
 )
+from itertools import (
+    pairwise,
+)
 from typing import (
     TYPE_CHECKING,
 )
 
+import numpy as np
 import torch
 
 if TYPE_CHECKING:
@@ -19,16 +23,51 @@ if TYPE_CHECKING:
         NeighborGraph,
     )
 
-UINT32_MAX = (1 << 32) - 1
+INT32_MAX = (1 << 31) - 1
+
+
+def canonical_index_dtype(node_count: int) -> torch.dtype:
+    """Choose node-index width; edge counts and CSR positions always use int64.
+
+    Four-byte words retain a signed representation at native host boundaries.
+    """
+    return torch.uint32 if node_count <= INT32_MAX + 1 else torch.int64
+
+
+def canonical_index_bytes(index: torch.Tensor) -> torch.Tensor:
+    """Expose contiguous integer words as bytes with a final word-size axis."""
+    return index.view(torch.uint8).reshape(*index.shape, index.element_size())
+
+
+def canonical_index_words(storage: torch.Tensor) -> torch.Tensor:
+    """Restore a canonical byte carrier to integer words without copying."""
+    if storage.dtype != torch.uint8:
+        return storage
+    if storage.ndim < 2 or not storage.is_contiguous():
+        raise ValueError(
+            "canonical index bytes require contiguous storage and a word axis"
+        )
+    width = storage.shape[-1]
+    if width not in (4, 8):
+        raise ValueError(
+            f"canonical index word width must be 4 or 8 bytes, got {width}"
+        )
+    dtype = torch.int64 if width == 8 else torch.uint32
+    return storage.view(dtype).squeeze(-1)
 
 
 @dataclass(frozen=True)
 class CanonicalGraph:
     """Store a cutoff-compacted destination-major graph without redundant fields.
 
-    The physical edge count is the final value of either CSR row-pointer tensor.
-    The storage edge axis has length ``max(E, 2)``; suffix entries are guards
-    excluded from every CSR row.
+    The physical edge count is the final value of the destination row-pointer
+    tensor. The storage edge axis has length at least ``max(E, 2)``; entries
+    past the physical edges are guards excluded from every CSR row.
+
+    The source CSR serves the consumers that group edges by source: the DPA1
+    force assembly and the source-attributed per-atom virial of DPA4C. A DPA4C
+    graph whose caller declines the per-atom virial may carry two-entry
+    placeholders in its place.
 
     Parameters
     ----------
@@ -38,16 +77,18 @@ class CanonicalGraph:
         Per-frame owned node counts with shape ``(nf,)``, int64.
     source
         Source-node index for each edge storage slot with shape ``(S,)``,
-        uint32.
+        uint32 or int64, selected from the node extent.
+        Exported programs carry these words as uint8 with shape ``(S, W)``,
+        where the dynamic word width ``W`` is four or eight bytes.
     edge_vec
         Neighbor-minus-center vectors with shape ``(S, 3)``, float32.
     destination_row_ptr
         Destination CSR offsets with shape ``(N + 1,)``, int64.
     source_row_ptr
-        Source CSR offsets with shape ``(N + 1,)``, int64.
+        Source CSR offsets with shape ``(N + 1,)``, int64, or a placeholder.
     source_order
-        Edge storage positions grouped by source with shape ``(S,)`` and the
-        same dtype as ``source``.
+        Edge storage positions grouped by source with shape ``(S,)``, int64,
+        or a placeholder. This width is independent of the node indices.
     """
 
     n_node: torch.Tensor
@@ -59,16 +100,154 @@ class CanonicalGraph:
     source_order: torch.Tensor
 
 
+@dataclass(frozen=True)
+class BorderPlan:
+    """Store the border plan of the node set of one domain of a decomposed frame.
+
+    The node set holds the owned nodes first, then the halo nodes, images of
+    atoms that other swaps of a LAMMPS brick decomposition deliver. A model
+    whose further message-passing blocks read features of the edge sources
+    refreshes the halo rows of those features from their owners with this
+    plan (``source/op/pt/border_exchange.h``), and evaluates the owned nodes
+    alone. A node set without halo nodes carries a plan without swaps.
+
+    Parameters
+    ----------
+    send_nodes
+        Nodes that the swaps send, the swaps concatenated in order, with shape
+        ``(M,)``, int32, on the device of the graph; entries past the rows of
+        the swaps are unused.
+    swaps
+        Swap table with shape ``(nswap, 5)``, int32, on the CPU: the rank that
+        swap ``s`` sends to, the rank it receives from, the counts of the rows
+        it sends and receives, and the first halo row it receives into.
+    communicator
+        Address of the MPI_Comm handle of the decomposition, an int64 CPU
+        tensor of one element, zero for a single process.
+    """
+
+    send_nodes: torch.Tensor
+    swaps: torch.Tensor
+    communicator: torch.Tensor
+
+    @classmethod
+    def single_domain(cls, device: torch.device) -> BorderPlan:
+        """Return the plan of a node set without halo nodes."""
+        return cls(
+            send_nodes=torch.zeros(2, dtype=torch.int32, device=device),
+            swaps=torch.zeros(0, 5, dtype=torch.int32, device="cpu"),
+            communicator=torch.zeros(1, dtype=torch.int64, device="cpu"),
+        )
+
+
+def validate_reciprocal_canonical_graph(graph: CanonicalGraph) -> None:
+    """Check reverse edges of a complete, single-domain graph at construction.
+
+    Every physical edge must have a reverse edge with opposite displacement.
+    Periodic images sharing a node pair are matched one-to-one within the
+    displacement tolerance. Lexicographic displacement order pairs reciprocal
+    images on the graph device. Groups that do not match within tolerance in
+    this order are compacted before host-side matching. Storage guards are
+    ignored. This check synchronizes the device and belongs at graph
+    construction, not inside a captured inference operator. A partitioned
+    graph cannot be checked locally.
+    """
+    device = graph.source.device
+    destination = torch.repeat_interleave(
+        torch.arange(
+            graph.destination_row_ptr.numel() - 1, dtype=torch.int64, device=device
+        ),
+        graph.destination_row_ptr.diff(),
+    )
+    count = destination.numel()
+    source = canonical_index_words(graph.source)[:count].to(torch.int64)
+    vector = graph.edge_vec[:count]
+
+    def ordered(
+        center: torch.Tensor, neighbor: torch.Tensor, order: torch.Tensor
+    ) -> torch.Tensor:
+        """Group endpoints while preserving the supplied displacement order."""
+        for column in (neighbor, center):
+            order = order[torch.argsort(column[order], stable=True)]
+        return order
+
+    # Negating every displacement reverses its lexicographic order. One
+    # geometry ordering therefore serves both directions, including self-images.
+    geometry_order = torch.arange(count, dtype=torch.int64, device=device)
+    for axis in (2, 1, 0):
+        geometry_order = geometry_order[
+            torch.argsort(vector[geometry_order, axis], stable=True)
+        ]
+    forward = ordered(destination, source, geometry_order)
+    reverse = ordered(source, destination, geometry_order.flip(0))
+    message = (
+        "multi-block DPA4C requires a globally bidirectional graph: "
+        "each edge must have a reverse edge with opposite displacement"
+    )
+    same_pair = (destination[forward] == source[reverse]) & (
+        source[forward] == destination[reverse]
+    )
+    actual, expected = vector[forward], -vector[reverse]
+    aligned = torch.isclose(actual, expected, rtol=2e-6, atol=2e-6).all(dim=1)
+    if bool((same_pair & aligned).all()):
+        return
+    if not bool(same_pair.all()):
+        raise ValueError(message)
+    # A prefix count identifies groups with any mismatch. Keep every edge of
+    # those groups for one-to-one matching, without transferring accepted groups.
+    changes = (destination[forward][1:] != destination[forward][:-1]) | (
+        source[forward][1:] != source[forward][:-1]
+    )
+    ends = torch.cat(
+        (torch.nonzero(changes).flatten() + 1, source.new_full((1,), count))
+    )
+    starts = torch.cat((source.new_zeros(1), ends[:-1]))
+    sizes = ends - starts
+    prefix = torch.cat((source.new_zeros(1), (~aligned).to(torch.int64).cumsum(0)))
+    pending = prefix[ends] != prefix[starts]
+    selected = torch.repeat_interleave(pending, sizes, output_size=count)
+    actual = actual[selected].detach().cpu().numpy()
+    expected = expected[selected].detach().cpu().numpy()
+    starts = np.cumsum([0, *sizes[pending].cpu().tolist()])
+    for begin, end in pairwise(starts):
+        adjacent = np.isclose(
+            actual[begin:end, None], expected[None, begin:end], rtol=2e-6, atol=2e-6
+        ).all(axis=-1)
+        owner = [-1] * (end - begin)
+
+        def augment(node: int, seen: set[int]) -> bool:
+            """Reassign images along a path to an unmatched reverse image."""
+            for target in np.flatnonzero(adjacent[node]):
+                if target in seen:
+                    continue
+                seen.add(target)
+                if owner[target] < 0 or augment(owner[target], seen):
+                    owner[target] = node
+                    return True
+            return False
+
+        if not all(augment(node, set()) for node in range(end - begin)):
+            raise ValueError(message)
+
+
 def validate_canonical_graph_shapes(
     graph: CanonicalGraph,
     node_count: int,
 ) -> None:
-    """Validate shape, dtype, and device invariants without reading tensor data."""
+    """Validate shape, dtype, and device invariants without reading tensor data.
+
+    The extents of the source CSR are left to the operators that read it,
+    because a placeholder is a valid source CSR for a DPA4C graph and the
+    deployment trace keeps its extents independent of the node and edge axes.
+    """
     index_dtype = graph.source.dtype
-    if index_dtype != torch.uint32:
-        raise ValueError("canonical graph source must be uint32")
-    if graph.source_order.dtype != index_dtype:
-        raise ValueError("canonical graph source and source_order dtypes must match")
+    byte_storage = index_dtype == torch.uint8
+    if index_dtype not in (torch.uint8, torch.uint32, torch.int64):
+        raise ValueError(
+            "canonical graph source must be uint32, int64 or exported bytes"
+        )
+    if graph.source_order.dtype != torch.int64:
+        raise ValueError("canonical graph source_order must be int64")
     if graph.edge_vec.dtype != torch.float32:
         raise ValueError("canonical graph edge_vec must be float32")
     if graph.n_node.dtype != torch.int64 or graph.n_local.dtype != torch.int64:
@@ -78,31 +257,24 @@ def validate_canonical_graph_shapes(
         or graph.source_row_ptr.dtype != torch.int64
     ):
         raise ValueError("canonical graph row pointers must be int64")
-    if graph.source.ndim != 1 or graph.source_order.shape != graph.source.shape:
-        raise ValueError("canonical graph source arrays must share shape (S,)")
+    if graph.source.ndim != (2 if byte_storage else 1) or graph.source_order.ndim != 1:
+        raise ValueError("canonical graph source arrays have invalid rank")
+    # A traced word width is a symbol of range [4, 8]: a bound adds no guard,
+    # and the operators that read the words accept only four or eight bytes.
+    if byte_storage and not 4 <= graph.source.shape[-1] <= 8:
+        raise ValueError("canonical index word width must be four or eight bytes")
+    if index_dtype == torch.uint32 and node_count > INT32_MAX + 1:
+        raise ValueError("canonical graph nodes require int64 indices")
     if graph.edge_vec.shape != (graph.source.shape[0], 3):
-        raise ValueError("canonical graph edge_vec must have shape (S, 3)")
+        raise ValueError("canonical edge_vec must have shape (S, 3) matching source")
     if graph.source.shape[0] < 2:
         raise ValueError("canonical graph edge storage must contain at least two slots")
-    if graph.source.shape[0] > UINT32_MAX:
-        raise ValueError("canonical graph edge storage exceeds the uint32 range")
     if graph.destination_row_ptr.shape != (node_count + 1,):
         raise ValueError("destination_row_ptr must have shape (N + 1,)")
-    if graph.source_row_ptr.shape != (node_count + 1,):
-        raise ValueError("source_row_ptr must have shape (N + 1,)")
+    if graph.source_row_ptr.ndim != 1:
+        raise ValueError("source_row_ptr must be one-dimensional")
     if graph.n_node.shape != graph.n_local.shape or graph.n_node.ndim != 1:
         raise ValueError("n_node and n_local must share shape (nf,)")
-    devices = {
-        graph.n_node.device,
-        graph.n_local.device,
-        graph.source.device,
-        graph.edge_vec.device,
-        graph.destination_row_ptr.device,
-        graph.source_row_ptr.device,
-        graph.source_order.device,
-    }
-    if len(devices) != 1:
-        raise ValueError("canonical graph tensors must reside on one device")
     tensors = (
         graph.n_node,
         graph.n_local,
@@ -112,6 +284,8 @@ def validate_canonical_graph_shapes(
         graph.source_row_ptr,
         graph.source_order,
     )
+    if len({tensor.device for tensor in tensors}) != 1:
+        raise ValueError("canonical graph tensors must reside on one device")
     if not all(tensor.is_contiguous() for tensor in tensors):
         raise ValueError("canonical graph tensors must be contiguous")
 
@@ -160,11 +334,9 @@ def canonical_graph_from_neighbor_graph(
     node_count = graph.destination_row_ptr.shape[0] - 1
 
     storage_edge_count = max(physical_edge_count, 2)
-    if storage_edge_count > UINT32_MAX:
-        raise ValueError("canonical graph edge storage exceeds the uint32 range")
     source = torch.zeros(
         storage_edge_count,
-        dtype=torch.uint32,
+        dtype=canonical_index_dtype(node_count),
         device=graph.edge_index.device,
     )
     edge_vec = torch.zeros(
@@ -177,17 +349,17 @@ def canonical_graph_from_neighbor_graph(
         storage_edge_count,
         dtype=torch.int64,
         device=graph.edge_index.device,
-    ).to(torch.uint32)
+    )
     if physical_edge_count:
         source[:physical_edge_count] = graph.edge_index[0, :physical_edge_count].to(
-            torch.uint32
+            source.dtype
         )
         edge_vec[:physical_edge_count] = graph.edge_vec[:physical_edge_count].to(
             torch.float32
         )
         source_order[:physical_edge_count] = graph.source_order[
             :physical_edge_count
-        ].to(torch.uint32)
+        ].to(torch.int64)
 
     result = CanonicalGraph(
         n_node=graph.n_node.contiguous(),
@@ -230,8 +402,6 @@ def canonical_graph_from_pairs(
         All nodes are local; no coordinate differentiation is required.
     """
     edge_count = source.shape[0]
-    if max(edge_count, node_count) > UINT32_MAX:
-        raise ValueError("canonical graph node or edge count exceeds the uint32 range")
     destination_order = torch.argsort(center, stable=True)
     center = center.index_select(0, destination_order)
     source = source.index_select(0, destination_order)
@@ -258,18 +428,22 @@ def canonical_graph_from_pairs(
     return CanonicalGraph(
         n_node=n_node,
         n_local=n_node,
-        source=source.to(torch.uint32),
+        source=source.to(canonical_index_dtype(node_count)),
         edge_vec=edge_vec,
         destination_row_ptr=destination_row_ptr,
         source_row_ptr=source_row_ptr,
-        source_order=source_order.to(torch.uint32),
+        source_order=source_order,
     )
 
 
 __all__ = [
-    "UINT32_MAX",
+    "INT32_MAX",
     "CanonicalGraph",
     "canonical_graph_from_neighbor_graph",
     "canonical_graph_from_pairs",
+    "canonical_index_bytes",
+    "canonical_index_dtype",
+    "canonical_index_words",
     "validate_canonical_graph_shapes",
+    "validate_reciprocal_canonical_graph",
 ]

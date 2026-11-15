@@ -1,6 +1,7 @@
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 # only install public headers
 file(GLOB INC_SRC include/c_api.h include/deepmd.hpp)
+list(APPEND INC_SRC ../api_cc/include/canonical_graph.h)
 
 set(libname "${LIB_DEEPMD_C}")
 
@@ -9,8 +10,10 @@ add_library(${libname} SHARED ${LIB_SRC})
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
 target_link_libraries(${libname} PRIVATE ${LIB_DEEPMD_CC})
 target_include_directories(
-  ${libname} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-                    $<INSTALL_INTERFACE:include>)
+  ${libname}
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../api_cc/include>
+         $<INSTALL_INTERFACE:include>)
 
 set_target_properties(${libname} PROPERTIES INSTALL_RPATH
                                             "$ORIGIN;${BACKEND_LIBRARY_PATH}")

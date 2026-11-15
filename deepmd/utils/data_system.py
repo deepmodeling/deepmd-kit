@@ -693,6 +693,15 @@ class DeepmdDataSystem:
                     )
                 b_data[kk] = merged.reshape(len(batch_data), -1)
             elif not vv["atomic"]:
+                if vv.get("special_shape") == "frame_major":
+                    extents = {bb[kk].shape[1:] for bb in batch_data}
+                    if len(extents) > 1:
+                        raise ValueError(
+                            f"The frame-major data {kk} has inconsistent "
+                            f"extents {sorted(extents)} across systems; "
+                            "mixed batching requires the same extent in "
+                            "every system"
+                        )
                 b_data[kk] = np.concatenate([bb[kk] for bb in batch_data], axis=0)
             else:
                 b_data[kk] = np.zeros(
@@ -1566,12 +1575,9 @@ def get_data(
         ]
         # All legacy statistics consumers expect the same keys from every
         # child, including real_natoms_vec for mixed-type data. LMDB children
-        # must participate in this check as well as NumPy/HDF5 children.
-        legacy_sources = [
-            source
-            for source in sources
-            if isinstance(source, (DeepmdDataSystem, LmdbDataSystem))
-        ]
+        # must participate in this check as well as NumPy/HDF5 children,
+        # including backend-specific adapters supplied by lmdb_factory.
+        legacy_sources = [source for source in sources if hasattr(source, "mixed_type")]
         if len({source.mixed_type for source in legacy_sources}) > 1:
             raise ValueError("All data systems must agree on mixed_type.")
         ntypes = max(source.get_ntypes() for source in sources)

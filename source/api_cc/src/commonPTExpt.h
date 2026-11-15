@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Shared utilities for pt_expt (.pt2 / AOTInductor) backend classes.
-// Provides: JSON parser, ZIP archive reader, type-sorted nlist builder,
-// and helpers for the with-comm dual-artifact layout.
+// Provides: the caller-stream scope and the CUDA graph replay of
+// device-resident evaluations, JSON parser, ZIP archive reader, type-sorted
+// nlist builder, and helpers for the with-comm dual-artifact layout.
 #pragma once
 
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
@@ -15,20 +16,467 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
+#include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "canonical_graph.h"
 #include "common.h"  // for remap_comm_sendlist
 #include "errors.h"
 #include "neighbor_list.h"
 
+#ifdef DEEPMD_TORCH_HAS_CUDA
+#include <ATen/cuda/CUDAGraph.h>
+#include <c10/cuda/CUDACachingAllocator.h>
+#include <c10/cuda/CUDAFunctions.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
+
+#include <optional>
+#endif
+
 namespace deepmd {
 namespace ptexpt {
+
+/** Validate source width before wrapping caller buffers or replaying a graph.
+ */
+inline void check_canonical_index(const void* source,
+                                  DP_CanonicalIndexWidth width,
+                                  std::int64_t node_count) {
+  if (width != DP_CANONICAL_INDEX32 && width != DP_CANONICAL_INDEX64) {
+    throw deepmd_exception("canonical index width must be four or eight bytes");
+  }
+  if (width == DP_CANONICAL_INDEX32 &&
+      canonical_index_width(node_count) != width) {
+    throw deepmd_exception("canonical node count requires 64-bit indices");
+  }
+  if (reinterpret_cast<std::uintptr_t>(source) % width != 0) {
+    throw deepmd_exception(
+        "canonical source must be aligned to its word width");
+  }
+}
+
+/// One directed edge: local endpoints and the extended neighbor's coordinates.
+struct ReciprocalEdge {
+  int center;
+  int source;
+  int neighbor;
+};
+
+/** Match equal-size image lists of opposite directions for one node pair.
+ * Displacements are recomputed in double precision from the original
+ * coordinates, avoiding edge-sized geometry storage. Their tolerance includes
+ * the input rounding of all four coordinates: epsilon(Value) times their
+ * absolute values bounds cancellation in two independently rounded images.
+ */
+template <typename Value>
+inline bool reciprocal_images_match(const ReciprocalEdge* forward,
+                                    const ReciprocalEdge* reverse,
+                                    size_t count,
+                                    const std::vector<Value>& coord) {
+  const auto opposite = [&](const ReciprocalEdge& a, const ReciprocalEdge& b) {
+    for (size_t axis = 0; axis < 3; ++axis) {
+      const double ac = coord[3 * static_cast<size_t>(a.center) + axis];
+      const double an = coord[3 * static_cast<size_t>(a.neighbor) + axis];
+      const double bc = coord[3 * static_cast<size_t>(b.center) + axis];
+      const double bn = coord[3 * static_cast<size_t>(b.neighbor) + axis];
+      const double av = an - ac, bv = bn - bc;
+      if (!std::isfinite(av) || !std::isfinite(bv)) {
+        throw deepmd_exception(
+            "multi-block DPA4C requires finite edge displacements");
+      }
+      const double eps = std::numeric_limits<Value>::epsilon();
+      const double rounding = eps * std::abs(ac) + eps * std::abs(an) +
+                              eps * std::abs(bc) + eps * std::abs(bn);
+      if (std::abs(av + bv) >
+          2e-6 * (1.0 + std::max(std::abs(av), std::abs(bv))) + rounding) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (std::equal(forward, forward + count, reverse, opposite)) {
+    return true;
+  }
+  // Tolerance is not a strict ordering. Augmenting paths match images
+  // one-to-one even when several candidates fit, preserving multiplicities.
+  std::vector<std::vector<size_t>> adjacent(count);
+  for (size_t i = 0; i < count; ++i) {
+    for (size_t j = 0; j < count; ++j) {
+      if (opposite(forward[i], reverse[j])) {
+        adjacent[i].push_back(j);
+      }
+    }
+  }
+  std::vector<size_t> owner(count, count);
+  std::function<bool(size_t, std::vector<bool>&)> augment =
+      [&](size_t node, std::vector<bool>& seen) {
+        for (const size_t target : adjacent[node]) {
+          if (seen[target]) {
+            continue;
+          }
+          seen[target] = true;
+          if (owner[target] == count || augment(owner[target], seen)) {
+            owner[target] = node;
+            return true;
+          }
+        }
+        return false;
+      };
+  for (size_t node = 0; node < count; ++node) {
+    std::vector<bool> seen(count, false);
+    if (!augment(node, seen)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Check the global reverse-edge contract at a single-domain list rebuild.
+ * Each edge stores only three node indices. One sort groups unordered local
+ * node pairs and separates their two directions. Equal direction counts and
+ * a one-to-one displacement match establish reciprocity, including duplicate
+ * periodic images. Self-image edges match against their own negated group.
+ * The topology builder validates the local-owner mapping before this check.
+ * Domain-decomposed lists are checked by their producer across ranks instead.
+ */
+template <typename Value>
+inline void check_reciprocal_nlist(const std::vector<std::vector<int>>& nlist,
+                                   const std::vector<int>& centers,
+                                   const std::vector<std::int64_t>& mapping,
+                                   const std::vector<Value>& coord,
+                                   int nloc,
+                                   int nall) {
+  size_t capacity = 0;
+  for (size_t row = 0; row < nlist.size() && row < centers.size(); ++row) {
+    if (centers[row] >= 0 && centers[row] < nloc) {
+      capacity += std::count_if(
+          nlist[row].begin(), nlist[row].end(),
+          [nall](int neighbor) { return neighbor >= 0 && neighbor < nall; });
+    }
+  }
+  std::vector<ReciprocalEdge> edges;
+  edges.reserve(capacity);
+  for (size_t row = 0; row < nlist.size() && row < centers.size(); ++row) {
+    const int center = centers[row];
+    if (center < 0 || center >= nloc) {
+      continue;
+    }
+    for (const int neighbor : nlist[row]) {
+      if (neighbor >= 0 && neighbor < nall) {
+        edges.push_back(
+            {center, static_cast<int>(mapping[neighbor]), neighbor});
+      }
+    }
+  }
+  const auto pair_key = [](const ReciprocalEdge& edge) {
+    const auto endpoints = std::minmax(edge.center, edge.source);
+    return std::make_tuple(endpoints.first, endpoints.second, edge.center);
+  };
+  std::sort(edges.begin(), edges.end(), [&](const auto& a, const auto& b) {
+    return pair_key(a) < pair_key(b);
+  });
+  for (size_t begin = 0; begin < edges.size();) {
+    const auto endpoints =
+        std::minmax(edges[begin].center, edges[begin].source);
+    size_t end = begin + 1;
+    while (end < edges.size() &&
+           std::minmax(edges[end].center, edges[end].source) == endpoints) {
+      ++end;
+    }
+    size_t split = begin;
+    size_t count = end - begin;
+    if (endpoints.first != endpoints.second) {
+      while (split < end && edges[split].center == endpoints.first) {
+        ++split;
+      }
+      count = split - begin;
+    }
+    if (count != end - split ||
+        !reciprocal_images_match(edges.data() + begin, edges.data() + split,
+                                 count, coord)) {
+      throw deepmd_exception(
+          "multi-block DPA4C requires a globally bidirectional graph: "
+          "each edge must have a reverse edge with opposite displacement");
+    }
+    begin = end;
+  }
+}
+
+/**
+ * @brief Make a caller's accelerator stream current for one scope.
+ *
+ * Device-resident entry points take the stream on which the caller produced
+ * their inputs and will consume their outputs. While the scope lives, every
+ * kernel the model launches is enqueued on that stream, so the evaluation is
+ * ordered after the inputs and before the outputs' consumers without a host
+ * synchronization. A null stream leaves the current stream in place.
+ */
+class CallerStreamScope {
+ public:
+  CallerStreamScope(void* stream, int device) {
+    if (stream == nullptr) {
+      return;
+    }
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    guard_.emplace(c10::cuda::getStreamFromExternal(
+        static_cast<cudaStream_t>(stream),
+        static_cast<c10::DeviceIndex>(device)));
+#else
+    (void)device;
+    throw deepmd::deepmd_exception(
+        "a caller stream requires deepmd-kit built with USE_CUDA_TOOLKIT "
+        "against a CUDA-enabled PyTorch.");
+#endif
+  }
+
+ private:
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  std::optional<c10::cuda::CUDAStreamGuard> guard_;
+#endif
+};
+
+/**
+ * @brief Lock of the operations of the backend that capture a CUDA graph or
+ * wait for a whole device.
+ *
+ * A wait for a whole device is invalid while any stream of the device
+ * captures, and it invalidates the capture. Every such operation of the
+ * backend holds this lock, so models in different threads of one process
+ * capture, release their graphs and replace their constants in turn. The
+ * lock outlives every model, including one destroyed with the static objects
+ * of the process.
+ */
+inline std::mutex& device_wide_mutex() {
+  static auto* const mutex = new std::mutex;
+  return *mutex;
+}
+
+/**
+ * @brief Wait for the work in flight on every stream of ``device``.
+ *
+ * An evaluation on a caller's stream may still read the constants of a model
+ * while the caller replaces them, so whoever replaces them waits for it first.
+ * A build without caller streams leaves no such work.
+ */
+inline void synchronize_device(const int device) {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  const std::lock_guard<std::mutex> device_wide(device_wide_mutex());
+  const c10::cuda::CUDAGuard device_guard(
+      static_cast<c10::DeviceIndex>(device));
+  c10::cuda::device_synchronize();
+#else
+  (void)device;
+#endif
+}
+
+/// Address of a buffer as an entry of a GraphReplay key.
+inline std::int64_t address_key(const void* pointer) {
+  return static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(pointer));
+}
+
+/**
+ * @brief Copy the results of an evaluation of ``nodes`` nodes into the
+ * caller's outputs, ``results[k]`` into ``targets[k]``; both lists hold the
+ * same number of tensors, at least one.
+ *
+ * Up to 8,192 nodes the results take one multi-tensor copy, which copies a
+ * list of results of one dtype in a single kernel. That copy serves every
+ * chunk of 65,536 elements with one block, so on the force of a larger graph
+ * it leaves most of the device idle; a larger graph therefore copies each
+ * tensor on its own, and each copy spreads over the whole device. Inside a
+ * graph replay on compute capability 12.0, the outputs of a DPA4C energy
+ * model take 10 us in one kernel and 6 us in separate copies at 16,384 nodes,
+ * and 18 and 8 us at 100,800.
+ */
+inline void copy_results(const std::vector<torch::Tensor>& targets,
+                         const std::vector<torch::Tensor>& results,
+                         const std::int64_t nodes) {
+  constexpr std::int64_t kMultiTensorNodes = 8192;
+  if (nodes <= kMultiTensorNodes) {
+    at::_foreach_copy_(targets, results);
+    return;
+  }
+  for (std::size_t k = 0; k < targets.size(); ++k) {
+    targets[k].copy_(results[k]);
+  }
+}
+
+/**
+ * @brief Replay repeated device-resident evaluations as one CUDA graph.
+ *
+ * Launching kernels dominates an evaluation of a small system. Two
+ * evaluations over the same buffers, extents and host values launch the same
+ * kernels with the same arguments, so the evaluation is captured into a CUDA
+ * graph on the second consecutive call with the same key -- every buffer
+ * address, extent and host value that shapes its launches -- and relaunched
+ * as a whole while the key stays the same. A call with another key releases
+ * the graph and evaluates eagerly.
+ *
+ * The evaluation must be free of host synchronization, and every device
+ * tensor it uses beyond the caller's buffers must either be allocated inside
+ * it, so that the graph owns them, or persist at an address that the key
+ * covers; a replay repeats the launches of the capture without the host code
+ * that made them, so every host value that shapes them belongs to the key.
+ * The constants of the model are read where they reside at capture, so
+ * whoever replaces them calls ``invalidate`` first. An evaluation that cannot
+ * be captured runs eagerly instead (see ``capture``).
+ *
+ * A capture, like the release of a graph, waits for the whole device, and
+ * both hold ``device_wide_mutex``, so the replays of different models capture
+ * in turn and the evaluations and replays of other threads proceed
+ * meanwhile. CUDA work outside the backend that waits for the whole device
+ * while a capture is under way invalidates that capture, and the replay then
+ * evaluates eagerly from there on.
+ */
+class GraphReplay {
+ public:
+  using Key = std::vector<std::int64_t>;
+
+  /**
+   * @brief Evaluate under ``key`` on the current stream of ``device``.
+   *
+   * @param key Every buffer address, extent and host value that shapes the
+   * launches of ``evaluate``.
+   * @param device Index of the CUDA device.
+   * @param evaluate The evaluation, enqueued on the current stream.
+   */
+  template <class Evaluate>
+  void run(const Key& key, const int device, Evaluate&& evaluate) {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    if (graph_ && key == key_) {
+      graph_->replay();
+      return;
+    }
+    if (key != key_ || !capturable_) {
+      // The key is recorded once the evaluation has completed, so that a
+      // capture always follows an eager evaluation under the same key, which
+      // has run every one-time step of the program (such as the folding of
+      // its constants) outside the graph.
+      release();
+      key_.clear();
+      evaluate();
+      key_ = key;
+      return;
+    }
+    if (capture(device, evaluate)) {
+      graph_->replay();
+    } else {
+      evaluate();
+    }
+#else
+    (void)key;
+    (void)device;
+    evaluate();
+#endif
+  }
+
+  /**
+   * @brief Release the graph, so that the next call evaluates eagerly.
+   *
+   * Called before the constants that a captured evaluation reads change.
+   */
+  void invalidate() {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    release();
+    key_.clear();
+#endif
+  }
+
+ private:
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  void release() {
+    if (graph_) {
+      // Replays still in flight run in the private pool of the graph, on the
+      // device it was captured on.
+      const std::lock_guard<std::mutex> device_wide(device_wide_mutex());
+      const c10::cuda::CUDAGuard device_guard(
+          static_cast<c10::DeviceIndex>(device_));
+      c10::cuda::device_synchronize();
+      graph_.reset();
+    }
+  }
+
+  /**
+   * @brief Capture ``evaluate`` into a graph, which becomes the graph of the
+   * current key only once its capture has ended.
+   *
+   * A capture that fails at any stage -- its beginning, the evaluation, its
+   * end or the instantiation of the graph -- leaves no graph behind and turns
+   * capturing off for this replay, and the caller evaluates eagerly: an
+   * evaluation that has run eagerly under the same key fails in a capture for
+   * a reason of the capture, which a retry would meet again while holding
+   * another private memory pool. An error of the evaluation itself recurs in
+   * the eager evaluation, which reports it.
+   *
+   * @return Whether the capture succeeded.
+   */
+  template <class Evaluate>
+  bool capture(const int device, Evaluate& evaluate) {
+    const std::lock_guard<std::mutex> device_wide(device_wide_mutex());
+    // The cached blocks of the eager evaluations are released before the
+    // graph allocates its private pool, so the pool takes their place in
+    // device memory instead of adding to it.
+    c10::cuda::device_synchronize();
+    c10::cuda::CUDACachingAllocator::emptyCache();
+    auto graph = std::make_unique<at::cuda::CUDAGraph>();
+    try {
+      // A capture needs a stream other than the legacy default one, on which
+      // a caller may evaluate; the graph replays on the caller's stream.
+      const c10::cuda::CUDAStreamGuard capture_stream(
+          c10::cuda::getStreamFromPool(false,
+                                       static_cast<c10::DeviceIndex>(device)));
+      graph->capture_begin({0, 0}, cudaStreamCaptureModeThreadLocal);
+      try {
+        evaluate();
+      } catch (...) {
+        // End the capture the failure interrupted, so that the stream leaves
+        // capture mode; the failure of the evaluation is the one reported.
+        try {
+          graph->capture_end();
+        } catch (const c10::Error&) {
+        }
+        throw;
+      }
+      graph->capture_end();
+    } catch (const std::exception& error) {
+      // The graph of a failed capture is kept for the lifetime of the
+      // replay, since the caching allocator may still refer to it, and the
+      // memory its partial evaluation allocated may stay reserved in its
+      // private pool for the rest of the process. Capturing is off from here
+      // on, so at most one is kept.
+      abandoned_ = std::move(graph);
+      capturable_ = false;
+      const auto* const c10_error = dynamic_cast<const c10::Error*>(&error);
+      std::cerr << "WARNING: deepmd-kit could not capture the evaluation into "
+                   "a CUDA graph ("
+                << (c10_error != nullptr ? c10_error->what_without_backtrace()
+                                         : error.what())
+                << "); later evaluations run without graph replay."
+                << std::endl;
+      return false;
+    }
+    graph_ = std::move(graph);
+    device_ = device;
+    return true;
+  }
+
+  Key key_;
+  int device_ = 0;
+  bool capturable_ = true;
+  std::unique_ptr<at::cuda::CUDAGraph> graph_;
+  std::unique_ptr<at::cuda::CUDAGraph> abandoned_;
+#endif
+};
 
 // ============================================================================
 // Minimal JSON value parser for reading metadata from .pt2 archives.
@@ -849,6 +1297,131 @@ inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
 }
 
 // ============================================================================
+// Halo exchange of a compact canonical node set.
+// ============================================================================
+
+/**
+ * @brief The halo exchange of a node set as the compact canonical lower of a
+ * model with further message-passing blocks receives it
+ * (source/op/pt/border_exchange.h): the nodes the swaps send, int32 on the
+ * model device, and the swap table, an int32 CPU tensor of shape
+ * ``(nswap, 5)`` whose columns are the rank a swap sends to, the rank it
+ * receives from, the counts of the nodes it sends and receives, and the first
+ * halo node it receives into.
+ */
+struct HaloTensors {
+  at::Tensor send_nodes;
+  at::Tensor swaps;
+};
+
+/**
+ * @brief The halo exchange of a node set without halo nodes, on the model
+ * device ``device``.
+ */
+inline HaloTensors empty_halo(const torch::Device& device) {
+  const auto int32_option = torch::TensorOptions().dtype(torch::kInt32);
+  return {torch::zeros({0}, int32_option.device(device)),
+          torch::zeros({0, 5}, int32_option)};
+}
+
+/**
+ * @brief The swap table of ``nswap`` swaps (HaloTensors::swaps).
+ */
+inline at::Tensor halo_swap_table(const int nswap,
+                                  const int* sendproc,
+                                  const int* recvproc,
+                                  const int* sendnum,
+                                  const int* recvnum,
+                                  const int* firstrecv) {
+  if (nswap < 0) {
+    throw deepmd::deepmd_exception(
+        "the halo exchange has a negative number of swaps.");
+  }
+  if (nswap > 0 &&
+      (sendproc == nullptr || recvproc == nullptr || sendnum == nullptr ||
+       recvnum == nullptr || firstrecv == nullptr)) {
+    throw deepmd::deepmd_exception(
+        "a nonempty halo exchange requires all five host swap arrays.");
+  }
+  auto swaps =
+      torch::empty({nswap, 5}, torch::TensorOptions().dtype(torch::kInt32));
+  int* const table = swaps.data_ptr<int>();
+  for (int s = 0; s < nswap; ++s) {
+    table[5 * s + 0] = sendproc[s];
+    table[5 * s + 1] = recvproc[s];
+    table[5 * s + 2] = sendnum[s];
+    table[5 * s + 3] = recvnum[s];
+    table[5 * s + 4] = firstrecv[s];
+  }
+  return swaps;
+}
+
+/**
+ * @brief The tensors of a halo exchange of the C API, whose send list resides
+ * on ``device``; the send list is wrapped, not copied.
+ */
+inline HaloTensors halo_tensors(const DP_HaloExchange& halo,
+                                const torch::Device& device,
+                                std::int64_t nloc,
+                                std::int64_t nall_nodes) {
+  at::Tensor swaps =
+      halo_swap_table(halo.nswap, halo.sendproc, halo.recvproc, halo.sendnum,
+                      halo.recvnum, halo.firstrecv);
+  const std::int64_t owned = halo.nswap == 0 ? nall_nodes : halo.firstrecv[0];
+  if (owned != nloc) {
+    throw deepmd::deepmd_exception(
+        "the halo plan's owned-node count does not match nloc.");
+  }
+  std::int64_t sent = 0;
+  for (int s = 0; s < halo.nswap; ++s) {
+    sent += halo.sendnum[s];
+  }
+  if (sent > 0 && halo.d_sendlist == nullptr) {
+    throw deepmd::deepmd_exception(
+        "the swaps of the halo exchange send nodes, but its send list is "
+        "null.");
+  }
+  const auto int32_option =
+      torch::TensorOptions().dtype(torch::kInt32).device(device);
+  at::Tensor send_nodes =
+      sent > 0 ? torch::from_blob(const_cast<int*>(halo.d_sendlist), {sent},
+                                  int32_option)
+               : torch::zeros({0}, int32_option);
+  return {send_nodes, swaps};
+}
+
+/**
+ * @brief The halo exchange of the extended node set of a host neighbor list,
+ * whose ``nloc`` owned nodes precede the ghost atoms that ``fwd_map`` keeps,
+ * in the order of the atoms. ``fwd_map`` maps an atom to its node, or to -1
+ * for an atom of a type the model drops, whose swaps send and receive the
+ * nodes that remain. The send list is copied to ``device``.
+ */
+inline HaloTensors halo_tensors(const InputNlist& lmp_list,
+                                const std::vector<int>& fwd_map,
+                                const int nloc,
+                                const torch::Device& device) {
+  std::vector<std::vector<int>> sendlist;
+  std::vector<int> sendnum, recvnum;
+  remap_comm_sendlist(sendlist, sendnum, recvnum, lmp_list, fwd_map);
+  std::vector<int> firstrecv(lmp_list.nswap);
+  std::vector<int> nodes;
+  int next = nloc;
+  for (int s = 0; s < lmp_list.nswap; ++s) {
+    firstrecv[s] = next;
+    next += recvnum[s];
+    nodes.insert(nodes.end(), sendlist[s].begin(), sendlist[s].end());
+  }
+  at::Tensor send_nodes =
+      torch::from_blob(nodes.data(), {static_cast<std::int64_t>(nodes.size())},
+                       torch::TensorOptions().dtype(torch::kInt32))
+          .to(device, torch::kInt32, /*non_blocking=*/false, /*copy=*/true);
+  return {send_nodes,
+          halo_swap_table(lmp_list.nswap, lmp_list.sendproc, lmp_list.recvproc,
+                          sendnum.data(), recvnum.data(), firstrecv.data())};
+}
+
+// ============================================================================
 // Charge-state fold — the runtime charge/spin condition of a compressed model.
 // ============================================================================
 
@@ -941,22 +1514,20 @@ class ChargeStateFold {
           " tables but the archive names " + std::to_string(constants_.size()) +
           " constants; it cannot serve a runtime charge state");
     }
-    // The inactive buffer is a complete model image. A partial inactive update
-    // copies tensor constants and buffers but omits ordinary parameters, so it
-    // cannot be swapped into service safely.
-    auto* runner = target.get_runner();
-    auto constants = runner->extract_constants_map(/*use_inactive=*/false);
+    // The tables are copied into the active constants in place, which keeps
+    // their addresses and marks the constants for folding again at the next
+    // run. The caller waits for the device on both sides of the update, so no
+    // evaluation reads the constants while they change.
+    std::unordered_map<std::string, torch::Tensor> updated;
     for (size_t ii = 0; ii < tables.size(); ++ii) {
       // An unnamed output belongs to a mechanism this model has disabled and
       // has no constant to reach.
       if (!constants_[ii].empty()) {
-        constants[constants_[ii]] = tables[ii];
+        updated.emplace(constants_[ii], tables[ii]);
       }
     }
-    target.load_constants(constants, /*use_inactive=*/true,
-                          /*check_full_update=*/true);
-    runner->swap_constant_buffer();
-    runner->free_inactive_constant_buffer();
+    target.load_constants(updated, /*use_inactive=*/false,
+                          /*check_full_update=*/false);
   }
 
  private:

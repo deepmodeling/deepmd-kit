@@ -887,6 +887,9 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
     the graph-lower capability, which covers both.
     """
     import copy
+    from unittest import (
+        mock,
+    )
 
     from deepmd.pt_expt.entrypoints.main import (
         freeze,
@@ -908,13 +911,17 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
     torch.save({"model": wrapper.state_dict()}, ckpt)
 
     output = tmp_path / "frozen_bridged"  # suffixless: default CLI form
-    freeze(model=str(ckpt), output=str(output))
+    # This test pins the public entry point's route and default suffix. The
+    # bridged with-comm export test exercises real tracing and AOTI packaging.
+    with mock.patch("deepmd.pt_expt.utils.serialization.deserialize_to_file") as export:
+        freeze(model=str(ckpt), output=str(output))
 
-    pt2 = output.with_suffix(".pt2")
-    assert pt2.exists(), "default suffix must follow the resolved graph kind"
-    with zipfile.ZipFile(pt2) as z:
-        md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
-    assert md["lower_input_kind"] == "graph"
+    export.assert_called_once()
+    args, kwargs = export.call_args
+    assert args[0] == str(output.with_suffix(".pt2")), (
+        "default suffix must follow the resolved graph kind"
+    )
+    assert kwargs["lower_kind"] == "graph"
 
 
 def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:

@@ -21,6 +21,10 @@ from collections.abc import (
 from pathlib import (
     Path,
 )
+from stat import (
+    S_ISDIR,
+    S_ISREG,
+)
 from typing import (
     Any,
 )
@@ -107,6 +111,7 @@ def _normalize_dpdata_format(fmt: str, source: Path) -> str:
 
 
 def _iter_conversion_inputs(path: str, patterns: list[str] | None) -> list[str]:
+    """Discover external inputs without feeding our cached outputs back in."""
     if patterns is None:
         return [path]
     root = Path(path)
@@ -114,7 +119,12 @@ def _iter_conversion_inputs(path: str, patterns: list[str] | None) -> list[str]:
         return [path]
     matches = []
     for pattern in patterns:
-        matches.extend(str(match) for match in root.rglob(pattern))
+        matches.extend(
+            str(match)
+            for match in root.rglob(pattern)
+            if _DPDATA_CACHE_DIR not in match.parts
+            and _DPDATA_CACHE_DIR not in match.resolve().parts
+        )
     return sorted(set(matches))
 
 
@@ -134,6 +144,25 @@ def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
     safe_out_fmt = out_fmt.replace("/", "-")
     suffix = ".lmdb" if _is_dpdata_lmdb_format(out_fmt) else ""
     return Path.cwd() / _DPDATA_CACHE_DIR / f"{stem}-{safe_out_fmt}-{digest}{suffix}"
+
+
+def _ensure_private_conversion_cache(cache_dir: Path) -> None:
+    """Never trust a shared, foreign-owned or symlinked conversion cache.
+
+    The manifest authenticates freshness, not provenance. Protect the whole
+    directory before reading any output or manifest, including memoized paths.
+    Reject legacy shared permissions rather than trusting their old contents.
+    """
+    cache_dir.mkdir(mode=0o700, exist_ok=True)
+    metadata = cache_dir.lstat()
+    if not S_ISDIR(metadata.st_mode) or (
+        os.name == "posix"
+        and (metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077)
+    ):
+        raise PermissionError(
+            f"Unsafe dpdata cache {cache_dir}: use a private directory owned by "
+            "the current user (mode 0700); remove an untrusted existing cache."
+        )
 
 
 def _source_signature(source: Path, output: Path) -> str:
@@ -179,7 +208,9 @@ def _source_signature(source: Path, output: Path) -> str:
                 [name, stat.st_mode, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
             ).encode()
         )
-        if stat.st_size <= _DPDATA_SOURCE_HASH_LIMIT:
+        # Pipes, sockets and devices may appear beside genuine inputs. Their
+        # metadata is tracked, but opening them can block or have side effects.
+        if S_ISREG(stat.st_mode) and stat.st_size <= _DPDATA_SOURCE_HASH_LIMIT:
             with path.open("rb") as fp:
                 # Bound the read even if a concurrent writer grows the input.
                 digest.update(
@@ -525,6 +556,7 @@ def _convert_system_by_dpdata(
     fmt = _normalize_dpdata_format(fmt, source)
     out_fmt = _canonical_dpdata_out_format(out_fmt)
     output = _conversion_cache_path(source, fmt, out_fmt)
+    _ensure_private_conversion_cache(output.parent)
     cache_key = (
         str(Path.cwd().resolve(strict=False)),
         str(source.resolve(strict=False)),
@@ -542,7 +574,6 @@ def _convert_system_by_dpdata(
         # conversion flow refreshes the on-disk result before it is reused.
         del _DPDATA_CONVERSION_CACHE[cache_key]
 
-    output.parent.mkdir(parents=True, exist_ok=True)
     lock_path = output.with_suffix(output.suffix + ".lock")
     # Reuse only this pre-lock check. Waiting, acquiring the lock and writing
     # each require fresh scans because the source can change between phases.

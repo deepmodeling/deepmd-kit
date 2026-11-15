@@ -59,6 +59,20 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
 
+    def mixed_types(self) -> bool:
+        """Whether arbitrary per-frame atom types and mixed-type meshes work."""
+        return False
+
+    def validate_mixed_type(self, mixed_type: bool) -> None:
+        """Reject unsupported mixed-type inputs before statistics or training."""
+        if mixed_type and not self.mixed_types():
+            raise ValueError(
+                f"TensorFlow descriptor {type(self).__name__} does not support "
+                "mixed-type data. LMDB datasets are always mixed-type; use "
+                "se_atten (or a hybrid of mixed-type descriptors), or convert "
+                "fixed-composition inputs with out_format='deepmd/npy'."
+            )
+
     @abstractmethod
     def get_rcut(self) -> float:
         """Returns the cut-off radius.

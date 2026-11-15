@@ -411,12 +411,15 @@ class TestEnergy(unittest.TestCase):
             .numpy(),
         )
         # self.assertIsNone(model_predict_1.get("atom_virial", None))
+        # Atomic virials can be close to zero after cancellation; allow
+        # float64 roundoff without relaxing the default relative tolerance.
         np.testing.assert_allclose(
             head_dict["atom_virial"],
             p_atomic_virial.reshape(head_dict["atom_virial"].shape)
             .cpu()
             .detach()
             .numpy(),
+            atol=1e-14,
         )
         optimizer = paddle.optimizer.Adam(cur_lr, parameters=my_model.parameters())
         optimizer.clear_grad()

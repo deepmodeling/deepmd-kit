@@ -100,10 +100,11 @@ TEST_F(TestDeepPotPTExptWithCommLoadFailure, single_rank_compute_succeeds) {
 }
 
 TEST_F(TestDeepPotPTExptWithCommLoadFailure, multi_rank_compute_throws) {
-  // nswap > 0 forces the dispatch site to ``run_model_with_comm``; the
-  // load-failure guard added by PR #5430 must throw rather than silently
-  // falling back to the single-rank path. The send/recv arrays remain
-  // null — the guard fires before any of them are dereferenced.
+  // The multi-rank dispatch keys on nprocs (DeepPotPTExpt.cc): nprocs > 1
+  // forces the dispatch site to ``run_model_with_comm``, whose load-failure
+  // guard must throw rather than silently falling back to the single-rank
+  // path. The send/recv arrays remain null — the guard fires before any of
+  // them are dereferenced.
   float rc = dp.cutoff();
   int nloc = coord.size() / 3;
   std::vector<double> coord_cpy;
@@ -118,7 +119,7 @@ TEST_F(TestDeepPotPTExptWithCommLoadFailure, multi_rank_compute_throws) {
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
   inlist.mapping = mapping.data();
-  inlist.nswap = 1;  // simulate multi-rank without populating send/recv
+  inlist.nprocs = 2;  // simulate multi-rank without populating send/recv
 
   double ener;
   std::vector<double> force_, virial;
