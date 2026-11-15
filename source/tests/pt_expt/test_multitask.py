@@ -2267,11 +2267,11 @@ class TestCompileCaseEmbdVaryingNframes(unittest.TestCase):
                 self.assertIsNotNone(ce, f"case_embd not set on {mk}")
                 self.assertEqual(int(ce.shape[0]), 2)
 
-            # Drive 6 steps alternating (task, system_index) so each branch's
-            # compiled graph sees both nframes=2 (sys0) and nframes=3 (sys1).
+            # Alternate branches while each sees nframes=2, then 3, then 2
+            # again, covering both dynamic shapes and cached graph reuse.
             trainer.wrapper.train()
             task_sequence = ["model_1", "model_2"] * 3
-            sys_sequence = [0, 1, 0, 1, 0, 1]
+            sys_sequence = [0, 0, 1, 1, 0, 0]
             sys_iter = iter(sys_sequence)
 
             original_choice = dp_random.choice
@@ -2283,12 +2283,14 @@ class TestCompileCaseEmbdVaryingNframes(unittest.TestCase):
                     return next(sys_iter)
                 return original_choice(a, size=size, replace=replace, p=p)
 
-            seen_nframes: set[int] = set()
+            seen_nframes: dict[str, set[int]] = {
+                key: set() for key in ("model_1", "model_2")
+            }
             with patch.object(dp_random, "choice", side_effect=task_or_system_choice):
                 for task_key in task_sequence:
                     trainer.optimizer.zero_grad(set_to_none=True)
                     inp, lab = trainer.get_data(is_train=True, task_key=task_key)
-                    seen_nframes.add(int(inp["coord"].shape[0]))
+                    seen_nframes[task_key].add(int(inp["coord"].shape[0]))
                     lr = trainer.scheduler.get_last_lr()[0]
                     _, loss, _ = trainer.wrapper(
                         **inp, cur_lr=lr, label=lab, task_key=task_key
@@ -2298,14 +2300,15 @@ class TestCompileCaseEmbdVaryingNframes(unittest.TestCase):
                     self.assertFalse(torch.isnan(loss), "loss is NaN")
                     self.assertFalse(torch.isinf(loss), "loss is Inf")
 
-            self.assertEqual(
-                seen_nframes,
-                {2, 3},
-                msg=(
-                    f"nframes did not vary across steps: {seen_nframes}. "
-                    "Expected both 2 and 3 (matching and not matching dim_case_embd=2)."
-                ),
-            )
+            for task_key, nframes in seen_nframes.items():
+                self.assertEqual(
+                    nframes,
+                    {2, 3},
+                    msg=(
+                        f"nframes did not vary for {task_key}: {nframes}. "
+                        "Expected both 2 and 3 (matching and not matching dim_case_embd=2)."
+                    ),
+                )
         finally:
             os.chdir(old_cwd)
             shutil.rmtree(tmpdir, ignore_errors=True)

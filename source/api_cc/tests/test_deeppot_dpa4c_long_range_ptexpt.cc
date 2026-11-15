@@ -617,8 +617,8 @@ class TestInferDeepPotDpa4cLongRangeDevicePtExpt : public ::testing::Test {
         compact.destination_row_ptr.data_ptr<std::int64_t>(),
         source_csr ? compact.source_row_ptr.data_ptr<std::int64_t>() : nullptr,
         source_csr ? compact.source_order.data_ptr<std::int64_t>() : nullptr,
-        graph.coord.data_ptr<double>(), /*world=*/nullptr, cell, nloc,
-        graph.nodes, compact.source.size(0), stream);
+        graph.coord.data_ptr<double>(), /*world=*/nullptr, /*halo=*/nullptr,
+        cell, nloc, graph.nodes, compact.source.size(0), stream);
   }
 
   // The atomic energies, forces and virial of an evaluation of ``graph`` on

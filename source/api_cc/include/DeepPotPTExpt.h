@@ -29,6 +29,7 @@ class TempFile;
 class ChargeStateFold;
 class GraphReplay;
 class PinnedCell;
+struct HaloTensors;
 }  // namespace deepmd::ptexpt
 
 namespace torch::inductor {
@@ -393,6 +394,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                                    const std::int64_t* d_source_order,
                                    const double* d_coord,
                                    void* world,
+                                   const DP_HaloExchange* halo,
                                    const double* box,
                                    const std::int64_t nloc,
                                    const std::int64_t nall_nodes,
@@ -427,6 +429,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool uses_fp32_edge_vectors() const override;
   bool uses_canonical_graph_inference() const override;
   bool canonical_graph_requires_source_csr() const override;
+  bool canonical_graph_requires_halo() const override;
   bool has_long_range() const override;
 
  private:
@@ -458,6 +461,7 @@ class DeepPotPTExpt : public DeepPotBackend {
       const std::int64_t* d_source_order,
       const double* d_coord,
       void* world,
+      const DP_HaloExchange* halo,
       const double* box,
       const std::int64_t nloc,
       const std::int64_t nall_nodes,
@@ -700,11 +704,15 @@ class DeepPotPTExpt : public DeepPotBackend {
    * model with a long-range module and ignored otherwise.
    * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of the
    * ranks a decomposed system spans, or NULL for a system that one rank holds
-   * whole; a model with a long-range module receives it after the positions.
+   * whole; a model with a long-range module receives it after the positions,
+   * and a model with further message-passing blocks before its halo exchange.
    * @param[in] cell The cell, a float64 CPU tensor of shape ``(1, 9)``: the
    * row-major cell of a periodic frame, or zero for a non-periodic one; a
    * model with a long-range module receives it after the communicator, and
    * every other model ignores it.
+   * @param[in] halo The halo exchange of the node set, which a model with
+   * further message-passing blocks receives after the communicator and every
+   * other model ignores.
    */
   std::vector<torch::Tensor> run_model_canonical_graph(
       const torch::Tensor& atype,
@@ -717,7 +725,8 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& source_order,
       const torch::Tensor& coord,
       const void* world,
-      const torch::Tensor& cell);
+      const torch::Tensor& cell,
+      const ptexpt::HaloTensors& halo);
 
   /**
    * @brief Evaluate the long-range module on a rank that holds no node.

@@ -16,6 +16,12 @@
 #include <utility>
 #include <vector>
 
+#ifdef LMPPLUGIN
+#include "canonical_graph.h"
+#else
+#include "deepmd/canonical_graph.h"
+#endif
+
 #include "atom.h"
 #include "atom_kokkos.h"
 #include "atom_masks.h"
@@ -85,9 +91,11 @@ __device__ __forceinline__ void compact_canonical_warp_sort(Key (&key)[K],
 
 #endif
 
-/// Bits of the candidate slot in the sort keys of the single-pass fill, which
-/// serves candidate lists of up to ``1 << kCompactCanonicalSlotBits`` entries.
-constexpr int kCompactCanonicalSlotBits = 9;
+/// Bits of the candidate slot in the sort keys of the single-pass fill that
+/// keys ``K`` candidates per lane: nine for lists of up to 512 candidates and
+/// ten for the widest fill, of up to 768.
+template <int K>
+inline constexpr int kCompactCanonicalSlotBits = K > 16 ? 10 : 9;
 
 #if defined(KOKKOS_ENABLE_CUDA)
 // Read the packed record of one atom: its fixed-point coordinates and, in the
@@ -290,7 +298,7 @@ __device__ __forceinline__ void compact_canonical_finish_row(
     const Counts& source_counts) {
   constexpr unsigned kFull = 0xffffffffu;
   constexpr std::uint32_t kRejected = ~std::uint32_t{0};
-  constexpr int kSlot = kCompactCanonicalSlotBits;
+  constexpr int kSlot = kCompactCanonicalSlotBits<K>;
   constexpr std::uint32_t kSlotMask = (1u << kSlot) - 1u;
   constexpr auto kLaneMajor = CompactCanonicalLayout::kLaneMajor;
 
@@ -484,19 +492,20 @@ __device__ __forceinline__ void compact_canonical_finish_row(
 // with the capacity and repeats the build with larger arrays.
 //
 // The keys of up to ``32 * K`` candidates are formed in the registers of the
-// warp: the squared bond length quantized to the 23 bits above the nine bits
-// of the candidate slot, which resolves lengths far finer than any thermal
-// displacement. A rejected candidate carries the largest key and sorts behind
-// every survivor, so the sorted position of a survivor is its slot in the row;
-// the survivors are sorted on the fewest registers that hold them. The order
-// of the candidates in the neighbor list varies from build to build, and so
-// does the order of the local atoms, so survivors of equal quantized length
-// are ordered by the tag of their source atom: a row whose sorted keys show
-// such a tie is sorted again on 64-bit keys that insert the low 32 bits of the
-// tag between the length and the slot. Such ties arise in symmetric
-// configurations, such as a perfect lattice, and almost never in a thermal
-// one. A row holds every tag once when the box is thicker than twice the
-// cutoff along every periodic direction, as the folded node set of a single
+// warp: the squared bond length quantized to the bits above those of the
+// candidate slot, 23 above nine for lists of up to 512 candidates and 22
+// above ten for the widest fill, either of which resolves lengths far finer
+// than any thermal displacement. A rejected candidate carries the largest key
+// and sorts behind every survivor, so the sorted position of a survivor is its
+// slot in the row; the survivors are sorted on the fewest registers that hold
+// them. The order of the candidates in the neighbor list varies from build to
+// build, and so does the order of the local atoms, so survivors of equal
+// quantized length are ordered by the tag of their source atom: a row whose
+// sorted keys show such a tie is sorted again on 64-bit keys that insert the
+// low 32 bits of the tag between the length and the slot. Such ties arise in
+// symmetric configurations, such as a perfect lattice, and almost never in a
+// thermal one. A row holds every tag once when the box is thicker than twice
+// the cutoff along every periodic direction, as the folded node set of a single
 // rank requires, and the row order, and with it the summation order of every
 // reduction over the row, is then a function of the geometry and the atom
 // tags alone, which makes the forces reproducible from run to run. In a
@@ -555,9 +564,9 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
 #if defined(KOKKOS_ENABLE_CUDA) && defined(__CUDA_ARCH__)
   constexpr unsigned kFull = 0xffffffffu;
   constexpr std::uint32_t kRejected = ~std::uint32_t{0};
+  constexpr int kSlot = kCompactCanonicalSlotBits<K>;
   // Highest length level of a survivor, one below the levels the key holds.
-  constexpr std::uint32_t kTopLevel =
-      (std::uint32_t{1} << (32 - kCompactCanonicalSlotBits)) - 2u;
+  constexpr std::uint32_t kTopLevel = (std::uint32_t{1} << (32 - kSlot)) - 2u;
   constexpr unsigned long long kInclusive = 1ull << 63;
   // Candidate slots of one row; the row stride adds four, which spreads the
   // stores of a warp, eight centers by four slots, over all 32 banks.
@@ -573,7 +582,9 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
   __shared__ int claim;
   __shared__ int ready;
   __shared__ alignas(16) int slot_atom[Warps][kSlotStride];
-  __shared__ std::uint32_t staging[Warps][256];
+  // Survivors that a sort on fewer registers than ``K`` compacts: up to 32
+  // times the widest such sort.
+  __shared__ std::uint32_t staging[Warps][K > 16 ? 512 : 256];
   if (rank == 0) {
     block_ticket = atomicAdd(ticket_counter, 1ull);
     claim = 0;
@@ -682,10 +693,10 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
       // value.
       const std::uint32_t level =
           min(static_cast<std::uint32_t>(length2 * key_scale), kTopLevel);
-      key[k] = record[u].w >= 0 && length2 < cutsq
-                   ? (level << kCompactCanonicalSlotBits) |
-                         static_cast<std::uint32_t>(k * 32 + lane)
-                   : kRejected;
+      key[k] =
+          record[u].w >= 0 && length2 < cutsq
+              ? (level << kSlot) | static_cast<std::uint32_t>(k * 32 + lane)
+              : kRejected;
       count += __popc(__ballot_sync(kFull, key[k] != kRejected));
     }
   }
@@ -727,8 +738,12 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
     DEEPMD_COMPACT_CANONICAL_FINISH(4);
   } else if (K > 8 && count <= 256u) {
     DEEPMD_COMPACT_CANONICAL_FINISH(8);
-  } else {
+  } else if (K <= 16 || count <= 512u) {
     DEEPMD_COMPACT_CANONICAL_FINISH((K > 8 ? 16 : 8));
+  } else {
+    if constexpr (K > 16) {
+      DEEPMD_COMPACT_CANONICAL_FINISH(32);
+    }
   }
 #undef DEEPMD_COMPACT_CANONICAL_FINISH
 #endif
@@ -949,6 +964,78 @@ class CompactCanonicalGhostFold {
   // only the packed values of a swap are staged in the pinned host views.
   Buffer send, recv;
   Kokkos::View<Value*, Kokkos::SharedHostPinnedSpace> h_send, h_recv;
+};
+
+// Halo exchange of the extended node set of a decomposed system, the forward
+// communication of the Kokkos brick communication in model-node space
+// (DP_HaloExchange), which a model with further message-passing blocks reads
+// to refresh the features of its ghost nodes from their owners. Without
+// virtual atoms the node of every atom of the extended node set is the atom
+// itself, so the exchange is the swap plan of the communication, whose send
+// lists the exchange gathers into one device list. The plan moves only when
+// the borders are rebuilt, together with the neighbor list.
+template <class DeviceType>
+class CompactCanonicalHalo {
+ public:
+  // The halo exchange of the current borders of ``comm``, rebuilt when
+  // ``rebuild`` is set, at the step of a neighbor list rebuild, or on the
+  // first call.
+  const DP_HaloExchange* plan(Comm* comm, Error* error, const bool rebuild) {
+    auto* kokkos_comm = dynamic_cast<CommKokkos*>(comm);
+    if (kokkos_comm == nullptr) {
+      error->all(FLERR,
+                 "a model with further message-passing blocks exchanges the "
+                 "features of ghost atoms through the swaps of the Kokkos "
+                 "brick communication; use comm_style brick.");
+    }
+    if (!rebuild && built) {
+      return &halo;
+    }
+    using Plan = CompactCanonicalSwapPlan;
+    const int nswap = kokkos_comm->*Plan::swap_count;
+    const int* plan_sendnum = kokkos_comm->*Plan::send_count;
+    const int* plan_recvnum = kokkos_comm->*Plan::recv_count;
+    const int* plan_sendproc = kokkos_comm->*Plan::send_rank;
+    const int* plan_recvproc = kokkos_comm->*Plan::recv_rank;
+    const int* plan_firstrecv = kokkos_comm->*Plan::first_recv;
+    auto& sendlists = kokkos_comm->*Plan::send_lists;
+    sendproc.assign(plan_sendproc, plan_sendproc + nswap);
+    recvproc.assign(plan_recvproc, plan_recvproc + nswap);
+    sendnum.assign(plan_sendnum, plan_sendnum + nswap);
+    recvnum.assign(plan_recvnum, plan_recvnum + nswap);
+    firstrecv.assign(plan_firstrecv, plan_firstrecv + nswap);
+    int total = 0;
+    for (int iswap = 0; iswap < nswap; ++iswap) {
+      total += sendnum[iswap];
+    }
+    if (static_cast<int>(d_sendlist.extent(0)) < total) {
+      d_sendlist =
+          Kokkos::View<int*, DeviceType>("compact_canonical:halo_send", total);
+    }
+    sendlists.sync_device();
+    auto lists = sendlists.template view<DeviceType>();
+    auto gathered = d_sendlist;
+    int offset = 0;
+    for (int iswap = 0; iswap < nswap; ++iswap) {
+      Kokkos::parallel_for(
+          "compact_canonical:halo_send",
+          Kokkos::RangePolicy<DeviceType>(0, sendnum[iswap]),
+          KOKKOS_LAMBDA(const int i) {
+            gathered(offset + i) = lists(iswap, i);
+          });
+      offset += sendnum[iswap];
+    }
+    halo = {nswap,          sendproc.data(),  recvproc.data(),  sendnum.data(),
+            recvnum.data(), firstrecv.data(), d_sendlist.data()};
+    built = true;
+    return &halo;
+  }
+
+ private:
+  bool built = false;
+  std::vector<int> sendproc, recvproc, sendnum, recvnum, firstrecv;
+  Kokkos::View<int*, DeviceType> d_sendlist;
+  DP_HaloExchange halo = {};
 };
 
 // Device-resident model node set and compact canonical neighbor graph.
@@ -1196,11 +1283,12 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     // consecutive slots, so the dominant store stream stays coalesced; the
     // geometry of a survivor is recomputed from its slot, whose coordinates
     // the key pass has just brought into cache. The single-pass fill keys a
-    // survivor by its squared length quantized to 23 bits and its slot, and
+    // survivor by its squared length quantized to 23 bits, or 22 for lists of
+    // more than 512 candidates, and its slot, and
     // orders survivors of equal quantized length by tag only in the rows that
     // hold such ties. The two orders differ.
     //
-    // On a CUDA device whose candidate lists fit 512 entries, the warp of a
+    // On a CUDA device whose candidate lists fit 768 entries, the warp of a
     // center sorts in registers and the row offsets come from the decoupled
     // look-back of compact_canonical_fill_row, so counting, offsets and the
     // fill are one pass. Every other configuration counts the rows first,
@@ -1210,8 +1298,10 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     // so that one 32-byte sector of the neighbor list holds a candidate slot
     // of every center of the block.
     constexpr int fill_warps = 8;
-    static_assert(16 * neighbor_lanes <= (1 << kCompactCanonicalSlotBits),
-                  "the single-pass sort keys must address every candidate");
+    static_assert(
+        16 * neighbor_lanes <= (1 << kCompactCanonicalSlotBits<16>) &&
+            24 * neighbor_lanes <= (1 << kCompactCanonicalSlotBits<24>),
+        "the single-pass sort keys must address every candidate");
     const int key_capacity = static_cast<int>(d_neighbors.extent(1));
     if (key_capacity >= (1 << 16)) {
       error->one(FLERR,
@@ -1226,18 +1316,32 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     // and the gathers; one that keys sixteen takes 25 KB, and three teams, 24
     // warps, fit. Either bound holds the registers of the whole kernel at the
     // budget of its common path rather than at that of the rarely taken
-    // tie-break sort.
+    // tie-break sort. The widest fill, which keys 24, stages 41 KB, and two
+    // teams fit.
     using fill_policy = Kokkos::TeamPolicy<
         DeviceType,
         Kokkos::LaunchBounds<fill_warps * neighbor_lanes, 32 / fill_warps>>;
     using wide_fill_policy = Kokkos::TeamPolicy<
         DeviceType,
         Kokkos::LaunchBounds<fill_warps * neighbor_lanes, 24 / fill_warps>>;
+    using widest_fill_policy = Kokkos::TeamPolicy<
+        DeviceType,
+        Kokkos::LaunchBounds<fill_warps * neighbor_lanes, 16 / fill_warps>>;
     using member_type = typename team_policy::member_type;
-    // Squared lengths quantize to the key bits above the slot: 23 bits in the
-    // single-pass fill and 16 bits in the 64-bit keys of the team fill.
+    // Candidates keyed per lane by the single-pass fill: the fewest of 8, 12,
+    // 16 and 24 that hold the longest list, or none when the list exceeds 24
+    // per lane, which then takes the counted fill.
+    const int fill_keys = longest_candidates <= 8 * neighbor_lanes    ? 8
+                          : longest_candidates <= 12 * neighbor_lanes ? 12
+                          : longest_candidates <= 16 * neighbor_lanes ? 16
+                          : longest_candidates <= 24 * neighbor_lanes ? 24
+                                                                      : 0;
+    // Squared lengths quantize to the key bits above the slot: 23 or 22 bits
+    // in the single-pass fill and 16 bits in the 64-bit keys of the team fill.
+    const int fill_slot_bits = fill_keys <= 16 ? kCompactCanonicalSlotBits<16>
+                                               : kCompactCanonicalSlotBits<24>;
     const double fill_key_levels =
-        static_cast<double>((1u << (32 - kCompactCanonicalSlotBits)) - 1u);
+        static_cast<double>((1u << (32 - fill_slot_bits)) - 1u);
     const double key_scale = 65535.0 / cutsq;
     std::int64_t edge_count = 0;
     // The single-pass fill lays the rows out in the order of the centers and
@@ -1250,8 +1354,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
 #if defined(KOKKOS_ENABLE_CUDA)
     single_pass =
         std::is_same_v<typename DeviceType::execution_space, Kokkos::Cuda> &&
-        inum > 0 && inum == atom->nlocal &&
-        longest_candidates <= 16 * neighbor_lanes;
+        inum > 0 && inum == atom->nlocal && fill_keys > 0;
 #endif
     if (single_pass) {
       // === Pack every atom the fill can visit into one aligned record ===
@@ -1324,17 +1427,21 @@ class CompactCanonicalGraphKokkos : protected Pointers {
               }
             });
         const std::int64_t capacity = static_cast<std::int64_t>(edge_capacity);
-        if (longest_candidates <= 8 * neighbor_lanes) {
+        if (fill_keys == 8) {
           fill_rows<8, fill_warps>(
               fill_policy(teams, fill_warps * neighbor_lanes), k_list,
               fill_cutsq, fill_key_scale, vector_scale, source_csr);
-        } else if (longest_candidates <= 12 * neighbor_lanes) {
+        } else if (fill_keys == 12) {
           fill_rows<12, fill_warps>(
               fill_policy(teams, fill_warps * neighbor_lanes), k_list,
               fill_cutsq, fill_key_scale, vector_scale, source_csr);
-        } else {
+        } else if (fill_keys == 16) {
           fill_rows<16, fill_warps>(
               wide_fill_policy(teams, fill_warps * neighbor_lanes), k_list,
+              fill_cutsq, fill_key_scale, vector_scale, source_csr);
+        } else {
+          fill_rows<24, fill_warps>(
+              widest_fill_policy(teams, fill_warps * neighbor_lanes), k_list,
               fill_cutsq, fill_key_scale, vector_scale, source_csr);
         }
         if (bounded) {

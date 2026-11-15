@@ -6,6 +6,12 @@ and DPA4C use `pair_style deepmd/kk`; compressed native-spin DPA4C models use
 
 There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library.
 
+For `dpa4spin/kk`, use LAMMPS 4 Jul 2026 or newer in place of the 2025 release
+shown in the examples below. Configure both LAMMPS and the DeePMD-kit plugin
+with `CMAKE_CXX_STANDARD=20`, and build the plugin against that same LAMMPS
+source and Kokkos build. This requirement does not apply to the host
+`dpa4spin` pair style.
+
 ## Install LAMMPS's DeePMD-kit module (built-in mode)
 
 Before following this section, [DeePMD-kit C++ interface](install-from-source.md) should have be installed.
@@ -156,12 +162,20 @@ The Open MPI package of conda-forge is built with CUDA support but disables it b
 conda create -n openmpi -c conda-forge openmpi ucx
 ```
 
-Configure LAMMPS and the DeePMD-kit C++ interface in new build directories with both compiler wrappers of that environment, `-D MPI_C_COMPILER=${mpi_root}/bin/mpicc -D MPI_CXX_COMPILER=${mpi_root}/bin/mpicxx`, where `${mpi_root}` is its prefix; CMake finds the MPI of each language separately. Launch a run on several GPUs with the `mpirun` of that installation, enabling its CUDA support for the launch:
+Configure LAMMPS and the DeePMD-kit C++ interface in new build directories with both compiler wrappers of that environment, `-D MPI_C_COMPILER=${mpi_root}/bin/mpicc -D MPI_CXX_COMPILER=${mpi_root}/bin/mpicxx`, where `${mpi_root}` is its prefix; CMake finds the MPI of each language separately. Launch a run on several GPUs with the `mpirun` of that installation:
 
 ```bash
-mpirun --mca opal_cuda_support 1 -x UCX_MEMTYPE_CACHE=n -np 2 lmp -k on g 2 -sf kk -in in.lammps
+mpirun --mca opal_cuda_support 1 --mca pml ucx -x UCX_MEMTYPE_CACHE=n -np 2 lmp -k on g 2 -sf kk -in in.lammps
 ```
 
-With `UCX_MEMTYPE_CACHE=n`, UCX queries the memory type of every buffer instead of taking it from a cache that can report a GPU buffer as host memory and make UCX abort.
+The first option enables the CUDA support of Open MPI for the launch. The second selects UCX, which moves GPU buffers between the GPUs directly; Open MPI selects it by itself only on a node with an InfiniBand or RoCE adapter, and elsewhere, such as in a virtual machine without one, copies GPU buffers through host memory, which makes runs on several GPUs much slower. With `UCX_MEMTYPE_CACHE=n`, UCX queries the memory type of every buffer instead of taking it from a cache that can report a GPU buffer as host memory and make UCX abort.
 
-Launch a run on a single MPI rank without these options: it exchanges no atom data, and the CUDA support adds a memory-type query to every MPI call, which can lengthen the step of a small system by more than 10%.
+On a node with an InfiniBand or RoCE adapter, UCX may split every large message between two GPUs of the node across the direct GPU-to-GPU path and the adapter, whose share is far slower and holds up the whole message. Two more options keep each message on a single path, which the GPUs write directly:
+
+```bash
+mpirun --mca opal_cuda_support 1 --mca pml ucx -x UCX_MEMTYPE_CACHE=n -x UCX_MAX_RNDV_RAILS=1 -x UCX_RNDV_SCHEME=put_zcopy -np 4 lmp -k on g 4 -sf kk -in in.lammps
+```
+
+Models of several message-passing blocks exchange atom features at every block of every step and gain the most from them.
+
+Launch a run on a single MPI rank without these options: it exchanges no atom data, and the CUDA support of the MPI library slows the steps of a small system down noticeably.

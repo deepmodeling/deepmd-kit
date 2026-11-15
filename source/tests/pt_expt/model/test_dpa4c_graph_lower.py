@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import re
 from types import (
     SimpleNamespace,
 )
@@ -8,6 +9,7 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.pt_expt.kernels.dpa4c import canonical as dpa4c_canonical
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -21,6 +23,7 @@ from deepmd.pt_expt.utils.serialization import (
     _resolve_lower_kind,
     _trace_and_export,
     build_synthetic_graph_inputs,
+    compressed_export_unsupported_reason,
 )
 
 #: The compact canonical ABI and the fused spin backward are CUDA-only routes,
@@ -69,6 +72,35 @@ def _compressed_config(channels: int = 8) -> dict:
     # only reachable without it.
     fitting["resnet_dt"] = False
     return config
+
+
+def test_multiblock_communication_is_specific_to_the_lower() -> None:
+    """Canonical halo exchange belongs to its main ABI, not a sibling archive."""
+    from deepmd.pt_expt.utils.serialization import (
+        _collect_metadata,
+        _needs_with_comm_artifact,
+    )
+
+    config = _compressed_config()
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config)
+    assert model.atomic_model.has_message_passing_across_ranks()
+    for kind, needs_sibling in (
+        ("graph", True),
+        ("nlist", False),
+        ("dpa4c_canonical", False),
+    ):
+        assert _needs_with_comm_artifact(model, kind) is needs_sibling
+        metadata = _collect_metadata(model, lower_kind=kind)
+        assert metadata["has_message_passing"] is True
+        assert metadata["has_comm_artifact"] is needs_sibling
+        if not needs_sibling:
+            with pytest.raises(ValueError, match=r"with_comm_dict.*lower"):
+                _trace_and_export(
+                    {"model": model.serialize()},
+                    lower_kind=kind,
+                    with_comm_dict=True,
+                )
 
 
 def _run_graph(
@@ -669,6 +701,121 @@ def test_compact_canonical_export_accepts_source_csr_placeholders(
     for key, value in complete.items():
         if key != "atom_virial":
             assert torch.equal(declined[key], value), key
+
+
+@_GPU
+def test_a_multi_block_export_reads_its_border_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The compact lower of further message-passing blocks reads its border plan.
+
+    The communicator and the border plan follow the graph by name, since their
+    positions are those of the long-range inputs of the energy lower; a program
+    that took them for long-range inputs would ignore the halo rows of a
+    decomposed frame and give wrong energies on several ranks. Each of them
+    must reach the fused operator, and the metadata must announce the message
+    passing, from which the C++ interface decides to pass a border plan.
+    """
+    monkeypatch.setenv("DP_CUDA_INFER", "2")
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config).to("cpu").eval()
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    exported, metadata, _model_json, _output_keys = _trace_and_export(
+        {"model": model.serialize()},
+        lower_kind="dpa4c_canonical",
+        do_atomic_virial=True,
+    )
+    assert metadata["has_message_passing"]
+    user_inputs = exported.graph_signature.user_inputs
+    placeholders = {
+        node.name: node
+        for node in exported.graph_module.graph.nodes
+        if node.op == "placeholder"
+    }
+    for name, expected in zip(
+        user_inputs[-3:], ("communicator", "halo_send", "halo_swaps"), strict=True
+    ):
+        assert name.startswith(expected), user_inputs
+        assert any(
+            user.target
+            is torch.ops.deepmd.dpa4c_canonical_compress_energy_force.default
+            for user in placeholders[name].users
+        ), name
+
+
+@pytest.mark.parametrize(
+    ("change", "condition"),
+    [
+        ({"pair_exclude_types": [[0, 1]]}, "pair_exclude_types"),
+        ({"fitting_net": {"resnet_dt": True}}, "energy fitting"),
+    ],
+)
+def test_a_multi_block_model_the_canonical_operators_cannot_serve_is_refused(
+    monkeypatch: pytest.MonkeyPatch, change: dict, condition: str
+) -> None:
+    """A compressed model of several blocks is refused rather than evaluated uncompressed.
+
+    The operators of a generic lower evaluate one block, so a compressed model
+    of several blocks that the compact canonical operators of a CUDA target do
+    not serve, here one that excludes a type pair or whose energy fitting
+    takes a timestep per layer, would evaluate its descriptor through the
+    uncompressed equations there. The automatic selection of the lower
+    reports the failing condition instead, and a freeze learns it from the
+    uncompressed model. The judgment reads the configuration alone, so the
+    test targets CUDA on any device.
+    """
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    for key, value in change.items():
+        if isinstance(value, dict):
+            config[key].update(value)
+        else:
+            config[key] = value
+    model = get_model(config).to("cpu").eval()
+    pattern = f"compact canonical.*{condition}"
+    assert re.search(pattern, compressed_export_unsupported_reason(model) or "")
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    with pytest.raises(ValueError, match=pattern):
+        _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto")
+
+
+def test_compression_preflight_checks_canonical_operator_availability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    monkeypatch.setattr(dpa4c_canonical, "op_available", lambda: False)
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config).to("cpu").eval()
+    assert (
+        "lacks the compact canonical operators"
+        in compressed_export_unsupported_reason(model)
+    )
+    model.get_descriptor().enable_compression(0.5)
+    assert dpa4c_canonical.canonical_model_eligible(model)
+
+
+def test_a_freeze_judges_a_case_embedding_as_the_export_folds_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model of several blocks with a case embedding deploys compressed.
+
+    The export folds the case embedding of a deployed branch into the first
+    layer of its fitting, which the fused fitting kernels then reproduce, so
+    the judgment of a freeze before compression folds it too, on a copy that
+    leaves the model unchanged.
+    """
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    monkeypatch.setattr(dpa4c_canonical, "op_available", lambda: True)
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    config["fitting_net"]["dim_case_embd"] = 2
+    model = get_model(config).to("cpu").eval()
+    model.set_case_embd(1)
+    assert compressed_export_unsupported_reason(model) is None
+    assert model.get_fitting_net().dim_case_embd == 2
 
 
 @_GPU

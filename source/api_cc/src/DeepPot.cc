@@ -670,6 +670,7 @@ void DeepPotBackend::compute_canonical_graph_gpu(
     const std::int64_t* d_source_order,
     const double* d_coord,
     void* world,
+    const DP_HaloExchange* halo,
     const double* box,
     const std::int64_t nloc,
     const std::int64_t nall_nodes,
@@ -687,6 +688,7 @@ void DeepPotBackend::compute_canonical_graph_gpu(
   (void)d_source_order;
   (void)d_coord;
   (void)world;
+  (void)halo;
   (void)box;
   (void)nloc;
   (void)nall_nodes;
@@ -702,6 +704,8 @@ bool DeepPotBackend::uses_fp32_edge_vectors() const { return false; }
 bool DeepPotBackend::canonical_graph_requires_source_csr() const {
   return false;
 }
+
+bool DeepPotBackend::canonical_graph_requires_halo() const { return false; }
 
 bool DeepPotBackend::supports_device_edge_inference() const { return false; }
 
@@ -776,6 +780,7 @@ void DeepPot::compute_canonical_graph_gpu(
     const std::int64_t* d_source_order,
     const double* d_coord,
     void* world,
+    const DP_HaloExchange* halo,
     const double* box,
     const std::int64_t nloc,
     const std::int64_t nall_nodes,
@@ -784,7 +789,7 @@ void DeepPot::compute_canonical_graph_gpu(
   dp->compute_canonical_graph_gpu(
       d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
       index_width, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
-      d_source_order, d_coord, world, box, nloc, nall_nodes, edge_storage,
+      d_source_order, d_coord, world, halo, box, nloc, nall_nodes, edge_storage,
       stream);
 }
 
@@ -802,6 +807,10 @@ bool DeepPot::uses_canonical_graph_inference() const {
 
 bool DeepPot::canonical_graph_requires_source_csr() const {
   return dp->canonical_graph_requires_source_csr();
+}
+
+bool DeepPot::canonical_graph_requires_halo() const {
+  return dp->canonical_graph_requires_halo();
 }
 
 bool DeepPot::has_long_range() const { return dp->has_long_range(); }

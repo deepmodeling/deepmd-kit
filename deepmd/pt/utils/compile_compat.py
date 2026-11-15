@@ -648,11 +648,11 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
     if tune_train >= 2:
         compile_options["max_autotune_gemm"] = True
     if inference:
-        # PyTorch 2.11 CPU horizontal fusion can reuse a scatter's index
-        # array in an earlier gather, before the array is declared. Keep
-        # those loops separate while retaining SIMD and vertical fusion.
+        # PyTorch 2.11 CPU SIMD codegen can reuse a scatter's index array
+        # in an earlier gather before its declaration, even without
+        # horizontal fusion. Scalar codegen preserves the dynamic graph.
         if _torch_release() == (2, 11):
-            compile_options["cpp.max_horizontal_fusion_size"] = 1
+            compile_options["cpp.simdlen"] = 1
         # The peak-memory reordering pass sizes buffers through
         # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
         # lowered from ``make_fx`` fake placeholders whose edge-count symbols

@@ -1512,7 +1512,8 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         gw_all = randn(self.N_LAYERS - 1, n_focus, focus_dim, half) * 0.3
         return u0, alpha, w0_all, w1_all, gw_all
 
-    def _errors_against_fp64(self, op, u0, alpha, w0_all, w1_all, gw_all, grad_seed):
+    def _fp64_reference(self, u0, alpha, w0_all, w1_all, gw_all, grad_seed):
+        """Evaluate one oracle for both fp32 and fp16x3 on identical operands."""
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_reference,
         )
@@ -1530,7 +1531,12 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             True,
         )
         gu_ref, _ = torch.autograd.grad(x_ref, [u0_ref, alpha_ref], grad_seed.double())
+        return x_ref.detach(), gu_ref.detach()
 
+    def _errors_against_fp64(
+        self, op, u0, alpha, w0_all, w1_all, gw_all, grad_seed, *, reference
+    ):
+        x_ref, gu_ref = reference
         u0_run = u0.clone().requires_grad_(True)
         alpha_run = alpha.clone().requires_grad_(True)
         stack_output = op(
@@ -1562,11 +1568,12 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             self.N_EDGE, self.N_FOCUS, row, device="cuda", generator=generator
         )
 
+        reference = self._fp64_reference(*inputs, grad_seed)
         fp32_fwd, fp32_bwd = self._errors_against_fp64(
-            _mixing_stack_op, *inputs, grad_seed
+            _mixing_stack_op, *inputs, grad_seed, reference=reference
         )
         x3_fwd, x3_bwd = self._errors_against_fp64(
-            mixing_stack_fp16x3, *inputs, grad_seed
+            mixing_stack_fp16x3, *inputs, grad_seed, reference=reference
         )
         self.assertLess(x3_fwd, max(3.0 * fp32_fwd, 2e-6))
         self.assertLess(x3_bwd, max(3.0 * fp32_bwd, 8e-6))
@@ -1595,12 +1602,14 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         for scale in (1e-4, 1e2):
             with self.subTest(scale=scale):
                 scaled = (u0 * scale, alpha, w0_all, w1_all, gw_all)
+                reference = self._fp64_reference(*scaled, grad_seed)
                 fp32_fwd, fp32_bwd = self._errors_against_fp64(
-                    _mixing_stack_op, *scaled, grad_seed
+                    _mixing_stack_op, *scaled, grad_seed, reference=reference
                 )
                 x3_fwd, x3_bwd = self._errors_against_fp64(
-                    mixing_stack_fp16x3, *scaled, grad_seed
+                    mixing_stack_fp16x3, *scaled, grad_seed, reference=reference
                 )
+                del reference
                 self.assertLess(x3_fwd, max(3.0 * fp32_fwd, 2e-6))
                 self.assertLess(x3_bwd, max(3.0 * fp32_bwd, 8e-6))
 

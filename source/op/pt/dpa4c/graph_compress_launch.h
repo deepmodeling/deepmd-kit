@@ -41,11 +41,13 @@ constexpr int kFoldedModes = 4;
 /// 64-bit fixed point, and the pair energy fp64.
 struct Arguments {
   long node_count = 0;
-  // Node count of the whole system, from which the edge scans choose their
-  // row split and their co-scheduled blocks, both of which change the
-  // summation order of a row, so that every run of a tiled system takes the
-  // schedule of the whole system.
+  // Rows of the whole system that the operator evaluates -- every node, or the
+  // owned nodes of a node set with halo rows -- from which the edge scans
+  // choose their row split and their co-scheduled blocks, both of which change
+  // the summation order of a row, so that every run of a tiled system takes
+  // the schedule of the whole system.
   long system_node_count = 0;
+  // Slots of the edge storage, at least the edges of every row.
   long edge_count = 0;
   int lmax = 2;
   int interval_count = 0;
@@ -136,6 +138,21 @@ struct Arguments {
   // and this radius long, so the edge scans resolve the window of a pair only
   // for the shorter bonds of the row.
   const float* largest_radius = nullptr;
+  // === Source gate of a bridged descriptor of several blocks ===
+  // A descriptor of several blocks with a bridging window mutes every edge
+  // that an atom inside the frozen zone of a pair emits towards a third atom:
+  // the envelope of an edge carries the product of the switches of every
+  // other pair of its source, its leave-one-out gate. ``source_gate`` holds,
+  // per node over the absolute node axis, the two totals of the switches of
+  // the pairs of the node, the sum of the logarithms of the nonzero ones and
+  // the number of zero ones (source_gate_kernel). ``gate_sums`` holds, per
+  // node over the absolute node axis, signed fixed-point sums in units of
+  // ``1 / kForceFixedScale``, onto which the edge backward adds the envelope
+  // cotangent times the envelope of every edge whose source has a pair inside
+  // its window (see gate_closure_kernel). Both are null for a descriptor of
+  // one block or without a window, and ``gate_sums`` for a forward launch.
+  const float2* source_gate = nullptr;
+  unsigned long long* gate_sums = nullptr;
 
   // === Native spin ===
   // Present together or not at all. ``spin`` is indexed by absolute node id,
@@ -163,6 +180,10 @@ struct Arguments {
   float* descriptor = nullptr;
   float* state_out = nullptr;
   float* moment_gradient = nullptr;
+  // Divisor columns of the descriptor, two per node and offset by the caller
+  // like ``descriptor``, which a readout launched apart from the scan that
+  // emits them copies (FirstStage::Readout); null for every other launch.
+  const float* divisors = nullptr;
   // Per-edge energy cotangent. A null pointer skips the store, which a
   // backward that assembles the force itself only needs for the per-atom
   // virial.
@@ -324,22 +345,13 @@ constexpr int bispectrum_prefix(int lmax, int k1, int k2, int a, int b, int c) {
 // Degree triples that the sparse coupling artifact must describe, that is
 // every allowed triple except the two the kernel contracts in closed form.
 constexpr int coupling_record_count(int lmax) {
-  int total = 0;
-  for (int l1 = 1; l1 <= lmax; ++l1) {
-    for (int l2 = l1; l2 <= lmax; ++l2) {
-      for (int l3 = l2; l3 <= lmax; ++l3) {
-        if (l3 > l1 + l2 || (l1 + l2 + l3) % 2 != 0) {
-          continue;
-        }
-        if ((l1 == 1 && l2 == 1 && l3 == 2) ||
-            (l1 == 2 && l2 == 2 && l3 == 2)) {
-          continue;
-        }
-        ++total;
-      }
-    }
+  if (lmax < 2) {
+    return 0;
   }
-  return total;
+  if (lmax % 2 == 0) {
+    return ((lmax * lmax * lmax) + (9 * lmax * lmax) + (2 * lmax) - 48) / 24;
+  }
+  return ((lmax * lmax * lmax) + (9 * lmax * lmax) - lmax - 57) / 24;
 }
 
 // Number of lanes that cooperate on one edge. A warp therefore keeps

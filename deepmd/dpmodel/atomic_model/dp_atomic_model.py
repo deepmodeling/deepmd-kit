@@ -671,6 +671,7 @@ class DPAtomicModel(BaseAtomicModel):
         comm_dict: dict | None = None,
         topologies: dict[str, Any] | None = None,
         node_mask: Array | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, Array]:
         """Graph analogue of :meth:`forward_atomic` on the flat node axis.
 
@@ -709,11 +710,18 @@ class DPAtomicModel(BaseAtomicModel):
         node_mask
             flat mask of the real and owned nodes, which carry the fields of
             the long-range module.
+        return_atomic_feature
+            whether the forward stops after the fitting network and returns
+            the embeddings of the nodes instead of the fitting output; the
+            long-range module is then not evaluated.
 
         Returns
         -------
         result_dict
-            the result dict on the flat node axis, defined by the `FittingOutputDef`.
+            the result dict on the flat node axis, defined by the `FittingOutputDef`;
+            with ``return_atomic_feature``, the ``descriptor`` (N, d) and the
+            ``atomic_feature`` (N, h), the activation after the last hidden
+            layer of the fitting network.
 
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
@@ -804,6 +812,7 @@ class DPAtomicModel(BaseAtomicModel):
         # its type, so along the closing of a pair the learned energy follows
         # the switch linearly while the analytical pair term takes over.
         gate_kwargs = {} if node_gate is None else {"node_gate": node_gate}
+        middle_kwargs = {"return_middle_output": True} if return_atomic_feature else {}
         ret = self.fitting_net.call_graph(
             gg,
             atype,
@@ -814,7 +823,12 @@ class DPAtomicModel(BaseAtomicModel):
             aparam=aparam_node,
             **vacuum_kwargs,
             **gate_kwargs,
+            **middle_kwargs,
         )
+        # The embeddings are the descriptor and the last hidden activation of
+        # the fitting network, which the long-range module does not change.
+        if return_atomic_feature:
+            return {"descriptor": gg, "atomic_feature": ret["middle_output"]}
         # === Step 5. Long-range module ===
         # The module reads the descriptor of the real nodes; the reference
         # nodes appended above take no part in it.
@@ -835,6 +849,65 @@ class DPAtomicModel(BaseAtomicModel):
                 aparam=aparam_node,
                 charge_spin=charge_spin_frame,
             )
+        return ret
+
+    def forward_embedding_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        node_mask: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Descriptor, atomic feature and structural feature of the nodes.
+
+        The forward of :meth:`forward_atomic_graph` stops after the fitting
+        network, and the structural feature sums the atomic feature over the
+        counted nodes of every frame.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free)
+        atype
+            flat local atom types, clamped to valid types. N
+        node_mask
+            flat mask of the counted nodes, over which the structural feature
+            sums. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level charge/spin conditioning.
+
+        Returns
+        -------
+        dict[str, Array]
+            ``descriptor`` (N, d), ``atomic_feature`` (N, h) and
+            ``structural_feature`` (nf, h).
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            frame_id_from_n_node,
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        ret = self.forward_atomic_graph(
+            graph,
+            atype,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            return_atomic_feature=True,
+        )
+        atomic_feature = ret["atomic_feature"]
+        ret["structural_feature"] = segment_sum(
+            xp.where(node_mask[:, None], atomic_feature, xp.zeros_like(atomic_feature)),
+            frame_id_from_n_node(graph.n_node, n_total=atype.shape[0]),
+            graph.n_node.shape[0],
+        )
         return ret
 
     def _frame_conditions(

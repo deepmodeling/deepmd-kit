@@ -37,6 +37,7 @@ that the Python builder forms for the periodic case, against which the C++
 suite checks the mesh it builds for the graph lower; it needs no archive.
 """
 
+import argparse
 import copy
 import dataclasses
 import json
@@ -273,11 +274,14 @@ def _export_compressed(pt2_path: str, config: dict) -> None:
     deserialize_to_file(pt2_path, data, do_atomic_virial=True, lower_kind="auto")
 
 
-def main() -> None:
+def main(*, compressed_only: bool = False) -> None:
     from deepmd.pt_expt.utils.serialization import (
         deserialize_to_file,
         mesh_freeze_supported,
     )
+
+    if compressed_only and os.environ.get("DP_VARIANT") != "cuda":
+        raise ValueError("--compressed-only requires DP_VARIANT=cuda")
 
     ensure_inductor_compiler()
     load_custom_ops()
@@ -286,27 +290,29 @@ def main() -> None:
     for suffix, periodic in (("", False), ("_periodic", True)):
         config = _periodic(CONFIG) if periodic else CONFIG
         stem = os.path.join(base_dir, f"deeppot_dpa4c_long_range{suffix}")
-        data = {
-            "model": _model_dict(config),
-            "model_def_script": config,
-            "backend": "dpmodel",
-            "software": "deepmd-kit",
-            "version": "3.0.0",
-        }
-        if periodic:
-            _write_mesh_ref(config, f"{stem}_mesh.expected")
-        if periodic and not mesh_freeze_supported():
-            # The C++ and LAMMPS suites skip the archive this torch cannot
-            # package.
-            print(f"Skipping {stem}.pt2: the mesh evaluation needs torch >= 2.12")  # noqa: T201
-        else:
-            print(f"Exporting to {stem}.pt2 (lower_kind='graph') ...")  # noqa: T201
-            deserialize_to_file(
-                f"{stem}.pt2", data, do_atomic_virial=True, lower_kind="graph"
-            )
-            _check_metadata(f"{stem}.pt2", "graph", periodic)
-            _write_ref(f"{stem}.pt2", f"{stem}.expected", periodic)
-
+        # The dedicated Kokkos job consumes only compact canonical archives.
+        # The main C++ job keeps the graph and mesh-builder reference coverage.
+        if not compressed_only:
+            data = {
+                "model": _model_dict(config),
+                "model_def_script": config,
+                "backend": "dpmodel",
+                "software": "deepmd-kit",
+                "version": "3.0.0",
+            }
+            if periodic:
+                _write_mesh_ref(config, f"{stem}_mesh.expected")
+            if periodic and not mesh_freeze_supported():
+                # The C++ and LAMMPS suites skip the archive this torch cannot
+                # package.
+                print(f"Skipping {stem}.pt2: the mesh evaluation needs torch >= 2.12")  # noqa: T201
+            else:
+                print(f"Exporting to {stem}.pt2 (lower_kind='graph') ...")  # noqa: T201
+                deserialize_to_file(
+                    f"{stem}.pt2", data, do_atomic_virial=True, lower_kind="graph"
+                )
+                _check_metadata(f"{stem}.pt2", "graph", periodic)
+                _write_ref(f"{stem}.pt2", f"{stem}.expected", periodic)
         if os.environ.get("DP_VARIANT") == "cuda":
             compressed = f"{stem}_compressed"
             compressed_config = (
@@ -320,4 +326,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--compressed-only",
+        action="store_true",
+        help="generate only the two CUDA compact-canonical fixtures for Kokkos",
+    )
+    main(compressed_only=parser.parse_args().compressed_only)

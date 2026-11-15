@@ -88,8 +88,18 @@ from deepmd.utils.element_radii import (
     UNIT_CONTACT_RADIUS,
 )
 
+from .attention import (
+    block_layout,
+    build_block_artifacts,
+    further_block_moments,
+)
+from .profile import (
+    DescriptorProfile,
+)
+
 if TYPE_CHECKING:
     from collections.abc import (
+        Callable,
         Sequence,
     )
 
@@ -108,6 +118,7 @@ __all__ = [
     "ef_op_available",
     "ensure_registered",
     "fitting_energy_and_gradient",
+    "graph_operator_eligible",
     "mega_eligible",
     "op_available",
     "reduce_edge_spin_gradient",
@@ -214,8 +225,9 @@ def mega_eligible(descriptor: Any) -> bool:
     Native spin is a compiled variant of the same kernels rather than a
     separate operator, and every spin width follows from the channel count, so
     a spin-conditioned descriptor is eligible on exactly the conditions a
-    spin-free one is. Each condition below is a width the compiled operator
-    specializes on.
+    spin-free one is. The further message-passing blocks read the widths of
+    the first one, so any depth is eligible. Each condition below is a width
+    the compiled operator specializes on.
 
     Eligibility is a property of the descriptor alone: it decides whether the
     compression artifacts are worth building, which a snapshot does once for
@@ -238,6 +250,27 @@ def mega_eligible(descriptor: Any) -> bool:
         and int(getattr(descriptor, "radial_modes", -1)) in SUPPORTED_RADIAL_MODES
         and str(getattr(descriptor, "precision", "")).lower() in ("float32", "single")
     )
+
+
+def graph_operator_eligible(descriptor: Any) -> bool:
+    """Return whether the NeighborGraph operators evaluate the descriptor.
+
+    The descriptor operator and the fused energy-force route of the generic
+    graph compile one reduction, so a descriptor with further blocks takes the
+    compact canonical operator on its deployment path and its own equations
+    elsewhere.
+
+    Parameters
+    ----------
+    descriptor
+        Descriptor instance, which need not be a DPA4C.
+
+    Returns
+    -------
+    bool
+        Whether the NeighborGraph operators cover this configuration.
+    """
+    return mega_eligible(descriptor) and int(getattr(descriptor, "n_blocks", 1)) == 1
 
 
 def compression_ineligibility_reason(descriptor: Any) -> str | None:
@@ -290,69 +323,6 @@ def compression_ineligibility_reason(descriptor: Any) -> str | None:
 
 
 # === Compiled profile ===
-
-
-@dataclass(frozen=True)
-class DescriptorProfile:
-    r"""Describe every width the compiled operator derives from its inputs.
-
-    Attributes
-    ----------
-    channels
-        Scalar degree-zero width :math:`C_0`.
-    lmax
-        Maximum angular degree.
-    degree_channels
-        Channel width of each degree from zero through ``lmax``.
-    ranks
-        Bispectrum probe rank of each degree from one through ``lmax``.
-    moment_width
-        Flat moment width :math:`S=\\sum_\\ell(2\\ell+1)C_\\ell`.
-    output_width
-        Invariant descriptor width consumed by the fitting network.
-    gram_base
-        Descriptor coordinate of the first degree-one Gram entry.
-    bispectrum_base
-        Descriptor coordinate of the first bispectrum entry.
-    spin_width
-        Width of the trailing native-spin invariant block.
-    basis
-        Width of the low-rank expansion of the scalar-only channels, zero for
-        a profile that admits no expansion.
-    """
-
-    channels: int
-    lmax: int
-    degree_channels: tuple[int, ...]
-    ranks: tuple[int, ...]
-    moment_width: int
-    output_width: int
-    gram_base: int
-    bispectrum_base: int
-    spin_channels: int
-    spin_width: int
-    basis: int
-
-    @property
-    def state_width(self) -> int:
-        """Return the saved-state width: the moments plus both normalizers."""
-        return self.moment_width + 2
-
-    @property
-    def has_spin(self) -> bool:
-        """Return whether the compiled profile carries the spin families."""
-        return self.spin_channels > 0
-
-    @property
-    def spin_slice(self) -> slice:
-        """Return the descriptor columns holding the spin invariants.
-
-        The layout closes with the spin invariants, the two moment divisors
-        and the center type tail, so the block is addressed from the end and
-        is empty for a spin-free profile.
-        """
-        stop = self.output_width - 2 - self.degree_channels[0]
-        return slice(stop - self.spin_width, stop)
 
 
 def descriptor_profile(
@@ -935,12 +905,13 @@ def build_compression_artifacts(
         Radial spline coefficients, the low-rank table of the scalar-only
         channels and its expansion (empty when no basis is adopted), metadata,
         ordered FiLM, mixing and type caches, padded readout projections,
-        sparse angular couplings, and the output calibration.
+        sparse angular couplings, the output calibration, and the records of
+        the further message-passing blocks (empty for a single block).
 
     Raises
     ------
     ValueError
-        If the descriptor excludes type pairs, or is not an fp32 model with a
+        If the descriptor excludes type pairs or is not an fp32 model with a
         compiled specialization.
     """
     reason = compression_ineligibility_reason(descriptor)
@@ -1004,6 +975,7 @@ def build_compression_artifacts(
         ),
         "output_mean": output_mean.detach().contiguous(),
         "output_inv_std": output_inv_std.detach().contiguous(),
+        "blocks": build_block_artifacts(descriptor, profile),
         **build_charge_state_artifacts(descriptor, descriptor.default_chg_spin),
     }
 
@@ -1349,8 +1321,8 @@ def _edge_envelope(
     rcut: float,
     f_inner: float,
     f_outer: float,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Evaluate the edge envelope and the length the radial table reads.
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Evaluate the edge envelope, the length the radial table reads and the switch.
 
     The window of a pair is two dimensionless fractions of that pair's own
     length scale ``contact``, so both are functions of the reduced distance
@@ -1360,24 +1332,92 @@ def _edge_envelope(
     the window midpoint below the inner fraction and rises with the
     antiderivative ``S(t)`` of the switch, ``S(1) = 1/2``, to meet the true
     length at the outer fraction. Equal fractions denote a model without a
-    bridging window, whose table reads the true length and whose envelope is
-    the cutoff factor alone.
+    bridging window, whose table reads the true length, whose envelope is the
+    cutoff factor alone and whose switch is one.
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor]
-        The envelope and the length the table reads, both with the shape of
-        ``radius``.
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        The envelope, the length the table reads and the switch ``h(t)``, all
+        with the shape of ``radius``.
     """
     if f_outer <= f_inner:
-        return _cutoff_factor(radius, rcut), radius
+        return _cutoff_factor(radius, rcut), radius, torch.ones_like(radius)
     width = f_outer - f_inner
     t = ((radius / contact - f_inner) / width).clamp(0.0, 1.0)
     switch = t**4 * (35.0 + t * (-84.0 + t * (70.0 - 20.0 * t)))
     rise = t**5 * (7.0 + t * (-14.0 + t * (10.0 - 2.5 * t)))
     clamped = contact * (window_midpoint(f_inner, f_outer) + width * rise)
     seen = torch.where(radius >= f_outer * contact, radius, clamped)
-    return _cutoff_factor(seen, rcut) * switch, seen
+    return _cutoff_factor(seen, rcut) * switch, seen, switch
+
+
+def _source_gate(
+    switch: torch.Tensor,
+    row_switch: torch.Tensor,
+    keep: torch.Tensor,
+    source: torch.Tensor,
+    destination: torch.Tensor,
+    node_count: int,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None,
+) -> torch.Tensor:
+    r"""Evaluate the leave-one-out source gate of every edge.
+
+    A descriptor of several blocks with a bridging window mutes every edge that
+    an atom inside the frozen zone of a pair emits towards a third atom (see
+    ``compute_source_gates`` of DPA4): the gate of an edge :math:`j \to i` is
+    the product of the switches of every other pair of :math:`j`. The graph
+    holds both directions of every bond, so the row of :math:`j` holds every
+    pair of :math:`j`, and the totals of the rows, the sum of the logarithms
+    of the nonzero switches and the number of zero ones, are those of the
+    edges :math:`j` emits; ``exchange`` refreshes the totals of the halo rows,
+    which carry no edges, from their owners. An edge then removes its own
+    switch from the totals of its source. Masked edges contribute a switch of
+    one.
+
+    The totals read ``row_switch``, the switch of every edge as an entry of the
+    row of its destination, whose values are those of ``switch``. A separately
+    differentiated copy separates the slope of the totals, which belongs to
+    the node of each row, from the slope of the switch of every edge itself.
+
+    Parameters
+    ----------
+    switch
+        Bridging switch of every edge with shape ``(E,)``.
+    row_switch
+        Bridging switch of every edge as the totals read it, shape ``(E,)``.
+    keep
+        One on the kept edges and zero on the masked ones, shape ``(E,)``.
+    source, destination
+        Source and destination node of every edge with shape ``(E,)``.
+    node_count
+        Number of nodes.
+    exchange
+        Halo exchange of a node set with halo rows, or ``None``.
+
+    Returns
+    -------
+    torch.Tensor
+        Gate of every edge with shape ``(E,)``.
+    """
+
+    def logarithms(value: torch.Tensor) -> torch.Tensor:
+        weight = value * keep + (1.0 - keep)
+        frozen = (weight <= 0.0).to(weight.dtype)
+        log_weight = torch.log(
+            torch.where(weight > 0.0, weight, torch.ones_like(weight))
+        )
+        return torch.stack((log_weight, frozen), dim=-1)
+
+    totals = torch.zeros(
+        node_count, 2, dtype=switch.dtype, device=switch.device
+    ).index_add_(0, destination, logarithms(row_switch))
+    if exchange is not None:
+        totals = exchange(totals)
+    others = totals[source] - logarithms(switch)
+    return torch.where(
+        others[:, 1] > 0.5, torch.zeros_like(switch), torch.exp(others[:, 0])
+    )
 
 
 def _half_gram(value: torch.Tensor) -> torch.Tensor:
@@ -1463,6 +1503,9 @@ def _reference_descriptor(
     spin_pair: torch.Tensor | None = None,
     spin_type: torch.Tensor | None = None,
     edge_spin: torch.Tensor | None = None,
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    row_edge_vec: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Reference implementation of the compressed DPA4C descriptor.
 
@@ -1479,6 +1522,16 @@ def _reference_descriptor(
     every edge, which the neighbor families read in place of
     ``spin[source]``; with equal values the descriptor is the same, and
     the cotangent of the neighbor moments is resolved per edge.
+
+    ``blocks_record`` holds the records of the further message-passing blocks
+    with shape ``(n_blocks - 1, width)`` (see
+    :func:`~deepmd.pt_expt.kernels.dpa4c.attention.build_block_artifacts`);
+    ``None`` or an empty tensor denotes a single block. ``exchange`` refreshes
+    the halo rows of a node feature from their owners before every further
+    block reads them, and is ``None`` for a graph without halo nodes.
+    ``row_edge_vec``, with the values of ``edge_vec``, is the edge geometry
+    that the switch totals of a source gate read (see :func:`_source_gate`);
+    ``None`` reads ``edge_vec`` itself.
     """
     del destination_order, destination_row_ptr, canonical, coupling_meta
     compute = edge_vec.to(torch.float32)
@@ -1499,10 +1552,22 @@ def _reference_descriptor(
     maskf = mask.to(compute.dtype)
     radii = contact_radius.to(compute.dtype)
     contact = radii[center_type] + radii[neighbor_type]
-    envelope, seen = _edge_envelope(
+    envelope, seen, switch = _edge_envelope(
         radius, contact, float(rcut), float(f_inner), float(f_outer)
     )
     envelope = envelope * maskf
+    further_blocks = blocks_record is not None and blocks_record.numel() > 0
+    if further_blocks and float(f_outer) > float(f_inner):
+        row_switch = switch
+        if row_edge_vec is not None:
+            row = row_edge_vec.to(torch.float32)
+            row_radius = torch.sqrt((row * row).sum(dim=-1) + float(eps) ** 2)
+            row_switch = _edge_envelope(
+                row_radius, contact, float(rcut), float(f_inner), float(f_outer)
+            )[2]
+        envelope = envelope * _source_gate(
+            switch, row_switch, maskf, source, destination, node_count, exchange
+        )
 
     # === Step 2. Evaluate the ordered FiLM amplitude ===
     tabulated = _table_lookup(
@@ -1568,66 +1633,12 @@ def _reference_descriptor(
             * angular_norm
         )
 
-    # === Step 4. Align, project, and contract the invariant readout ===
-    width_one, width_two = profile.degree_channels[1], profile.degree_channels[2]
-    rank_one, rank_two = profile.ranks[0], profile.ranks[1]
-    aligned = list(blocks)
-    aligned[1] = blocks[1] @ readout_matrices[0, :width_one, :width_one]
-    aligned[2] = blocks[2] @ readout_matrices[2, :width_two, :width_two]
-    probes = list(aligned[1:])
-    probes[0] = aligned[1] @ readout_matrices[4, :width_one, :rank_one]
-    probes[1] = aligned[2] @ readout_matrices[6, :width_two, :rank_two]
-
-    vectors = probes[0].transpose(1, 2)
-    tensors = packed_l2_to_stf(probes[1].transpose(1, 2))
-    tensor_vector = (tensors[:, :, None] @ vectors[:, None, :, :, None]).squeeze(-1)
-    parts: dict[int, torch.Tensor] = {}
-    for record in coupling_records(int(channels), profile.lmax)[0]:
-        degree_1, degree_2, degree_3 = record.degrees
-        start = record.nonzero_begin
-        components = coupling_entry[start : start + record.nonzero_count]
-        coupling = torch.zeros(
-            2 * degree_1 + 1,
-            2 * degree_2 + 1,
-            2 * degree_3 + 1,
-            dtype=compute.dtype,
-            device=compute.device,
-        )
-        coupling[
-            components & 0xFF,
-            (components >> 8) & 0xFF,
-            (components >> 16) & 0xFF,
-        ] = coupling_value[start : start + record.nonzero_count].to(compute.dtype)
-        full = _contract_coupling(
-            coupling,
-            probes[degree_1 - 1],
-            probes[degree_2 - 1],
-            probes[degree_3 - 1],
-        )
-        start = record.probe_begin
-        selection = coupling_entry[start : start + record.probe_count]
-        rank_2 = profile.ranks[degree_2 - 1]
-        rank_3 = profile.ranks[degree_3 - 1]
-        flat = (
-            ((selection & 0xFF) * rank_2 + ((selection >> 8) & 0xFF)) * rank_3
-            + ((selection >> 16) & 0xFF)
-        ).to(torch.long)
-        parts[record.coordinate] = full[:, flat] * coupling_value[
-            start : start + record.probe_count
-        ].to(compute.dtype)
-
-    parts[profile.bispectrum_base] = _closed_form_112(
-        vectors,
-        tensor_vector,
-        rank_one,
-        rank_two,
-    )
-    parts[_closed_form_222_coordinate(profile)] = _closed_form_222(tensors)
-
-    # === Step 5. Reduce and contract the native spin families ===
-    spin_blocks: list[torch.Tensor] = []
+    # === Step 4. Reduce the native spin families ===
+    # The spin moments belong to the first block, and every further block
+    # keeps them.
+    spin_moments = None
     if has_spin:
-        magnitude, coordination, spin_vector, spin_tensor = _reference_spin_moments(
+        spin_moments = _reference_spin_moments(
             spin,
             spin[source] if edge_spin is None else edge_spin,
             spin_pair,
@@ -1642,38 +1653,126 @@ def _reference_descriptor(
             angular_norm,
             node_count,
         )
-        spin_blocks = [
-            _half_gram(spin_vector),
-            # The quadrupole Gram omits its leading diagonal entry, the
-            # on-site self-term: the harmonic block is homogeneous, so
-            # |B_2(s)|^2 = |s|^4 makes that entry a per-type constant times
-            # the square of the vector block's own on-site self-term.
-            _half_gram(spin_tensor)[:, 1:],
-            # Cross Gram against the unaligned geometric degree-two moments.
-            # Both factors carry even spin order, so the product is
-            # admissible; with a unit direction it evaluates to the
-            # single-ion anisotropy sum over neighbors.
-            (spin_tensor.transpose(1, 2) @ blocks[2]).flatten(start_dim=1),
-            magnitude,
-            coordination,
-        ]
+    center_type_embedding = type_embedding[atype]
 
-    # === Step 6. Assemble and calibrate the invariant output ===
-    quartic = (tensor_vector * tensor_vector).sum(dim=-1).flatten(start_dim=1)
-    descriptor = torch.cat(
-        [
-            blocks[0][:, 0, :],
-            *[_half_gram(block) for block in aligned[1:]],
-            *[parts[key] for key in sorted(parts)],
-            quartic,
-            *spin_blocks,
-            scalar_divisor,
-            angular_divisor,
-            type_embedding[atype],
-        ],
-        dim=-1,
-    )
-    return (descriptor - output_mean[None, :]) * output_inv_std[None, :]
+    def readout(moments: list[torch.Tensor]) -> torch.Tensor:
+        """Contract the moments of one block into its calibrated invariants."""
+        # === Align, project, and contract the invariant readout ===
+        width_one, width_two = profile.degree_channels[1], profile.degree_channels[2]
+        rank_one, rank_two = profile.ranks[0], profile.ranks[1]
+        aligned = list(moments)
+        aligned[1] = moments[1] @ readout_matrices[0, :width_one, :width_one]
+        aligned[2] = moments[2] @ readout_matrices[2, :width_two, :width_two]
+        probes = list(aligned[1:])
+        probes[0] = aligned[1] @ readout_matrices[4, :width_one, :rank_one]
+        probes[1] = aligned[2] @ readout_matrices[6, :width_two, :rank_two]
+
+        vectors = probes[0].transpose(1, 2)
+        tensors = packed_l2_to_stf(probes[1].transpose(1, 2))
+        tensor_vector = (tensors[:, :, None] @ vectors[:, None, :, :, None]).squeeze(-1)
+        parts: dict[int, torch.Tensor] = {}
+        for record in coupling_records(int(channels), profile.lmax)[0]:
+            degree_1, degree_2, degree_3 = record.degrees
+            start = record.nonzero_begin
+            components = coupling_entry[start : start + record.nonzero_count]
+            coupling = torch.zeros(
+                2 * degree_1 + 1,
+                2 * degree_2 + 1,
+                2 * degree_3 + 1,
+                dtype=compute.dtype,
+                device=compute.device,
+            )
+            coupling[
+                components & 0xFF,
+                (components >> 8) & 0xFF,
+                (components >> 16) & 0xFF,
+            ] = coupling_value[start : start + record.nonzero_count].to(compute.dtype)
+            full = _contract_coupling(
+                coupling,
+                probes[degree_1 - 1],
+                probes[degree_2 - 1],
+                probes[degree_3 - 1],
+            )
+            start = record.probe_begin
+            selection = coupling_entry[start : start + record.probe_count]
+            rank_2 = profile.ranks[degree_2 - 1]
+            rank_3 = profile.ranks[degree_3 - 1]
+            flat = (
+                ((selection & 0xFF) * rank_2 + ((selection >> 8) & 0xFF)) * rank_3
+                + ((selection >> 16) & 0xFF)
+            ).to(torch.long)
+            parts[record.coordinate] = full[:, flat] * coupling_value[
+                start : start + record.probe_count
+            ].to(compute.dtype)
+
+        parts[profile.bispectrum_base] = _closed_form_112(
+            vectors,
+            tensor_vector,
+            rank_one,
+            rank_two,
+        )
+        parts[_closed_form_222_coordinate(profile)] = _closed_form_222(tensors)
+
+        # === Contract the native spin families ===
+        spin_blocks: list[torch.Tensor] = []
+        if spin_moments is not None:
+            magnitude, coordination, spin_vector, spin_tensor = spin_moments
+            spin_blocks = [
+                _half_gram(spin_vector),
+                # The quadrupole Gram omits its leading diagonal entry, the
+                # on-site self-term: the harmonic block is homogeneous, so
+                # |B_2(s)|^2 = |s|^4 makes that entry a per-type constant
+                # times the square of the vector block's own on-site
+                # self-term.
+                _half_gram(spin_tensor)[:, 1:],
+                # Cross Gram against the unaligned geometric degree-two
+                # moments. Both factors carry even spin order, so the product
+                # is admissible; with a unit direction it evaluates to the
+                # single-ion anisotropy sum over neighbors.
+                (spin_tensor.transpose(1, 2) @ moments[2]).flatten(start_dim=1),
+                magnitude,
+                coordination,
+            ]
+
+        # === Assemble and calibrate the invariant output ===
+        quartic = (tensor_vector * tensor_vector).sum(dim=-1).flatten(start_dim=1)
+        descriptor = torch.cat(
+            [
+                moments[0][:, 0, :],
+                *[_half_gram(block) for block in aligned[1:]],
+                *[parts[key] for key in sorted(parts)],
+                quartic,
+                *spin_blocks,
+                scalar_divisor,
+                angular_divisor,
+                center_type_embedding,
+            ],
+            dim=-1,
+        )
+        return (descriptor - output_mean[None, :]) * output_inv_std[None, :]
+
+    # === Step 5. Run the further message-passing blocks ===
+    moments = blocks
+    if blocks_record is not None and blocks_record.numel() > 0:
+        layout = block_layout(profile)
+        for record in blocks_record:
+            moments = further_block_moments(
+                record,
+                layout,
+                blocks,
+                moments,
+                readout(moments),
+                amplitude,
+                basis,
+                envelope,
+                radius,
+                source,
+                destination,
+                scalar_divisor,
+                angular_divisor,
+                exchange,
+            )
+    return readout(moments)
 
 
 def _reference_spin_moments(
@@ -1939,8 +2038,14 @@ def _portable_inputs(args: tuple) -> tuple:
 def _reference_forward(
     edge_vec: torch.Tensor,
     *args: Any,
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """CPU custom-op implementation returning descriptor and opaque state."""
+    """Return the reference descriptor and an opaque state of the operator inputs.
+
+    ``blocks_record`` and ``exchange`` are those of
+    :func:`_reference_descriptor`.
+    """
     args = (edge_vec, *_portable_inputs(args))
     descriptor = _reference_descriptor(
         *args[:16],
@@ -1948,6 +2053,8 @@ def _reference_forward(
         spin=args[16],
         spin_pair=args[17],
         spin_type=args[18],
+        blocks_record=blocks_record,
+        exchange=exchange,
     )
     profile = descriptor_profile(
         int(args[9].shape[1]),
@@ -2076,13 +2183,22 @@ def _backward_fake(
     )
 
 
-def _reference_backward(
+def _reference_cotangents(
     descriptor_gradient: torch.Tensor,
     state: torch.Tensor,
     edge_vec: torch.Tensor,
     *args: Any,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """CPU custom-op backward returning the coordinate and magnetic cotangents.
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return the reference coordinate and magnetic cotangents of the descriptor.
+
+    The coordinate cotangent of every edge comes in two parts that share the
+    vector of the edge and add up to its cotangent. The switch totals of a
+    source gate read the pairs of every row as the edges the node of the row
+    emits (see :func:`_source_gate`), so their part, the second result,
+    belongs to the destination of each edge, and the first part belongs to
+    its source. The second part is zero without a source gate.
 
     The magnetic cotangent is split as in the device operator, which splits it
     because a destination-major scan does not own the source of an edge: the
@@ -2094,7 +2210,9 @@ def _reference_backward(
     A non-empty pair table adds the analytical pair potential: its energy,
     weighted by the per-node cotangent ``pair_seed``, joins the differentiated
     objective, so the coordinate cotangent carries the slope of the pair term,
-    and the node energies of the term are returned as the fourth result.
+    and the node energies of the term are returned as the fifth result.
+    ``blocks_record`` and ``exchange`` are those of
+    :func:`_reference_descriptor`.
     """
     del state
     args = _portable_inputs(args)
@@ -2102,6 +2220,7 @@ def _reference_backward(
     pair_table, pair_seed = args[_PAIR_TABLE_SLOT:]
     has_spin = spin.ndim == 2
     value = edge_vec.detach().clone().requires_grad_(True)
+    row_value = edge_vec.detach().clone().requires_grad_(True)
     moment = spin.detach().clone().requires_grad_(has_spin)
     edge_moment = (
         spin.detach()[args[0][0].to(torch.long)].requires_grad_(True)
@@ -2118,6 +2237,9 @@ def _reference_backward(
             spin_pair=args[16],
             spin_type=args[17],
             edge_spin=edge_moment,
+            blocks_record=blocks_record,
+            exchange=exchange,
+            row_edge_vec=row_value,
         )
         objective = (descriptor * descriptor_gradient.to(descriptor.dtype)).sum()
         if pair_table.numel():
@@ -2132,16 +2254,42 @@ def _reference_backward(
             objective = objective + (pair_energy[:, 0] * pair_seed.reshape(-1)).sum()
         gradients = torch.autograd.grad(
             objective,
-            (value, moment, edge_moment) if has_spin else (value,),
+            (value, row_value, moment, edge_moment) if has_spin else (value, row_value),
+            materialize_grads=True,
         )
     return (
         gradients[0].to(edge_vec.dtype),
-        gradients[1] if has_spin else edge_vec.new_empty((0,), dtype=torch.float32),
-        gradients[2].to(edge_vec.dtype)
+        gradients[1].to(edge_vec.dtype),
+        gradients[2] if has_spin else edge_vec.new_empty((0,), dtype=torch.float32),
+        gradients[3].to(edge_vec.dtype)
         if has_spin
         else edge_vec.new_empty((0,), dtype=torch.float32),
         pair_energy.detach(),
     )
+
+
+def _reference_backward(
+    descriptor_gradient: torch.Tensor,
+    state: torch.Tensor,
+    edge_vec: torch.Tensor,
+    *args: Any,
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return the reference cotangents in the layout of the backward operator.
+
+    The results are those of :func:`_reference_cotangents` with the two parts
+    of the coordinate cotangent of every edge added up.
+    """
+    edge, row, *rest = _reference_cotangents(
+        descriptor_gradient,
+        state,
+        edge_vec,
+        *args,
+        blocks_record=blocks_record,
+        exchange=exchange,
+    )
+    return (edge + row, *rest)
 
 
 #: Position of the per-node magnetic moment among the operator inputs, and its
