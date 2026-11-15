@@ -1937,6 +1937,9 @@ def test_uniform_group_combines_numpy_and_lmdb_systems(
     set_path = numpy_path / "set.000"
     set_path.mkdir(parents=True)
     np.savetxt(numpy_path / "type.raw", [0], fmt="%d")
+    # LMDB is mixed-type even for fixed compositions; both children must
+    # provide real atom types to share the same statistics contract.
+    np.save(set_path / "real_atom_types.npy", np.zeros((2, 1), dtype=np.int32))
     np.save(set_path / "coord.npy", np.zeros((2, 3), dtype=np.float64))
     np.save(set_path / "box.npy", np.tile(np.eye(3).reshape(1, 9), (2, 1)))
     np.save(set_path / "energy.npy", np.full((2, 1), 5.0, dtype=np.float64))
