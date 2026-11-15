@@ -36,13 +36,11 @@ class TestForbiddenDimsFromModel:
 def test_fusion_size_defaults_to_eight(monkeypatch) -> None:
     monkeypatch.delenv("DP_FUSION_SIZE", raising=False)
     monkeypatch.delenv("DP_GEN_UNDER_SANITIZER", raising=False)
-    monkeypatch.setattr(compile_compat, "_torch_release", lambda: (2, 13))
+    monkeypatch.setattr(compile_compat, "_torch_release", lambda: (2, 12))
 
     assert build_inductor_compile_options()["max_fusion_size"] == 8
     inference_options = build_inductor_compile_options(inference=True)
     assert inference_options["max_fusion_size"] == 8
-    assert inference_options["cpp.min_chunk_size"] == 1
-    assert inference_options["cpp.dynamic_threads"] is True
     assert "cpp.max_horizontal_fusion_size" not in inference_options
 
 
@@ -54,9 +52,64 @@ def test_torch_211_inference_keeps_default_cpp_parallelism(monkeypatch) -> None:
 
     assert "cpp.min_chunk_size" not in inference_options
     assert "cpp.dynamic_threads" not in inference_options
+    assert "cpp.threads" not in inference_options
     assert inference_options["cpp.max_horizontal_fusion_size"] == 1
     assert "cpp.simdlen" not in inference_options
     assert "cpp.max_horizontal_fusion_size" not in build_inductor_compile_options()
+
+
+def test_torch_212_inference_keeps_qualified_cpp_parallelism(monkeypatch) -> None:
+    monkeypatch.delenv("DP_GEN_UNDER_SANITIZER", raising=False)
+    monkeypatch.setattr(compile_compat, "_torch_release", lambda: (2, 12))
+
+    inference_options = build_inductor_compile_options(inference=True)
+
+    assert inference_options["cpp.min_chunk_size"] == 1
+    assert inference_options["cpp.dynamic_threads"] is True
+    assert "cpp.min_chunk_size" not in build_inductor_compile_options()
+    assert "cpp.dynamic_threads" not in build_inductor_compile_options()
+
+
+def test_torch_213_inference_uses_serial_cpp_atomic_lowering(monkeypatch) -> None:
+    monkeypatch.delenv("DP_GEN_UNDER_SANITIZER", raising=False)
+    monkeypatch.setattr(compile_compat, "_torch_release", lambda: (2, 13))
+
+    inference_options = build_inductor_compile_options(inference=True)
+
+    assert inference_options["cpp.threads"] == 1
+    assert inference_options["cpp.dynamic_threads"] is False
+    assert inference_options["cpp.max_horizontal_fusion_size"] == 1
+    assert "cpp.min_chunk_size" not in inference_options
+    assert "cpp.simdlen" not in inference_options
+    assert "cpp.threads" not in build_inductor_compile_options()
+    assert "cpp.dynamic_threads" not in build_inductor_compile_options()
+    assert "cpp.max_horizontal_fusion_size" not in build_inductor_compile_options()
+
+
+@pytest.mark.skipif(
+    compile_compat._torch_release() != (2, 13),
+    reason="regression for PyTorch 2.13 CPU vectorized atomic scatter",
+)
+@pytest.mark.parametrize("columns", [1, 3, 8])
+def test_torch_213_dynamic_cpu_atomic_scatter(columns: int) -> None:
+    """A scalar destination must accept all rows of a dynamic scatter-add."""
+
+    def scatter(values):
+        destination = torch.zeros(
+            (1, values.shape[1]), dtype=values.dtype, device=values.device
+        )
+        indices = torch.zeros(values.shape[0], dtype=torch.int64, device=values.device)
+        return destination.index_add(0, indices, values)
+
+    compiled = torch.compile(
+        scatter,
+        dynamic=True,
+        options=build_inductor_compile_options(inference=True),
+    )
+    for rows in (257, 1027, 19):
+        values = torch.randn((rows, columns), dtype=torch.float64, device="cpu")
+        torch.testing.assert_close(compiled(values), scatter(values))
+    torch._dynamo.reset()
 
 
 def test_inductor_kernels_write_separate_output_buffers() -> None:
