@@ -23,7 +23,23 @@ else:
     importlib.import_module("deepmd.pt.cxx_op")
 
 
-@unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
+def _has_fitting_cuda_kernels():
+    """Require implementations, not just schemas from a CPU-only ops build."""
+    return all(
+        hasattr(torch.ops.deepmd, name)
+        and torch._C._dispatch_has_kernel_for_dispatch_key(f"deepmd::{name}", "CUDA")
+        for name in (
+            "graph_fitting",
+            "graph_fitting_backward",
+            "graph_fitting_energy_gradient",
+        )
+    )
+
+
+@unittest.skipUnless(
+    torch.cuda.is_available() and _has_fitting_cuda_kernels(),
+    "requires CUDA and the optional fitting CUDA kernels",
+)
 class TestGraphFittingBatchInvariant(unittest.TestCase):
     """Check the entire feature matrix, residual backward, and stream ownership."""
 
