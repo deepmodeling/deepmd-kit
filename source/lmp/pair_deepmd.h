@@ -46,8 +46,8 @@ class PairDeepMD : public PairDeepBaseModel {
   ~PairDeepMD() override;
   void settings(int, char**) override;
   void coeff(int, char**) override;
-  void compute(int, int) override;
   void init_style() override;
+  void compute(int, int) override;
   double init_one(int, int) override;
   void* extract(const char*, int&) override;
   int pack_reverse_comm(int, int, double*) override;
@@ -62,8 +62,14 @@ class PairDeepMD : public PairDeepBaseModel {
   // geometry fields are unused) for the device-resident message-passing path,
   // where ghost features are exchanged across ranks inside the forward pass.
   deepmd_compat::InputNlist make_comm_nlist();
+  // The model carries a long-range module, which reads the cell of a
+  // periodic system and no cell for a non-periodic one.
+  bool long_range = false;
 
  private:
+  // Run compact-only validation after the common and long-range setup.
+  void init_compact_selection();
+
   // Compact evaluation is implemented by assigning type -1 to atoms outside
   // the selected subsystem. Every supported DeepPot backend already compacts
   // such atoms, remaps its neighbor/communication data, and scatters outputs

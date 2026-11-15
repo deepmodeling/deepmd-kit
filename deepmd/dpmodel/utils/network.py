@@ -712,6 +712,22 @@ def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
                     x = layer(x)
             return x
 
+        def call_last(self, x):  # noqa: ANN001, ANN202
+            """Return the output of the last layer.
+
+            Parameters
+            ----------
+            x : Array
+                The output before last layer, as returned by
+                :meth:`call_until_last`.
+
+            Returns
+            -------
+            np.ndarray
+                The output of the network.
+            """
+            return self.layers[-1](x)
+
         def clear(self) -> None:
             """Clear the network parameters to zero."""
             for layer in self.layers:

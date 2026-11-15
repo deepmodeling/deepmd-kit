@@ -11,8 +11,15 @@ a deterministic config+seed — but this should only be done once (the .yaml
 is then committed).
 
 Also prints reference values for C++ tests (PBC and NoPbc).
+
+Standalone execution exports all models. CI can run ``--dpa3-only`` alongside
+``gen_spin_model_devi.py``, then, after BOTH generators succeed, run
+``--reuse-model-devi`` to derive the baseline from the identical model-0 archive
+and generate the .pth and reference values. No artifact is polled or implicitly
+cached.
 """
 
+import argparse
 import copy
 import os
 import sys
@@ -25,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
+    reuse_pt2,
     write_expected_ref,
 )
 
@@ -220,12 +228,13 @@ def _build_dpa3_single_yaml(yaml_path: str) -> None:
     save_dp_model(yaml_path, data)
 
 
-def main():
+def main(*, dpa3_only=False, reuse_model_devi=False):
+    if dpa3_only and reuse_model_devi:
+        raise ValueError("dpa3_only and reuse_model_devi are mutually exclusive")
+
     from deepmd.entrypoints.convert_backend import (
         convert_backend,
     )
-
-    ensure_inductor_compiler()
 
     base_dir = os.path.dirname(__file__)
     yaml_path = os.path.join(base_dir, "deeppot_dpa_spin.yaml")
@@ -244,21 +253,37 @@ def main():
     yaml_dpa3_single_path = os.path.join(base_dir, "deeppot_dpa3_spin.yaml")
     pt2_dpa3_single_path = os.path.join(base_dir, "deeppot_dpa3_spin.pt2")
 
+    if reuse_model_devi:
+        source = os.path.join(base_dir, "deeppot_dpa_spin_md0.pt2")
+        # The shell removes stale .pt2 files and waits for both producers.
+        # Never silently compile missing artifacts or poll a failed producer.
+        for required in (pt2_dpa3_single_path, pt2_dpa3_path, source):
+            if not os.path.isfile(required):
+                raise FileNotFoundError(
+                    "--reuse-model-devi requires gen_spin.py --dpa3-only and "
+                    "gen_spin_model_devi.py to finish successfully in this run "
+                    f"first; missing {required}"
+                )
+
+    ensure_inductor_compiler()
+
     # ---- 1. Build .yamls if they don't exist ----
-    if not os.path.exists(yaml_path):
-        _build_yaml(yaml_path)
-    else:
-        print(f"Using existing {yaml_path}")  # noqa: T201
+    if not dpa3_only:
+        if not os.path.exists(yaml_path):
+            _build_yaml(yaml_path)
+        else:
+            print(f"Using existing {yaml_path}")  # noqa: T201
 
-    if not os.path.exists(yaml_dpa3_path):
-        _build_dpa3_mpi_yaml(yaml_dpa3_path)
-    else:
-        print(f"Using existing {yaml_dpa3_path}")  # noqa: T201
+    if not reuse_model_devi:
+        if not os.path.exists(yaml_dpa3_path):
+            _build_dpa3_mpi_yaml(yaml_dpa3_path)
+        else:
+            print(f"Using existing {yaml_dpa3_path}")  # noqa: T201
 
-    if not os.path.exists(yaml_dpa3_single_path):
-        _build_dpa3_single_yaml(yaml_dpa3_single_path)
-    else:
-        print(f"Using existing {yaml_dpa3_single_path}")  # noqa: T201
+        if not os.path.exists(yaml_dpa3_single_path):
+            _build_dpa3_single_yaml(yaml_dpa3_single_path)
+        else:
+            print(f"Using existing {yaml_dpa3_single_path}")  # noqa: T201
 
     # ---- 2. Convert .yaml -> .pth and .yaml -> .pt2 ----
     # Import deepmd.pt to register the backend (needed for convert_backend)
@@ -266,23 +291,38 @@ def main():
 
     load_custom_ops()
 
-    print(f"Converting to {pth_path} ...")  # noqa: T201
-    convert_backend(INPUT=yaml_path, OUTPUT=pth_path)
+    if not dpa3_only:
+        if reuse_model_devi:
+            from deepmd.dpmodel.utils.serialization import (
+                load_dp_model,
+            )
 
-    print(f"Converting to {pt2_path} ...")  # noqa: T201
-    convert_backend(INPUT=yaml_path, OUTPUT=pt2_path, atomic_virial=True)
+            print(f"Reusing {source} for {pt2_path} ...")  # noqa: T201
+            # The seed-1 YAMLs differ only in creation time. Check every
+            # serialized weight, dtype and the lower/atomic-virial contract.
+            reuse_pt2(source, pt2_path, load_dp_model(yaml_path))
 
-    print(f"Converting to {pt2_dpa3_single_path} ...")  # noqa: T201
-    convert_backend(
-        INPUT=yaml_dpa3_single_path,
-        OUTPUT=pt2_dpa3_single_path,
-        atomic_virial=True,
-    )
+        print(f"Converting to {pth_path} ...")  # noqa: T201
+        convert_backend(INPUT=yaml_path, OUTPUT=pth_path)
 
-    print(f"Converting to {pt2_dpa3_path} ...")  # noqa: T201
-    convert_backend(INPUT=yaml_dpa3_path, OUTPUT=pt2_dpa3_path, atomic_virial=True)
+        if not reuse_model_devi:
+            print(f"Converting to {pt2_path} ...")  # noqa: T201
+            convert_backend(INPUT=yaml_path, OUTPUT=pt2_path, atomic_virial=True)
+
+    if not reuse_model_devi:
+        print(f"Converting to {pt2_dpa3_single_path} ...")  # noqa: T201
+        convert_backend(
+            INPUT=yaml_dpa3_single_path,
+            OUTPUT=pt2_dpa3_single_path,
+            atomic_virial=True,
+        )
+
+        print(f"Converting to {pt2_dpa3_path} ...")  # noqa: T201
+        convert_backend(INPUT=yaml_dpa3_path, OUTPUT=pt2_dpa3_path, atomic_virial=True)
 
     print("Export done.")  # noqa: T201
+    if dpa3_only:
+        return
 
     # ---- 3. Run inference for PBC test ----
     from deepmd.infer import (
@@ -388,4 +428,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--dpa3-only",
+        action="store_true",
+        help="export only the two DPA3 variants, without baseline references",
+    )
+    mode.add_argument(
+        "--reuse-model-devi",
+        action="store_true",
+        help="reuse completed model 0 after both producers succeed, then evaluate",
+    )
+    args = parser.parse_args()
+    main(dpa3_only=args.dpa3_only, reuse_model_devi=args.reuse_model_devi)

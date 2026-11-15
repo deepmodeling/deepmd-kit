@@ -133,7 +133,7 @@ def test_cuda_export_folds_on_cpu_before_restoring_deployment_dispatch(
     class StopBeforeTrace(Exception):
         pass
 
-    def check_before_trace(model, target):
+    def check_before_trace(model, target, lower_kind):
         events.append("trace")
         assert target.type == env.DEVICE.type == "cuda"
         assert torch.is_grad_enabled(), "force tracing still needs autograd"

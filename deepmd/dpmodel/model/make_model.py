@@ -48,6 +48,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     build_neighbor_graph,
     build_neighbor_graph_ase,
+    cast_topology_geometry,
     compact_nodes,
     expand_node_values,
 )
@@ -564,12 +565,20 @@ def make_model(
             # atom count the mask is all true and this is a renumbering by the
             # identity.
             ng, node_index = compact_nodes(ng, atype_flat >= 0)
+            atype_real = xp.take(atype_flat, node_index, axis=0)
+            topologies = self.atomic_model.build_topologies(
+                xp.take(xp.reshape(cc, (n_padded, 3)), node_index, axis=0),
+                ng.n_node,
+                bb,
+                atype=atype_real,
+                pair_excl=pair_excl,
+            )
             # OUTPUT-AGNOSTIC standard model dict (``<var>``, ``<var>_redu``,
             # derivative name-holders ``None``, plus int ``mask``), like the
             # dense ``call_common``.  ``call_lower_graph`` masks virtual atoms
             # (atype<0) and sets the real int mask.
             model_predict = self.call_lower_graph(
-                atype=xp.take(atype_flat, node_index, axis=0),
+                atype=atype_real,
                 n_node=ng.n_node,
                 edge_index=ng.edge_index,
                 edge_vec=ng.edge_vec,
@@ -589,6 +598,7 @@ def make_model(
                     else None
                 ),
                 charge_spin=charge_spin,
+                topologies=topologies,
             )
             # Public ABI is rectangular (nf, nloc, *); the lower is flat over
             # the real atoms. Scatter per-atom keys back onto the padded width
@@ -731,6 +741,7 @@ def make_model(
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
             spin: Array | None = None,
+            topologies: dict[str, Any] | None = None,
         ) -> dict[str, Array]:
             """Model-level graph forward (no type cast). Analogue of the dense
             :meth:`forward_common_atomic`.
@@ -773,6 +784,9 @@ def make_model(
                 Per-node spin vectors, flat (N, 3), or ``None``. Forwarded
                 unchanged to the atomic model's ``forward_common_atomic_graph``
                 (and, from there, the descriptor's ``call_graph``).
+            topologies
+                The topologies the atomic model declares by
+                ``required_topologies()``, on the node axis of the graph.
 
             Returns
             -------
@@ -795,6 +809,7 @@ def make_model(
                 aparam=aparam,
                 charge_spin=charge_spin,
                 spin=spin,
+                topologies=topologies,
             )
             return fit_output_to_model_output_graph(
                 atomic_ret,
@@ -817,6 +832,7 @@ def make_model(
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
             spin: Array | None = None,
+            topologies: dict[str, Any] | None = None,
         ) -> dict[str, Array]:
             """Graph-native PUBLIC lower (dpa1/se_atten concat-tebd, attention included).
 
@@ -858,6 +874,9 @@ def make_model(
                 Per-node spin vectors, flat (N, 3), or ``None``. Cast to the
                 model precision alongside the other node inputs and forwarded
                 unchanged to :meth:`forward_common_atomic_graph`.
+            topologies
+                The topologies the atomic model declares by
+                ``required_topologies()``, on the node axis of the graph.
 
             Returns
             -------
@@ -871,6 +890,12 @@ def make_model(
                 charge_spin=charge_spin,
                 spin=spin,
             )
+            if topologies:
+                # The topologies carry geometry like the edge vectors.
+                topologies = {
+                    name: cast_topology_geometry(topology, edge_vec.dtype)
+                    for name, topology in topologies.items()
+                }
             model_predict = self.forward_common_atomic_graph(
                 atype,
                 n_node,
@@ -883,6 +908,7 @@ def make_model(
                 comm_dict=comm_dict,
                 charge_spin=cs,
                 spin=sp,
+                topologies=topologies,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict

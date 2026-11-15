@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Run after test_cc_local.sh: reuse its C API/backend installation and the
-# matching LAMMPS checkout instead of rebuilding DeePMD or using the pip wheel.
+# Run after test_cc_local.sh (or --build-only then --models-only=kokkos):
+# reuse its C API/backend installation, long-range fixtures, and matching
+# LAMMPS checkout instead of rebuilding DeePMD or using the pip wheel.
 SCRIPT_PATH=$(dirname "$(realpath -s "$0")")
 REPO_ROOT=$(realpath "${SCRIPT_PATH}/../..")
 DEEPMD_C_ROOT=${DEEPMD_C_ROOT:-${REPO_ROOT}/dp_test}
@@ -44,7 +45,7 @@ MPI_ARGS=(
 cmake -S "${LAMMPS_SOURCE_ROOT}/cmake" -B "${LAMMPS_BUILD_DIR}" \
 	-D CMAKE_BUILD_TYPE=Release \
 	-D CMAKE_CXX_COMPILER="${NVCC_WRAPPER}" \
-	-D CMAKE_CXX_STANDARD=17 \
+	-D CMAKE_CXX_STANDARD=20 \
 	-D BUILD_SHARED_LIBS=ON \
 	-D BUILD_MPI=ON \
 	-D BUILD_OMP=OFF \
@@ -63,7 +64,7 @@ cmake --build "${LAMMPS_BUILD_DIR}" --target lammps --parallel "${BUILD_JOBS}"
 cmake -S "${REPO_ROOT}/source" -B "${PLUGIN_BUILD_DIR}" \
 	-D CMAKE_BUILD_TYPE=Release \
 	-D CMAKE_CXX_COMPILER="${NVCC_WRAPPER}" \
-	-D CMAKE_CXX_STANDARD=17 \
+	-D CMAKE_CXX_STANDARD=20 \
 	-D CMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
 	-D BUILD_TESTING=OFF \
 	-D DEEPMD_C_ROOT="${DEEPMD_C_ROOT}" \
@@ -77,7 +78,22 @@ mkdir -p "${PLUGIN_DIR}"
 ln -sfn "${PLUGIN_BUILD_DIR}/lmp/plugin/libdeepmd_lmp.so" "${PLUGIN_DIR}/dpplugin.so"
 
 export LD_LIBRARY_PATH=${LAMMPS_BUILD_DIR}:${DEEPMD_C_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
-python "${REPO_ROOT}/source/tests/infer/gen_dpa4c_spin_lmp_kokkos.py"
+# Record the spin fixture separately from the two pytest sessions below.
+# Keep a failed generator's report, then propagate its original exit status.
+mkdir -p "${BUILD_ROOT}/test-reports"
+GENERATOR_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")
+GENERATOR_START=$SECONDS
+if python -u "${REPO_ROOT}/source/tests/infer/gen_dpa4c_spin_lmp_kokkos.py"; then
+	GENERATOR_STATUS=0
+else
+	GENERATOR_STATUS=$?
+fi
+printf 'generator\tseconds\texit_status\n%s\t%s\t%s\n' \
+	gen_dpa4c_spin_lmp_kokkos "$((SECONDS - GENERATOR_START))" "${GENERATOR_STATUS}" \
+	>"${GENERATOR_REPORT_DIR}/gen_dpa4c_spin_lmp_kokkos.tsv"
+if [[ ${GENERATOR_STATUS} != 0 ]]; then
+	exit "${GENERATOR_STATUS}"
+fi
 
 # The wheel's Python package loads its own liblammps by absolute path. Merely
 # setting LD_LIBRARY_PATH would therefore still test the non-Kokkos wheel.
@@ -104,5 +120,18 @@ with lammps.lammps(cmdargs=["-log", "none", "-screen", "none"]) as lmp:
     print(f"Verified matching LAMMPS Python and shared library: {mapped_libraries}")
 PY
 
+# Keep each invocation and each pytest process separate, including failures.
+mkdir -p "${BUILD_ROOT}/test-reports"
+TEST_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")
 DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
-	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py"
+	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py" \
+	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_multiblock_kokkos.py" \
+	--junitxml="${TEST_REPORT_DIR}/spin.xml"
+# The compressed long-range fixtures come from gen_dpa4c_long_range.py of
+# test_cc_local.sh; the MPI runner of the test launches mpirun from PATH, which
+# leads with the launcher of the MPI prefix, while pytest runs on the Python of
+# the job.
+PYTHON=$(command -v python)
+PATH=${MPI_ROOT}/bin:${PATH} DPA4C_LONG_RANGE_KOKKOS_REQUIRED=1 "${PYTHON}" -m pytest -v -s \
+	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_long_range_kokkos.py" \
+	--junitxml="${TEST_REPORT_DIR}/long-range.xml"

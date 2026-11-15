@@ -944,6 +944,49 @@ class GeneralFitting(NativeOP, BaseFitting):
             device=array_api_compat.device(self.bias_atom_e),
         )
 
+    def fold_case_embedding(self) -> None:
+        """Fold the case embedding into the first layer so the call needs no case columns.
+
+        The case embedding is the same trailing block of input columns for
+        every atom, so its product with the rows of the first-layer weight
+        that read it is a constant of the pre-activation. Adding that product
+        to the bias and removing the rows yields a fitting without the case
+        embedding that gives the same outputs. Export folds the fixed case of
+        a deployed model, so that the frozen branch of a multi-task model with
+        a shared fitting network is a plain fitting network. The fold rebuilds
+        the first layers in place, so it applies to a fitting that no other
+        branch shares. A first layer whose residual adds its input to the
+        output also carries the case embedding past the activation; such a
+        fitting keeps it.
+        """
+        if self.dim_case_embd == 0:
+            return
+        networks = [
+            self.nets[ii] for ii in range(self.ntypes if not self.mixed_types else 1)
+        ]
+        for net in networks:
+            width_in, width_out = net[0].w.shape
+            if net[0].resnet and width_out in (width_in, 2 * width_in):
+                return
+        case_embd = to_numpy_array(self.case_embd).astype(np.float64)
+        for net in networks:
+            data = net[0].serialize()
+            variables = data["@variables"]
+            weight = variables["w"]
+            kept = weight.shape[0] - self.dim_case_embd
+            variables["b"] = (
+                variables["b"].astype(np.float64)
+                + case_embd @ weight[kept:].astype(np.float64)
+            ).astype(weight.dtype)
+            variables["w"] = weight[:kept]
+            # The residual is inactive at the original input width, checked
+            # above; clearing it keeps the narrower input from activating it.
+            data["resnet"] = False
+            net[0] = type(net[0]).deserialize(data)
+            net.in_dim = kept
+        self.dim_case_embd = 0
+        self.case_embd = None
+
     def _call_common(
         self,
         descriptor: Array,
@@ -955,6 +998,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
         node_gate: Array | None = None,
+        return_middle_output: bool = False,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -983,6 +1027,12 @@ class GeneralFitting(NativeOP, BaseFitting):
         node_gate
             Per-atom source gate of a bridged descriptor; the learned part of
             the output fades with it. shape: nf x nloc x 1
+        return_middle_output
+            Whether this call also returns the input of the output layer under
+            the ``middle_output`` key: the activation after the last hidden
+            layer, or the fitting input for a fitting without hidden layers.
+            The key is declared by the output definition only when
+            :meth:`set_return_middle_output` requests it for every call.
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
@@ -994,6 +1044,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 "get an input descriptor of dim {nd},"
                 "which is not consistent with {self.dim_descrpt}."
             )
+        return_middle_output = return_middle_output or self.eval_return_middle_output
 
         # === Step 1. Assemble the fitting input ===
         # The conditioning columns are shared by the atoms and by their vacuum
@@ -1013,6 +1064,8 @@ class GeneralFitting(NativeOP, BaseFitting):
         xx_vac = self.vacuum_input(vacuum_descriptor, atype, cond)
 
         # === Step 2. Evaluate the fitting networks ===
+        # Each network evaluates its hidden layers once, and the output layer
+        # reads their activation, which is the middle output.
         results: dict[str, Array] = {}
         if not self.mixed_types:
             outs = xp.zeros(
@@ -1020,9 +1073,10 @@ class GeneralFitting(NativeOP, BaseFitting):
                 dtype=get_xp_precision(xp, self.precision),
                 device=array_api_compat.device(descriptor),
             )
-            if self.eval_return_middle_output and len(self.neuron) > 0:
+            if return_middle_output:
+                middle_dim = self.neuron[-1] if len(self.neuron) > 0 else xx.shape[-1]
                 middle_outs = xp.zeros(
-                    [nf, nloc, self.neuron[-1]],
+                    [nf, nloc, middle_dim],
                     dtype=get_xp_precision(xp, self.precision),
                     device=array_api_compat.device(descriptor),
                 )
@@ -1031,7 +1085,8 @@ class GeneralFitting(NativeOP, BaseFitting):
                     xp.reshape((atype == type_i), (nf, nloc, 1)),
                     (1, 1, net_dim_out),
                 )
-                atom_property = self.nets[(type_i,)](xx)
+                hidden = self.nets[(type_i,)].call_until_last(xx)
+                atom_property = self.nets[(type_i,)].call_last(hidden)
                 if self.remove_vaccum_contribution is not None and not (
                     len(self.remove_vaccum_contribution) > type_i
                     and not self.remove_vaccum_contribution[type_i]
@@ -1053,22 +1108,21 @@ class GeneralFitting(NativeOP, BaseFitting):
                     mask, atom_property, xp.zeros_like(atom_property)
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
-                if self.eval_return_middle_output and len(self.neuron) > 0:
-                    mid = self.nets[(type_i,)].call_until_last(xx)
+                if return_middle_output:
                     mid_mask = xp.tile(
                         xp.reshape((atype == type_i), (nf, nloc, 1)),
-                        (1, 1, self.neuron[-1]),
+                        (1, 1, middle_dim),
                     )
-                    mid = xp.where(mid_mask, mid, xp.zeros_like(mid))
-                    middle_outs = middle_outs + mid
+                    middle_outs = middle_outs + xp.where(
+                        mid_mask, hidden, xp.zeros_like(hidden)
+                    )
         else:
-            outs = self.nets[()](xx)
+            middle_outs = self.nets[()].call_until_last(xx)
+            outs = self.nets[()].call_last(middle_outs)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
             if xx_vac is not None:
                 outs = outs - self.vacuum_output(self.nets[()](xx_vac), atype)
-            if self.eval_return_middle_output and len(self.neuron) > 0:
-                middle_outs = self.nets[()].call_until_last(xx)
         bias_atom_e = xp.asarray(
             self.bias_atom_e,
             dtype=outs.dtype,
@@ -1109,7 +1163,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
         results[self.var_name] = outs
-        if self.eval_return_middle_output and len(self.neuron) > 0:
+        if return_middle_output:
             results["middle_output"] = middle_outs
         return results
 
@@ -1124,6 +1178,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
         node_gate: Array | None = None,
+        return_middle_output: bool = False,
     ) -> dict[str, Array]:
         """Graph-native (flat node axis) fitting forward.
 
@@ -1155,6 +1210,10 @@ class GeneralFitting(NativeOP, BaseFitting):
         node_gate
             per-atom source gate of a bridged descriptor; the learned part of
             the output fades with it. N
+        return_middle_output
+            whether this call also returns the input of the output layer under
+            the ``middle_output`` key: the activation after the last hidden
+            layer, or the fitting input for a fitting without hidden layers.
 
         Returns
         -------
@@ -1190,6 +1249,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         gate_kwargs = (
             {} if node_gate is None else {"node_gate": xp.reshape(node_gate, (n, 1, 1))}
         )
+        middle_kwargs = {"return_middle_output": True} if return_middle_output else {}
         ret = self.__call__(
             d1,
             a1,
@@ -1200,5 +1260,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             aparam=ap1,
             **vacuum_kwargs,
             **gate_kwargs,
+            **middle_kwargs,
         )
         return {kk: xp.reshape(vv, (n, *vv.shape[2:])) for kk, vv in ret.items()}

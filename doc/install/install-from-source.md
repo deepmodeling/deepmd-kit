@@ -180,7 +180,7 @@ Build CPU variant or GPU variant with CUDA or ROCM support.
 
 **Type**: Path; **Default**: Detected automatically
 
-The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported, and CUDA 11.8 or later for the PyTorch backend. NVCC is required.
 :::
 
 :::{envvar} ROCM_ROOT
@@ -518,7 +518,7 @@ If `TRUE`, Build GPU support with CUDA toolkit.
 
 **Type**: `PATH`, **Default**: [Search automatically](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html)
 
-The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported, and CUDA 11.8 or later for the PyTorch backend. NVCC is required.
 See also [CMake documentation](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html).
 :::
 

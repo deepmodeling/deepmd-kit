@@ -14,14 +14,22 @@
 
 #include <torch/torch.h>
 
+#include <array>
+#include <cstdint>
+#include <mutex>
+#include <optional>
+
 #include "DeepPot.h"
 #include "graph_assembly.h"
 
 // Forward-declare to keep these out of the public header. Defined in
-// commonPTExpt.h.
+// commonPTExpt.h, and PinnedCell in longRangePTExpt.h.
 namespace deepmd::ptexpt {
 class TempFile;
 class ChargeStateFold;
+class GraphReplay;
+class PinnedCell;
+struct HaloTensors;
 }  // namespace deepmd::ptexpt
 
 namespace torch::inductor {
@@ -375,16 +383,23 @@ class DeepPotPTExpt : public DeepPotBackend {
                          const InputNlist* comm_nlist) override;
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
+                                   double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::uint32_t* d_source_order,
-                                   const int nloc,
-                                   const int nall_nodes,
-                                   const std::int64_t edge_storage) override;
+                                   const std::int64_t* d_source_order,
+                                   const double* d_coord,
+                                   void* world,
+                                   const DP_HaloExchange* halo,
+                                   const double* box,
+                                   const std::int64_t nloc,
+                                   const std::int64_t nall_nodes,
+                                   const std::int64_t edge_storage,
+                                   void* stream) override;
   /**
    * @brief FP32 edge-vector overload for compressed graph artifacts.
    *
@@ -413,6 +428,9 @@ class DeepPotPTExpt : public DeepPotBackend {
    */
   bool uses_fp32_edge_vectors() const override;
   bool uses_canonical_graph_inference() const override;
+  bool canonical_graph_requires_source_csr() const override;
+  bool canonical_graph_requires_halo() const override;
+  bool has_long_range() const override;
 
  private:
   template <typename EDGE_TYPE>
@@ -432,16 +450,23 @@ class DeepPotPTExpt : public DeepPotBackend {
   void compute_canonical_graph_gpu_impl(
       double* d_atom_energy,
       double* d_force,
+      double* d_virial,
       double* d_atom_virial,
       const std::int64_t* d_atype,
-      const std::uint32_t* d_source,
+      const void* d_source,
+      DP_CanonicalIndexWidth index_width,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
       const std::int64_t* d_source_row_ptr,
-      const std::uint32_t* d_source_order,
-      const int nloc,
-      const int nall_nodes,
-      const std::int64_t edge_storage);
+      const std::int64_t* d_source_order,
+      const double* d_coord,
+      void* world,
+      const DP_HaloExchange* halo,
+      const double* box,
+      const std::int64_t nloc,
+      const std::int64_t nall_nodes,
+      const std::int64_t edge_storage,
+      void* stream);
   bool inited;
   // Every width below is a property of the loaded archive.  They read as zero
   // until ``init`` has run, so that a query on an uninitialised backend
@@ -472,7 +497,23 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool lower_input_is_edge_ = false;
   bool lower_input_is_graph_ = false;
   bool lower_input_is_canonical_ = false;
+  // Whether the canonical force assembly groups edges by source, which makes
+  // the source CSR an input of every evaluation rather than of the per-atom
+  // virial alone.
+  bool canonical_requires_source_csr_ = false;
+  // Two-entry source CSR placeholders that decline the per-atom virial.
+  at::Tensor source_row_placeholder_;
+  at::Tensor source_order_placeholder_;
   bool graph_edge_fp32_ = false;
+  // The model carries a long-range module, whose lower reads the topologies
+  // of the frame after its other inputs: the pair lists, and the mesh of the
+  // cell of a module that serves periodic systems, for the graph lower; the
+  // node positions, the communicator of the ranks and the cell for the compact
+  // canonical lower.
+  bool long_range_ = false;
+  // The module serves periodic systems, on a mesh of at most this spacing.
+  bool long_range_periodic_ = false;
+  double mesh_spacing_ = 0.0;
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
   std::vector<std::int64_t> mapping_;  // cached mapping vector (LAMMPS path)
@@ -480,6 +521,24 @@ class DeepPotPTExpt : public DeepPotBackend {
   at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
   at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
+  // The cell input of the device-resident evaluations of a model with a
+  // long-range module, in pinned memory that a replay reads again.
+  std::unique_ptr<deepmd::ptexpt::PinnedCell> long_range_cell_;
+  // The mesh size of the cell of the last device-resident evaluation of a
+  // model with a long-range module, zero for a non-periodic frame, and the
+  // evaluations since it last changed, counted up to the number of calls for
+  // which a changed mesh is evaluated eagerly before it is captured again.
+  std::optional<std::array<std::int64_t, 3> > long_range_mesh_;
+  std::int64_t long_range_mesh_calls_ = 0;
+  // CUDA-graph replay of repeated device-resident canonical evaluations,
+  // declared after the loader and the cell so that the graph is released
+  // before the constants and the cell it reads.
+  std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
+  // Serializes the runs of the model, which runs on a single-threaded runner,
+  // the device-resident entry points, whose replay of canonical evaluations
+  // keeps its graph across calls, and the replacement of the constants. The
+  // mutex is recursive because a replayed evaluation enters the runner again.
+  std::recursive_mutex evaluation_mutex_;
   // Optional AOTInductor artifact for multi-rank message-passing inference,
   // loaded only when the .pt2 metadata declares ``has_comm_artifact``. It is
   // required when ghost features must be exchanged across ranks inside the
@@ -615,6 +674,11 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] destination_row_ptr Destination CSR offsets ``(N + 1,)``.
    * @param[in] source_order Source-grouped edge permutation ``(E,)``.
    * @param[in] source_row_ptr Source CSR offsets ``(N + 1,)``.
+   * @param[in] coord Positions of the nodes of the single frame, shape
+   * ``(N, 3)`` float64, from which the topologies of a model with a
+   * long-range module are built; read only for such a model.
+   * @param[in] box The row-major cell of a periodic frame, nine values, or
+   * empty for a non-periodic one; read only for such a model.
    */
   std::vector<torch::Tensor> run_model_graph(
       const torch::Tensor& atype,
@@ -629,8 +693,27 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& source_row_ptr,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
-      const torch::Tensor& charge_spin);
+      const torch::Tensor& charge_spin,
+      const torch::Tensor& coord,
+      const std::vector<double>& box);
 
+  /**
+   * @brief Run a compact canonical ``.pt2`` artifact.
+   *
+   * @param[in] coord Node positions, shape ``(N, 3)`` float64, appended for a
+   * model with a long-range module and ignored otherwise.
+   * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of the
+   * ranks a decomposed system spans, or NULL for a system that one rank holds
+   * whole; a model with a long-range module receives it after the positions,
+   * and a model with further message-passing blocks before its halo exchange.
+   * @param[in] cell The cell, a float64 CPU tensor of shape ``(1, 9)``: the
+   * row-major cell of a periodic frame, or zero for a non-periodic one; a
+   * model with a long-range module receives it after the communicator, and
+   * every other model ignores it.
+   * @param[in] halo The halo exchange of the node set, which a model with
+   * further message-passing blocks receives after the communicator and every
+   * other model ignores.
+   */
   std::vector<torch::Tensor> run_model_canonical_graph(
       const torch::Tensor& atype,
       const torch::Tensor& n_node,
@@ -639,7 +722,31 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& edge_vec,
       const torch::Tensor& destination_row_ptr,
       const torch::Tensor& source_row_ptr,
-      const torch::Tensor& source_order);
+      const torch::Tensor& source_order,
+      const torch::Tensor& coord,
+      const void* world,
+      const torch::Tensor& cell,
+      const ptexpt::HaloTensors& halo);
+
+  /**
+   * @brief Evaluate the long-range module on a rank that holds no node.
+   *
+   * The compact lower runs on one halo node without edges, which carries no
+   * charge and contributes nothing, so that the rank joins the exchanges of
+   * the module with the other ranks of ``world``, in the cell ``box`` of the
+   * system, empty for a non-periodic one.
+   */
+  void join_long_range_exchange(const void* world,
+                                const std::vector<double>& box);
+
+  /**
+   * @brief Check the cell given to a model with a long-range module.
+   *
+   * @param[in] box The row-major cell of a periodic frame, nine values, or
+   * empty for a non-periodic one, which every long-range module serves; a
+   * cell requires a module that serves periodic systems.
+   */
+  void check_long_range_box(const std::vector<double>& box) const;
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.

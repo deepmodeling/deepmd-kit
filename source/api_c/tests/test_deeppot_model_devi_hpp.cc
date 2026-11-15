@@ -120,6 +120,8 @@ TYPED_TEST(TestInferDeepPotModeDevi, attrs) {
   EXPECT_EQ(dp1.numb_types(), dp_md.numb_types());
   // EXPECT_EQ(dp1.dim_fparam(), dp_md.dim_fparam());
   // EXPECT_EQ(dp1.dim_aparam(), dp_md.dim_aparam());
+  EXPECT_FALSE(dp0.has_long_range());
+  EXPECT_FALSE(dp_md.has_long_range());
 }
 
 TYPED_TEST(TestInferDeepPotModeDevi, cpu_build_nlist) {

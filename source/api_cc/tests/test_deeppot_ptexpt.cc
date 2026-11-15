@@ -98,6 +98,55 @@ deepmd::DeepPot TestInferDeepPotAPtExpt<VALUETYPE>::dp;
 TYPED_TEST_SUITE(TestInferDeepPotAPtExpt, ValueTypes);
 
 #if defined(BUILD_PYTORCH)
+template <typename Value>
+class TestPtExptReciprocalNlist : public ::testing::Test {};
+
+TYPED_TEST_SUITE(TestPtExptReciprocalNlist, ValueTypes);
+
+TYPED_TEST(TestPtExptReciprocalNlist, PeriodicCoordinateRoundoff) {
+  std::vector<TypeParam> coord{99.9, 0, 0, 0.1, 1, 0, 100.1, 1, 0, -0.1, 0, 0};
+  const std::vector<std::int64_t> mapping{0, 1, 1, 0};
+  EXPECT_NO_THROW(deepmd::ptexpt::check_reciprocal_nlist({{2}, {3}}, {0, 1},
+                                                         mapping, coord, 2, 4));
+  // A geometric mismatch above the coordinate uncertainty is still rejected.
+  coord[9] = -0.11;
+  EXPECT_THROW(deepmd::ptexpt::check_reciprocal_nlist({{2}, {3}}, {0, 1},
+                                                      mapping, coord, 2, 4),
+               deepmd::deepmd_exception);
+}
+
+TYPED_TEST(TestPtExptReciprocalNlist, PeriodicImageMultiplicity) {
+  const std::vector<TypeParam> coord{0, 0, 0, 0, 1,     0,  1e-7, 1,
+                                     0, 0, 2, 0, -1e-7, -1, 0};
+  const std::vector<std::int64_t> mapping{0, 1, 1, 1, 0};
+  EXPECT_NO_THROW(deepmd::ptexpt::check_reciprocal_nlist(
+      {{0, 4}, {3, 2}}, {1, 0}, mapping, coord, 2, 5));
+  EXPECT_THROW(deepmd::ptexpt::check_reciprocal_nlist({{2, 2}, {0, 4}}, {0, 1},
+                                                      mapping, coord, 2, 5),
+               deepmd::deepmd_exception);
+  EXPECT_THROW(deepmd::ptexpt::check_reciprocal_nlist({{2, 3}, {0}}, {0, 1},
+                                                      mapping, coord, 2, 5),
+               deepmd::deepmd_exception);
+  const std::vector<TypeParam> self{0, 0, 0, 1, 0, 0, -1, 0, 0};
+  EXPECT_NO_THROW(deepmd::ptexpt::check_reciprocal_nlist(
+      {{1, 2}}, {0}, {0, 0, 0}, self, 1, 3));
+  EXPECT_THROW(deepmd::ptexpt::check_reciprocal_nlist({{1, 1}}, {0}, {0, 0, 0},
+                                                      self, 1, 3),
+               deepmd::deepmd_exception);
+}
+
+TYPED_TEST(TestPtExptReciprocalNlist, AmbiguousImagesRequireOneToOneMatching) {
+  const std::vector<TypeParam> coord{0,          0, 0, 0,          0, 0,
+                                     1,          0, 0, 1.000005,   0, 0,
+                                     -1.0000025, 0, 0, -0.9999975, 0, 0};
+  // The first forward image fits either reverse image. Only the first
+  // reverse image fits the second forward image, so greedy matching fails.
+  const deepmd::ptexpt::ReciprocalEdge forward[]{{0, 1, 2}, {0, 1, 3}};
+  const deepmd::ptexpt::ReciprocalEdge reverse[]{{1, 0, 4}, {1, 0, 5}};
+  EXPECT_TRUE(
+      deepmd::ptexpt::reciprocal_images_match(forward, reverse, 2, coord));
+}
+
 TEST(TestPtExptMetadata, default_chg_spin_is_optional_when_dim_is_zero) {
   auto metadata = deepmd::ptexpt::parse_json("{}");
   auto value = deepmd::ptexpt::read_default_chg_spin(metadata, 0);

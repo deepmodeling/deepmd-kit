@@ -41,8 +41,8 @@ def _learned_part_path(model: torch.nn.Module) -> str | None:
 
 
 def _move_learned_key(key: str, path: str, source_path: str) -> str:
-    """Move a descriptor or fitting-net key between learned atomic-model paths."""
-    for part in ("descriptor.", "fitting_net."):
+    """Move a descriptor, fitting-net or long-range key between learned atomic-model paths."""
+    for part in ("descriptor.", "fitting_net.", "long_range."):
         if f".{path}{part}" in key:
             return key.replace(f".{path}{part}", f".{source_path}{part}", 1)
     return key

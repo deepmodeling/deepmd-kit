@@ -50,6 +50,52 @@ from ...seed import (
     GLOBAL_SEED,
 )
 
+# These APIs read the same unconditioned models. Keep only the immutable files
+# across classes: each consumer creates its own DeepPot (and deserialized model)
+# so swapping _dpmodel for a conditioning check cannot affect another class.
+_INTROSPECTION_ARCHIVES: dict[str, tuple[str, int]] = {}
+
+
+def _introspection_archive(descriptor_type: str) -> tuple[str, int]:
+    if descriptor_type not in _INTROSPECTION_ARCHIVES:
+        if descriptor_type == "se_e2_a":
+            ds = DescrptSeA(4.0, 0.5, [8, 6], seed=GLOBAL_SEED)
+        else:
+            from deepmd.pt_expt.descriptor.dpa1 import (
+                DescrptDPA1,
+            )
+
+            ds = DescrptDPA1(4.0, 0.5, [8, 6], ntypes=2, seed=GLOBAL_SEED)
+        ft = EnergyFittingNet(
+            2, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=GLOBAL_SEED
+        )
+        model = EnergyModel(ds, ft, type_map=["foo", "bar"]).to(torch.float64).eval()
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as archive:
+            path = archive.name
+        try:
+            deserialize_to_file(path, {"model": model.serialize()})
+        except BaseException:
+            os.unlink(path)
+            raise
+        _INTROSPECTION_ARCHIVES[descriptor_type] = path, ds.get_dim_out()
+    return _INTROSPECTION_ARCHIVES[descriptor_type]
+
+
+def tearDownModule() -> None:
+    for path, _ in _INTROSPECTION_ARCHIVES.values():
+        os.unlink(path)
+    _INTROSPECTION_ARCHIVES.clear()
+
+
+def _set_up_introspection(cls) -> str:
+    cls.rcut, cls.rcut_smth = 4.0, 0.5
+    cls.sel, cls.nt, cls.type_map = [8, 6], 2, ["foo", "bar"]
+    pte_sea, cls.dim_descrpt_sea = _introspection_archive("se_e2_a")
+    pte_dpa1, cls.dim_descrpt_dpa1 = _introspection_archive("dpa1")
+    cls.dp_sea = DeepPot(pte_sea)
+    cls.dp_dpa1 = DeepPot(pte_dpa1)
+    return pte_sea
+
 
 def _assert_repeatable(a, b) -> None:
     """Two evals of the same inputs must agree.
@@ -1686,58 +1732,7 @@ class TestEvalTypeEbd(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.rcut = 4.0
-        cls.rcut_smth = 0.5
-        cls.sel = [8, 6]
-        cls.nt = 2
-        cls.type_map = ["foo", "bar"]
-
-        # se_e2_a model (no type embedding)
-        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft_sea = EnergyFittingNet(
-            cls.nt,
-            ds_sea.get_dim_out(),
-            mixed_types=ds_sea.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
-        model_sea = model_sea.to(torch.float64)
-        model_sea.eval()
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
-        cls.dp_sea = DeepPot(pte_sea)
-
-        # DPA1 model (has type embedding)
-        from deepmd.pt_expt.descriptor.dpa1 import (
-            DescrptDPA1,
-        )
-
-        ds_dpa1 = DescrptDPA1(
-            cls.rcut,
-            cls.rcut_smth,
-            cls.sel,
-            ntypes=cls.nt,
-            seed=GLOBAL_SEED,
-        )
-        ft_dpa1 = EnergyFittingNet(
-            cls.nt,
-            ds_dpa1.get_dim_out(),
-            mixed_types=ds_dpa1.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
-        model_dpa1 = model_dpa1.to(torch.float64)
-        model_dpa1.eval()
-        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
-        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
-        cls.dp_dpa1 = DeepPot(pte_dpa1)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+        _set_up_introspection(cls)
 
     def test_typeebd_dpa1(self) -> None:
         """DPA1 model has type embedding, should return valid array."""
@@ -1758,54 +1753,7 @@ class TestEvalDescriptor(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.rcut = 4.0
-        cls.rcut_smth = 0.5
-        cls.sel = [8, 6]
-        cls.nt = 2
-        cls.type_map = ["foo", "bar"]
-
-        # se_e2_a model
-        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft_sea = EnergyFittingNet(
-            cls.nt,
-            ds_sea.get_dim_out(),
-            mixed_types=ds_sea.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
-        model_sea = model_sea.to(torch.float64)
-        model_sea.eval()
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
-        cls.dp_sea = DeepPot(pte_sea)
-        cls.dim_descrpt_sea = ds_sea.get_dim_out()
-
-        # DPA1 model
-        from deepmd.pt_expt.descriptor.dpa1 import (
-            DescrptDPA1,
-        )
-
-        ds_dpa1 = DescrptDPA1(
-            cls.rcut,
-            cls.rcut_smth,
-            cls.sel,
-            ntypes=cls.nt,
-            seed=GLOBAL_SEED,
-        )
-        ft_dpa1 = EnergyFittingNet(
-            cls.nt,
-            ds_dpa1.get_dim_out(),
-            mixed_types=ds_dpa1.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
-        model_dpa1 = model_dpa1.to(torch.float64)
-        model_dpa1.eval()
-        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
-        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
-        cls.dp_dpa1 = DeepPot(pte_dpa1)
-        cls.dim_descrpt_dpa1 = ds_dpa1.get_dim_out()
+        pte_sea = _set_up_introspection(cls)
 
         # se_e2_a model with fparam (dim_fparam=1, no default; swap _dpmodel
         # because se_e2_a + fparam hits GuardOnDataDependentSymNode in export)
@@ -1818,17 +1766,9 @@ class TestEvalDescriptor(unittest.TestCase):
             seed=GLOBAL_SEED,
         )
         model_fp = EnergyModel(ds_fp, ft_fp, type_map=cls.type_map)
-        pte_fp = os.path.join(cls._tmpdir, "fp.pte")
-        deserialize_to_file(pte_fp, {"model": model_sea.serialize()})
-        cls.dp_fp = DeepPot(pte_fp)
+        cls.dp_fp = DeepPot(pte_sea)
         cls.dp_fp.deep_eval._dpmodel = model_fp
         cls.dim_descrpt_fp = ds_fp.get_dim_out()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     def _make_inputs(self):
         nframes = 1
@@ -1914,53 +1854,8 @@ class TestEvalFittingLastLayer(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.rcut = 4.0
-        cls.rcut_smth = 0.5
-        cls.sel = [8, 6]
-        cls.nt = 2
-        cls.type_map = ["foo", "bar"]
+        pte_sea = _set_up_introspection(cls)
         cls.neuron = [120, 120, 120]  # default fitting net neurons
-
-        # se_e2_a model (mixed_types=False)
-        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft_sea = EnergyFittingNet(
-            cls.nt,
-            ds_sea.get_dim_out(),
-            mixed_types=ds_sea.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
-        model_sea = model_sea.to(torch.float64)
-        model_sea.eval()
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
-        cls.dp_sea = DeepPot(pte_sea)
-
-        # DPA1 model (mixed_types=True)
-        from deepmd.pt_expt.descriptor.dpa1 import (
-            DescrptDPA1,
-        )
-
-        ds_dpa1 = DescrptDPA1(
-            cls.rcut,
-            cls.rcut_smth,
-            cls.sel,
-            ntypes=cls.nt,
-            seed=GLOBAL_SEED,
-        )
-        ft_dpa1 = EnergyFittingNet(
-            cls.nt,
-            ds_dpa1.get_dim_out(),
-            mixed_types=ds_dpa1.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
-        model_dpa1 = model_dpa1.to(torch.float64)
-        model_dpa1.eval()
-        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
-        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
-        cls.dp_dpa1 = DeepPot(pte_dpa1)
 
         # se_e2_a model with fparam and aparam (swap _dpmodel because
         # se_e2_a + fparam hits GuardOnDataDependentSymNode in export)
@@ -1974,16 +1869,8 @@ class TestEvalFittingLastLayer(unittest.TestCase):
             seed=GLOBAL_SEED,
         )
         model_fp = EnergyModel(ds_fp, ft_fp, type_map=cls.type_map)
-        pte_fp = os.path.join(cls._tmpdir, "fp.pte")
-        deserialize_to_file(pte_fp, {"model": model_sea.serialize()})
-        cls.dp_fp = DeepPot(pte_fp)
+        cls.dp_fp = DeepPot(pte_sea)
         cls.dp_fp.deep_eval._dpmodel = model_fp
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     def _make_inputs(self):
         nframes = 1
@@ -2242,28 +2129,8 @@ class TestEvalDescriptorASE(unittest.TestCase):
         cls.nt = 2
         cls.type_map = ["foo", "bar"]
 
-        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft = EnergyFittingNet(
-            cls.nt,
-            ds.get_dim_out(),
-            mixed_types=ds.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        model = EnergyModel(ds, ft, type_map=cls.type_map)
-        model = model.to(torch.float64)
-        model.eval()
-        cls.dim_descrpt = ds.get_dim_out()
-
-        cls._tmpdir = tempfile.mkdtemp()
-        pte_path = os.path.join(cls._tmpdir, "sea.pte")
-        deserialize_to_file(pte_path, {"model": model.serialize()})
-        cls.dp_native = DeepPot(pte_path)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import shutil
-
-        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+        cls.pte_path, cls.dim_descrpt = _introspection_archive("se_e2_a")
+        cls.dp_native = DeepPot(cls.pte_path)
 
     @unittest.skipUnless(
         importlib.util.find_spec("ase") is not None, "ase not installed"
@@ -2272,9 +2139,8 @@ class TestEvalDescriptorASE(unittest.TestCase):
         """eval_descriptor with ASE nlist matches native nlist."""
         import ase.neighborlist
 
-        pte_path = os.path.join(self._tmpdir, "sea.pte")
         dp_ase = DeepPot(
-            pte_path,
+            self.pte_path,
             neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
                 cutoffs=self.rcut, bothways=True
             ),
@@ -2299,9 +2165,8 @@ class TestEvalDescriptorASE(unittest.TestCase):
         """eval_fitting_last_layer with ASE nlist matches native nlist."""
         import ase.neighborlist
 
-        pte_path = os.path.join(self._tmpdir, "sea.pte")
         dp_ase = DeepPot(
-            pte_path,
+            self.pte_path,
             neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
                 cutoffs=self.rcut, bothways=True
             ),
@@ -2598,30 +2463,24 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
         np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
 
 
-@unittest.skipUnless(
-    torch.cuda.is_available() and dpa4c_op_available(),
-    "CUDA and the compiled DPA4C operator are required",
-)
-class TestCompressedChargeStateRoutes(unittest.TestCase):
-    """A compressed archive must serve one charge state to all of its routes.
+def _charge_state_model(resnet_dt: bool) -> torch.nn.Module:
+    """Build a small charge-conditioned DPA4C energy model on the backend device.
 
-    Compression folds the condition into frozen tables that only the fused
-    kernel behind the compiled lower reads, while ``eval_descriptor`` and
-    ``eval_fitting_last_layer`` evaluate the model deserialized beside that
-    lower, which reads the condition as an argument. Both routes have to
-    answer for the state the caller asked for.
+    The conditioning projection is zero initialized so that an untrained
+    descriptor is unconditioned; it is given weight here to make the state
+    observable at all.
+
+    Parameters
+    ----------
+    resnet_dt
+        Whether the hidden layers of the fitting network carry a timestep. A
+        compressed model with one is frozen to the graph lower, and one
+        without it to the compact canonical lower on CUDA.
     """
+    from deepmd.pt_expt.model import get_model as pt_expt_get_model
 
-    lower_kind = "graph"
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        import copy
-
-        from deepmd.pt_expt.model import get_model as pt_expt_get_model
-
-        cls.nt = 2
-        config = {
+    model = pt_expt_get_model(
+        {
             "type_map": ["O", "H"],
             "descriptor": {
                 "type": "dpa4c",
@@ -2637,35 +2496,128 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
             "fitting_net": {
                 "neuron": [8, 8],
                 "precision": "float32",
-                "resnet_dt": cls.lower_kind == "graph",
+                "resnet_dt": resnet_dt,
                 "seed": 1,
             },
         }
-        model = pt_expt_get_model(copy.deepcopy(config)).to("cuda")
-
-        # The conditioning projection is zero initialized so that an untrained
-        # descriptor is unconditioned; give it weight to make the state
-        # observable at all.
-        generator = torch.Generator(device="cuda").manual_seed(GLOBAL_SEED)
-        for (
-            _,
-            param,
-        ) in model.atomic_model.descriptor.charge_spin_embedding.named_parameters():
-            with torch.no_grad():
-                param.copy_(
-                    torch.randn(
-                        param.shape,
-                        generator=generator,
-                        device="cuda",
-                        dtype=param.dtype,
-                    )
-                    * 0.3
+    ).to(DEVICE)
+    generator = torch.Generator(device=DEVICE).manual_seed(GLOBAL_SEED)
+    for (
+        _,
+        param,
+    ) in model.atomic_model.descriptor.charge_spin_embedding.named_parameters():
+        with torch.no_grad():
+            param.copy_(
+                torch.randn(
+                    param.shape,
+                    generator=generator,
+                    device=DEVICE,
+                    dtype=param.dtype,
                 )
+                * 0.3
+            )
+    return model
+
+
+@unittest.skipUnless(
+    dpa4c_op_available(),
+    "the compiled DPA4C operator of the backend device is required",
+)
+class TestCompressedChargeStateSwitch(unittest.TestCase):
+    """A compressed archive answers for the charge state it switches to.
+
+    Serving a state copies the rebuilt tables over the constants of the
+    compiled lower that carry the condition, so the kernels of the backend
+    device have to read the copied values rather than anything they prepared
+    from the previous ones.
+    """
+
+    def test_a_state_served_later_answers_as_one_served_first(self) -> None:
+        """An instance that switches to a state answers as a fresh one does.
+
+        The first instance serves the default state and then the other state,
+        which the second instance serves at once.
+        """
+        model = _charge_state_model(resnet_dt=True)
+        model.atomic_model.descriptor.enable_compression(0.5)
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coords = rng.random((1, 5, 3)) * 6.0
+        cells = np.eye(3).reshape(1, 9) * 12.0
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        other_state = np.array([[2.0, 3.0]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "compressed_model.pt2")
+            deserialize_to_file(
+                path, {"model": model.serialize()}, lower_kind="auto", with_comm=False
+            )
+            later = DeepPot(path)
+            default = later.eval(
+                coords, cells, atom_types, charge_spin=np.array([[0.0, 1.0]])
+            )
+            actual = later.eval(coords, cells, atom_types, charge_spin=other_state)
+            expected = DeepPot(path).eval(
+                coords, cells, atom_types, charge_spin=other_state
+            )
+        # The states must differ, or an instance that kept the default state
+        # would still match.
+        self.assertGreater(float(np.abs(default[0] - expected[0]).max()), 1e-4)
+        for value, reference in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, reference, rtol=1e-6, atol=1e-6)
+
+
+class TestGraphInputLayout(unittest.TestCase):
+    """A graph archive answers for broadcast inputs as for contiguous ones."""
+
+    def test_broadcast_frames_match_their_copies(self) -> None:
+        """Frames given as zero-stride views evaluate like their copies.
+
+        A batch of identical cells is naturally a broadcast view, whose zero
+        frame stride survives the conversion to a tensor.
+        """
+        model = _charge_state_model(resnet_dt=True)
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nframes = 3
+        coords = np.broadcast_to(rng.random((1, 5, 3)) * 6.0, (nframes, 5, 3))
+        cells = np.broadcast_to(np.eye(3).reshape(1, 9) * 12.0, (nframes, 9))
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.pt2")
+            deserialize_to_file(
+                path, {"model": model.serialize()}, lower_kind="graph", with_comm=False
+            )
+            dp = DeepPot(path)
+            actual = dp.eval(coords, cells, atom_types)
+            expected = dp.eval(coords.copy(), cells.copy(), atom_types)
+        for value, reference in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, reference, rtol=1e-6, atol=1e-6)
+
+
+@unittest.skipUnless(
+    dpa4c_op_available(),
+    "the compiled DPA4C operator of the backend device is required",
+)
+class TestCompressedChargeStateRoutes(unittest.TestCase):
+    """A compressed archive must serve one charge state to all of its routes.
+
+    Compression folds the condition into frozen tables. The compiled lower
+    and the model deserialized beside it must both receive the requested
+    state, including descriptor and fitting-layer introspection.
+    """
+
+    lower_kind = "graph"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import copy
+
+        cls.nt = 2
+        model = _charge_state_model(resnet_dt=cls.lower_kind == "graph")
         cls.reference = copy.deepcopy(model).eval()
         model.atomic_model.descriptor.enable_compression(0.5)
 
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
         cls.tmpfile.close()
+        previous_device = torch.get_default_device()
         torch.set_default_device(None)
         try:
             deserialize_to_file(
@@ -2679,7 +2631,7 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
             cls.dp = DeepPot(cls.tmpfile.name)
             assert cls.dp.deep_eval.metadata["lower_input_kind"] == cls.lower_kind
         finally:
-            torch.set_default_device("cuda:9999999")
+            torch.set_default_device(previous_device)
 
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
@@ -2737,6 +2689,10 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
         np.testing.assert_allclose(self._routes([0.0, 1.0]), first, rtol=1e-6)
 
 
+@unittest.skipUnless(
+    DEVICE.type == "cuda" and dpa4c_op_available(),
+    "CUDA and the compiled DPA4C operator are required",
+)
 class TestCanonicalChargeStateRoutes(TestCompressedChargeStateRoutes):
     """Canonical archives retain charge folding and both graph input paths."""
 

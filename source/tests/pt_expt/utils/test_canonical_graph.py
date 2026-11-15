@@ -1,16 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from dataclasses import (
+    replace,
+)
+from unittest import (
+    mock,
+)
+
 import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
+    build_neighbor_graph,
 )
 from deepmd.pt_expt.utils.canonical_graph import (
-    UINT32_MAX,
+    INT32_MAX,
     CanonicalGraph,
     canonical_graph_from_neighbor_graph,
     canonical_graph_from_pairs,
+    canonical_index_bytes,
+    canonical_index_words,
     validate_canonical_graph_shapes,
+    validate_reciprocal_canonical_graph,
 )
 
 
@@ -46,18 +57,115 @@ def test_storage_guards_remain_outside_csr(physical_edge_count: int) -> None:
     assert compact.edge_vec.shape == (2, 3)
     assert compact.source_order.shape == (2,)
     assert compact.source.dtype == torch.uint32
-    assert compact.source_order.dtype == torch.uint32
+    assert compact.source_order.dtype == torch.int64
     assert int(compact.destination_row_ptr[-1]) == physical_edge_count
     assert int(compact.source_row_ptr[-1]) == physical_edge_count
     validate_canonical_graph_shapes(compact, 1)
 
 
-def test_storage_exceeding_uint32_range_is_rejected() -> None:
-    storage_count = UINT32_MAX + 1
+def test_reciprocity_checks_periodic_images_and_duplicate_counts() -> None:
+    center = torch.tensor([0, 0, 1, 1, 0, 0])
+    source = torch.tensor([1, 1, 0, 0, 0, 0])
+    vector = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [-2.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+            [-3.0, 0.0, 0.0],
+        ]
+    )
+    for count in (0, 4, 6):
+        graph = canonical_graph_from_pairs(
+            center[:count], source[:count], vector[:count], torch.tensor([2]), 2
+        )
+        validate_reciprocal_canonical_graph(graph)
+    for count in (1, 3, 5):
+        graph = canonical_graph_from_pairs(
+            center[:count], source[:count], vector[:count], torch.tensor([2]), 2
+        )
+        with pytest.raises(ValueError, match="bidirectional"):
+            validate_reciprocal_canonical_graph(graph)
+    vector[2] = vector[3]
+    graph = canonical_graph_from_pairs(center, source, vector, torch.tensor([2]), 2)
+    with pytest.raises(ValueError, match="bidirectional"):
+        validate_reciprocal_canonical_graph(graph)
+
+
+def test_reciprocity_matching_accepts_periodic_roundoff() -> None:
+    graph = canonical_graph_from_pairs(
+        torch.tensor([0, 0, 1, 1]),
+        torch.tensor([1, 1, 0, 0]),
+        torch.tensor(
+            [[1e-7, 1.0, 0.0], [0.0, 2.0, 0.0], [0.0, -1.0, 0.0], [-1e-7, -2.0, 0.0]]
+        ),
+        torch.tensor([2]),
+        2,
+    )
+    validate_reciprocal_canonical_graph(graph)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_periodic_self_images_are_matched_without_host_transfers(device: str) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+    coord = torch.zeros(4, 1, 3, dtype=torch.float64, device=device)
+    types = torch.zeros(4, 1, dtype=torch.int64, device=device)
+    box = 1.5 * torch.eye(3, dtype=torch.float64, device=device).repeat(4, 1, 1)
+    neighbor = build_neighbor_graph(coord, types, box, 2.0, canonicalize=True)
+    graph = canonical_graph_from_neighbor_graph(
+        replace(neighbor, n_local=neighbor.n_node)
+    )
+    with mock.patch.object(
+        torch.Tensor, "cpu", side_effect=AssertionError("host transfer")
+    ):
+        validate_reciprocal_canonical_graph(graph)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_only_ambiguous_image_groups_reach_host_matching(device: str) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+    center = torch.tensor([0, 0, 1, 1, 2, 3, 4, 4], device=device)
+    source = torch.tensor([1, 1, 0, 0, 3, 2, 4, 4], device=device)
+    vector = torch.tensor(
+        [
+            [1e-7, 1.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [-1e-7, -2.0, 0.0],
+            [0.5, 0.0, 0.0],
+            [-0.5, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+        ],
+        device=device,
+    )
+    graph = canonical_graph_from_pairs(
+        center, source, vector, torch.tensor([5], device=device), 5
+    )
+    cpu = torch.Tensor.cpu
+    transfers = []
+
+    def record_transfer(tensor: torch.Tensor) -> torch.Tensor:
+        transfers.append(tuple(tensor.shape))
+        return cpu(tensor)
+
+    with mock.patch.object(torch.Tensor, "cpu", record_transfer):
+        validate_reciprocal_canonical_graph(graph)
+    assert [shape for shape in transfers if len(shape) == 2] == [(4, 3), (4, 3)]
+
+
+@pytest.mark.parametrize("index_dtype", [torch.uint32, torch.int64])
+def test_edge_storage_range_is_independent_of_node_width(
+    index_dtype: torch.dtype,
+) -> None:
+    storage_count = 1 << 32
     graph = CanonicalGraph(
         n_node=torch.empty(1, dtype=torch.int64, device="meta"),
         n_local=torch.empty(1, dtype=torch.int64, device="meta"),
-        source=torch.empty(storage_count, dtype=torch.uint32, device="meta"),
+        source=torch.empty(storage_count, dtype=index_dtype, device="meta"),
         edge_vec=torch.empty(
             storage_count,
             3,
@@ -68,12 +176,43 @@ def test_storage_exceeding_uint32_range_is_rejected() -> None:
         source_row_ptr=torch.empty(2, dtype=torch.int64, device="meta"),
         source_order=torch.empty(
             storage_count,
-            dtype=torch.uint32,
+            dtype=torch.int64,
             device="meta",
         ),
     )
-    with pytest.raises(ValueError, match="exceeds the uint32 range"):
-        validate_canonical_graph_shapes(graph, 1)
+    validate_canonical_graph_shapes(graph, 1)
+
+
+@pytest.mark.parametrize(
+    "node_count, expected_dtype",
+    [(INT32_MAX + 1, torch.uint32), (INT32_MAX + 2, torch.int64)],
+)
+def test_pairs_choose_width_from_node_extent(
+    node_count: int, expected_dtype: torch.dtype
+) -> None:
+    graph = canonical_graph_from_pairs(
+        torch.empty(2, dtype=torch.int64, device="meta"),
+        torch.empty(2, dtype=torch.int64, device="meta"),
+        torch.empty(2, 3, dtype=torch.float32, device="meta"),
+        torch.empty(1, dtype=torch.int64, device="meta"),
+        node_count,
+    )
+    assert graph.source.dtype == expected_dtype
+    assert graph.source_order.dtype == torch.int64
+    validate_canonical_graph_shapes(graph, node_count)
+
+
+@pytest.mark.parametrize("dtype", [torch.uint32, torch.int32, torch.int64])
+def test_index_byte_carrier_preserves_words_without_copy(dtype: torch.dtype) -> None:
+    values = [0, 7, (1 << 40) + 123] if dtype == torch.int64 else [0, 7, INT32_MAX]
+    index = torch.tensor(values, dtype=dtype)
+    storage = canonical_index_bytes(index)
+    restored = canonical_index_words(storage)
+    assert storage.shape == (3, index.element_size())
+    assert storage.data_ptr() == restored.data_ptr() == index.data_ptr()
+    torch.testing.assert_close(
+        restored.to(torch.int64), index.to(torch.int64), atol=0, rtol=0
+    )
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])

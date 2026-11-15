@@ -766,69 +766,6 @@ class TestCompiledModelGetattr(unittest.TestCase):
 
 
 @REQUIRES_SUPPORTED_COMPILE
-class TestCompiledDynamicShapes(unittest.TestCase):
-    """Test that _CompiledModel handles varying nall via dynamic shapes."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        data_dir = os.path.join(EXAMPLE_DIR, "data")
-        if not os.path.isdir(data_dir):
-            raise unittest.SkipTest(f"Example data not found: {data_dir}")
-        cls.data_dir = data_dir
-
-    def test_compiled_handles_varying_nall(self) -> None:
-        """Run several training steps, assert finite loss each step.
-
-        With ``tracing_mode="symbolic"`` + ``dynamic=True``, nall is a
-        symbolic dim so nall growth across batches is handled without
-        any recompile or padding.
-        """
-        from deepmd.pt_expt.train.training import (
-            _CompiledModel,
-        )
-
-        config = _make_config(self.data_dir, numb_steps=5)
-        config["training"]["enable_compile"] = True
-        config = update_deepmd_input(config, warning=False)
-        config = normalize(config)
-
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_dynamic_")
-        try:
-            old_cwd = os.getcwd()
-            os.chdir(tmpdir)
-            try:
-                trainer = get_trainer(config)
-
-                # The wrapper.model should be a _CompiledModel
-                compiled_model = trainer.wrapper.model["Default"]
-                self.assertIsInstance(compiled_model, _CompiledModel)
-                # Lazy compile: no graph exists before any forward.
-                self.assertEqual(compiled_model._compiled_lower_by_mode, {})
-
-                trainer.wrapper.train()
-                for step in range(3):
-                    trainer.optimizer.zero_grad(set_to_none=True)
-                    inp, lab = trainer.get_data(is_train=True)
-                    lr = trainer.scheduler.get_last_lr()[0]
-                    _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
-                    loss.backward()
-                    trainer.optimizer.step()
-
-                    # After the first forward the training graph must exist,
-                    # keyed by the mode it was traced in.
-                    if step == 0:
-                        self.assertIn(True, compiled_model._compiled_lower_by_mode)
-
-                    # Loss should be a finite scalar at every step
-                    self.assertFalse(torch.isnan(loss))
-                    self.assertFalse(torch.isinf(loss))
-            finally:
-                os.chdir(old_cwd)
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-@REQUIRES_SUPPORTED_COMPILE
 class TestCompiledConsistency(unittest.TestCase):
     """Verify compiled model produces the same energy/force/virial as uncompiled."""
 
@@ -2018,6 +1955,7 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
                 trainer_c = get_trainer(self._make_varying_config(True, descriptor))
                 compiled_model = trainer_c.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
+                self.assertEqual(compiled_model._compiled_lower_by_mode, {})
 
                 # Sync weights so predictions can be compared exactly
                 compiled_model.original_model.load_state_dict(
@@ -2044,6 +1982,8 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
                         out_c, loss_c, _ = trainer_c.wrapper(
                             **inp, cur_lr=lr, label=lab
                         )
+                        self.assertIn(True, compiled_model._compiled_lower_by_mode)
+                        self.assertTrue(torch.isfinite(loss_c))
 
                         ctx = f"step={step} "
                         _assert_compile_predictions_match(self, out_c, out_uc, ctx=ctx)

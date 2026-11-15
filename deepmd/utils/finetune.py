@@ -589,6 +589,18 @@ class FinetuneRuleBuilder:
         single_config["descriptor"] = deepcopy(pretrained_config["descriptor"])
         if not random_fitting:
             single_config["fitting_net"] = deepcopy(pretrained_config["fitting_net"])
+            # A long-range module reads the descriptor beside the fitting and
+            # is carried over with it; the trainability set in the input
+            # applies to its parts as to the descriptor and the fitting.
+            if "long_range" in pretrained_config:
+                long_range = deepcopy(pretrained_config["long_range"])
+                for part in ("charge_net", "kernel"):
+                    long_range.setdefault(part, {})["trainable"] = (
+                        single_config.get("long_range", {})
+                        .get(part, {})
+                        .get("trainable", True)
+                    )
+                single_config["long_range"] = long_range
         log.info(
             "Change the '%s' model configurations according to pretrained branch '%s'.",
             model_branch,
