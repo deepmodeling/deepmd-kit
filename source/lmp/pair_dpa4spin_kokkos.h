@@ -89,6 +89,9 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   // Model node set and the compact canonical graph over it.
   CompactCanonicalGraphKokkos<DeviceType> compact_graph;
   bool multi_rank;  // domain-decomposed run -> extended (local+ghost) node set
+  // The artifact reads features of the ghost nodes of an extended node set
+  // from their owners through its halo exchange.
+  bool canonical_halo;
   // (3 * nall) per-node magnetic moment in the ABI's float32 layout, the
   // LAMMPS unit direction scaled by its magnitude.
   Kokkos::View<float*, DeviceType> d_moment;
@@ -120,6 +123,8 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   bool reverse_used_host;  // the host pack/unpack overrides ran
   // Device-packed fold that replaces the host reverse communication.
   CompactCanonicalGhostFold<DeviceType, DPA4SpinKokkosCommBuffer> ghost_fold;
+  // Halo exchange of the extended node set for ``canonical_halo``.
+  CompactCanonicalHalo<DeviceType> halo_exchange;
 };
 
 }  // namespace LAMMPS_NS

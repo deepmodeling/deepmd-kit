@@ -23,13 +23,13 @@ class DipoleChargeModifierBase;
  * of another layout.
  **/
 constexpr const char* DEEPMD_DEEPPOT_PLUGIN_CREATE_SYMBOL =
-    "deepmd_create_deeppot_backend_v2";
+    "deepmd_create_deeppot_backend_v3";
 constexpr const char* DEEPMD_DEEPPOT_PLUGIN_DELETE_SYMBOL =
-    "deepmd_delete_deeppot_backend_v2";
+    "deepmd_delete_deeppot_backend_v3";
 constexpr const char* DEEPMD_DEEPSPIN_PLUGIN_CREATE_SYMBOL =
-    "deepmd_create_deepspin_backend_v2";
+    "deepmd_create_deepspin_backend_v3";
 constexpr const char* DEEPMD_DEEPSPIN_PLUGIN_DELETE_SYMBOL =
-    "deepmd_delete_deepspin_backend_v2";
+    "deepmd_delete_deepspin_backend_v3";
 constexpr const char* DEEPMD_DEEPTENSOR_PLUGIN_CREATE_SYMBOL =
     "deepmd_create_deeptensor_backend_v1";
 constexpr const char* DEEPMD_DEEPTENSOR_PLUGIN_DELETE_SYMBOL =

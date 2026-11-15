@@ -218,7 +218,8 @@ succeeds. Enable Kokkos only when the requested LAMMPS runtime requires it,
 and select the architecture supported by that exact LAMMPS/Kokkos source tree.
 For LAMMPS runs on several GPUs, build LAMMPS and the DeePMD-kit C/C++
 interface against the same CUDA-aware MPI library, such as Open MPI with UCX,
-and enable its CUDA support at run time as the matching LAMMPS page describes.
+and enable its CUDA support and select UCX at run time as the matching LAMMPS
+page describes.
 
 ## 4. Verify the requested interface
 

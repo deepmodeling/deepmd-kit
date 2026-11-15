@@ -92,7 +92,8 @@ def embedding(
         Output HDF5 file. Each system becomes a group holding the three
         embedding datasets.
     head : str, optional
-        (Supported backend: PyTorch) Task head if in multi-task mode.
+        (Supported backend: PyTorch, PyTorch Exportable) Task head if in
+        multi-task mode.
     dtype : str
         Output dtype for embedding arrays: ``"fp32"``, ``"fp64"``, or
         ``"native"``.
@@ -101,6 +102,12 @@ def embedding(
 
     Notes
     -----
+    Each system supplies the inputs the model conditions on, read as
+    ``dp test`` reads them: the frame parameters (``fparam``), the atomic
+    parameters (``aparam``), and the charge and spin multiplicity
+    (``charge_spin``). An optional one that the system does not carry falls
+    back to the default of the model.
+
     The output HDF5 file stores one group per system. The group name is the
     system directory's base name (de-duplicated on collision), and the source
     directory is recorded in the group's ``system`` attribute. Each group holds
@@ -148,6 +155,33 @@ def embedding(
                 type_map=tmap,
                 sort_atoms=False,
             )
+            # The system supplies the frame and atomic parameters and the
+            # charge/spin condition the model takes; an optional one it does
+            # not carry falls back to the default of the model.
+            if dp.get_dim_fparam() > 0:
+                data.add(
+                    "fparam",
+                    dp.get_dim_fparam(),
+                    atomic=False,
+                    must=not dp.has_default_fparam(),
+                    high_prec=False,
+                )
+            if dp.get_dim_aparam() > 0:
+                data.add(
+                    "aparam",
+                    dp.get_dim_aparam(),
+                    atomic=True,
+                    must=True,
+                    high_prec=False,
+                )
+            if dp.has_chg_spin_ebd():
+                data.add(
+                    "charge_spin",
+                    2,
+                    atomic=False,
+                    must=not dp.has_default_chg_spin(),
+                    high_prec=False,
+                )
 
             test_data = data.get_test()
             mixed_type = data.mixed_type
@@ -162,12 +196,10 @@ def embedding(
             else:
                 atype = test_data["type"][0]
 
-            fparam = None
-            if dp.get_dim_fparam() > 0 and "fparam" in test_data:
-                fparam = test_data["fparam"]
-            aparam = None
-            if dp.get_dim_aparam() > 0 and "aparam" in test_data:
-                aparam = test_data["aparam"]
+            fparam, aparam, charge_spin = (
+                test_data[key] if test_data.get(f"find_{key}", 0.0) != 0.0 else None
+                for key in ("fparam", "aparam", "charge_spin")
+            )
 
             log.info(f"# evaluating embeddings for {nframes} frames")
             descriptor, atomic_feature, structural_feature = dp.eval_embedding(
@@ -176,6 +208,7 @@ def embedding(
                 atype,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
                 mixed_type=mixed_type,
                 dtype=dtype,
             )

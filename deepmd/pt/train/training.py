@@ -1483,7 +1483,7 @@ class Trainer:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
             if self.model_ema is not None:
-                self.model_ema.update(self.model)
+                self.model_ema.update()
 
             if self.metric_accumulator is not None:
                 self.metric_accumulator.add(

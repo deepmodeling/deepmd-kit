@@ -17,6 +17,7 @@
 #include <mutex>
 #include <type_traits>
 
+#include "block_launch.h"
 #include "graph_compress.cuh"
 
 namespace deepmd_dpa4c {
@@ -1151,7 +1152,7 @@ __global__ __launch_bounds__(
     const EdgeGeometry geometry = load_geometry<Bridged>(
         edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
         args.inverse_f_width, center_radius, bound, args.contact_radius,
-        args.eps, args.edge_vec);
+        args.eps, args.edge_vec, args.source_gate);
     const TableLocation location = locate_table<Canonical>(
         geometry.seen, args.table_stride, args.table_max, args.interval_count);
     const TableRow row =
@@ -1914,11 +1915,13 @@ __global__ __launch_bounds__(
 
 // The invariant readout of the nodes whose moments the edge scan published:
 // the degree alignment, the probe projections and every invariant block of
-// the descriptor except the two divisors, which the scan emits itself. One
-// warp owns one node, as in the scan. The readout is a launch of its own
-// because the radial table rows that bound the scan are served by L1, whose
-// capacity follows the carveout the scan's shared memory selects; the readout
-// buffers of a resident node would double that carveout at full occupancy.
+// the descriptor except the two divisors, which the scan emits itself, or
+// which the readout copies from ``divisors`` when it is launched apart from
+// the scan. One warp owns one node, as in the scan. The readout is a launch of
+// its own because the radial table rows that bound the scan are served by L1,
+// whose capacity follows the carveout the scan's shared memory selects; the
+// readout buffers of a resident node would double that carveout at full
+// occupancy.
 template <int Channels, int Lmax, bool HasSpin>
 __global__ __launch_bounds__(kWarpSize) void forward_readout_kernel(
     Arguments args) {
@@ -1994,6 +1997,10 @@ __global__ __launch_bounds__(kWarpSize) void forward_readout_kernel(
   __syncthreads();
 
   // === Step 2. Emit the invariant blocks ===
+  if (args.divisors != nullptr && thread < 2) {
+    args.descriptor[node * P::OutputWidth + P::OutputDivisor + thread] =
+        args.divisors[node * 2 + thread];
+  }
   for (int channel = thread; channel < Channels; channel += P::Threads) {
     store_descriptor(args.descriptor, args.output_mean, args.output_inv_std,
                      node, P::OutputWidth, P::OutputScalar + channel,
@@ -3451,7 +3458,7 @@ __global__ __launch_bounds__(
     const EdgeGeometry geometry = load_geometry<Bridged>(
         edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
         args.inverse_f_width, center_radius, bound, args.contact_radius,
-        args.eps, args.edge_vec);
+        args.eps, args.edge_vec, args.source_gate);
     const TableLocation location = locate_table<Canonical>(
         geometry.seen, args.table_stride, args.table_max, args.interval_count);
     // The pair term depends on the geometry alone, so it starts here and runs
@@ -3983,6 +3990,21 @@ __global__ __launch_bounds__(
                               radial_gradient, envelope_gradient);
     if constexpr (Bridged) {
       radial_gradient = fmaf(pair_weight, pair_slope, radial_gradient);
+      // Under a source gate the envelope of an edge enters the gate of every
+      // other edge of its source, so its cotangent times the envelope joins
+      // the totals of a source with a pair inside its window, from which
+      // gate_closure_kernel forms the slope of the switches of that source.
+      if (args.gate_sums != nullptr) {
+        const float sum = subwarp_allsum<EdgeWidth>(envelope_gradient, mask) *
+                          geometry.envelope;
+        if (thread == leader &&
+            has_window_pair(args.source_gate[geometry.source])) {
+          if (args.force != nullptr) {
+            check_force_range(sum, args.force + geometry.source * kForceWords);
+          }
+          atomicAdd(args.gate_sums + geometry.source, fixed_point(sum));
+        }
+      }
     }
 
     // The basis VJP is linear in the radial and angular cotangents, so
@@ -4438,12 +4460,22 @@ struct BackwardLauncher {
         <<<node_blocks, NodeProfile::Threads, 0, stream>>>(args);
   }
 
-  static void run(const Arguments& args, cudaStream_t stream) {
+  /// The readout VJP of every node of the launch into its moment gradient.
+  static void run_nodes(const Arguments& args, cudaStream_t stream) {
     if (prefer_wide_nodes()) {
       launch_node_backward<kNodeLanesWide>(args, stream);
     } else {
       launch_node_backward<kNodeLanesNarrow>(args, stream);
     }
+  }
+
+  static void run(const Arguments& args, cudaStream_t stream) {
+    run_nodes(args, stream);
+    run_edges(args, stream);
+  }
+
+  /// The edge recomputation scans from the moment gradient of every node.
+  static void run_edges(const Arguments& args, cudaStream_t stream) {
     launch_edge_scans<BackwardLauncher, true, Channels, Lmax, HasSpin,
                       Canonical, index_t>(args, stream);
     // The reserved edge slots beyond the physical count are only known on the
@@ -4552,6 +4584,71 @@ void launch_forward(const Arguments& arguments, cudaStream_t stream) {
 template <int Channels, int Lmax>
 void launch_backward(const Arguments& arguments, cudaStream_t stream) {
   dispatch_modes<Channels, Lmax, BackwardLauncher>(arguments, stream);
+}
+
+// The stages of the first block that a descriptor of several blocks launches
+// one at a time (FirstStage).
+template <int Channels,
+          int Lmax,
+          bool HasModes,
+          bool HasSpin,
+          bool Bridged,
+          bool Canonical,
+          typename index_t>
+struct ReadoutLauncher {
+  static void run(const Arguments& args, cudaStream_t stream) {
+    using P = Profile<Channels, Lmax, HasSpin>;
+    forward_readout_kernel<Channels, Lmax, HasSpin>
+        <<<static_cast<int>(args.node_count), P::Threads, 0, stream>>>(args);
+  }
+};
+
+template <int Channels,
+          int Lmax,
+          bool HasModes,
+          bool HasSpin,
+          bool Bridged,
+          bool Canonical,
+          typename index_t>
+struct NodeBackwardLauncher {
+  static void run(const Arguments& args, cudaStream_t stream) {
+    BackwardLauncher<Channels, Lmax, HasModes, HasSpin, Bridged, Canonical,
+                     index_t>::run_nodes(args, stream);
+  }
+};
+
+template <int Channels,
+          int Lmax,
+          bool HasModes,
+          bool HasSpin,
+          bool Bridged,
+          bool Canonical,
+          typename index_t>
+struct EdgeBackwardLauncher {
+  static void run(const Arguments& args, cudaStream_t stream) {
+    BackwardLauncher<Channels, Lmax, HasModes, HasSpin, Bridged, Canonical,
+                     index_t>::run_edges(args, stream);
+  }
+};
+
+template <int Channels, int Lmax>
+void launch_first_stage(FirstStage stage,
+                        const Arguments& arguments,
+                        cudaStream_t stream) {
+  if (arguments.node_count == 0) {
+    return;
+  }
+  switch (stage) {
+    case FirstStage::Readout:
+      dispatch_modes<Channels, Lmax, ReadoutLauncher>(arguments, stream);
+      return;
+    case FirstStage::NodeBackward:
+      dispatch_modes<Channels, Lmax, NodeBackwardLauncher>(arguments, stream);
+      return;
+    case FirstStage::EdgeBackward:
+      dispatch_modes<Channels, Lmax, EdgeBackwardLauncher>(arguments, stream);
+      return;
+  }
 }
 
 }  // namespace deepmd_dpa4c

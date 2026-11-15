@@ -5,70 +5,42 @@
 //
 // With an MPI library that reads device memory (MPIX_Query_cuda_support), the
 // rows travel between device buffers once the current stream has finished
-// writing them; otherwise they are staged through pinned host buffers. Either
-// way the host waits for the device once per exchange, before MPI reads the
-// data; the results return to the device without a further wait.
+// writing them, those of a gather as one point-to-point message between every
+// pair of ranks, which the library transfers between the device buffers of
+// the two ranks; otherwise they are staged through pinned host buffers, which
+// a collective gathers. Either way the host waits for the device once per
+// exchange, before MPI reads the data; the results return to the device
+// without a further wait.
 
 #include "domain_exchange.h"
 
-#ifdef USE_MPI
-#include <mpi.h>
-#ifdef OMPI_MPI_H
-#include <mpi-ext.h>
-#endif
-#endif
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/util/Exception.h>
 
 #include <limits>
 #include <vector>
 
+#include "../communicator.h"
+
 namespace deepmd {
 namespace long_range {
-namespace {
 
-std::int64_t address_of(const torch::Tensor& communicator) {
-  TORCH_CHECK(communicator.device().is_cpu() &&
-                  communicator.scalar_type() == torch::kInt64 &&
-                  communicator.numel() == 1,
-              "latent_charge_sum: communicator must be an int64 CPU "
-              "tensor with one element");
-  return communicator.contiguous().data_ptr<std::int64_t>()[0];
-}
+/// The operator that names an exchange in its diagnostics.
+constexpr const char* kOperator = "latent_charge_sum";
 
 #ifdef USE_MPI
-// The handle of the caller, of the width of MPI_Comm in this MPI library: an
-// int in MPICH, a pointer in Open MPI.
-MPI_Comm communicator_of(const torch::Tensor& communicator) {
-  static_assert(sizeof(std::uintptr_t) <= sizeof(std::int64_t),
-                "an address must fit in an int64 tensor");
-  return *reinterpret_cast<const MPI_Comm*>(
-      static_cast<std::uintptr_t>(address_of(communicator)));
-}
-
-bool reads_device_memory() {
-#ifdef NO_CUDA_AWARE
-  return false;
-#else
-  return MPIX_Query_cuda_support() != 0;
+/// Tag of the rows of a gather. Messages between two ranks are received in
+/// the order they are sent, so one tag serves every gather.
+constexpr int kGatherTag = 0x4c52;
 #endif
-}
-#endif
-
-}  // namespace
 
 int domain_count(const torch::Tensor& communicator) {
-  if (address_of(communicator) == 0) {
+  if (communicator_address(communicator, kOperator) == 0) {
     return 1;
   }
 #ifdef USE_MPI
-  int initialized = 0;
-  MPI_Initialized(&initialized);
-  TORCH_CHECK(initialized != 0,
-              "latent_charge_sum: a communicator was given, but MPI is "
-              "not initialized");
   int size = 1;
-  MPI_Comm_size(communicator_of(communicator), &size);
+  MPI_Comm_size(communicator_handle(communicator, kOperator), &size);
   return size;
 #else
   TORCH_CHECK(false,
@@ -84,7 +56,7 @@ std::pair<torch::Tensor, std::int64_t> gather_domain_rows(
                   rows.scalar_type() == torch::kFloat64 && rows.is_contiguous(),
               "gather_domain_rows: rows must be a contiguous float64 CUDA "
               "matrix");
-  const MPI_Comm comm = communicator_of(communicator);
+  const MPI_Comm comm = communicator_handle(communicator, kOperator);
   int rank = 0;
   int size = 1;
   MPI_Comm_rank(comm, &rank);
@@ -110,11 +82,30 @@ std::pair<torch::Tensor, std::int64_t> gather_domain_rows(
   }
   const int send_count = static_cast<int>(local * width);
   auto gathered = torch::empty({total, width}, rows.options());
-  if (reads_device_memory()) {
+  if (mpi_reads_device_memory()) {
+    // Every rank sends its rows to every other rank and receives theirs into
+    // their place; a rank of no rows sends nothing, which every rank knows
+    // from the counts. MPI reads the rows of the device once the stream has
+    // written them.
+    gathered.narrow(0, offset, local).copy_(rows);
     at::cuda::getCurrentCUDAStream().synchronize();
-    MPI_Allgatherv(rows.data_ptr<double>(), send_count, MPI_DOUBLE,
-                   gathered.data_ptr<double>(), receive_counts.data(),
-                   displacements.data(), MPI_DOUBLE, comm);
+    std::vector<MPI_Request> requests;
+    requests.reserve(2 * static_cast<std::size_t>(size));
+    for (int r = 0; r < size; ++r) {
+      if (r != rank && receive_counts[r] > 0) {
+        MPI_Irecv(gathered.data_ptr<double>() + displacements[r],
+                  receive_counts[r], MPI_DOUBLE, r, kGatherTag, comm,
+                  &requests.emplace_back());
+      }
+    }
+    for (int r = 0; r < size && send_count > 0; ++r) {
+      if (r != rank) {
+        MPI_Isend(rows.data_ptr<double>(), send_count, MPI_DOUBLE, r,
+                  kGatherTag, comm, &requests.emplace_back());
+      }
+    }
+    MPI_Waitall(static_cast<int>(requests.size()), requests.data(),
+                MPI_STATUSES_IGNORE);
   } else {
     const auto host = rows.options().device(torch::kCPU).pinned_memory(true);
     auto host_rows = torch::empty({local, width}, host);
@@ -138,7 +129,7 @@ torch::Tensor sum_over_domains(const torch::Tensor& communicator,
 #ifdef USE_MPI
   TORCH_CHECK(values.dim() == 1 && values.scalar_type() == torch::kFloat64,
               "sum_over_domains: values must be a float64 vector");
-  const MPI_Comm comm = communicator_of(communicator);
+  const MPI_Comm comm = communicator_handle(communicator, kOperator);
   int size = 1;
   MPI_Comm_size(comm, &size);
   const torch::Tensor local = values.to(torch::kCPU).contiguous();

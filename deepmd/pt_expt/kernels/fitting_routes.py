@@ -26,7 +26,11 @@ ends of every band, and where the two ends disagree it bisects the band for the
 run size at which the winner changes. Each sample times the compared routes on
 the canonical graph of a periodic bulk system of exactly the run size of
 atoms, as replays of a captured CUDA graph of the whole operator, which is how
-LAMMPS evaluates it.
+LAMMPS evaluates it. For a descriptor of several message-passing blocks the
+operator is that of its first block: the routes change no further block,
+whose scans take the same time on every route and most of the time of the
+operator, so the measurement times what it compares at a fraction of the
+cost.
 
 A sample times the routes in two ways. Within each capture of the operator the
 replays of the routes alternate, so that every route runs at the clocks of a
@@ -282,9 +286,10 @@ def _bulk_graph(rcut: float, node_count: int, device: torch.device) -> Any:
 class _Bench:
     """Times the fused operator of one model on synthetic bulk systems.
 
-    The operator is that without a long-range module, with the descriptor of
-    the model and the network ``fitting`` with its atomic bias ``atom_bias``,
-    the energy fitting or a charge network, in place of the energy fitting.
+    The operator is that without a long-range module, with the first
+    message-passing block of the descriptor of the model and the network
+    ``fitting`` with its atomic bias ``atom_bias``, the energy fitting or a
+    charge network, in place of the energy fitting.
     The bench keeps four counters, which :func:`_tune_network` logs:
 
     - ``samples``, the samples of run sizes that it times, those of the
@@ -309,7 +314,10 @@ class _Bench:
         import copy
 
         learned, pair_potential = model.atomic_model.fused_decomposition()
+        # A copy of the descriptor without its further blocks, which the
+        # operator evaluates as one block.
         self.descriptor = copy.deepcopy(learned.descriptor).to(device).eval()
+        self.descriptor.attentions = torch.nn.ModuleList()
         self.fitting = copy.deepcopy(fitting).to(device).eval()
         self.atom_bias = atom_bias.to(device)
         self.pair_table = (
