@@ -18,30 +18,50 @@ from deepmd.pt_expt.kernels.utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+
     from deepmd.pt_expt.utils.canonical_graph import (
+        BorderPlan,
         CanonicalGraph,
     )
 
 _cpu_library: torch.library.Library | None = None
 
 
-def canonical_model_eligible(model: Any) -> bool:
-    """Return whether a model can use the compact source-only graph ABI.
+def _canonical_ineligibility(model: Any, *, as_compressed: bool = False) -> str | None:
+    """Return the condition under which the compact canonical ABI fails a model.
 
     The compact ABI exists so that a device-resident neighbor list can reach
     the descriptor without a host round trip, which is a property of the
     CUDA / Kokkos deployment. Only that backend implements its operators, so
     a CPU target keeps the generic graph lower, whose operators it does
     implement and whose extra cost is one index tensor.
+
+    Parameters
+    ----------
+    model
+        Model to deploy.
+    as_compressed
+        Judge the model in the state that its compression leaves: the
+        descriptor compressed and the charge state of a long-range module
+        that reads one folded (see ``DPAtomicModel.enable_compression``).
+
+    Returns
+    -------
+    str or None
+        The first condition that fails, as a clause, or ``None`` when the
+        compact canonical operators serve the model.
     """
     if backend_device_type() != "cuda":
-        return False
+        return "the compact canonical operators run on CUDA devices"
     atomic_model = getattr(model, "atomic_model", None)
     # A bridged composition deploys like its learned part: the fused operator
     # evaluates the analytical pair potential in the same edge scan.
     parts = None if atomic_model is None else atomic_model.fused_decomposition()
     if parts is None:
-        return False
+        return "the model is not one DPA4C energy model"
     descriptor = parts[0].descriptor
     fitting = parts[0].fitting_net
     from deepmd.pt_expt.descriptor.dpa4c import (
@@ -49,15 +69,64 @@ def canonical_model_eligible(model: Any) -> bool:
     )
 
     if not isinstance(descriptor, DescrptDPA4C):
-        return False
-    if not bool(getattr(descriptor, "compress", False)):
-        return False
+        return "the descriptor is not DPA4C"
+    if not (as_compressed or bool(getattr(descriptor, "compress", False))):
+        return "the descriptor is not compressed"
     if getattr(descriptor, "exclude_types", None):
-        return False
+        return "the descriptor excludes type pairs"
     if getattr(atomic_model, "pair_excl", None) is not None:
-        return False
+        return "the model excludes type pairs (pair_exclude_types)"
     if getattr(atomic_model, "atom_excl", None) is not None:
-        return False
+        return "the model excludes atom types (atom_exclude_types)"
+    # A latent-charge long-range module joins the pipeline through the node
+    # positions and the cells, which its operator reads in place of a pair
+    # list or a mesh; that pipeline reads no frame input and evaluates no pair
+    # potential, and further message-passing blocks on the fused long-range
+    # operator alone.
+    if parts[0].has_long_range():
+        from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+            fused_long_range_eligible,
+        )
+        from deepmd.pt_expt.kernels.long_range import (
+            MAX_CHANNELS,
+            MAX_GAUSSIANS,
+            MAX_ORDER,
+        )
+        from deepmd.pt_expt.kernels.long_range import (
+            op_available as latent_charge_op_available,
+        )
+        from deepmd.pt_expt.long_range.latent_charge import (
+            LatentChargeLongRange,
+        )
+
+        long_range = parts[0].long_range
+        if not isinstance(long_range, LatentChargeLongRange):
+            return "the long-range module is not a latent-charge module"
+        if not latent_charge_op_available():
+            return "the loaded library lacks the latent-charge operator"
+        if not long_range.operator_eligible():
+            return (
+                "the long-range module is not one the long-range operator "
+                f"evaluates (the les kernel or the sog kernel of up to "
+                f"{MAX_GAUSSIANS} Gaussians, up to {MAX_CHANNELS} charge "
+                f"channels, B-splines of order up to {MAX_ORDER}, and a charge "
+                "network without frame or atomic parameters)"
+            )
+        if long_range.uses_charge_spin() and not as_compressed:
+            return (
+                "the long-range module reads the charge state of each frame, "
+                "which the compression of the whole model folds"
+            )
+        if parts[1] is not None:
+            return "the model combines a long-range module with a pair potential"
+        if descriptor.attentions and not fused_long_range_eligible(long_range):
+            return (
+                "the charge network is not one the fused long-range operator, "
+                "which evaluates further message-passing blocks, reproduces "
+                "(one channel in float32 with tanh or silu hidden layers whose "
+                "widths are multiples of four, without resnet_dt), or the "
+                "loaded library lacks that operator"
+            )
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         mega_eligible,
     )
@@ -65,7 +134,76 @@ def canonical_model_eligible(model: Any) -> bool:
         fitting_eligible,
     )
 
-    return mega_eligible(descriptor) and fitting_eligible(fitting)
+    if not mega_eligible(descriptor):
+        return "the fused kernels are not compiled for the descriptor profile"
+    if not fitting_eligible(fitting):
+        return (
+            "the energy fitting is not one the fused fitting kernels reproduce "
+            "(float32 with tanh or silu hidden layers whose widths are "
+            "multiples of four, without resnet_dt, frame or atomic parameters "
+            "or a case embedding)"
+        )
+    return None
+
+
+def canonical_model_unsupported_reason(
+    model: Any, *, as_compressed: bool = False
+) -> str | None:
+    """Return why a compressed DPA4C model of several blocks cannot be deployed.
+
+    On the CUDA backend, the further message-passing blocks of a compressed
+    DPA4C descriptor are evaluated by the compact canonical operators alone;
+    the operators of a generic lower evaluate one block. Such a model must
+    not fall back to a generic lower, which would silently evaluate the
+    uncompressed equations, so the deployment reports the condition under
+    which the compact canonical operators fail it instead.
+
+    Parameters
+    ----------
+    model
+        Model to deploy.
+    as_compressed
+        Judge the model in the state that its compression leaves, as a freeze
+        does before it compresses the model (see
+        :func:`~deepmd.pt_expt.utils.serialization.compressed_export_unsupported_reason`).
+
+    Returns
+    -------
+    str or None
+        Diagnostic of the failing condition, or ``None`` when the compact
+        canonical path serves the model or the model does not need it.
+    """
+    if backend_device_type() != "cuda":
+        return None
+    atomic_model = getattr(model, "atomic_model", None)
+    parts = None if atomic_model is None else atomic_model.fused_decomposition()
+    if parts is None:
+        return None
+    descriptor = parts[0].descriptor
+    if not (
+        (as_compressed or bool(getattr(descriptor, "compress", False)))
+        and getattr(descriptor, "attentions", None)
+    ):
+        return None
+    condition = _canonical_ineligibility(model, as_compressed=as_compressed)
+    if condition is None and not op_available():
+        condition = "the loaded library lacks the compact canonical operators"
+    if condition is None:
+        return None
+    return (
+        "A compressed DPA4C model with further message-passing blocks "
+        "(`n_blocks` > 1) deploys on a GPU through the compact canonical "
+        f"operators alone, which do not serve this model: {condition}. "
+        "Deploy the uncompressed archive."
+    )
+
+
+def canonical_model_eligible(model: Any) -> bool:
+    """Return whether a model can use the compact source-only graph ABI.
+
+    See :func:`_canonical_ineligibility` for the conditions.
+    """
+    return _canonical_ineligibility(model) is None
 
 
 def op_available() -> bool:
@@ -76,9 +214,25 @@ def op_available() -> bool:
             "dpa4c_canonical_compress",
             "dpa4c_canonical_compress_backward",
             "dpa4c_canonical_compress_backward_inplace",
-            "dpa4c_canonical_compress_energy_gradient",
+            "dpa4c_canonical_compress_energy_force",
         )
     )
+
+
+def long_range_op_available() -> bool:
+    """Return whether the backend device carries the fused long-range operator."""
+    return op_available() and operator_available(
+        "dpa4c_canonical_compress_long_range_energy_force"
+    )
+
+
+#: Position of the per-node magnetic moment among the compression arguments,
+#: which open with the radial table (see ``compressed_operator_arguments``),
+#: and among the inputs that follow ``edge_vec`` in the compact descriptor
+#: operators, where the source indices, the destination row pointers and the
+#: node types precede those arguments.
+_SPIN_ARGUMENT_SLOT = 12
+_SPIN_SLOT = 3 + _SPIN_ARGUMENT_SLOT
 
 
 def _forward_fake(
@@ -87,6 +241,8 @@ def _forward_fake(
     destination_row_ptr: torch.Tensor,
     atype: torch.Tensor,
     table: torch.Tensor,
+    basis_table: torch.Tensor,
+    basis_matrix: torch.Tensor,
     pair_film: torch.Tensor,
     pair_mixing: torch.Tensor,
     type_embedding: torch.Tensor,
@@ -113,6 +269,8 @@ def _forward_fake(
         source,
         destination_row_ptr,
         table,
+        basis_table,
+        basis_matrix,
         pair_film,
         pair_mixing,
         readout_matrices,
@@ -152,7 +310,7 @@ def _backward_fake(
     *args: Any,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     del descriptor_gradient, state
-    return _backward_shapes(edge_vec, args[13])
+    return _backward_shapes(edge_vec, args[_SPIN_SLOT])
 
 
 def _backward_inplace_fake(
@@ -162,7 +320,7 @@ def _backward_inplace_fake(
     *args: Any,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     del descriptor_gradient, state
-    return _backward_shapes(edge_vec, args[13])
+    return _backward_shapes(edge_vec, args[_SPIN_SLOT])
 
 
 def _backward_shapes(
@@ -187,59 +345,252 @@ def _backward_shapes(
     )
 
 
-def _energy_gradient_fake(
+def _energy_force_fake(
     edge_vec: torch.Tensor,
     source: torch.Tensor,
     destination_row_ptr: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+    source_order: torch.Tensor,
+    n_node: torch.Tensor,
+    n_local: torch.Tensor,
     atype: torch.Tensor,
     *args: Any,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    del source, destination_row_ptr
-    spin = args[10]
+) -> tuple[torch.Tensor, ...]:
+    del source, destination_row_ptr, source_row_ptr, source_order, n_local
+    spin = args[_SPIN_ARGUMENT_SLOT]
+    nodes = atype.shape[0]
+    frames = n_node.shape[0]
     has_spin = spin.ndim == 2
-    # Each absent output is allocated separately, because the schema declares
-    # four unannotated results and no two of them may share storage.
+    # Each output is allocated separately, because the schema declares seven
+    # unannotated results and no two of them may share storage.
     return (
-        edge_vec.new_empty(atype.shape[0], 1, dtype=torch.float64),
-        torch.empty_like(edge_vec),
-        edge_vec.new_empty(atype.shape[0], 3, dtype=torch.float32)
+        edge_vec.new_empty(frames, 1, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 1, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 3, dtype=torch.float64),
+        edge_vec.new_empty(frames, 3, 3, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 3, 3, dtype=torch.float32),
+        edge_vec.new_empty(nodes, 3, dtype=torch.float64)
         if has_spin
         else edge_vec.new_empty((0,), dtype=torch.float32),
-        torch.empty_like(edge_vec)
-        if has_spin
-        else edge_vec.new_empty((0,), dtype=torch.float32),
+        edge_vec.new_empty(nodes, dtype=torch.int32),
     )
 
 
-def _cpu_energy_gradient(
+def _long_range_energy_force_fake(
+    edge_vec: torch.Tensor,
+    source: torch.Tensor,
+    destination_row_ptr: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+    source_order: torch.Tensor,
+    n_node: torch.Tensor,
+    n_local: torch.Tensor,
+    atype: torch.Tensor,
     *args: Any,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Reference sequence of the fused operator, evaluated in one run."""
-    descriptor_args = args[:_DESCRIPTOR_ARGUMENT_COUNT]
-    ws, bs, resnets, w_head, b_head, bias_atom_e, act, seed, _tile, pair_table = args[
-        _DESCRIPTOR_ARGUMENT_COUNT:
+) -> tuple[torch.Tensor, ...]:
+    del source, destination_row_ptr, source_row_ptr, source_order, n_local, args
+    nodes = atype.shape[0]
+    frames = n_node.shape[0]
+    # Each output is allocated separately, because the schema declares six
+    # unannotated results and no two of them may share storage.
+    return (
+        edge_vec.new_empty(frames, 1, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 1, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 3, dtype=torch.float64),
+        edge_vec.new_empty(frames, 3, 3, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 3, 3, dtype=torch.float32),
+        edge_vec.new_empty(nodes, dtype=torch.int32),
+    )
+
+
+def _cpu_energy_force(
+    edge_vec: torch.Tensor,
+    source: torch.Tensor,
+    destination_row_ptr: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+    source_order: torch.Tensor,
+    n_node: torch.Tensor,
+    n_local: torch.Tensor,
+    atype: torch.Tensor,
+    *args: Any,
+) -> tuple[torch.Tensor, ...]:
+    """Reference sequence of the fused operator, evaluated in one run.
+
+    The force and the virial are assembled by index reduction in fp64. The
+    per-atom virial is attributed to the source nodes that the source CSR
+    lists, and is zero when two-entry placeholders take the place of the CSR;
+    the part of the switch totals of a source gate belongs to the node of the
+    row that holds each edge, its destination. A frame whose energy or virial
+    is not finite reports every force of its nodes, and every magnetic force,
+    as not a number, as the CUDA operator does.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        frame_id_from_n_node,
+        node_ownership_mask,
+    )
+
+    node_count = atype.shape[0]
+    edge_storage = edge_vec.shape[0]
+    device = edge_vec.device
+    complete = (
+        source_row_ptr.numel() == node_count + 1
+        and source_order.numel() == edge_storage
+    )
+    if not complete and not (source_row_ptr.numel() == 2 and source_order.numel() == 2):
+        raise RuntimeError(
+            "dpa4c_canonical_compress_energy_force: the source CSR must hold "
+            f"{node_count + 1} row pointers and {edge_storage} positions, or two "
+            "entries each to decline the per-atom virial; got "
+            f"{source_row_ptr.numel()} and {source_order.numel()}"
+        )
+    if node_count == 0:
+        # An empty node axis holds no energy, force or virial: the outputs
+        # take the layout of the operator with zero frame totals, as in the
+        # CUDA operator.
+        outputs = _energy_force_fake(
+            edge_vec,
+            source,
+            destination_row_ptr,
+            source_row_ptr,
+            source_order,
+            n_node,
+            n_local,
+            atype,
+            *args,
+        )
+        outputs[0].zero_()
+        outputs[3].zero_()
+        return outputs
+    real = atype >= 0
+    mask = real & node_ownership_mask(n_node, n_local, node_count)
+    atype = torch.where(real, atype, torch.zeros_like(atype))
+    seed = mask.to(torch.float64)
+    descriptor_args = (
+        edge_vec,
+        source,
+        destination_row_ptr,
+        atype,
+        *args[:_DESCRIPTOR_TAIL_COUNT],
+    )
+    # The trailing fitting-route table, which a caller may leave to its default,
+    # sets only the speed of the CUDA operator, and so do the trailing cutoffs
+    # of the further blocks: the reference reads them from the records and
+    # evaluates every block on the whole graph.
+    ws, bs, resnets, w_head, b_head, bias_atom_e, act, _tile, pair_table = args[
+        _DESCRIPTOR_TAIL_COUNT : _DESCRIPTOR_TAIL_COUNT + 9
     ]
-    descriptor, state = _cpu_forward(*descriptor_args)
-    atype = descriptor_args[3]
+    _routes, blocks, halo_send, halo_swaps, communicator = (
+        *args[_DESCRIPTOR_TAIL_COUNT + 9 :],
+        *(None,) * 5,
+    )[:5]
+    further = {
+        "blocks_record": blocks,
+        "exchange": _self_swap_exchange(
+            halo_send, halo_swaps, communicator, node_count
+        ),
+    }
+    descriptor, state = _cpu_forward(*descriptor_args, **further)
     energy, saved = torch.ops.deepmd.graph_fitting(
         descriptor, atype, ws, bs, resnets, w_head, b_head, bias_atom_e, act
     )
     gradient = torch.ops.deepmd.graph_fitting_backward(
         seed.reshape(-1, 1), saved, ws, bs, resnets, w_head, act
     )
-    edge_gradient, spin_gradient, edge_spin_gradient, pair_energy = _generic_backward(
-        gradient, state, *descriptor_args, pair=(pair_table, seed)
+    (
+        edge_gradient,
+        row_gradient,
+        spin_gradient,
+        edge_spin_gradient,
+        pair_energy,
+    ) = _generic_backward(
+        gradient, state, *descriptor_args, pair=(pair_table, seed), **further
     )
     if pair_table.numel():
         energy = energy + pair_energy
-    return energy, edge_gradient, spin_gradient, edge_spin_gradient
+    atom_energy = energy * seed[:, None]
+
+    edge_index, edge_mask, _ = _generic_topology(source, destination_row_ptr)
+    keep = edge_mask[:, None].to(torch.float64)
+    source_part = edge_gradient.to(torch.float64) * keep
+    row_part = row_gradient.to(torch.float64) * keep
+    g = source_part + row_part
+    vector = edge_vec.to(torch.float64)[:, None, :]
+    source_outer = -(source_part[:, :, None] * vector)
+    row_outer = -(row_part[:, :, None] * vector)
+    source_index, destination_index = edge_index[0], edge_index[1]
+    destination_force = torch.zeros(
+        node_count, 3, dtype=torch.float64, device=device
+    ).index_add_(0, destination_index, g)
+    force = destination_force.clone().index_add_(0, source_index, -g)
+    # A force contribution that lies outside the range of the fixed-point totals
+    # of the CUDA operator -- an edge onto its source, the row of a destination,
+    # or the magnetic contribution of an edge onto its source -- makes its node
+    # report its energy as not a number, as the CUDA operator does.
+    out_of_range = (destination_force.abs() >= _FORCE_FIXED_LIMIT).any(1)
+    out_of_range[source_index[(g.abs() >= _FORCE_FIXED_LIMIT).any(1)]] = True
+    if spin_gradient.ndim == 2:
+        spin_edges = (edge_spin_gradient.abs() * keep >= _FORCE_FIXED_LIMIT).any(1)
+        out_of_range[source_index[spin_edges]] = True
+    atom_energy[out_of_range] = torch.nan
+    node_virial = torch.zeros(
+        node_count, 3, 3, dtype=torch.float64, device=device
+    ).index_add_(0, destination_index, source_outer + row_outer)
+    # Padding nodes past the last frame belong to none: they enter no frame
+    # total, as in the CUDA operator.
+    frame_id = frame_id_from_n_node(n_node, n_total=node_count)
+    in_frame = torch.arange(node_count, dtype=torch.int64, device=device) < n_node.sum()
+    virial = torch.zeros(
+        n_node.shape[0], 3, 3, dtype=torch.float64, device=device
+    ).index_add_(0, frame_id[in_frame], node_virial[in_frame])
+    frame_energy = torch.zeros(
+        n_node.shape[0], 1, dtype=torch.float64, device=device
+    ).index_add_(0, frame_id[in_frame], atom_energy[in_frame])
+    atom_virial = torch.zeros(node_count, 3, 3, dtype=torch.float64, device=device)
+    if complete:
+        listed = source_row_ptr[1:] - source_row_ptr[:-1]
+        rows = torch.repeat_interleave(
+            torch.arange(node_count, dtype=torch.int64, device=device), listed
+        )
+        positions = source_order[: int(source_row_ptr[-1])].to(torch.int64)
+        atom_virial.index_add_(0, rows, source_outer[positions])
+        atom_virial.index_add_(0, destination_index, row_outer)
+    if spin_gradient.ndim == 2:
+        spin_force = torch.zeros(
+            node_count, 3, dtype=torch.float64, device=device
+        ).index_add_(0, source_index, edge_spin_gradient.to(torch.float64) * keep)
+        force_mag = -(spin_gradient.to(torch.float64) + spin_force)
+    else:
+        force_mag = spin_gradient.new_empty((0,), dtype=torch.float32)
+    # A fixed-point force cannot carry a non-finite value through the CUDA
+    # operator, which marks the forces of a broken frame instead; padding
+    # nodes past the last frame belong to none.
+    broken = ~(
+        torch.isfinite(frame_energy).all(1) & torch.isfinite(virial).flatten(1).all(1)
+    )
+    node_broken = broken[frame_id] & in_frame
+    force[node_broken] = torch.nan
+    if force_mag.ndim == 2:
+        force_mag[node_broken] = torch.nan
+    return (
+        frame_energy,
+        atom_energy,
+        force,
+        virial,
+        atom_virial.to(torch.float32),
+        force_mag,
+        mask.to(torch.int32),
+    )
 
 
 def _generic_topology(
     source: torch.Tensor,
     destination_row_ptr: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Materialize the generic topology for the small CPU trace sample."""
+    """Materialize the generic topology of a compact graph for the CPU paths."""
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_index_words,
+    )
+
+    source = canonical_index_words(source)
     physical_edge_count = int(destination_row_ptr[-1].item())
     node_count = destination_row_ptr.shape[0] - 1
     destination = torch.repeat_interleave(
@@ -267,13 +618,87 @@ def _generic_topology(
 # leading ``canonical`` flag; the remaining trailing scalars are identical.
 _CANONICAL_SCALAR_COUNT = 8
 
-#: Leading arguments of the fused operator that describe the descriptor:
-#: ``edge_vec`` plus the compact topology, the compression artifacts and the
-#: eight trailing geometry scalars.
-_DESCRIPTOR_ARGUMENT_COUNT = 26
+#: Arguments of the compact descriptor operator: ``edge_vec``, the source
+#: indices, the destination row pointers and the node types, then the
+#: compression artifacts and the trailing geometry scalars.
+_DESCRIPTOR_ARGUMENT_COUNT = 28
+
+#: Magnitude in eV/Å from which a force contribution lies outside the range of
+#: the fixed-point force totals of the CUDA operator (``kForceFixedLimit``).
+_FORCE_FIXED_LIMIT = 2.0**30
+
+#: Descriptor arguments that follow the node types. The fused energy-force
+#: operator passes them after its own graph inputs, which insert the source
+#: CSR and the frame counts before the node types.
+_DESCRIPTOR_TAIL_COUNT = _DESCRIPTOR_ARGUMENT_COUNT - 4
 
 
-def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
+def _self_swap_exchange(
+    send_nodes: torch.Tensor | None,
+    swaps: torch.Tensor | None,
+    communicator: torch.Tensor | None,
+    node_count: int,
+) -> Callable[[torch.Tensor], torch.Tensor] | None:
+    """Return the halo exchange of a border plan for the reference evaluation.
+
+    The reference runs in one process, so it serves the plans of a single
+    domain, whose swaps all copy rows of this process: swap by swap, the halo
+    rows from the first receive take the rows of the send list, so that a
+    swap may send the rows an earlier swap received. ``None`` without a plan,
+    or for a plan without swaps.
+
+    Raises
+    ------
+    RuntimeError
+        If the plan names another rank or does not fill the halo rows.
+    """
+    if swaps is None or swaps.shape[0] == 0:
+        return None
+    if int(communicator.reshape(-1)[0]) != 0:
+        raise RuntimeError(
+            "dpa4c_canonical_compress_energy_force: the reference evaluation "
+            "serves the border plan of a single process, but a communicator "
+            "was given"
+        )
+    table = swaps.to(device="cpu", dtype=torch.int64).tolist()
+    send = send_nodes.to(torch.int64)
+    copies = []
+    offset = 0
+    expected = table[0][4]
+    for send_rank, receive_rank, sent, received, first in table:
+        if send_rank != receive_rank or sent != received or first != expected:
+            raise RuntimeError(
+                "dpa4c_canonical_compress_energy_force: the reference "
+                "evaluation copies the halo rows of self swaps that fill the "
+                f"halo in order, got the swap {(send_rank, receive_rank, sent, received, first)}"
+            )
+        receive = torch.arange(
+            first, first + received, dtype=torch.int64, device=send.device
+        )
+        copies.append((receive, send[offset : offset + sent]))
+        offset += sent
+        expected = first + received
+    if expected != node_count:
+        raise RuntimeError(
+            "dpa4c_canonical_compress_energy_force: the swaps of the border "
+            f"plan fill the rows up to {expected} of {node_count}"
+        )
+
+    def exchange(rows: torch.Tensor) -> torch.Tensor:
+        for receive, sent in copies:
+            rows = rows.index_copy(
+                0, receive.to(rows.device), rows[sent.to(rows.device)]
+            )
+        return rows
+
+    return exchange
+
+
+def _cpu_forward(
+    *args: Any,
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         _reference_forward as generic_forward,
     )
@@ -293,20 +718,28 @@ def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
         *tail[:-_CANONICAL_SCALAR_COUNT],
         True,
         *tail[-_CANONICAL_SCALAR_COUNT:],
+        blocks_record=blocks_record,
+        exchange=exchange,
     )
 
 
 def _generic_backward(
     *args: Any,
     pair: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Run the generic reference backward on a compact payload.
+    blocks_record: torch.Tensor | None = None,
+    exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Run the generic reference cotangents on a compact payload.
 
     ``pair`` is the series table and the energy cotangent of an analytical
     pair potential; the compact descriptor operators carry none.
+    ``blocks_record`` and ``exchange`` are those of the reference descriptor.
+    The results are those of ``_reference_cotangents``, whose second one is
+    the part of the coordinate cotangent that belongs to the destination of
+    every edge.
     """
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
-        _reference_backward as generic_backward,
+        _reference_cotangents as generic_cotangents,
     )
 
     descriptor_gradient, state, edge_vec, source, destination_row_ptr, atype, *tail = (
@@ -317,7 +750,7 @@ def _generic_backward(
         destination_row_ptr,
     )
     no_pair = edge_vec.new_empty(0)
-    return generic_backward(
+    return generic_cotangents(
         descriptor_gradient,
         state,
         edge_vec,
@@ -330,11 +763,16 @@ def _generic_backward(
         True,
         *tail[-_CANONICAL_SCALAR_COUNT:],
         *((no_pair, no_pair) if pair is None else pair),
+        blocks_record=blocks_record,
+        exchange=exchange,
     )
 
 
 def _cpu_backward(*args: Any) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    return _generic_backward(*args)[:3]
+    edge_gradient, row_gradient, spin_gradient, edge_spin_gradient, _ = (
+        _generic_backward(*args)
+    )
+    return edge_gradient + row_gradient, spin_gradient, edge_spin_gradient
 
 
 def _cpu_backward_inplace(
@@ -354,9 +792,13 @@ def ensure_registered() -> None:
     torch.library.register_fake("deepmd::dpa4c_canonical_compress_backward")(
         _backward_fake
     )
-    torch.library.register_fake("deepmd::dpa4c_canonical_compress_energy_gradient")(
-        _energy_gradient_fake
+    torch.library.register_fake("deepmd::dpa4c_canonical_compress_energy_force")(
+        _energy_force_fake
     )
+    if long_range_op_available():
+        torch.library.register_fake(
+            "deepmd::dpa4c_canonical_compress_long_range_energy_force"
+        )(_long_range_energy_force_fake)
     torch.library.register_fake("deepmd::dpa4c_canonical_compress_backward_inplace")(
         _backward_inplace_fake
     )
@@ -368,8 +810,8 @@ def ensure_registered() -> None:
         "CPU",
     )
     _cpu_library.impl(
-        "dpa4c_canonical_compress_energy_gradient",
-        _cpu_energy_gradient,
+        "dpa4c_canonical_compress_energy_force",
+        _cpu_energy_force,
         "CPU",
     )
     _cpu_library.impl(
@@ -384,12 +826,13 @@ def dpa4c_canonical_compress_energy_force(
     fitting: Any,
     graph: CanonicalGraph,
     atype: torch.Tensor,
-    ownership: torch.Tensor,
     atom_bias: torch.Tensor,
-    do_atomic_virial: bool,
     spin: torch.Tensor | None = None,
     pair_table: torch.Tensor | None = None,
+    fitting_routes: list[int] | None = None,
+    border: BorderPlan | None = None,
 ) -> tuple[
+    torch.Tensor,
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
@@ -402,7 +845,31 @@ def dpa4c_canonical_compress_energy_force(
     The compact ABI carries only source indices and CSR row pointers, so the
     descriptor operator addresses edges by position and omits every mask,
     padding-type, and table-tail check that the cutoff-compacted graph already
-    guarantees. The backward reuses the forward state in place.
+    guarantees. The backward reuses the forward state in place and assembles
+    the force and the virial itself, so the source CSR is read only for the
+    per-atom virial: a graph that carries placeholders in its place yields a
+    zero per-atom virial. The operator also derives the ownership mask, masks
+    the node energies and forms the frame totals, so that nothing around it
+    runs on the node axis.
+
+    The forces are summed in fixed point. A frame whose energy or virial is
+    not finite reports every force of its nodes, and every magnetic force, as
+    not a number, and so does a frame with a force contribution of 2^30 eV/Å
+    or more, which lies outside the range of the sums; its node then reports
+    its energy as not a number. The check covers each contribution, so a sum
+    of three or more smaller ones beyond the range of 2^31 eV/Å, which no
+    configuration short of three atoms within about 0.01 Å of one atom
+    reaches, is not detected.
+
+    A descriptor of several message-passing blocks evaluates every further
+    block from the records of its compression. On the node set of one domain
+    of a decomposed frame, whose halo nodes follow its owned nodes, the
+    operator then refreshes the features of the halo nodes that the further
+    blocks read through ``border`` and evaluates the owned nodes alone: their
+    energies, the per-node virials of the edges they own, and the force of
+    every edge they own on both of its nodes, so that the forces on the halo
+    nodes are the contributions of this domain, which the caller folds onto
+    their owners.
 
     Parameters
     ----------
@@ -411,16 +878,16 @@ def dpa4c_canonical_compress_energy_force(
     fitting
         Eligible pt_expt energy fitting network.
     graph
-        Canonical graph whose ``source`` has shape ``(E,)`` in ``uint32`` and
-        whose ``destination_row_ptr`` has shape ``(N + 1,)`` in ``int64``.
+        Canonical graph whose ``source`` has shape ``(E,)`` in ``uint32`` or
+        ``int64``, or shape ``(E, W)`` in ``uint8`` for the exported bytes of
+        those words, and whose ``destination_row_ptr`` has shape ``(N + 1,)``
+        in ``int64``. Its source CSR is either complete or a two-entry
+        placeholder.
     atype
-        Flat node atom types with shape ``(N,)``.
-    ownership
-        Boolean mask selecting energy-contributing nodes with shape ``(N,)``.
+        Flat node atom types with shape ``(N,)``; a negative type marks a
+        virtual node, which contributes no energy.
     atom_bias
         Combined atomic energy bias with shape ``(ntypes,)`` in eV.
-    do_atomic_virial
-        Whether to return per-node virials.
     spin
         Per-node magnetic moments with shape ``(N, 3)`` for a spin-conditioned
         descriptor, or ``None``.
@@ -428,43 +895,48 @@ def dpa4c_canonical_compress_energy_force(
         Series constants of an analytical pair potential with shape
         ``((T + 1) ** 2, 8)``, or ``None``. The fused operator adds its energy
         to the node energies and its slope to the edge gradient.
+    fitting_routes
+        Fitting-route table of the CUDA operator, which sets only its speed
+        (``deepmd.pt_expt.kernels.fitting_routes``). ``None`` or an empty
+        table leaves the routes to the rules of the operator.
+    border
+        Border plan of the node set for a descriptor of several blocks, whose
+        owned nodes are the leading ``n_local`` nodes of its single frame, or
+        ``None`` for a node set without halo nodes. A descriptor of one block
+        takes none.
 
     Returns
     -------
     energy
         Per-frame energy with shape ``(F, 1)`` in eV, fp64.
     atom_energy
-        Per-node energy with shape ``(N, 1)`` in eV, fp64.
+        Per-node energy with shape ``(N, 1)`` in eV, fp64, zero for every node
+        outside the ownership mask whose forces lie in range.
     force
-        Per-node force with shape ``(N, 3)`` in eV/Å, fp32.
+        Per-node force with shape ``(N, 3)`` in eV/Å, fp64.
     virial
-        Per-frame virial with shape ``(F, 3, 3)`` in eV, fp32.
+        Per-frame virial with shape ``(F, 3, 3)`` in eV, fp64.
     atom_virial
-        Per-node virial with shape ``(N, 3, 3)`` in eV, or an empty tensor.
+        Per-node virial with shape ``(N, 3, 3)`` in eV, fp32, attributed to
+        source nodes; zero when the graph carries no source CSR.
     force_mag
-        Per-node magnetic force with shape ``(N, 3)``, or an empty tensor. The
-        on-site part closes inside the fused operator; the neighbour part is
-        emitted per edge and reduced onto source nodes here, where the source
-        CSR is in scope.
+        Per-node magnetic force with shape ``(N, 3)`` in fp64 for a
+        spin-conditioned descriptor, or an empty tensor. Both the on-site part
+        and the neighbour part close inside the fused operator.
+    mask
+        Ownership mask with shape ``(N,)``, int32: one for a real node among
+        the leading ``n_local`` nodes of its frame.
 
     Raises
     ------
     ValueError
-        If the model or the compiled operators do not support the compact path.
+        If the descriptor lies outside the configurations the compiled
+        operator specializes on, or the fused fitting operator cannot
+        reproduce the fitting network.
     """
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         compressed_operator_arguments,
         mega_eligible,
-    )
-    from deepmd.pt_expt.kernels.edge_force_virial import (
-        canonical_edge_force_virial,
-        canonical_op_available,
-    )
-    from deepmd.pt_expt.kernels.edge_force_virial import (
-        ensure_registered as ensure_force_registered,
-    )
-    from deepmd.pt_expt.kernels.edge_force_virial import (
-        frame_scalar_sum,
     )
     from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
@@ -476,20 +948,23 @@ def dpa4c_canonical_compress_energy_force(
 
     ensure_registered()
     ensure_fitting_registered()
-    ensure_force_registered()
-    if not mega_eligible(descriptor) or not canonical_op_available():
+    if not mega_eligible(descriptor):
         raise ValueError("model is not eligible for compact canonical DPA4C inference")
+    if border is not None and not descriptor.attentions:
+        raise ValueError(
+            "a border plan serves the further message-passing blocks, but the "
+            "descriptor has one block"
+        )
 
     network = fitting_operator_arguments(fitting)
-    (
-        atom_energy_raw,
-        edge_gradient,
-        spin_gradient,
-        edge_spin_gradient,
-    ) = torch.ops.deepmd.dpa4c_canonical_compress_energy_gradient(
+    return torch.ops.deepmd.dpa4c_canonical_compress_energy_force(
         graph.edge_vec,
         graph.source,
         graph.destination_row_ptr,
+        graph.source_row_ptr,
+        graph.source_order,
+        graph.n_node,
+        graph.n_local,
         atype,
         *compressed_operator_arguments(descriptor, spin),
         int(descriptor.lmax),
@@ -501,24 +976,19 @@ def dpa4c_canonical_compress_energy_force(
         network.head_bias,
         atom_bias.to(torch.float64).contiguous(),
         network.activation,
-        ownership.to(torch.float64).reshape(-1).contiguous(),
         node_tile(),
         graph.edge_vec.new_empty(0) if pair_table is None else pair_table,
+        # No table is passed as None rather than as an empty list: the
+        # AOTInductor proxy executor of torch 2.13 and earlier hands a
+        # serialized empty int list to the operator as None.
+        list(fitting_routes) if fitting_routes else None,
+        descriptor.compress_blocks if descriptor.attentions else None,
+        *(
+            (None, None, None)
+            if border is None
+            else (border.send_nodes, border.swaps, border.communicator)
+        ),
+        [float(cutoff) for cutoff in descriptor.block_rcut[1:]]
+        if descriptor.attentions
+        else None,
     )
-    atom_energy = atom_energy_raw * ownership[:, None].to(atom_energy_raw.dtype)
-    energy = frame_scalar_sum(atom_energy, graph.n_node)
-    # The magnetic cotangent is reduced onto its source nodes by the force
-    # assembly, which already walks that grouping.
-    force, atom_virial, virial, source_spin = canonical_edge_force_virial(
-        edge_gradient,
-        graph.edge_vec,
-        graph.destination_row_ptr,
-        graph.source_row_ptr,
-        graph.source_order,
-        graph.n_node,
-        edge_spin_gradient,
-        atype.shape[0],
-        do_atomic_virial,
-    )
-    force_mag = spin_gradient if spin is None else -(spin_gradient + source_spin)
-    return energy, atom_energy, force, virial, atom_virial, force_mag

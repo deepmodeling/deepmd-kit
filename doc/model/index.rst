@@ -13,6 +13,7 @@ Model
    dpa3
    dpa4
    dpa4c
+   long-range
    unimol
    train-hybrid
    sel
@@ -22,6 +23,7 @@ Model
    train-fitting-tensor
    train-fitting-dos
    train-fitting-property
+   train-fitting-density
    train-se-e2-a-tebd
    train-se-a-mask
    train-se-e3-tebd

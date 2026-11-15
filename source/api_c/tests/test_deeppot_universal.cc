@@ -46,7 +46,11 @@ class UniversalDeepPotCTest : public ::testing::TestWithParam<ModelCase> {
     }
     ASSERT_TRUE(path_exists(param.model_path))
         << "Model artifact is not available: " << param.model_path;
+  }
 
+  // Call after capability skips so unsupported cases do not load a model.
+  void InitModel() {
+    const auto& param = GetParam();
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_c_universal_" + param.name + ".pb";
@@ -92,7 +96,11 @@ class FParamAParamDeepPotCTest
       loaded_ref = load_fparam_ref(param.ref_path);
       ref = &loaded_ref;
     }
+  }
 
+  // Call after capability skips so unsupported cases do not load a model.
+  void InitModel() {
+    const auto& param = GetParam();
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_c_fparam_aparam_" + param.name + ".pb";
@@ -116,6 +124,7 @@ class FParamAParamDeepPotCTest
 };
 
 TEST_P(UniversalDeepPotCTest, Metadata) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const auto& ref = *GetParam().ref;
 
   EXPECT_DOUBLE_EQ(DP_DeepPotGetCutoff(dp), ref.cutoff);
@@ -347,6 +356,7 @@ void check_fparam_compute_float(DP_DeepPot* dp,
 }
 
 TEST_P(UniversalDeepPotCTest, ComputeDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_double(dp, *GetParam().ref, GetParam().double_tol);
 }
 
@@ -355,10 +365,12 @@ TEST_P(UniversalDeepPotCTest, ComputeFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_float(dp, *GetParam().ref, GetParam().float_tol);
 }
 
 TEST_P(UniversalDeepPotCTest, ComputeLegacyDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const std::vector<double>& box = deepmd_test::deeppot_box();
   check_compute_legacy_double(dp, *GetParam().ref, box.data(),
                               GetParam().double_tol);
@@ -369,6 +381,7 @@ TEST_P(UniversalDeepPotCTest, ComputeLegacyFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const std::vector<double>& box_double = deepmd_test::deeppot_box();
   const std::vector<float> box(box_double.begin(), box_double.end());
   check_compute_legacy_float(dp, *GetParam().ref, box.data(),
@@ -380,6 +393,7 @@ TEST_P(UniversalDeepPotCTest, ComputeLegacyNoPbcDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_legacy_double(dp, *GetParam().no_pbc_ref, nullptr,
                               GetParam().double_tol);
 }
@@ -393,17 +407,20 @@ TEST_P(UniversalDeepPotCTest, ComputeLegacyNoPbcFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_legacy_float(dp, *GetParam().no_pbc_ref, nullptr,
                              GetParam().float_tol);
 }
 
 TEST_P(FParamAParamDeepPotCTest, Metadata) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   EXPECT_EQ(DP_DeepPotGetDimFParam(dp), 1);
   EXPECT_EQ(DP_DeepPotGetDimAParam(dp), 1);
   EXPECT_FALSE(DP_DeepPotHasDefaultFParam(dp));
 }
 
 TEST_P(FParamAParamDeepPotCTest, ComputeDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_double(dp, *ref, GetParam().double_tol);
 }
 
@@ -412,6 +429,7 @@ TEST_P(FParamAParamDeepPotCTest, ComputeFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_float(dp, *ref, GetParam().float_tol);
 }
 

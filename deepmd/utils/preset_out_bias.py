@@ -401,6 +401,48 @@ def preset_out_bias_rows(
     return rows
 
 
+def recover_nonfinite_preset_bias(
+    preset_out_bias: dict[str, list[list | None]],
+    type_map: list[str],
+    stored_bias: np.ndarray,
+    keys: list[str],
+    sizes: list[int],
+) -> dict[str, np.ndarray]:
+    """Recover non-finite stored cells from presets without fixing fitted outputs.
+
+    Parameters
+    ----------
+    preset_out_bias
+        Normalized checkpoint preset. Unassigned cells cannot be recovered.
+    type_map
+        Element names in stored type order, including types absent from data.
+    stored_bias
+        Stored bias with shape (n_out, ntypes, max_size).
+    keys
+        Output names in stored order.
+    sizes
+        Flattened size of each output.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Changed output rows. All finite stored cells are preserved.
+    """
+    preset_rows = preset_out_bias_rows(
+        preset_out_bias, type_map, [], stored_bias, keys, sizes, keep_unassigned=True
+    )
+    recovered = {}
+    for index, (key, size) in enumerate(zip(keys, sizes, strict=True)):
+        if key not in preset_rows:
+            continue
+        stored = stored_bias[index, :, :size]
+        replacement = preset_rows[key]
+        mask = ~np.isfinite(stored) & np.isfinite(replacement)
+        if np.any(mask):
+            recovered[key] = np.where(mask, replacement, stored)
+    return recovered
+
+
 def override_assigned_bias(
     bias: np.ndarray,
     assigned_bias: np.ndarray | None,

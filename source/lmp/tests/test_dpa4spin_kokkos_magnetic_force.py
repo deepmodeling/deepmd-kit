@@ -67,7 +67,7 @@ def _unavailable(reason):
 
 
 @pytest.fixture(scope="module")
-def kokkos_model():
+def kokkos_runtime() -> None:
     # The ordinary LAMMPS suite also runs on CUDA, but uses a non-Kokkos wheel.
     # Only the dedicated matching library/plugin job opts into this regression.
     if os.environ.get("DPA4SPIN_KOKKOS_REQUIRED") != "1":
@@ -84,13 +84,18 @@ def kokkos_model():
             _unavailable(f"Required Python package missing: {module}")
     if shutil.which(os.environ.get("DPA4SPIN_KOKKOS_MPIEXEC", "mpirun")) is None:
         _unavailable("mpirun required for the two-rank /kk regression")
+
+
+@pytest.fixture(scope="module")
+def kokkos_model(kokkos_runtime: None) -> Path:
     model = Path(os.environ.get("DPA4SPIN_KOKKOS_MODEL", _MODEL))
     if not model.is_file():
         _unavailable(f"Generate the compressed canonical fixture first: {model}")
     with zipfile.ZipFile(model) as archive:
         meta = json.loads(archive.read("model/extra/metadata.json"))
     assert meta["lower_input_kind"] == "dpa4c_canonical"
-    assert meta["canonical_index_dtype"] == "uint32"
+    assert meta["canonical_index_dtype"] == "auto"
+    assert meta["canonical_index_storage"] == "byte_words"
     assert meta["graph_edge_dtype"] == "float32"
     assert meta["spin_scheme"] == "native"
     assert meta["type_map"] == ["Ni", "O"]
@@ -101,7 +106,15 @@ def kokkos_model():
     return model
 
 
-def _run(tmp_path, data, model, *, ranks, kokkos):
+def _run(
+    tmp_path: Path,
+    data: Path,
+    model: Path,
+    *,
+    ranks: int,
+    kokkos: bool,
+    cadence: bool = False,
+) -> dict:
     output = tmp_path / f"{'kokkos' if kokkos else 'host'}-{ranks}.json"
     runner = Path(__file__).with_name("run_mpi_dpa4spin_conventions.py")
     command = [
@@ -118,6 +131,8 @@ def _run(tmp_path, data, model, *, ranks, kokkos):
     ]
     if kokkos:
         command.append("--kokkos")
+    if cadence:
+        command.append("--cadence")
     # As in dpa4_spin_harness, bound the whole MPI process group: killing only
     # mpirun can leave workers holding the pipes open after a timeout.
     with subprocess.Popen(
@@ -157,14 +172,35 @@ def samples(kokkos_model, tmp_path_factory, request):
     )
 
 
-def _assert_snapshot(actual, expected, scale=1.0):
+def _assert_snapshot(actual: dict, expected: dict, scale: float = 1.0) -> None:
+    """Compare outputs at the same timestep using the canonical fp32 tolerances."""
+    assert actual["step"] == expected["step"]
     assert actual["ids"] == expected["ids"] == list(range(1, 7))
     np.testing.assert_allclose(actual["spin"], expected["spin"], atol=0, rtol=0)
     # The canonical kernels use float32; edge/reduction ordering differs between
-    # host, folded single-rank and extended multi-rank graphs.
-    for name, atol in (("force", 2e-7), ("magnetic_force", 5e-9)):
+    # host, folded single-rank and extended multi-rank graphs. A snapshot holds
+    # the per-atom virial only when its run requested it; the global virial
+    # sums six atoms.
+    fields = [("force", 2e-7), ("magnetic_force", 5e-9), ("global_virial", 1e-6)]
+    if "virial" in expected:
+        fields.append(("virial", 2e-7))
+    for name, atol in fields:
         np.testing.assert_allclose(
-            actual[name], scale * np.array(expected[name]), rtol=5e-4, atol=atol
+            actual[name],
+            scale * np.array(expected[name]),
+            rtol=5e-4,
+            atol=atol,
+            err_msg=f"{name} at step {expected['step']}",
+        )
+    if "virial" in actual:
+        # The pair fills the global and the per-atom virial from separate
+        # outputs of the model, whose totals agree. The first six centroid
+        # components (xx, yy, zz, xy, xz, yz) are the global ones.
+        np.testing.assert_allclose(
+            np.sum(actual["virial"], axis=0)[:6],
+            actual["global_virial"],
+            rtol=5e-4,
+            atol=1e-6,
         )
     assert actual["energy"] == pytest.approx(
         scale * expected["energy"], rel=5e-6, abs=2e-7
@@ -213,7 +249,60 @@ def test_kokkos_conventions_and_mpi(samples):
                 np.testing.assert_array_equal(precession[~finite], 0.0)
             for repeated in sample["snapshots"][1:]:
                 _assert_snapshot(repeated, actual)
-            _assert_snapshot(sample["scaled"], actual, scale=2.75)
+            virial_snapshots = sample["virial_snapshots"]
+            first = virial_snapshots[0]
+            _assert_snapshot(first, host[selection]["virial_snapshots"][0])
+            _assert_snapshot(first, single[selection]["virial_snapshots"][0])
+            # Requesting the per-atom virial changes no force or energy.
+            _assert_snapshot(first, actual)
+            _assert_snapshot(virial_snapshots[1], first)
+            _assert_snapshot(sample["scaled"], first, scale=2.75)
+
+
+def test_multiblock_halo_survives_neighbor_rebuild(
+    kokkos_runtime: None,
+    tmp_path: Path,
+) -> None:
+    """Two ranks exchange active block features on rebuilt and reused lists."""
+    model = _MODEL.with_name("deeppot_dpa4c_canonical_spin_multiblock.pt2")
+    assert model.is_file(), f"Generate the multiblock canonical fixture: {model}"
+    with zipfile.ZipFile(model) as archive:
+        metadata = json.loads(archive.read("model/extra/metadata.json"))
+    assert metadata["lower_input_kind"] == "dpa4c_canonical"
+    assert metadata["has_message_passing"]
+    assert not metadata["has_comm_artifact"]
+    data = tmp_path / "nio.lmp"
+    coord = _COORD.copy()
+    # Atom 3 crosses x=7 before the step-2 rebuild. Its 150 Å/ps velocity
+    # changes the owned-node count and the halo plan on both ranks.
+    coord[2, 0] = 6.9
+    write_lmp_data_spin(_BOX, coord, _SPIN, _TYPE, data)
+    with data.open("a") as stream:
+        stream.write("\nVelocities\n\n")
+        for atom in range(1, len(coord) + 1):
+            stream.write(f"{atom} {150.0 if atom == 3 else 0.0} 0 0\n")
+    single, parallel = (
+        _run(tmp_path, data, model, ranks=ranks, kokkos=True, cadence=True)["cartesian"]
+        for ranks in (1, 2)
+    )
+    for ranks, result in ((1, single), (2, parallel)):
+        assert result["pair_style"] == "dpa4spin/kk"
+        assert result["kokkos_active"] == 1
+        assert len(result["local_counts"]) == ranks
+        assert sum(result["local_counts"]) == 6
+        assert min(result["local_counts"]) > 0
+        if ranks == 2:
+            assert min(result["ghost_counts"]) > 0
+        assert result["neighbor_ages"] == [0, 1, 0, 1]
+        counts = result["local_count_history"]
+        assert counts[0] == counts[1] and counts[2] == counts[3]
+        if ranks == 2:
+            assert counts[2] == [counts[0][0] - 1, counts[0][1] + 1]
+    for actual, expected in zip(
+        parallel["snapshots"], single["snapshots"], strict=True
+    ):
+        assert np.linalg.norm(expected["magnetic_force"]) > 1e-7
+        _assert_snapshot(actual, expected)
 
 
 def test_kokkos_overlay_accumulates(samples):
@@ -224,6 +313,7 @@ def test_kokkos_overlay_accumulates(samples):
             assert overlay["pair_style"] == "hybrid/overlay/kk"
             assert overlay["run_style_active"] == 1
             assert overlay["convention"] == int(selection == "cartesian")
-            for snapshot in overlay["snapshots"]:
-                _assert_snapshot(snapshot, host[selection]["snapshots"][0], scale=2.0)
-                _assert_snapshot(snapshot, result[selection]["snapshots"][0], scale=2.0)
+            for key in ("snapshots", "virial_snapshots"):
+                for snapshot in overlay[key]:
+                    _assert_snapshot(snapshot, host[selection][key][0], scale=2.0)
+                    _assert_snapshot(snapshot, result[selection][key][0], scale=2.0)

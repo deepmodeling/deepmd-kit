@@ -339,6 +339,32 @@ def test_freeze_folds_the_reference(tmp_path, suffix) -> None:
         atol=1e-8,
     )
 
+    if suffix == ".pt2":
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(str(tmp_path / "vacuum_frozen.pt2"))
+        restored = BaseModel.deserialize(data["model"])
+        fitting = restored.atomic_model.fitting_net
+        assert fitting.needs_vacuum_descriptor()
+        np.testing.assert_allclose(fitting.bias_atom_e.detach().cpu().numpy(), BIAS)
+        again = tmp_path / "vacuum_again.pt2"
+        deserialize_to_file(str(again), data)
+        dp_again = DeepPot(str(again))
+        for itype in range(2):
+            for evaluator in (dp, dp_again):
+                _, _, _, atom_energy, _ = evaluator.eval(
+                    np.zeros((1, 1, 3)), None, np.array([itype]), atomic=True
+                )
+                np.testing.assert_allclose(
+                    atom_energy.reshape(-1), BIAS[itype], rtol=1e-8, atol=1e-8
+                )
+
 
 def test_freeze_keeps_the_reference_with_fparam(tmp_path) -> None:
     """With frame parameters the frozen model references from the stored vacuum table."""
@@ -405,35 +431,6 @@ def test_reference_rows_follow_a_padded_node_axis() -> None:
         atol=1e-12,
     )
     assert torch.all(padded[atype_flat.shape[0] :] == 0.0)
-
-
-def test_archive_carries_the_live_model(tmp_path) -> None:
-    """The archive keeps the unfolded model, so a re-export resolves the reference once."""
-    from deepmd.pt_expt.model.model import (
-        BaseModel,
-    )
-    from deepmd.pt_expt.utils.serialization import (
-        deserialize_to_file,
-        serialize_from_file,
-    )
-
-    _, dp = freeze_model(tmp_path, numb_fparam=0)
-    data = serialize_from_file(str(tmp_path / "vacuum_frozen.pt2"))
-    model = BaseModel.deserialize(data["model"])
-    fitting = model.atomic_model.fitting_net
-    assert fitting.needs_vacuum_descriptor()
-    np.testing.assert_allclose(fitting.bias_atom_e.detach().cpu().numpy(), BIAS)
-    again = tmp_path / "vacuum_again.pt2"
-    deserialize_to_file(str(again), data)
-    dp_again = DeepPot(str(again))
-    for itype in range(2):
-        for evaluator in (dp, dp_again):
-            _, _, _, atom_energy, _ = evaluator.eval(
-                np.zeros((1, 1, 3)), None, np.array([itype]), atomic=True
-            )
-            np.testing.assert_allclose(
-                atom_energy.reshape(-1), BIAS[itype], rtol=1e-8, atol=1e-8
-            )
 
 
 def test_without_preset_the_output_is_not_referenced() -> None:

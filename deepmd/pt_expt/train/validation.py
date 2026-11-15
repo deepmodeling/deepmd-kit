@@ -14,6 +14,7 @@ from contextlib import (
 )
 from dataclasses import (
     dataclass,
+    replace,
 )
 from pathlib import (
     Path,
@@ -55,6 +56,9 @@ from deepmd.pt_expt.utils.env import (
 from deepmd.utils.argcheck import (
     normalize_full_validation_metric,
     resolve_full_validation_start_step,
+)
+from deepmd.utils.data_group import (
+    iter_data_sources,
 )
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
@@ -294,11 +298,11 @@ class FullValidator:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
             self._initialize_best_checkpoints(restart_training=restart_training)
 
-        # Lazily-populated full test snapshot for LMDB validation. Frames are
+        # Lazily-populated full test snapshots for LMDB validation. Frames are
         # evaluated in atom-count and label-availability groups so each stack
         # has consistent shapes and scalar find_* flags. Reuse the decoded
-        # snapshot on subsequent validation calls.
-        self._lmdb_test_data: LmdbTestData | None = None
+        # snapshots on subsequent validation calls, independently for each source.
+        self._lmdb_snapshots: dict[int, LmdbTestData] = {}
 
     def should_run(self, display_step: int) -> bool:
         """Check whether the current step should trigger full validation."""
@@ -315,8 +319,14 @@ class FullValidator:
         display_step: int,
         lr: float,
         save_checkpoint: Any,
+        prepare_checkpoint: Callable[[], None] | None = None,
     ) -> FullValidationResult | None:
-        """Run full validation if the current step is due."""
+        """Run full validation if the current step is due.
+
+        ``prepare_checkpoint`` runs on every rank only for a selected checkpoint.
+        It must agree on distributed failures before returning or raising, so
+        no peer enters checkpoint collectives after another rejects the save.
+        """
         if not self.should_run(display_step):
             return None
 
@@ -327,10 +337,15 @@ class FullValidator:
         caught_exception: Exception | None = None
         error_message = None
         save_path = [None]
+        proposed_records = self.topk_records
         if self.rank == 0:
             try:
                 result = self._evaluate(display_step)
-                save_path[0] = result.saved_best_path
+                proposed_records, save_path[0] = self._propose_best_state(
+                    display_step=display_step,
+                    selected_metric_value=result.selected_metric_value,
+                )
+                result = replace(result, saved_best_path=save_path[0])
             except Exception as exc:
                 caught_exception = exc
                 error_message = (
@@ -342,6 +357,15 @@ class FullValidator:
 
         if self.is_distributed:
             dist.broadcast_object_list(save_path, src=0)
+
+        if save_path[0] is not None and prepare_checkpoint is not None:
+            # All ranks agree before mutating top-K metadata or entering a
+            # serializer that may gather sharded model/optimizer state.
+            prepare_checkpoint()
+
+        if self.rank == 0:
+            self.topk_records = proposed_records
+            self._sync_state_store()
 
         if save_path[0] is not None:
             try:
@@ -384,7 +408,7 @@ class FullValidator:
         return result if self.rank == 0 else None
 
     def _evaluate(self, display_step: int) -> FullValidationResult:
-        """Evaluate all validation systems and update best state."""
+        """Evaluate all validation systems without publishing checkpoint state."""
         # === Step 1. Switch to Evaluation Mode ===
         was_training = bool(getattr(self.model, "training", True))
         self.model.eval()
@@ -408,18 +432,13 @@ class FullValidator:
                 f"validation dataset: {self.metric_name.upper()}."
             )
 
-        # === Step 3. Update Best Tracking ===
         selected_metric_value = float(metrics[self.metric_key])
-        saved_best_path = self._update_best_state(
-            display_step=display_step,
-            selected_metric_value=selected_metric_value,
-        )
         return FullValidationResult(
             display_step=display_step,
             metrics=metrics,
             selected_metric_key=self.metric_key,
             selected_metric_value=selected_metric_value,
-            saved_best_path=saved_best_path,
+            saved_best_path=None,
         )
 
     def evaluate_all_systems(self) -> dict[str, float]:
@@ -457,28 +476,27 @@ class FullValidator:
         - A loader set owns ``systems``, each wrapping a ``DeepmdData`` in
           ``data_system``.
         """
-        validation_data = self.validation_data
-        if hasattr(validation_data, "_reader"):
-            lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
-            for nloc in sorted(lmdb_test_data.nloc_groups):
-                for indices in lmdb_test_data.availability_groups(
-                    lmdb_test_data.nloc_groups[nloc]
-                ):
-                    yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
-            return
-
-        if hasattr(validation_data, "data_systems"):
-            yield from validation_data.data_systems
-            return
-
-        for dataset in validation_data.systems:
-            data_system = getattr(dataset, "data_system", None)
-            if data_system is None:
-                raise TypeError(
-                    "Full validation expects each dataset in validation_data.systems "
-                    f"to expose a `data_system`, got {type(dataset)!r}."
+        for source in iter_data_sources(self.validation_data):
+            if hasattr(source, "_reader"):
+                snapshot = self._get_lmdb_test_data_snapshot(source)
+                yield from (
+                    LmdbTestDataNlocView(snapshot, nloc, indices)
+                    for nloc in sorted(snapshot.nloc_groups)
+                    for indices in snapshot.availability_groups(
+                        snapshot.nloc_groups[nloc]
+                    )
                 )
-            yield data_system
+            elif hasattr(source, "data_systems"):
+                yield from source.data_systems
+            else:
+                for dataset in source.systems:
+                    data_system = getattr(dataset, "data_system", None)
+                    if data_system is None:
+                        raise TypeError(
+                            "Full validation expects each dataset in validation_data.systems "
+                            f"to expose a `data_system`, got {type(dataset)!r}."
+                        )
+                    yield data_system
 
     def _get_lmdb_test_data_snapshot(self, lmdb_dataset: Any) -> LmdbTestData:
         """Build (once) and return the cached LMDB test snapshot.
@@ -488,8 +506,9 @@ class FullValidator:
         the full-validation snapshot sees exactly the same fields and
         dtypes as training batches.
         """
-        if self._lmdb_test_data is not None:
-            return self._lmdb_test_data
+        key = id(lmdb_dataset)
+        if key in self._lmdb_snapshots:
+            return self._lmdb_snapshots[key]
 
         reader = getattr(lmdb_dataset, "_reader", None)
         lmdb_path = getattr(lmdb_dataset, "lmdb_path", None)
@@ -512,14 +531,15 @@ class FullValidator:
                 f"{type(lmdb_dataset)!r}."
             )
 
-        self._lmdb_test_data = LmdbTestData(
+        snapshot = LmdbTestData(
             lmdb_path,
             type_map=list(type_map),
             shuffle_test=False,
         )
         if data_requirements:
-            self._lmdb_test_data.add_data_requirement(data_requirements)
-        return self._lmdb_test_data
+            snapshot.add_data_requirement(data_requirements)
+        self._lmdb_snapshots[key] = snapshot
+        return snapshot
 
     def _evaluate_system(
         self, data_system: DeepmdData
@@ -696,13 +716,13 @@ class FullValidator:
             prediction["virial"] = batch_prediction["virial"]
         return prediction
 
-    def _update_best_state(
+    def _propose_best_state(
         self,
         *,
         display_step: int,
         selected_metric_value: float,
-    ) -> str | None:
-        """Update the top-K records and return the checkpoint path to save."""
+    ) -> tuple[list[BestCheckpointRecord], str | None]:
+        """Propose top-K records and a save path without changing published state."""
         candidate = BestCheckpointRecord(
             metric=selected_metric_value,
             step=display_step,
@@ -714,14 +734,17 @@ class FullValidator:
         updated_records.sort()
         updated_records = updated_records[: self.max_best_ckpt]
         if candidate not in updated_records:
-            return None
-
-        self.topk_records = updated_records
-        self._sync_state_store()
-        if not self.save_best:
-            return None
-        candidate_rank = self.topk_records.index(candidate) + 1
-        return str(self._best_checkpoint_path(display_step, candidate_rank))
+            return self.topk_records, None
+        save_path = (
+            str(
+                self._best_checkpoint_path(
+                    display_step, updated_records.index(candidate) + 1
+                )
+            )
+            if self.save_best
+            else None
+        )
+        return updated_records, save_path
 
     def _sync_state_store(self) -> None:
         """Synchronize top-K validation state into the configured state store."""

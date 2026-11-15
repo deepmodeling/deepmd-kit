@@ -182,6 +182,11 @@ def _generic_topology(
     source: torch.Tensor,
     destination_row_ptr: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_index_words,
+    )
+
+    source = canonical_index_words(source)
     physical_edge_count = int(destination_row_ptr[-1].item())
     node_count = destination_row_ptr.shape[0] - 1
     destination = torch.repeat_interleave(

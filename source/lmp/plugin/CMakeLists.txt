@@ -188,9 +188,13 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     set_target_properties(${libname} PROPERTIES LINK_FLAGS
                                                 "-Wl,-undefined,dynamic_lookup")
   else()
+    # When installed with the C/C++ interface, LAMMPS opens the plugin through
+    # its link in lib/deepmd_lmp, where $ORIGIN names that directory, so
+    # $ORIGIN/.. reaches the DeePMD-kit libraries installed beside the plugin.
     set_target_properties(
-      ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}"
-                            LINK_FLAGS "-rdynamic")
+      ${libname}
+      PROPERTIES INSTALL_RPATH "$ORIGIN;$ORIGIN/..;${BACKEND_LIBRARY_PATH}"
+                 LINK_FLAGS "-rdynamic")
   endif()
   target_compile_definitions(
     ${libname}

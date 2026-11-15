@@ -171,6 +171,22 @@ def test_multi_task_steps_keep_configured_model_prob() -> None:
     np.testing.assert_allclose(schedule.model_prob, [0.75, 0.25])
 
 
+@pytest.mark.parametrize("model_prob", [None, {}])
+def test_default_multi_task_probabilities_use_system_counts(
+    model_prob: dict[str, float] | None,
+) -> None:
+    schedule = resolve_step_schedule(
+        {"numb_steps": 12, "model_prob": model_prob},
+        multi_task=True,
+        model_keys=["small", "large"],
+        training_data={"small": FakeData(1), "large": FakeData(3)},
+        epoch_length=_unreachable_epoch_length,
+    )
+
+    assert schedule.num_steps == 12
+    np.testing.assert_allclose(schedule.model_prob, [0.25, 0.75])
+
+
 def test_multi_task_requires_a_run_length() -> None:
     with pytest.raises(ValueError, match="num_epoch_dict must be set"):
         resolve_step_schedule(

@@ -50,6 +50,12 @@ def _try_register_fake(op_name: str, fn: Callable[..., Any]) -> None:
     """Register a fake implementation, silently skipping if already registered."""
     if op_name in _registered:
         return
+    # CompositeImplicitAutograd operators use their decomposition on fake
+    # tensors; PyTorch forbids a separate Meta registration for such operators.
+    if torch._C._dispatch_has_kernel_for_dispatch_key(
+        op_name, "CompositeImplicitAutograd"
+    ):
+        return
     try:
         torch.library.register_fake(op_name)(fn)
         _registered.add(op_name)

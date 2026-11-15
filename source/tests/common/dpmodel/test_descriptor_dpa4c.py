@@ -12,6 +12,9 @@ from unittest import (
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.descriptor.dpa4_nn.mlp import (
+    SwiGLUMLP,
+)
 from deepmd.dpmodel.descriptor.dpa4c import (
     DescrptDPA4C,
 )
@@ -32,6 +35,9 @@ from deepmd.dpmodel.utils.lebedev import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     graph_from_dense_quartet,
+)
+from deepmd.dpmodel.utils.network import (
+    NativeLayer,
 )
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -148,6 +154,37 @@ def projected_blocks(
             strict=True,
         )
     ]
+
+
+def randomize_attentions(descriptor: DescrptDPA4C) -> DescrptDPA4C:
+    """Draw every zero-initialized map of every further block.
+
+    The output maps start at zero, which makes every block the identity, so a
+    contract tested at initialization would not reach the blocks.
+    """
+    rng = np.random.default_rng(97)
+    for block in descriptor.attentions:
+        modules = [
+            module
+            for value in vars(block).values()
+            for module in (value if isinstance(value, list) else [value])
+        ]
+        for module in modules:
+            layers = module.layers if isinstance(module, SwiGLUMLP) else [module]
+            for layer in layers:
+                if isinstance(layer, NativeLayer) and not np.any(layer.w):
+                    layer.w = rng.normal(size=layer.w.shape)
+        block.adam_field_gain = rng.normal(size=block.adam_field_gain.shape)
+    return descriptor
+
+
+BLOCK_CONFIG = {
+    "ntypes": 2,
+    "channels": 32,
+    "lmax": 3,
+    "precision": "float64",
+    "seed": 61,
+}
 
 
 class TestDPA4C:
@@ -541,6 +578,269 @@ class TestDPA4C:
             rtol=2e-13,
         )
 
+    # === Further message-passing blocks ===
+
+    def test_further_block_is_the_identity_at_initialization(self) -> None:
+        single = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG)
+        multi_block = DescrptDPA4C(rcut=[3.0, 2.5], n_blocks=2, **BLOCK_CONFIG)
+        assert multi_block.get_dim_out() == single.get_dim_out()
+        # Every output map starts at zero, so every block reproduces the
+        # moments of the first.
+        np.testing.assert_allclose(
+            evaluate(multi_block), evaluate(single), atol=1e-14, rtol=0.0
+        )
+
+    def test_further_blocks_are_o3_invariant_and_alter_the_descriptor(self) -> None:
+        single = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG)
+        multi_block = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.5, 2.5], n_blocks=3, **BLOCK_CONFIG)
+        )
+        reference = evaluate(multi_block)
+        assert np.max(np.abs(reference - evaluate(single))) > 1e-3
+        rng = np.random.default_rng(61)
+        for determinant in (1.0, -1.0):
+            rotation, upper = np.linalg.qr(rng.normal(size=(3, 3)))
+            rotation = rotation * np.sign(np.diag(upper))
+            if np.linalg.det(rotation) * determinant < 0.0:
+                rotation[:, 0] *= -1.0
+            np.testing.assert_allclose(
+                evaluate(multi_block, COORD @ rotation.T),
+                reference,
+                atol=1e-11,
+                rtol=1e-11,
+            )
+
+    def test_block_attention_matches_the_explicit_terms(self) -> None:
+        descriptor = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.0], n_blocks=2, **BLOCK_CONFIG)
+        )
+        block = descriptor.attentions[0]
+        rng = np.random.default_rng(67)
+        n_node, n_edge, channels = 3, 7, 32
+        heads = block.HEADS
+        moments = rng.normal(size=(n_node, descriptor.degree_offsets[-1]))
+        invariants = rng.normal(size=(n_node, block.descriptor_dim))
+        direction = rng.normal(size=(n_edge, 3))
+        direction /= np.linalg.norm(direction, axis=1, keepdims=True)
+        basis = build_angular_basis(direction, 3)
+        src = rng.integers(0, n_node, size=n_edge)
+        dst = rng.integers(0, n_node, size=n_edge)
+        amplitude = rng.normal(size=(n_edge, channels))
+        envelope = rng.uniform(0.0, 1.0, size=n_edge)
+        block_envelope = rng.uniform(0.0, 1.0, size=n_edge)
+        rescaled, transport = block.call(
+            block.source_features(moments, invariants),
+            block.center_features(invariants),
+            amplitude,
+            basis,
+            envelope,
+            block_envelope,
+            src,
+            dst,
+        )
+
+        def saturate(value: np.ndarray, knee: float) -> np.ndarray:
+            return value / np.sqrt(1.0 + (value / knee) ** 2)
+
+        # Every head of every degree of the source is saturated by its norm,
+        # and the fields read it along the reversed bond, which flips the
+        # sign of every odd degree.
+        keys, fields = [], []
+        for degree, projection in enumerate(block.key_projections, start=1):
+            start, end = descriptor.degree_offsets[degree : degree + 2]
+            moment = moments[src, start:end].reshape(
+                n_edge, 2 * degree + 1, descriptor.degree_channels[degree]
+            )
+            key = np.einsum("emc,ch->emh", moment, projection.w)
+            key /= np.sqrt(
+                1.0 + np.sum(key**2, axis=1, keepdims=True) / block.KEY_KNEE**2
+            )
+            keys.append(key)
+            fields.append(
+                (-1.0) ** degree
+                * np.einsum("em,emh->eh", basis[:, degree**2 : (degree + 1) ** 2], key)
+            )
+        keys = np.concatenate(keys, axis=1)
+        fields = np.stack(fields, axis=1)
+        state_input = saturate(invariants, block.STATE_KNEE)[src]
+        amplitude_input = saturate(amplitude, block.AMPLITUDE_KNEE)
+        field = np.einsum("elh,lh->eh", fields, block.adam_field_gain)
+        hidden = (
+            block.hidden_state.call(state_input)
+            + block.hidden_field.call(fields.reshape(n_edge, -1))
+            + block.hidden_amplitude.call(amplitude_input)
+        )
+        logit = (
+            field[:, np.arange(channels) % heads]
+            + block.state_encoder.call(state_input)
+            + block.hidden_output.call(hidden / (1.0 + np.exp(-hidden)))
+        )
+        np.testing.assert_allclose(
+            rescaled,
+            amplitude * (1.0 + block_envelope[:, None] * np.tanh(logit)),
+            atol=1e-12,
+            rtol=1e-12,
+        )
+
+        # The keys reach the centers through an envelope-weighted softmax of
+        # the capped logits of the leading channels, with a null mass.
+        cap = block.LOGIT_CAP
+        mass = (envelope * block_envelope)[:, None] ** 2 * np.exp(
+            cap * np.tanh(logit[:, :heads] / cap)
+        )
+        null = np.log1p(
+            np.exp(block.null_mass.call(saturate(invariants, block.STATE_KNEE)))
+        )
+        denominator = null + block.NULL_FLOOR
+        numerator = np.zeros((n_node, keys.shape[1], heads))
+        weight = mass * block.transport_radial.call(amplitude_input)
+        for edge in range(n_edge):
+            denominator[dst[edge]] += mass[edge]
+            numerator[dst[edge]] += weight[edge] * keys[edge]
+        reduced = numerator / denominator[:, None, :]
+        expected, start = [], 0
+        for degree, output in enumerate(block.transport_outputs, start=1):
+            size = 2 * degree + 1
+            expected.append(
+                np.einsum(
+                    "nmh,hc->nmc", reduced[:, start : start + size], output.w
+                ).reshape(n_node, -1)
+            )
+            start += size
+        np.testing.assert_allclose(
+            transport, np.concatenate(expected, axis=1), atol=1e-12, rtol=1e-12
+        )
+
+    def test_block_factor_is_bounded_and_saturates_far_from_the_data(
+        self,
+    ) -> None:
+        descriptor = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.0], n_blocks=2, **BLOCK_CONFIG)
+        )
+        block = descriptor.attentions[0]
+        rng = np.random.default_rng(71)
+        moments = 1.0e6 * rng.normal(size=(4, descriptor.degree_offsets[-1]))
+        direction = rng.normal(size=(9, 3))
+        direction /= np.linalg.norm(direction, axis=1, keepdims=True)
+        basis = build_angular_basis(direction, 3)
+        distance = np.linspace(0.5, 2.8, 9)
+        src = rng.integers(0, 4, size=9)
+
+        def factor(invariants: np.ndarray) -> np.ndarray:
+            # The SiLU of the state encoder overflows its exponential at the
+            # largest inputs and saturates exactly, which is the limit tested.
+            with np.errstate(over="ignore"):
+                return block.call(
+                    block.source_features(moments, invariants),
+                    block.center_features(invariants),
+                    np.ones((9, 32)),
+                    basis,
+                    np.ones(9),
+                    descriptor.block_envelopes[0].call(distance),
+                    src,
+                    np.zeros(9, dtype=np.int64),
+                )[0]
+
+        far = 1.0e6 * rng.normal(size=(4, block.descriptor_dim))
+        value = factor(far)
+        # The factor lies in [0, 2] whatever its inputs, and equals one on
+        # every edge beyond the cutoff of the block.
+        assert value.shape == (9, 32)
+        assert np.all((value >= 0.0) & (value <= 2.0))
+        np.testing.assert_array_equal(value[distance >= 2.0], 1.0)
+
+        # The saturation acts per component: a component far beyond the knee
+        # loses its slope, while one near the data keeps it.
+        moments = np.zeros_like(moments)
+        near = 0.3 * rng.normal(size=(4, block.descriptor_dim))
+        far = 100.0 * rng.normal(size=(4, block.descriptor_dim))
+
+        def slopes(invariants: np.ndarray) -> np.ndarray:
+            base = factor(invariants)
+            step = 1.0e-6
+            result = []
+            for component in range(block.descriptor_dim):
+                shifted = invariants.copy()
+                shifted[:, component] += step
+                result.append(np.max(np.abs(factor(shifted) - base)) / step)
+            return np.asarray(result)
+
+        outside = np.all(np.abs(far) > 50.0, axis=0)
+        assert outside.sum() > 0
+        assert slopes(far)[outside].max() < 1e-3 * slopes(near).mean()
+
+    def test_further_block_reads_the_second_shell(self) -> None:
+        # Atom 2 lies within the cutoff of atom 1 only, so the descriptor of
+        # atom 0 sees it through the second block alone.
+        coord = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.9, 0.3, 0.0]]])
+        moved = coord.copy()
+        moved[0, 2] += [0.0, 0.2, 0.1]
+        atype = np.zeros((1, 3), dtype=np.int64)
+        config = {**BLOCK_CONFIG, "ntypes": 1, "channels": 16, "lmax": 2}
+        single = DescrptDPA4C(rcut=2.5, **config)
+        multi_block = randomize_attentions(
+            DescrptDPA4C(rcut=[2.5, 2.5], n_blocks=2, **config)
+        )
+        assert not single.has_message_passing()
+        assert multi_block.has_message_passing()
+        assert multi_block.has_message_passing_across_ranks()
+
+        def change(descriptor: DescrptDPA4C) -> float:
+            return np.max(
+                np.abs(
+                    evaluate(descriptor, moved, atype)[0, 0]
+                    - evaluate(descriptor, coord, atype)[0, 0]
+                )
+            )
+
+        assert change(single) == 0.0
+        assert change(multi_block) > 1e-6
+
+    def test_multi_block_descriptor_roundtrips_and_rejects_invalid_cutoffs(
+        self,
+    ) -> None:
+        descriptor = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.5, 2.0], n_blocks=3, **BLOCK_CONFIG)
+        )
+        data = descriptor.serialize()
+        assert data["rcut"] == [3.0, 2.5, 2.0]
+        assert data["n_blocks"] == 3
+        restored = DescrptDPA4C.deserialize(data)
+        assert restored.block_rcut == [3.0, 2.5, 2.0]
+        # One cutoff applies to every block and serializes as one value.
+        uniform = DescrptDPA4C(rcut=3.0, n_blocks=2, **BLOCK_CONFIG)
+        assert uniform.block_rcut == [3.0, 3.0]
+        assert uniform.serialize()["rcut"] == 3.0
+        assert DescrptDPA4C.deserialize(uniform.serialize()).block_rcut == [3.0, 3.0]
+        # A record of format 2 carries one cutoff and one block.
+        legacy = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG).serialize()
+        legacy["@version"] = 2
+        del legacy["attentions"], legacy["n_blocks"]
+        assert not DescrptDPA4C.deserialize(legacy).attentions
+        assert restored.get_rcut() == 3.0
+        np.testing.assert_array_equal(evaluate(restored), evaluate(descriptor))
+        single = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG).serialize()
+        assert single["rcut"] == 3.0
+        assert not DescrptDPA4C.deserialize(single).attentions
+        with pytest.raises(ValueError, match="must not increase"):
+            DescrptDPA4C(rcut=[2.5, 3.0], n_blocks=2, **BLOCK_CONFIG)
+        for radius in (0.0, float("nan")):
+            with pytest.raises(ValueError, match="positive"):
+                DescrptDPA4C(rcut=[3.0, radius], n_blocks=2, **BLOCK_CONFIG)
+        with pytest.raises(ValueError, match=r"lists 2 cutoff\(s\)"):
+            DescrptDPA4C(rcut=[3.0, 2.5], n_blocks=3, **BLOCK_CONFIG)
+        with pytest.raises(ValueError, match=r"lists 2 cutoff\(s\)"):
+            DescrptDPA4C(rcut=[3.0, 2.5], **BLOCK_CONFIG)
+        for invalid in (0, 1.5, True):
+            with pytest.raises(ValueError, match="positive integer"):
+                DescrptDPA4C(rcut=3.0, n_blocks=invalid, **BLOCK_CONFIG)
+        # A record whose blocks disagree with its block count is rejected.
+        mismatched = descriptor.serialize()
+        mismatched["n_blocks"] = 2
+        mismatched["rcut"] = [3.0, 2.5]
+        with pytest.raises(ValueError, match="further blocks"):
+            DescrptDPA4C.deserialize(mismatched)
+
     def test_jax_lmax4_matches_numpy(self) -> None:
         pytest.importorskip("jax")
         from deepmd.jax.env import (
@@ -702,6 +1002,69 @@ class TestDPA4CBridgingWindow:
         assert np.abs(evaluate(self.plain, coord, atype) - windowed).max() > 1e-3
         np.testing.assert_array_equal(windowed, evaluate(removed, coord, atype))
 
+    def multi_block(self) -> DescrptDPA4C:
+        """Build a two-block windowed descriptor with random block maps."""
+        return randomize_attentions(
+            DescrptDPA4C(
+                **{**self.config, "rcut": 3.0, "n_blocks": 2},
+                inner_clamp_f_inner=self.R_INNER,
+                inner_clamp_f_outer=self.R_OUTER,
+                inner_clamp_scale="absolute",
+            )
+        )
+
+    @pytest.mark.parametrize("distance", [0.05, 0.3, 0.5])
+    def test_frozen_pair_does_not_leak_through_a_neighbor(
+        self, distance: float
+    ) -> None:
+        # Atoms 0 and 1 form a frozen pair. The second block would otherwise
+        # hand the view of a third atom, which sees both, back to atom 0.
+        descriptor = self.multi_block()
+        coord, atype = self.cluster(distance)
+        reference = evaluate(descriptor, coord, atype)
+        moved = coord.copy()
+        moved[0, 1] = distance * np.array([-0.6, 0.0, 0.8])
+        perturbed = evaluate(descriptor, moved, atype)
+        # Moving atom 1 inside the frozen zone leaves atom 0 and every third
+        # atom unchanged, and the third atoms match the system without the
+        # pair.
+        unchanged = [0, 2, 3, 4]
+        np.testing.assert_allclose(
+            perturbed[0, unchanged], reference[0, unchanged], atol=1e-13, rtol=0.0
+        )
+        third = [2, 3, 4]
+        without = evaluate(descriptor, coord[:, third], atype[:, third])
+        np.testing.assert_allclose(
+            reference[0, third], without[0], atol=1e-13, rtol=0.0
+        )
+        # Without a window atom 0 sees atom 1 through a third atom, so the
+        # contract is not vacuous.
+        plain = randomize_attentions(
+            DescrptDPA4C(**{**self.config, "rcut": 3.0, "n_blocks": 2})
+        )
+        assert (
+            np.abs(
+                evaluate(plain, moved, atype)[0, 0]
+                - evaluate(plain, coord, atype)[0, 0]
+            ).max()
+            > 1e-6
+        )
+
+    def test_frozen_pair_window_keeps_the_multi_block_descriptor_smooth(self) -> None:
+        descriptor = self.multi_block()
+        distances = np.linspace(self.R_INNER - 0.02, self.R_OUTER + 0.02, 97)
+        probe = []
+        for distance in distances:
+            coord, atype = self.cluster(float(distance))
+            # Atom 1 moves; every other atom stops depending on it inside the
+            # frozen zone.
+            probe.append(evaluate(descriptor, coord, atype)[0, [0, 2, 3, 4]].sum())
+        probe = np.asarray(probe)
+        inner = distances <= self.R_INNER
+        np.testing.assert_allclose(probe[inner], probe[inner][0], atol=1e-12)
+        third = np.diff(probe, n=3)
+        assert np.abs(third).max() < 1e-2 * np.abs(probe).max()
+
     def test_pairs_beyond_the_window_are_unchanged(self) -> None:
         coord, atype = self.cluster(self.R_OUTER)
         np.testing.assert_array_equal(
@@ -779,7 +1142,7 @@ class TestDPA4CBridgingWindow:
     def test_serialization_roundtrip_keeps_the_window(self) -> None:
         coord, atype = self.cluster(0.65)
         data = self.windowed.serialize()
-        assert data["@version"] == 2
+        assert data["@version"] == 3
         assert data["inner_clamp_f_inner"] == self.R_INNER
         assert data["inner_clamp_f_outer"] == self.R_OUTER
         assert data["inner_clamp_scale"] == "absolute"
@@ -843,6 +1206,12 @@ def test_configuration_boundaries(
 ) -> None:
     with pytest.raises(error):
         DescrptDPA4C(**{"rcut": 3.0, "ntypes": 1, **config})
+
+
+def test_legacy_positional_use_amp_keeps_its_parameter_slot() -> None:
+    descriptor = DescrptDPA4C(3.0, 2, 8, 2, "bessel", 4, 0, False)
+    assert descriptor.n_blocks == 1
+    assert descriptor.use_amp is False
 
 
 @pytest.mark.parametrize("neighbors", [8, 4096])
@@ -970,11 +1339,14 @@ def make_spin_descriptor(**overrides: Any) -> DescrptDPA4C:
 @pytest.mark.parametrize("precision", ["float32", "float64"])
 @pytest.mark.parametrize("channels", [8, 32])
 @pytest.mark.parametrize("node_count", [0, 2])
+@pytest.mark.parametrize("n_blocks", [1, 2])
 def test_native_spin_graph_without_edges(
-    precision: str, channels: int, node_count: int
+    precision: str, channels: int, node_count: int, n_blocks: int
 ) -> None:
     """Both zero-node graphs and isolated atoms retain the feature width."""
-    descriptor = make_spin_descriptor(precision=precision, channels=channels)
+    descriptor = make_spin_descriptor(
+        precision=precision, channels=channels, n_blocks=n_blocks
+    )
     graph = neighbor_graph.NeighborGraph(
         n_node=np.array([node_count], dtype=np.int64),
         n_local=np.array([node_count], dtype=np.int64),
@@ -1216,6 +1588,40 @@ class TestDPA4CSpin:
         np.testing.assert_array_equal(
             self.evaluate(self.spin),
             self.evaluate(-self.spin),
+        )
+
+    def test_further_block_carries_the_spin_moments(self) -> None:
+        multi_block = make_spin_descriptor(rcut=[3.0, 2.5], n_blocks=2)
+        np.testing.assert_allclose(
+            multi_block.call_graph(self.graph, self.atype, spin=self.spin)[0],
+            self.evaluate(self.spin),
+            atol=1e-14,
+            rtol=0.0,
+        )
+        randomize_attentions(multi_block)
+        reference = multi_block.call_graph(self.graph, self.atype, spin=self.spin)[0]
+        assert np.abs(reference - self.evaluate(self.spin)).max() > 1e-3
+        # The state reads the spin invariants, which have even spin order, so
+        # the multi-block descriptor keeps time reversal and axial O(3) symmetry.
+        assert multi_block.attentions[0].descriptor_dim == multi_block.get_dim_out()
+        np.testing.assert_array_equal(
+            multi_block.call_graph(self.graph, self.atype, spin=-self.spin)[0],
+            reference,
+        )
+        rng = np.random.default_rng(13)
+        orthogonal, triangular = np.linalg.qr(rng.normal(size=(3, 3)))
+        orthogonal = -orthogonal * np.sign(np.diag(triangular))
+        rotated = neighbor_graph.build_neighbor_graph(
+            SPIN_COORD @ orthogonal.T, SPIN_ATYPE, None, multi_block.get_rcut()
+        )
+        np.testing.assert_allclose(
+            multi_block.call_graph(
+                rotated,
+                self.atype,
+                spin=(self.spin @ orthogonal.T) * np.linalg.det(orthogonal),
+            )[0],
+            reference,
+            atol=1e-12,
         )
 
     def test_non_magnetic_types_are_ignored_bitwise(self) -> None:

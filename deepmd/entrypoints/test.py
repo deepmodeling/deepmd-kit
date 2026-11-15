@@ -34,7 +34,10 @@ from deepmd.utils.compat import (
 from deepmd.utils.data import (
     DeepmdData,
 )
-from deepmd.utils.data_system import (
+from deepmd.utils.data_config import (
+    data_group_configs,
+)
+from deepmd.utils.data_path import (
     process_systems,
 )
 from deepmd.utils.weight_avg import (
@@ -98,34 +101,25 @@ def test(
     if numb_test == 0:
         # only float has inf, but should work for min
         numb_test = float("inf")
-    if train_json is not None:
-        jdata = j_loader(train_json)
+    if train_json is not None or valid_json is not None:
+        input_json = train_json if train_json is not None else valid_json
+        data_kind = "training" if train_json is not None else "validation"
+        jdata = j_loader(input_json)
         jdata = update_deepmd_input(jdata)
-        data_params = jdata.get("training", {}).get("training_data", {})
-        systems = data_params.get("systems")
-        if not systems:
-            raise RuntimeError("No training data found in input json")
-        root = Path(train_json).parent
-        if isinstance(systems, str):
-            systems = str((root / Path(systems)).resolve())
-        else:
-            systems = [str((root / Path(ss)).resolve()) for ss in systems]
-        patterns = data_params.get("rglob_patterns", None)
-        all_sys = process_systems(systems, patterns=patterns)
-    elif valid_json is not None:
-        jdata = j_loader(valid_json)
-        jdata = update_deepmd_input(jdata)
-        data_params = jdata.get("training", {}).get("validation_data", {})
-        systems = data_params.get("systems")
-        if not systems:
-            raise RuntimeError("No validation data found in input json")
-        root = Path(valid_json).parent
-        if isinstance(systems, str):
-            systems = str((root / Path(systems)).resolve())
-        else:
-            systems = [str((root / Path(ss)).resolve()) for ss in systems]
-        patterns = data_params.get("rglob_patterns", None)
-        all_sys = process_systems(systems, patterns=patterns)
+        data_params = jdata.get("training", {}).get(f"{data_kind}_data")
+        if not data_params:
+            raise RuntimeError(f"No {data_kind} data found in input json")
+        all_sys = []
+        for group in data_group_configs(data_params):
+            if not group.get("systems"):
+                raise RuntimeError(f"No {data_kind} data found in input json")
+            all_sys.extend(
+                process_systems(
+                    group["systems"],
+                    patterns=group.get("rglob_patterns"),
+                    root_dir=Path(input_json).parent,
+                )
+            )
     elif datafile is not None:
         with open(datafile) as datalist:
             all_sys = datalist.read().splitlines()

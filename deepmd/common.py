@@ -29,8 +29,9 @@ import yaml
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.data_path import (
+    expand_sys_str,
+    rglob_sys_str,
 )
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "get_np_precision",
     "j_loader",
     "make_default_mesh",
+    "rglob_sys_str",
     "select_idx_map",
 ]
 
@@ -186,50 +188,6 @@ def j_loader(filename: str | Path) -> dict[str, Any]:
             return yaml.safe_load(fp)
     else:
         raise TypeError("config file must be json, or yaml/yml")
-
-
-def expand_sys_str(root_dir: str | Path) -> list[str]:
-    """Recursively iterate over directories taking those that contain `type.raw` file.
-
-    Parameters
-    ----------
-    root_dir : Union[str, Path]
-        starting directory
-
-    Returns
-    -------
-    list[str]
-        list of string pointing to system directories
-    """
-    root_dir = DPPath(root_dir)
-    matches = [str(d) for d in root_dir.rglob("*") if (d / "type.raw").is_file()]
-    if (root_dir / "type.raw").is_file():
-        matches.append(str(root_dir))
-    return matches
-
-
-def rglob_sys_str(root_dir: str, patterns: list[str]) -> list[str]:
-    """Recursively iterate over directories taking those that contain `type.raw` file.
-
-    Parameters
-    ----------
-    root_dir : str, Path
-        starting directory
-    patterns : list[str]
-        list of glob patterns to match directories
-
-    Returns
-    -------
-    list[str]
-        list of string pointing to system directories
-    """
-    root_dir = Path(root_dir)
-    matches = []
-    for pattern in patterns:
-        matches.extend(
-            [str(d) for d in root_dir.rglob(pattern) if (d / "type.raw").is_file()]
-        )
-    return list(set(matches))  # remove duplicates
 
 
 def get_np_precision(precision: "_PRECISION") -> np.dtype:

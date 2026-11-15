@@ -9,6 +9,9 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+from deepmd.dpmodel.descriptor.dpa4 import (
+    DescrptDPA4,
+)
 from deepmd.dpmodel.model.spin_model import SpinModel as SpinModelDP
 from deepmd.pt_expt.common import (
     torch_module,
@@ -28,6 +31,12 @@ from .model import (
 
 @torch_module
 class SpinModel(SpinModelDP):
+    def __init__(self, backbone_model: torch.nn.Module, spin: Spin) -> None:
+        """Initialize a spin wrapper around a compatible backbone."""
+        if any(isinstance(module, DescrptDPA4) for module in backbone_model.modules()):
+            raise ValueError("DPA4/SeZM spin models require a native spin model.")
+        super().__init__(backbone_model=backbone_model, spin=spin)
+
     def __getattr__(self, name: str) -> Any:
         """Get attribute from the wrapped model.
 
@@ -47,6 +56,20 @@ class SpinModel(SpinModelDP):
         if backbone is not None:
             return getattr(backbone, name)
         raise AttributeError(name)
+
+    @property
+    def min_nbor_dist(self) -> float | None:
+        """Minimal neighbor distance, stored on the backbone model.
+
+        ``__getattr__`` only delegates reads, so without this property an
+        assignment would land on the wrapper while ``get_min_nbor_dist`` and
+        ``enable_compression`` keep reading the backbone.
+        """
+        return self.backbone_model.min_nbor_dist
+
+    @min_nbor_dist.setter
+    def min_nbor_dist(self, value: float | None) -> None:
+        self.backbone_model.min_nbor_dist = value
 
     def forward_common_lower_exportable(
         self,

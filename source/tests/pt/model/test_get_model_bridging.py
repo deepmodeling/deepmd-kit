@@ -394,24 +394,14 @@ def test_canonical_conflicting_top_level_option_raises() -> None:
         get_model(cfg)
 
 
-@pytest.mark.parametrize(
-    "scheme",
-    [
-        "native",  # spin as an equivariant descriptor feature
-        "deepspin",  # classical virtual-atom representation
-    ],
-)
-def test_canonical_spin_rejects_mismatched_pair_exclusions(scheme: str) -> None:
-    """Both spin routes must fail fast on a pair-exclusion mismatch like
-    the no-spin route, not silently overwrite the descriptor's exclusions.
-    """
+def test_canonical_spin_rejects_mismatched_pair_exclusions() -> None:
+    """Spin models reject conflicting pair exclusions."""
     cfg = _canonical_config()
     cfg["pair_exclude_types"] = [[0, 0]]
     cfg["models"][0]["descriptor"]["exclude_types"] = [[0, 1]]
     cfg["spin"] = {
-        "scheme": scheme,
+        "scheme": "native",
         "use_spin": [True, False],
-        "virtual_scale": 0.3,
     }
     with pytest.raises(ValueError, match="must match"):
         get_model(cfg)
@@ -432,3 +422,15 @@ def test_normalized_canonical_top_level_option_survives_child_defaults() -> None
     assert cfg["models"][0]["data_stat_protect"] == 0.01  # injected default
     model = get_model(cfg)
     assert model.atomic_model.data_stat_protect == 0.123
+
+
+@pytest.mark.parametrize("canonical", [False, True])
+@pytest.mark.parametrize("scheme", [None, "invalid"])
+def test_spin_requires_native_scheme(canonical: bool, scheme: str | None) -> None:
+    """Both public model spellings require an explicit native spin scheme."""
+    cfg = _canonical_config() if canonical else _sugar_config()
+    cfg["spin"] = {"use_spin": [True, False]}
+    if scheme is not None:
+        cfg["spin"]["scheme"] = scheme
+    with pytest.raises(ValueError, match=r"require model\.spin\.scheme='native'"):
+        get_model(cfg)
