@@ -40,13 +40,11 @@ from deepmd.utils.data_path import (
 from deepmd.utils.data_path import process_systems as process_systems
 from deepmd.utils.data_sampling import (
     data_child_seeds,
-)
-from deepmd.utils.data_sampling import prob_sys_size_ext as prob_sys_size_ext
-from deepmd.utils.data_sampling import process_sys_probs as process_sys_probs
-from deepmd.utils.data_sampling import (
     system_probabilities,
     uniform_sampling_weights,
 )
+from deepmd.utils.data_sampling import prob_sys_size_ext as prob_sys_size_ext
+from deepmd.utils.data_sampling import process_sys_probs as process_sys_probs
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )

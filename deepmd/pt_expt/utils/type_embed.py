@@ -12,7 +12,9 @@ from deepmd.pt_expt.common import (
 )
 
 # Import network to ensure EmbeddingNet is registered before TypeEmbedNet is used
-from deepmd.pt_expt.utils import network  # noqa: F401
+from deepmd.pt_expt.utils import (  # noqa: F401
+    network,
+)
 
 
 class TypeEmbedNet(TypeEmbedNetDP, torch.nn.Module):

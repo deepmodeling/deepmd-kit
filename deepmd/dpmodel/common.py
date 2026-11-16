@@ -25,7 +25,9 @@ from deepmd.common import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.dpmodel.array_api import Array
+    from deepmd.dpmodel.array_api import (
+        Array,
+    )
 
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
