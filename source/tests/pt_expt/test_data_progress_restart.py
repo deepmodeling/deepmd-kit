@@ -962,12 +962,15 @@ def test_malformed_rank_envelope_is_rejected(
 
 
 @pytest.mark.parametrize("saved_mode", ["synchronized", "independent"])
+@pytest.mark.parametrize("current_size", [1, 2])
 @pytest.mark.parametrize("reset", [False, True])
-def test_task_sampling_mode_change_requires_reset(saved_mode, reset) -> None:
+def test_task_sampling_mode_change_requires_reset(
+    saved_mode, current_size, reset
+) -> None:
     """A restart cannot silently switch the meaning of its saved task stream."""
     trainer = Trainer.__new__(Trainer)
     trainer.rank = 0
-    trainer.world_size = 1
+    trainer.world_size = current_size
     trainer._configured_data_seed = 19
     trainer.task_sampling = (
         "independent" if saved_mode == "synchronized" else "synchronized"
@@ -1043,6 +1046,20 @@ def _ddp_restart_worker(
             dist.all_gather_object(ranks, choices)
             assert (ranks[0] == ranks[1]) == (sampling == "synchronized")
             unseeded._close_data_systems()
+        if sampling == "independent":
+            sequences = []
+            for _ in range(2):
+                fresh = get_trainer(deepcopy(config))
+                try:
+                    sequences.append(
+                        [fresh.select_task(fresh.training_tasks).key for _ in range(64)]
+                    )
+                finally:
+                    fresh._close_data_systems()
+            assert sequences[0] == sequences[1]
+            ranks = [None, None]
+            dist.all_gather_object(ranks, sequences[0])
+            assert ranks[0] != ranks[1]
         dp_random.seed(19)
         trainer = get_trainer(deepcopy(config))
         with preserve_training_data_progress(trainer.training_data_by_task):

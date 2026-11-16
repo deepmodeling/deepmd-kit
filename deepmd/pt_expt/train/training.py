@@ -3273,6 +3273,11 @@ class Trainer(AbstractTrainer):
                     "may repeat; exact data-order continuation is unavailable."
                 )
             return
+        sampling = getattr(self, "task_sampling", "synchronized")
+        if progress.get("task_sampling", "synchronized") != sampling:
+            raise ValueError(
+                "Task sampling changed; set training.reset_data_progress=true."
+            )
         if saved_world_size != self.world_size:
             # Model/optimizer/step restart has always allowed a new topology.
             # Rank-local cursors cannot be remapped safely, particularly after
@@ -3296,11 +3301,6 @@ class Trainer(AbstractTrainer):
             raise ValueError(
                 "Training data progress is incompatible: training.seed changed; "
                 "set training.reset_data_progress=true to restart data sampling."
-            )
-        sampling = getattr(self, "task_sampling", "synchronized")
-        if progress.get("task_sampling", "synchronized") != sampling:
-            raise ValueError(
-                "Task sampling changed; set training.reset_data_progress=true."
             )
         rng_state = progress["task_rng"]
         if sampling == "independent":
