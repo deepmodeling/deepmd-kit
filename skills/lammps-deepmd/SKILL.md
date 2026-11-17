@@ -1,13 +1,13 @@
 ---
 name: lammps-deepmd
 description: >
-  A tool and knowledge base for running molecular dynamics (MD) simulations in LAMMPS with the DeePMD-kit plugin. It handles input script preparation, ensemble selection (NVE/NVT/NPT), and job execution via `uv` or offline binaries.
-  USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (e.g., `graph.pb`).
-compatibility: Requires LAMMPS with DeePMD-kit support. Online mode prefers `uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp`; offline mode requires a user-provided LAMMPS executable or module.
+  A tool and knowledge base for running molecular dynamics (MD) simulations in LAMMPS with the DeePMD-kit plugin. It handles input script preparation, ensemble selection (NVE/NVT/NPT), and execution with a verified DeePMD-enabled runtime.
+  USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (for example `.pb`, `.pth`, or DPA4/SeZM `.pt2`).
+compatibility: Requires a user-provided, containerized, or source-built LAMMPS runtime with DeePMD-kit support. Verify capabilities in the target environment.
 license: LGPL-3.0-or-later
 metadata:
   author: OpenClaw
-  version: '1.0'
+  version: '1.1'
   repository: https://github.com/deepmodeling/deepmd-kit
   lammps_docs: https://docs.lammps.org/
 ---
@@ -18,51 +18,51 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
 
 ## Agent responsibilities
 
-1. Confirm the available execution mode:
-   - **Online mode**: if internet access is available and `uv` is installed, prefer
-     `uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp ...`
-   - **Offline mode**: do **not** guess the executable. Ask the user which LAMMPS command, module, or container should be used.
+1. Confirm the available execution runtime:
+
+   - For a build from the current checkout, record the resolved Git commit SHA.
+   - For an installed binary, module, or container, record the exact command and
+     runtime versions.
+   - Do not infer capabilities from a future release or an artifact suffix.
+
 1. Confirm the minimum simulation inputs:
+
    - structure/data file (for example `data.system`)
-   - DeePMD model file (for example `graph.pb` or compressed model)
-   - atom type to element mapping, including required per-type masses if the data file does not define them
+   - DeePMD model artifact; read `references/model-deployment.md` for a training
+     checkpoint, DPA4/SeZM, or an unclear export path
+   - atom type to element mapping, including required per-type masses if the data
+     file does not define them
    - target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
    - temperature, pressure if applicable, timestep, and total number of steps
+
 1. Write the LAMMPS input script yourself instead of asking the user to hand-write it.
+
 1. Keep the example readable and fully explained. If you include an example input script, explain what **every command** does.
+
 1. When possible, validate command availability against the LAMMPS docs or local `lmp -h` output before execution.
+
 1. Report clearly which command was run, which files were used, and where outputs were written.
 
-## Decide the execution mode
+## Verify the execution runtime
 
-### Online mode (preferred when internet access is available)
+Use an existing site-installed binary, container, or build from the current
+checkout. Before execution:
 
-Use:
+- record `git rev-parse HEAD` for a source checkout, or record `dp --version` and
+  the exact installed package/container identity;
+- inspect the selected LAMMPS command with `-h` and confirm that it provides the
+  required DeePMD pair style and model-artifact route;
+- follow `references/model-deployment.md` for DPA4 `.pt2` and multi-rank
+  capability gates;
+- do not install or upgrade packages silently, and do not claim support from an
+  unreleased version number.
 
-```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -in input.lammps
-```
-
-If you need to inspect the local command-line help:
-
-```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -h | tee /dev/tty
-```
-
-Notes:
-
-- This is the preferred path because it can provision LAMMPS and DeePMD-kit on demand.
-- The `gpu,torch,lmp` extras match the requested runtime pattern from the user.
-- If the environment is slow or the packages are large, warn the user that the first run may take time.
-
-### Offline mode
-
-If internet access is unavailable or the user explicitly wants a site-installed binary, ask a concrete question such as:
+If no verified runtime is available, ask a concrete question such as:
 
 - "Which LAMMPS executable should I use, for example `lmp`, `lmp_mpi`, `mpirun -np 8 lmp`, or an HPC module command?"
-- "Do you already have a DeePMD-enabled LAMMPS build on this machine or cluster?"
+- "Do you already have a DeePMD-enabled LAMMPS build or container on this machine or cluster?"
 
-Do not invent a binary name or module name.
+Do not invent a binary, module, container, or package version.
 
 ## Minimal information to collect
 
@@ -76,14 +76,15 @@ Ask only for what is missing:
 - timestep
 - run length in steps
 - whether velocities should be generated from scratch
-- preferred execution command if offline
+- execution command, module, container, or source checkout
 
 ## Recommended workflow
 
 1. Inspect available files in the working directory.
+1. Read `references/model-deployment.md` when the model needs export, its artifact type is unclear, or explicit element mapping is required.
 1. Draft `input.lammps`.
 1. Explain the script to the user if they asked for an explanation or if the script is nontrivial.
-1. Run a short smoke test first when reasonable.
+1. Follow the staged canary in `references/commands-and-workflow.md` before production.
 1. Run the full simulation.
 1. Summarize outputs such as `log.lammps`, dump trajectories, restart files, and thermodynamic data.
 
@@ -104,15 +105,17 @@ atom_style      atomic
 
 neighbor        1.0 bin
 
+atom_modify     map yes
 read_data       data.system
 mass            1 28.0855
 mass            2 15.999
 pair_style      deepmd graph_compressed.pb
-pair_coeff      * *
+pair_coeff      * * Si O
 
 thermo_style    custom step temp pe ke etotal press vol lx ly lz xy xz yz
 thermo          ${THERMO_FREQ}
-dump            1 all custom ${DUMP_FREQ} traj.lammpstrj id type x y z
+dump            1 all custom ${DUMP_FREQ} traj.lammpstrj id type element x y z
+dump_modify     1 element Si O sort id
 
 velocity        all create ${TEMP} 743574
 fix             1 all nvt temp ${TEMP} ${TEMP} ${TAU_T}
@@ -169,9 +172,15 @@ run             ${NSTEPS}
   - Uses the `bin` neighbor-building method.
   - Neighbor lists help LAMMPS efficiently find nearby atoms for force evaluation.
 
+- `atom_modify map yes`
+
+  - Creates an atom-ID map required by the documented DPA4 route.
+  - It must appear before `read_data`.
+
 - `read_data data.system`
 
   - Reads the initial atomic structure, atom types, simulation box, and related information from the LAMMPS data file `data.system`.
+  - The data file's first line is a skipped title; actual header counts begin after it.
   - Replace this filename with the actual user file.
 
 - `mass 1 28.0855`, `mass 2 15.999`
@@ -185,10 +194,11 @@ run             ${NSTEPS}
   - Loads the DeePMD model from `graph_compressed.pb`.
   - Replace the model filename with the actual model path, for example `graph.pb`, `graph-compress.pb`, or another supported exported model.
 
-- `pair_coeff * *`
+- `pair_coeff * * Si O`
 
-  - Activates the previously selected pair style for all atom types.
-  - For DeePMD this often takes the simple form `* *` because the mapping is embedded in the model workflow rather than through conventional pairwise parameters.
+  - Activates the pair style for all local atom types.
+  - Maps LAMMPS type 1 to `Si` and type 2 to `O`, matching the masses and dump labels.
+  - Inspect the actual model type map and replace this example order; do not infer it from integer type IDs.
 
 - `thermo_style custom step temp pe ke etotal press vol lx ly lz xy xz yz`
 
@@ -207,14 +217,15 @@ run             ${NSTEPS}
 
   - Prints the thermo block every `THERMO_FREQ` timesteps.
 
-- `dump 1 all custom ${DUMP_FREQ} traj.lammpstrj id type x y z`
+- `dump 1 all custom ${DUMP_FREQ} traj.lammpstrj id type element x y z`
 
-  - Creates dump ID `1`.
-  - Dumps atoms from group `all`.
-  - Uses the `custom` dump format.
-  - Writes every `DUMP_FREQ` steps.
-  - Saves to `traj.lammpstrj`.
-  - Outputs per-atom columns `id type x y z`.
+  - Creates dump ID `1` and writes every `DUMP_FREQ` steps.
+  - Saves `id`, local type, mapped element, and coordinates to `traj.lammpstrj`.
+
+- `dump_modify 1 element Si O sort id`
+
+  - Uses the same local type-to-element order as `pair_coeff`.
+  - Sorts each frame by stable atom ID, not by element or model type-map position.
 
 - `velocity all create ${TEMP} 743574`
 
@@ -277,21 +288,9 @@ When using NPT, it is often useful to keep `vol`, `lx`, `ly`, and `lz` in the th
 
 ## Execution templates
 
-### Online run
+### Verified run
 
-```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -in input.lammps
-```
-
-### Online help
-
-```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -h | tee /dev/tty
-```
-
-### Offline run
-
-Only after the user specifies the executable, use a command such as one of these exact patterns:
+Only after the runtime is identified, use the matching command, for example:
 
 ```bash
 lmp -in input.lammps
@@ -299,7 +298,7 @@ mpirun -np 8 lmp_mpi -in input.lammps
 srun lmp -in input.lammps
 ```
 
-The agent must not choose one of these on its own without user guidance in offline mode.
+Do not choose one of these without evidence that it is the verified runtime.
 
 ## Output checklist
 
@@ -321,3 +320,4 @@ After a run, report at least:
 - DeePMD-kit: https://github.com/deepmodeling/deepmd-kit
 - User-provided tutorial reference: https://github.com/tongzhugroup/Chapter13-tutorial/blob/master/input.lammps
 - Detailed notes: `references/commands-and-workflow.md`
+- Model artifact, export, and type-mapping notes: `references/model-deployment.md`

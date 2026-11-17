@@ -15,7 +15,8 @@
 // is selected at freeze time by DP_CUDA_INFER >= 2.
 
 #include <ATen/cuda/CUDAContext.h>
-#include <torch/torch.h>
+#include <torch/library.h>
+#include <torch/types.h>
 
 #include <optional>
 #include <tuple>

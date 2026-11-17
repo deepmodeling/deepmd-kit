@@ -107,9 +107,7 @@ static const char cite_user_deepmd_package[] =
     "}\n\n";
 
 namespace {
-// Reduced Planck constant in eV.ps. The model reports the magnetic force as
-// the energy gradient with respect to the magnetic moment, while LAMMPS stores
-// the precession force; the two differ by the factor hbar / |m|.
+// Reduced Planck constant in eV.ps, used by the default precession convention.
 constexpr double kHBar = 6.5821191e-04;
 // Positions of the LAMMPS global virial components (xx, yy, zz, xy, xz, yz)
 // within the nine-component tensor the model reports.
@@ -120,7 +118,11 @@ constexpr int kCentroidVirialMap[9] = {0, 4, 8, 3, 6, 7, 1, 2, 5};
 }  // namespace
 
 PairDPA4Spin::PairDPA4Spin(LAMMPS* lmp)
-    : Pair(lmp), scale(nullptr), cutoff(0.0), commdata_(nullptr) {
+    : Pair(lmp),
+      scale(nullptr),
+      cutoff(0.0),
+      fm_cartesian_force(0),
+      commdata_(nullptr) {
   if (lmp->citeme) {
     lmp->citeme->add(cite_user_deepmd_package);
   }
@@ -237,46 +239,81 @@ void PairDPA4Spin::settings(int narg, char** arg) {
   }
   cutoff = deep_spin.cutoff() * dist_unit_cvt_factor;
 
-  // How many values name a charge state is a property of the artifact, so the
-  // keyword can only be read once the model is loaded.
+  // The artifact determines how many values follow charge_spin.
+  // magnetic_force independently selects the convention stored in atom->fm.
   const int dim_chg_spin = deep_spin.dim_chg_spin();
   std::vector<double> charge_spin;
+  bool magnetic_force_seen = false;
+  fm_cartesian_force = 0;
   int iarg = 1;
   while (iarg < narg) {
-    if (std::string(arg[iarg]) != "charge_spin") {
+    const std::string key(arg[iarg]);
+    if (key == "charge_spin") {
+      // One charge state holds for the whole run, so a second occurrence names
+      // no state the style could serve. Values already read mark the keyword
+      // as seen: a successful read always contributes at least one value.
+      if (!charge_spin.empty()) {
+        error->all(FLERR,
+                   "Illegal pair_style command: keyword charge_spin names the "
+                   "single charge state of the whole run, so it may appear "
+                   "only once.");
+      }
+      if (dim_chg_spin == 0) {
+        error->all(FLERR,
+                   "Illegal pair_style command: the artifact served by pair "
+                   "style " +
+                       style +
+                       " carries no charge/spin condition, so keyword "
+                       "charge_spin names nothing it can serve.");
+      }
+      if (iarg + dim_chg_spin >= narg) {
+        error->all(FLERR,
+                   "Illegal pair_style command: keyword charge_spin names a "
+                   "charge state with " +
+                       std::to_string(dim_chg_spin) + " value(s).");
+      }
+      for (int ii = 0; ii < dim_chg_spin; ++ii) {
+        charge_spin.push_back(
+            utils::numeric(FLERR, arg[iarg + 1 + ii], false, lmp));
+      }
+      iarg += 1 + dim_chg_spin;
+    } else if (key == "magnetic_force") {
+      if (magnetic_force_seen) {
+        error->all(FLERR,
+                   "Illegal pair_style command: keyword magnetic_force may "
+                   "appear only once.");
+      }
+      if (iarg + 1 >= narg) {
+        error->all(FLERR,
+                   "Illegal pair_style command: keyword magnetic_force takes "
+                   "one of precession or cartesian.");
+      }
+      const std::string value(arg[iarg + 1]);
+      if (value == "precession") {
+        fm_cartesian_force = 0;
+      } else if (value == "cartesian") {
+        fm_cartesian_force = 1;
+      } else {
+        error->all(FLERR,
+                   "Illegal pair_style command: keyword magnetic_force takes "
+                   "one of precession or cartesian, not '" +
+                       value + "'.");
+      }
+      magnetic_force_seen = true;
+      iarg += 2;
+    } else {
       error->all(FLERR, "Illegal pair_style command: pair style " + style +
                             " takes the artifact path followed by the optional "
-                            "keyword charge_spin, not '" +
-                            std::string(arg[iarg]) + "'.");
+                            "keywords charge_spin and magnetic_force, not '" +
+                            key + "'.");
     }
-    // One charge state holds for the whole run, so a second occurrence names
-    // no state the style could serve.  Values already read mark the keyword
-    // as seen: a successful read always contributes at least one value.
-    if (!charge_spin.empty()) {
-      error->all(FLERR,
-                 "Illegal pair_style command: keyword charge_spin names the "
-                 "single charge state of the whole run, so it may appear "
-                 "only once.");
-    }
-    if (dim_chg_spin == 0) {
-      error->all(FLERR,
-                 "Illegal pair_style command: the artifact served by pair "
-                 "style " +
-                     style +
-                     " carries no charge/spin condition, so keyword "
-                     "charge_spin names nothing it can serve.");
-    }
-    if (iarg + dim_chg_spin >= narg) {
-      error->all(FLERR,
-                 "Illegal pair_style command: keyword charge_spin names a "
-                 "charge state with " +
-                     std::to_string(dim_chg_spin) + " value(s).");
-    }
-    for (int ii = 0; ii < dim_chg_spin; ++ii) {
-      charge_spin.push_back(
-          utils::numeric(FLERR, arg[iarg + 1 + ii], false, lmp));
-    }
-    iarg += 1 + dim_chg_spin;
+  }
+
+  // Cartesian moments use the model's spin units and energies in eV.
+  if (fm_cartesian_force && strcmp(update->unit_style, "metal") != 0) {
+    error->all(FLERR,
+               "pair style " + style +
+                   " keyword magnetic_force cartesian requires units metal.");
   }
 
   // A charge/spin condition named on the pair_style line holds for the whole
@@ -305,6 +342,8 @@ void PairDPA4Spin::settings(int narg, char** arg) {
     }
     utils::logmesg(lmp, "  using charge_spin:  {}\n", values);
   }
+  utils::logmesg(lmp, "  magnetic_force:     {}\n",
+                 fm_cartesian_force ? "cartesian" : "precession");
 }
 
 /* ----------------------------------------------------------------------
@@ -534,18 +573,19 @@ void PairDPA4Spin::compute(int eflag, int vflag) {
   }
 
   // === Step 3. Accumulate the model outputs ===
-  // The model reports a force and a magnetic force for every atom the neighbor
-  // list covers, ghosts included; the spin atom style folds the ghost rows
-  // onto their owners in its reverse communication. Dividing the magnetic
-  // force by hbar / |m| turns the energy gradient with respect to the moment
-  // into the precession force LAMMPS stores. Multiplication by |m| preserves
-  // that relation while making a zero moment well-defined.
+  // Ghost contributions are folded onto their owners by the spin atom style.
+  // Precession scales -dE/dS by |m|/hbar; Cartesian keeps the energy-per-spin
+  // force, including at zero moment.
   const double force_scale = scale[1][1] * force_unit_cvt_factor;
-  const double magnetic_force_scale = force_scale / kHBar;
+  const double magnetic_force_scale = fm_cartesian_force
+                                          ? scale[1][1] * ener_unit_cvt_factor
+                                          : force_scale / kHBar;
   for (int ii = 0; ii < nall; ++ii) {
+    const double moment_factor = fm_cartesian_force ? 1.0 : sp[ii][3];
     for (int dd = 0; dd < 3; ++dd) {
       f[ii][dd] += dforce[3 * ii + dd] * force_scale;
-      fm[ii][dd] += dforce_mag[3 * ii + dd] * sp[ii][3] * magnetic_force_scale;
+      fm[ii][dd] +=
+          dforce_mag[3 * ii + dd] * moment_factor * magnetic_force_scale;
     }
   }
 
@@ -578,6 +618,10 @@ void* PairDPA4Spin::extract(const char* str, int& dim) {
   if (strcmp(str, "scale") == 0) {
     dim = 2;
     return (void*)scale;
+  }
+  if (strcmp(str, "fm_cartesian_force") == 0) {
+    dim = 0;
+    return (void*)&fm_cartesian_force;
   }
   return nullptr;
 }

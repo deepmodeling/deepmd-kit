@@ -82,6 +82,8 @@
 // ``concat`` or ``strip`` tebd input (strip with or without the smooth gate),
 // ``attn_layer == 0``, no excluded type pairs.
 
+#include <torch/library.h>
+
 #include <algorithm>
 #include <optional>
 #include <tuple>

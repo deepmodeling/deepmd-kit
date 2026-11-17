@@ -1,0 +1,382 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""The Uni-Mol to deepmd data conversion."""
+
+import os
+import pickle
+import shutil
+import tempfile
+import unittest
+import unittest.mock
+
+import numpy as np
+
+from deepmd.dpmodel.descriptor.unimol import (
+    UNIMOL_ELEMENTS,
+)
+from deepmd.dpmodel.loss.unimol import (
+    UniMolLoss,
+)
+from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbDataReader,
+)
+from deepmd.dpmodel.utils.unimol_transform import (
+    make_unimol_data_transform,
+)
+from deepmd.utils.unimol_data import (
+    convert_unimol_lmdb,
+    read_unimol_lmdb,
+)
+
+
+def _write_unimol_lmdb(path: str, molecules: list[dict]) -> None:
+    """Write a file in the upstream layout: one pickle per molecule."""
+    import lmdb
+
+    env = lmdb.open(path, subdir=False, map_size=1 << 24)
+    with env.begin(write=True) as txn:
+        for i, mol in enumerate(molecules):
+            txn.put(f"{i}".encode(), pickle.dumps(mol))
+    env.close()
+
+
+class TestUniMolDataConversion(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        rng = np.random.default_rng(0)
+        # Large enough that the 15% selection actually selects something: with
+        # four atoms it usually selects none, and every assertion about the
+        # corruption would hold vacuously.
+        big = ["C", "N", "O", "H", "C", "C", "N", "O", "H", "H", "C", "F", "S", "C"]
+        self.molecules = [
+            {
+                "atoms": big,
+                "coordinates": [
+                    rng.normal(size=(len(big), 3)).astype(np.float32) * 2.0
+                    for _ in range(3)
+                ],
+                "smi": "CNO",
+            },
+            {
+                "atoms": ["C", "C", "H"],
+                "coordinates": [
+                    rng.normal(size=(3, 3)).astype(np.float32) for _ in range(2)
+                ],
+                "smi": "CC",
+            },
+            # A single atom cannot be told apart from padding downstream, and an
+            # unmapped element would silently become [UNK]; both are skipped.
+            {
+                "atoms": ["C"],
+                "coordinates": [rng.normal(size=(1, 3)).astype(np.float32)],
+                "smi": "C",
+            },
+            {
+                "atoms": ["C", "Xx"],
+                "coordinates": [rng.normal(size=(2, 3)).astype(np.float32)],
+                "smi": "C",
+            },
+        ]
+        self.src = os.path.join(self.tmp, "mol.lmdb")
+        _write_unimol_lmdb(self.src, self.molecules)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_reader_streams_the_upstream_layout(self) -> None:
+        records = list(read_unimol_lmdb(self.src))
+        self.assertEqual(len(records), len(self.molecules))
+        self.assertEqual(records[0]["atoms"], self.molecules[0]["atoms"])
+        self.assertEqual(len(records[0]["coordinates"]), 3)
+
+    def test_conversion_round_trips_through_the_deepmd_reader(self) -> None:
+        dst = os.path.join(self.tmp, "converted")
+        counts = convert_unimol_lmdb(self.src, dst, map_size=1 << 24)
+        # One frame per conformer, and the two unusable records are skipped.
+        self.assertEqual(counts["frames"], 5)
+        self.assertEqual(counts["molecules"], 2)
+        self.assertEqual(counts["skipped"], 2)
+
+        reader = LmdbDataReader(dst, list(UNIMOL_ELEMENTS))
+        self.assertEqual(len(reader), 5)
+        frame = reader[0]
+        coord = np.asarray(frame["coord"]).reshape(-1, 3)
+        np.testing.assert_allclose(
+            coord, self.molecules[0]["coordinates"][0].astype(np.float64), atol=1e-6
+        )
+        symbols = [UNIMOL_ELEMENTS[i] for i in np.asarray(frame["atype"]).reshape(-1)]
+        self.assertEqual(symbols, list(self.molecules[0]["atoms"]))
+        # Molecules are not periodic, so no cell is written at all. A zero cell
+        # would not do: the neighbour-list builder takes any cell at face value
+        # and inverts it.
+        self.assertNotIn("box", frame)
+
+    def test_transform_corrupts_frames_in_the_data_path(self) -> None:
+        """The reader hook is what makes self-supervised training possible."""
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        dst = os.path.join(self.tmp, "for_training")
+        convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
+        reader = LmdbDataReader(dst, type_map)
+        plain = reader[0]
+        reader.set_frame_transform(make_unimol_data_transform(type_map, seed=1))
+        corrupted = reader[0]
+
+        self.assertEqual(
+            sorted(set(corrupted) - set(plain)),
+            [
+                "find_unimol_coord_target",
+                "find_unimol_token_target",
+                "unimol_coord_target",
+                "unimol_token_target",
+            ],
+        )
+        target = np.asarray(corrupted["unimol_token_target"])
+        clean = np.asarray(corrupted["unimol_coord_target"]).reshape(-1, 3)
+        noisy = np.asarray(corrupted["coord"]).reshape(-1, 3)
+        # Only selected atoms may move, and the clean target is centred.
+        moved = np.abs(noisy - clean).max(axis=-1) > 0
+        self.assertTrue(bool(np.all(~moved | (target != 0))))
+        # Centring is exact only to fp32, because the transform keeps upstream's
+        # fp32 coordinates.
+        np.testing.assert_allclose(clean.mean(axis=0), np.zeros(3), atol=1e-6)
+        # Masked atoms are carried as the pseudo-element. Of the selected
+        # atoms, 90% are masked and 5% take a random element; both are moved,
+        # so the masked ones are a subset of the moved ones.
+        is_mask = np.asarray(corrupted["atype"]) == type_map.index("[MASK]")
+        self.assertLessEqual(int(is_mask.sum()), int(moved.sum()))
+        self.assertTrue(bool(np.all(~is_mask | moved)))
+        # The fixture is large enough that something is actually corrupted, so
+        # the assertions above are not vacuous.
+        self.assertGreater(int((target != 0).sum()), 0)
+        self.assertGreater(int(moved.sum()), 0)
+
+    def test_corruption_changes_between_visits(self) -> None:
+        """Upstream redraws every epoch; a frozen mask would be memorised."""
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        dst = os.path.join(self.tmp, "revisited")
+        convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
+        reader = LmdbDataReader(dst, type_map)
+        reader.set_frame_transform(make_unimol_data_transform(type_map, seed=1))
+        first = np.asarray(reader[0]["unimol_token_target"]).copy()
+        second = np.asarray(reader[0]["unimol_token_target"]).copy()
+        self.assertFalse(np.array_equal(first, second))
+
+    def test_the_transform_survives_a_worker_process(self) -> None:
+        """LMDB decoding runs in spawned workers, which pickle the decoder config.
+
+        Each batch sends a fresh copy, so anything the transform carries is
+        reset over and over. A counter would therefore freeze the corruption,
+        and a closure would not have made it across at all.
+        """
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        transform = make_unimol_data_transform(type_map, seed=1)
+        frame = {
+            "coord": np.array(
+                [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]] * 4
+            ),
+            "atype": np.array([0, 1, 2, 3] * 4, dtype=np.int64),
+        }
+        drawn = set()
+        for _ in range(12):
+            revived = pickle.loads(pickle.dumps(transform))
+            drawn.add(revived(frame, 0)["unimol_token_target"].tobytes())
+        self.assertGreater(len(drawn), 1)
+
+    def test_the_objective_supplies_its_own_transform(self) -> None:
+        """A trainer installs whatever the loss declares, and nothing else.
+
+        Supervised losses return None here, so the data path is untouched for
+        them; this objective returns the corruption that produces its labels.
+        """
+        from deepmd.dpmodel.loss.property import (
+            PropertyLoss,
+        )
+
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        self.assertIsNone(
+            PropertyLoss(task_dim=1, var_name="property").frame_transform(type_map)
+        )
+
+        loss = UniMolLoss(mask_prob=0.2)
+        self.assertEqual(
+            [r.key for r in loss.label_requirement],
+            ["unimol_token_target", "unimol_coord_target"],
+        )
+        dst = os.path.join(self.tmp, "through_the_loss")
+        convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
+        reader = LmdbDataReader(dst, type_map)
+        before = set(reader[0])
+        reader.set_frame_transform(loss.frame_transform(type_map))
+        after = reader[0]
+        for key in ("unimol_token_target", "unimol_coord_target"):
+            self.assertIn(key, set(after) - before)
+        self.assertEqual(
+            len(np.asarray(after["unimol_token_target"])), len(after["atype"])
+        )
+
+    def test_an_element_outside_unimol_vocabulary_is_refused(self) -> None:
+        """Rewriting it as [MASK] would quietly corrupt an ordinary atom.
+
+        Uni-Mol knows 26 elements. A model whose type_map goes beyond them
+        tokenizes the extras as [UNK], and [UNK] has no element to come back to,
+        so such an atom would return as [MASK] once it happened to be selected.
+        The frame is refused whatever the draw does.
+        """
+        wider = ["C", "N", "O", "H", "Mg", "[MASK]"]
+        transform = make_unimol_data_transform(wider, seed=1)
+        frame = {
+            "coord": np.array(
+                [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]]
+            ),
+            # the third atom is magnesium, which Uni-Mol has no token for
+            "atype": np.array([0, 1, 4, 3], dtype=np.int64),
+        }
+        for _ in range(8):
+            with self.assertRaisesRegex(ValueError, "cannot express"):
+                transform(frame, 0)
+
+        # Without it, the same frame goes through.
+        ordinary = make_unimol_data_transform(["C", "N", "O", "H", "[MASK]"], seed=1)
+        ordinary(
+            {
+                "coord": frame["coord"],
+                "atype": np.array([0, 1, 2, 3], dtype=np.int64),
+            },
+            0,
+        )
+
+    def test_the_same_seed_corrupts_the_same_way_twice(self) -> None:
+        """Two runs of one configuration have to agree.
+
+        The number standing in for the epoch used to come from OS entropy, so
+        the documented guarantee -- reproducible when a single process decodes
+        -- did not actually hold. It is derived from the seed now.
+
+        The generator lives in a module-level table so that it survives the
+        transform being re-created for every batch in a worker. Clearing that
+        table is what a fresh process looks like.
+        """
+        from deepmd.dpmodel.utils import unimol_transform as transform_module
+
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        frame = {
+            "coord": np.arange(48, dtype=np.float64).reshape(16, 3),
+            "atype": np.zeros(16, dtype=np.int64),
+        }
+
+        def one_run():
+            transform_module._EPOCH_STREAMS.clear()
+            transform = make_unimol_data_transform(type_map, seed=1, stream="training")
+            return [
+                transform(dict(frame), 0)["unimol_token_target"].tolist()
+                for _ in range(3)
+            ]
+
+        first, second = one_run(), one_run()
+        self.assertEqual(first, second)
+        # and it is not reproducible by being frozen: the visits differ
+        self.assertGreater(len({tuple(v) for v in first}), 1)
+        # a different seed gives a different stream
+        transform_module._EPOCH_STREAMS.clear()
+        other = make_unimol_data_transform(type_map, seed=2, stream="training")
+        self.assertNotEqual(
+            first[0], other(dict(frame), 0)["unimol_token_target"].tolist()
+        )
+
+    def test_training_and_validation_do_not_share_a_stream(self) -> None:
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        frame = {
+            "coord": np.arange(48, dtype=np.float64).reshape(16, 3),
+            "atype": np.zeros(16, dtype=np.int64),
+        }
+        train = make_unimol_data_transform(type_map, seed=1, stream="training")
+        valid = make_unimol_data_transform(type_map, seed=1, stream="validation")
+        self.assertNotEqual(
+            train(dict(frame), 0)["unimol_token_target"].tolist(),
+            valid(dict(frame), 0)["unimol_token_target"].tolist(),
+        )
+
+    def test_transform_requires_the_mask_pseudo_element(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"\[MASK\]"):
+            make_unimol_data_transform(list(UNIMOL_ELEMENTS))
+
+    def _convert(self, dst, **kwargs):
+        return convert_unimol_lmdb(self.src, dst, map_size=1 << 24, **kwargs)
+
+    def test_replacing_a_dataset_keeps_one_on_disk(self) -> None:
+        """The second conversion must not leave the destination empty."""
+        dst = os.path.join(self.tmp, "replaced_twice")
+        self._convert(dst)
+        first = os.path.getsize(os.path.join(dst, "data.mdb"))
+        self._convert(dst)
+        self.assertTrue(os.path.isdir(dst))
+        self.assertGreater(os.path.getsize(os.path.join(dst, "data.mdb")), 0)
+        # and the backup is cleaned up once the new one is in place
+        self.assertFalse(os.path.exists(dst + ".replaced"))
+        self.assertGreater(first, 0)
+
+    def test_a_stranded_backup_survives_a_failed_publish(self) -> None:
+        """A run that died between the two renames leaves the only copy aside.
+
+        Deleting that copy and then failing to put the new one in place loses
+        both. The publish is two renames, so the window is the second one
+        failing -- which is what this forces, because nothing else reaches it.
+        """
+        dst = os.path.join(self.tmp, "stranded")
+        self._convert(dst)
+        # exactly the state an interrupted publish leaves behind
+        os.rename(dst, dst + ".replaced")
+        self.assertFalse(os.path.exists(dst))
+
+        real_rename = os.rename
+
+        def fail_on_publish(a, b):
+            # let the restore through, refuse the staging -> dst move
+            if str(a).endswith(".partial"):
+                raise OSError("simulated failure publishing the new dataset")
+            return real_rename(a, b)
+
+        with unittest.mock.patch("os.rename", side_effect=fail_on_publish):
+            with self.assertRaises(OSError):
+                self._convert(dst)
+
+        survivor = dst if os.path.exists(dst) else dst + ".replaced"
+        self.assertTrue(
+            os.path.exists(survivor), "the only copy of the dataset was destroyed"
+        )
+        self.assertGreater(os.path.getsize(os.path.join(survivor, "data.mdb")), 0)
+
+    def test_a_failed_conversion_leaves_the_old_dataset_in_place(self) -> None:
+        """Rolling back has to put the previous dataset back at its name."""
+        dst = os.path.join(self.tmp, "kept_on_failure")
+        self._convert(dst)
+        before = os.path.getsize(os.path.join(dst, "data.mdb"))
+
+        # a source that cannot be read: the conversion raises before publishing
+        with self.assertRaises(Exception):
+            convert_unimol_lmdb(
+                os.path.join(self.tmp, "missing.lmdb"), dst, map_size=1 << 24
+            )
+        self.assertTrue(os.path.isdir(dst))
+        self.assertEqual(os.path.getsize(os.path.join(dst, "data.mdb")), before)
+
+    def test_an_empty_conversion_does_not_replace_a_good_dataset(self) -> None:
+        """Refusing an empty result must not cost the dataset already there."""
+        dst = os.path.join(self.tmp, "kept_on_empty")
+        self._convert(dst)
+        before = os.path.getsize(os.path.join(dst, "data.mdb"))
+        with self.assertRaisesRegex(ValueError, "no usable frame"):
+            self._convert(dst, max_molecules=0)
+        self.assertTrue(os.path.isdir(dst))
+        self.assertEqual(os.path.getsize(os.path.join(dst, "data.mdb")), before)
+
+    def test_limits_are_respected(self) -> None:
+        dst = os.path.join(self.tmp, "limited")
+        counts = convert_unimol_lmdb(
+            self.src, dst, max_molecules=1, max_conformers=2, map_size=1 << 24
+        )
+        self.assertEqual(counts["molecules"], 1)
+        self.assertEqual(counts["frames"], 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

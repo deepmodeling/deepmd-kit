@@ -22,6 +22,7 @@ from typing_extensions import (
     Self,
 )
 from wcmatch.glob import (
+    GLOBSTAR,
     globfilter,
 )
 
@@ -393,7 +394,7 @@ class DPH5Path(DPPath):
         ]
         return [
             type(self)(f"{self.root_path}#{pp}", mode=self.mode)
-            for pp in globfilter(subpaths, self._connect_path(pattern))
+            for pp in globfilter(subpaths, self._connect_path(pattern), flags=GLOBSTAR)
         ]
 
     def rglob(self, pattern: str) -> list["DPPath"]:
@@ -410,7 +411,7 @@ class DPH5Path(DPPath):
         list[DPPath]
             list of paths
         """
-        return self.glob("**" + pattern)
+        return self.glob("**/" + pattern)
 
     @property
     def _keys(self) -> list[str]:

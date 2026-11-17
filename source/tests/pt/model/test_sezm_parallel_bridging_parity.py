@@ -2,11 +2,13 @@
 """Issue #5906 Task 2 (pt backend): SFPG completion across ranks.
 
 A BRIDGED SeZM model's parallel (comm_dict) path must reproduce the folded
-single-domain path. The Source Freeze Propagation Gate folds each node's
-full outgoing-edge set; under domain decomposition a rank only holds edges
-with owned destinations, so the src-keyed per-node partials are incomplete
-and must be completed by one reverse-accumulate + forward-broadcast border
-exchange before the gate is applied.
+single-domain path. The Source Freeze Propagation Gate multiplies, into the
+envelope of an edge, the switching amplitudes of every pair of that edge's
+source other than its own, and hands the full per-node product to the model;
+under domain decomposition a rank only holds edges with owned destinations,
+so the src-keyed per-node partials are incomplete and must be completed by
+one reverse-accumulate + forward-broadcast border exchange before either
+gate is applied.
 
 Geometry is the load-bearing part: a sub-``r_outer`` pair STRADDLES the
 periodic x boundary so the close contact's src is a ghost image row.
@@ -171,8 +173,15 @@ class TestSeZMBridgingSelfCommParity(unittest.TestCase):
             msg="reference forces are ~0; the parity check would be vacuous",
         )
         for key in ("energy", "extended_force", "virial"):
+            # The perturbed weights give outputs of order 1e6 to 1e7, and the
+            # two paths differ by round-off of about 1e-14 of the largest entry,
+            # so the tolerance follows that entry rather than each one.
             torch.testing.assert_close(
-                par[key], ref[key], rtol=1e-8, atol=1e-9, msg=f"mismatch in {key}"
+                par[key],
+                ref[key],
+                rtol=0.0,
+                atol=1e-11 * ref[key].abs().max().item(),
+                msg=f"mismatch in {key}",
             )
 
     def test_parity_hard_freeze_pair_cpu(self) -> None:

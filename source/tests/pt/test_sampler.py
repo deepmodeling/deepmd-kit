@@ -17,6 +17,9 @@ import deepmd.pt.utils.dataloader as pt_dataloader
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
 )
+from deepmd.dpmodel.utils.training_utils import (
+    resolve_model_prob,
+)
 from deepmd.pt.utils import (
     dp_random,
 )
@@ -167,6 +170,29 @@ class TestSampler(unittest.TestCase):
         coord = batch_data["coord"].squeeze(0)
         frame = self.my_dataset.systems[sid].__getitem__(fid)
         self.assertTrue(np.allclose(coord, frame["coord"]))
+
+    def test_grouping_preserves_default_model_probabilities(self) -> None:
+        system = self.systems[0]
+        grouped = pt_dataloader.create_dataset(
+            [
+                {"systems": [system] * 2, "batch_size": 1},
+                {"systems": [system] * 3, "batch_size": 1},
+            ],
+            self.type_map,
+        )
+        flat = pt_dataloader.create_dataset(
+            {"systems": [system] * 5, "batch_size": 1}, self.type_map
+        )
+        single = pt_dataloader.create_dataset(
+            {"systems": system, "batch_size": 1}, self.type_map
+        )
+        probabilities = [
+            resolve_model_prob(
+                ["large", "small"], None, {"large": data, "small": single}
+            )
+            for data in (flat, grouped)
+        ]
+        np.testing.assert_allclose(probabilities, [[5 / 6, 1 / 6]] * 2)
 
     def test_auto_prob_uniform(self) -> None:
         auto_prob_style = "prob_uniform"

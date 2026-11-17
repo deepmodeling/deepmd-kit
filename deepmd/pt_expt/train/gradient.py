@@ -24,6 +24,7 @@ from typing import (
 )
 
 import torch
+import torch.distributed as dist
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -123,6 +124,8 @@ class NonFiniteGradGuard:
     def raise_if_nonfinite(
         self,
         named_parameters: Callable[[], Iterable[tuple[str, torch.nn.Parameter]]],
+        *,
+        synchronize: bool = False,
     ) -> None:
         """
         Raise if any norm accumulated since the previous call was non-finite.
@@ -134,15 +137,22 @@ class NonFiniteGradGuard:
         ----------
         named_parameters : Callable[[], Iterable[tuple[str, torch.nn.Parameter]]]
             Accessor for the model's named parameters, consulted only when raising.
+        synchronize : bool, optional
+            Agree on divergence across all ranks before raising or entering
+            checkpoint collectives. Every rank must participate when enabled.
 
         Raises
         ------
         RuntimeError
             If a non-finite gradient norm was recorded.
         """
-        if self._nonfinite is None:
-            return
-        diverged = bool(self._nonfinite)
+        diverged = self._nonfinite is not None and bool(self._nonfinite)
+        if synchronize:
+            # Agree before diagnostics too: inspecting sharded gradients can
+            # itself require collectives, so all ranks must take that path.
+            gathered = [False] * dist.get_world_size()
+            dist.all_gather_object(gathered, diverged)
+            diverged = any(gathered)
         self._nonfinite = None
         if diverged:
             raise_nonfinite_gradient_norm(named_parameters())

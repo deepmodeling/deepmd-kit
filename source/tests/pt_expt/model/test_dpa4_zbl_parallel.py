@@ -290,19 +290,27 @@ class TestBridgedGraphWithCommExport:
         )
 
     def test_freeze_embeds_with_comm_artifact(self, tmp_path) -> None:
-        """Freezing the bridged model to a graph ``.pt2`` embeds the nested
-        with-comm artifact (mirrors the plain-DPA4 embed test).
-        """
+        """Default public freeze embeds the bridged with-comm graph artifact."""
         import json
         import zipfile
 
-        from deepmd.pt_expt.utils.serialization import (
-            deserialize_to_file,
+        from deepmd.pt_expt.entrypoints.main import (
+            freeze,
+        )
+        from deepmd.pt_expt.train.wrapper import (
+            ModelWrapper,
         )
 
-        data = {"model": self.model.serialize()}
-        p = str(tmp_path / "m_dpa4_zbl_graph.pt2")
-        deserialize_to_file(p, copy.deepcopy(data), lower_kind="graph")
+        wrapper = ModelWrapper(self.model, model_params=copy.deepcopy(ZBL_CONFIG))
+        checkpoint = tmp_path / "model.pt"
+        torch.save({"model": wrapper.state_dict()}, checkpoint)
+
+        # Cover checkpoint loading, default graph routing, and real AOTI
+        # packaging together instead of compiling again in the route test.
+        output = tmp_path / "m_dpa4_zbl_graph"
+        freeze(model=str(checkpoint), output=str(output))
+        p = output.with_suffix(".pt2")
+        assert p.exists(), "default suffix must follow the resolved graph kind"
         with zipfile.ZipFile(p, "r") as zf:
             names = zf.namelist()
             meta = json.loads(zf.read("model/extra/metadata.json"))

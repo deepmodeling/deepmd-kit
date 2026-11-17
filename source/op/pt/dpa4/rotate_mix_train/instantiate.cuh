@@ -3,10 +3,11 @@
 // Explicit launcher instantiations for one spherical-harmonic degree. A build
 // shard defines DPA4_RMT_TYPE and DPA4_RMT_RANK to select one grid point; the
 // host leaves both undefined and sets DPA4_RMT_EXTERN to declare every rank and
-// dtype for its selected degree without emitting device code.
+// compiled dtype for its selected degree without emitting device code.
 
 #include <c10/util/BFloat16.h>
 
+#include "../sezm_types.cuh"
 #include "kernels.cuh"
 
 #ifndef DPA4_RMT_L
@@ -48,8 +49,10 @@ DPA4_RMT_ONE(DPA4_RMT_TYPE, DPA4_RMT_RANK)
   DPA4_RMT_ONE(T, 4)
 
 DPA4_RMT_ALL_RANKS(float)
-DPA4_RMT_ALL_RANKS(double)
 DPA4_RMT_ALL_RANKS(c10::BFloat16)
+#if DEEPMD_ENABLE_DPA4_FP64
+DPA4_RMT_ALL_RANKS(double)
+#endif
 
 #undef DPA4_RMT_ALL_RANKS
 #endif

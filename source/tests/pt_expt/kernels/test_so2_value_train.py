@@ -19,6 +19,7 @@ from __future__ import (
     annotations,
 )
 
+import re
 from types import (
     SimpleNamespace,
 )
@@ -37,6 +38,7 @@ from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv import (
 )
 from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
     SO2ValueTrainCuda,
+    float64_available,
     op_available,
 )
 from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
@@ -482,15 +484,21 @@ def test_float64_agrees_with_eager_to_reduction_order(
 ) -> None:
     """Separate logic from precision: in float64 both sides must coincide.
 
-    The kernels keep float accumulators internally, so a float64 evaluation of
-    the fused path and of the eager reference differ only by reduction order.
-    Any structural disagreement -- a mis-indexed block, a dropped gradient
-    term -- survives the precision increase and shows up here. The second
-    shape runs the competition head with the RMS norm active, whose scales'
-    gradient chain is closed form inside the operator in both orders.
+    The float64 instantiations accumulate in double throughout, so a float64
+    evaluation of the fused path and of the eager reference differ only by
+    reduction order: double rounding amplified through the second-order chain
+    stays near 1e-14 on these shapes. Any structural disagreement -- a
+    mis-indexed block, a dropped gradient term -- survives the precision
+    increase and shows up here, and so does float32 arithmetic anywhere in the
+    chain: a float32 kernel stage leaves disagreements on the order of 1e-7,
+    and even a float32-rounded label smoothing leaves 5e-10. The second shape
+    runs the competition head with the RMS norm active, whose scales' gradient
+    chain is closed form inside the operator in both orders.
     """
     if not op_available():
         pytest.skip("the DPA4 CUDA training operators are unavailable")
+    if not float64_available():
+        pytest.skip("the build omits the float64 kernels (DEEPMD_ENABLE_DPA4_FP64)")
     case = _ValuePathCase(*shape, seed=DRAW_SEEDS[0])
     common = {"dtype": torch.float64, "amp": False, "second": True}
     reference = case.evaluate(fused=False, **common)
@@ -501,7 +509,26 @@ def test_float64_agrees_with_eager_to_reduction_order(
         truth, got = case.restrict(name, truth), case.restrict(name, got)
         scale = truth.abs().max().clamp_min(1.0).item()
         error = (got - truth).abs().max().item() / scale
-        assert error <= 5e-6, f"{name}: float64 disagreement {error:.3e}"
+        assert error <= 1e-12, f"{name}: float64 disagreement {error:.3e}"
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float64])
+def test_unsupported_value_dtypes_are_rejected(dtype: torch.dtype) -> None:
+    """The CUDA entry rejects working dtypes absent from the compiled build."""
+    if not op_available():
+        pytest.skip("the DPA4 CUDA training operators are unavailable")
+    has_float64 = float64_available()
+    if dtype is torch.float64 and has_float64:
+        pytest.skip("the build includes float64 kernels")
+    supported = (
+        "float32, bfloat16 or float64"
+        if has_float64
+        else "float32 or bfloat16 (float64 requires a build with "
+        "DEEPMD_ENABLE_DPA4_FP64=ON)"
+    )
+    case = _ValuePathCase(*BLOCK_SHAPES[0], seed=DRAW_SEEDS[0], n_node=8, n_edge=16)
+    with pytest.raises(RuntimeError, match=re.escape(f"x must be {supported}")):
+        case.evaluate(fused=True, dtype=dtype, amp=False, second=False)
 
 
 @pytest.mark.parametrize(

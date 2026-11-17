@@ -43,6 +43,8 @@ class EnergyFittingNet(EnergyFittingNetDP):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
+        node_gate: torch.Tensor | None = None,
+        return_middle_output: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Graph-native fitting forward, fused when the backend supports it.
 
@@ -53,10 +55,15 @@ class EnergyFittingNet(EnergyFittingNetDP):
         device rather than a traced tensor, because every export traces on CPU
         and moves the program afterwards. A vacuum reference is a per-type
         constant on the eligible configuration and enters the operator through
-        the bias.
+        the bias; the readout gate of a bridged descriptor scales the
+        deviation of the fused output from the bias of the type (see
+        :meth:`readout_reference`). The fused operator returns the output
+        alone, so a call that also asks for the middle output keeps the
+        reference.
         """
         if (
             not self.training
+            and not return_middle_output
             and fparam is None
             and aparam is None
             and fused_operators_enabled()
@@ -68,7 +75,14 @@ class EnergyFittingNet(EnergyFittingNetDP):
                 atom_bias = atom_bias - self.vacuum_property(vacuum_descriptor).to(
                     atom_bias.dtype
                 )
-            return graph_fitting(self, descriptor, atype, atom_bias)
+            ret = graph_fitting(self, descriptor, atype, atom_bias)
+            if node_gate is not None:
+                energy = ret[self.var_name]
+                reference = self.readout_reference().to(energy.dtype)[atype]
+                ret[self.var_name] = reference + node_gate.to(energy.dtype)[:, None] * (
+                    energy - reference
+                )
+            return ret
         return EnergyFittingNetDP.call_graph(
             self,
             descriptor,
@@ -79,4 +93,6 @@ class EnergyFittingNet(EnergyFittingNetDP):
             fparam=fparam,
             aparam=aparam,
             vacuum_descriptor=vacuum_descriptor,
+            node_gate=node_gate,
+            return_middle_output=return_middle_output,
         )

@@ -2,6 +2,42 @@
 import numpy as np
 
 
+def type_map_cases() -> list[tuple[tuple[str, ...], tuple[str, ...], bool]]:
+    """Cover one-hot residual widths and electronic-configuration map changes.
+
+    One-hot inputs cross the embedding widths at 8 and 16 types. Electronic
+    configurations have a fixed input width, so permutation, shrink and growth
+    cover their distinct map operations without repeating the width matrix.
+    """
+    elements = (
+        "H",
+        "He",
+        "Li",
+        "Be",
+        "B",
+        "C",
+        "N",
+        "O",
+        "F",
+        "Ne",
+        "Na",
+        "Mg",
+        "Al",
+        "Si",
+        "P",
+        "S",
+        "Cl",
+        "Ar",
+    )
+    small = ("H", "O")
+    maps = (elements, elements[:16], elements[:8], small)
+    return [(old, new, False) for old in maps for new in maps] + [
+        (elements, elements, True),
+        (elements, small, True),
+        (small, elements, True),
+    ]
+
+
 # originally copied from source/tests/pt/model/test_env_mat.py
 class TestCaseSingleFrameWithNlist:
     def setUp(self) -> None:

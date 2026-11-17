@@ -33,10 +33,7 @@ spins verbatim, in a 13x13x13 A box instead (the same box-swap the ZBL twin
 ``test_lammps_dpa4_zbl_pt2.py`` applies to its generator geometry).
 """
 
-import json
 import os
-import subprocess as sp
-import sys
 import textwrap
 from pathlib import (
     Path,
@@ -46,6 +43,9 @@ import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from python_reference import (
+    run_python_reference,
 )
 from write_lmp_data import (
     write_lmp_data_spin,
@@ -141,7 +141,6 @@ def _compute_expected() -> None:
     # from SHARED_LIB_DIR, which the build-test env does not populate.
     infer_dir = str(pb_file.resolve().parent)
     script = textwrap.dedent(f"""\
-        import json
         import sys
         import numpy as np
 
@@ -175,12 +174,9 @@ def _compute_expected() -> None:
                 "f": np.asarray(f[0]).tolist(),
                 "fm": np.asarray(fm[0]).tolist(),
             }}
-        print(json.dumps(out))
+        result = out
     """)
-    proc = sp.run([sys.executable, "-c", script], capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
-    result = json.loads(proc.stdout.strip())
+    result = run_python_reference(script)
 
     # Raw DeepEval force_mag (dE/dspin), scaled by LAMMPS's own
     # spin_norm / hbar unit convention (see ``_HBAR_METAL`` above) before

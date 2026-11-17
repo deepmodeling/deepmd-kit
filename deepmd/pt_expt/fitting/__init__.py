@@ -17,11 +17,17 @@ from .ener_fitting import (
 from .invar_fitting import (
     InvarFitting,
 )
+from .latent_charge import (
+    LatentChargeFitting,
+)
 from .polarizability_fitting import (
     PolarFitting,
 )
 from .property_fitting import (
     PropertyFittingNet,
+)
+from .unimol_pretrain import (
+    UniMolPretrainFitting,
 )
 
 __all__ = [
@@ -30,7 +36,9 @@ __all__ = [
     "DipoleFitting",
     "EnergyFittingNet",
     "InvarFitting",
+    "LatentChargeFitting",
     "PolarFitting",
     "PropertyFittingNet",
     "SeZMEnergyFittingNet",
+    "UniMolPretrainFitting",
 ]
