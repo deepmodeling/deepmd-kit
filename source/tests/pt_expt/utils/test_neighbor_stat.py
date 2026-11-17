@@ -9,6 +9,7 @@ from typing import (
 )
 
 import numpy as np
+import pytest
 
 from deepmd.pt_expt.utils.neighbor_stat import (
     NeighborStat,
@@ -121,9 +122,10 @@ def _stat_with_batch_size(
             coord: np.ndarray,
             atype: np.ndarray,
             cell: np.ndarray | None,
+            nbuff: np.ndarray | None = None,
         ) -> tuple[np.ndarray, np.ndarray]:
             frames_per_call.append(coord.shape[0])
-            return original(self, coord, atype, cell)
+            return original(self, coord, atype, cell, nbuff)
 
         patch.setattr(NeighborStat, "_execute", spy)
 
@@ -203,3 +205,135 @@ def test_batched_statistics_are_correct(monkeypatch: Any, tmp_path: Path) -> Non
 
     assert min_nbor_dist == UNIFORM_SPACING
     np.testing.assert_array_equal(max_nbor_size, [6])
+
+
+@pytest.mark.parametrize("pbc", [False, True])
+@pytest.mark.parametrize("mixed", [False, True])
+@pytest.mark.parametrize("rcut", [1e-6, 3.0])
+@pytest.mark.parametrize("cap", [1, 8])
+def test_frame_cap_matches_numpy_reference(
+    monkeypatch: Any,
+    tmp_path: Path,
+    pbc: bool,
+    mixed: bool,
+    rcut: float,
+    cap: int,
+) -> None:
+    from ...common.test_neighbor_stat_batching import (
+        make_data,
+        reference_stat,
+    )
+
+    data = make_data(tmp_path / "system", pbc)
+    expected = reference_stat(data, rcut, mixed)
+    monkeypatch.setenv("DP_NEIGHBOR_STAT_BATCH_SIZE", str(cap))
+    # Even a large inference budget must obey the independent frame cap.
+    monkeypatch.setenv("DP_INFER_BATCH_SIZE", "1000000")
+    stat = NeighborStat(2, rcut, mixed)
+    execute = stat._execute
+    calls = []
+
+    def record(coord, atype, cell, nbuff):
+        calls.append(coord.shape[0])
+        return execute(coord, atype, cell, nbuff)
+
+    monkeypatch.setattr(stat, "_execute", record)
+    actual = stat.get_stat(data)
+    assert sum(calls) == 17
+    assert max(calls) <= cap
+    np.testing.assert_allclose(actual[0], expected[0], rtol=1e-12, atol=1e-12)
+    np.testing.assert_array_equal(actual[1], expected[1])
+
+
+def test_oom_retry_keeps_every_frame(monkeypatch: Any, tmp_path: Path) -> None:
+    import torch
+
+    from ...common.test_neighbor_stat_batching import (
+        make_data,
+        reference_stat,
+    )
+
+    data = make_data(tmp_path / "system")
+    expected = reference_stat(data, 3.0, False)
+    monkeypatch.setenv("DP_NEIGHBOR_STAT_BATCH_SIZE", "8")
+    monkeypatch.setenv("DP_INFER_BATCH_SIZE", "32")
+    stat = NeighborStat(2, 3.0)
+    execute = stat._execute
+    attempted, successful = [], []
+
+    def limited(coord, atype, cell, nbuff):
+        attempted.append(coord.shape[0])
+        if coord.shape[0] > 2:
+            raise torch.cuda.OutOfMemoryError("simulated allocation limit")
+        result = execute(coord, atype, cell, nbuff)
+        successful.append(coord.shape[0])
+        return result
+
+    monkeypatch.setattr(stat, "_execute", limited)
+    actual = stat.get_stat(data)
+    assert attempted[:3] == [8, 4, 2]
+    assert sum(successful) == 17
+    np.testing.assert_allclose(actual[0], expected[0], rtol=1e-12, atol=1e-12)
+    np.testing.assert_array_equal(actual[1], expected[1])
+
+
+@pytest.mark.parametrize("case", ["skew", "unwrapped"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("mixed", [False, True])
+@pytest.mark.parametrize("cap", [1, 8, 100, None])
+def test_periodic_batches_keep_full_set_statistics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    reverse: bool,
+    mixed: bool,
+    cap: int | None,
+) -> None:
+    from ...common.test_neighbor_stat_batching import (
+        check_periodic_batches,
+    )
+
+    check_periodic_batches(
+        NeighborStat, tmp_path, monkeypatch, case, reverse, mixed, cap
+    )
+
+
+@pytest.mark.parametrize("case", ["skew", "unwrapped"])
+@pytest.mark.parametrize("cap", [8, 100])
+def test_oom_retry_preserves_full_set_periodic_bounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    cap: int,
+) -> None:
+    import torch
+
+    from ...common.test_neighbor_stat_batching import (
+        make_periodic_counterexample,
+        reference_stat,
+    )
+
+    data, rcut = make_periodic_counterexample(tmp_path / "system", case)
+    expected = reference_stat(data, rcut, False)
+    monkeypatch.setenv("DP_NEIGHBOR_STAT_BATCH_SIZE", str(cap))
+    natoms = 1 if case == "skew" else 2
+    monkeypatch.setenv("DP_INFER_BATCH_SIZE", str(9 * natoms))
+    stat = NeighborStat(2, rcut)
+    execute = stat._execute
+    attempted, successful = [], []
+
+    def limited(coord, atype, cell, nbuff):
+        np.testing.assert_array_equal(nbuff, [3 if case == "skew" else 2, 1, 1])
+        attempted.append(coord.shape[0])
+        if coord.shape[0] > 2:
+            raise torch.cuda.OutOfMemoryError("simulated allocation limit")
+        result = execute(coord, atype, cell, nbuff)
+        successful.append(coord.shape[0])
+        return result
+
+    monkeypatch.setattr(stat, "_execute", limited)
+    actual = stat.get_stat(data)
+    assert attempted[:3] == [min(cap, 9), 4, 2]
+    assert sum(successful) == 9
+    assert actual[0] == expected[0]
+    np.testing.assert_array_equal(actual[1], expected[1])

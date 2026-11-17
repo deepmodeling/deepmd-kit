@@ -49,3 +49,19 @@ class TestNeighborStatOP(unittest.TestCase, ArrayAPITest):
                 self.assert_dtype_equal(max_nnei, atype)
                 self.assertEqual(min_rr2.shape, (1, 4))
                 self.assertEqual(max_nnei.shape, expected_max_nnei.shape)
+
+    def test_shared_periodic_bounds(self) -> None:
+        """Explicit image bounds preserve the array namespace and pair minimum."""
+        coord = xp.zeros((1, 3), dtype=xp.float64)
+        atype = xp.zeros((1, 1), dtype=xp.int64)
+        cell = xp.asarray([[1, 0, 0, 2, 0.125, 0, 0, 0, 8]], dtype=xp.float64)
+        nbuff = xp.asarray([3, 1, 1], dtype=xp.int64)
+        op = NeighborStatOP(1, 1 / 64, False)
+        local_min, _ = op(coord, atype, cell)
+        shared_min, counts = op(coord, atype, cell, nbuff)
+        self.assertEqual(float(local_min[0, 0]), 1.0)
+        self.assertEqual(float(shared_min[0, 0]), 1 / 64)
+        self.assertEqual(int(counts[0, 0]), 0)
+        self.assert_namespace_equal(shared_min, coord)
+        self.assert_device_equal(shared_min, coord)
+        self.assert_dtype_equal(shared_min, coord)

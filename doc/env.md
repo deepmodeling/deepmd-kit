@@ -81,6 +81,31 @@ probes until a complete evaluation succeeds, so a known OOM cannot cause an
 endless restart of that input.
 :::
 
+:::{envvar} DP_NEIGHBOR_STAT_BATCH_SIZE
+
+**Type**: positive integer; **Default**: `8`
+
+Maximum number of frames per neighbor-statistics calculation in the NumPy and
+PyTorch Exportable backends. This is independent of the training `batch_size`.
+All frames are included; per-batch minima and maxima are reduced over all sets.
+The PyTorch Exportable backend also retains `DP_INFER_BATCH_SIZE` and automatic
+out-of-memory recovery, which may reduce the actual batch below this frame cap.
+
+DPA4C energy-model training with `dp --pt-expt train` uses the PyTorch Exportable
+statistics implementation on the selected device. CUDA is used when available,
+unless `DEVICE=cpu` is set; the selected device is logged before statistics.
+
+The cap bounds pair-distance intermediates, not disk loading: each `set.*` is
+still loaded completely into host memory. A single frame must fit in memory.
+For periodic systems, image bounds are determined once from all cells in each
+`set.*` and reused by every frame batch, including out-of-memory retries. Each
+frame therefore uses the same image candidates as the original full-set
+calculation. This preserves its statistics independently of the frame cap or
+frame order within a set, apart from floating-point effects. Distances, cutoffs,
+and precision settings are unchanged; results across devices are not guaranteed
+to be bitwise equal.
+:::
+
 :::{envvar} DP_BACKEND
 
 **Default**: `tensorflow`

@@ -474,6 +474,7 @@ def extend_coord_with_ghosts(
     atype: Array,
     cell: Array | None,
     rcut: float,
+    nbuff: Array | None = None,
 ) -> tuple[Array, Array]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
@@ -489,6 +490,9 @@ def extend_coord_with_ghosts(
         simulation cell tensor of shape [-1, 9].
     rcut : float
         the cutoff radius
+    nbuff : Array, optional
+        Integer periodic-image bounds of shape [3], shared across frames.
+        If omitted, compute the bounds from the supplied cells and cutoff.
 
     Returns
     -------
@@ -517,9 +521,10 @@ def extend_coord_with_ghosts(
     else:
         coord = xp.reshape(coord, (nf, nloc, 3))
         cell = xp.reshape(cell, (nf, 3, 3))
-        to_face = to_face_distance(cell)
-        nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
-        nbuff = xp.max(nbuff, axis=0)
+        if nbuff is None:
+            to_face = to_face_distance(cell)
+            nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
+            nbuff = xp.max(nbuff, axis=0)
         device = array_api_compat.device(coord)
         xi = _arange_nbuff(nbuff, 0, xp, device)
         yi = _arange_nbuff(nbuff, 1, xp, device)

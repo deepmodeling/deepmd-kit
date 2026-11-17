@@ -334,9 +334,34 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             train_data = get_neighbor_stat_data(
                 task_config.training_data_params, type_map
             )
-            updated_model_params, task_min_nbor_dist = BaseModel.update_sel(
-                train_data, type_map, dict(task_config.model_params)
-            )
+            model_params = dict(task_config.model_params)
+            # Match BaseModel dispatch, including normalized standard models.
+            model_type = model_params.get("type", "standard")
+            if model_type == "standard":
+                model_type = model_params.get("fitting", {}).get("type", "ener")
+            if (
+                model_type == "ener"
+                and model_params.get("descriptor", {}).get("type") == "dpa4c"
+            ):
+                # The common model implementation uses the dpmodel registry.
+                # DPA4C already supplies a device-aware pt_expt UpdateSel.
+                from deepmd.pt_expt.descriptor.dpa4c import (
+                    DescrptDPA4C,
+                )
+                from deepmd.pt_expt.utils.env import (
+                    DEVICE,
+                )
+
+                log.info("DPA4C neighbor statistics device: %s", DEVICE)
+                descriptor, task_min_nbor_dist = DescrptDPA4C.update_sel(
+                    train_data, type_map, dict(model_params["descriptor"])
+                )
+                model_params["descriptor"] = descriptor
+                updated_model_params = model_params
+            else:
+                updated_model_params, task_min_nbor_dist = BaseModel.update_sel(
+                    train_data, type_map, model_params
+                )
             min_nbor_dist[task_config.key] = task_min_nbor_dist
             if multi_task:
                 config["model"]["model_dict"][task_config.key] = updated_model_params

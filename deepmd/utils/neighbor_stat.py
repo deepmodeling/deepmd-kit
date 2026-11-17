@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import math
+import os
 from abc import (
     ABC,
     abstractmethod,
@@ -16,6 +17,56 @@ from deepmd.utils.data_system import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def iter_neighbor_stat_batches(
+    data: DeepmdDataSystem,
+    rcut: float,
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray | None, str, np.ndarray | None]]:
+    """Yield aligned frame batches for NumPy and PyTorch-exportable statistics.
+
+    ``DP_NEIGHBOR_STAT_BATCH_SIZE`` limits the number of frames handed to a
+    distance calculation (default: 8), independently of training/inference
+    batch sizes. Validate it before loading any sets. This bounds the large
+    pair-distance intermediates, not the input: ``_load_set`` still loads a
+    complete set into host memory.
+
+    Periodic-image bounds are computed once from all cells in each set.
+    Reuse these bounds in every batch, including OOM retries, so that each
+    frame has exactly the same image candidates as a full-set calculation.
+    """
+    value = os.environ.get("DP_NEIGHBOR_STAT_BATCH_SIZE", "8")
+    try:
+        batch_size = int(value)
+    except ValueError as exc:
+        raise ValueError(
+            "DP_NEIGHBOR_STAT_BATCH_SIZE must be a positive integer"
+        ) from exc
+    if batch_size < 1:
+        raise ValueError("DP_NEIGHBOR_STAT_BATCH_SIZE must be a positive integer")
+    for data_set in data.data_systems:
+        for set_path in data_set.dirs:
+            arrays = data_set._load_set(set_path)
+            coord, atype = arrays["coord"], arrays["type"]
+            cell = arrays["box"] if data_set.pbc else None
+            nbuff = None
+            if cell is not None:
+                # Keep the dpmodel dependency local to this NumPy/pt_expt path.
+                from deepmd.dpmodel.utils.region import (
+                    to_face_distance,
+                )
+
+                to_face = to_face_distance(cell.reshape(-1, 3, 3))
+                nbuff = np.max(np.ceil(rcut / to_face).astype(np.int64), axis=0)
+            for start in range(0, coord.shape[0], batch_size):
+                frames = slice(start, start + batch_size)
+                yield (
+                    coord[frames],
+                    atype[frames],
+                    cell[frames] if cell is not None else None,
+                    str(set_path),
+                    nbuff,
+                )
 
 
 class NeighborStat(ABC):
