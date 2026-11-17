@@ -883,11 +883,12 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   if (nloc_real == 0) {
     // no real atoms, fill 0 for all outputs
     // this can prevent a Xla error
-    ener.resize(nframes, 0.0);
-    force_.resize(static_cast<size_t>(nframes) * nall * 3, 0.0);
-    virial.resize(static_cast<size_t>(nframes) * 9, 0.0);
-    atom_energy_.resize(static_cast<size_t>(nframes) * nall, 0.0);
-    atom_virial_.resize(static_cast<size_t>(nframes) * nall * 9, 0.0);
+    // use assign rather than resize: callers may pass reused vectors
+    ener.assign(nframes, 0.0);
+    force_.assign(static_cast<size_t>(nframes) * nall * 3, 0.0);
+    virial.assign(static_cast<size_t>(nframes) * 9, 0.0);
+    atom_energy_.assign(static_cast<size_t>(nframes) * nall, 0.0);
+    atom_virial_.assign(static_cast<size_t>(nframes) * nall * 9, 0.0);
     return;
   }
 
@@ -1049,11 +1050,12 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   if (nloc_real == 0) {
     // no real atoms, fill 0 for all outputs
     // this can prevent a Xla error
-    ener.resize(nframes, 0.0);
-    force_.resize(static_cast<size_t>(nframes) * nall * 3, 0.0);
-    virial.resize(static_cast<size_t>(nframes) * 9, 0.0);
-    atom_energy_.resize(static_cast<size_t>(nframes) * nall, 0.0);
-    atom_virial_.resize(static_cast<size_t>(nframes) * nall * 9, 0.0);
+    // use assign rather than resize: callers may pass reused vectors
+    ener.assign(nframes, 0.0);
+    force_.assign(static_cast<size_t>(nframes) * nall * 3, 0.0);
+    virial.assign(static_cast<size_t>(nframes) * 9, 0.0);
+    atom_energy_.assign(static_cast<size_t>(nframes) * nall, 0.0);
+    atom_virial_.assign(static_cast<size_t>(nframes) * nall * 9, 0.0);
     return;
   }
 
