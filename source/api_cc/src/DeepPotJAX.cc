@@ -1074,7 +1074,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
       padding_for_nloc = nloc_real;
     }
     while (padding_to_nall < nall_real) {
-      padding_to_nall *= PADDING_FACTOR;
+      // Grow by at least one atom: below 20 atoms, int(n * 1.05) == n and
+      // the loop would never terminate.
+      padding_to_nall =
+          std::max(padding_to_nall + 1,
+                   static_cast<int>(padding_to_nall * PADDING_FACTOR));
     }
     nall_model = padding_to_nall;
   }
