@@ -2212,9 +2212,22 @@ class DeepEval(DeepEvalBackend):
         preparation uses the artifact's geometry dtype and layout; both
         forwards return local public outputs without extended-atom
         communication.
+
+        Whether this call needs the per-atom virial is read from the current
+        ``request_defs`` alone; the graph of a DPA4C model may then omit the
+        source CSR that only the per-atom virial reads.
         """
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C for x in request_defs
+        )
         model_inputs, nframes, natoms = self._prepare_graph_inputs(
-            coords, cells, atom_types, fparam, aparam, charge_spin
+            coords,
+            cells,
+            atom_types,
+            fparam,
+            aparam,
+            charge_spin,
+            do_atomic_virial=do_atomic_virial,
         )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
@@ -2241,6 +2254,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         *,
         canonical: bool,
+        with_source_csr: bool = True,
     ) -> tuple["NeighborGraph | CanonicalGraph", torch.Tensor, int, int]:
         """Build the local graph of the frames on the model device.
 
@@ -2255,6 +2269,10 @@ class DeepEval(DeepEvalBackend):
             Atom types with shape ``(natoms,)`` or ``(nframes, natoms)``.
         canonical
             Whether the graph takes the compact canonical layout.
+        with_source_csr
+            Whether a compact canonical graph keeps its source CSR. Default
+            ``True``; only a DPA4C caller that declines the per-atom virial
+            passes ``False``.
 
         Returns
         -------
@@ -2290,6 +2308,7 @@ class DeepEval(DeepEvalBackend):
             cells.reshape(nframes, 9) if cells is not None else None,
             DEVICE,
             canonical=canonical,
+            with_source_csr=with_source_csr,
         )
         atype_t = torch.as_tensor(
             atom_types.reshape(-1), dtype=torch.int64, device=DEVICE
@@ -2331,6 +2350,43 @@ class DeepEval(DeepEvalBackend):
                 graph = canonical_graph_from_neighbor_graph(graph)
         return graph, atype_t, nframes, natoms
 
+    def _wants_source_csr(self, do_atomic_virial: bool) -> bool:
+        """Whether the compact canonical graph keeps its source CSR.
+
+        The export records in ``canonical_requires_source_csr`` whether the
+        compiled lower reads the source CSR on every call. ``False`` means
+        the lower reads it only for the per-atom virial, and that recorded
+        capability — not the architecture — is what permits the placeholders.
+        A missing field counts as required, so an artifact that predates the
+        field always keeps the complete graph.
+
+        The remaining gates narrow this first version to the short-range
+        single-block non-spin case: DPA1, generic graphs, spin, long-range
+        topologies, and further message-passing blocks all keep the complete
+        graph.
+
+        Parameters
+        ----------
+        do_atomic_virial
+            Whether the current request asks for ``DERV_C``. Read from the
+            request of this call only, never cached.
+
+        Returns
+        -------
+        bool
+            ``False`` only for a short-range single-block non-spin DPA4C
+            compact graph whose export declines the source CSR and whose
+            request asks for no per-atom virial.
+        """
+        return not (
+            self.metadata.get("lower_input_kind") == "dpa4c_canonical"
+            and self.metadata.get("canonical_requires_source_csr", True) is False
+            and not do_atomic_virial
+            and not getattr(self, "_is_spin", False)
+            and not self.metadata.get("topologies", ())
+            and not self.metadata.get("has_message_passing", False)
+        )
+
     def _prepare_graph_inputs(
         self,
         coords: np.ndarray,
@@ -2341,8 +2397,15 @@ class DeepEval(DeepEvalBackend):
         charge_spin: np.ndarray | None,
         *,
         spins: np.ndarray | None = None,
+        do_atomic_virial: bool = True,
     ) -> tuple[tuple[torch.Tensor | None, ...], int, int]:
-        """Pack local graph inputs according to the exported artifact's ABI."""
+        """Pack local graph inputs according to the exported artifact's ABI.
+
+        ``do_atomic_virial`` describes the current request only. A DPA4C
+        compact canonical graph may omit its source CSR when no per-atom
+        virial is requested; every other layout, and every caller that keeps
+        the default, keeps the complete graph.
+        """
         from deepmd.pt_expt.utils.canonical_graph import (
             BorderPlan,
             canonical_index_bytes,
@@ -2357,7 +2420,11 @@ class DeepEval(DeepEvalBackend):
             "dpa4c_canonical",
         )
         graph, atype_t, nframes, natoms = self._build_device_graph(
-            coords, cells, atom_types, canonical=canonical
+            coords,
+            cells,
+            atom_types,
+            canonical=canonical,
+            with_source_csr=self._wants_source_csr(do_atomic_virial),
         )
         if canonical:
             if self.metadata.get(
@@ -2521,6 +2588,7 @@ class DeepEval(DeepEvalBackend):
         device: "torch.device",
         *,
         canonical: bool = False,
+        with_source_csr: bool = True,
     ) -> "NeighborGraph | CanonicalGraph":
         """Build the local graph for the artifact's input layout.
 
@@ -2536,7 +2604,8 @@ class DeepEval(DeepEvalBackend):
         destination-major graph-form ``.pt2`` ABI after construction; the
         caller transfers its fields to the model device. Vesin emits the
         compact canonical layout directly when ``canonical`` asks for it and no
-        pair exclusions are needed.
+        pair exclusions are needed; only that direct branch honours
+        ``with_source_csr``, and every fallback keeps the complete graph.
         """
         # A caller may pass broadcast views, whose zero strides survive the
         # zero-copy conversion to torch; the Warp neighbor search on the
@@ -2662,6 +2731,7 @@ class DeepEval(DeepEvalBackend):
                         node_mask=aa >= 0
                         if (np.asarray(atom_types) < 0).any()
                         else None,
+                        with_source_csr=with_source_csr,
                     )
                 return build_neighbor_graph_vesin(
                     cc,
