@@ -369,6 +369,7 @@ def test_compiled_capture_peak_memory(strict_environment, record_property):
     from torch.fx.experimental.proxy_tensor import (
         make_fx,
     )
+
     from deepmd.pt.model.descriptor.sezm_nn.so2 import (
         SO2Convolution,
     )

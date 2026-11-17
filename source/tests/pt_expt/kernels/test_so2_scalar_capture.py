@@ -162,10 +162,10 @@ def test_dynamic_compile(capture: bool) -> None:
 @pytest.mark.parametrize("compiled", [False, True])
 def test_non_capture_mutation_analysis_fallback(monkeypatch, compiled) -> None:
     """An unread kernel slot must not replace the functionalized output."""
+    from torch._functorch import config as aot_config
     from torch._higher_order_ops import (
         triton_kernel_wrap,
     )
-    from torch._functorch import config as aot_config
     from torch._inductor import config as inductor_config
 
     args = _inputs(17, 1)
