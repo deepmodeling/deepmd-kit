@@ -159,6 +159,62 @@ def test_dynamic_compile(capture: bool) -> None:
             torch.testing.assert_close(x, y, rtol=1e-4, atol=1e-5)
 
 
+@pytest.mark.parametrize("compiled", [False, True])
+def test_non_capture_mutation_analysis_fallback(monkeypatch, compiled) -> None:
+    """An unread kernel slot must not replace the functionalized output."""
+    from torch._higher_order_ops import (
+        triton_kernel_wrap,
+    )
+    from torch._functorch import config as aot_config
+    from torch._inductor import config as inductor_config
+
+    args = _inputs(17, 1)
+    expected = vp._rotate_mix_op(*args)
+    calls = []
+
+    def unavailable_analysis(*args, **kwargs):
+        calls.append(True)
+        raise RuntimeError("Exercise conservative Triton mutation analysis")
+
+    monkeypatch.setattr(triton_kernel_wrap, "generate_ttir", unavailable_analysis)
+    if compiled:
+        # A previous test's cached graph would bypass the injected failure.
+        torch._dynamo.reset()
+        with (
+            aot_config.patch(enable_autograd_cache=False),
+            inductor_config.patch(force_disable_caches=True),
+        ):
+            actual = torch.compile(vp._rotate_mix_op, fullgraph=True)(*args)
+    else:
+        detached = tuple(v.detach() if isinstance(v, torch.Tensor) else v for v in args)
+        actual = torch.func.functionalize(vp._rotate_mix_impl)(*detached)
+    assert calls, "The conservative mutation fallback must actually execute"
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    if compiled:
+        upstream = torch.randn_like(expected)
+        leaves = tuple(args[i] for i in (0, 4, 5, 6))
+        actual_grad = torch.autograd.grad(actual, leaves, upstream)
+        expected_grad = torch.autograd.grad(expected, leaves, upstream)
+        for a, b in zip(actual_grad, expected_grad, strict=True):
+            torch.testing.assert_close(a, b, rtol=1e-4, atol=1e-5)
+
+
+def test_capture_context_does_not_save_rotation() -> None:
+    """Saving the large rotation output would undo the storage-lifetime win."""
+    saved = []
+
+    def pack(tensor):
+        saved.append(tensor.untyped_storage().data_ptr())
+        return tensor
+
+    with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+        rotation, scalar = vp._rotate_mix_scalar_op(*_inputs(257, 1))
+    assert saved
+    assert rotation.untyped_storage().data_ptr() not in saved
+    # Keep both outputs alive while examining storage identities.
+    assert scalar.untyped_storage().data_ptr() != rotation.untyped_storage().data_ptr()
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

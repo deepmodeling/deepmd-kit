@@ -354,6 +354,95 @@ def test_model_capture_on_off(monkeypatch, strict_environment):
             )
 
 
+@GPU
+def test_compiled_capture_peak_memory(strict_environment, record_property):
+    """The joint mixing/competition inference graph must use less CUDA storage."""
+    from torch._functorch.aot_autograd import (
+        aot_module_simplified,
+    )
+    from torch._inductor.compile_fx import (
+        compile_fx_inner,
+    )
+    from torch._inductor.decomposition import (
+        select_decomp_table,
+    )
+    from torch.fx.experimental.proxy_tensor import (
+        make_fx,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+        SO2Convolution,
+    )
+
+    torch.manual_seed(7)
+    conv = (
+        SO2Convolution(
+            lmax=3,
+            mmax=1,
+            channels=32,
+            n_focus=2,
+            focus_dim=32,
+            mixing_layers=3,
+            radial_so2_mode="degree_channel",
+            radial_so2_rank=1,
+            n_atten_head=1,
+            seed=7,
+            trainable=False,
+            dtype=torch.float32,
+        )
+        .cuda()
+        .eval()
+    )
+    path = vp.make_triton_value_path(conv)
+    assert path is not None
+    path.prepare_inference_weights()
+    edges = 8192
+    x = (torch.randn(7, 16, 64, device="cuda") * 0.1).requires_grad_()
+    radial = (torch.randn(edges, 4, 32, device="cuda") * 0.1).requires_grad_()
+    wigner = torch.eye(16, device="cuda").repeat(edges, 1, 1).requires_grad_()
+    src = torch.arange(edges, device="cuda") % 7
+
+    def joint(x, radial, wigner):
+        cache = SimpleNamespace(src=src, D_full=wigner)
+        output = path(x, cache, radial)[0]
+        return (output, *torch.autograd.grad(output.sum(), (x, radial, wigner)))
+
+    def measure(capture):
+        conv._scalar_capture_retains_rotation = capture
+        # Match PT inference: trace the joint value/coordinate-gradient graph,
+        # then functionalize and lower it through AOT's inference compiler.
+        traced = make_fx(joint)(x, radial, wigner)
+        with torch.no_grad():
+            compiled = aot_module_simplified(
+                traced,
+                [x, radial, wigner],
+                fw_compiler=compile_fx_inner,
+                inference_compiler=compile_fx_inner,
+                decompositions=select_decomp_table(),
+            )
+        for _ in range(2):
+            output = compiled(x, radial, wigner)
+            del output
+        torch.cuda.synchronize()
+        start = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        output = compiled(x, radial, wigner)
+        torch.cuda.synchronize()
+        peak = torch.cuda.max_memory_allocated() - start
+        return peak, output[0], output[1:]
+
+    baseline, expected, expected_grad = measure(False)
+    captured, actual, actual_grad = measure(True)
+    record_property("baseline_peak_bytes", baseline)
+    record_property("capture_peak_bytes", captured)
+    # Allow allocator/compiler variation without hard-coding a device-specific
+    # whole-model percentage: each 320-channel row becomes 64 padded channels.
+    released_bytes = 2 * edges * (320 - 64) * 4
+    assert baseline - captured >= released_bytes // 2
+    torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-5)
+    for a, b in zip(actual_grad, expected_grad, strict=True):
+        torch.testing.assert_close(a, b, rtol=1e-4, atol=1e-5)
+
+
 @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
 @pytest.mark.parametrize(
     "level,target",

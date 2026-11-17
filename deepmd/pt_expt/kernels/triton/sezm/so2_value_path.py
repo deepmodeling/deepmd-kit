@@ -2521,6 +2521,9 @@ def _rotate_mix_impl(
     u = torch.empty(n_focus, n_edge, row, device=x.device, dtype=x.dtype)
     if _has_no_edges(n_edge):
         return u
+    # A conservative mutation-analysis fallback clones every tensor argument.
+    # Keep the unread slot distinct so it cannot replace the written output.
+    scalar_unused = x.new_empty(1)
     warps, stages = rotate_mix_fwd_config(c_wide, int(lmax))
     wrap_triton(_rotate_mix_fwd_kernel)[(n_edge,)](
         x,
@@ -2529,7 +2532,7 @@ def _rotate_mix_impl(
         kc,
         cb,
         u,
-        u,  # unread unless SAVE_SCALAR is enabled
+        scalar_unused,
         n_edge,
         x.stride(0),
         x.stride(1),
