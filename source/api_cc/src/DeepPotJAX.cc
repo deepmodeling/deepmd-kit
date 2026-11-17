@@ -7,7 +7,6 @@
 #include <tensorflow/c/eager/c_api.h>
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -639,21 +638,35 @@ void deepmd::DeepPotJAX::init(const std::string& model,
     // config = tf.ConfigProto( allow_soft_placement = True )
     // config.gpu_options.allow_growth = True
     // config.gpu_options.per_process_gpu_memory_fraction = percentage
-    // Create a byte-array for the serialized ProtoConfig, set the mandatory
-    // bytes (first three and last four)
-    std::array<std::uint8_t, 19> config = {
-        {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
-         static_cast<std::uint8_t>(num_inter_nthreads), 0x32, 0xb, 0x9, 0xFF,
-         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
-
-    // Convert the desired percentage into a byte-array.
+    // config.intra_op_parallelism_threads = num_intra_nthreads
+    // config.inter_op_parallelism_threads = num_inter_nthreads
+    // The thread counts are protobuf varints: values >= 128 take more than
+    // one byte, so they cannot be stored in a fixed-size byte array.
+    auto append_varint = [](std::vector<std::uint8_t>& out,
+                            std::uint32_t value) {
+      while (value >= 0x80u) {
+        out.push_back(static_cast<std::uint8_t>((value & 0x7fu) | 0x80u));
+        value >>= 7u;
+      }
+      out.push_back(static_cast<std::uint8_t>(value));
+    };
+    std::vector<std::uint8_t> config;
+    // intra_op_parallelism_threads (field 2, varint)
+    config.push_back(0x10);
+    append_varint(config, static_cast<std::uint32_t>(num_intra_nthreads));
+    // inter_op_parallelism_threads (field 5, varint)
+    config.push_back(0x28);
+    append_varint(config, static_cast<std::uint32_t>(num_inter_nthreads));
+    // gpu_options (field 6, length-delimited, 11 bytes):
+    // per_process_gpu_memory_fraction (field 1, fixed64)
+    config.insert(config.end(), {0x32, 0xb, 0x9});
     double gpu_memory_fraction = 0.9;
     auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
-
-    // Put it to the config byte-array, from 7 to 14:
-    for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
-      config[i + 7] = bytes[i];
-    }
+    config.insert(config.end(), bytes, bytes + sizeof(gpu_memory_fraction));
+    // gpu_options.allow_growth (field 4, varint) = true
+    config.insert(config.end(), {0x20, 0x1});
+    // allow_soft_placement (field 7, varint) = true
+    config.insert(config.end(), {0x38, 0x1});
 
     TF_SetConfig(sessionopts, config.data(), config.size(), status);
     check_status(status);
