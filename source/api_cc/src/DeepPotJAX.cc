@@ -591,6 +591,39 @@ inline std::vector<double> make_fparam_input(
       std::to_string(nframes) + " frames).");
 }
 
+// aparam may hold nloc * daparam values (shared by all frames) or
+// nframes * nloc * daparam values. Return the per-frame layout, or throw
+// on any other size instead of reading past the end of the buffer.
+template <typename VALUETYPE>
+inline std::vector<VALUETYPE> make_aparam_input(
+    const std::vector<VALUETYPE>& aparam,
+    const int daparam,
+    const int nframes,
+    const int nloc) {
+  if (daparam == 0) {
+    return aparam;
+  }
+  const size_t frame_size = static_cast<size_t>(nloc) * daparam;
+  const size_t expected = static_cast<size_t>(nframes) * frame_size;
+  if (aparam.size() == expected) {
+    return aparam;
+  }
+  if (aparam.size() == frame_size) {
+    std::vector<VALUETYPE> result(expected);
+    for (int ff = 0; ff < nframes; ++ff) {
+      std::copy(aparam.begin(), aparam.end(),
+                result.begin() + static_cast<size_t>(ff) * frame_size);
+    }
+    return result;
+  }
+  throw deepmd::deepmd_exception(
+      "aparam has " + std::to_string(aparam.size()) +
+      " values but the model expects nloc * dim_aparam=" +
+      std::to_string(frame_size) + " (per frame) or " +
+      std::to_string(expected) + " (for " + std::to_string(nframes) +
+      " frames).");
+}
+
 template <typename T>
 inline void tensor_to_vector(std::vector<T>& result,
                              TFE_TensorHandle* retval,
@@ -876,9 +909,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   int nframes = nall > 0 ? (dcoord.size() / 3 / nall) : 1;
   int nghost = 0;
 
+  const std::vector<VALUETYPE> aparam_in =
+      make_aparam_input(aparam_, daparam, nframes, nall - nghost);
   select_real_atoms_coord(coord, atype, aparam, nghost_real, fwd_map, bkw_map,
-                          nall_real, nloc_real, dcoord, datype, aparam_, nghost,
-                          ntypes, nframes, daparam, nall, false);
+                          nall_real, nloc_real, dcoord, datype, aparam_in,
+                          nghost, ntypes, nframes, daparam, nall, false);
 
   if (nloc_real == 0) {
     // no real atoms, fill 0 for all outputs
@@ -1043,9 +1078,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   // nlist passed to the model
   int nframes = 1;
 
+  const std::vector<VALUETYPE> aparam_in =
+      make_aparam_input(aparam_, daparam, nframes, nall - nghost);
   select_real_atoms_coord(coord, atype, aparam, nghost_real, fwd_map, bkw_map,
-                          nall_real, nloc_real, dcoord, datype, aparam_, nghost,
-                          ntypes, nframes, daparam, nall, false);
+                          nall_real, nloc_real, dcoord, datype, aparam_in,
+                          nghost, ntypes, nframes, daparam, nall, false);
 
   if (nloc_real == 0) {
     // no real atoms, fill 0 for all outputs
