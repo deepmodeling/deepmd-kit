@@ -160,7 +160,7 @@ def test_dpa4c_statistics_use_selected_device(
     import copy
     import logging
 
-    from deepmd.dpmodel.utils.neighbor_stat import NeighborStat as NumpyStat
+    from deepmd.dpmodel.utils.neighbor_stat import NeighborStat as NPStat
     from deepmd.pt_expt.utils.env import (
         DEVICE,
     )
@@ -192,7 +192,7 @@ def test_dpa4c_statistics_use_selected_device(
     def forbidden(*args, **kwargs):
         raise AssertionError("DPA4C entered the NumPy statistics path")
 
-    monkeypatch.setattr(NumpyStat, "iterator", forbidden)
+    monkeypatch.setattr(NPStat, "iterator", forbidden)
     original_op = TorchStat.__init__
     devices, sizes = [], []
 
