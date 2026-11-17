@@ -1369,6 +1369,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         L: tl.constexpr,
         CF: tl.constexpr,
         BLOCK_M: tl.constexpr,
+        saved_edges=0,
     ):
         """Recompute the gate sigmoids from the saved pre-activation (backward)."""
         ROW: tl.constexpr = (3 * L + 1) * CF
@@ -1386,7 +1387,8 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         cm = mm & (nc < CF)[None, :]
         wm = ((nc < CF)[:, None]) & ((nc < CF)[None, :])
 
-        z_row = z_ptr + (layer * n_focus + fid) * n_edge * ROW + offs_m * ROW
+        z_stride = tl.where(saved_edges > 0, saved_edges, n_edge).to(tl.int64)
+        z_row = z_ptr + (layer * n_focus + fid) * z_stride * ROW + offs_m * ROW
         z_s = tl.load(z_row[:, None] + nc[None, :], mask=cm, other=0.0).to(tl.float32)
         sig_row = sig_ptr + (fid * n_edge + offs_m) * LG
         for g in tl.static_range(L):
@@ -1420,6 +1422,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         RECOMPUTE_SIG: tl.constexpr,
         RECOVER_INPUT: tl.constexpr,
         BLOCK_M: tl.constexpr,
+        saved_edges=0,
     ):
         """Pointwise part of the gated-layer backward.
 
@@ -1456,7 +1459,8 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         wm = ((nc < CF)[:, None]) & ((nc < CF)[None, :])
 
         g_row = g_ptr + fid * n_edge * ROW + offs_m * ROW
-        z_row = z_ptr + (layer * n_focus + fid) * n_edge * ROW + offs_m * ROW
+        z_stride = tl.where(saved_edges > 0, saved_edges, n_edge).to(tl.int64)
+        z_row = z_ptr + (layer * n_focus + fid) * z_stride * ROW + offs_m * ROW
         gz_row = gz_ptr + fid * n_edge * ROW + offs_m * ROW
         sig_row = sig_ptr + (fid * n_edge + offs_m) * LG
         gl_row = gl_ptr + (fid * n_edge + offs_m) * LG
@@ -2014,6 +2018,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
+        output_edges=0,
     ):
         """Backward block GEMM ``g_u = residual + gz @ W^T`` over both blocks.
 
@@ -2044,7 +2049,8 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             gz_row = gz_ptr + fid * ROW + offs_m * (n_focus * ROW)
         else:
             gz_row = gz_ptr + fid * n_edge * ROW + offs_m * ROW
-        gu_row = gu_ptr + fid * n_edge * ROW + offs_m * ROW
+        output_stride = tl.where(output_edges > 0, output_edges, n_edge).to(tl.int64)
+        gu_row = gu_ptr + fid * output_stride * ROW + offs_m * ROW
         if FOLD_ALPHA:
             alpha = tl.load(alpha_ptr + offs_m * n_focus + fid, mask=m_mask, other=0.0)
 
@@ -2435,6 +2441,7 @@ def _launch_stack_point_backward(
                 L=lmax,
                 CF=focus_dim,
                 BLOCK_M=block_m,
+                saved_edges=0,
                 num_warps=warps,
                 num_stages=stages,
             )
@@ -2458,6 +2465,7 @@ def _launch_stack_point_backward(
         RECOMPUTE_SIG=recompute_sigmoid,
         RECOVER_INPUT=recover,
         BLOCK_M=block_m,
+        saved_edges=0,
         num_warps=warps,
         num_stages=stages,
     )
@@ -3222,6 +3230,7 @@ def _stack_backward_traversal(
         BLOCK_M=block_m,
         BLOCK_N=block_n,
         BLOCK_K=block_k,
+        output_edges=0,
         num_warps=warps,
         num_stages=stages,
     )
@@ -3406,6 +3415,7 @@ def _stack_backward_traversal(
             BLOCK_M=block_m,
             BLOCK_N=block_n,
             BLOCK_K=block_k,
+            output_edges=0,
             num_warps=warps,
             num_stages=stages,
         )
@@ -4960,7 +4970,28 @@ def _mixing_stack_backward(ctx, grad_out, grad_z, grad_u):
             None,
             None,
         )
-    grad_u0, grad_alpha = _mixing_stack_bwd_op(
+    backward_op = _mixing_stack_bwd_op
+    # The fused FP32 stack is selected by the existing Triton inference
+    # controls. Only its validated layout uses cohort-sized scratch; weight,
+    # saved-state and higher-order requests have already taken the train path.
+    # CPU/reference callers must not import the CUDA-only launcher, especially
+    # when Triton is absent. Keep the existing optional-dependency fallback.
+    if SO2_VALUE_PATH_TRITON_AVAILABLE and grad_out.is_cuda:
+        from .so2_edge_cohort import (
+            cohort_backward,
+            supports_edge_cohort,
+        )
+
+        if supports_edge_cohort(
+            grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
+        ) and all(
+            value.dtype == torch.float32
+            and value.device == grad_out.device
+            and value.is_contiguous()
+            for value in (alpha, w0_all, w1_all, gw_all)
+        ):
+            backward_op = cohort_backward
+    grad_u0, grad_alpha = backward_op(
         grad_out,
         x_local,
         z_all,

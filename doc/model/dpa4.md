@@ -522,6 +522,15 @@ shipping built in. On other GPUs the kernels fall back to conservative
 configurations, and `dp --pt freeze` tunes the missing entries on the local GPU
 before exporting, a one-off sweep of a few minutes baked into the `.pt2`.
 
+The frozen first-order FP32 SO(2) stack automatically uses edge cohorts for
+the validated two-focus layout (`lmax=3`, 32 channels per focus, two gated
+layers and focus competition). It completes the backward layers for up to
+8192 edges before reusing scratch for the next cohort; saved activations and
+returned gradients still cover all edges. Training, higher-order derivatives
+and other layouts keep their existing paths. No separate feature switch is
+required. This runtime launcher serves online compilation; the official
+CPU-traced exports retain the native deployable backward.
+
 `DP_CUTILE_INFER` replaces the whole SeZM edge pipeline — Wigner monomials,
 rotate-and-mix, the gated SO(2) mixing stack, the attention aggregation and the
 force / virial assembly — with kernels written in the `cuda.tile` DSL. On an
