@@ -9,6 +9,10 @@ import numpy as np
 import pytest
 
 from deepmd.utils import random as dp_random
+from deepmd.utils.argcheck import (
+    training_data_args,
+    validation_data_args,
+)
 from deepmd.utils.data_config import (
     resolve_data_groups,
 )
@@ -19,6 +23,16 @@ from deepmd.utils.data_sampling import (
 from deepmd.utils.data_system import (
     get_data,
 )
+
+
+@pytest.mark.parametrize("argument", [training_data_args(), validation_data_args()])
+def test_conversion_label_mode_schema(argument) -> None:
+    """Training and validation require explicit opt-in to label removal."""
+    default = argument.normalize_value({"systems": "data.extxyz", "format": "extxyz"})
+    assert default["labeled"] is True
+    explicit = argument.normalize_value({**default, "labeled": False})
+    argument.check_value(explicit, strict=True)
+    assert explicit["labeled"] is False
 
 
 def test_group_probabilities_do_not_equalize_unweighted_groups() -> None:

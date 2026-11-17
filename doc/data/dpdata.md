@@ -40,6 +40,18 @@ with these permissions and rejects existing shared or untrusted caches before
 reading their datasets or manifests. Remove an untrusted cache and rerun the
 conversion rather than changing permissions on potentially modified contents.
 
+Automatic conversion preserves labels by default. If dpdata cannot read the
+labels (including a partially labeled trajectory), conversion fails without
+publishing a reusable cache. For intentionally structure-only input, explicitly
+set `labeled: false` on the data group. This mode discards all labels, uses a
+separate cache entry, and cannot provide supervised training or validation
+targets. Repair incomplete labels or preconvert them with an explicit
+missing-label policy rather than disabling labels to bypass a read failure.
+
+On Windows, refreshed LMDB output is written to a new sibling directory before
+replacing the cache, with rollback if publication fails. Close readers of the
+old cache before refreshing it: Windows cannot replace open memory-mapped files.
+
 LMDB datasets use mixed-type batches. In the TensorFlow backend, use `se_atten`
 or a hybrid whose components all support mixed-type data. Fixed-composition
 descriptors such as `se_e2_a`, `se_e2_r`, and `se_e3` cannot consume LMDB batches;

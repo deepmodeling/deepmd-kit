@@ -6287,6 +6287,16 @@ If MPI is used, the value should be considered as the batch size per task.'
             alias=["output_format"],
         ),
         Argument(
+            "labeled",
+            bool,
+            optional=True,
+            default=True,
+            doc="Preserve labels when converting non-DeePMD input with dpdata. "
+            "Set False only to intentionally load structure-only data; this "
+            "discards all labels and cannot supply a supervised loss. "
+            "A failed labeled read never falls back to unlabeled conversion.",
+        ),
+        Argument(
             "batch_size",
             [list[int], int, str],
             optional=True,
@@ -6428,6 +6438,16 @@ def validation_data_args() -> list[
             default="deepmd/lmdb",
             doc=doc_out_format,
             alias=["output_format"],
+        ),
+        Argument(
+            "labeled",
+            bool,
+            optional=True,
+            default=True,
+            doc="Preserve labels when converting non-DeePMD input with dpdata. "
+            "Set False only to intentionally load structure-only data; this "
+            "discards all labels and cannot supply a supervised loss. "
+            "A failed labeled read never falls back to unlabeled conversion.",
         ),
         Argument(
             "batch_size",

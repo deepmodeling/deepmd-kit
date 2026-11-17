@@ -160,6 +160,7 @@ def resolve_data_groups(
             formats=formats,
             fmt=group.get("format"),
             out_fmt=group.get("out_format", group.get("output_format")),
+            labeled=group.get("labeled", True),
         )
         if not systems:
             raise ValueError(f"Data group {index} contains no supported data systems.")

@@ -109,6 +109,7 @@ def process_systems(
     root_dir: str | Path | None = None,
     fmt: str | None = None,
     out_fmt: str | None = None,
+    labeled: bool = True,
 ) -> list[str]:
     """Expand every input path through the same format-aware discovery.
 
@@ -117,6 +118,8 @@ def process_systems(
     Each entry may name a dataset directly or a parent containing datasets.
     When ``root_dir`` is supplied, relative filesystem paths are resolved
     against it before discovery; HDF5 group fragments remain unchanged.
+    External inputs retain labels by default; ``labeled=False`` explicitly
+    requests structure-only conversion and a separate cache entry.
     """
     paths = [systems] if isinstance(systems, str) else systems
     if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
@@ -142,7 +145,7 @@ def process_systems(
             for path in paths
             for input_path in _iter_conversion_inputs(path, patterns)
             for system in _convert_system_by_dpdata(
-                input_path, fmt, out_fmt, expand_systems=expand_sys_str
+                input_path, fmt, out_fmt, expand_systems=expand_sys_str, labeled=labeled
             )
         ]
     return [

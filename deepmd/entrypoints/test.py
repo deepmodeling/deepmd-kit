@@ -121,6 +121,7 @@ def test(
                     root_dir=Path(input_json).parent,
                     fmt=group.get("format"),
                     out_fmt=group.get("out_format", group.get("output_format")),
+                    labeled=group.get("labeled", True),
                 )
             )
     elif datafile is not None:

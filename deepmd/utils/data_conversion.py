@@ -37,8 +37,8 @@ log = logging.getLogger(__name__)
 
 _DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
 _DPDATA_DEFAULT_OUT_FORMAT = "deepmd/lmdb"
-_DPDATA_CONVERSION_SCHEMA_VERSION = "3"
-_DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str, str], list[str]] = {}
+_DPDATA_CONVERSION_SCHEMA_VERSION = "4"
+_DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str, bool, str], list[str]] = {}
 _DPDATA_SOURCE_HASH_LIMIT = 1024 * 1024
 _CONVERSION_LOCK_HEARTBEAT_SECONDS = 5.0
 # Allow for shared-filesystem attribute caching before diagnosing a stalled
@@ -128,7 +128,9 @@ def _iter_conversion_inputs(path: str, patterns: list[str] | None) -> list[str]:
     return sorted(set(matches))
 
 
-def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
+def _conversion_cache_path(
+    source: Path, fmt: str, out_fmt: str, *, labeled: bool = True
+) -> Path:
     source_resolved = source.resolve(strict=False)
     try:
         dpdata_version = importlib.metadata.version("dpdata")
@@ -137,7 +139,8 @@ def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
     digest = hashlib.sha256(
         (
             f"{source_resolved}|{fmt}|{out_fmt}|"
-            f"schema={_DPDATA_CONVERSION_SCHEMA_VERSION}|dpdata={dpdata_version}"
+            f"schema={_DPDATA_CONVERSION_SCHEMA_VERSION}|dpdata={dpdata_version}|"
+            f"labeled={labeled}"
         ).encode()
     ).hexdigest()[:16]
     stem = source_resolved.stem or source_resolved.name or "dataset"
@@ -461,7 +464,7 @@ def _remove_path(path: Path) -> None:
 
 
 def _publish_conversion_output(tmp_output: Path, output: Path) -> None:
-    """Publish a non-LMDB conversion without discarding a valid old cache."""
+    """Publish a staged conversion without discarding a valid old cache."""
     if not output.exists() or output.is_symlink() or not output.is_dir():
         os.replace(tmp_output, output)
         backup = output.with_name(f".{output.name}.backup")
@@ -483,15 +486,19 @@ def _publish_conversion_output(tmp_output: Path, output: Path) -> None:
 
 
 def _write_dpdata_conversion(
-    source: Path, fmt: str, out_fmt: str, output: Path
+    source: Path, fmt: str, out_fmt: str, output: Path, *, labeled: bool = True
 ) -> None:
     """Load *source* with dpdata and publish it in a DeePMD format.
 
     dpdata 1.1.0 makes ``deepmd/lmdb`` writes transactional: it stages and
     validates the complete database before atomically publishing it. Use that
-    writer directly so DeePMD-kit does not duplicate or weaken its overwrite
-    guarantees. Other dpdata formats do not share that contract, so they keep
-    the cache-level temporary output used for failure isolation.
+    writer directly on POSIX so DeePMD-kit does not weaken its overwrite
+    guarantees. Windows does not support that overwrite operation, so stage
+    a new LMDB and publish it with rollback, as for other output formats.
+
+    Loading is labeled unless explicitly disabled by the user. A failed
+    labeled read must never silently discard labels and cache unsupervised
+    data, even when an unlabeled reader would accept the same input.
     """
     try:
         import dpdata
@@ -504,29 +511,20 @@ def _write_dpdata_conversion(
 
     multi_systems = dpdata.MultiSystems()
     try:
-        multi_systems.load_systems_from_file(str(source), fmt=fmt)
-    except (NotImplementedError, ValueError) as labeled_error:
-        # dpdata 1.1 exposes an explicit unlabeled path. This matters for
-        # structure-only EXTXYZ/ASE inputs, which are valid descriptor data
-        # even though a supervised loss may later require labels.
-        unlabeled_systems = dpdata.MultiSystems()
+        multi_systems.load_systems_from_file(str(source), fmt=fmt, labeled=labeled)
+    except (NotImplementedError, ValueError) as load_error:
+        # Some formats implement the single-system reader but not the
+        # MultiSystems reader. Preserve the user's label contract here too.
+        system_class = dpdata.LabeledSystem if labeled else dpdata.System
         try:
-            unlabeled_systems.load_systems_from_file(
-                str(source), fmt=fmt, labeled=False
-            )
-        except (NotImplementedError, TypeError, ValueError):
-            try:
-                labeled_system = dpdata.LabeledSystem(str(source), fmt=fmt)
-            except Exception:
-                raise labeled_error from None
-            multi_systems = dpdata.MultiSystems(labeled_system)
-        else:
-            log.info("Loaded unlabeled dpdata input %s using format %s", source, fmt)
-            multi_systems = unlabeled_systems
+            system = system_class(str(source), fmt=fmt)
+        except Exception:
+            raise load_error from None
+        multi_systems = dpdata.MultiSystems(system)
     if len(multi_systems) == 0:
         raise RuntimeError(f"No frames were loaded by dpdata from {source}")
 
-    if _is_dpdata_lmdb_format(out_fmt):
+    if _is_dpdata_lmdb_format(out_fmt) and os.name != "nt":
         multi_systems.to(out_fmt, str(output), overwrite=True)
         return
 
@@ -546,6 +544,7 @@ def _convert_system_by_dpdata(
     out_fmt: str | None,
     *,
     expand_systems: Callable[[str], list[str]],
+    labeled: bool = True,
 ) -> list[str]:
     """Convert one source while keeping native discovery outside this module.
 
@@ -555,13 +554,14 @@ def _convert_system_by_dpdata(
     source = Path(source_path)
     fmt = _normalize_dpdata_format(fmt, source)
     out_fmt = _canonical_dpdata_out_format(out_fmt)
-    output = _conversion_cache_path(source, fmt, out_fmt)
+    output = _conversion_cache_path(source, fmt, out_fmt, labeled=labeled)
     _ensure_private_conversion_cache(output.parent)
     cache_key = (
         str(Path.cwd().resolve(strict=False)),
         str(source.resolve(strict=False)),
         fmt,
         out_fmt,
+        labeled,
         str(output),
     )
     cached_systems = _DPDATA_CONVERSION_CACHE.get(cache_key)
@@ -599,7 +599,9 @@ def _convert_system_by_dpdata(
                         # Invalidate before replacing output: a crash must never
                         # pair a new dataset with an older source manifest.
                         _conversion_manifest_path(output).unlink(missing_ok=True)
-                        _write_dpdata_conversion(source, fmt, out_fmt, output)
+                        _write_dpdata_conversion(
+                            source, fmt, out_fmt, output, labeled=labeled
+                        )
                         if signature != _source_signature(source, output):
                             raise RuntimeError(
                                 f"dpdata input changed during conversion: {source}. "

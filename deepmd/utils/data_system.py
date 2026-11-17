@@ -1420,6 +1420,7 @@ def process_systems(
     *,
     formats: tuple[DatasetFormat, ...] = ("deepmd", "lmdb"),
     root_dir: str | Path | None = None,
+    labeled: bool = True,
 ) -> list[str]:
     """Process the user-input systems.
 
@@ -1441,6 +1442,9 @@ def process_systems(
     out_fmt : str, optional
         The dpdata output format. If None, ``deepmd/lmdb`` is used when fmt
         triggers conversion.
+    labeled : bool, optional
+        Preserve labels during conversion, by default True. Set False only
+        to intentionally convert structure-only data.
 
     Returns
     -------
@@ -1455,6 +1459,7 @@ def process_systems(
         root_dir=root_dir,
         fmt=fmt,
         out_fmt=out_fmt,
+        labeled=labeled,
     )
 
 

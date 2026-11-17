@@ -1025,6 +1025,61 @@ class TestLmdbDataReader(unittest.TestCase):
             [indices.tolist() for indices in second_groups],
         )
 
+    def test_non_numeric_cells_are_unavailable(self):
+        """Raw grouping and decoded batches share the same absent-cell rule."""
+        invalid_array = np.array(["invalid"])
+        invalid_cells = [
+            None,
+            "invalid",
+            ["invalid"],
+            {
+                "type": str(invalid_array.dtype),
+                "shape": list(invalid_array.shape),
+                "data": invalid_array.tobytes(),
+            },
+        ]
+        for index, cell in enumerate(invalid_cells):
+            for field in ("cells", "box"):
+                with self.subTest(cell=cell, field=field):
+                    path = _create_lmdb(
+                        f"{self._tmpdir.name}/invalid_cell_{index}_{field}.lmdb",
+                        nframes=4,
+                        natoms=6,
+                    )
+                    with lmdb.open(path) as env, env.begin(write=True) as txn:
+                        key = b"000000000000"
+                        frame = msgpack.unpackb(txn.get(key), raw=False)
+                        frame.pop("cells")
+                        frame[field] = cell
+                        frame["find_box"] = 1.0
+                        txn.put(key, msgpack.packb(frame, use_bin_type=True))
+                    for cls in (LmdbDataReader, LmdbTestData):
+                        reader_options = (
+                            {"shuffle_test": False} if cls is LmdbTestData else {}
+                        )
+                        reader = cls(path, type_map=self._type_map, **reader_options)
+                        try:
+                            reader.add_data_requirement(
+                                [
+                                    DataRequirementItem(
+                                        "box", 9, atomic=False, must=False
+                                    )
+                                ]
+                            )
+                            groups = reader.availability_groups(np.arange(4))
+                            self.assertEqual(sorted(map(len, groups)), [1, 3])
+                            if cls is LmdbDataReader:
+                                batch = reader.decode_batch([0])
+                            else:
+                                self.assertFalse(reader.pbc)
+                                batch = reader.get_test_by_indices([0])
+                            self.assertEqual(float(batch["find_box"]), 0.0)
+                            self.assertTrue(
+                                batch["box"] is None or not np.any(batch["box"])
+                            )
+                        finally:
+                            reader.close()
+
     def test_availability_cache_depends_only_on_tracked_keys(self):
         """Repeated contracts reuse PBC scans; new optional labels repartition."""
         path = _create_lmdb(

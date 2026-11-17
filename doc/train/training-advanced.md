@@ -55,7 +55,7 @@ The sections {ref}`training_data <training/training_data>` and {ref}`validation_
 - {ref}`systems <training/training_data/systems>` provide paths of the training data systems. DeePMD-kit allows you to provide multiple systems with different numbers of atoms. This key can be a `list` or a `str`.
   - `str`: {ref}`systems <training/training_data/systems>` should be a valid path. It can be a system directory path (containing 'type.raw'), a DeePMD HDF5 container or group, or a parent directory path to recursively search for all system subdirectories.
   - `list`: {ref}`systems <training/training_data/systems>` gives a list of paths. Each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories.
-  - The PyTorch and PyTorch Exportable backends also accept LMDB paths, lists of LMDB paths, and parent directories containing LMDB datasets. An LMDB dataset is terminal: discovery does not inspect its contents as additional datasets. NPY and LMDB sources may appear in the same group. Other backends discover DeePMD NPY/HDF5 systems only.
+  - All backends except Paddle also accept LMDB paths, lists of LMDB paths, and parent directories containing LMDB datasets. An LMDB dataset is terminal: discovery does not inspect its contents as additional datasets. NPY and LMDB sources may appear in the same group subject to the mixed-type constraints below.
 - At each training step, DeePMD-kit randomly picks {ref}`batch_size <training/training_data/batch_size>` frame(s) from one of the systems. The probability of using a system is by default in proportion to the number of batches in the system. More options are available for automatically determining the probability of using systems. One can set the key {ref}`auto_prob <training/training_data/auto_prob>` to
   - `"prob_uniform"` each retained system supplies the same long-run share of sampled frames. Batch-selection probabilities account for the number of frames returned per batch.
   - `"prob_sys_size"` the probability of using a system is proportional to its number of batches.
@@ -147,6 +147,19 @@ For a group containing exactly one LMDB, `auto_prob` addresses that LMDB's inter
 
 If a group expands to multiple sources and includes LMDB, `auto_prob` can be `"prob_sys_size"` (the default) or `"prob_uniform"`, and `sys_probs` must be omitted. Custom block rules still require a single LMDB because their system indices are local to that dataset. To assign source weights or configure different block rules, put each LMDB in a separate group. Existing dictionary configurations, NPY `sys_probs`, and single-LMDB block rules remain supported.
 
+The TensorFlow, TensorFlow 2, JAX, and PyTorch Exportable shared data adapters
+require all retained sources of a training or validation dataset to agree on
+`mixed_type`, even across separate groups. LMDB always uses mixed-type batches.
+When combining LMDB with NPY/HDF5 on these backends, use the NPY/HDF5 mixed-type
+representation (`set.NNN/real_atom_types.npy`); fixed composition can still be
+represented this way by repeating each frame's atom types. Alternatively,
+convert all sources to LMDB, or convert the LMDB to fixed-type NPY/HDF5 and use
+only fixed-type sources. Separate groups control sampling, not this statistics
+invariant. `filter:N` removes oversized NPY/HDF5 systems before this check.
+The PyTorch backend's native data loader can combine fixed-type NPY/HDF5 and
+LMDB directly. TensorFlow additionally requires a mixed-type-capable descriptor
+such as `se_atten` for LMDB.
+
 For `"prob_uniform"`, each NPY/HDF5 system and each nonempty internal LMDB system counts once after `filter:N` is applied. An LMDB without internal system identifiers counts as one system. The rule is independent of how systems are split among LMDB files: systems containing 100 and 900 frames each supply half the sampled frames. LMDB sampling balances the internal frame counts before applying the native batch packing; `mix:N` continues to combine systems. Source-selection weights also correct for differing batch frame counts. Uniform frame shares do not imply equal contributions to each batch or to the loss, and subsequent geometric frame rejection can change the retained training shares.
 
 For an LMDB containing `N` retained frames in `M` nonempty systems, a uniform sampling pass draws `ceil(N / M)` frames from each system. Before distributed batch padding, the pass therefore contains fewer than `N + M` frame indices, rather than scaling with the largest system. Larger systems contribute a random subset without replacement; smaller systems retain their frames and repeat them to fill their quota. A pass need not visit every frame of a larger system. Subsets change with the sampler epoch and remain reproducible from its seed. `numb_epoch` and omitted outer-group probabilities use the resulting native batch counts; an explicit outer `prob` is unchanged. Custom block rules retain their existing non-shrinking targets.
@@ -162,6 +175,14 @@ Set `format` on a training or validation data group to a dpdata format such as
 cached separately; `out_format` defaults to `deepmd/lmdb`. LMDB requires an
 explicit model `type_map`. Paddle, data modifiers, and explicit `sys_probs`
 require another output format such as `deepmd/hdf5`.
+
+Conversion preserves labels by default (`labeled: true`). A failed labeled
+read is an error, not a reason to retry without labels: partially labeled
+trajectories must be repaired or converted offline with an explicit missing-label
+policy. Set `labeled: false` only when intentionally loading structure-only
+inputs; it discards all labels and cannot supply a supervised loss. The two
+modes use separate cache entries, and older caches created by the implicit
+unlabeled fallback are not reused.
 
 Automatic conversion loads each input path eagerly through dpdata. Its supported
 scale is limited to inputs whose parsed arrays **and intermediate copies fit in

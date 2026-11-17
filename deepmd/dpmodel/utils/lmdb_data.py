@@ -404,7 +404,7 @@ def _raw_frame_availability(
         else:
             bit = key_bits.get(name)
             if bit is not None and (
-                name != "box" or not np.allclose(_decode_value(value), 0.0)
+                name != "box" or _frame_source_available({"box": value}, "box")
             ):
                 present |= bit
     return present & (~explicit_known | explicit_true)
@@ -779,7 +779,8 @@ def _frame_source_available(frame: dict[str, Any], key: str) -> bool:
         # A zero cell is DeePMD's non-periodic sentinel, not an available
         # periodic box. Treating it as present would mix PBC and non-PBC
         # frames under one scalar find_box flag.
-        source_present = not np.allclose(_decode_value(value), 0.0)
+        cell = np.asarray(_decode_value(value))
+        source_present = cell.dtype.kind in "biufc" and not np.allclose(cell, 0.0)
     find_key = f"find_{key}"
     if find_key in frame:
         return source_present and bool(
@@ -1042,6 +1043,10 @@ def decode_lmdb_frame(
     for metadata_key in ("atom_numbs", "atom_names", "orig"):
         frame.pop(metadata_key, None)
 
+    if "box" in frame and not _frame_source_available(frame, "box"):
+        # Normalize null/invalid cells before numeric reshaping or derived
+        # geometry. Collators turn this zero-cell sentinel into box=None.
+        frame["box"] = np.zeros(9, dtype=_resolve_frame_dtype(config, "box"))
     if "coord" in frame and isinstance(frame["coord"], np.ndarray):
         frame["coord"] = (
             frame["coord"]
@@ -4181,8 +4186,7 @@ def make_neighbor_stat_data(
             box = frame.get("box")
             # Neighbor kernels also use one PBC flag per source. Partition the
             # actual sampled frames, including zero-cell nonperiodic sentinels.
-            pbc = box is not None and not np.allclose(box, 0.0)
-            pbc = pbc and bool(frame.get("find_box", 1.0))
+            pbc = _frame_source_available(frame, "box")
             nloc_frames.setdefault((nloc, pbc), []).append(
                 (frame["coord"], atype, box if pbc else None)
             )
@@ -4286,8 +4290,7 @@ class LmdbTestData:
                 raw = transaction.get(format(first, self._frame_fmt).encode())
             if raw is not None:
                 frame = _remap_keys(msgpack.unpackb(raw, raw=False))
-                box = _decode_value(frame.get("box"), copy_arrays=False)
-                self.pbc = isinstance(box, np.ndarray) and not np.allclose(box, 0.0)
+                self.pbc = _frame_source_available(frame, "box")
 
         self.mixed_type = True
 
