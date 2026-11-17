@@ -104,8 +104,11 @@ def _make_descriptor(
         random_gamma=False,
         precision=precision,
         seed=7,
-        inner_clamp_r_inner=0.8 if source_gated else None,
-        inner_clamp_r_outer=1.2 if source_gated else None,
+        # The absolute scale gives every pair the unit length scale, so the two
+        # fractions are the window radii in Å.
+        inner_clamp_f_inner=0.8 if source_gated else None,
+        inner_clamp_f_outer=1.2 if source_gated else None,
+        inner_clamp_scale="absolute",
     )
 
 
@@ -303,8 +306,15 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(output.sum(), coord)[0]
         return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
-    def test_source_gated_flash_retains_dense_rotations(self, monkeypatch) -> None:
-        """Source-gated flash inference retains the rotations its fallback uses."""
+    def test_source_gated_inference_takes_the_fused_convolution(
+        self, monkeypatch
+    ) -> None:
+        """A bridged descriptor runs the fused convolution and matches the dense path.
+
+        The source gate is folded into the edge envelope, so the fused
+        convolution and the flash attention see it through the one factor they
+        already weight by, and the dense per-edge rotations are not built.
+        """
         if not cuda_infer_available():
             pytest.skip("the DPA4 CUDA inference operators are unavailable")
         if not SO2_VALUE_PATH_TRITON_AVAILABLE:
@@ -332,8 +342,8 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
             pytest.skip("the descriptor layout has no fused CUDA convolution")
         assert conv._flash_atten_fn is not None
         assert conv._cuda_value_train is None
-        assert not accelerated._wigner_free_conv
-        assert accelerated._build_full_wigner()
+        assert accelerated._wigner_free_conv
+        assert not accelerated._build_full_wigner()
 
         output, gradient = self._inference_step(accelerated)
         np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)

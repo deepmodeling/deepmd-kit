@@ -355,15 +355,24 @@ canonical_edge_force_virial(torch::Tensor edge_gradient,
                             bool want_atom_virial) {
   TORCH_CHECK(edge_gradient.device().is_cpu(),
               "canonical_edge_force_virial: the CPU kernel needs CPU tensors");
+  const int64_t node_count = node_capacity.expect_int();
+  TORCH_CHECK(destination_row_ptr.numel() == node_count + 1 &&
+                  source_row_ptr.numel() == node_count + 1,
+              "canonical_edge_force_virial: row pointers must have N + 1 "
+              "entries");
+  TORCH_CHECK(
+      source_order.dim() == 1 && source_order.numel() == edge_gradient.size(0),
+      "canonical_edge_force_virial: source_order must hold one "
+      "position per edge slot, expected ",
+      edge_gradient.size(0), ", got ", source_order.numel());
   const auto empty_index = torch::empty({0}, source_order.options());
   const auto empty_mask =
       torch::empty({0}, edge_gradient.options().dtype(torch::kBool));
-  return assemble_entry(node_capacity.expect_int(), edge_gradient.contiguous(),
-                        edge_vec.contiguous(), empty_mask, empty_index,
-                        destination_row_ptr.contiguous(),
-                        source_order.contiguous(), source_row_ptr.contiguous(),
-                        n_node_per_frame, edge_spin_gradient.contiguous(),
-                        want_atom_virial);
+  return assemble_entry(
+      node_count, edge_gradient.contiguous(), edge_vec.contiguous(), empty_mask,
+      empty_index, destination_row_ptr.contiguous(), source_order.contiguous(),
+      source_row_ptr.contiguous(), n_node_per_frame,
+      edge_spin_gradient.contiguous(), want_atom_virial);
 }
 
 torch::Tensor frame_scalar_sum(torch::Tensor node_scalar,

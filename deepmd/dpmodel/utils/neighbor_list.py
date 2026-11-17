@@ -63,8 +63,9 @@ class NeighborList:
     Implementations turn local coordinates into the extended representation: the
     coordinates and atom types of local-plus-ghost (periodic-image) atoms, a
     candidate neighbor list indexing the extended atoms, and a mapping from each
-    extended atom to its local owner.  Implementations are stateless --
-    ``rcut``/``sel`` are supplied by the model at call time.
+    extended atom to its local owner. Implementations may retain search storage
+    and neighbor candidates, while ``rcut``/``sel`` are supplied by the model at
+    call time. Returned geometry always describes the current coordinates.
     """
 
     def build(

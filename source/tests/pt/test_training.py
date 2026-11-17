@@ -111,6 +111,10 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
     """Verify statistics use the training minimum-distance frame semantics."""
 
     def test_min_pair_dist_filters_every_frame_aligned_tensor(self) -> None:
+        # The field holds margins against each frame's own pair thresholds, so
+        # the verdict is a comparison against one. Both margins clear the
+        # configured window radius of 0.8, which is therefore no threshold of
+        # its own: a filter that compared against it would keep both frames.
         batch = {
             "coord": torch.arange(18, dtype=torch.float64, device="cpu").reshape(
                 2, 3, 3
@@ -122,9 +126,10 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
                 [[1000.0], [2.0]], dtype=torch.float64, device="cpu"
             ),
             "natoms": torch.tensor([[3, 3, 2, 1], [3, 3, 1, 2]], device="cpu"),
-            "min_pair_dist": torch.tensor(
-                [[0.5], [1.0]], dtype=torch.float64, device="cpu"
+            "pair_margin": torch.tensor(
+                [[0.9], [1.2]], dtype=torch.float64, device="cpu"
             ),
+            "find_pair_margin": np.float32(1.0),
             "fid": ["rejected", "accepted"],
             "find_energy": np.float32(1.0),
         }
@@ -149,12 +154,16 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
         )
 
     def test_min_pair_dist_skips_system_without_valid_frames(self) -> None:
+        # The only frame falls short of a margin of one while still clearing
+        # the configured window radius, so a filter reading that radius as a
+        # threshold would keep the system instead of skipping it.
         batch = {
             "coord": torch.zeros(1, 2, 3, device="cpu"),
             "atype": torch.zeros(1, 2, dtype=torch.long, device="cpu"),
             "energy": torch.zeros(1, 1, device="cpu"),
             "natoms": torch.tensor([[2, 2, 2]], device="cpu"),
-            "min_pair_dist": torch.tensor([[0.5]], device="cpu"),
+            "pair_margin": torch.tensor([[0.9]], device="cpu"),
+            "find_pair_margin": np.float32(1.0),
             "find_energy": np.float32(1.0),
         }
         sampled = make_stat_input(
@@ -171,21 +180,34 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
         def mark_remote_rank_empty(
             valid_flag: torch.Tensor,
             op: Any,
+            group: Any,
         ) -> None:
             self.assertEqual(op, torch.distributed.ReduceOp.MIN)
+            self.assertFalse(valid_flag.is_cuda)
             valid_flag.zero_()
 
-        with patch(
-            "deepmd.pt.train.training.dist.all_reduce",
-            side_effect=mark_remote_rank_empty,
+        # The agreement travels over a dedicated CPU process group, which only
+        # exists once distributed training is initialized; stubbing the lookup
+        # keeps the MIN decision itself under test without a live group.
+        with (
+            patch(
+                "deepmd.pt.train.training.dist.all_reduce",
+                side_effect=mark_remote_rank_empty,
+            ),
+            patch("deepmd.pt.train.training._validity_group", return_value=None),
         ):
             self.assertFalse(all_ranks_have_valid_frames(local_has_valid=True))
 
 
 class DPTrainTest:
     test_zbl_from_standard: bool = False
+    stat_nbatch: int = 2
 
     def test_dp_train(self) -> None:
+        # Keep multi-batch statistics without repeating sampling for finetuning.
+        self.config["model"]["data_stat_nbatch"] = self.stat_nbatch
+        if self.test_zbl_from_standard:
+            self.config_zbl["model"]["data_stat_nbatch"] = self.stat_nbatch
         # test training from scratch
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
@@ -289,6 +311,7 @@ class DPTrainTest:
 
     def test_trainable(self) -> None:
         fix_params = deepcopy(self.config)
+        fix_params["model"]["data_stat_nbatch"] = self.stat_nbatch
         fix_params["model"]["descriptor"]["trainable"] = False
         fix_params["model"]["fitting_net"]["trainable"] = False
         free_descriptor = hasattr(self, "not_all_grad") and self.not_all_grad
@@ -429,6 +452,9 @@ class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
 
 class TestFparam(unittest.TestCase, DPTrainTest):
     """Test if `fparam` can be loaded correctly."""
+
+    # Preserve full-dataset sampling for the fparam normalization transfer test.
+    stat_nbatch = 100
 
     def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
@@ -933,6 +959,18 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
         )
 
 
+def _small_control_flow_model() -> dict:
+    """Keep real energy/force training cheap for checkpoint and schedule tests."""
+    model = deepcopy(model_se_e2_a)
+    model["descriptor"]["neuron"] = [4, 8]
+    model["descriptor"]["axis_neuron"] = 4
+    model["fitting_net"]["neuron"] = [8, 8]
+    # Exercise statistics on multiple batches without sampling twenty batches
+    # for tests whose assertions concern training control flow, not accuracy.
+    model["data_stat_nbatch"] = 2
+    return model
+
+
 class TestLearningRateRestart(unittest.TestCase):
     def setUp(self) -> None:
         self._cwd = os.getcwd()
@@ -945,7 +983,7 @@ class TestLearningRateRestart(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"] = _small_control_flow_model()
         self.config["learning_rate"] = {
             "type": "wsd",
             "start_lr": 5e-4,
@@ -1007,7 +1045,7 @@ class TestFullValidation(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"] = _small_control_flow_model()
         self.config["training"]["numb_steps"] = 4
         self.config["training"]["save_freq"] = 100
         self.config["training"]["disp_training"] = False
@@ -1024,6 +1062,37 @@ class TestFullValidation(unittest.TestCase):
     def tearDown(self) -> None:
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_rejects_prior_nonfinite_gradient(
+        self, mocked_eval
+    ) -> None:
+        mocked_eval.return_value = {"mae_e_per_atom": 1.0}
+        for ema in (False, True):
+            with self.subTest(ema=ema):
+                config = deepcopy(self.config)
+                config["training"]["enable_ema"] = True
+                config["validating"]["full_validation"] = not ema
+                config["validating"]["ema_full_validation"] = ema
+                trainer = get_trainer(config)
+                validator = (
+                    trainer.ema_full_validator if ema else trainer.full_validator
+                )
+                previous_state = deepcopy(validator.state_store)
+                trainer.nonfinite_grad_guard.update(
+                    torch.tensor(float("nan"), device="cpu")
+                )
+                trainer.nonfinite_grad_guard.update(torch.tensor(1.0, device="cpu"))
+                with (
+                    patch("torch.save", wraps=torch.save) as serialize,
+                    self.assertRaisesRegex(RuntimeError, "Non-finite gradient norm"),
+                ):
+                    trainer.run()
+                serialize.assert_not_called()
+                self.assertEqual(validator.state_store, previous_state)
+                self.assertEqual(validator.topk_records, [])
+                self.assertEqual(list(Path(".").glob("*.pt")), [])
 
     @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
@@ -1208,7 +1277,7 @@ class TestSkippedTrainingBatch(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"] = _small_control_flow_model()
         self.config["training"]["numb_steps"] = 2
         self.config["training"]["save_freq"] = 2
         self.config["training"]["disp_training"] = False
@@ -1250,15 +1319,11 @@ class TestSkippedTrainingBatch(unittest.TestCase):
 
 class TestEMATraining(unittest.TestCase):
     def setUp(self) -> None:
-        import deepmd.pt.train.training as training_module
         import deepmd.pt.utils.env as env_module
 
-        self._num_workers_state = (
-            (env_module, env_module.NUM_WORKERS),
-            (training_module, training_module.NUM_WORKERS),
-        )
+        self._num_workers_state = env_module.NUM_WORKERS
+        self.addCleanup(setattr, env_module, "NUM_WORKERS", self._num_workers_state)
         env_module.NUM_WORKERS = 0
-        training_module.NUM_WORKERS = 0
         self._cwd = os.getcwd()
         self._tmpdir = tempfile.TemporaryDirectory()
         os.chdir(self._tmpdir.name)
@@ -1269,7 +1334,7 @@ class TestEMATraining(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"] = _small_control_flow_model()
         self.config["training"]["numb_steps"] = 4
         self.config["training"]["save_freq"] = 1
         self.config["training"]["max_ckpt_keep"] = 3
@@ -1289,8 +1354,6 @@ class TestEMATraining(unittest.TestCase):
         }
 
     def tearDown(self) -> None:
-        for module, num_workers in self._num_workers_state:
-            module.NUM_WORKERS = num_workers
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 

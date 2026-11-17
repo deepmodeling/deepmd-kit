@@ -241,6 +241,8 @@ class InvarFitting(GeneralFitting):
         fparam: Array | None = None,
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
+        node_gate: Array | None = None,
+        return_middle_output: bool = False,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -266,6 +268,13 @@ class InvarFitting(GeneralFitting):
         vacuum_descriptor
             The descriptor of an isolated atom of every type, required by
             ``vacuum_ref``. shape: ntypes x nd
+        node_gate
+            Per-atom source gate of a bridged descriptor; the learned part of
+            the output fades with it. shape: nf x nloc x 1
+        return_middle_output
+            Whether this call also returns the input of the output layer, the
+            activation after the last hidden layer, under the
+            ``middle_output`` key.
 
         """
         return self._call_common(
@@ -277,4 +286,6 @@ class InvarFitting(GeneralFitting):
             fparam,
             aparam,
             vacuum_descriptor=vacuum_descriptor,
+            node_gate=node_gate,
+            return_middle_output=return_middle_output,
         )

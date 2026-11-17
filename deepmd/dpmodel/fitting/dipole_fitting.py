@@ -214,6 +214,7 @@ class DipoleFitting(GeneralFitting):
         h2: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        return_middle_output: bool = False,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -236,13 +237,26 @@ class DipoleFitting(GeneralFitting):
             The frame parameter. shape: nf x nfp. nfp being `numb_fparam`
         aparam
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
+        return_middle_output
+            Whether this call also returns the input of the output layer, the
+            activation after the last hidden layer, under the
+            ``middle_output`` key.
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # (nframes, nloc, m1)
-        results = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        results = self._call_common(
+            descriptor,
+            atype,
+            gr,
+            g2,
+            h2,
+            fparam,
+            aparam,
+            return_middle_output=return_middle_output,
+        )
         out = results[self.var_name]
         # (nframes * nloc, 1, m1)
         out = xp.reshape(out, (-1, 1, self.embedding_width))

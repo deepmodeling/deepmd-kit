@@ -285,7 +285,7 @@ def test_call_graph_supports_an_empty_edge_list() -> None:
             edge_vec=wrap_tensor(edge_vec),
             edge_mask=wrap_tensor(edge_mask),
         )
-        descrpt, _ = descriptor.call_graph(graph, wrap_tensor(atype))
+        descrpt, _, _ = descriptor.call_graph(graph, wrap_tensor(atype))
         return to_tf_tensor(descrpt)
 
     args = (

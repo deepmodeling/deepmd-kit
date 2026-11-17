@@ -1,10 +1,16 @@
 # Install LAMMPS
 
 An AI agent can build LAMMPS with the DeePMD-kit module and Kokkos. DPA4/SeZM
-uses `pair_style deepmd/kk`; DPA4C uses `pair_style dpa4spin/kk`. See
-[Install with an AI agent](install-with-agent.md).
+and DPA4C use `pair_style deepmd/kk`; compressed native-spin DPA4C models use
+`pair_style dpa4spin/kk`. See [Install with an AI agent](install-with-agent.md).
 
 There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library.
+
+For `dpa4spin/kk`, use LAMMPS 4 Jul 2026 or newer in place of the 2025 release
+shown in the examples below. Configure both LAMMPS and the DeePMD-kit plugin
+with `CMAKE_CXX_STANDARD=20`, and build the plugin against that same LAMMPS
+source and Kokkos build. This requirement does not apply to the host
+`dpa4spin` pair style.
 
 ## Install LAMMPS's DeePMD-kit module (built-in mode)
 
@@ -84,8 +90,8 @@ make -j4
 make install
 ```
 
-To build the GPU-resident `pair_style deepmd/kk`, enable the LAMMPS Kokkos
-package. The pair style uses the DeePMD C API:
+To build the GPU-resident pair styles `deepmd/kk` and `dpa4spin/kk`, enable the
+LAMMPS Kokkos package. The pair styles use the DeePMD C API:
 
 ```bash
 cmake -D PKG_KOKKOS=ON \
@@ -129,9 +135,9 @@ make install
 
 Configure LAMMPS with `PKG_KOKKOS=ON`, then configure the DeePMD plugin with
 `DEEPMD_LAMMPS_KOKKOS=ON` and `Kokkos_DIR` pointing to the Kokkos package
-exported by the LAMMPS build. This registers the GPU-resident
-`pair_style deepmd/kk`; the plugin and built-in integrations use the same C API
-device-graph interface.
+exported by the LAMMPS build. This registers the GPU-resident pair styles
+`deepmd/kk` and `dpa4spin/kk`; the plugin and built-in integrations use the same
+C API device-graph interface.
 
 If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 
@@ -145,3 +151,31 @@ ${deepmd_root}/bin/lmp -h
 > ```sh
 > patchelf --add-rpath "${tensorflow_root}/lib" liblammps.so
 > ```
+
+## MPI for runs on several GPUs
+
+With the KOKKOS package, each MPI rank of LAMMPS uses one GPU and keeps its atom data in GPU memory, and the ranks exchange atom data at every step. Build LAMMPS and the DeePMD-kit C++ interface against the same MPI library, one that can access GPU memory (CUDA-aware MPI), such as Open MPI with UCX. When LAMMPS detects an MPI library without CUDA support, such as the MPICH package of conda-forge, it turns GPU-aware communication off and copies the positions and forces through host memory at every step. An MPI library that LAMMPS cannot identify is assumed to support CUDA; if it does not, run LAMMPS with `-pk kokkos gpu/aware off`.
+
+The Open MPI package of conda-forge is built with CUDA support but disables it by default; `ompi_info --all | grep opal_built_with_cuda_support` shows whether an Open MPI installation was built with it. Install the package in an environment of its own:
+
+```bash
+conda create -n openmpi -c conda-forge openmpi ucx
+```
+
+Configure LAMMPS and the DeePMD-kit C++ interface in new build directories with both compiler wrappers of that environment, `-D MPI_C_COMPILER=${mpi_root}/bin/mpicc -D MPI_CXX_COMPILER=${mpi_root}/bin/mpicxx`, where `${mpi_root}` is its prefix; CMake finds the MPI of each language separately. Launch a run on several GPUs with the `mpirun` of that installation:
+
+```bash
+mpirun --mca opal_cuda_support 1 --mca pml ucx -x UCX_MEMTYPE_CACHE=n -np 2 lmp -k on g 2 -sf kk -in in.lammps
+```
+
+The first option enables the CUDA support of Open MPI for the launch. The second selects UCX, which moves GPU buffers between the GPUs directly; Open MPI selects it by itself only on a node with an InfiniBand or RoCE adapter, and elsewhere, such as in a virtual machine without one, copies GPU buffers through host memory, which makes runs on several GPUs much slower. With `UCX_MEMTYPE_CACHE=n`, UCX queries the memory type of every buffer instead of taking it from a cache that can report a GPU buffer as host memory and make UCX abort.
+
+On a node with an InfiniBand or RoCE adapter, UCX may split every large message between two GPUs of the node across the direct GPU-to-GPU path and the adapter, whose share is far slower and holds up the whole message. Two more options keep each message on a single path, which the GPUs write directly:
+
+```bash
+mpirun --mca opal_cuda_support 1 --mca pml ucx -x UCX_MEMTYPE_CACHE=n -x UCX_MAX_RNDV_RAILS=1 -x UCX_RNDV_SCHEME=put_zcopy -np 4 lmp -k on g 4 -sf kk -in in.lammps
+```
+
+Models of several message-passing blocks exchange atom features at every block of every step and gain the most from them.
+
+Launch a run on a single MPI rank without these options: it exchanges no atom data, and the CUDA support of the MPI library slows the steps of a small system down noticeably.

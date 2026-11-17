@@ -44,7 +44,11 @@ from __future__ import (
     annotations,
 )
 
+from functools import (
+    cache,
+)
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -60,6 +64,13 @@ from torch.library import (
 )
 
 _Shape = tuple[int | torch.SymInt, ...]
+_ShapeKey = tuple[str, int, int, int, int, bool, int, torch.dtype]
+_LaunchConfig = tuple[int, int, int]
+
+if TYPE_CHECKING:
+    from triton.runtime.jit import (
+        JITFunction,
+    )
 
 __all__ = [
     "GRID_PAIR_TRITON_AVAILABLE",
@@ -879,8 +890,6 @@ def _unpack(value: Tensor, shape: _Shape, n_frames: int) -> Tensor:
     )
 
 
-_LAUNCH_CACHE: dict[tuple, tuple[int, int, int]] = {}
-
 # Exact production-shape winners on RTX PRO 6000 Blackwell.  The grid-pair
 # kernels hold one, two or three ``(P_PAD, C_BLK)`` accumulator tiles, so the
 # best channel width and grid tile change independently across differentiation
@@ -1002,54 +1011,123 @@ _BLACKWELL_LAUNCH_CONFIGS = {
 
 
 def _built_in_launch_config(
-    device_name: str, shape_key: tuple
-) -> tuple[int, int, int] | None:
+    device_name: str, shape_key: _ShapeKey
+) -> _LaunchConfig | None:
     """Return the built-in launch for one exact grid-pair shape."""
     if device_name.startswith("NVIDIA RTX PRO 6000 Blackwell"):
         return _BLACKWELL_LAUNCH_CONFIGS.get(shape_key)
     return None
 
 
-def _launch(
-    kernel,
-    value: Tensor,
-    n_grid: int,
-    n_frames: int,
-    packed: bool,
-    args: tuple,
-    n_acc: int,
-) -> None:
-    """Launch with the largest tile the register and shared budgets admit.
-
-    The channel block is capped so the ``n_acc`` fp32 accumulator tiles
-    ``(P_PAD, C_BLK)`` stay register-resident (a spilled accumulator is
-    read-modify-written through local memory once per grid block, which
-    dominated the three-accumulator second-order kernel before the cap).
-    The exact shared footprint additionally depends on Triton's internal
-    staging (dot operand buffers, transpose scratch), so candidates are
-    tried from the most to the least aggressive and the first that compiles
-    is cached per device and exact operator shape.  Swept built-in launches
-    take precedence where available and fall back to the same compile search
-    if a later Triton version rejects one.
-    """
-    n_batch = value.shape[0]
-    # The leading pair count follows the workload. The trailing coefficient
-    # layout and projector size define the Triton tile geometry and remain
-    # kernel-specialized.
-    n_grid = guard_int(n_grid)
-    n_frames = guard_int(n_frames)
-    coeff_dim, n_focus, packed_channels = (guard_int(size) for size in value.shape[1:])
-    n_pair = n_batch * n_focus
-    p_dim = coeff_dim * n_frames
-    c_per = packed_channels // n_frames
+def _slot_partition(p_dim: int) -> tuple[int, int]:
+    """Split the coefficient axis into power-of-two contraction tiles."""
     # The slot axis is covered by the largest power of two below the count
     # plus an optional low segment for the remainder, so 147 (degree six)
     # pads to 128 + 32 and 75 (degree four) to 64 + 16 instead of the next
     # power of two. The high segment keeps the tensor-core minimum of 16.
     p_hi = max(16, 1 << (p_dim.bit_length() - 1))
     p_lo = max(16, _next_pow2(p_dim - p_hi)) if p_dim > p_hi else 0
+    return p_hi, p_lo
+
+
+def _launch_kwargs(
+    shape_key: _ShapeKey, config: _LaunchConfig
+) -> dict[str, int | bool]:
+    """Share static geometry and tile parameters between validation and execution."""
+    _, p_dim, c_per, n_focus, n_frames, packed, n_grid, _ = shape_key
+    p_hi, p_lo = _slot_partition(p_dim)
+    c_blk, block_g, stages = config
+    return {
+        "n_grid": n_grid,
+        "PACKED": packed,
+        "N_FOCUS": n_focus,
+        "N_FRAMES": n_frames,
+        "P_DIM": p_dim,
+        "P_HI": p_hi,
+        "P_LO": p_lo,
+        "C_ALL": c_per,
+        "C_BLK": c_blk,
+        "ALLOW_TF32": False,
+        "BLOCK_G": block_g,
+        "num_warps": 8 if c_blk >= 64 else 4,
+        "num_stages": stages,
+    }
+
+
+@cache
+def _select_launch_config(
+    kernel: JITFunction,
+    device: torch.device,
+    shape_key: _ShapeKey,
+    signature: tuple[torch.dtype | int, ...],
+    n_acc: int,
+) -> _LaunchConfig | None:
+    """Compile and load candidates without allocating or executing their inputs.
+
+    Tile resources depend on the static coefficient geometry and operand
+    dtypes. The leading pair count and physical strides only address rows;
+    their non-unit placeholders avoid specializing a dynamic batch size.
+    Triton's ``warmup`` accepts dtypes in place of tensor operands and
+    compiles the real device binary without dereferencing a pointer. Loading
+    its handles checks the device's resource limits before a configuration
+    enters the cache or a traced graph. Fake-tensor tracing therefore makes
+    the same choice as eager execution.
+
+    The probe admits a tile configuration, not a byte-identical runtime binary.
+    Scalar and pointer-alignment specialization of the actual launch can still
+    produce a separate compiled artifact.
+
+    The channel cap keeps the ``n_acc`` fp32 accumulator tiles register
+    resident. Exact shared-memory requirements are checked by Triton, whose
+    staging and transpose storage depend on the compiler and target device.
+    A swept configuration has priority but must pass the same validation.
+    ``None`` records that the reference composition must serve this layout.
+    """
+    _, p_dim, c_per, *_ = shape_key
+    p_hi, p_lo = _slot_partition(p_dim)
     p_eff = p_hi + p_lo
     c_top = min(64, _next_pow2(c_per), max(16, _next_pow2(4096 // (n_acc * p_eff))))
+    preferred = _built_in_launch_config(torch.cuda.get_device_name(device), shape_key)
+    candidates = [
+        (c_blk, block_g, stages)
+        for c_blk in (c_top, 32, 16)
+        if c_blk <= c_top
+        for block_g, stages in ((64, 2), (32, 2), (32, 1), (16, 1))
+    ]
+    if preferred is not None:
+        candidates.insert(0, preferred)
+    with torch.cuda.device(device):
+        for config in dict.fromkeys(candidates):
+            try:
+                compiled = kernel.warmup(
+                    *signature,
+                    2,
+                    grid=(1, 1),
+                    **_launch_kwargs(shape_key, config),
+                )
+                compiled._init_handles()
+            except triton.runtime.errors.OutOfResources:
+                continue
+            return config
+    return None
+
+
+def _launch(
+    kernel: JITFunction,
+    value: Tensor,
+    n_grid: int,
+    n_frames: int,
+    packed: bool,
+    args: tuple[Tensor | int | torch.SymInt, ...],
+    n_acc: int,
+) -> None:
+    """Record or execute a launch whose tile has passed device validation."""
+    n_grid = guard_int(n_grid)
+    n_frames = guard_int(n_frames)
+    coeff_dim, n_focus, packed_channels = (guard_int(size) for size in value.shape[1:])
+    n_pair = value.shape[0] * n_focus
+    p_dim = coeff_dim * n_frames
+    c_per = packed_channels // n_frames
     shape_key = (
         kernel.fn.__name__,
         p_dim,
@@ -1060,48 +1138,13 @@ def _launch(
         n_grid,
         value.dtype,
     )
-    device_name = torch.cuda.get_device_name(value.device)
-    key = (device_name, *shape_key)
-    generic_candidates = [
-        (c_blk, block_g, stages)
-        for c_blk in (c_top, 32, 16)
-        if c_blk <= c_top
-        for block_g, stages in ((64, 2), (32, 2), (32, 1), (16, 1))
-    ]
-    if key in _LAUNCH_CACHE:
-        candidates = [_LAUNCH_CACHE[key]]
-    else:
-        built_in = _built_in_launch_config(device_name, shape_key)
-        candidates = (
-            generic_candidates
-            if built_in is None
-            else [built_in, *(cfg for cfg in generic_candidates if cfg != built_in)]
-        )
-    for c_blk, block_g, stages in candidates:
-        grid = (n_pair, (c_per + c_blk - 1) // c_blk)
-        try:
-            wrap_triton(kernel)[grid](
-                *args,
-                n_pair,
-                n_grid=n_grid,
-                PACKED=packed,
-                N_FOCUS=n_focus,
-                N_FRAMES=n_frames,
-                P_DIM=p_dim,
-                P_HI=p_hi,
-                P_LO=p_lo,
-                C_ALL=c_per,
-                C_BLK=c_blk,
-                ALLOW_TF32=False,
-                BLOCK_G=block_g,
-                num_warps=8 if c_blk >= 64 else 4,
-                num_stages=stages,
-            )
-        except triton.runtime.errors.OutOfResources:
-            continue
-        _LAUNCH_CACHE[key] = (c_blk, block_g, stages)
-        return
-    raise _NoViableConfig(p_dim, c_per)
+    signature = tuple(arg.dtype if isinstance(arg, Tensor) else 2 for arg in args)
+    config = _select_launch_config(kernel, value.device, shape_key, signature, n_acc)
+    if config is None:
+        raise _NoViableConfig(p_dim, c_per)
+    c_blk = config[0]
+    grid = (n_pair, (c_per + c_blk - 1) // c_blk)
+    wrap_triton(kernel)[grid](*args, n_pair, **_launch_kwargs(shape_key, config))
 
 
 def _strides(*values: Tensor) -> _Shape:
@@ -1156,9 +1199,9 @@ def _eager_packed(
 ) -> tuple[Tensor, ...]:
     """Eager einsum fallback on the packed layout.
 
-    Serves the shapes whose padded tiles exceed the shared-memory budget --
-    the wide-slot fp32 regime of the exact-precision harnesses; the
-    production bf16 shapes never reach it.
+    Serves layouts for which no candidate tile fits the target device's
+    resources. The composition remains visible to the compiler when resource
+    validation rejects every fused configuration during tracing.
     """
     tg = to_grid
     fg = from_grid

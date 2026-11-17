@@ -31,6 +31,9 @@ from deepmd.pt_expt.descriptor import (
 from deepmd.pt_expt.fitting import (
     BaseFitting,
 )
+from deepmd.pt_expt.long_range import (
+    BaseLongRange,
+)
 from deepmd.pt_expt.model.dp_zbl_model import (
     DPZBLModel,
 )
@@ -75,6 +78,7 @@ _model_factory = BackendModelFactory(
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
     linear_atomic_model=LinearEnergyAtomicModel,
+    long_range_base=BaseLongRange,
 )
 get_zbl_model = _model_factory.get_zbl_model
 
@@ -92,8 +96,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     ``bridging_method`` sugar expands to that form in :func:`get_model`);
     this builder rejects the flag.
 
-    Still unsupported here, each raising ``NotImplementedError``: the
-    virtual-atom (``deepspin``) spin scheme and ``lora``.
+    ``lora`` raises ``NotImplementedError``.
 
     Notes
     -----
@@ -107,11 +110,9 @@ def get_sezm_model(data: dict) -> BaseModel:
     """
     data = copy.deepcopy(data)
     if "spin" in data:
-        if str(data["spin"].get("scheme", "deepspin")) != "native":
+        if str(data["spin"].get("scheme", "")) != "native":
             raise NotImplementedError(
-                "Spin DPA4/SeZM models with the virtual-atom (deepspin) "
-                "scheme are not supported in the pt_expt backend; use spin "
-                "scheme 'native' instead."
+                "DPA4/SeZM spin models require model.spin.scheme='native'."
             )
         return get_native_spin_model(data)
     bridging_method = str(data.get("bridging_method", "none"))
@@ -168,6 +169,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     data["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
 
     descriptor, fitting, _ = _model_factory.get_model_components(data)
+    long_range = _model_factory.get_long_range(data, descriptor, fitting)
     return DPA4EnergyModel(
         descriptor=descriptor,
         fitting=fitting,
@@ -175,6 +177,7 @@ def get_sezm_model(data: dict) -> BaseModel:
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=pair_exclude_types,
         preset_out_bias=data.get("preset_out_bias"),
+        **({} if long_range is None else {"long_range": long_range}),
     )
 
 
@@ -293,9 +296,9 @@ def _dpa4_family_child_builder(sub: dict) -> "BaseModel | None":
     the semantics of a standalone ``type: "dpa4"`` model -- the
     descriptor/fitting type defaults, the exclusion consistency check, and
     the loud rejections of unsupported options (``lora``, ``use_compile``)
-    -- instead of the generic component build that
-    would silently ignore them. Returns ``None`` for non-DPA4-family
-    children so the shared builder uses its generic path.
+    -- instead of the generic component build that would silently ignore
+    them. Returns ``None`` for non-DPA4-family children so the shared
+    builder uses its generic path.
 
     Parameters
     ----------
@@ -319,11 +322,10 @@ def get_linear_model(model_params: dict) -> BaseModel:
 
     Children with a ``descriptor`` build as learned atomic models;
     ``pairtab`` children build as pair-tabulation atomic models; an
-    ``inner_potential`` child builds the analytical bridging term, with
-    the learned sibling descriptor's ``inner_clamp_r_inner``/``_outer``
-    derived from the child's ``r_inner``/``r_outer`` (issue #5948). A
-    top-level ``spin`` section (scheme ``native``) wraps the composition
-    as a :class:`NativeSpinEnergyModel`.
+    ``inner_potential`` child builds the analytical bridging term, with the
+    learned sibling descriptor's window derived from the child's (issue
+    #5948). A top-level ``spin`` section (scheme ``native``) wraps the
+    composition as a :class:`NativeSpinEnergyModel`.
 
     Parameters
     ----------

@@ -65,7 +65,20 @@ class EdgeFeatureCache(NamedTuple):
         Radial basis with shape (E, n_radial).
         The C^3 cutoff envelope is already baked in.
     edge_env
-        C^3 cutoff envelope weights with shape (E, 1).
+        C^3 cutoff envelope weights with shape (E, 1). In bridging mode the
+        Source Freeze Propagation Gate is folded into it: the envelope of the
+        edge ``j -> k`` is multiplied by the product of the switching
+        amplitudes ``w(r_{jl})`` of every pair of the source ``j`` other than
+        the pair ``(j, k)`` itself, so an edge whose source has a third
+        neighbor in the frozen zone vanishes everywhere the envelope enters
+        (messages, environment seed, attention masses and degree), exactly as
+        an edge beyond the cutoff does, while the edge between the two atoms
+        of a frozen pair keeps its clamped geometry.
+    node_gate
+        Per-node source gate ``eta[j] = prod_{k in N(j)} w(r_{jk})`` with
+        shape (N,), the product over every pair of the node; ``None`` without
+        bridging. The atomic model fades the learned atomic energy of node
+        ``j`` with it.
     deg
         Envelope-squared smooth degree with shape (N,), computed as
         ``sum(edge_env**2)`` over incoming edges.
@@ -90,17 +103,6 @@ class EdgeFeatureCache(NamedTuple):
         Lazy cache for endpoint CSR views used by segmented accelerated
         operators, keyed by endpoint role (``"dst"`` or ``"src"``). Built once
         per step and shared by every consumer.
-    edge_src_gate
-        Optional per-edge Source Freeze Propagation Gate (SFPG) weight with
-        shape (E, 1). Equals ``eta[src]`` where
-        ``eta[j] = prod_{k in N(j)} w(r_{jk})`` and ``w`` is the
-        :class:`BridgingSwitch` C3 switching amplitude. Present only when
-        the model runs in bridging mode; ``None`` otherwise. Aggregation
-        sites (``GeometricInitialEmbedding``, ``EnvironmentInitialEmbedding``,
-        ``SO2Convolution``) multiply their per-edge message contribution
-        by this gate to forbid any node whose local neighborhood enters
-        the frozen zone from propagating information along its outgoing
-        edges.
     """
 
     src: torch.Tensor
@@ -116,8 +118,8 @@ class EdgeFeatureCache(NamedTuple):
     D_to_m_cache: dict[str, torch.Tensor] | None = None
     Dt_from_m_cache: dict[str, torch.Tensor] | None = None
     csr_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] | None = None
-    edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
+    node_gate: torch.Tensor | None = None
 
 
 def cached_edge_csr(
@@ -161,30 +163,39 @@ def cached_edge_csr(
     return order, row_ptr
 
 
-def compute_edge_src_gate(
+def compute_source_gates(
     *,
     edge_len: torch.Tensor,
+    edge_contact: torch.Tensor,
     src: torch.Tensor,
     n_nodes: int,
-    bridging_switch: Callable[[torch.Tensor], torch.Tensor],
+    bridging_switch: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     edge_keep_f: torch.Tensor | None = None,
     node_partial_exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Compute the per-edge source gate for SFPG from edge lengths.
+    Compute the per-node and per-edge source gates of SFPG from edge lengths.
 
-    The gate implements a per-node "non-frozen confidence" and broadcasts
-    it back to edges along the source axis::
+    The per-node gate is the "non-frozen confidence" of a node, the per-edge
+    gate the same product with the edge's own pair left out::
 
-        w_e      = bridging_switch(edge_len_e)               in [0, 1]
-        eta_j    = prod_{e: src_e = j} w_e                   in [0, 1]
-        gate_e   = eta_{src_e}                               in [0, 1]
+        w_e      = bridging_switch(edge_len_e, edge_contact_e)   in [0, 1]
+        eta_j    = prod_{e: src_e = j} w_e                       in [0, 1]
+        gate_e   = eta_{src_e} / w_e = prod_{e': src_e' = src_e, e' != e} w_e'
 
-    ``w_e = 0`` at ``r_{jk} <= r_inner`` ensures ``eta_j = 0`` for any
-    node with at least one neighbor in the frozen zone. Masked edges
-    (padding, excluded type pairs) must contribute the multiplicative
-    identity ``1`` so they never spuriously mute a valid source node;
-    callers supply ``edge_keep_f`` for this.
+    ``w_e = 0`` inside the inner radius of that edge's own pair ensures
+    ``eta_j = 0`` for any node with at least one neighbor in the frozen zone,
+    and ``gate_e = 0`` for every edge such a node emits except the edge to
+    that frozen neighbor. The cache builder multiplies ``gate_e`` into the
+    edge envelope, which every consumer weights by, so a muted edge is
+    indistinguishable from a deleted one: the frozen atom disappears from the
+    environment of every third atom, while the two atoms of a frozen pair
+    keep seeing each other at the clamped distance. The fitting scales the
+    deviation of its output from the bias of the type by ``eta_j``, so the
+    frozen atom contributes that bias alone. Masked edges (padding,
+    excluded type pairs) must contribute the multiplicative identity ``1`` so
+    they never spuriously mute a valid source node; callers supply
+    ``edge_keep_f`` for this.
 
     The product is **not** realised by ``scatter_reduce(reduce="prod")``:
     its registered backward handles exact zeros with a data-dependent
@@ -193,12 +204,14 @@ def compute_edge_src_gate(
     path's double-backward tracing. Instead, the product is decomposed
     into a log-sum on non-zero contributions combined with an explicit
     "any zero per group" indicator that routes the frozen case through
-    ``torch.where``. Both branches use only shape-preserving standard
-    ops (``scatter_add``, ``where``, ``exp``, ``log``) with backed
-    symints, so the graph survives symbolic tracing cleanly.
+    ``torch.where``; the leave-one-out product subtracts the edge's own
+    log-amplitude and zero flag from the totals of its source. Both branches
+    use only shape-preserving standard ops (``scatter_add``, ``where``,
+    ``exp``, ``log``) with backed symints, so the graph survives symbolic
+    tracing cleanly.
 
     The gradient consequence at the plateau is exact: ``BridgingSwitch``
-    places ``w'(r) = 0`` for every ``r <= r_inner``, so the chain rule
+    places ``w'(r) = 0`` everywhere inside the inner radius, so the chain rule
     ``d eta / d r = (leave-one-out factor) * w'(r) = anything * 0 = 0``
     holds regardless of how the muted ``torch.where`` branch treats the
     upstream gradient. In the transition zone every edge has strictly
@@ -209,13 +222,17 @@ def compute_edge_src_gate(
     ----------
     edge_len
         Per-edge distances with shape (E, 1).
+    edge_contact
+        Per-edge length scale with shape (E, 1) in Å, the sum of the two
+        endpoint radii. The switch measures the window against it, so every
+        element combination gets its own pair of radii.
     src
         Source node indices with shape (E,).
     n_nodes
         Total number of nodes N.
     bridging_switch
-        Callable ``r -> w(r)`` with ``w: [0, ∞) -> [0, 1]``, typically a
-        :class:`BridgingSwitch` instance.
+        Callable ``(r, contact) -> w`` with ``w: [0, ∞) -> [0, 1]``, typically
+        a :class:`BridgingSwitch` instance.
     edge_keep_f
         Optional per-edge keep weights with shape (E, 1), with ``0`` on
         masked edges and ``1`` on kept edges. If provided, masked edges
@@ -231,12 +248,14 @@ def compute_edge_src_gate(
 
     Returns
     -------
-    torch.Tensor
-        Per-edge source gate with shape (E, 1), aligned on the same edge
-        axis as the rest of the cache.
+    node_gate : torch.Tensor
+        Per-node source gate ``eta`` with shape (N,).
+    edge_gate : torch.Tensor
+        Per-edge leave-one-out gate with shape (E, 1), aligned on the same
+        edge axis as the rest of the cache.
     """
     # === Step 1. Per-edge switching amplitude w(r) in [0, 1] ===
-    edge_w = bridging_switch(edge_len)  # (E, 1)
+    edge_w = bridging_switch(edge_len, edge_contact)  # (E, 1)
     if edge_keep_f is not None:
         # Force w = 1 on masked edges so they are neutral for the product.
         edge_w = edge_w * edge_keep_f + (1.0 - edge_keep_f)
@@ -260,9 +279,10 @@ def compute_edge_src_gate(
     # the hard-freeze rule. Float count (values are small integers, exact
     # in fp) so both partials ride ONE border-exchange tensor when
     # completing across ranks.
+    is_zero_f = is_zero.to(edge_w.dtype)
     zero_count = torch.zeros(
         n_nodes, dtype=edge_w.dtype, device=edge_w.device
-    ).scatter_add(0, src, is_zero.to(edge_w.dtype))
+    ).scatter_add(0, src, is_zero_f)
 
     # === Step 3b. Cross-rank completion of the per-node partials ===
     # A rank only holds edges whose dst is owned, so the src-keyed sums
@@ -276,12 +296,21 @@ def compute_edge_src_gate(
         log_eta = packed[..., 0]
         zero_count = packed[..., 1]
 
-    eta_nonzero_path = torch.exp(log_eta)
-    any_zero = zero_count > 0.5
+    # === Step 4. Per-node gate ===
+    node_gate = torch.where(
+        zero_count > 0.5, torch.zeros_like(log_eta), torch.exp(log_eta)
+    )  # (N,)
 
-    # === Step 4. Combine and broadcast back to edges via source ===
-    eta = torch.where(any_zero, torch.zeros_like(eta_nonzero_path), eta_nonzero_path)
-    return eta.index_select(0, src).unsqueeze(-1)
+    # === Step 5. Per-edge leave-one-out gate ===
+    # The edge's own factor is removed from its source's totals: its
+    # log-amplitude (0 when it is a frozen edge, because ``safe_w`` is 1 there)
+    # and its zero flag, so the remaining product is over the other pairs.
+    loo_log = log_eta.index_select(0, src) - log_safe  # (E,)
+    loo_zero = zero_count.index_select(0, src) - is_zero_f  # (E,)
+    edge_gate = torch.where(
+        loo_zero > 0.5, torch.zeros_like(loo_log), torch.exp(loo_log)
+    )
+    return node_gate, edge_gate.unsqueeze(-1)
 
 
 @torch.amp.autocast("cuda", enabled=False)
@@ -443,8 +472,9 @@ def build_edge_cache_from_edges(
     compute_dtype: torch.dtype,
     eps: float,
     deg_norm_floor: float,
-    inner_clamp: Callable[[torch.Tensor], torch.Tensor] | None,
-    bridging_switch: Callable[[torch.Tensor], torch.Tensor] | None,
+    bridging_clamp: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None,
+    bridging_switch: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None,
+    edge_contact: torch.Tensor | None,
     edge_envelope: Callable[[torch.Tensor], torch.Tensor],
     radial_basis: Callable[[torch.Tensor], torch.Tensor],
     has_exclude_types: bool,
@@ -478,15 +508,21 @@ def build_edge_cache_from_edges(
     deg_norm_floor
         Floor added to the envelope-squared degree before inverse-sqrt
         normalization (see :func:`_finalize_edge_cache`).
-    inner_clamp
-        Optional inner clamp used to freeze short-range geometry below `r_inner`.
+    bridging_clamp
+        Optional distance clamp that freezes the geometry the descriptor sees
+        for a pair inside its bridging window (see :class:`InnerClamp`).
     bridging_switch
-        Optional C3 switching amplitude ``w(r) -> [0, 1]`` that drives
-        the Source Freeze Propagation Gate. When provided, a per-edge
-        ``edge_src_gate`` is computed from the node-wise product of
-        ``w(r_{jk})`` along each source node's outgoing edges. Masked
-        edges (``edge_keep=False``) are forced to ``w=1`` so they never
-        leak into the product.
+        Optional C3 switching amplitude ``w(r, contact) -> [0, 1]`` that drives
+        the Source Freeze Propagation Gate. When provided, the product of
+        ``w(r_{jl})`` over the true lengths of every pair of the source node
+        other than the edge's own pair is folded into the envelope of every
+        edge that node emits, and the full product is stored on the cache as
+        ``node_gate``. Masked edges (``edge_keep=False``) are forced to
+        ``w=1`` so they never leak into the product.
+    edge_contact
+        Per-edge length scale with shape (E, 1) in Å that both window modules
+        measure their fractions against, or ``None`` when neither is given.
+        The descriptor owns the per-type radii and resolves it before the call.
     edge_envelope
         C^3 edge envelope module.
     radial_basis
@@ -534,8 +570,9 @@ def build_edge_cache_from_edges(
     # === Step 3. Edge length, envelope, and radial basis ===
     with nvtx_range("envelope"):
         edge_len = safe_norm(edge_vec, eps)
-        if inner_clamp is not None:
-            clamped = inner_clamp(edge_len)
+        edge_len_true = edge_len
+        if bridging_clamp is not None:
+            clamped = bridging_clamp(edge_len, edge_contact)
             scale = clamped / edge_len
             edge_vec = edge_vec * scale
             edge_len = clamped
@@ -561,21 +598,30 @@ def build_edge_cache_from_edges(
     edge_type_feat = edge_type_feat * edge_keep_f.to(dtype=edge_type_feat.dtype)
 
     # === Step 6. Source Freeze Propagation Gate (optional) ===
-    # The sparse-edge path packs masked dummy edges so the compiled graph sees
-    # a statically non-empty, non-singular edge tensor. ``edge_keep_f`` rewrites
-    # any such slot to ``w=1`` inside ``compute_edge_src_gate``, keeping the
-    # product reduction unaffected by padding.
-    edge_src_gate: torch.Tensor | None = None
+    # The leave-one-out gate is folded into the envelope, the one factor every
+    # consumer of an edge weights by: the messages, the environment seed, the
+    # attention masses and the degree normalization all see a muted edge
+    # exactly as they see an edge beyond the cutoff. The gate reads the true
+    # pair length, so it closes where the clamp above has frozen the geometry.
+    # The radial basis stays ungated because it feeds networks whose output
+    # the envelope multiplies. The sparse-edge path packs masked dummy edges
+    # so the compiled graph sees a statically non-empty, non-singular edge
+    # tensor; ``edge_keep_f`` rewrites any such slot to ``w=1`` inside
+    # ``compute_source_gates``, keeping the product reduction unaffected by
+    # padding. The per-node product travels on the cache to the atomic model.
+    node_gate = None
     if bridging_switch is not None:
         with nvtx_range("src_gate"):
-            edge_src_gate = compute_edge_src_gate(
-                edge_len=edge_len,
+            node_gate, edge_gate = compute_source_gates(
+                edge_len=edge_len_true,
+                edge_contact=edge_contact,
                 src=src,
                 n_nodes=n_nodes,
                 bridging_switch=bridging_switch,
                 edge_keep_f=edge_keep_f,
                 node_partial_exchange=node_partial_exchange,
             )
+            edge_env = edge_env * edge_gate
 
     return _finalize_edge_cache(
         n_nodes=n_nodes,
@@ -589,7 +635,7 @@ def build_edge_cache_from_edges(
         Dt_full=Dt_full,
         edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
-        edge_src_gate=edge_src_gate,
+        node_gate=node_gate,
     )
 
 
@@ -667,7 +713,7 @@ def _finalize_edge_cache(
     Dt_full: torch.Tensor | None,
     edge_quat: torch.Tensor,
     deg_norm_floor: float,
-    edge_src_gate: torch.Tensor | None = None,
+    node_gate: torch.Tensor | None = None,
 ) -> EdgeFeatureCache:
     """
     Assemble the shared `EdgeFeatureCache` layout.
@@ -702,9 +748,9 @@ def _finalize_edge_cache(
         normalization. A tiny ``eps`` reproduces the legacy behavior; an
         ``O(1)`` value makes sparse-neighborhood features vanish smoothly at
         ``rcut`` instead of saturating and kinking.
-    edge_src_gate
-        Optional per-edge SFPG weight with shape (E, 1). ``None`` in
-        non-bridging mode.
+    node_gate
+        Per-node source gate with shape (N,) of a bridged descriptor, or
+        ``None``.
 
     Returns
     -------
@@ -733,8 +779,8 @@ def _finalize_edge_cache(
         D_to_m_cache={},
         Dt_from_m_cache={},
         csr_cache={},
-        edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        node_gate=node_gate,
     )
 
 
@@ -871,8 +917,9 @@ def edge_cache_to_dtype(
     """
     Convert all floating-point tensors in EdgeFeatureCache to the specified dtype.
 
-    Integer tensors (src, dst) are unchanged. This is a standalone function
-    (not a method) to keep it side-effect free.
+    Integer tensors (src, dst) are unchanged, and so is the node gate, which
+    no block reads: it is applied to the fitting output in global precision.
+    This is a standalone function (not a method) to keep it side-effect free.
 
     Parameters
     ----------
@@ -890,18 +937,14 @@ def edge_cache_to_dtype(
     # Use local variables with explicit None check and assignment.
     _D_full = cache.D_full
     _Dt_full = cache.Dt_full
-    _edge_src_gate = cache.edge_src_gate
     _edge_quat = cache.edge_quat
     D_full: torch.Tensor | None = None
     Dt_full: torch.Tensor | None = None
-    edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
     if _D_full is not None:
         D_full = _D_full.to(dtype=dtype)
     if _Dt_full is not None:
         Dt_full = _Dt_full.to(dtype=dtype)
-    if _edge_src_gate is not None:
-        edge_src_gate = _edge_src_gate.to(dtype=dtype)
     if _edge_quat is not None:
         edge_quat = _edge_quat.to(dtype=dtype)
 
@@ -921,6 +964,6 @@ def edge_cache_to_dtype(
         D_to_m_cache=None if cache.D_to_m_cache is None else {},
         Dt_from_m_cache=None if cache.Dt_from_m_cache is None else {},
         csr_cache=None if cache.csr_cache is None else dict(cache.csr_cache),
-        edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        node_gate=cache.node_gate,
     )

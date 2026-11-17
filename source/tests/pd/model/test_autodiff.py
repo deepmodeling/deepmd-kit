@@ -27,10 +27,7 @@ from ..common import (
 from .test_permutation import (
     model_dpa1,
     model_dpa2,
-    model_hybrid,
     model_se_e2_a,
-    model_spin,
-    model_zbl,
 )
 
 
@@ -208,53 +205,4 @@ class TestEnergyModelDPA2Force(unittest.TestCase, ForceTest):
     def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
-    def setUp(self) -> None:
-        model_params = copy.deepcopy(model_dpa2)
-        self.type_split = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelHybridForce(unittest.TestCase, ForceTest):
-    def setUp(self) -> None:
-        model_params = copy.deepcopy(model_hybrid)
-        self.type_split = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelHybridVirial(unittest.TestCase, VirialTest):
-    def setUp(self) -> None:
-        model_params = copy.deepcopy(model_hybrid)
-        self.type_split = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelZBLForce(unittest.TestCase, ForceTest):
-    def setUp(self) -> None:
-        model_params = copy.deepcopy(model_zbl)
-        self.type_split = False
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
-    def setUp(self) -> None:
-        model_params = copy.deepcopy(model_zbl)
-        self.type_split = False
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("Skip for not implemented yet")
-class TestEnergyModelSpinSeAForce(unittest.TestCase, ForceTest):
-    def setUp(self) -> None:
-        model_params = copy.deepcopy(model_spin)
-        self.type_split = False
-        self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)

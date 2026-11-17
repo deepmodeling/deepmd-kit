@@ -198,6 +198,10 @@ class ActivationFn(torch.nn.Module):
             return F.relu(x)
         elif self.activation.lower() == "gelu" or self.activation.lower() == "gelu_tf":
             return F.gelu(x, approximate="tanh")
+        elif self.activation.lower() == "gelu_erf":
+            # Exact GELU. "gelu"/"gelu_tf" above are the tanh approximation,
+            # which differs from this by up to 4.7e-4 per element.
+            return F.gelu(x, approximate="none")
         elif self.activation.lower() == "tanh":
             return torch.tanh(x)
         elif self.activation.lower() == "relu6":

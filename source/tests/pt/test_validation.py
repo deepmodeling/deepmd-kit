@@ -268,6 +268,35 @@ def _make_spin_task_config() -> dict:
 
 
 class TestValidationHelpers(unittest.TestCase):
+    @staticmethod
+    def _run_best_candidate(
+        validator: FullValidator,
+        *,
+        display_step: int,
+        selected_metric_value: float,
+        directory_checkpoint: bool = False,
+    ) -> str:
+        """Exercise selection, writing and reconciliation through the public flow."""
+
+        def save_checkpoint(path: Path, **kwargs) -> None:
+            if directory_checkpoint:
+                path.mkdir()
+            else:
+                path.touch()
+
+        with patch.object(
+            validator,
+            "evaluate_all_systems",
+            return_value={validator.metric_key: selected_metric_value},
+        ):
+            result = validator.run(
+                step_id=display_step,
+                display_step=display_step,
+                lr=1e-3,
+                save_checkpoint=save_checkpoint,
+            )
+        return result.saved_best_path
+
     def test_resolve_full_validation_start_step(self) -> None:
         self.assertEqual(resolve_full_validation_start_step(0, 2000000), 0)
         self.assertEqual(resolve_full_validation_start_step(0.1, 2000000), 200000)
@@ -349,26 +378,23 @@ class TestValidationHelpers(unittest.TestCase):
                     rank=0,
                     restart_training=False,
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 
@@ -453,7 +479,8 @@ class TestValidationHelpers(unittest.TestCase):
                 )
                 # The directory is created recursively at construction time.
                 self.assertTrue(best_dir.is_dir())
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
@@ -486,26 +513,26 @@ class TestValidationHelpers(unittest.TestCase):
                     restart_training=False,
                     best_checkpoint_suffix=".jax",
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 

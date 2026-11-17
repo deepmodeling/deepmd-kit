@@ -172,6 +172,7 @@ class ModelWrapper(torch.nn.Module):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        grid: torch.Tensor | None = None,
     ) -> tuple[Any, Any, Any]:
         if not self.multi_task:
             task_key = "Default"
@@ -186,13 +187,22 @@ class ModelWrapper(torch.nn.Module):
             "do_atomic_virial": do_atomic_virial,
             "fparam": fparam,
             "aparam": aparam,
-            "charge_spin": charge_spin,
         }
+        # Keep older scripted model signatures usable when this optional
+        # input is absent; explicitly supplied values must still be forwarded.
+        if charge_spin is not None:
+            input_dict["charge_spin"] = charge_spin
         has_spin = getattr(self.model[task_key], "has_spin", False)
         if callable(has_spin):
             has_spin = has_spin()
         if has_spin:
             input_dict["spin"] = spin
+
+        has_grid = getattr(self.model[task_key], "has_grid", False)
+        if callable(has_grid):
+            has_grid = has_grid()
+        if has_grid:
+            input_dict["grid"] = grid
 
         # A loss-free wrapper is a pure inference object, so parameters can be
         # treated as constants while coordinate gradients remain enabled.

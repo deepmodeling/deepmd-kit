@@ -88,8 +88,9 @@ def resolve_step_schedule(
         Task keys in the order used by the trainer.  Single-task runs pass the
         one key under which their data is registered.
     training_data : Mapping[str, Any]
-        Training data of every task, keyed like ``model_keys``.  Only consulted
-        when multi-task sampling weights fall back to the per-task data size.
+        Training data of every task, keyed like ``model_keys``. Only consulted
+        when multi-task sampling weights default to native data sizes:
+        NumPy/HDF5 system counts or retained LMDB frame counts.
     epoch_length : Callable[[str], int]
         Maps a task key to the number of steps *this rank* performs during one
         epoch of that task.  Backends whose data pipeline is sharded across

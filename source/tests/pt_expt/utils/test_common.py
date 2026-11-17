@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import numpy as np
+import pytest
 import torch
 
 from deepmd.dpmodel.common import (
@@ -127,3 +128,61 @@ def test_torch_module_handles_no_call_lower_method() -> None:
     assert hasattr(module, "forward")
     # Should not have forward_lower method since there's no call_lower method
     assert not hasattr(module, "forward_lower")
+
+
+def test_dpmodel_setattr_keeps_module_device(monkeypatch) -> None:
+    """NumPy buffer assignment after Module.to keeps the module device.
+
+    ``env.DEVICE`` is patched to ``meta`` so a regression that always places
+    new buffers on the process default would land off-CPU and fail the assert.
+    """
+    from deepmd.dpmodel.common import (
+        NativeOP,
+    )
+    from deepmd.pt_expt.common import (
+        torch_module,
+    )
+
+    class HolderDP(NativeOP):
+        def __init__(self) -> None:
+            self.stat = np.zeros(3, dtype=np.float64)
+
+        def call(self, x: np.ndarray) -> np.ndarray:
+            return x
+
+    @torch_module
+    class Holder(HolderDP):
+        pass
+
+    module = Holder().to("cpu")
+    assert module.stat.device.type == "cpu"
+    monkeypatch.setattr(env, "DEVICE", torch.device("meta"))
+    module.stat = np.ones(3, dtype=np.float64)
+    assert module.stat.device.type == "cpu"
+    np.testing.assert_array_equal(module.stat.detach().cpu().numpy(), np.ones(3))
+
+
+@pytest.mark.parametrize("resident", ["parameter", "buffer"])  # device source
+def test_dpmodel_setattr_uses_other_module_tensors(monkeypatch, resident) -> None:
+    """A new NumPy buffer follows an existing parameter or other buffer."""
+
+    @torch_module
+    class Holder(NativeOP):
+        def call(self, *args, **kwargs) -> None:
+            pass
+
+    monkeypatch.setattr(env, "DEVICE", torch.device("cpu"))
+    module = Holder()
+    tensor = torch.zeros(3, device="cpu")
+    if resident == "parameter":
+        module.weight = torch.nn.Parameter(tensor)
+    else:
+        module.register_buffer("other", tensor)
+        assert not list(module.parameters())
+    module.to("meta")
+
+    assert "stat" not in module._buffers
+    module.stat = np.ones(3, dtype=np.float64)
+    assert module.stat.device.type == "meta"
+    assert module.stat.dtype == torch.float64
+    assert module.stat.shape == (3,)

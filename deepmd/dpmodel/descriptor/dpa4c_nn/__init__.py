@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Neural and geometric building blocks for DPA4C."""
 
+from .attention import (
+    BlockAttention,
+)
 from .bispectrum import (
     BispectrumLayout,
     build_bispectrum_layout,
@@ -14,7 +17,6 @@ from .charge_state import (
 from .geometry import (
     MAX_ANGULAR_DEGREE,
     build_angular_basis,
-    build_moment_indices,
     degree_offsets,
     derive_degree_channels,
     packed_l2_to_stf,
@@ -35,13 +37,13 @@ __all__ = [
     "MAX_ANGULAR_DEGREE",
     "NEIGHBOR_QUADRUPOLE_CHANNELS",
     "BispectrumLayout",
+    "BlockAttention",
     "ChargeStateEmbedding",
     "InvariantReadout",
     "OrderedPairFiLM",
     "SpinChannels",
     "build_angular_basis",
     "build_bispectrum_layout",
-    "build_moment_indices",
     "canonicalize_charge_spin",
     "degree_offsets",
     "derive_bispectrum_ranks",

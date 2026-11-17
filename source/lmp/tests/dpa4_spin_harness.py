@@ -17,7 +17,6 @@ Consumers: ``test_lammps_dpa4_spin_graph_pt2.py`` (plain native spin) and
 ``test_lammps_dpa4_spin_zbl_pt2.py`` (native spin + ZBL bridging).
 """
 
-import json
 import os
 import signal
 import subprocess as sp
@@ -36,6 +35,9 @@ import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from python_reference import (
+    run_python_reference,
 )
 
 MPI_DEFAULT_TIMEOUT = 120.0
@@ -146,7 +148,6 @@ def compute_expected(
     atype = (type_map - 1).tolist()  # LAMMPS 1-based -> deepmd 0-based
     infer_dir = str(pb_file.resolve().parent)
     script = textwrap.dedent(f"""\
-        import json
         import sys
         import numpy as np
 
@@ -165,18 +166,15 @@ def compute_expected(
             atomic=True,
             spin=np.array({spin.tolist()!r}).reshape(1, -1, 3),
         )
-        print(json.dumps({{
+        result = {{
             "e": float(e[0, 0]),
             "ae": np.asarray(ae[0]).reshape(-1).tolist(),
             "f": np.asarray(f[0]).tolist(),
             "fm": np.asarray(fm[0]).tolist(),
             "av": np.asarray(av[0]).tolist(),
-        }}))
+        }}
     """)
-    proc = sp.run([sys.executable, "-c", script], capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
-    result = json.loads(proc.stdout.strip())
+    result = run_python_reference(script)
 
     # Raw DeepEval force_mag (dE/dspin), scaled by LAMMPS's own
     # spin_norm / hbar unit convention (see HBAR_METAL) before comparison.

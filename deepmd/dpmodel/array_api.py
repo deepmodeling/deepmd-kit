@@ -383,14 +383,13 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
 
 
 def xp_hint_dynamic_size(x: Array) -> None:
-    """Mark a data-dependent leading dimension as a valid size for torch.export.
+    """Check that a data-dependent leading dimension is nonnegative for torch.export.
 
     Under symbolic tracing (``make_fx`` / ``torch.export``) the length of a
     data-dependent array (e.g. the output of ``nonzero`` or a tensor-``repeat``)
-    is an UNBACKED SymInt; guarding Python control flow or allocations on it
-    raises ``GuardOnDataDependentSymNode``. ``torch._check_is_size`` registers
-    the ``>= 0`` size hint that lets the tracer treat it as a proper dimension
-    (recorded as a ``sym_constrain_range_for_size`` node, preserved by AOTI).
+    is an unbacked SymInt. These operations already mark their output dimensions
+    as sizes; ``torch._check`` expresses the nonnegative constraint without
+    guarding on a concrete value.
 
     No-op for numpy / jax / eager-torch concrete shapes — safe to call
     unconditionally from dpmodel code (torch imported lazily, torch arrays only).
@@ -398,7 +397,7 @@ def xp_hint_dynamic_size(x: Array) -> None:
     if array_api_compat.is_torch_array(x):
         import torch
 
-        torch._check_is_size(x.shape[0])
+        torch._check(x.shape[0] >= 0)
 
 
 def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
@@ -514,6 +513,50 @@ def xp_sigmoid(x: Array) -> Array:
         return torch.sigmoid(x)
     xp = array_api_compat.array_namespace(x)
     return 1 / (1 + xp.exp(-x))
+
+
+def xp_erf(x: Array) -> Array:
+    """Compute the error function.
+
+    Used by the exact (non-approximated) GELU. The array API has no ``erf``, so
+    each backend's own implementation is used; NumPy goes through SciPy, which
+    is already a core dependency.
+    """
+    if array_api_compat.is_jax_array(x):
+        from deepmd.jax.env import (
+            jax,
+        )
+
+        return jax.scipy.special.erf(x)
+    elif array_api_compat.is_torch_array(x):
+        import torch
+
+        return torch.special.erf(x)
+
+    xp = array_api_compat.array_namespace(x)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        # The NumPy round-trip below cannot serve TensorFlow. Under
+        # ``tf.function`` the conversion is refused outright, and in eager mode
+        # it detaches the erf factor from the tape, which leaves the exact GELU
+        # differentiating to Phi(x) alone -- silently, and for every backend
+        # user of ``gelu_erf`` rather than only Uni-Mol.
+        #
+        # Imported directly rather than through ``deepmd.tf2.env`` for symmetry
+        # with the JAX branch above: that module raises at import time unless
+        # eager execution is on, and this branch has to work inside
+        # ``tf.function``, where it is not.
+        return xp.asarray(tf.math.erf(x.unwrap()))
+
+    from scipy.special import (
+        erf,
+    )
+
+    if array_api_compat.is_numpy_array(x):
+        return erf(x)
+    # array-api-strict and friends: round-trip through NumPy.
+    return xp.asarray(erf(np.asarray(x)), dtype=x.dtype)
 
 
 def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:

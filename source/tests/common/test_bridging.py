@@ -8,11 +8,25 @@ key routing, the legacy exclusion promotion, and the rejections.
 """
 
 import copy
+import json
+from pathlib import (
+    Path,
+)
 
+import numpy as np
 import pytest
 
+from deepmd.dpmodel.descriptor.dpa4_nn import (
+    BridgingSwitch,
+)
 from deepmd.utils.bridging import (
+    DEFAULT_FRACTION_INNER,
+    DEFAULT_FRACTION_OUTER,
     expand_bridging_method,
+    resolve_bridging_window,
+)
+from deepmd.utils.data import (
+    min_pair_dist_requirement,
 )
 
 
@@ -58,22 +72,51 @@ def test_expansion_shape() -> None:
     assert inner == {
         "type": "inner_potential",
         "mode": "ZBL",
+        "fraction_inner": 0.26,
+        "fraction_outer": 0.80,
         "r_inner": 0.8,
         "r_outer": 1.2,
     }
     # the flag keys must not leak into the canonical config
-    for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+    for key in (
+        "bridging_method",
+        "bridging_fraction_inner",
+        "bridging_fraction_outer",
+        "bridging_r_inner",
+        "bridging_r_outer",
+    ):
         assert key not in out
         assert key not in learned
 
 
-def test_default_radii() -> None:
+def test_window_defaults_to_the_covalent_rule() -> None:
+    """Without explicit radii the window is a fraction of each pair's own size."""
     data = _flag_config()
     del data["bridging_r_inner"]
     del data["bridging_r_outer"]
     inner = expand_bridging_method(data)["models"][1]
-    assert inner["r_inner"] == 0.5
-    assert inner["r_outer"] == 0.8
+    assert inner["r_inner"] is None
+    assert inner["r_outer"] is None
+    assert resolve_bridging_window(inner) == {
+        "inner_clamp_f_inner": 0.26,
+        "inner_clamp_f_outer": 0.80,
+        "inner_clamp_scale": "covalent",
+    }
+
+
+def test_explicit_radii_override_the_covalent_rule() -> None:
+    """Radii in Å apply the same window to every pair, through a unit scale."""
+    inner = expand_bridging_method(_flag_config())["models"][1]
+    assert resolve_bridging_window(inner) == {
+        "inner_clamp_f_inner": 0.8,
+        "inner_clamp_f_outer": 1.2,
+        "inner_clamp_scale": "absolute",
+    }
+
+
+def test_half_a_window_is_rejected() -> None:
+    with pytest.raises(ValueError, match="both `r_inner` and `r_outer`"):
+        resolve_bridging_window({"r_outer": 1.2})
 
 
 def test_input_is_not_mutated() -> None:
@@ -345,3 +388,79 @@ def test_routing_resolves_argcheck_default_conflicts() -> None:
         route_canonical_learned_options(
             {"data_stat_protect": 0.2}, {"data_stat_protect": 0.3}
         )
+
+
+# The frame filter of a bridged model is the midpoint of its window, so the two
+# decisions it rests on -- which models count as bridged, and which radius the
+# window yields -- are pinned here against the shipped examples.
+
+_EXAMPLES = Path(__file__).parent.parent.parent.parent / "examples" / "water"
+_BRIDGED_INPUTS = (
+    _EXAMPLES / "dpa4" / "input-zbl.json",
+    _EXAMPLES / "dpa4c" / "input-zbl.json",
+)
+
+
+@pytest.mark.parametrize("path", _BRIDGED_INPUTS, ids=lambda p: p.parent.name)
+def test_a_shipped_bridged_example_derives_its_own_filter(path) -> None:
+    """Every learned family the composition accepts owns a frame filter."""
+    config = json.loads(path.read_text())
+    training_data = config["training"]["training_data"]
+    assert "min_pair_dist" not in training_data, (
+        "a bridged model derives the filter from its window, so the input must "
+        "not carry a second copy of it"
+    )
+    requirement = min_pair_dist_requirement(config["model"], 0.0)
+    assert requirement is not None
+    assert requirement.key == "pair_margin"
+    assert requirement.default == pytest.approx(
+        0.5 * (DEFAULT_FRACTION_INNER + DEFAULT_FRACTION_OUTER)
+    )
+    assert requirement.length_scale == "covalent"
+
+
+@pytest.mark.parametrize("path", _BRIDGED_INPUTS, ids=lambda p: p.parent.name)
+def test_a_shipped_bridged_example_refuses_an_explicit_filter(path) -> None:
+    config = json.loads(path.read_text())
+    with pytest.raises(ValueError, match="must not be set on a bridged model"):
+        min_pair_dist_requirement(config["model"], 0.5)
+
+
+def test_an_explicit_window_filters_at_its_midpoint() -> None:
+    """Radii given in Å yield a filter in Å, halfway between the two."""
+    requirement = min_pair_dist_requirement(_flag_config(), 0.0)
+    assert requirement is not None
+    assert requirement.default == pytest.approx(1.0)
+    assert requirement.length_scale == "absolute"
+
+
+@pytest.mark.parametrize(
+    "fractions",
+    [(DEFAULT_FRACTION_INNER, DEFAULT_FRACTION_OUTER), (0.1, 0.9), (0.5, 0.8)],
+)
+def test_the_bridging_switch_is_half_open_at_the_filter_radius(fractions) -> None:
+    """The filter keeps exactly the pairs whose learned amplitude is at least one half."""
+    f_inner, f_outer = fractions
+    config = _flag_config()
+    del config["bridging_r_inner"], config["bridging_r_outer"]
+    config["bridging_fraction_inner"] = f_inner
+    config["bridging_fraction_outer"] = f_outer
+    requirement = min_pair_dist_requirement(config, 0.0)
+    assert requirement is not None
+    contact = np.array([1.7])
+    opening = BridgingSwitch(f_inner, f_outer).call(
+        requirement.default * contact, contact
+    )
+    np.testing.assert_allclose(opening, 0.5, rtol=0.0, atol=1.0e-14)
+
+
+def test_an_unbridged_model_without_a_floor_registers_no_filter() -> None:
+    """Whether the filter runs and whether it is registered is one decision."""
+    config = _flag_config()
+    for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+        del config[key]
+    assert min_pair_dist_requirement(config, 0.0) is None
+    requirement = min_pair_dist_requirement(config, 0.5)
+    assert requirement is not None
+    assert requirement.default == 0.5
+    assert requirement.length_scale == "absolute"
