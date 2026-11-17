@@ -667,39 +667,9 @@ void deepmd::DeepPotJAX::init(const std::string& model,
     get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
     // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
     // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L364-L379
-    // The following is an equivalent of setting this in Python:
-    // config = tf.ConfigProto( allow_soft_placement = True )
-    // config.gpu_options.allow_growth = True
-    // config.gpu_options.per_process_gpu_memory_fraction = percentage
-    // config.intra_op_parallelism_threads = num_intra_nthreads
-    // config.inter_op_parallelism_threads = num_inter_nthreads
-    // The thread counts are protobuf varints: values >= 128 take more than
-    // one byte, so they cannot be stored in a fixed-size byte array.
-    auto append_varint = [](std::vector<std::uint8_t>& out,
-                            std::uint32_t value) {
-      while (value >= 0x80u) {
-        out.push_back(static_cast<std::uint8_t>((value & 0x7fu) | 0x80u));
-        value >>= 7u;
-      }
-      out.push_back(static_cast<std::uint8_t>(value));
-    };
-    std::vector<std::uint8_t> config;
-    // intra_op_parallelism_threads (field 2, varint)
-    config.push_back(0x10);
-    append_varint(config, static_cast<std::uint32_t>(num_intra_nthreads));
-    // inter_op_parallelism_threads (field 5, varint)
-    config.push_back(0x28);
-    append_varint(config, static_cast<std::uint32_t>(num_inter_nthreads));
-    // gpu_options (field 6, length-delimited, 11 bytes):
-    // per_process_gpu_memory_fraction (field 1, fixed64)
-    config.insert(config.end(), {0x32, 0xb, 0x9});
-    double gpu_memory_fraction = 0.9;
-    auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
-    config.insert(config.end(), bytes, bytes + sizeof(gpu_memory_fraction));
-    // gpu_options.allow_growth (field 4, varint) = true
-    config.insert(config.end(), {0x20, 0x1});
-    // allow_soft_placement (field 7, varint) = true
-    config.insert(config.end(), {0x38, 0x1});
+    // See serialize_jax_session_config for the equivalent Python config.
+    const std::vector<std::uint8_t> config = serialize_jax_session_config(
+        num_intra_nthreads, num_inter_nthreads, 0.9);
 
     TF_SetConfig(sessionopts, config.data(), config.size(), status);
     check_status(status);
