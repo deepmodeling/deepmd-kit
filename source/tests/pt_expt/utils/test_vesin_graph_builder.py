@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import weakref
 from dataclasses import (
     replace,
 )
@@ -19,6 +20,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
 )
 from deepmd.pt_expt.utils.canonical_graph import (
     canonical_graph_from_neighbor_graph,
+    canonical_graph_from_pairs,
     validate_canonical_graph_shapes,
 )
 
@@ -37,6 +39,67 @@ from deepmd.pt_expt.utils.vesin_search import (
 pytestmark = pytest.mark.skipif(
     not is_vesin_torch_available(), reason="vesin[torch] not installed"
 )
+
+
+@pytest.mark.parametrize("edge_count", [0, 1, 7])
+@pytest.mark.parametrize("frames", [1, 2])
+@pytest.mark.parametrize("masked", [False, True])
+def test_canonical_search_geometry_is_narrowed_before_sort(
+    edge_count: int, frames: int, masked: bool
+) -> None:
+    """The same deployed FP32 values need not keep search FP64 storage alive."""
+    nloc = 4
+    old_geometry = []
+
+    def frame_data(frame):
+        idx = torch.arange(edge_count)
+        center = (2 * idx + frame) % nloc
+        source = (idx + 1) % nloc
+        center = torch.stack((center, center), dim=1)[:, 0]
+        source = torch.stack((source, source), dim=1)[:, 0]
+        vector = torch.tensor([-0.0, 1.0 + 2**-24, 1e-44], dtype=torch.float64)
+        return center, source, vector.repeat(edge_count, 2)[:, ::2]
+
+    class FreshSearch:
+        def compute(self, positions, cell, rcut, *, frame, return_vectors):
+            assert positions.dtype == torch.float64 and return_vectors
+            center, source, vector = frame_data(frame)
+            old_geometry.append(weakref.ref(vector))
+            return center, source, vector
+
+    coord = torch.zeros(frames, nloc, 3, dtype=torch.float64)
+    mask = torch.tensor([[True, False, True, True]] * frames) if masked else None
+    centers, sources, vectors = [], [], []
+    for frame in range(frames):
+        center, source, vector = frame_data(frame)
+        if mask is not None:
+            active = mask[frame, center] & mask[frame, source]
+            center, source, vector = center[active], source[active], vector[active]
+        centers.append(center + frame * nloc)
+        sources.append(source + frame * nloc)
+        vectors.append(vector)
+    expected = canonical_graph_from_pairs(
+        torch.cat(centers),
+        torch.cat(sources),
+        torch.cat(vectors),
+        torch.full((frames,), nloc),
+        frames * nloc,
+    )
+    original = vesin_builder.canonical_graph_from_pairs
+
+    def inspect(center, source, vector, *args):
+        assert vector.dtype == torch.float32
+        assert all(reference() is None for reference in old_geometry)
+        return original(center, source, vector, *args)
+
+    with mock.patch.object(vesin_builder, "canonical_graph_from_pairs", inspect):
+        actual = vesin_builder.build_canonical_graph_vesin(
+            coord, None, 3.0, FreshSearch(), node_mask=mask
+        )
+    for field in expected.__dataclass_fields__:
+        before, after = getattr(expected, field), getattr(actual, field)
+        assert before.shape == after.shape and before.dtype == after.dtype
+        assert torch.equal(before.view(torch.uint8), after.view(torch.uint8)), field
 
 
 def _sets(ng, nloc):

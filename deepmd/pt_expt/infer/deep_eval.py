@@ -2626,8 +2626,20 @@ class DeepEval(DeepEvalBackend):
             cc = torch.as_tensor(
                 coord_input, dtype=torch.float64, device=builder_device
             )
-            aa = torch.as_tensor(
-                np.asarray(atom_types), dtype=torch.int64, device=builder_device
+            # Direct canonical graphs only consume types when masking virtual
+            # atoms. The model input types are transferred by the caller.
+            skip_unused_types = (
+                method == "vesin"
+                and canonical
+                and pair_excl is None
+                and not (np.asarray(atom_types) < 0).any()
+            )
+            aa = (
+                None
+                if skip_unused_types
+                else torch.as_tensor(
+                    np.asarray(atom_types), dtype=torch.int64, device=builder_device
+                )
             )
             bb = (
                 torch.as_tensor(box_input, dtype=torch.float64, device=builder_device)
@@ -2659,9 +2671,7 @@ class DeepEval(DeepEvalBackend):
                         bb.reshape(-1, 3, 3) if bb is not None else None,
                         self._rcut,
                         self._vesin_search,
-                        node_mask=aa >= 0
-                        if (np.asarray(atom_types) < 0).any()
-                        else None,
+                        node_mask=aa >= 0 if aa is not None else None,
                     )
                 return build_neighbor_graph_vesin(
                     cc,
