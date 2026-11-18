@@ -38,6 +38,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    triton_infer_level,
     triton_train_level,
 )
 
@@ -67,6 +68,22 @@ if TYPE_CHECKING:
 GridNetLayout = Literal["ndfc", "nfdc", "fndc", "flat"]
 GridNetMode = Literal["self", "cross"]
 GridNetOp = Literal["glu", "mlp", "branch"]
+
+
+def _grid_layout_infer(module: nn.Module) -> bool:
+    """Whether the routed grid composition uses the grid-major layout.
+
+    The layout rides the cumulative Triton inference level -- the levels are
+    the single control, with no per-optimization opt-in -- and never applies
+    to a training forward, matching how every other level consumer gates by
+    mode. Read per call so a compiled graph bakes the value observed at
+    trace time. The branch count of the routed product is tiny, so a
+    broadcast multiply plus a sum over the branch axis fuses into one
+    kernel, while the einsum formulation lowers to a bmm whose output
+    layout then needs a full-tensor transpose copy; the grid-major
+    projections let the projector GEMMs write their outputs directly.
+    """
+    return triton_infer_level() >= 1 and not module.training
 
 
 def _build_frame_degree_index(
@@ -197,6 +214,7 @@ class GridProduct(nn.Module):
         | None = None,
         scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         | None = None,
+        grid_major: bool = False,
     ) -> torch.Tensor:
         """
         Combine two coefficient operands by a point-wise grid product.
@@ -297,6 +315,7 @@ class GridMLP(nn.Module):
         | None = None,
         scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         | None = None,
+        grid_major: bool = False,
     ) -> torch.Tensor:
         """
         Apply the polynomial point-wise MLP on coefficient operands.
@@ -446,6 +465,7 @@ class GridBranch(nn.Module):
         | None = None,
         scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         | None = None,
+        grid_major: bool = False,
     ) -> torch.Tensor:
         """
         Apply scalar-routed grid branch mixing on coefficient operands.
@@ -487,7 +507,13 @@ class GridBranch(nn.Module):
                 self.channels,
             )
             router = torch.softmax(self.router(scalar_pair), dim=-1)
-            coeff = torch.einsum("ndfhc,nfh->ndfc", value, router)
+            if _grid_layout_infer(self):
+                # The branch axis is tiny: a broadcast product plus a sum
+                # fuses into one kernel, while the einsum lowers to a bmm
+                # whose output then needs a full-tensor layout copy.
+                coeff = (value * router.unsqueeze(1).unsqueeze(-1)).sum(dim=3)
+            else:
+                coeff = torch.einsum("ndfhc,nfh->ndfc", value, router)
         else:
             coeff = (
                 pair_grid(left, right)
@@ -501,13 +527,33 @@ class GridBranch(nn.Module):
                 to_grid=to_grid,
                 project_pair=project_pair,
             )
-            value = left_grid * right_grid  # (N, G, F, N_branches * C)
-            n_batch, n_grid, n_focus, _ = value.shape
-            value = value.reshape(
-                n_batch, n_grid, n_focus, self.n_branches, self.channels
-            )
+            value = left_grid * right_grid  # (N|G, G|N, F, N_branches * C)
             router = torch.softmax(self.router(scalar_pair), dim=-1)  # (N, F, Nb)
-            out = torch.einsum("ngfhc,nfh->ngfc", value, router)  # (N, G, F, C)
+            # The operand layout is an explicit argument, not an
+            # environment-plus-identity inference: the owning grid net
+            # passes ``grid_major`` to match its own flag-aware projectors
+            # (which emit grid-major (G, N, F, ...) operands under the
+            # flag), while any other caller keeps the documented
+            # node-major (N, G, F, ...) layout.  Sniffing the projector
+            # identity is not Dynamo-safe: bound-method attributes resolve
+            # through Dynamo's hasattr path and silently read as absent,
+            # so an identity check always evaluates False under
+            # torch.compile while the projectors still emit grid-major.
+            if _grid_layout_infer(self) and grid_major:
+                # Grid-major operands from the projector (G, N, F, Nb * C):
+                # the broadcast weight aligns on the node axis and the whole
+                # combination stays grid-major for the from-grid projection.
+                g_size, n_batch, n_focus, _ = value.shape
+                value5 = value.reshape(
+                    g_size, n_batch, n_focus, self.n_branches, self.channels
+                )
+                out = (value5 * router.unsqueeze(0).unsqueeze(-1)).sum(dim=3)
+            else:
+                n_batch, n_grid, n_focus, _ = value.shape
+                value5 = value.reshape(
+                    n_batch, n_grid, n_focus, self.n_branches, self.channels
+                )
+                out = torch.einsum("ngfhc,nfh->ngfc", value5, router)  # (N, G, F, C)
             coeff = from_grid(out)
 
         # === Step 3. Project back to coefficients and mix output channels ===
@@ -871,6 +917,7 @@ class BaseGridNet(nn.Module):
             from_grid=self._from_grid_scalar if scalar_only else self._from_grid,
             pair_grid=None if scalar_only else self._pair_grid,
             scalar_product=self._scalar_so3_product if direct_scalar else None,
+            grid_major=_grid_layout_infer(self),
         )
 
         # === Step 3. Apply scalar gating and contract Wigner-D frames ===
@@ -1110,10 +1157,28 @@ class BaseGridNet(nn.Module):
             coeff_dim,
             self.n_frames,
         )
+        if _grid_layout_infer(self):
+            # Grid-major output: the projector GEMM writes (G, N*F*C) rows
+            # directly, so no full-tensor output transpose is needed. The
+            # pair product and the routed combination are layout agnostic,
+            # and ``_from_grid`` consumes the same layout.
+            return torch.einsum("gdk,ndfkc->gnfc", to_grid, coeff_view)
         return torch.einsum("gdk,ndfkc->ngfc", to_grid, coeff_view)
 
     def _from_grid(self, grid: torch.Tensor) -> torch.Tensor:
         # Channel width is inferred to match the (possibly widened) grid field.
+        if _grid_layout_infer(self):
+            # Grid-major input (G, N, F, C): the flattened (G, N*F*C) view has
+            # contiguous rows and serves the projector GEMM directly, leaving
+            # one fused transpose copy on the coefficient side.
+            # ``from_grid_mat`` is already (D*K, G) row-major.
+            g_size, n_batch, n_focus, n_channels = grid.shape
+            coeff_dim = self.projector.coeff_dim // self.n_frames
+            out = torch.matmul(self.projector.from_grid_mat, grid.reshape(g_size, -1))
+            out5 = out.reshape(
+                coeff_dim, self.n_frames, n_batch, n_focus, n_channels
+            ).permute(2, 0, 3, 1, 4)
+            return out5.reshape(n_batch, coeff_dim, n_focus, self.n_frames * n_channels)
         n_batch, _, n_focus, n_channels = grid.shape
         coeff_dim = self.projector.coeff_dim // self.n_frames
         from_grid = self.projector.from_grid_mat.reshape(
@@ -1126,6 +1191,16 @@ class BaseGridNet(nn.Module):
 
     def _from_grid_scalar(self, grid: torch.Tensor) -> torch.Tensor:
         """Project a grid field to the ``l=0`` coefficient only."""
+        if _grid_layout_infer(self):
+            g_size, n_batch, n_focus, n_channels = grid.shape
+            proj = self.projector.from_grid_mat[
+                0 : self.n_frames
+            ]  # (K, G) of the l=0 degree
+            out = torch.matmul(proj, grid.reshape(g_size, -1))
+            out5 = out.reshape(1, self.n_frames, n_batch, n_focus, n_channels).permute(
+                2, 0, 3, 1, 4
+            )
+            return out5.reshape(n_batch, 1, n_focus, self.n_frames * n_channels)
         n_batch, _, n_focus, n_channels = grid.shape
         coeff_dim = self.projector.coeff_dim // self.n_frames
         from_grid = self.projector.from_grid_mat.reshape(
