@@ -188,6 +188,36 @@ jobs:
           done >> "${manifest}"
           LC_ALL=C sort -u -o "${manifest}" "${manifest}"
           echo "Cached fixture manifest now contains $(wc -l < "${manifest}") files"
+      - name: Check out LAMMPS for the built-in registry test
+        if: matrix.enable_pytorch && !matrix.check_memleak
+        uses: actions/checkout@v7
+        with:
+          repository: lammps/lammps
+          ref: 8de817dd79bfe4525d5d39246a212d833e6dee07 # stable_30Sep2026
+          path: lammps-builtin
+          sparse-checkout: |
+            cmake
+            src
+            lib/kokkos
+            tools
+      - name: Check built-in Kokkos pair style registration
+        if: matrix.enable_pytorch && !matrix.check_memleak
+        run: |
+          echo "include(\"$PWD/source/lmp/builtin.cmake\")" >> lammps-builtin/cmake/CMakeLists.txt
+          build="$RUNNER_TEMP/lammps-builtin-build"
+          cmake -S lammps-builtin/cmake -B "$build" -D CMAKE_PREFIX_PATH="$PWD/dp_test" \
+            -D BUILD_MPI=OFF -D PKG_KOKKOS=ON -D Kokkos_ENABLE_SERIAL=ON
+          # The registration pass must work without class-definition headers or version macros.
+          for header in source/lmp/pair_{deepmd,dpa4spin}_kokkos.h; do
+            c++ -E -P -x c++ -DPAIR_CLASS -DLMP_KOKKOS "$header" > /dev/null
+          done
+          registry="$build/styles/style_pair.cpp"
+          for style in {deepmd,dpa4spin}/kk{,/host,/device}; do
+            if ! sed -n '/^#ifdef LMP_KOKKOS$/,/^#endif/p' "$registry" | grep -F "add_builtin(\"$style\","; then
+              echo "Missing Kokkos-guarded registration for $style" >&2
+              exit 1
+            fi
+          done
       # test lammps
       - run: |
           cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
