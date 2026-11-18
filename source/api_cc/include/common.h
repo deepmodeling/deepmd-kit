@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <set>
 #include <string>
@@ -199,6 +200,54 @@ std::vector<std::intptr_t> pack_comm_sendlist_pointers(int* const* sendlist,
  *DP_INTER_OP_PARALLELISM_THREADS.
  **/
 void get_env_nthreads(int& num_intra_nthreads, int& num_inter_nthreads);
+
+/**
+ * @brief Serialize the TensorFlow ``ConfigProto`` used by the TF-C-API
+ *        ``DeepPotJAX`` session, without depending on protobuf.
+ * @details The bytes are equivalent to this Python config:
+ *   config = tf.ConfigProto(allow_soft_placement=True)
+ *   config.intra_op_parallelism_threads = num_intra_nthreads
+ *   config.inter_op_parallelism_threads = num_inter_nthreads
+ *   config.gpu_options.allow_growth = True
+ *   config.gpu_options.per_process_gpu_memory_fraction = gpu_memory_fraction
+ * The thread counts are protobuf varints, so values >= 128 take more than one
+ * byte. The fixed64 double is written in host byte order, which matches the
+ * protobuf little-endian wire format on the supported platforms.
+ * @param[in] num_intra_nthreads intra_op_parallelism_threads (>= 0).
+ * @param[in] num_inter_nthreads inter_op_parallelism_threads (>= 0).
+ * @param[in] gpu_memory_fraction per_process_gpu_memory_fraction.
+ * @return The serialized ConfigProto.
+ **/
+inline std::vector<std::uint8_t> serialize_jax_session_config(
+    const int num_intra_nthreads,
+    const int num_inter_nthreads,
+    const double gpu_memory_fraction) {
+  auto append_varint = [](std::vector<std::uint8_t>& out, std::uint32_t value) {
+    while (value >= 0x80u) {
+      out.push_back(static_cast<std::uint8_t>((value & 0x7fu) | 0x80u));
+      value >>= 7u;
+    }
+    out.push_back(static_cast<std::uint8_t>(value));
+  };
+  std::vector<std::uint8_t> config;
+  // intra_op_parallelism_threads (field 2, varint)
+  config.push_back(0x10);
+  append_varint(config, static_cast<std::uint32_t>(num_intra_nthreads));
+  // inter_op_parallelism_threads (field 5, varint)
+  config.push_back(0x28);
+  append_varint(config, static_cast<std::uint32_t>(num_inter_nthreads));
+  // gpu_options (field 6, length-delimited, 11 bytes):
+  // per_process_gpu_memory_fraction (field 1, fixed64)
+  config.insert(config.end(), {0x32, 0xb, 0x9});
+  std::uint8_t bytes[sizeof(double)];
+  std::memcpy(bytes, &gpu_memory_fraction, sizeof(double));
+  config.insert(config.end(), bytes, bytes + sizeof(double));
+  // gpu_options.allow_growth (field 4, varint) = true
+  config.insert(config.end(), {0x20, 0x1});
+  // allow_soft_placement (field 7, varint) = true
+  config.insert(config.end(), {0x38, 0x1});
+  return config;
+}
 
 /**
  * @brief Dynamically load OP library. This should be called before loading
