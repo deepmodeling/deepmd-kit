@@ -42,8 +42,12 @@ The option **`graph_file`** provides the file name of the frozen model. The mode
 
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it) and translates the names to atom types by rules provided by **`atom_type`**.
 
-The client accepts the standard i-PI `INIT` message (replica ID, payload length,
-and payload). Its model and atom types remain configured by the JSON input;
+The JSON input configures the model and atom types before the client connects.
+The client therefore answers the first `STATUS` with `READY`. In a normal run,
+i-PI sends `INIT` only after `NEEDINIT`, so it skips initialization here.
+
+If a peer explicitly sends `INIT`, the client reads the replica ID, payload
+length, and payload without changing the model or atom types. The
 initialization payloads are read in chunks with no additional size cap beyond
 the signed 32-bit protocol length limit. Negative payload lengths are rejected
 with an error.

@@ -18,6 +18,15 @@ from pathlib import (
     reason="Skip test because PyTorch support is not enabled.",
 )
 class TestDPIPIInitialization(unittest.TestCase):
+    def assert_ready(self, connection: socket.socket) -> None:
+        connection.sendall(b"STATUS      ")
+        response = b""
+        while len(response) < 12:
+            part = connection.recv(12 - len(response))
+            self.assertTrue(part, "driver closed before STATUS reply")
+            response += part
+        self.assertEqual(response, b"READY       ")
+
     def exchange(
         self, payload: bytes, length: int | None = None, *, verbose: bool = False
     ) -> None:
@@ -62,17 +71,12 @@ class TestDPIPIInitialization(unittest.TestCase):
                 connection, _ = server.accept()
                 with connection:
                     connection.settimeout(10)
+                    self.assert_ready(connection)
                     size = len(payload) if length is None else length
                     connection.sendall(b"INIT        " + struct.pack("=ii", 0, size))
                     connection.sendall(payload)
                     if size == len(payload):
-                        connection.sendall(b"STATUS      ")
-                        response = b""
-                        while len(response) < 12:
-                            part = connection.recv(12 - len(response))
-                            self.assertTrue(part, "driver closed before STATUS reply")
-                            response += part
-                        self.assertEqual(response, b"READY       ")
+                        self.assert_ready(connection)
                         connection.sendall(b"EXIT        ")
                     elif size > len(payload):
                         connection.shutdown(socket.SHUT_WR)
