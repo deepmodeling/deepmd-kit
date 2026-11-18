@@ -89,6 +89,28 @@ def test_descriptor_config_warning_skips_default_only_difference(caplog):
     assert caplog.text == ""
 
 
+def test_descriptor_config_warning_skips_runtime_only_differences(monkeypatch, caplog):
+    monkeypatch.setattr(
+        finetune,
+        "_normalize_descriptor_for_compare",
+        lambda descriptor: descriptor,
+    )
+
+    runtime_only_differences = [
+        ({"type": "se_e2_a", "seed": None}, {"type": "se_e2_a", "seed": 42}),
+        ({"type": "dpa4c", "use_amp": False}, {"type": "dpa4c", "use_amp": True}),
+    ]
+    for input_descriptor, pretrained_descriptor in runtime_only_differences:
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            finetune.warn_configuration_mismatch_during_finetune(
+                input_descriptor,
+                pretrained_descriptor,
+            )
+
+        assert caplog.text == ""
+
+
 def test_descriptor_config_warning_falls_back_to_raw_if_normalization_fails(
     monkeypatch, caplog
 ):
@@ -156,6 +178,20 @@ def test_finetune_rule_builder_updates_single_task_config_preserving_trainable()
     assert rule.get_finetune_tmap() == ["O", "H", "B"]
     assert rule.get_pretrained_tmap() == ["O", "H"]
     assert rule.get_has_new_type()
+
+
+def test_finetune_rule_builder_carries_descriptor_use_amp():
+    pretrained = _model_config(["O", "H"])
+    target = _model_config(["O", "H"])
+    target["descriptor"]["use_amp"] = True
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["descriptor"]["use_amp"] is True
 
 
 def test_finetune_rule_builder_carries_long_range_preserving_trainable():

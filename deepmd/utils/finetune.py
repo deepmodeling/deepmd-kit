@@ -19,7 +19,7 @@ from deepmd.utils.spin import (
 
 log = logging.getLogger(__name__)
 
-_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable"})
+_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable", "seed", "use_amp"})
 _MISSING = object()
 _MAX_DESCRIPTOR_CONFIG_DIFFS = 20
 _MAX_CONFIG_VALUE_LENGTH = 200
@@ -582,11 +582,17 @@ class FinetuneRuleBuilder:
                 pretrained_config["descriptor"],
                 model_branch_chosen,
             )
+        input_descriptor = single_config.get("descriptor", {})
         trainable_param = {
-            "descriptor": single_config.get("descriptor", {}).get("trainable", True),
+            "descriptor": input_descriptor.get("trainable", True),
             "fitting_net": single_config.get("fitting_net", {}).get("trainable", True),
         }
         single_config["descriptor"] = deepcopy(pretrained_config["descriptor"])
+        # use_amp is an execution policy rather than a checkpoint parameter, so
+        # it cannot come from the pretrained descriptor; carry the input value
+        # across the overwrite just like trainable.
+        if "use_amp" in input_descriptor:
+            single_config["descriptor"]["use_amp"] = input_descriptor["use_amp"]
         if not random_fitting:
             single_config["fitting_net"] = deepcopy(pretrained_config["fitting_net"])
             # A long-range module reads the descriptor beside the fitting and
