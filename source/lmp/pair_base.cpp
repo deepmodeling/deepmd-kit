@@ -576,6 +576,15 @@ double PairDeepBaseModel::init_one(int i, int j) {
 
 void* PairDeepBaseModel::extract(const char* str, int& dim) {
   if (strcmp(str, "cut_coul") == 0) {
+    // Standalone DeepMD historically supplies the cutoff to ordinary KSpace
+    // solvers. In a hybrid style, the Coulomb sub-style supplies its own
+    // cutoff, which need not match the model's. PPPM/DPLR intentionally uses
+    // the model cutoff even when DeepMD is a hybrid sub-style.
+    if (force->pair != this &&
+        (force->kspace_style == nullptr ||
+         strcmp(force->kspace_style, "pppm/dplr") != 0)) {
+      return nullptr;
+    }
     dim = 0;
     return (void*)&cutoff;
   }
