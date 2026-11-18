@@ -219,15 +219,15 @@ def build_directional_neighbor_list(
 
     Parameters
     ----------
-    coord_central : torch.Tensor
+    coord_cntl : torch.Tensor
         coordinates of central atoms. assumed to be local atoms.
         shape [batch_size, nloc_central x 3]
-    atype_central : torch.Tensor
+    atype_cntl : torch.Tensor
         atomic types of central atoms. shape [batch_size, nloc_central]
         if type < 0 the atom is treated as virtual atoms.
-    coord_neighbor : torch.Tensor
+    coord_neig : torch.Tensor
         extended coordinates of neighbors atoms. shape [batch_size, nall_neighbor x 3]
-    atype_central : torch.Tensor
+    atype_neig : torch.Tensor
         extended atomic types of neighbors atoms. shape [batch_size, nall_neighbor]
         if type < 0 the atom is treated as virtual atoms.
     rcut : float
