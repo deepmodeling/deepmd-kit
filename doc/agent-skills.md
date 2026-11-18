@@ -46,6 +46,22 @@ paper:
   Skills](https://doi.org/10.1021/acs.jctc.6c00622). *Journal
   of Chemical Theory and Computation*, 2026.
 
+## Read bundled guides offline
+
+Installed DeePMD-kit releases include a version-matched copy of the public
+workflow guides. Use the `dp` CLI to read them locally:
+
+```sh
+dp skills list
+dp skills read deepmd-train
+```
+
+`dp skills read <name> [relative-path]` reads the named guide's `SKILL.md`
+by default, or a referenced text file when a relative path is supplied.
+These commands only display documentation; they do not load model backends,
+execute examples, or register skills with an AI agent. To install the skills
+into an agent, follow the instructions below.
+
 ## Install skills
 
 To have an agent install DeePMD-kit itself, send
