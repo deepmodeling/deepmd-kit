@@ -86,6 +86,14 @@ Specifically, there are several parts that need to be modified:
   The total training steps are computed as `ceil(sum_i(num_epoch_dict[i] * per_task_total[i]))`.
   This parameter is mutually exclusive with `training/model_prob` and `training/num_steps`.
 
+- (Optional, PyTorch Exportable only) {ref}`training/task_sampling <training/task_sampling>` controls task selection across distributed ranks.
+  The default, `"synchronized"`, selects the same task on every rank at each step.
+  With `"independent"`, each rank samples its own task using the same task probabilities; one distributed update can therefore combine gradients from different tasks.
+  Task probabilities and within-task data sampling are unchanged. These modes have the same expected task proportions but need not produce equivalent optimizer updates.
+  Independent task random streams are derived from `training/seed` and the rank, and each rank's stream is saved in checkpoints for restart.
+  Changing the mode when restarting requires `training/reset_data_progress: true`, which resets data progress as well as task selection.
+  Independent-mode checkpoints require a version that supports this option; the default mode retains the existing checkpoint data-progress format.
+
 An example input for multi-task training two models in water system is shown as following:
 
 ```{literalinclude} ../../examples/water_multi_task/pytorch_example/input_torch.json
