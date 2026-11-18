@@ -22,6 +22,9 @@ from deepmd.utils.data_config import (
     DataConfig,
     data_group_configs,
 )
+from deepmd.utils.data_system import (
+    close_data_systems,
+)
 from deepmd.utils.stat_file import (
     StatFileMode,
     StatFileSpec,
@@ -106,15 +109,23 @@ def make_task_maps(
     config: Mapping[str, Any],
     factory: Callable[[TrainingTaskConfig], tuple[Any, Any | None, Any | None]],
 ) -> tuple[dict[str, Any], dict[str, Any | None], dict[str, Any | None]]:
-    """Build training, validation, and stat maps from normalized task configs."""
+    """Build task maps, closing completed data objects if a later task fails.
+
+    Factories own partial results until they return and must clean those up
+    themselves. Successful maps transfer ownership to the caller.
+    """
     training_data: dict[str, Any] = {}
     validation_data: dict[str, Any | None] = {}
     stat_data: dict[str, Any | None] = {}
-    for task_config in iter_training_task_configs(config):
-        train_item, valid_item, stat_item = factory(task_config)
-        training_data[task_config.key] = train_item
-        validation_data[task_config.key] = valid_item
-        stat_data[task_config.key] = stat_item
+    try:
+        for task_config in iter_training_task_configs(config):
+            train_item, valid_item, stat_item = factory(task_config)
+            training_data[task_config.key] = train_item
+            validation_data[task_config.key] = valid_item
+            stat_data[task_config.key] = stat_item
+    except BaseException:
+        close_data_systems(training_data, validation_data)
+        raise
     return training_data, validation_data, stat_data
 
 

@@ -21,6 +21,7 @@ from unittest.mock import (
 import lmdb
 import msgpack
 import numpy as np
+import pytest
 
 import deepmd.utils.random as dp_random
 from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
@@ -83,6 +84,61 @@ def _encode_array(arr: np.ndarray) -> dict:
         "shape": list(arr.shape),
         "data": arr.tobytes(),
     }
+
+
+@pytest.mark.timeout(60)
+class TestConvertedLmdbValidation(unittest.TestCase):
+    """Converted inputs retain the native LMDB routing and DDP metadata."""
+
+    def test_neighbor_stat_and_training_data_convert_each_input(self) -> None:
+        """Both entrypoints feed every selected file to the shared converter."""
+        params = {
+            "systems": ["first.extxyz", "second.extxyz"],
+            "format": "extxyz",
+            "batch_size": 1,
+        }
+        for factory in (get_neighbor_stat_data, _build_data_system):
+            with patch(
+                "deepmd.utils.data_path._convert_system_by_dpdata",
+                side_effect=[[], RuntimeError("second source reached")],
+            ) as convert:
+                with self.assertRaisesRegex(RuntimeError, "second source reached"):
+                    factory(params, ["O", "H"])
+                self.assertEqual(
+                    [call.args[0] for call in convert.call_args_list], params["systems"]
+                )
+
+    def test_converted_lmdb_forwards_distributed_sharding(self) -> None:
+        """Converted and direct LMDB routes must pass identical DDP metadata."""
+        params = {
+            "systems": "input.extxyz",
+            "format": "extxyz",
+            "batch_size": 2,
+        }
+        with (
+            patch(
+                "deepmd.utils.data_config.process_systems",
+                return_value=["converted.lmdb"],
+            ),
+            patch("deepmd.pt_expt.entrypoints.main.LmdbDataSystem") as lmdb_data_system,
+        ):
+            _build_data_system(
+                params,
+                ["O", "H"],
+                seed=7,
+                rank=2,
+                world_size=4,
+            )
+
+        lmdb_data_system.assert_called_once_with(
+            lmdb_path="converted.lmdb",
+            type_map=["O", "H"],
+            batch_size=2,
+            auto_prob_style=None,
+            seed=7,
+            rank=2,
+            world_size=4,
+        )
 
 
 def _make_frame(natoms: int, seed: int, *, include_spin: bool = False) -> dict:
@@ -539,11 +595,21 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
                 batch_size="mix:30000",
                 seed=0,
             )
-            self.assertEqual(inspect_availability.call_count, 0)
+            # Structural periodicity is always scanned exactly, before any
+            # loss labels arrive. Default-backed atom_pref must not add a
+            # partition or participate in the subsequent label scan.
+            self.assertEqual(inspect_availability.call_count, 8)
+            inspect_availability.reset_mock()
             ds.add_data_requirements(loss.label_requirement)
 
         try:
             self.assertLessEqual(inspect_availability.call_count, 8)
+            self.assertTrue(
+                all(
+                    "atom_pref" not in call.args[1]
+                    for call in inspect_availability.call_args_list
+                )
+            )
             self.assertEqual(len(ds._stat_groups), 1)
             batch = ds._reader.decode_batch([0, 1])
             np.testing.assert_array_equal(batch["atom_pref"][0], np.full(18, 2.0))

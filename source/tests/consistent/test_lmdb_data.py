@@ -156,6 +156,9 @@ class TestLmdbDataConsistency(unittest.TestCase):
         cls._type_map = ["O", "H"]
         cls._reader = LmdbDataReader(cls._lmdb_path, cls._type_map, batch_size=2)
         cls._ds = LmdbDataset(cls._lmdb_path, cls._type_map, batch_size=2)
+        # The adapter registers structural box availability automatically;
+        # compare decoders with the same requirements.
+        cls._reader.add_data_requirement(cls._ds.data_requirements)
 
     @classmethod
     def tearDownClass(cls):
@@ -209,6 +212,7 @@ class TestLmdbDataConsistency(unittest.TestCase):
             path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
             reader = LmdbDataReader(path, self._type_map, batch_size=2)
             ds = LmdbDataset(path, self._type_map, batch_size=2)
+            reader.add_data_requirement(ds.data_requirements)
             self.assertEqual(len(reader), len(ds))
             for i in range(len(reader)):
                 _assert_frames_equal(self, reader[i], ds[i], i)
@@ -219,6 +223,7 @@ class TestLmdbDataConsistency(unittest.TestCase):
             path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
             reader = LmdbDataReader(path, self._type_map, batch_size=2)
             ds = LmdbDataset(path, self._type_map, batch_size=2)
+            reader.add_data_requirement(ds.data_requirements)
             self.assertEqual(reader.nframes, ds.nframes)
             self.assertEqual(reader.batch_sizes, ds.batch_sizes)
             self.assertEqual(reader.mixed_nloc, ds.mixed_nloc)

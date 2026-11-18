@@ -188,6 +188,7 @@ class EnerModel(StandardModel):
     def data_stat(
         self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
     ) -> None:
+        self.descrpt.validate_mixed_type(data.mixed_type)
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         stat_file_path = add_type_map_to_stat_path(stat_file_path, self.type_map)
@@ -217,8 +218,8 @@ class EnerModel(StandardModel):
                 all_stat["natoms_vec"],
                 all_stat["default_mesh"],
                 all_stat,
-                mixed_type,
-                all_stat["real_natoms_vec"],
+                mixed_type=mixed_type,
+                real_natoms_vec=all_stat["real_natoms_vec"],
                 stat_file_path=stat_file_path,
             )
         else:

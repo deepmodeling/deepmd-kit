@@ -132,6 +132,10 @@ class DescrptHybrid(Descriptor):
             self.descrpt_list[ii].sel_r,
         )
 
+    def mixed_types(self) -> bool:
+        """Every component must accept the shared mixed-type batch."""
+        return all(descriptor.mixed_types() for descriptor in self.descrpt_list)
+
     def compute_input_stats(
         self,
         data_coord: list,

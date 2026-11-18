@@ -56,6 +56,8 @@ dependencies = [
     'array-api-compat',
     'lmdb',
     'msgpack',
+    'dpdata>=1.1.0',
+    'filelock>=3.12',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]
@@ -82,7 +84,6 @@ test = [
     # Build-option tests import the backend outside its isolated build environment.
     "dependency_groups",
     'tomli >= 1.1.0 ; python_version < "3.11"',
-    "dpdata>=0.2.7",
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # fixed in 3.23.0
     "ase>=3.23.0",
