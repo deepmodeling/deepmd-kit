@@ -2366,6 +2366,7 @@ def _trace_and_export_impl(
         GeometricInitialEmbedding,
     )
     from deepmd.pt_expt.descriptor.dpa4_nn.so2 import (
+        SO2Convolution,
         SO2Linear,
     )
 
@@ -2376,6 +2377,11 @@ def _trace_and_export_impl(
             module._force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
             module._force_fused_scatter = force_fused_scatter
+        if isinstance(module, SO2Convolution):
+            # The folded radial head resolves its device through the same
+            # pin: the CPU tracing inputs would otherwise keep the fold out
+            # of the CUDA-target artifact, exactly like the PT freeze seam.
+            module._force_radial_packed = force_fused_scatter
 
     if lower_kind == "graph" and not _supports_graph_export(model):
         raise NotImplementedError(
