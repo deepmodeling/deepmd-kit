@@ -653,6 +653,10 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # horizontal fusion. Scalar codegen preserves the dynamic graph.
         if _torch_release() == (2, 11):
             compile_options["cpp.simdlen"] = 1
+        elif _torch_release() == (2, 13):
+            # Its serial lowering still needs separate scatter/gather loops
+            # to keep their temporary index arrays declared before use.
+            compile_options["cpp.max_horizontal_fusion_size"] = 1
         # The peak-memory reordering pass sizes buffers through
         # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
         # lowered from ``make_fx`` fake placeholders whose edge-count symbols
@@ -675,16 +679,17 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # system sized at run time, so the guard is removed rather than
         # retuned.
         under_lsan = os.environ.get("DP_GEN_UNDER_SANITIZER") == "lsan"
-        # PyTorch 2.11 corrupts the process heap when its CPU backend lowers
-        # the dynamic SeZM inference graph with forced parallel loops. Keeping
-        # its default threshold and thread policy preserves the same graph
-        # semantics without activating the defective codegen path.
-        if under_lsan:
-            # LeakSanitizer fails on the generated OpenMP force/virial
-            # reductions, so its memory-safety fixtures use serial codegen.
+        # PyTorch 2.11 corrupts the process heap with forced parallel loops.
+        # PyTorch 2.13's vectorized atomic-add codegen also mishandles scalar
+        # destination indices, including in DPA2's with-comm artifact. Merely
+        # restoring its default loop threshold is insufficient: use the
+        # single-thread lowering until the parallel path is qualified. This
+        # affects CPU inference kernels, not SIMD, training or CUDA kernels.
+        if under_lsan or _torch_release() == (2, 13):
+            # LeakSanitizer likewise requires serial force/virial reductions.
             compile_options["cpp.dynamic_threads"] = False
             compile_options["cpp.threads"] = 1
-        elif _torch_release() != (2, 11):
+        elif _torch_release() == (2, 12):
             compile_options["cpp.min_chunk_size"] = 1
             # Resolve the thread count at run time instead of baking the
             # freezing host's into the generated code. A deployed artifact is
