@@ -160,12 +160,12 @@ class EnergyStdLoss(TaskLoss):
 
         self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
-        self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
-        self.has_f = (start_pref_f != 0.0 and limit_pref_f != 0.0) or inference
-        self.has_v = (start_pref_v != 0.0 and limit_pref_v != 0.0) or inference
-        self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
-        self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
-        self.has_gf = start_pref_gf != 0.0 and limit_pref_gf != 0.0
+        self.has_e = (start_pref_e != 0.0 or limit_pref_e != 0.0) or inference
+        self.has_f = (start_pref_f != 0.0 or limit_pref_f != 0.0) or inference
+        self.has_v = (start_pref_v != 0.0 or limit_pref_v != 0.0) or inference
+        self.has_ae = (start_pref_ae != 0.0 or limit_pref_ae != 0.0) or inference
+        self.has_pf = (start_pref_pf != 0.0 or limit_pref_pf != 0.0) or inference
+        self.has_gf = start_pref_gf != 0.0 or limit_pref_gf != 0.0
         # Hessian labels scale quadratically with the atom count. Unlike the
         # linear-size labels above, do not request them merely because a mock
         # inference loss is collecting requirements for ``dp change-bias``.
