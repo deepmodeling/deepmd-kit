@@ -135,20 +135,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
-        Returns
-        -------
-        descriptor:         torch.Tensor
-            the descriptor of shape nb x nloc x g1_dim.
-            invariant single-atom representation.
-        g2:                 torch.Tensor
-            invariant pair-atom representation.
-        h2:                 torch.Tensor
-            equivariant pair-atom representation.
-        rot_mat:            torch.Tensor
-            rotation matrix for equivariant fittings
-        sw:                 torch.Tensor
-            The switch function for decaying inverse distance.
-
         References
         ----------
         .. [1] Zhang, D., Liu, X., Zhang, X. et al. DPA-2: a

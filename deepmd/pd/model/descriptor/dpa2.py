@@ -130,20 +130,6 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
-        Returns
-        -------
-        descriptor:         paddle.Tensor
-            the descriptor of shape nb x nloc x g1_dim.
-            invariant single-atom representation.
-        g2:                 paddle.Tensor
-            invariant pair-atom representation.
-        h2:                 paddle.Tensor
-            equivariant pair-atom representation.
-        rot_mat:            paddle.Tensor
-            rotation matrix for equivariant fittings
-        sw:                 paddle.Tensor
-            The switch function for decaying inverse distance.
-
         References
         ----------
         .. [1] Zhang, D., Liu, X., Zhang, X. et al. DPA-2: a
