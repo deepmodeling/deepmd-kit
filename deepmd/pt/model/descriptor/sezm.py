@@ -131,6 +131,65 @@ if TYPE_CHECKING:
     )
 
 
+def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
+    """Whether one block's *currently selected* rotation consumers address
+    the band (inference only).
+
+    The banded layout serves the Triton value path and the Triton
+    rotate-mix path (whose kernels address the band directly) together
+    with the Triton flash aggregation and the GIE coupling that read the
+    same tensor.  Every dense-layout consumer keeps the dense surfaces:
+    the cuTile value path, the fused CUDA convolution, the plain SO2
+    reference path, and the aggregation routes that rotate messages back
+    through ``Dt_full`` (no attention heads or a projected-attention
+    layout).  Training always keeps the dense layout: the registered
+    parameter-gradient consumers (the channel-basis backward of the
+    rotate-mix operator among them) address the dense surface, so a
+    training cache must never carry the band even when the bound kernels
+    could read it.  The level derives from the per-block value captured
+    at construction -- the same number ``active_triton_level`` resolves
+    dispatch with -- and the gate is evaluated per cache build.
+    """
+    if training:
+        return False
+    if getattr(so2_conv, "_cutile_value_path", None) is not None:
+        return False
+    if getattr(so2_conv, "_cuda_conv_fn", None) is not None:
+        return False
+    if getattr(so2_conv, "_cuda_value_train", None) is not None:
+        return False
+    # Inverse-rotation consumer: without a bound flash aggregation the
+    # message is rotated back through the dense inverse matrix.
+    if getattr(so2_conv, "_flash_atten_fn", None) is None:
+        return False
+    # Gradient consumer: the rotate-mix backward contracts the channel-basis
+    # cotangent through the dense-only helper whenever the basis still
+    # requires grad.  ``.eval()`` alone does not freeze parameters, so an
+    # eval-mode backward against trainable parameters (e.g. validation
+    # losses) must also keep the dense layout.  A no-grad forward, however,
+    # cannot build that backward at all, so a ``torch.no_grad()`` inference
+    # call admits the band without freezing anything -- ``requires_grad``
+    # alone is not the discriminator.
+    mixer = getattr(so2_conv, "radial_degree_mixer", None)
+    if (
+        mixer is not None
+        and getattr(mixer, "rank", 0) > 0
+        and getattr(getattr(mixer, "channel_basis", None), "requires_grad", False)
+        and torch.is_grad_enabled()
+    ):
+        return False
+    # Dispatch resolves against the per-block levels captured at
+    # construction (``active_triton_level``), not the ambient environment;
+    # eligibility must derive from the same captured numbers.
+    if so2_conv.triton_infer_level < 1:
+        return False
+    # Forward-rotation consumer selected at the captured level.
+    return getattr(so2_conv, "_triton_value_path", None) is not None or (
+        getattr(so2_conv, "_triton_value_path", None) is None
+        and getattr(so2_conv, "_triton_rotate_mix", None) is not None
+    )
+
+
 @BaseDescriptor.register("SeZM")
 @BaseDescriptor.register("sezm")
 @BaseDescriptor.register("DPA4")
@@ -1126,6 +1185,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             and block.so2_conv._flash_atten_trains
             for block in self.blocks
         )
+        # Banded storage additionally requires every selected rotation
+        # consumer to address the band; the decision is re-evaluated at
+        # each cache build so train/eval and level changes are honored
+        # (see ``block_supports_packed_wigner``).
+        self._blocks_have_so2_conv = bool(self.blocks) and all(
+            hasattr(block, "so2_conv") for block in self.blocks
+        )
 
         # The envelope and the radial basis are both functions of the pair
         # distance and are cheap enough that the compiler inlines them into
@@ -1427,6 +1493,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
+                packed_wigner=self._packed_wigner_ok(),
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1735,7 +1802,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
                 fused_radial=(None if self.training else self._cuda_radial_fn),
-                fused_wigner=(None if self.training else self._cuda_wigner_fn),
+                fused_wigner=self._inference_wigner_fn(),
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
                 # Random local-Z roll is a training-only augmentation;
@@ -1743,6 +1810,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
+                packed_wigner=self._packed_wigner_ok(),
                 node_partial_exchange=node_partial_exchange,
             )
 
@@ -2062,6 +2130,42 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
         return edge_quat
 
+    def _packed_wigner_ok(self) -> bool:
+        """Every block's currently selected consumers address the band."""
+        if not self._blocks_have_so2_conv:
+            return False
+        # The cache builds a single band at ``mp_init_lmax`` (``l_schedule[0]``,
+        # the largest degree), while every consumer kernel derives its
+        # per-edge stride and its ``m = -1 / +1`` group offsets from the
+        # block's own degree.  A decreasing schedule would read a narrower
+        # band out of a wider stride, so anything but a uniform degree keeps
+        # the dense surfaces.
+        if any(int(block.so2_conv.lmax) != self.mp_init_lmax for block in self.blocks):
+            return False
+        return all(
+            block_supports_packed_wigner(block.so2_conv, self.training)
+            for block in self.blocks
+        )
+
+    def _inference_wigner_fn(self) -> Any:
+        """The fused CUDA Wigner pair to substitute, if it serves this build.
+
+        The CUDA calculator produces the dense pair only.  When every block
+        admits the banded layout (the structural gate of the inference
+        levels -- no per-optimization opt-in), substituting that calculator
+        would veto the band at the cache build (it has no
+        ``forward_band``), so the module's own band-capable ``wigner_calc``
+        resolves instead -- the dense pair is never materialized on that
+        path, so the CUDA dense speedup is not lost, it is unused.  Any
+        dense-consuming build (a dense-layout consumer selected, training,
+        or the gate closed) keeps the CUDA calculator.
+        """
+        if self.training:
+            return None
+        if self._cuda_wigner_fn is not None and self._packed_wigner_ok():
+            return None
+        return self._cuda_wigner_fn
+
     def _build_full_wigner(self) -> bool:
         """Return whether the active execution path needs dense Wigner blocks."""
         if not self._need_full_wigner:
@@ -2134,6 +2238,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             shared = self._shared_wigner_runs(edge_cache, calc.lmax)
             if shared is not None:
                 return shared
+            packed = getattr(edge_cache, "D_packed", None)
+            if packed is not None and calc.lmax <= self.lmax:
+                # The packed band's m=0 group already carries these entries
+                # (band columns 1..(lmax+1)^2-1 equal the zonal coupling's
+                # packed-row order), so no second quaternion -> monomial ->
+                # block run is scheduled next to the banded assembly.
+                return packed[:, 1 : (calc.lmax + 1) ** 2]
             return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None

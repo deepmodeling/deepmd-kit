@@ -272,6 +272,10 @@ class GeometricInitialEmbedding(nn.Module):
         # Advanced indexing pairs one packed non-scalar row with the zonal m=0 column
         # from the same degree block in Dt_full.
         if zonal_coupling is None:
+            # Only the dense layout reaches here: the descriptor builds the
+            # coupling eagerly in banded mode (where the dense surfaces do
+            # not exist to gather from), so a None coupling implies
+            # ``Dt_full`` is present.
             Dt_full = edge_cache.Dt_full  # (E, D, D)
             zonal_coupling = Dt_full[
                 :,
