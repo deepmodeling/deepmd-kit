@@ -702,6 +702,16 @@ class TestTraining(unittest.TestCase):
         config = normalize(config)
         self._run_training(config)
 
+    @REQUIRES_SUPPORTED_COMPILE
+    def test_training_loop_compiled_two_side(self) -> None:
+        """Run compiled training with type_one_side=False."""
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["model"]["descriptor"]["type_one_side"] = False
+        config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self._run_training(config)
+
 
 class TestCompiledModelGetattr(unittest.TestCase):
     """Unit tests for _CompiledModel attribute delegation.
