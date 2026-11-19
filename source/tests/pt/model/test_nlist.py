@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import torch
 
@@ -7,17 +10,125 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.nlist import (
+    _nlist_distinguish_types_topk,
     build_directional_neighbor_list,
     build_multiple_neighbor_list,
     build_neighbor_list,
     extend_coord_with_ghosts,
     get_multiple_nlist_key,
+    nlist_distinguish_types,
 )
 from deepmd.pt.utils.region import (
     inter2phys,
 )
 
 dtype = torch.float64
+
+
+class TestNeighborTypeGrouping(unittest.TestCase):
+    def test_cpu_keeps_stable_sort(self) -> None:
+        nlist = torch.tensor([[[0, 1, 2, -1]]], device="cpu")
+        atype = torch.tensor([[1, 0, 1]], device="cpu")
+        expected = torch.tensor([[[1, -1, 0, 2]]], device="cpu")
+        with patch.object(torch, "topk", wraps=torch.topk) as topk:
+            torch.testing.assert_close(
+                nlist_distinguish_types(nlist, atype, [2, 2]),
+                expected,
+                rtol=0,
+                atol=0,
+            )
+            topk.assert_not_called()
+
+    def test_stable_order(self) -> None:
+        nlist = torch.tensor([[[1, 3, 0, -1, 2, 1]]], device=env.DEVICE)
+        atype = torch.tensor([[0, 1, 0, -1]], device=env.DEVICE)
+        tnlist = torch.tensor([[[1, -1, 0, -1, 0, 1]]], device=env.DEVICE)
+        sel = [2, 3, 1]
+        expected = torch.tensor([[[0, 2, 1, 1, -1, -1]]], device=env.DEVICE)
+        torch.testing.assert_close(
+            _nlist_distinguish_types_topk(nlist, tnlist, sel), expected, rtol=0, atol=0
+        )
+        torch.testing.assert_close(
+            nlist_distinguish_types(nlist, atype, sel), expected, rtol=0, atol=0
+        )
+
+    def test_topk_matches_stable_sort(self) -> None:
+        generator = torch.Generator(device="cpu").manual_seed(20260914)
+        scripted = torch.jit.script(_nlist_distinguish_types_topk)
+        scripted_public = torch.jit.script(nlist_distinguish_types)
+        shapes = [
+            (1, 192, 138, 5184, [46, 92]),
+            (2, 192, 138, 5184, [46, 92]),
+            (1, 3, 7, 5, [3, 3, 1]),
+            (2, 4, 17, 12, [0, 4, 13]),
+            (1, 2, 6, 8, [10, 0, -1, -20]),
+            (1, 1, 1, 3, [1, 1]),
+            (1, 2, 0, 5, [0, 2]),
+            (1, 0, 5, 4, [2, 3]),
+            (0, 2, 5, 4, [2, 3]),
+            (1, 2, 0, 0, [2, 3]),
+        ]
+        for nf, nloc, nnei, nall, sel in shapes:
+            for variant in range(4):
+                with self.subTest(shape=(nf, nloc, nnei, nall), variant=variant):
+                    atype = torch.randint(
+                        -1, len(sel) + 1, (nf, nall), generator=generator, device="cpu"
+                    )
+                    nlist = torch.randint(
+                        -1,
+                        max(nall, 1),
+                        (nf, nloc, nnei),
+                        generator=generator,
+                        device="cpu",
+                    )
+                    if variant == 1:
+                        nlist.fill_(-1)
+                    elif variant == 2:
+                        atype.fill_(0)
+                    elif variant == 3:
+                        atype.fill_(len(sel) + 1)
+                    # Build the expected indices independently, keeping the
+                    # input order and the old per-type slicing/padding rule.
+                    width = sum(len(range(nnei)[:count]) for count in sel)
+                    expected = torch.empty(
+                        (nf, nloc, width), dtype=nlist.dtype, device="cpu"
+                    )
+                    tnlist = torch.empty_like(nlist)
+                    for frame in range(nf):
+                        for atom in range(nloc):
+                            row = nlist[frame, atom].tolist()
+                            types = [
+                                int(atype[frame, idx]) if idx != -1 else -1
+                                for idx in row
+                            ]
+                            tnlist[frame, atom] = torch.tensor(
+                                types, dtype=tnlist.dtype, device="cpu"
+                            )
+                            grouped = []
+                            for kind, count in enumerate(sel):
+                                matched = [
+                                    idx
+                                    for idx, typ in zip(row, types, strict=True)
+                                    if typ == kind
+                                ]
+                                grouped.extend(
+                                    (matched + [-1] * (nnei - len(matched)))[:count]
+                                )
+                            expected[frame, atom] = torch.tensor(
+                                grouped, dtype=nlist.dtype, device="cpu"
+                            )
+                    nlist = nlist.to(env.DEVICE)
+                    atype = atype.to(env.DEVICE)
+                    tnlist = tnlist.to(env.DEVICE)
+                    expected = expected.to(env.DEVICE)
+                    for function in (_nlist_distinguish_types_topk, scripted):
+                        torch.testing.assert_close(
+                            function(nlist, tnlist, sel), expected, rtol=0, atol=0
+                        )
+                    for function in (nlist_distinguish_types, scripted_public):
+                        torch.testing.assert_close(
+                            function(nlist, atype, sel), expected, rtol=0, atol=0
+                        )
 
 
 class TestNeighList(unittest.TestCase):

@@ -306,10 +306,7 @@ def nlist_distinguish_types(
     atype: torch.Tensor,
     sel: list[int],
 ) -> torch.Tensor:
-    """Given a nlist that does not distinguish atom types, return a nlist that
-    distinguish atom types.
-
-    """
+    """Group neighbors by type, preserving their relative order."""
     nf, nloc, nnei = nlist.shape
     ret_nlist = []
     # nloc x nall
@@ -322,7 +319,11 @@ def nlist_distinguish_types(
         nlist.masked_fill(mask, 0),
     )
     tnlist = tnlist.masked_fill(mask, -1)
-    snsel = tnlist.shape[2]
+    # Ascend NPU has a faster floating-point TopK than stable integer sort.
+    # Keys up to 2*nnei-1 must be exactly representable in float32.
+    if nlist.device.type == "npu" and nnei <= 2**23:
+        return _nlist_distinguish_types_topk(nlist, tnlist, sel)
+
     for ii, ss in enumerate(sel):
         # nloc x s(nsel)
         # to int because bool cannot be sort on GPU
@@ -334,6 +335,36 @@ def nlist_distinguish_types(
         inlist = inlist.masked_fill(~(pick_mask.to(torch.bool)), -1)
         # nloc x nsel[ii]
         ret_nlist.append(inlist[..., :ss])
+    return torch.concat(ret_nlist, dim=-1)
+
+
+def _nlist_distinguish_types_topk(
+    nlist: torch.Tensor,
+    tnlist: torch.Tensor,
+    sel: list[int],
+) -> torch.Tensor:
+    """Select matching neighbors in original order using unique position keys.
+
+    The caller must ensure that twice the neighbor-list width is at most
+    2**24, so that all keys are exactly representable in float32.
+    """
+    nnei = nlist.shape[-1]
+    ret_nlist = []
+    position = torch.arange(nnei, dtype=torch.float32, device=nlist.device)
+    other_position = position + float(nnei)
+    for ii, ss in enumerate(sel):
+        # Preserve the original [:ss] slice, including empty and oversized
+        # selections.
+        count = min(ss, nnei) if ss >= 0 else max(nnei + ss, 0)
+        if count == 0:
+            ret_nlist.append(nlist[..., :0])
+            continue
+        # Matching entries have smaller keys than all other entries. Within
+        # each group, the key is strictly increasing with the original index.
+        key = torch.where(tnlist == ii, position, other_position)
+        values, imap = torch.topk(key, k=count, dim=-1, largest=False, sorted=True)
+        inlist = torch.gather(nlist, 2, imap)
+        ret_nlist.append(inlist.masked_fill(values >= float(nnei), -1))
     return torch.concat(ret_nlist, dim=-1)
 
 
