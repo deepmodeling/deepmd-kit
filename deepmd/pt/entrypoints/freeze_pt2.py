@@ -780,6 +780,8 @@ def _export_with_comm_artifact(
     from torch._inductor import config as inductor_config
 
     sample_inputs = _make_comm_sample_inputs(model, nloc=7, device=torch.device("cpu"))
+    # The Wigner-assembly suppression lives in the public export seam
+    # (``trace_lower_exportable``), so every caller inherits it.
     traced = model.forward_common_lower_exportable_with_comm(*sample_inputs)
     exported = torch.export.export(
         traced,
@@ -1003,7 +1005,14 @@ def _freeze_sezm_to_pt2(
 
     # Each model's exportable signature matches its sample tuple positionally
     # (energy or native-spin edge ABI).
+    # The Wigner assembly operator cannot ride an AOTInductor archive (the
+    # C++ package loader resolves custom ops by name and nothing registers
+    # sezm_nn::wigner_d_assemble there), so the export trace keeps the eager
+    # scatter the operator wraps.  The in-process inference path is
+    # unaffected.
     log.info("Tracing the lower graph on CPU (make_fx)...")
+    # The Wigner-assembly suppression lives in the public export seam
+    # (``trace_lower_exportable``), so every caller inherits it.
     traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
 
     # Output key order is read from the static FX output node. A CUDA-target
