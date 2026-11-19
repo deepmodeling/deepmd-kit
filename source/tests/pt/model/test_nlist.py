@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from importlib import (
+    import_module,
+)
 from unittest.mock import (
     patch,
 )
@@ -53,6 +56,33 @@ class TestNeighborTypeGrouping(unittest.TestCase):
         )
 
     def test_topk_matches_stable_sort(self) -> None:
+        self._check_topk_matches_stable_sort(env.DEVICE)
+
+    def test_npu_topk_matches_stable_sort(self) -> None:
+        try:
+            torch_npu = import_module("torch_npu")
+        except ImportError:
+            self.skipTest("torch_npu is unavailable")
+        if not torch_npu.npu.is_available():
+            self.skipTest("No Ascend NPU is available")
+
+        device = torch.device("npu:0")
+        # Exercise the public function, even when env.DEVICE is CPU or CUDA.
+        nlist = torch.tensor([[[0, 1, 2, -1]]], device=device)
+        atype = torch.tensor([[1, 0, 1]], device=device)
+        expected = torch.tensor([[[1, -1, 0, 2]]], device=device)
+        with patch.object(torch, "topk", wraps=torch.topk) as topk:
+            torch.testing.assert_close(
+                nlist_distinguish_types(nlist, atype, [2, 2]),
+                expected,
+                rtol=0,
+                atol=0,
+            )
+            topk.assert_called()
+
+        self._check_topk_matches_stable_sort(device)
+
+    def _check_topk_matches_stable_sort(self, device: torch.device) -> None:
         generator = torch.Generator(device="cpu").manual_seed(20260914)
         scripted = torch.jit.script(_nlist_distinguish_types_topk)
         scripted_public = torch.jit.script(nlist_distinguish_types)
@@ -117,10 +147,10 @@ class TestNeighborTypeGrouping(unittest.TestCase):
                             expected[frame, atom] = torch.tensor(
                                 grouped, dtype=nlist.dtype, device="cpu"
                             )
-                    nlist = nlist.to(env.DEVICE)
-                    atype = atype.to(env.DEVICE)
-                    tnlist = tnlist.to(env.DEVICE)
-                    expected = expected.to(env.DEVICE)
+                    nlist = nlist.to(device)
+                    atype = atype.to(device)
+                    tnlist = tnlist.to(device)
+                    expected = expected.to(device)
                     for function in (_nlist_distinguish_types_topk, scripted):
                         torch.testing.assert_close(
                             function(nlist, tnlist, sel), expected, rtol=0, atol=0
