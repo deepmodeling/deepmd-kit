@@ -24,12 +24,10 @@ from ._namespace import (
     finfo,
     matmul,
     matrix_transpose,
-)
-from ._namespace import sum as xp_sum
-from ._namespace import (
     tensordot,
     vecdot,
 )
+from ._namespace import sum as xp_sum
 
 EighResult = namedtuple("EighResult", ["eigenvalues", "eigenvectors"])
 EigResult = namedtuple("EigResult", ["eigenvalues", "eigenvectors"])
