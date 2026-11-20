@@ -140,8 +140,7 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         """Mixed-type data without names keeps its margin table at the model size.
 
         The stored ``type.raw`` of mixed-type data holds one placeholder type,
-        so the reader counts a single type while the frames read one by one
-        carry the model's type indices.
+        while both frame and batch reads use the real per-frame type indices.
         """
         (self.root / "type_map.raw").unlink()
         np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
@@ -150,13 +149,29 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         )
         np.save(self.set_dir / "coord.npy", coord.reshape(1, -1))
         np.save(self.set_dir / "box.npy", (6.0 * np.eye(3)).reshape(1, 9))
-        np.save(self.set_dir / "real_atom_types.npy", [[0, 1, 2, 1]])
-        np.save(self.set_dir / "real_atom_numbs.npy", [[1, 2, 1]])
+        np.save(self.set_dir / "real_atom_types.npy", [[0, -1, 2, 1]])
+        np.save(self.set_dir / "real_atom_numbs.npy", [[1, 1, 1]])
         data = DeepmdData(str(self.root), type_map=["O", "H", "Si"])
         data.add("pair_margin", 1, default=0.5)
-        self.assertEqual(data.get_ntypes(), 1)
-        loaded = data.get_single_frame(0, num_worker=1)
-        np.testing.assert_allclose(loaded["pair_margin"], 0.4 / 0.5)
+        self.assertEqual(data.get_ntypes(), 3)
+        for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
+            np.testing.assert_allclose(loaded["pair_margin"], 2.0 / 0.5)
+            np.testing.assert_array_equal(
+                loaded["real_natoms_vec"].reshape(-1), [4, 4, 1, 1, 1]
+            )
+
+    def test_mixed_types_validate_indices_before_narrowing(self) -> None:
+        (self.root / "type_map.raw").unlink()
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        np.save(
+            self.set_dir / "real_atom_types.npy",
+            np.array([[0, 1, 2**32, -1]], dtype=np.int64),
+        )
+        data = DeepmdData(str(self.root), type_map=["O", "H", "Si"])
+        with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+            data.get_single_frame(0, num_worker=1)
+        with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+            data.get_batch(1)
 
     def test_required_dataset_type_map_cannot_be_replaced(self) -> None:
         """A supplied model map does not make a required dataset map optional."""

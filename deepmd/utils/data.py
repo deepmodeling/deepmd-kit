@@ -126,12 +126,11 @@ class DeepmdData:
                     self.type_idx_map, np.array([-1], dtype=np.int32)
                 )
             self.type_map = type_map
-        # The model's type count bounds the type indices of data that carries no
-        # names of its own, such as mixed-type data whose `type.raw` stores a
-        # single placeholder type. It does not define the reader's numeric type
-        # domain: legacy spin data also stores unnamed virtual atom types.
+        # Unnamed mixed systems index the model map; their type.raw contains
+        # only placeholders. Non-mixed systems retain their own numeric domain,
+        # which can include the virtual atom types of a spin model.
         self._model_ntypes = len(type_map or ())
-        if type_map is None and self.type_map is None and self.mixed_type:
+        if self.mixed_type and self.type_map is None and not self._model_ntypes:
             raise RuntimeError("mixed_type format must have type_map!")
         # make idx map
         self.sort_atoms = sort_atoms
@@ -653,8 +652,11 @@ class DeepmdData:
         """Number of atom types in the system."""
         if self.type_map is not None:
             return len(self.type_map)
-        else:
-            return max(self.get_atom_type()) + 1
+        if self.mixed_type:
+            # With no dataset map, real frame types index the supplied model map;
+            # type.raw contains only placeholder indices.
+            return self._model_ntypes
+        return max(self.get_atom_type()) + 1
 
     def get_type_map(self) -> list[str]:
         """Get the type map."""
@@ -772,25 +774,8 @@ class DeepmdData:
                 mmap_types = type_path.load_numpy()
             else:
                 mmap_types = self._get_memmap(type_path)
-            real_type = mmap_types[local_idx].copy().astype(np.int32)
-
-            if self.enforce_type_map:
-                try:
-                    real_type = self.type_idx_map[real_type].astype(np.int32)
-                except IndexError as e:
-                    raise IndexError(
-                        f"some types in 'real_atom_types.npy' of set {set_dir} are not contained in {self.get_ntypes()} types!"
-                    ) from e
-
-            frame_data["type"] = real_type
-            ntypes = self.get_ntypes()
-            natoms = len(real_type)
-            # Use bincount for efficient counting of each type
-            natoms_vec = np.bincount(
-                real_type[real_type >= 0], minlength=ntypes
-            ).astype(np.int32)
-            frame_data["real_natoms_vec"] = np.concatenate(
-                (np.array([natoms, natoms], dtype=np.int32), natoms_vec)
+            frame_data["type"], frame_data["real_natoms_vec"] = self._mixed_frame_types(
+                mmap_types[local_idx], set_dir
             )
         else:
             frame_data["type"] = self.atom_type[self.idx_map]
@@ -1139,39 +1124,8 @@ class DeepmdData:
                 )
 
         if self.mixed_type:
-            # nframes x natoms
-            atom_type_mix = self._load_type_mix(set_name)
-            if self.enforce_type_map:
-                try:
-                    atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(np.int32)
-                except IndexError as e:
-                    raise IndexError(
-                        f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
-                    ) from e
-                atom_type_mix = atom_type_mix_
-            real_type = atom_type_mix.reshape([nframes, self.natoms])
-            data["type"] = real_type
-            natoms = data["type"].shape[1]
-            # nframes x ntypes
-            atom_type_nums = np.array(
-                [(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
-                dtype=np.int32,
-            ).T
-            ghost_nums = np.array(
-                [(real_type == -1).sum(axis=-1)],
-                dtype=np.int32,
-            ).T
-            assert (
-                atom_type_nums.sum(axis=-1) + ghost_nums.sum(axis=-1) == natoms
-            ).all(), (
-                f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
-            )
-            data["real_natoms_vec"] = np.concatenate(
-                (
-                    np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
-                    atom_type_nums,
-                ),
-                axis=-1,
+            data["type"], data["real_natoms_vec"] = self._mixed_frame_types(
+                self._load_type_mix(set_name).reshape(nframes, self.natoms), set_name
             )
         else:
             data["type"] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
@@ -1179,6 +1133,30 @@ class DeepmdData:
         # standardize keys
         data = {kk.replace("atomic", "atom"): vv for kk, vv in data.items()}
         return data
+
+    def _mixed_frame_types(
+        self, types: np.ndarray, directory: DPPath
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Map one or more frames and count real atoms in the model type domain."""
+        ntypes = self.get_ntypes()
+        limit = len(self.type_idx_map) - 1 if self.enforce_type_map else ntypes
+        if np.any((types < -1) | (types >= limit)):
+            raise ValueError(
+                f"Mixed atom types in {directory} must be -1 or in [0, {limit})."
+            )
+        types = (self.type_idx_map[types] if self.enforce_type_map else types).astype(
+            np.int32
+        )
+        frames = types.reshape(-1, self.natoms)
+        # Bin zero of each frame counts virtual atoms and is not returned.
+        stride = ntypes + 1
+        bins = np.arange(len(frames), dtype=np.int64)[:, None] * stride + frames + 1
+        counts = np.bincount(bins.ravel(), minlength=len(frames) * stride).reshape(
+            -1, stride
+        )
+        natoms_vec = np.full((len(frames), ntypes + 2), self.natoms, dtype=np.int32)
+        natoms_vec[:, 2:] = counts[:, 1:]
+        return types, natoms_vec.reshape(*types.shape[:-1], ntypes + 2)
 
     def _get_data_path(self, set_name: "DPPath", key: str) -> "DPPath":
         """Return the path for a data file, trying both atom_ and atomic_ naming."""
@@ -1536,8 +1514,7 @@ class DeepmdData:
 
     def _load_type_mix(self, set_name: DPPath) -> np.ndarray:
         type_path = set_name / "real_atom_types.npy"
-        real_type = type_path.load_numpy().astype(np.int32).reshape([-1, self.natoms])
-        return real_type
+        return type_path.load_numpy().reshape([-1, self.natoms])
 
     def _make_idx_map(self, atom_type: np.ndarray) -> np.ndarray:
         natoms = atom_type.shape[0]
