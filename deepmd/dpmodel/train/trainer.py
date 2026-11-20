@@ -346,9 +346,13 @@ class LearningCurveWriter:
         self.symm_virial_tasks = frozenset(symm_virial_tasks)
 
     def _display_metrics(
-        self, metrics: Mapping[str, Any], task_key: str = DEFAULT_TASK_KEY
+        self, metrics: Mapping[str, Any], task_key: str | None = None
     ) -> Mapping[str, Any]:
         """Label symmetric comparisons without changing internal metric keys."""
+        if task_key is None:
+            task_key = (
+                self.task_keys[0] if len(self.task_keys) == 1 else DEFAULT_TASK_KEY
+            )
         if task_key not in self.symm_virial_tasks:
             return metrics
         return {

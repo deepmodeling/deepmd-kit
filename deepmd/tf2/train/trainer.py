@@ -423,6 +423,7 @@ class Trainer(AbstractTrainer):
                 resolved,
                 self.start_step,
             )
+        self._attach_validation_state(None if restart_restore is None else resolved)
         self._compiled_train_steps: dict[str, Any] = {}
         self._compiled_prepare_steps: dict[str, Any] = {}
         self._compiled_prepared_train_steps: dict[str, Any] = {}
@@ -588,6 +589,32 @@ class Trainer(AbstractTrainer):
         restore_status = model_checkpoint.restore(resolved).expect_partial()
         restore_status.assert_existing_objects_matched()
         log.info("Initialized TF2 model variables from %s", resolved)
+
+    def _attach_validation_state(self, resolved: str | None) -> None:
+        """Bind validation history to the same checkpoint as the model and optimizer."""
+        # Attach after matching the optimizer and model: a restore supplies this
+        # variable through deferred restoration when the checkpoint contains it.
+        self.checkpoint.full_validation = tf.Variable(
+            "", dtype=tf.string, trainable=False
+        )
+        if resolved is not None:
+            encoded = self.checkpoint.full_validation.numpy()
+            if encoded:
+                self.full_validation_state = json.loads(encoded)
+            else:
+                # Directory metadata belongs only to its recorded training step.
+                metadata = Path(resolved).parent / TF2_TRAINING_STATE_FILE
+                if metadata.is_file():
+                    with metadata.open() as stream:
+                        saved = json.load(stream)
+                    if saved["current_step"] == self.start_step:
+                        self.full_validation_state = saved.get("full_validation", {})
+                    elif saved.get("full_validation") and self._is_validation_requested(
+                        "full_validation"
+                    ):
+                        raise ValueError(
+                            f"No full-validation history for checkpoint {resolved} at step {self.start_step}."
+                        )
 
     def _restore_checkpoint(self, checkpoint_path: str) -> tuple[str, Any]:
         resolved = self._resolve_checkpoint_path(checkpoint_path)
@@ -1175,6 +1202,7 @@ class Trainer(AbstractTrainer):
 
     def save_checkpoint(self, step: int) -> None:
         self.step.assign(step)
+        self.checkpoint.full_validation.assign(json.dumps(self.full_validation_state))
         save_path = self.checkpoint_manager.save(checkpoint_number=step)
         self._write_training_state(Path(self._checkpoint_directory()), step=step)
         log.info("Saved TF2 checkpoint to %s", save_path)
@@ -1211,6 +1239,9 @@ class Trainer(AbstractTrainer):
             shutil.rmtree(directory)
         checkpoint = tf.train.Checkpoint(
             step=tf.Variable(step, dtype=tf.int64, trainable=False, name="step"),
+            full_validation=tf.Variable(
+                json.dumps(self.full_validation_state), dtype=tf.string, trainable=False
+            ),
             optimizer=self.optimizer,
             model=self.model_container,
         )

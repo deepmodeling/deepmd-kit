@@ -32,6 +32,9 @@ from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 from deepmd.dpmodel.train import (
     ShardingPolicy,
 )
+from deepmd.dpmodel.train.validation import (
+    record_virial_convention,
+)
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
     LmdbTestDataNlocView,
@@ -241,15 +244,12 @@ class FullValidator:
         )
         self.profile = select_metric_profile(model)
         self.symm_virial = symm_virial
-        previous_symm = state_store.get("full_validation_symm_virial", False)
-        if restart_training and previous_symm != symm_virial:
-            raise ValueError(
-                "Cannot resume full validation with a different symm_virial: "
-                f"checkpoint={previous_symm}, loss={symm_virial}. "
-                "Start a new training run to compare scores under a new convention."
-            )
-        if symm_virial or "full_validation_symm_virial" in state_store:
-            state_store["full_validation_symm_virial"] = symm_virial
+        record_virial_convention(
+            state_store,
+            symm_virial,
+            restart_training,
+            (metric_name_info_key, topk_records_info_key, *stale_state_keys),
+        )
         self.state_store = state_store
         self.rank = rank
         self.sharding = sharding

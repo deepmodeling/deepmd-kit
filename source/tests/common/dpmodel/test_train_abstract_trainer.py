@@ -453,3 +453,5 @@ def test_symmetric_virial_display_is_task_specific() -> None:
     assert "mae_v_val_b" in header
     assert "mae_v_trn_b" in header
     assert list(values["a"]) == ["rmse", "mae_v"]
+    single = LearningCurveWriter(["a"], symm_virial_tasks=["a"])
+    assert "mae_symm_v_trn" in single.format_header(values["a"], values["a"])

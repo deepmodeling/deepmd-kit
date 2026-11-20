@@ -86,7 +86,7 @@ def test_full_validation_inherits_comparison_and_records_it(
     }
     data = SimpleNamespace(pbc=True, get_test=lambda: labels)
     ema = SimpleNamespace(validation_state={}, apply_shadow=lambda _: None)
-    state = {}
+    state = {"unrelated_training_state": 1}
     params = {
         "full_validation": True,
         "ema_full_validation": True,
@@ -102,7 +102,7 @@ def test_full_validation_inherits_comparison_and_records_it(
         state_store=state,
         num_steps=2,
         rank=0,
-        restart_training=False,
+        restart_training=True,
         checkpoint_dir=tmp_path,
         ensure_supported=lambda: None,
         model_ema=ema,

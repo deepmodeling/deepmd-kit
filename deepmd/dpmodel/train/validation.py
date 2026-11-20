@@ -170,6 +170,29 @@ def format_metric_number_for_log(metric_value: float) -> str:
     return f"{rounded_value:.0f}"
 
 
+def record_virial_convention(
+    state: dict[str, Any],
+    symmetric: bool,
+    restarting: bool,
+    history_keys: tuple[str, ...],
+) -> None:
+    """Check that restored validation scores use the current virial convention."""
+    key = "full_validation_symm_virial"
+    previous = state.get(key, False)
+    if (
+        restarting
+        and (key in state or any(k in state for k in history_keys))
+        and previous != symmetric
+    ):
+        raise ValueError(
+            "Cannot resume full validation with a different symm_virial: "
+            f"checkpoint={previous}, loss={symmetric}. "
+            "Start a new training run to compare scores under a new convention."
+        )
+    if symmetric or key in state:
+        state[key] = symmetric
+
+
 class FullValidatorBase(ABC):
     """Run independent full validation during backend-specific training."""
 
@@ -193,15 +216,12 @@ class FullValidatorBase(ABC):
     ) -> None:
         self.profile = FULL_VALIDATION_PROFILE
         self.symm_virial = symm_virial
-        previous_symm = state_store.get("full_validation_symm_virial", False)
-        if restart_training and previous_symm != symm_virial:
-            raise ValueError(
-                "Cannot resume full validation with a different symm_virial: "
-                f"checkpoint={previous_symm}, loss={symm_virial}. "
-                "Start a new training run to compare scores under a new convention."
-            )
-        if symm_virial or "full_validation_symm_virial" in state_store:
-            state_store["full_validation_symm_virial"] = symm_virial
+        record_virial_convention(
+            state_store,
+            symm_virial,
+            restart_training,
+            (metric_name_info_key, topk_records_info_key, *stale_state_keys),
+        )
         self.state_store = state_store
         self.rank = rank
         self.checkpoint_dir = (
