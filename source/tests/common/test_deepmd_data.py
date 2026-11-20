@@ -173,6 +173,28 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Mixed atom types"):
             data.get_batch(1)
 
+    def test_mixed_types_remap_integral_float_indices(self) -> None:
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        np.save(self.set_dir / "real_atom_types.npy", [[2.0, -1.0, 0.0, 1.0]])
+        data = DeepmdData(str(self.root), type_map=["H", "O", "Si"])
+        for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
+            self.assertEqual(loaded["type"].dtype, np.int32)
+            np.testing.assert_array_equal(loaded["type"].reshape(-1), [2, -1, 1, 0])
+            np.testing.assert_array_equal(
+                loaded["real_natoms_vec"].reshape(-1), [4, 4, 1, 1, 1]
+            )
+
+    def test_mixed_types_reject_non_integer_values(self) -> None:
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        for value in (0.5, np.nan):
+            with self.subTest(value=value):
+                np.save(self.set_dir / "real_atom_types.npy", [[value, -1.0, 0.0, 1.0]])
+                data = DeepmdData(str(self.root), type_map=["H", "O", "Si"])
+                with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+                    data.get_single_frame(0, num_worker=1)
+                with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+                    data.get_batch(1)
+
     def test_required_dataset_type_map_cannot_be_replaced(self) -> None:
         """A supplied model map does not make a required dataset map optional."""
         (self.root / "type_map.raw").unlink()

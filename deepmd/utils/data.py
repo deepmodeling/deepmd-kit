@@ -118,13 +118,11 @@ class DeepmdData:
             else:
                 self.enforce_type_map = True
                 sorter = np.argsort(type_map)
-                self.type_idx_map = np.array(
-                    sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
-                )
-                # padding for virtual atom
-                self.type_idx_map = np.append(
-                    self.type_idx_map, np.array([-1], dtype=np.int32)
-                )
+                self.type_idx_map = np.empty(len(self.type_map) + 1, dtype=np.int32)
+                self.type_idx_map[:-1] = sorter[
+                    np.searchsorted(type_map, self.type_map, sorter=sorter)
+                ]
+                self.type_idx_map[-1] = -1  # Virtual atom.
             self.type_map = type_map
         # Unnamed mixed systems index the model map; their type.raw contains
         # only placeholders. Non-mixed systems retain their own numeric domain,
@@ -1140,13 +1138,18 @@ class DeepmdData:
         """Map one or more frames and count real atoms in the model type domain."""
         ntypes = self.get_ntypes()
         limit = len(self.type_idx_map) - 1 if self.enforce_type_map else ntypes
-        if np.any((types < -1) | (types >= limit)):
+        if types.dtype.kind not in "iuf" or not np.all((types >= -1) & (types < limit)):
             raise ValueError(
-                f"Mixed atom types in {directory} must be -1 or in [0, {limit})."
+                f"Mixed atom types in {directory} must be integer indices equal to -1 or in [0, {limit})."
             )
-        types = (self.type_idx_map[types] if self.enforce_type_map else types).astype(
-            np.int32
-        )
+        # A frame may be a read-only memory map. Advanced indexing returns an
+        # owned array; without remapping the conversion must provide that copy.
+        indices = types.astype(np.int32, copy=not self.enforce_type_map)
+        if types.dtype.kind == "f" and not np.array_equal(types, indices):
+            raise ValueError(
+                f"Mixed atom types in {directory} must be integer indices."
+            )
+        types = self.type_idx_map[indices] if self.enforce_type_map else indices
         frames = types.reshape(-1, self.natoms)
         # Bin zero of each frame counts virtual atoms and is not returned.
         stride = ntypes + 1
