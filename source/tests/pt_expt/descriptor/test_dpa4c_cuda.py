@@ -1955,7 +1955,7 @@ def test_pair_potential_matches_the_portable_term(
     graph, atype = _build_graph(descriptor, canonical=canonical)
     arguments = _arguments(descriptor, graph, atype)
     output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
-    potential = InnerPotential(type_map=["O", "H"], mode=mode)
+    potential = InnerPotential(type_map=["O", "H"], mode=mode, precision="float32")
     pair_table = torch.as_tensor(potential.pair_table, device="cuda")
     # Ghost nodes carry no energy, so their cotangent vanishes.
     seed = (torch.arange(atype.shape[0], device="cuda") % 3 != 0).to(torch.float64)
@@ -3224,7 +3224,8 @@ def _check_canonical_against_reference(
     fitting = _energy_fitting(descriptor)
     pair_table = (
         torch.as_tensor(
-            InnerPotential(descriptor.get_type_map()).pair_table, device="cuda"
+            InnerPotential(descriptor.get_type_map(), precision="float32").pair_table,
+            device="cuda",
         )
         if bridged
         else None
@@ -3799,7 +3800,10 @@ def test_backward_operator_satisfies_its_schema(
     arguments = _arguments(descriptor, graph, atype)
     pair = (
         (
-            torch.as_tensor(InnerPotential(["O", "H"]).pair_table, device="cuda"),
+            torch.as_tensor(
+                InnerPotential(["O", "H"], precision="float32").pair_table,
+                device="cuda",
+            ),
             torch.ones(atype.shape[0], dtype=torch.float64, device="cuda"),
         )
         if bridged

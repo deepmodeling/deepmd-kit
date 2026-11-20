@@ -1514,7 +1514,7 @@ class TestInnerPotential(unittest.TestCase):
         self.assertGreater(values[1], 0.0)
         self.assertGreater(abs(values[1] / values[0] - 1.0), 0.05)
 
-    def test_nlh_series_table_stays_out_of_the_checkpoint(self) -> None:
+    def test_nlh_pair_table_is_derived_from_configuration(self) -> None:
         """Every array follows type_map and mode, so none of them is stored."""
         pot = InnerPotential(type_map=["O", "H"], mode="nlh").to(self.device)
         self.assertEqual(list(pot.state_dict()), [])

@@ -878,7 +878,7 @@ def dpa4c_canonical_compress_energy_force(
         descriptor, or ``None``.
     pair_table
         Series constants of an analytical pair potential with shape
-        ``((T + 1) ** 2, 8)``, or ``None``. The fused operator adds its energy
+        ``((T + 1) ** 2, 16)``, or ``None``. The fused operator adds its energy
         to the node energies and its slope to the edge gradient.
     fitting_routes
         Fitting-route table of the CUDA operator, which sets only its speed

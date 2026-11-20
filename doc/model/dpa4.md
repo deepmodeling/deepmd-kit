@@ -265,7 +265,8 @@ Zone bridging adds an analytical repulsive potential at short interatomic
 distances. Use it when simulations may contain close contacts, such as
 collisions. The analytical term is a screened Coulomb repulsion that falls
 smoothly to zero at 1.1 times each element pair's covalent bond length and is
-added to the learned energy.
+added to the learned energy. The pair term follows the descriptor precision:
+FP64 for a double-precision descriptor, FP32 otherwise.
 
 Enable it in the model configuration:
 

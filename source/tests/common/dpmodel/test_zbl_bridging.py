@@ -97,8 +97,11 @@ def _close_pair_inputs():
     return coord, atype, box
 
 
-def test_builder_composes_linear_model():
-    model = get_model(copy.deepcopy(ZBL_CONFIG))
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+def test_builder_composes_linear_model(precision: str) -> None:
+    config = copy.deepcopy(ZBL_CONFIG)
+    config["descriptor"]["precision"] = precision
+    model = get_model(config)
     assert type(model) is LinearEnergyModel
     am = model.atomic_model
     assert isinstance(am, LinearEnergyAtomicModel)
@@ -113,6 +116,9 @@ def test_builder_composes_linear_model():
     dp_child, inner = am.models
     assert dp_child.descriptor.contact_clamp.inner == 0.7
     assert inner.potential.truncation == 1.1
+    assert inner.potential.pair_table.dtype == np.dtype(precision)
+    restored = type(inner).deserialize(inner.serialize())
+    assert restored.potential.pair_table.dtype == np.dtype(precision)
 
 
 def test_bridged_preset_belongs_to_output_statistics() -> None:
@@ -333,8 +339,8 @@ class TestInnerPotentialChangeTypeMap:
         assert abs(e_fresh - e_hh) > 1.0
         np.testing.assert_allclose(_pair_energy(model), e_fresh, rtol=1e-12)
         np.testing.assert_allclose(
-            np.asarray(model.potential.series_table),
-            np.asarray(fresh.potential.series_table),
+            np.asarray(model.potential.pair_table),
+            np.asarray(fresh.potential.pair_table),
             rtol=1e-12,
         )
         assert model.potential.type_map == ["O", "H"]
@@ -344,7 +350,7 @@ class TestInnerPotentialChangeTypeMap:
         model.change_type_map(["H", "O", "Ni"])
         assert model.potential.ntypes == 3
         # one row per ordered pair of the three types plus the padding type
-        assert model.potential.series_table.shape == (16, 8)
+        assert model.potential.pair_table.shape == (16, 16)
         # the new type is now addressable -- a stale (length-2) table raises
         # IndexError here
         graph_atype = np.full(2, 2, dtype=np.int64)
@@ -370,8 +376,8 @@ class TestInnerPotentialChangeTypeMap:
         assert model.potential.ntypes == 1
         fresh = InnerPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
         np.testing.assert_allclose(
-            np.asarray(model.potential.series_table),
-            np.asarray(fresh.potential.series_table),
+            np.asarray(model.potential.pair_table),
+            np.asarray(fresh.potential.pair_table),
             rtol=1e-12,
         )
         np.testing.assert_allclose(_pair_energy(model), _pair_energy(fresh), rtol=1e-12)
@@ -1062,7 +1068,7 @@ def test_nlh_atomic_model_roundtrips_the_mode():
     restored = InnerPotentialAtomicModel.deserialize(data)
     assert restored.potential.mode == "NLH"
     np.testing.assert_allclose(
-        np.asarray(restored.potential.series_table),
-        np.asarray(child.potential.series_table),
+        np.asarray(restored.potential.pair_table),
+        np.asarray(child.potential.pair_table),
         rtol=1e-12,
     )

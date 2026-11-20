@@ -27,12 +27,11 @@
 #include <malloc.h>
 #endif
 
+#include "pair_potential.h"
+
 namespace deepmd_dpa4c_cpu {
 
-/// Floats of one row of `Arguments::pair_table`: the four amplitudes and four
-/// rates of the screened Coulomb series, the end radius and the four Taylor
-/// coefficients there, and three zeros.
-constexpr int kPairRow = 16;
+using deepmd_dpa4c::kPairRow;
 
 /// Allocator placing a buffer on a cache-line boundary.
 ///
@@ -219,12 +218,8 @@ struct Arguments {
   float contact_inner;
 
   /// Analytical pair potential, present together or not at all and read by
-  /// the backward only. `pair_table` holds, per ordered type pair, the four
-  /// amplitudes and the four decay rates of the screened Coulomb series
-  /// \f$V(r)=r^{-1}\sum_k A_k e^{-c_k r}\f$, the end radius \f$R\f$ of the
-  /// pair and the Taylor coefficients of \f$V\f$ at \f$R\f$ whose cubic
-  /// polynomial the pair energy \f$\phi\f$ subtracts below \f$R\f$; it is
-  /// zero from \f$R\f$ on. `pair_seed` is the energy cotangent of each node and
+  /// the backward only. Each table row defines a truncated screened potential.
+  /// `pair_seed` is the energy cotangent of each node and
   /// `pair_energy` the fp64 node energies onto which the scan adds
   /// \f$\phi/2\f$ per edge.
   const float* pair_table;  ///< `((T + 1)^2, kPairRow)` or null.

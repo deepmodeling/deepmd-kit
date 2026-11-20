@@ -351,21 +351,26 @@ def test_pair_potential_matches_the_portable_term(
     descriptor = _build_descriptor(32, **(_CLAMP if clamped else {}))
     graph, atype = _build_graph(descriptor, canonical)
     arguments = _arguments(descriptor, graph, atype)
-    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
-    potential = InnerPotential(type_map=["O", "H"], mode=mode)
+    potential = InnerPotential(type_map=["O", "H"], mode=mode, precision="float32")
     pair_table = torch.as_tensor(potential.pair_table)
     # Ghost nodes carry no energy, so their cotangent vanishes.
     seed = (torch.arange(atype.shape[0], device="cpu") % 3 != 0).to(torch.float64)
 
-    edge = graph.edge_vec.double().requires_grad_(True)
+    source, destination = graph.edge_index
+    end = pair_table[atype[destination] * 3 + atype[source], 8]
+    # Isolate the small radial force just inside one pair's cutoff.
+    near = torch.nonzero(graph.edge_mask & seed[destination].bool())[0, 0]
+    vectors = graph.edge_vec.clone()
+    vectors[near] = 0
+    vectors[near, 0] = end[near] * 0.999
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(vectors, *arguments)
+    edge = vectors.double().requires_grad_(True)
     reference = potential.call(
         edge, graph.edge_index, atype, graph.edge_mask, atype.shape[0]
     )[0]
     (reference_gradient,) = torch.autograd.grad((reference[:, 0] * seed).sum(), edge)
     assert reference.max() > 1.0
-    source, destination = graph.edge_index[0], graph.edge_index[1]
-    end = pair_table[atype[destination] * 3 + atype[source], 8]
-    length = graph.edge_vec.norm(dim=-1)
+    length = vectors.norm(dim=-1)
     assert ((length < end) & graph.edge_mask).sum() > 8
     assert ((length >= end) & graph.edge_mask).sum() > 8
     for backward in (
@@ -375,10 +380,14 @@ def test_pair_potential_matches_the_portable_term(
         edge_gradient, _, _, pair_energy = backward(
             torch.zeros_like(output),
             state,
-            graph.edge_vec,
+            vectors,
             *arguments,
             pair_table,
             seed,
+        )
+        assert reference_gradient[near, 0] < 0
+        torch.testing.assert_close(
+            edge_gradient[near].double(), reference_gradient[near], atol=0, rtol=1e-3
         )
         torch.testing.assert_close(pair_energy, reference, atol=3e-5, rtol=3e-5)
         torch.testing.assert_close(
@@ -387,7 +396,7 @@ def test_pair_potential_matches_the_portable_term(
 
     no_pair = graph.edge_vec.new_empty(0)
     plain_gradient, _, _, absent = torch.ops.deepmd.dpa4c_graph_compress_backward(
-        torch.zeros_like(output), state, graph.edge_vec, *arguments, no_pair, no_pair
+        torch.zeros_like(output), state, vectors, *arguments, no_pair, no_pair
     )
     assert absent.numel() == 0
     assert torch.count_nonzero(plain_gradient).item() == 0

@@ -68,6 +68,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    atomic_pair_energies,
+)
 from deepmd.dpmodel.descriptor.dpa4c_nn import (
     build_angular_basis,
     build_bispectrum_layout,
@@ -1933,67 +1936,6 @@ def _closed_form_222_coordinate(profile: DescriptorProfile) -> int:
 # === Custom-operator registration ===
 
 
-def _reference_pair_energy(
-    edge_vec: torch.Tensor,
-    edge_index: torch.Tensor,
-    edge_mask: torch.Tensor,
-    atype: torch.Tensor,
-    pair_table: torch.Tensor,
-    eps: float,
-) -> torch.Tensor:
-    r"""Evaluate the analytical pair energy of every node.
-
-    Each valid edge :math:`j\to i` adds half of the truncated pair energy of
-    its ordered type pair to node :math:`i`, at the regularized distance the
-    kernels use. The energy is the screened Coulomb series
-    :math:`V_{ab}(\rho)=\rho^{-1}\sum_k A_{abk}e^{-c_{abk}\rho}` minus its cubic
-    Taylor polynomial at the end radius :math:`R_{ab}` of the pair,
-
-    .. math::
-
-       \phi_{ab}(\rho)=V_{ab}(\rho)-\sum_{n=0}^{3}t_{abn}(\rho-R_{ab})^n
-       \quad(\rho<R_{ab}),\qquad\phi_{ab}(\rho)=0\quad(\rho\ge R_{ab}),
-
-    with :math:`t_{abn}=V_{ab}^{(n)}(R_{ab})/n!`. Rows of the padding type carry
-    :math:`R=0`, so padding nodes contribute nothing.
-
-    Parameters
-    ----------
-    edge_vec
-        Edge vectors with shape ``(E, 3)`` in Å.
-    edge_index
-        ``[source, destination]`` node indices with shape ``(2, E)``.
-    edge_mask
-        Valid-edge mask with shape ``(E,)``.
-    atype
-        Node types with shape ``(N,)``.
-    pair_table
-        Kernel table of the pair potential, ``[A_0..A_3, c_0..c_3, R, t_0..t_3,
-        0, 0, 0]`` per ordered type pair, with shape ``((T + 1) ** 2, 16)``.
-    eps
-        Distance regularization in Å.
-
-    Returns
-    -------
-    torch.Tensor
-        Pair energies with shape ``(N, 1)`` in eV, fp64.
-    """
-    source, destination = edge_index[0].long(), edge_index[1].long()
-    type_count = math.isqrt(int(pair_table.shape[0]))
-    radius = torch.sqrt(edge_vec.double().square().sum(dim=-1) + eps * eps)
-    row = pair_table.double()[atype[destination] * type_count + atype[source]]
-    series = (row[:, :4] * torch.exp(-row[:, 4:8] * radius[:, None])).sum(dim=-1)
-    delta = radius - row[:, 8]
-    polynomial = row[:, 9] + delta * (
-        row[:, 10] + delta * (row[:, 11] + delta * row[:, 12])
-    )
-    pair = torch.where(
-        radius < row[:, 8], series / radius - polynomial, torch.zeros_like(radius)
-    )
-    energy = torch.zeros(atype.shape[0], dtype=torch.float64, device=edge_vec.device)
-    return energy.index_add(0, destination, 0.5 * pair * edge_mask)[:, None]
-
-
 def _portable_inputs(args: tuple) -> tuple:
     """Drop the low-rank table and its expansion from the operator inputs.
 
@@ -2205,13 +2147,15 @@ def _reference_cotangents(
         )
         objective = (descriptor * descriptor_gradient.to(descriptor.dtype)).sum()
         if pair_table.numel():
-            pair_energy = _reference_pair_energy(
+            atype = args[4]
+            pair_energy = atomic_pair_energies(
                 value,
-                edge_index=args[0],
-                edge_mask=args[1],
-                atype=args[4],
-                pair_table=pair_table,
-                eps=float(args[24]),
+                args[0],
+                atype,
+                args[1],
+                pair_table,
+                atype.shape[0],
+                float(args[24]),
             )
             objective = objective + (pair_energy[:, 0] * pair_seed.reshape(-1)).sum()
         gradients = torch.autograd.grad(
@@ -2611,7 +2555,7 @@ def dpa4c_graph_compress_energy_force(
         Per-node magnetic moments with shape ``(N, 3)``, or ``None``.
     pair_table
         Series constants of an analytical pair potential with shape
-        ``((T + 1) ** 2, 8)``, or ``None``. The backward scan adds its energy
+        ``((T + 1) ** 2, 16)``, or ``None``. The backward scan adds its energy
         to the node energies and its slope to the edge gradient.
 
     Returns

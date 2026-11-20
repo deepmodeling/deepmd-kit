@@ -476,9 +476,6 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.neighbor_list import EdgeNeighborList, NeighborList
 
 from deepmd.dpmodel.atomic_model.inner_potential import (
-    InnerPotential as InnerPotentialDP,
-)
-from deepmd.dpmodel.atomic_model.inner_potential import (
     check_end_inside_cutoff,
 )
 from deepmd.pt.model.atomic_model.sezm_atomic_model import (
@@ -522,6 +519,9 @@ from deepmd.pt_expt.utils.auto_neighbor_list import (
 )
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
+)
+from deepmd.pt_expt.utils.inner_potential import (
+    InnerPotential,
 )
 from deepmd.utils.bridging import (
     DEFAULT_TRUNCATION,
@@ -731,6 +731,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 type_map=self.get_type_map(),
                 mode=self.bridging_method,
                 truncation=bridging_truncation,
+                precision=self.atomic_model.descriptor.precision,
             )
             if self.bridging_method != "NONE"
             else None
@@ -3392,119 +3393,3 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             yield
         finally:
             torch.set_float32_matmul_precision(prev_precision)
-
-
-# =============================================================================
-# InnerPotential: analytical close-contact pair potential
-# =============================================================================
-
-
-class InnerPotential(torch.nn.Module):
-    r"""
-    Analytical close-contact pair potential on the sparse edge list.
-
-    The potential is the truncated screened Coulomb series of the
-    backend-agnostic :class:`~deepmd.dpmodel.atomic_model.inner_potential.InnerPotential`,
-    which builds the tables both backends read: the series ends at the
-    fraction ``truncation`` of each pair's covalent bond length, where its
-    cubic Taylor polynomial is subtracted, so the term is non-negative,
-    decreasing, convex and C³ and exactly zero beyond its end radius. Each
-    pair (i, j) contributes ``phi(r_ij) / 2`` to both atom i and atom j,
-    avoiding double-counting from the symmetric neighbor list.
-
-    Parameters
-    ----------
-    type_map : list[str]
-        Element symbols (e.g. ``["O", "H"]``). Index in this list corresponds
-        to the ``atype`` integer values.
-    mode : str
-        Potential formula, ``"zbl"`` or ``"nlh"``. Case-insensitive.
-    truncation : float
-        Radius at which the potential ends, as a fraction of each pair's
-        covalent bond length.
-    """
-
-    def __init__(
-        self,
-        type_map: list[str],
-        mode: str = "zbl",
-        truncation: float = DEFAULT_TRUNCATION,
-    ) -> None:
-        super().__init__()
-        reference = InnerPotentialDP(type_map, mode=mode, truncation=truncation)
-        self.mode = reference.mode
-        self.truncation = reference.truncation
-        self.ntypes = reference.ntypes
-        # Derived from the configuration, hence rebuilt on construction and
-        # kept out of the checkpoint.
-        for name in ("series_table", "taylor_table"):
-            self.register_buffer(
-                name,
-                torch.tensor(
-                    getattr(reference, name), dtype=torch.float64, device=env.DEVICE
-                ),
-                persistent=False,
-            )
-
-    def forward(
-        self,
-        edge_vec: torch.Tensor,
-        edge_index: torch.Tensor,
-        atype_flat: torch.Tensor,
-        edge_mask: torch.Tensor,
-        n_node: int,
-    ) -> torch.Tensor:
-        """
-        Compute per-atom pair energy from the sparse edge list.
-
-        The pair sum is evaluated from the descriptor's ``edge_vec`` so that
-        differentiating ``edge_vec`` (the edge-force-scatter leaf) routes the
-        analytical force / virial through the same single edge backward as the
-        learned energy.
-
-        Parameters
-        ----------
-        edge_vec
-            Edge vectors with shape (E, 3) in Å.
-        edge_index
-            Edge source/destination indices with shape (2, E).
-        atype_flat
-            Flat atom types with shape (N,).
-        edge_mask
-            Boolean mask with shape (E,). True means valid edge.
-        n_node : int
-            Number of flattened local nodes.
-
-        Returns
-        -------
-        torch.Tensor
-            Per-atom pair energy with shape (1, N, 1) in eV.
-        """
-        stride = self.ntypes + 1
-        src = edge_index[0].to(dtype=torch.long)
-        dst = edge_index[1].to(dtype=torch.long)
-        # Padded atoms carry type -1; their edges are masked below, so the
-        # table lookup only needs a valid index for them.
-        atype_row = atype_flat.clamp(min=0)
-        # The floor inside the square root keeps every derivative of a padded
-        # zero-length edge finite.
-        vec = edge_vec.to(dtype=torch.float64)
-        r = torch.sqrt((vec * vec).sum(-1) + 1e-20)  # (E,)
-        # Row ``center * (T + 1) + neighbor``, the ordered-pair index the fused
-        # kernels use, with the destination as the center.
-        pair = atype_row[dst] * stride + atype_row[src]
-        row = self.series_table[pair]  # (E, 8)
-        taylor = self.taylor_table[pair]  # (E, 5)
-        delta = r - taylor[:, 0]
-        polynomial = taylor[:, 1] + delta * (
-            taylor[:, 2] + delta * (taylor[:, 3] + delta * taylor[:, 4])
-        )
-        series = (row[:, :4] * torch.exp(-row[:, 4:] * r[:, None])).sum(-1) / r
-        pair_e = torch.where(delta < 0.0, series - polynomial, torch.zeros_like(r))
-        pair_e = pair_e * edge_mask.to(dtype=pair_e.dtype)
-
-        # Half contribution to each destination atom
-        atom_energy = torch.zeros(n_node, dtype=pair_e.dtype, device=pair_e.device)
-        atom_energy.index_add_(0, dst, pair_e * 0.5)
-
-        return atom_energy.to(dtype=edge_vec.dtype).view(1, n_node, 1)

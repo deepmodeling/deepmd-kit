@@ -19,11 +19,9 @@
 // The two operators that close an energy-force evaluation, the generic
 // backward and the fused canonical energy-force, also evaluate an analytical
 // pair potential when `pair_table` is not empty. It has one row of 16 floats
-// per ordered type pair: the amplitudes and rates of a screened Coulomb
-// series, the end radius of the pair and the Taylor coefficients of the series
-// there. The pair energy is the series minus its cubic Taylor polynomial at
-// the end radius below that radius, and zero from it on. Its energy and radial
-// slope share their exponentials and need no saved state, so the edge scan
+// per ordered type pair, as defined in pair_potential.h. The pair energy is
+// the cubic Taylor remainder below the end radius, and zero from it on.
+// Energy and radial slope need no saved state, so the edge scan
 // that differentiates the descriptor produces both: it adds
 // `pair_seed_i * dphi/dr / 2` to the radial cotangent of every edge of node
 // `i` and accumulates `phi / 2` into the node energy (`pair_energy`, or the

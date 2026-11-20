@@ -964,12 +964,8 @@ class TestInnerPotentialChangeTypeMapPtExpt:
         from deepmd.pt_expt.utils import env as _env
 
         potential = self._zbl_child(self._build(["Ni", "O"])).potential
-        for table in (potential.series_table, potential.taylor_table):
-            assert isinstance(table, torch.Tensor), (
-                "the pt_expt wrapper no longer converts the table to a tensor; "
-                "this test would stop covering the device-safe rebuild"
-            )
-            assert table.device.type == torch.device(_env.DEVICE).type
+        assert isinstance(potential.pair_table, torch.Tensor)
+        assert potential.pair_table.device.type == torch.device(_env.DEVICE).type
 
     def test_reorder_matches_a_freshly_built_model(self) -> None:
         # NOTE: applied to the ZBL CHILD, not the whole composition -- the
@@ -986,22 +982,19 @@ class TestInnerPotentialChangeTypeMapPtExpt:
         assert abs(e_fresh - e_nini) > 1.0
         np.testing.assert_allclose(self._pair_energy(child), e_fresh, rtol=1e-12)
         # the series constants and the end radii follow the new order
-        for name in ("series_table", "taylor_table"):
-            torch.testing.assert_close(
-                getattr(child.potential, name), getattr(fresh.potential, name)
-            )
+        torch.testing.assert_close(
+            child.potential.pair_table, fresh.potential.pair_table
+        )
 
     def test_added_element_extends_the_lookup_on_device(self) -> None:
         from deepmd.pt_expt.utils import env as _env
 
         child = self._zbl_child(self._build(["Ni", "O"]))
         child.change_type_map(["Ni", "O", "H"])
-        for table in (child.potential.series_table, child.potential.taylor_table):
-            assert isinstance(table, torch.Tensor), "the rebuild dropped out of torch"
-            assert table.device.type == torch.device(_env.DEVICE).type
-        # one row per ordered pair of the three types plus the padding type
-        assert tuple(child.potential.series_table.shape) == (16, 8)
-        assert tuple(child.potential.taylor_table.shape) == (16, 5)
+        table = child.potential.pair_table
+        assert isinstance(table, torch.Tensor)
+        assert table.device.type == torch.device(_env.DEVICE).type
+        assert tuple(table.shape) == (16, 16)
         # the new type is addressable -- a stale (length-2) table raises here
         np.testing.assert_allclose(
             self._pair_energy(child, atype_value=2),

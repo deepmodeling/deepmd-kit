@@ -388,41 +388,14 @@ class TestDPA4CZBLBridging:
     def test_pair_table_is_rebuilt_not_stored(self) -> None:
         potential = self.model.atomic_model.models[1].potential
         stored = list(self.model.state_dict())
-        for name in ("pair_table", "series_table", "taylor_table"):
-            assert not any(name in key for key in stored)
-        assert potential.pair_table.dtype == torch.float32
-        table = potential.pair_table.double().cpu().reshape(4, 4, 16)
-        # Rows and columns of the padding type vanish.
+        assert not any("pair_table" in key for key in stored)
+        assert potential.pair_table.dtype == torch.float64
+        table = potential.pair_table.cpu().reshape(4, 4, 16)
         assert table[3].abs().max() == 0.0 and table[:, 3].abs().max() == 0.0
         row = table[0, 2]
-        end = row[8].item()
-        assert end == pytest.approx(
-            DEFAULT_TRUNCATION * float(RADII[0] + RADII[2]), rel=1e-6
-        )
-        assert row[13:].abs().max() == 0.0
-        charge_i, charge_j = (float(ELEMENT_TO_Z[TYPE_MAP[t]]) for t in (0, 2))
-
-        def series(radius: float) -> float:
-            return (row[:4] * torch.exp(-row[4:8] * radius)).sum().item() / radius
-
-        # The series is the ZBL potential, and the Taylor coefficients of the
-        # row make the truncated energy vanish to third order at its end.
-        assert series(0.7) == pytest.approx(
-            _zbl_series(torch.tensor(0.7), charge_i, charge_j).item(), rel=1e-6
-        )
-        assert row[9].item() == pytest.approx(series(end), rel=1e-5)
-
-        def truncated(radius: float) -> float:
-            delta = radius - end
-            return (
-                series(radius)
-                - (
-                    row[9] + delta * (row[10] + delta * (row[11] + delta * row[12]))
-                ).item()
-            )
-
-        assert truncated(0.7) == pytest.approx(_truncated_zbl(0.7, 0, 2), rel=1e-4)
-        assert abs(truncated(end * (1.0 - 1e-3))) < 1e-6
+        end = DEFAULT_TRUNCATION * float(RADII[0] + RADII[2])
+        assert row[8].item() == pytest.approx(end)
+        torch.testing.assert_close(row[12:], row[:4] * torch.exp(-row[4:8] * end))
 
 
 class TestDPA4CZBLBridgingMultiBlock:

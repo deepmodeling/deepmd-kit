@@ -23,7 +23,11 @@ from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
 )
 from deepmd.dpmodel.common import (
+    PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.descriptor.dpa4_nn.utils import (
+    get_promoted_dtype,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -103,15 +107,92 @@ _A_BOHR = 0.5291772109  # Bohr radius in Å
 # The same record, machine-readable, is in the file's ``meta`` entry and is
 # returned by :func:`nlh_provenance`.
 NLH_COEFFICIENTS_FILE = Path(__file__).with_name("nlh_coefficients.npz")
-
 _SERIES_TERMS = 4
-#: Columns of the truncation table: the end radius and the four constants of
-#: the subtracted cubic polynomial.
-_TAYLOR_COLUMNS = 5
-#: Width of a row of the single-precision kernel table: the eight series
-#: constants, the five constants of the truncation and three zeros that keep
-#: a row a whole number of 16-byte vectors.
-_KERNEL_ROW = 16
+_PAIR_ROW = 16
+
+
+def _truncated_pair_energy(radius: Array, row: Array) -> Array:
+    r"""Evaluate the cubic Taylor remainder of a screened pair potential.
+
+    With h = R - r, B = A exp(-cR) and K = -V'''(R)/6, multiplication
+    by r gives r phi = K h^4 + sum B (exp(ch) - T3(ch)), where T3 is
+    the cubic Taylor polynomial of exp at zero. Both contributions are
+    positive for h > 0. For ch <= 1 the exponential remainder starts
+    explicitly at fourth order; for ch > 1 its first term is evaluated
+    as A exp(-cr), so no exponential with a positive argument is needed.
+
+    Parameters
+    ----------
+    radius : Array
+        Regularized separations with shape (E,) in Å.
+    row : Array
+        Pair constants with shape (E, 16), in the evaluation precision.
+
+    Returns
+    -------
+    Array
+        Pair energies with shape (E,) in eV.
+    """
+    xp = array_api_compat.array_namespace(radius)
+    h = xp.maximum(row[:, 8] - radius, xp.zeros_like(radius))
+    y = row[:, 4:8] * h[:, None]
+    # At y <= 1 the first omitted term relative to y^4/4! is at
+    # most 24/13! (single precision) or 24/19! (double precision).
+    z = xp.where(y <= 1.0, y, xp.ones_like(y))
+    order = 12 if radius.dtype == xp.float32 else 18
+    tail = 1.0 / math.factorial(order)
+    for k in range(order - 1, 3, -1):
+        tail = 1.0 / math.factorial(k) + z * tail
+    cubic = 1.0 + y * (1.0 + y * (0.5 + y / 6.0))
+    endpoint = row[:, 12:16]
+    remainder = xp.where(
+        y <= 1.0,
+        endpoint * (z * z) ** 2 * tail,
+        row[:, :4] * xp.exp(-row[:, 4:8] * radius[:, None]) - endpoint * cubic,
+    )
+    return (row[:, 9] * (h * h) ** 2 + xp.sum(remainder, axis=-1)) / radius
+
+
+def atomic_pair_energies(
+    edge_vec: Array,
+    edge_index: Array,
+    atype: Array,
+    edge_mask: Array,
+    pair_table: Array,
+    n_node: int,
+    eps: float,
+) -> Array:
+    """Evaluate directed pairs in table precision and sum their half-energies in FP64.
+
+    Each valid edge contributes to its destination. The result has shape
+    (n_node, 1) in eV. The fourth component of the regularized edge vector is
+    eps in Å: its norm and derivatives are defined even for coincident atoms.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_sum,
+    )
+
+    xp = array_api_compat.array_namespace(edge_vec)
+    table = xp_asarray_nodetach(
+        xp, pair_table, device=array_api_compat.device(edge_vec)
+    )
+    vec = xp.astype(edge_vec, table.dtype, copy=False)
+    radius = xp.linalg.vector_norm(
+        xp.concat((vec, xp.full_like(vec[:, :1], eps)), axis=-1), axis=-1
+    )
+    src = xp.astype(edge_index[0], xp.int64, copy=False)
+    dst = xp.astype(edge_index[1], xp.int64, copy=False)
+    types = xp.astype(atype, xp.int64, copy=False)
+    types = xp.maximum(types, xp.zeros_like(types))
+    stride = math.isqrt(table.shape[0])
+    pair = xp.take(types, dst, axis=0) * stride + xp.take(types, src, axis=0)
+    energy = _truncated_pair_energy(radius, xp.take(table, pair, axis=0))
+    half = xp.where(
+        xp.astype(edge_mask, xp.bool, copy=False), 0.5 * energy, xp.zeros_like(energy)
+    )
+    return xp.reshape(
+        segment_sum(xp.astype(half, xp.float64, copy=False), dst, n_node), (n_node, 1)
+    )
 
 
 @functools.lru_cache(maxsize=1)
@@ -183,11 +264,10 @@ class InnerPotential(NativeOP):
     bulk modulus along every uniform compression, whatever the learned model
     does there, and it is exactly zero at long range.
 
-    :attr:`series_table` and :attr:`taylor_table` carry the constants in double
-    precision for :meth:`call`, and :attr:`pair_table` is their single
-    precision layout for the fused kernels. The term is evaluated on the edge
-    form so that its force and virial flow through the same edge backward as
-    the learned energy. Each pair (i, j) contributes ``phi(r_ij) / 2`` to both
+    The constants are built in double precision and stored in the descriptor's
+    compute precision. The term is evaluated on the edge form so its force
+    and virial flow through the same edge backward as the learned energy.
+    Each pair (i, j) contributes ``phi(r_ij) / 2`` to both
     atom i and atom j, avoiding double-counting from the symmetric neighbor
     list. The class is written against the array API, so every backend
     evaluates the same definition on its own array type.
@@ -204,6 +284,8 @@ class InnerPotential(NativeOP):
     truncation : float
         Radius at which the potential ends, as a fraction of each pair's
         covalent bond length.
+    precision : str
+        Descriptor precision. Half-precision descriptors evaluate geometry in FP32.
 
     Raises
     ------
@@ -211,19 +293,12 @@ class InnerPotential(NativeOP):
         If ``mode`` is not recognized, if any element in ``type_map`` is
         not found in the periodic table, or if ``truncation`` is not finite
         and positive.
-
-    Notes
-    -----
-    The identity that makes the truncated term vanish to third order at its
-    end holds between the double-precision series and Taylor tables; the
-    single-precision kernel tables round them independently and leave jumps of
-    about 1e-7 eV and 1e-6 eV/Å there.
     """
 
     # Rebuilt from ``type_map``, ``mode`` and ``truncation`` by ``__init__``
     # and ``change_type_map``, so a wrapped backend keeps them out of its
     # checkpoints.
-    CONFIG_DERIVED_ARRAYS = ("pair_table", "series_table", "taylor_table")
+    CONFIG_DERIVED_ARRAYS = ("pair_table",)
 
     SUPPORTED_MODES = ("ZBL", "NLH")
 
@@ -232,6 +307,7 @@ class InnerPotential(NativeOP):
         type_map: list[str],
         mode: str = "zbl",
         truncation: float = DEFAULT_TRUNCATION,
+        precision: str = "float64",
     ) -> None:
         super().__init__()
         mode = str(mode).upper()
@@ -246,143 +322,38 @@ class InnerPotential(NativeOP):
         self.type_map = list(type_map)
         self.ntypes = len(type_map)
         self.truncation = truncation
-        self._build_tables()
+        self.precision = np.dtype(get_promoted_dtype(PRECISION_DICT[precision])).name
+        self._build_table()
 
-    def _build_tables(self) -> None:
-        """Tabulate the series, its truncation and their kernel layout.
+    def _build_table(self) -> None:
+        """Build the aligned rows [A, c, R, -V'''(R)/6, padding, A exp(-cR)]."""
+        series = self._series_constants()
+        table = np.zeros((series.shape[0], _PAIR_ROW), dtype=np.float64)
+        table[:, :8] = series
+        radii = covalent_radii_from_type_map(self.type_map)
+        ends = table[:, 8].reshape(self.ntypes + 1, self.ntypes + 1)
+        ends[:-1, :-1] = self.truncation * (radii[:, None] + radii[None, :])
+        end = table[:, 8:9]
+        inverse = 1.0 / np.where(end > 0, end, 1.0)
+        z = series[:, 4:] * end
+        endpoint = series[:, :4] * np.exp(-z)
+        table[:, 12:16] = endpoint
+        cubic = 1 + z * (1 + z * (0.5 + z / 6))
+        table[:, 9] = (endpoint * cubic).sum(axis=1) * inverse[:, 0] ** 4
+        self.pair_table = self._in_namespace_of(
+            table.astype(self.precision), getattr(self, "pair_table", None)
+        )
 
-        Each table is placed in the namespace and on the device of the one it
-        replaces, so a rebuild on a wrapped backend (a pt_expt buffer on CPU
-        or CUDA) stays where the model lives.
+    def _series_constants(self) -> np.ndarray:
+        """Build the four amplitudes and inverse screening lengths per pair in FP64.
+
+        ZBL scales the universal screening rates by the inverse screening
+        length of each pair. NLH supplies the pair-specific rates directly.
+        Both series have amplitudes in eV Å and rates in inverse Å.
         """
-        series = self.series_table_from_type_map(self.type_map, mode=self.mode)
-        taylor = self.taylor_table_from_series(self.type_map, series, self.truncation)
-        kernel = np.zeros((series.shape[0], _KERNEL_ROW), dtype=np.float32)
-        kernel[:, : 2 * _SERIES_TERMS] = series
-        kernel[:, 2 * _SERIES_TERMS : 2 * _SERIES_TERMS + _TAYLOR_COLUMNS] = taylor
-        for name, table in (
-            ("series_table", series),
-            ("taylor_table", taylor),
-            ("pair_table", kernel),
-        ):
-            setattr(self, name, self._in_namespace_of(table, getattr(self, name, None)))
-
-    @staticmethod
-    def taylor_table_from_series(
-        type_map: list[str], series: np.ndarray, truncation: float
-    ) -> np.ndarray:
-        r"""Tabulate the end radius and the subtracted polynomial of every pair.
-
-        For one term :math:`A e^{-cr}/r` of the series the derivatives are
-
-        .. math::
-
-           \frac{d^n}{dr^n}\frac{A e^{-cr}}{r}=(-1)^n A e^{-cr}
-           \sum_{k=0}^{n}\frac{n!}{(n-k)!}\,c^{n-k}\,r^{-k-1},
-
-        evaluated at the end radius of every pair in double precision.
-
-        Parameters
-        ----------
-        type_map : list[str]
-            Element symbols; index corresponds to ``atype`` values.
-        series : np.ndarray
-            Series constants with shape ``((T + 1) ** 2, 8)`` in eV Å and Å⁻¹,
-            as :meth:`series_table_from_type_map` returns them.
-        truncation : float
-            End radius as a fraction of each pair's covalent bond length.
-
-        Returns
-        -------
-        np.ndarray
-            The end radius :math:`R` in Å followed by :math:`V^{(n)}(R)/n!`
-            for :math:`n=0..3` in eV/Å^n, with shape ``((T + 1) ** 2, 5)`` and
-            rows ordered like ``series``. Rows of the padding type carry
-            :math:`R=0`, below which no separation lies.
-        """
-        radius = covalent_radii_from_type_map(type_map)
-        ntypes = radius.shape[0]
-        end = np.zeros((ntypes + 1, ntypes + 1), dtype=np.float64)
-        end[:ntypes, :ntypes] = truncation * (radius[:, None] + radius[None, :])
-        end = end.reshape(-1, 1)
-        real = end[:, 0] > 0.0
-        at = np.where(end > 0.0, end, 1.0)
-        rate = series[:, _SERIES_TERMS:]
-        amplitude = series[:, :_SERIES_TERMS] * np.exp(-rate * at)
-        columns = [end[:, 0]]
-        for order in range(_TAYLOR_COLUMNS - 1):
-            derivative = sum(
-                math.factorial(order)
-                / math.factorial(order - k)
-                * rate ** (order - k)
-                * at ** (-k - 1)
-                for k in range(order + 1)
-            )
-            columns.append(
-                (-1) ** order
-                * np.sum(amplitude * derivative, axis=1)
-                / math.factorial(order)
-            )
-        table = np.stack(columns, axis=1)
-        table[~real] = 0.0
-        return table
-
-    @classmethod
-    def series_table_from_type_map(
-        cls,
-        type_map: list[str],
-        mode: str = "ZBL",
-        dtype: Any = np.float64,
-        like: Array | None = None,
-    ) -> Array:
-        r"""Tabulate the screened Coulomb series of every ordered type pair.
-
-        Both modes share the series
-
-        .. math::
-
-           V_{ab}(r)=\frac1r\sum_{k=1}^{4}A_{abk}\,e^{-c_{abk}r},\qquad
-           A_{abk}=k_e Z_aZ_b\,a_{abk},
-
-        and differ only in where the unitless amplitudes :math:`a_{abk}` and
-        the decay rates :math:`c_{abk}` come from. ``"ZBL"`` takes the
-        universal screening function, whose amplitudes are the same for every
-        pair and whose rates are the universal exponents divided by the
-        pair's screening length :math:`a_{ab}=0.88534\,a_0/(Z_a^{0.23}+
-        Z_b^{0.23})`. ``"NLH"`` reads both from the bundled per-pair
-        coefficients, where the rates are already in Å⁻¹.
-
-        A kernel therefore evaluates the energy and its radial derivative from
-        eight per-pair constants and four exponentials in either mode.
-
-        Parameters
-        ----------
-        type_map : list[str]
-            Element symbols; index corresponds to ``atype`` values.
-        mode : str
-            Potential formula, case-insensitive.
-        dtype
-            Floating-point dtype of the result. The fused kernels read the
-            table in single precision, :meth:`call` in double.
-        like : Array, optional
-            When given, the result is created in this array's namespace and
-            device instead of NumPy, so an in-place rebuild on a wrapped
-            backend (pt_expt buffer, possibly on CUDA) stays where it was.
-
-        Returns
-        -------
-        Array
-            Coefficients ``[A_1..A_4, c_1..c_4]`` with shape
-            ``((T + 1) ** 2, 8)``, in eV Å and Å⁻¹. Row
-            ``center * (T + 1) + neighbor`` follows the ordered pair index of
-            the fused descriptor caches; rows of the padding type ``T`` vanish.
-        """
-        mode = str(mode).upper()
-        if mode not in cls.SUPPORTED_MODES:
-            raise ValueError(f"Unknown InnerPotential mode: {mode}")
-        charge = cls._lookup_from_type_map(type_map)
+        charge = self._lookup_from_type_map(self.type_map)
         ntypes = charge.shape[0]
-        if mode == "NLH":
+        if self.mode == "NLH":
             lut_a, lut_b = _nlh_lookup()
             index = charge.astype(np.int64)
             amplitude = lut_a[index[:, None], index[None, :]]
@@ -400,8 +371,7 @@ class InnerPotential(NativeOP):
             _KE_EV_A * (charge[:, None] * charge[None, :])[:, :, None] * amplitude
         )
         table[:ntypes, :ntypes, _SERIES_TERMS:] = rate
-        table = table.reshape(-1, 2 * _SERIES_TERMS).astype(dtype, copy=False)
-        return cls._in_namespace_of(table, like)
+        return table.reshape(-1, 2 * _SERIES_TERMS)
 
     @staticmethod
     def _in_namespace_of(table: np.ndarray, like: Array | None) -> Array:
@@ -468,33 +438,7 @@ class InnerPotential(NativeOP):
         """
         self.type_map = list(type_map)
         self.ntypes = len(type_map)
-        self._build_tables()
-
-    @staticmethod
-    def _series_energy(xp: Any, r: Array, row: Array) -> Array:
-        r"""Evaluate the screened Coulomb series from its per-pair constants.
-
-        .. math::
-
-           V(r)=\frac1r\sum_{k=1}^{4}A_k\,e^{-c_k r}
-
-        Parameters
-        ----------
-        xp
-            The array namespace of ``r`` and ``row``.
-        r : Array
-            Pair distances with shape (E,) in Å.
-        row : Array
-            Series constants ``[A_1..A_4, c_1..c_4]`` with shape (E, 8), in
-            eV Å and Å⁻¹.
-
-        Returns
-        -------
-        Array
-            Pair energies with shape (E,) in eV.
-        """
-        decay = xp.exp(-row[:, _SERIES_TERMS:] * r[:, None])
-        return xp.sum(row[:, :_SERIES_TERMS] * decay, axis=-1) / r
+        self._build_table()
 
     def call(
         self,
@@ -529,53 +473,10 @@ class InnerPotential(NativeOP):
             ``edge_vec``'s dtype.
         """
         xp = array_api_compat.array_namespace(edge_vec)
-        device = array_api_compat.device(edge_vec)
-        stride = self.ntypes + 1
-        src = xp.astype(edge_index[0, :], xp.int64)
-        dst = xp.astype(edge_index[1, :], xp.int64)
-        # The floor sits inside the square root: a padded edge of zero length
-        # then has finite derivatives of every order, where a norm clipped
-        # after the fact gives the Hessian 0 / 0 at it.
-        vec = xp.astype(edge_vec, xp.float64)
-        r = xp.sqrt(xp.sum(vec * vec, axis=-1) + 1e-20)
-        # Padded atoms carry type -1; their edges are masked below, so the
-        # table lookup only needs a valid index for them.
-        atype_row = xp.astype(atype_flat, xp.int64)
-        atype_row = xp.maximum(atype_row, xp.zeros_like(atype_row))
-        # Row ``center * (T + 1) + neighbor``, the ordered-pair index the
-        # fused kernels use, with the destination as the center.
-        pair = xp.take(atype_row, dst, axis=0) * stride + xp.take(
-            atype_row, src, axis=0
+        energy = atomic_pair_energies(
+            edge_vec, edge_index, atype_flat, edge_mask, self.pair_table, n_node, 1e-10
         )
-        row = xp.take(
-            xp_asarray_nodetach(xp, self.series_table, dtype=xp.float64, device=device),
-            pair,
-            axis=0,
-        )
-        taylor = xp.take(
-            xp_asarray_nodetach(xp, self.taylor_table, dtype=xp.float64, device=device),
-            pair,
-            axis=0,
-        )
-        end = taylor[:, 0]
-        delta = r - end
-        polynomial = taylor[:, 1] + delta * (
-            taylor[:, 2] + delta * (taylor[:, 3] + delta * taylor[:, 4])
-        )
-        pair_e = xp.where(
-            r < end,
-            self._series_energy(xp, r, row) - polynomial,
-            xp.zeros_like(r),
-        )
-        pair_e = pair_e * xp.astype(xp.astype(edge_mask, xp.bool), pair_e.dtype)
-        # Symmetric neighbor list: both directed edges exist, each scatters
-        # half into its dst -- atoms i and j each receive V/2.
-        from deepmd.dpmodel.utils.neighbor_graph import (
-            segment_sum,
-        )
-
-        atom_energy = segment_sum(pair_e * 0.5, dst, n_node)
-        return xp.astype(xp.reshape(atom_energy, (1, n_node, 1)), edge_vec.dtype)
+        return xp.astype(xp.reshape(energy, (1, n_node, 1)), edge_vec.dtype, copy=False)
 
 
 def check_end_inside_cutoff(
@@ -637,6 +538,8 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
     truncation : float
         Radius at which the potential ends, as a fraction of each pair's
         covalent bond length; see :class:`InnerPotential`.
+    precision : str
+        Precision of the learned descriptor sharing the neighbor graph.
 
     Raises
     ------
@@ -651,11 +554,15 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
         mode: str = "zbl",
         sel: "list[int] | int" = 0,
         truncation: float = DEFAULT_TRUNCATION,
+        precision: str = "float64",
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         self.potential = InnerPotential(
-            type_map=list(type_map), mode=mode, truncation=truncation
+            type_map=list(type_map),
+            mode=mode,
+            truncation=truncation,
+            precision=precision,
         )
         self.mode = self.potential.mode
         self.rcut = float(rcut)
@@ -668,14 +575,7 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
-        """Change the type related params to new ones, according to `type_map` and the original one in the model.
-        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
-
-        The generic base handles the public map and the stat/exclusion state;
-        the element lookup belongs to :class:`InnerPotential`, so the update is
-        delegated there rather than reimplemented here (review 3649295675 --
-        without it the lookup keeps the ORIGINAL elements while ``atype``
-        values mean new ones, and a longer new map raises ``IndexError``).
+        """Remap the output statistics, exclusions and ordered-pair coefficient table.
 
         Parameters
         ----------
@@ -843,6 +743,7 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
                 "rcut": self.rcut,
                 "sel": self.sel,
                 "truncation": self.potential.truncation,
+                "precision": self.potential.precision,
             }
         )
         return data

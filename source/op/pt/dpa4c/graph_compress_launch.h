@@ -14,6 +14,8 @@
 
 #include <cstdint>
 
+#include "pair_potential.h"
+
 namespace deepmd_dpa4c {
 
 constexpr int kWarpSize = 32;
@@ -26,12 +28,6 @@ enum class IndexKind : int { Bits32 = 0, Bits64 = 1 };
 /// Words of the presence bitmap of the node types of a system, which covers
 /// the types below 32 times this count (`Arguments::type_present`).
 constexpr int kTypeWords = 4;
-
-/// Floats of one row of `Arguments::pair_table`, one row per ordered type pair:
-/// the four amplitudes and four rates of the screened Coulomb series, the end
-/// radius and the four Taylor coefficients of the series there, and three
-/// zeros that make the row four 16-byte vectors.
-constexpr int kPairRow = 16;
 
 /// Mode profiles that a folded scan carries as extra features and that a
 /// slotted scan holds in the slots of its types. A model with more modes
@@ -149,11 +145,7 @@ struct Arguments {
   // === Analytical pair potential ===
   // Present together or not at all, and read by the edge backward only, which
   // is the one scan that sees an edge together with the energy cotangent of
-  // its destination. ``pair_table`` holds, per ordered type pair, a row of
-  // `kPairRow` floats: the four amplitudes and four decay rates of the
-  // screened Coulomb series V(r) = (1/r) sum_k A_k exp(-c_k r), the end radius
-  // R of the pair, and the Taylor coefficients of V at R, whose cubic
-  // polynomial the pair energy subtracts below R and which ends it at R.
+  // its destination. Each table row defines a truncated screened potential.
   // ``pair_seed`` is that cotangent and ``pair_energy`` the fp64 node energies
   // onto which the scan adds phi/2 per edge. Both are node indexed and offset
   // by the caller, like ``descriptor``.

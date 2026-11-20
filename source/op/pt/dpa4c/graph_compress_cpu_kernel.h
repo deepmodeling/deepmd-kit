@@ -387,51 +387,6 @@ struct EdgeGeometry {
   int64_t pair;
 };
 
-/// Evaluate the truncated pair energy of one edge and its radial slope.
-///
-/// The screened Coulomb series
-/// \f$V=r^{-1}\sum_k A_k e^{-c_k r}\f$, whose slope
-/// \f$V'=-r^{-1}\sum_k A_k(c_k+r^{-1})e^{-c_k r}\f$ shares its
-/// exponentials, ends at the radius \f$R\f$ of the pair by subtracting its
-/// cubic Taylor polynomial there,
-/// \f$\phi=V-(t_0+d(t_1+d(t_2+d\,t_3)))\f$ with \f$d=r-R\f$, and is zero at
-/// and beyond \f$R\f$. The exponent is held at eighty, where a term lies at
-/// least nineteen orders of magnitude below the float32 resolution of the sum
-/// it enters for every element pair within 6 Å, and fourteen within 10 Å;
-/// beyond it the exponential would reach the subnormal range, whose
-/// arithmetic stalls the core.
-///
-/// \param row The `kPairRow` constants of the ordered type pair: the
-///            amplitudes \f$A_0..A_3\f$, the rates \f$c_0..c_3\f$, the end
-///            radius \f$R\f$ and the coefficients \f$t_0..t_3\f$.
-/// \param radius Regularized distance in Å.
-/// \param slope Receives d(phi)/dr in eV/Å.
-/// \return The pair energy phi in eV.
-DPA4C_CPU_INLINE float pair_series(const float* row,
-                                   float radius,
-                                   float* slope) {
-  const float end = row[8];
-  if (radius >= end) {
-    *slope = 0.0f;
-    return 0.0f;
-  }
-  const float inverse = 1.0f / radius;
-  float energy = 0.0f;
-  float derivative = 0.0f;
-  for (int term = 0; term < 4; ++term) {
-    const float rate = row[4 + term];
-    const float decayed =
-        row[term] * std::exp(-std::min(rate * radius, 80.0f)) * inverse;
-    energy += decayed;
-    derivative -= decayed * (rate + inverse);
-  }
-  const float delta = radius - end;
-  energy -= row[9] + delta * (row[10] + delta * (row[11] + delta * row[12]));
-  derivative -= row[10] + delta * (2.0f * row[11] + 3.0f * delta * row[12]);
-  *slope = derivative;
-  return energy;
-}
-
 /// Resolve one edge, returning false when it contributes nothing.
 ///
 /// A padding neighbor never contributes. In a bridged specialization an edge

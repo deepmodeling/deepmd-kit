@@ -25,5 +25,7 @@ class InnerPotential(InnerPotentialDP):
 # implements no serialize()/deserialize(); rebuild it fresh from them.
 register_dpmodel_mapping(
     InnerPotentialDP,
-    lambda v: InnerPotential(type_map=v.type_map, mode=v.mode, truncation=v.truncation),
+    lambda v: InnerPotential(
+        type_map=v.type_map, mode=v.mode, truncation=v.truncation, precision=v.precision
+    ),
 )

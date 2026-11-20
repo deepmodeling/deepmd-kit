@@ -93,6 +93,37 @@ def test_zbl_known_value(type_map, atypes, zi, zj):
     np.testing.assert_allclose(float(np.sum(out)), expected, rtol=1e-12)
 
 
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+@pytest.mark.parametrize("mode", ["zbl", "nlh"])
+def test_energy_and_force_at_the_cutoff(mode: str, precision: str) -> None:
+    """The leading energy and force at the cutoff are quartic and cubic."""
+    import torch
+
+    pot = InnerPotential(["O"], mode=mode, precision=precision)
+    assert pot.pair_table.dtype == np.dtype(precision)
+    end = _end_radius(pot, 0, 0)
+    evaluation_end = float(np.asarray(end, dtype=precision))
+    amplitude, rate = _pair_series(pot, 0, 0)
+    fourth = _series_derivative(amplitude.astype(float), rate.astype(float), end, 4)
+    for fraction in (1.0 - 2.0**-15, 1.0 - 2.0**-28, 1.0, 1.01):
+        r = evaluation_end * fraction
+        edges, index, mask = _two_atom_inputs(r)
+        vec = torch.tensor(edges, dtype=torch.float64, device="cpu", requires_grad=True)
+        energy = pot.call(
+            vec,
+            torch.tensor(index, device="cpu"),
+            torch.zeros(2, dtype=torch.long, device="cpu"),
+            torch.tensor(mask, device="cpu"),
+            2,
+        ).sum()
+        grad = torch.autograd.grad(energy, vec)[0]
+        gap = max(evaluation_end - float(np.asarray(r, dtype=precision)), 0.0)
+        assert energy.item() == pytest.approx(fourth * gap**4 / 24, rel=5e-4, abs=0)
+        assert -2 * grad[0, 0].item() == pytest.approx(
+            fourth * gap**3 / 6, rel=5e-4, abs=0
+        )
+
+
 def test_edge_mask_zeroes_edges():
     pot = InnerPotential(type_map=["O"])
     edge_vec, edge_index, _ = _two_atom_inputs(0.8)
@@ -154,7 +185,7 @@ def _pair_series(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Amplitudes in eV Å and decay rates in Å⁻¹ of one ordered type pair."""
     stride = pot.ntypes + 1
-    row = np.asarray(pot.series_table)[ia * stride + ib]
+    row = np.asarray(pot.pair_table)[ia * stride + ib, :8]
     return row[:4], row[4:]
 
 
@@ -190,7 +221,7 @@ def test_nlh_screening_reaches_the_coulomb_limit():
     pot = InnerPotential(type_map=_ALL_ELEMENTS, mode="nlh")
     charge = np.asarray([ELEMENT_TO_Z[symbol] for symbol in _ALL_ELEMENTS], dtype=float)
     ntypes = len(_ALL_ELEMENTS)
-    table = np.asarray(pot.series_table).reshape(ntypes + 1, ntypes + 1, 8)
+    table = np.asarray(pot.pair_table)[:, :8].reshape(ntypes + 1, ntypes + 1, 8)
     amp = table[:ntypes, :ntypes, :4]
     assert amp.min() >= 0.0
     reference = _KE * charge[:, None] * charge[None, :]
@@ -201,7 +232,7 @@ def test_nlh_is_positive_and_strictly_decreasing():
     """Non-negative amplitudes make V positive and falling at every radius."""
     pot = InnerPotential(type_map=_ALL_ELEMENTS, mode="nlh")
     ntypes = len(_ALL_ELEMENTS)
-    table = np.asarray(pot.series_table).reshape(ntypes + 1, ntypes + 1, 8)
+    table = np.asarray(pot.pair_table)[:, :8].reshape(ntypes + 1, ntypes + 1, 8)
     radii = np.concatenate([np.geomspace(1e-3, 2.0, 200), np.linspace(2.02, 20.0, 200)])
     amp = table[:ntypes, :ntypes, None, :4]
     rate = table[:ntypes, :ntypes, None, 4:]
@@ -214,7 +245,7 @@ def test_nlh_tail_bound_holds_for_every_pair():
     """The bound the fit imposes: 1 meV at 5 Å and 0.1 meV at 6 Å."""
     pot = InnerPotential(type_map=_ALL_ELEMENTS, mode="nlh")
     ntypes = len(_ALL_ELEMENTS)
-    table = np.asarray(pot.series_table).reshape(ntypes + 1, ntypes + 1, 8)
+    table = np.asarray(pot.pair_table)[:, :8].reshape(ntypes + 1, ntypes + 1, 8)
     amp, rate = table[:ntypes, :ntypes, :4], table[:ntypes, :ntypes, 4:]
     for radius, bound in ((5.0, 1e-3), (6.0, 1e-4)):
         v = (amp * np.exp(-rate * radius)).sum(-1) / radius
@@ -224,7 +255,7 @@ def test_nlh_tail_bound_holds_for_every_pair():
 def test_nlh_table_is_symmetric_and_padded():
     """Swapping the two types leaves the row unchanged; padding rows vanish."""
     pot = InnerPotential(type_map=["H", "O", "U"], mode="nlh")
-    table = np.asarray(pot.series_table).reshape(4, 4, 8)
+    table = np.asarray(pot.pair_table)[:, :8].reshape(4, 4, 8)
     np.testing.assert_array_equal(table, np.swapaxes(table, 0, 1))
     np.testing.assert_array_equal(table[3], 0.0)
     np.testing.assert_array_equal(table[:, 3], 0.0)
@@ -237,28 +268,19 @@ def test_nlh_change_type_map_rebuilds_from_symbols():
     pot.change_type_map(["H", "O", "Fe"])
     assert pot.type_map == ["H", "O", "Fe"]
     assert pot.ntypes == 3
-    assert np.asarray(pot.series_table).shape == (16, 8)
+    assert np.asarray(pot.pair_table).shape == (16, 16)
     np.testing.assert_allclose(_pair_series(pot, 1, 0)[0], original, rtol=1e-12)
     fresh = InnerPotential(type_map=["H", "O", "Fe"], mode="nlh")
     np.testing.assert_allclose(
-        np.asarray(pot.series_table), np.asarray(fresh.series_table), rtol=1e-12
+        np.asarray(pot.pair_table), np.asarray(fresh.pair_table), rtol=1e-12
     )
 
 
-def test_pair_table_is_the_float32_view_of_both_tables():
-    """The fused kernels and this route read the same constants."""
-    for mode in ("zbl", "nlh"):
-        pot = InnerPotential(type_map=["O", "H"], mode=mode)
-        kernel = np.asarray(pot.pair_table)
-        assert kernel.dtype == np.float32
-        assert kernel.shape == (9, 16)
-        np.testing.assert_allclose(
-            kernel[:, :8].astype(np.float64), np.asarray(pot.series_table), rtol=1e-6
-        )
-        np.testing.assert_allclose(
-            kernel[:, 8:13].astype(np.float64), np.asarray(pot.taylor_table), rtol=1e-6
-        )
-        np.testing.assert_array_equal(kernel[:, 13:], 0.0)
+def test_pair_table_has_zero_padding_rows() -> None:
+    pot = InnerPotential(["O", "H"])
+    table = pot.pair_table.reshape(3, 3, -1)
+    np.testing.assert_array_equal(table[-1], 0.0)
+    np.testing.assert_array_equal(table[:, -1], 0.0)
 
 
 def test_nlh_provenance_records_the_source_and_the_modification():
@@ -377,6 +399,36 @@ def test_padded_zero_length_edge_has_a_finite_hessian():
     assert hessian_row[2].abs().max().item() == 0.0
 
 
+@pytest.mark.parametrize("distance", [0.0, 1e-9])
+def test_contact_curvature_in_single_precision(distance: float) -> None:
+    """At nuclear contact the curvature is set by the regularized Coulomb term."""
+    import torch
+
+    pot = InnerPotential(["U"], precision="float32")
+    x = torch.tensor(
+        [distance, 0.0, 0.0], device="cpu", dtype=torch.float32, requires_grad=True
+    )
+    _, index, mask = _two_atom_inputs(distance)
+    energy = pot.call(
+        torch.stack((x, -x)),
+        torch.tensor(index, device="cpu"),
+        torch.zeros(2, dtype=torch.long, device="cpu"),
+        torch.tensor(mask, device="cpu"),
+        2,
+    ).sum()
+    gradient = torch.autograd.grad(energy, x, create_graph=True)[0]
+    curvature = torch.autograd.grad(gradient[0], x)[0][0]
+    eps = 1e-10
+    expected = (
+        _KE
+        * 92**2
+        * sum(_A_COEFF)
+        * (2 * distance**2 - eps**2)
+        / (distance**2 + eps**2) ** 2.5
+    )
+    assert curvature.item() == pytest.approx(expected, rel=3e-6)
+
+
 @pytest.mark.parametrize("truncation", [0.0, -1.0, float("nan"), float("inf")])
 def test_truncation_must_be_finite_and_positive(truncation):
     with pytest.raises(ValueError, match="finite and positive"):
@@ -387,10 +439,7 @@ def test_change_type_map_rebuilds_the_truncation():
     pot = InnerPotential(type_map=["O", "H"], mode="nlh", truncation=1.2)
     pot.change_type_map(["H", "O", "Fe"])
     fresh = InnerPotential(type_map=["H", "O", "Fe"], mode="nlh", truncation=1.2)
-    for name in ("series_table", "taylor_table", "pair_table"):
-        np.testing.assert_array_equal(
-            np.asarray(getattr(pot, name)), np.asarray(getattr(fresh, name))
-        )
+    np.testing.assert_array_equal(pot.pair_table, fresh.pair_table)
 
 
 def test_rejected_type_map_change_leaves_the_model_unchanged():
@@ -398,9 +447,9 @@ def test_rejected_type_map_change_leaves_the_model_unchanged():
     model = InnerPotentialAtomicModel(
         ["O", "H"], mode="zbl", rcut=4.0, sel=8, truncation=1.2
     )
-    taylor = np.asarray(model.potential.taylor_table).copy()
+    table = np.asarray(model.potential.pair_table).copy()
     with pytest.raises(ValueError, match="cutoff"):
         model.change_type_map(["O", "H", "Cs"])
     assert model.get_type_map() == ["O", "H"]
     assert model.potential.type_map == ["O", "H"]
-    np.testing.assert_array_equal(np.asarray(model.potential.taylor_table), taylor)
+    np.testing.assert_array_equal(np.asarray(model.potential.pair_table), table)

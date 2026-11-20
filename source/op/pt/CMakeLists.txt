@@ -186,6 +186,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   # Generated shards depend on their kernel and shared ABI declarations.
   set(DPA4C_COMMON_HEADERS
       "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress.cuh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/pair_potential.h"
       "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_launch.h"
       "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/block_launch.h")
   set_property(

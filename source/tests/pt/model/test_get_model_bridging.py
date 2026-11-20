@@ -75,13 +75,20 @@ def _canonical_config() -> dict:
     }
 
 
-def test_canonical_builds_sezm_model() -> None:
-    model = get_model(_canonical_config())
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+def test_canonical_builds_sezm_model(precision: str) -> None:
+    config = _canonical_config()
+    config["models"][0]["descriptor"]["precision"] = precision
+    model = get_model(config)
     assert isinstance(model, SeZMModel)
     assert model.bridging_method == "ZBL"
     # The truncation belongs to the analytical term and the clamp to the
     # descriptor, which is what the composition's options have to reach.
     assert model.inter_potential.truncation == 1.05
+    assert (
+        model.inter_potential.pair_table.dtype
+        == model.atomic_model.descriptor.compute_dtype
+    )
     assert model.atomic_model.descriptor.contact_clamp.inner == 0.7
 
 

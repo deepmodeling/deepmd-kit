@@ -360,68 +360,6 @@ __device__ __forceinline__ float c3_envelope_derivative(float radius,
   return __fdividef(-4.0f * u2 * u * series + u2 * u2 * derivative, rcut);
 }
 
-// === Analytical pair potential ===
-//
-// One ordered type pair owns a row of sixteen constants: the four amplitudes
-// A_k and the four rates c_k of the screened Coulomb series (the ZBL form)
-//
-//   V(r) = (1/r) sum_k A_k exp(-c_k r),
-//   dV/dr = -(1/r) sum_k A_k (c_k + 1/r) exp(-c_k r),
-//
-// the end radius R of the pair, the Taylor coefficients V(R), V'(R),
-// V''(R)/2 and V'''(R)/6 of the series at R, and three zeros. The pair energy
-// is the series with its cubic Taylor polynomial at R subtracted below R, and
-// zero from R on,
-//
-//   phi(r) = V(r) - (t0 + d (t1 + d (t2 + d t3))),   d = r - R,   r < R,
-//
-// so a bond at or beyond the end radius, nearly every bond of a simulation,
-// costs one vector load and one comparison and evaluates no exponential. The
-// row is four 16-byte vectors, and the third holds the end radius and the
-// first three coefficients, so one load serves the comparison and the
-// polynomial.
-//
-// Energy and slope share their exponentials, so both come from one
-// evaluation. The `Width` lanes of an edge group split the four terms between
-// them, lane `l` taking the terms `k = l (mod Width)`: the partial slopes are
-// merged by the reduction that already merges the lanes of an edge and the
-// partial energies by one reduction over the warp after the scan, no lane
-// evaluates more than two exponentials per edge, and the split is resolved at
-// compile time. Lane zero subtracts the polynomial.
-
-struct PairTerm {
-  float energy;
-  float slope;
-};
-
-template <int Width>
-__device__ __forceinline__ PairTerm
-pair_term(const float* row, int lane, float radius, float inverse_radius) {
-  PairTerm term = {0.0f, 0.0f};
-  const float4 end = __ldg(reinterpret_cast<const float4*>(row + 8));
-  if (radius >= end.x) {
-    return term;
-  }
-#pragma unroll
-  for (int first = 0; first < 4; first += Width) {
-    const int k = first + lane;
-    if (Width <= 4 || k < 4) {
-      const float rate = __ldg(row + 4 + k);
-      const float decayed =
-          __ldg(row + k) * expf(-rate * radius) * inverse_radius;
-      term.energy += decayed;
-      term.slope = fmaf(-decayed, rate + inverse_radius, term.slope);
-    }
-  }
-  if (lane == 0) {
-    const float cubic = __ldg(row + 12);
-    const float delta = radius - end.x;
-    term.energy -= end.y + delta * (end.z + delta * (end.w + delta * cubic));
-    term.slope -= end.z + delta * (2.0f * end.w + 3.0f * delta * cubic);
-  }
-  return term;
-}
-
 // === Edge geometry and angular basis ===
 
 struct EdgeGeometry {

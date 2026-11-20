@@ -230,6 +230,9 @@ a physical repulsive wall instead of an extrapolated network output:
 E_i = E_i^{\mathrm{DPA4C}} + E_i^{\mathrm{pair}}.
 ```
 
+The pair term follows the descriptor precision: FP64 for a double-precision
+descriptor, FP32 otherwise.
+
 A model with several message-passing blocks needs it most: in contacts closer
 than about 0.45 of the covalent bond length, which no training set samples, it
 extrapolates worse than a single block.
