@@ -151,6 +151,9 @@ def test_grid_nonlinearity_preserves_inversion(
         dtype=torch.float64,
         device="cpu",
     )[None, :, None, None]
+    if sphere == "so3" and mode == "self":
+        assert grid(x.float()).dtype == torch.float32
+        assert dp_grid.call(x.float().numpy()).dtype == np.float32
     output = grid(x, context)
     reflected = grid(x * signs, None if context is None else context * signs)
     torch.testing.assert_close(reflected, output * signs, atol=1e-12, rtol=1e-12)
@@ -166,6 +169,25 @@ def test_grid_nonlinearity_preserves_inversion(
         assert not grid._project_inversion
     scalar = grid.forward_scalar(x, context)
     torch.testing.assert_close(scalar, output[:, :1], atol=1e-12, rtol=1e-12)
+
+
+def test_e3nn_grid_requires_even_polar_resolution() -> None:
+    from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
+        S2GridProjector as DPProjector,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.projection import (
+        S2GridProjector as PTProjector,
+    )
+
+    for projector, kwargs in (
+        (DPProjector, {"precision": "float64"}),
+        (PTProjector, {"dtype": torch.float64}),
+    ):
+        with pytest.raises(ValueError, match="even polar resolution"):
+            projector(lmax=2, mmax=2, grid_resolution_list=[8, 7], **kwargs)
+        assert projector(
+            lmax=2, mmax=2, grid_resolution_list=[7, 8], **kwargs
+        ).grid_resolution_list == [7, 8]
 
 
 def test_plain_projector_load_preserves_archived_constants() -> None:

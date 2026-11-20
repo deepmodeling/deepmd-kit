@@ -109,6 +109,7 @@ _A_BOHR = 0.5291772109  # Bohr radius in Å
 NLH_COEFFICIENTS_FILE = Path(__file__).with_name("nlh_coefficients.npz")
 _SERIES_TERMS = 4
 _PAIR_ROW = 16
+_PAIR_EPS = 1e-10  # Å
 
 
 def _truncated_pair_energy(radius: Array, row: Array) -> Array:
@@ -160,13 +161,12 @@ def atomic_pair_energies(
     edge_mask: Array,
     pair_table: Array,
     n_node: int,
-    eps: float,
 ) -> Array:
     """Evaluate directed pairs in table precision and sum their half-energies in FP64.
 
     Each valid edge contributes to its destination. The result has shape
     (n_node, 1) in eV. The fourth component of the regularized edge vector is
-    eps in Å: its norm and derivatives are defined even for coincident atoms.
+    the pair regularizer in Å, independent of descriptor geometry.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         segment_sum,
@@ -178,7 +178,7 @@ def atomic_pair_energies(
     )
     vec = xp.astype(edge_vec, table.dtype, copy=False)
     radius = xp.linalg.vector_norm(
-        xp.concat((vec, xp.full_like(vec[:, :1], eps)), axis=-1), axis=-1
+        xp.concat((vec, xp.full_like(vec[:, :1], _PAIR_EPS)), axis=-1), axis=-1
     )
     src = xp.astype(edge_index[0], xp.int64, copy=False)
     dst = xp.astype(edge_index[1], xp.int64, copy=False)
@@ -319,39 +319,42 @@ class InnerPotential(NativeOP):
                 f"`truncation` must be finite and positive, got {truncation}"
             )
         self.mode = mode
-        self.type_map = list(type_map)
-        self.ntypes = len(type_map)
         self.truncation = truncation
         self.precision = np.dtype(get_promoted_dtype(PRECISION_DICT[precision])).name
-        self._build_table()
+        self.change_type_map(type_map)
 
-    def _build_table(self) -> None:
+    def _build_table(self, type_map: list[str]) -> Array:
         """Build the aligned rows [A, c, R, -V'''(R)/6, padding, A exp(-cR)]."""
-        series = self._series_constants()
+        series = self._series_constants(type_map)
         table = np.zeros((series.shape[0], _PAIR_ROW), dtype=np.float64)
         table[:, :8] = series
-        radii = covalent_radii_from_type_map(self.type_map)
-        ends = table[:, 8].reshape(self.ntypes + 1, self.ntypes + 1)
-        ends[:-1, :-1] = self.truncation * (radii[:, None] + radii[None, :])
-        end = table[:, 8:9]
-        inverse = 1.0 / np.where(end > 0, end, 1.0)
-        z = series[:, 4:] * end
-        endpoint = series[:, :4] * np.exp(-z)
-        table[:, 12:16] = endpoint
-        cubic = 1 + z * (1 + z * (0.5 + z / 6))
-        table[:, 9] = (endpoint * cubic).sum(axis=1) * inverse[:, 0] ** 4
-        self.pair_table = self._in_namespace_of(
-            table.astype(self.precision), getattr(self, "pair_table", None)
-        )
+        radii = covalent_radii_from_type_map(type_map)
+        ends = table[:, 8].reshape(len(type_map) + 1, len(type_map) + 1)
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            ends[:-1, :-1] = self.truncation * (radii[:, None] + radii[None, :])
+            end = table[:, 8:9]
+            inverse = 1.0 / np.where(end > 0, end, 1.0)
+            z = series[:, 4:] * end
+            endpoint = series[:, :4] * np.exp(-z)
+            table[:, 12:16] = endpoint
+            cubic = 1 + z * (1 + z * (0.5 + z / 6))
+            table[:, 9] = (endpoint * cubic).sum(axis=1) * inverse[:, 0] ** 4
+            table = table.astype(self.precision)
+        if not np.isfinite(table).all():
+            raise ValueError(
+                f"Bridging truncation {self.truncation} produces non-finite pair "
+                f"coefficients in {self.precision} for type map {type_map}."
+            )
+        return self._in_namespace_of(table, getattr(self, "pair_table", None))
 
-    def _series_constants(self) -> np.ndarray:
+    def _series_constants(self, type_map: list[str]) -> np.ndarray:
         """Build the four amplitudes and inverse screening lengths per pair in FP64.
 
         ZBL scales the universal screening rates by the inverse screening
         length of each pair. NLH supplies the pair-specific rates directly.
         Both series have amplitudes in eV Å and rates in inverse Å.
         """
-        charge = self._lookup_from_type_map(self.type_map)
+        charge = self._lookup_from_type_map(type_map)
         ntypes = charge.shape[0]
         if self.mode == "NLH":
             lut_a, lut_b = _nlh_lookup()
@@ -436,9 +439,10 @@ class InnerPotential(NativeOP):
         type_map : list[str]
             The new element symbols.
         """
+        table = self._build_table(type_map)
         self.type_map = list(type_map)
         self.ntypes = len(type_map)
-        self._build_table()
+        self.pair_table = table
 
     def call(
         self,
@@ -474,7 +478,7 @@ class InnerPotential(NativeOP):
         """
         xp = array_api_compat.array_namespace(edge_vec)
         energy = atomic_pair_energies(
-            edge_vec, edge_index, atype_flat, edge_mask, self.pair_table, n_node, 1e-10
+            edge_vec, edge_index, atype_flat, edge_mask, self.pair_table, n_node
         )
         return xp.astype(xp.reshape(energy, (1, n_node, 1)), edge_vec.dtype, copy=False)
 
@@ -586,10 +590,10 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
             term has no fitted statistics).
         """
         check_end_inside_cutoff(type_map, self.potential.truncation, self.rcut)
+        self.potential.change_type_map(type_map)
         super().change_type_map(
             type_map, model_with_new_type_stat=model_with_new_type_stat
         )
-        self.potential.change_type_map(type_map)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Per-atom analytical energy: reducible and fully differentiable."""

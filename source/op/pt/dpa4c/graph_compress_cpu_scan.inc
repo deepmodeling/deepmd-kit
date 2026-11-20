@@ -322,9 +322,9 @@ void backward_scan(const Arguments& arguments,
       if (present && has_pair) {
         const float* row = arguments.pair_table + kPairRow * geometry.pair;
         const auto term = deepmd_dpa4c::pair_term<1>(
-            row, 0, geometry.radius, 1.0f / geometry.radius);
+            row, 0, geometry.squared_distance);
         pair_energy += 0.5f * term.energy;
-        pair_radial = pair_weight * term.slope;
+        pair_radial = pair_weight * (term.gradient_scale * geometry.radius);
       }
       if (!present || (BRIDGED && geometry.chi == 0.0f)) {
         // Only the pair potential acts on an edge outside the descriptor.

@@ -125,7 +125,6 @@ from .dpa4_nn.radial import (
 from .dpa4_nn.utils import (
     ATTN_RES_MODES,
     get_promoted_dtype,
-    safe_norm,
 )
 from .dpa4_nn.wignerd import (
     WignerDCalculator,
@@ -1908,7 +1907,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         edge_quat = edge_cache.edge_quat
         if edge_quat is None:
-            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
+            edge_len = edge_cache.edge_len
             edge_quat = build_edge_quaternion(
                 edge_cache.edge_vec,
                 edge_len=edge_len,

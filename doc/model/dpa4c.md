@@ -244,8 +244,8 @@ frozen atomic electron densities and covers every element.
 coefficients are fitted to self-consistent quantum-chemical pair energies and
 therefore follow the real repulsive wall much more closely; it leaves a smaller
 residual repulsion at ordinary bond lengths, which is energy the learned model
-would otherwise have to cancel. `zbl` is the default; whether `nlh` yields a
-better trained model has not been established.
+would otherwise have to cancel. Bridging is disabled unless you select a
+potential with `bridging_method`.
 
 > [!NOTE]
 > The `nlh` coefficients shipped with DeePMD-kit are this project's own refit and
@@ -258,24 +258,7 @@ better trained model has not been established.
 > Pairs containing an element heavier than uranium, which the reference data does
 > not cover, fall back to ZBL.
 
-The analytical term acts on every pair inside `rcut`, and a window between an
-inner and an outer radius hands each pair over between the two descriptions.
-Below the inner radius a pair leaves the learned model entirely: both atoms are
-described exactly as if the other one were absent, and the pair interacts
-through the analytical term alone. Across the window the pair enters the
-learned model smoothly, and beyond the outer radius the learned model is the
-same as without bridging. The energy stays three times continuously
-differentiable through the window, as it does at the outer cutoff.
-
-The two radii follow the size of the pair they apply to. Each is a fraction of
-the covalent bond length of that element pair, so a hydrogen pair is described
-down to a much shorter separation than a caesium pair, and one setting covers
-every element combination in the type map. The defaults place the outer radius
-at 0.80 of the bond length, below all but the shortest multiple bonds, and
-the inner radius at 0.26, deep inside the repulsive wall where the analytical
-term is the responsible description.
-
-Enable it on the model:
+Enable bridging on the model:
 
 ```json
 {
@@ -307,12 +290,6 @@ the refitted NLH coefficients.
 Training keeps every frame. Bridging alone does not ensure accurate forces at
 short range without training data there.
 
-Bridging therefore relies on short-range training data. The labels that are
-kept have to reach into the window of every element pair, which in practice
-means adding dimer scans that run down to about half the covalent bond length.
-Labels inside the window keep the hand-over smooth; a pair whose window holds
-no label can show spurious force maxima there.
-
 The same model can be written explicitly as a `linear_ener` model over the
 DPA4C model and an `inner_potential` sub-model with `weights: "sum"`; the
 concise form above expands to it.
@@ -331,10 +308,9 @@ architecture, and start from the earlier checkpoint:
 dp --pt-expt train input-zbl.json --finetune model.ckpt.pt
 ```
 
-The descriptor and the fitting network carry over. Fine-tuning is required
-rather than optional: the bridging window changes what the descriptor sees at
-short range, so the learned part is trained against the analytical term it is
-now summed with.
+The descriptor and fitting weights carry over. Fine-tune them because the
+contact clamp changes the short-range distances the descriptor reads and the
+analytical term changes the energy that the learned part must fit.
 
 ## Model compression
 

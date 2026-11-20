@@ -1480,12 +1480,12 @@ __global__ __launch_bounds__(
   }
   // === Step 1b. Merge the warps that share the row ===
   // The accumulators that `accumulators` visits, in its order.
-  constexpr int Accumulators = ScanTiles + 3 * AngularTiles + 5 * TensorTiles +
-                               (Lmax >= 3 ? HighTiles : 0) + 2 + 8 * SpinTiles +
-                               SpinTensorTiles +
-                               (Foldable && !SlotScan ? 9 * ExtraTiles : 0) +
-                               (SlotModes ? 9 * SlotTiles : 0) +
-                               (SlotBasis ? BasisTiles * Slots + 1 : 0);
+  constexpr int Accumulators =
+      ScanTiles + 3 * AngularTiles + 5 * TensorTiles +
+      (Lmax >= 3 ? HighTiles : 0) + 2 + (P::HasOrbit ? 8 : 5) * SpinTiles +
+      SpinTensorTiles + (Foldable && !SlotScan ? 9 * ExtraTiles : 0) +
+      (SlotModes ? 9 * SlotTiles : 0) +
+      (SlotBasis ? BasisTiles * Slots + 1 : 0);
   __shared__ float split_buffer[split_buffer_floats<Split>()];
   const auto accumulators = [&](auto&& visit) {
 #pragma unroll
@@ -3490,11 +3490,13 @@ __global__ __launch_bounds__(
     if (has_pair) {
       const long pair_row = static_cast<long>(center_type) * args.type_count +
                             geometry.source_type;
-      const PairTerm term = pair_term<EdgeWidth>(
-          args.pair_table + pair_row * kPairRow, base_channel, geometry.radius,
-          geometry.inverse_radius);
+      const PairTerm term =
+          pair_term<EdgeWidth>(args.pair_table + pair_row * kPairRow,
+                               base_channel, geometry.squared_distance);
       pair_energy = fmaf(0.5f, term.energy, pair_energy);
-      pair_slope = term.slope;
+      // The scan projects radial cotangents along displacement /
+      // geometry.radius.
+      pair_slope = term.gradient_scale * geometry.radius;
     }
     const TableRow row =
         reads_low_rank(Kind)

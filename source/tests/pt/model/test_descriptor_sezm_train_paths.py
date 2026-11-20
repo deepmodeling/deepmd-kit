@@ -383,7 +383,14 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         )
         if conv._cuda_conv_fn is None:
             pytest.skip("the descriptor layout has no fused CUDA convolution")
+        from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+            op_available as radial_available,
+        )
+
+        if not radial_available():
+            pytest.skip("the fused CUDA radial operator is unavailable")
         assert conv._flash_atten_fn is not None
+        assert accelerated.atomic_model.descriptor._cuda_radial_fn is not None
         assert accelerated.atomic_model.descriptor._wigner_free_conv
         energy, force = evaluate(accelerated)
         # Without the clamp the model reads other separations, so the
@@ -392,6 +399,7 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         unclamped = accelerated(coord, atype)["energy"].detach().cpu().numpy()
         assert np.abs(unclamped - energy).max() > 1e-4
         np.testing.assert_allclose(energy, dense_energy, rtol=2e-4, atol=2e-4)
+        assert np.isfinite(force).all() and np.isfinite(dense_force).all()
         np.testing.assert_allclose(force, dense_force, rtol=2e-4, atol=2e-4)
 
     @pytest.mark.parametrize("path", ["triton", "cuda", "cuda-triton"])

@@ -11,7 +11,8 @@ constexpr int kPairRow = 16;
 
 struct PairTerm {
   float energy;
-  float slope;
+  float gradient_scale;  ///< Multiply by the displacement for the Cartesian
+                         ///< gradient.
 };
 
 #ifdef __CUDACC__
@@ -36,15 +37,21 @@ DPA4C_PAIR_INLINE float screened_remainder(
   return amplitude * expf(-rate * radius) - endpoint * cubic;
 }
 
-/// Evaluate a subset of the four screening terms and its radial derivative.
-/// CPU scans take all four; cooperating GPU lanes take interleaved terms.
+/// Evaluate a subset of the four screening terms and its Cartesian gradient
+/// factor. CPU scans take all four; cooperating GPU lanes take interleaved
+/// terms.
 template <int Width>
-DPA4C_PAIR_INLINE PairTerm
-pair_term(const float* row, int lane, float radius, float inverse) {
-  const float h = row[8] - radius;
-  if (h <= 0.0f) {
+DPA4C_PAIR_INLINE PairTerm pair_term(const float* row,
+                                     int lane,
+                                     float squared_distance) {
+  // The analytical regularizer is 1e-10 Å, independent of the descriptor.
+  const float squared = squared_distance + 1e-20f;
+  if (squared >= row[8] * row[8]) {
     return {0.0f, 0.0f};
   }
+  const float radius = sqrtf(squared);
+  const float inverse = 1.0f / radius;
+  const float h = row[8] - radius;
   // r*phi = -V'''(R)*h^4/6 + sum B*(exp(ch)-T3(ch)).
   const float cubic = lane == 0 ? row[9] * h * h * h : 0.0f;
   float numerator = cubic * h;
@@ -59,7 +66,7 @@ pair_term(const float* row, int lane, float radius, float inverse) {
     derivative += rate * (value + endpoint * (y * y * y / 6.0f));
   }
   const float energy = numerator * inverse;
-  return {energy, -(derivative + energy) * inverse};
+  return {energy, -(derivative + energy) * inverse * inverse};
 }
 
 #undef DPA4C_PAIR_INLINE

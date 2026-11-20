@@ -227,8 +227,9 @@ class TestDPA4C:
         self,
         descriptor: DescrptDPA4C,
         distance: float,
+        order: int = 3,
     ) -> list[torch.Tensor]:
-        """Return the value and first three radial derivatives of the probe."""
+        """Return radial derivatives from the value through the requested order."""
         radius = torch.tensor(
             distance,
             dtype=torch.float64,
@@ -236,7 +237,7 @@ class TestDPA4C:
             requires_grad=True,
         )
         derivatives = [self._dimer_probe(descriptor, radius)]
-        for _ in range(3):
+        for _ in range(order):
             derivatives.append(
                 torch.autograd.grad(
                     derivatives[-1],
@@ -638,31 +639,28 @@ class TestDPA4C:
         # slope of the read separation has a triple zero at both ends, so the
         # separation is C^4 at the edge, where it joins the plain descriptor,
         # and flat to the same order at the inner radius, where the probe
-        # joins a constant. The regularized distance exceeds the separation by
-        # 1e-14 Å, which the fourth derivative of the separation turns into
-        # the tolerance below.
+        # joins a constant. Probe either side close enough to distinguish
+        # the limiting fourth derivative from a finite jump.
         descriptor = self.build(channels=16, lmax=4, **CLAMP | {"contact_clamp": 0.625})
         descriptor.contact_clamp.edges.fill_(0.8)
         descriptor.eval()
         plain = self.build(channels=16, lmax=4).eval()
-        inner = self._dimer_derivatives(descriptor, 0.5)
-        for order in (1, 2, 3):
-            torch.testing.assert_close(
-                inner[order],
-                torch.zeros_like(inner[order]),
-                atol=1e-8,
-                rtol=0.0,
-            )
-        outer = self._dimer_derivatives(descriptor, 0.8)
-        reference = self._dimer_derivatives(plain, 0.8)
-        assert reference[3].abs() > 1e-3
-        for order in range(4):
-            torch.testing.assert_close(
-                outer[order],
-                reference[order],
-                atol=1e-8,
-                rtol=0.0,
-            )
+        for offset in (-1e-11, 1e-11):
+            inner = self._dimer_derivatives(descriptor, 0.5 + offset, order=4)
+            for order, value in enumerate(inner[1:], start=1):
+                torch.testing.assert_close(
+                    value,
+                    torch.zeros_like(value),
+                    atol=1e-6 if order == 4 else 1e-8,
+                    rtol=0,
+                )
+            outer = self._dimer_derivatives(descriptor, 0.8 + offset, order=4)
+            reference = self._dimer_derivatives(plain, 0.8 + offset, order=4)
+            assert reference[3].abs() > 1e-3
+            for order, (value, target) in enumerate(zip(outer, reference, strict=True)):
+                torch.testing.assert_close(
+                    value, target, atol=1e-6 if order == 4 else 1e-8, rtol=0
+                )
 
     def test_frozen_bond_reads_one_separation(self) -> None:
         descriptor = self.build(**CLAMP | {"contact_clamp": 0.625})

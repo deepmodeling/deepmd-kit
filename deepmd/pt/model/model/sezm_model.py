@@ -1093,23 +1093,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if spin is not None:
             spin = spin.to(device=coord.device, dtype=coord.dtype)
         nf = atype.shape[0]
-        # A bridged descriptor records the contacts of every training batch
-        # before it is evaluated, frame by frame; the record happens outside
-        # any compiled region.
-        clamp = self.atomic_model.descriptor.contact_clamp
-        if self.training and clamp is not None:
-            node_atype = atype if extended_atype is None else extended_atype
-            # The node axis holds the ``nf`` frames one after the other.
-            node_frame = torch.arange(
-                nf, dtype=torch.int64, device=node_atype.device
-            ).repeat_interleave(node_atype.shape[1])
-            clamp.observe_edges(
-                edge_vec.detach(),
-                edge_index,
-                node_atype.reshape(-1),
-                edge_mask,
-                node_frame,
-            )
         should_compile = (
             self.should_use_compile() if use_compile is None else use_compile
         )
@@ -1128,6 +1111,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             dtype=coord.dtype,
             device=coord.device,
         )
+        # A bridged descriptor records the contacts of every training batch
+        # before it is evaluated, frame by frame; the record happens outside
+        # any compiled region.
+        clamp = self.atomic_model.descriptor.contact_clamp
+        if self.training and clamp is not None:
+            node_atype = atype if comm_dict is None else extended_atype
+            # The node axis holds the ``nf`` frames one after the other.
+            node_frame = torch.arange(
+                nf, dtype=torch.int64, device=node_atype.device
+            ).repeat_interleave(node_atype.shape[1])
+            clamp.observe_edges(
+                edge_vec.detach(),
+                edge_index,
+                node_atype.reshape(-1),
+                edge_mask,
+                node_frame,
+            )
         with self.tf32_precision_ctx():
             if should_compile:
                 fp, ap = self.convert_fp_ap(
@@ -3338,6 +3338,13 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         data = data.copy()
         version = int(data.pop("@version", 1))
         check_version_compatibility(version, 2, 1)
+        if version == 1 and str(data.get("bridging_method", "none")).lower() not in (
+            "none",
+            "",
+        ):
+            raise ValueError(
+                "A model trained with a bridging window requires retraining."
+            )
         data.pop("@class", None)
         data.pop("type", None)
         atomic_model = SeZMAtomicModel.deserialize(data.pop("atomic_model"))

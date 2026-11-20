@@ -642,6 +642,8 @@ def _normalize_s2_grid_resolution(
     resolution = [int(grid_resolution_list[0]), int(grid_resolution_list[1])]
     if resolution[0] < 1 or resolution[1] < 1:
         raise ValueError("grid resolutions must be positive")
+    if method == "e3nn" and resolution[1] % 2:
+        raise ValueError("The e3nn S2 grid requires an even polar resolution.")
     return resolution
 
 

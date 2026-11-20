@@ -487,11 +487,6 @@ class EnvironmentInitialEmbedding(nn.Module):
         self.coord_dim = self.geometry_coord_dim + (
             9 if self.spin_flags is not None else 0
         )
-        self.register_buffer(
-            "eps_sq_tensor",
-            torch.tensor(self.eps * self.eps, dtype=self.dtype, device=self.device),
-            persistent=False,
-        )
 
         # === RBF projection: n_radial -> rbf_out_dim (two-layer MLP) ===
         # rbf_out_dim = max(32, embed_dim - 2*type_dim) to align G-network width to embed_dim
@@ -619,8 +614,7 @@ class EnvironmentInitialEmbedding(nn.Module):
 
         # === Step 1. Construct r_tilde = [s, s*r_hat] ===
         # s = edge_env * (1/r), r_hat = edge_vec / r
-        r_sq = (edge_vec * edge_vec).sum(dim=-1, keepdim=True)  # (E, 1)
-        inv_r = torch.rsqrt(r_sq + self.eps_sq_tensor)  # (E, 1)
+        inv_r = torch.reciprocal(edge_cache.edge_len)
         s = edge_env * inv_r  # (E, 1)
         r_hat = edge_vec * inv_r  # (E, 3)
         r_tilde = torch.cat([s, s * r_hat], dim=-1)  # (E, 4)

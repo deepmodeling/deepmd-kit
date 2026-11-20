@@ -1150,6 +1150,18 @@ class TestDescrptSeZM(_SeZMTestCase):
                 msg="Smooth weight differs for models with same seed",
             )
 
+    def test_shared_spin_descriptors_preserve_the_branch_scheme(self) -> None:
+        config = _descriptor_kwargs(use_env_seed=True, use_spin=[True, False])
+        orbit = DescrptSeZM(**config, spin_mode="orbit")
+        exchange = DescrptSeZM(**config, spin_mode="exchange")
+        original = exchange.type_embedding
+        with self.assertRaisesRegex(ValueError, "spin modes"):
+            exchange.share_params(orbit, 0)
+        self.assertIs(exchange.type_embedding, original)
+        exchange.share_params(orbit, 1)
+        self.assertIs(exchange.type_embedding, orbit.type_embedding)
+        self.assertIsNot(exchange.spin_embedding, orbit.spin_embedding)
+
     def test_shared_descriptor_binds_fused_radial_to_shared_basis(self) -> None:
         """Fused radial inference of a linked branch reads the shared basis."""
         from deepmd.pt_expt.kernels.cuda.dpa4 import (
@@ -2247,7 +2259,7 @@ class TestEdgeNorm(_SeZMTestCase):
                 torch.testing.assert_close(sw1, sw2, atol=atol, rtol=rtol)
 
 
-class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
+class _EnergyCurveFixture(_SeZMTestCase):
     """Test PES smoothness from scaled symmetric eight-atom probes."""
 
     RANDOM_WEIGHT_BASE_SEED = 184
@@ -2403,6 +2415,8 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         model.eval()
         return model
 
+
+class TestDescriptorEnergyCurveSmoothness(_EnergyCurveFixture):
     def _scan_total_energy_curve(
         self,
         model: torch.nn.Module,
@@ -2582,6 +2596,11 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         the analytical force (``-dE/dx``) diverge from the central difference.
         """
         distances = torch.linspace(1.0, 3.2, 45, dtype=self.dtype, device=self.device)
+        clamp = model.atomic_model.descriptor.contact_clamp
+        edge = clamp.edges[0, 1]
+        end = model.inter_potential.pair_table[1, 8]
+        junctions = torch.stack((edge * clamp.inner, edge, end)).to(distances)
+        distances = torch.cat((distances, junctions - eps, junctions + eps))
         template = torch.tensor(
             [
                 [0.0, 0.0, 0.0],
@@ -2605,7 +2624,16 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         energy = result["energy"][:, 0].reshape(-1, 3)
         self.assertTrue(torch.isfinite(energy).all().item())
         fd_force = -(energy[:, 1] - energy[:, 2]) / (2.0 * eps)
-        analytical_force = result["force"][::3, 1, 0]
+        forces = result["force"][:, 1, 0].reshape(-1, 3)
+        analytical_force = forces[:, 0]
+        # Extrapolate the one-sided forces from h and 2h to each junction.
+        left, right = forces[-6:-3], forces[-3:]
+        torch.testing.assert_close(
+            2 * left[:, 0] - left[:, 2],
+            2 * right[:, 0] - right[:, 1],
+            atol=1e-6,
+            rtol=1e-6,
+        )
         torch.testing.assert_close(analytical_force, fd_force, atol=1.0e-6, rtol=1.0e-4)
         # Below the freeze the learned energy no longer depends on the pair
         # separation and the truncated ZBL term dominates, so the closest
@@ -2638,7 +2666,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                         )
 
 
-class TestContactClampFreeze(TestDescriptorEnergyCurveSmoothness):
+class TestContactClampFreeze(_EnergyCurveFixture):
     """
     The learned energy of a bridged model stops depending on a closing pair.
 

@@ -2155,7 +2155,6 @@ def _reference_cotangents(
                 args[1],
                 pair_table,
                 atype.shape[0],
-                float(args[24]),
             )
             objective = objective + (pair_energy[:, 0] * pair_seed.reshape(-1)).sum()
         gradients = torch.autograd.grad(

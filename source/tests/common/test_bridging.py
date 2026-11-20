@@ -136,6 +136,14 @@ def test_a_descriptor_record_drops_the_retired_window(window: dict) -> None:
     assert config == {"rcut": 4.0}
 
 
+@pytest.mark.parametrize("setting", ["inner_clamp_f_inner", "inner_clamp_r_inner"])
+def test_active_descriptor_window_requires_retraining(setting: str) -> None:
+    config = {setting: 0.0}
+    with pytest.raises(ValueError, match="requires retraining"):
+        drop_retired_descriptor_options(config)
+    assert config == {setting: 0.0}
+
+
 _RETIRED_MODEL_WINDOW = {
     "bridging_fraction_inner": 0.26,
     "bridging_fraction_outer": 0.8,

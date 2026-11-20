@@ -92,6 +92,50 @@ def test_canonical_builds_sezm_model(precision: str) -> None:
     assert model.atomic_model.descriptor.contact_clamp.inner == 0.7
 
 
+def test_contact_observations_use_the_evaluation_domain() -> None:
+    import torch
+
+    cfg = _sugar_config()
+    cfg["bridging_support"] = 1
+    model = get_model(cfg).to("cpu").train()
+    clamp = model.atomic_model.descriptor.contact_clamp
+    types = torch.tensor([[0, 0], [1, 1]], device="cpu")
+    indices = torch.tensor([[2, 3], [3, 2]], device="cpu")
+    kwargs = {
+        "coord": torch.zeros((2, 2, 3), dtype=torch.float64, device="cpu"),
+        "atype": types,
+        "edge_index": indices,
+        "edge_scatter_index": indices,
+        "edge_vec": torch.tensor(
+            [[0.4, 0, 0], [-0.4, 0, 0]], dtype=torch.float64, device="cpu"
+        ),
+        "edge_mask": torch.ones(2, dtype=torch.bool, device="cpu"),
+        "use_compile": False,
+    }
+    with pytest.raises(ValueError, match="extended_atype"):
+        model.forward_common_lower(**kwargs, comm_dict={})
+    assert torch.isinf(clamp.contacts).all()
+    extended = torch.tensor([[0, 0, 0], [1, 1, 1]], device="cpu")
+    model.forward_common_lower(**kwargs, extended_atype=extended)
+    assert clamp.contacts[1, 1, 0].item() == pytest.approx(0.4)
+    assert torch.isinf(clamp.contacts[0, 1]).all()
+
+
+def test_version_one_model_requires_retraining_only_with_bridging() -> None:
+    model = get_model(_canonical_config())
+    record = model.serialize()
+    record["@version"] = 1
+    record.pop("bridging_truncation")
+    with pytest.raises(ValueError, match="requires retraining"):
+        SeZMModel.deserialize(record)
+    plain = _sugar_config()
+    plain["bridging_method"] = "none"
+    plain_record = get_model(plain).serialize()
+    plain_record["@version"] = 1
+    plain_record.pop("bridging_truncation")
+    assert SeZMModel.deserialize(plain_record).inter_potential is None
+
+
 def test_canonical_matches_sugar_serialize() -> None:
     """Same seeds, both spellings: the serialized models must agree."""
     import numpy as np

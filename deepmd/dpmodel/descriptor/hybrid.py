@@ -81,6 +81,13 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             else:
                 raise NotImplementedError
         self.descrpt_list = formatted_descript_list
+        if any(
+            getattr(child, "contact_clamp", None) is not None
+            for child in self.descrpt_list
+        ):
+            raise ValueError(
+                "A hybrid descriptor cannot update the contact clamp of a child."
+            )
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):
             assert (

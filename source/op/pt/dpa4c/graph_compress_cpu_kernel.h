@@ -375,8 +375,8 @@ DPA4C_CPU_INLINE void mode_value_and_derivative(const float* __restrict modes,
 /// Everything one edge contributes, resolved once per direction.
 struct EdgeGeometry {
   float direction[3];
-  /// True regularized length in Å, which the direction and the analytical
-  /// pair potential read.
+  float squared_distance;  ///< Unregularized, in Å².
+  /// Descriptor-regularized length in Å.
   float radius;
   float chi;
   float chi_slope;
@@ -422,6 +422,7 @@ DPA4C_CPU_INLINE bool resolve_edge(const Arguments& arguments,
   geometry->direction[0] = vector[0] * inverse;
   geometry->direction[1] = vector[1] * inverse;
   geometry->direction[2] = vector[2] * inverse;
+  geometry->squared_distance = squared;
   geometry->radius = radius;
   geometry->chi = state.chi;
   geometry->chi_slope = state.chi_slope;

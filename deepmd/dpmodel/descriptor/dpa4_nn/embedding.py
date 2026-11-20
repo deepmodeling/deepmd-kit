@@ -698,8 +698,7 @@ class EnvironmentInitialEmbedding(NativeOP):
 
         # === Step 1. Construct r_tilde = [s, s*r_hat] ===
         # s = edge_env * (1/r), r_hat = edge_vec / r
-        r_sq = xp.sum(edge_vec * edge_vec, axis=-1, keepdims=True)  # (E, 1)
-        inv_r = 1.0 / xp.sqrt(r_sq + self.eps * self.eps)  # (E, 1)
+        inv_r = 1.0 / edge_cache.edge_len
         s = edge_env * inv_r  # (E, 1)
         r_hat = edge_vec * inv_r  # (E, 3)
         r_tilde = xp.concat([s, s * r_hat], axis=-1)  # (E, 4)

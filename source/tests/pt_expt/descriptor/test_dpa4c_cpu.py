@@ -363,6 +363,9 @@ def test_pair_potential_matches_the_portable_term(
     vectors = graph.edge_vec.clone()
     vectors[near] = 0
     vectors[near, 0] = end[near] * 0.999
+    close = torch.nonzero(graph.edge_mask & seed[destination].bool())[1, 0]
+    vectors[close] = 0
+    vectors[close, 0] = 1e-8
     output, state = torch.ops.deepmd.dpa4c_graph_compress(vectors, *arguments)
     edge = vectors.double().requires_grad_(True)
     reference = potential.call(

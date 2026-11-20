@@ -25,6 +25,10 @@ from einops import (
     rearrange,
 )
 
+from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+    clamped_edge_geometry,
+)
+
 from .utils import (
     get_promoted_dtype,
     nvtx_range,
@@ -61,6 +65,8 @@ class EdgeFeatureCache(NamedTuple):
         Per-edge type embeddings with shape (E, C), computed as src+dst.
     edge_vec
         Edge vectors with shape (E, 3) in Å.
+    edge_len
+        Regularized read distances with shape (E, 1) in Å.
     edge_rbf
         Radial basis with shape (E, n_radial).
         The C^3 cutoff envelope is already baked in.
@@ -96,6 +102,7 @@ class EdgeFeatureCache(NamedTuple):
     dst: torch.Tensor
     edge_type_feat: torch.Tensor
     edge_vec: torch.Tensor
+    edge_len: torch.Tensor
     edge_rbf: torch.Tensor
     edge_env: torch.Tensor
     deg: torch.Tensor
@@ -288,6 +295,7 @@ def build_edge_cache(
         dst=dst,
         edge_type_feat=edge_type_feat,
         edge_vec=edge_vec,
+        edge_len=edge_len,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
         D_full=D_full,
@@ -393,11 +401,10 @@ def build_edge_cache_from_edges(
 
     # === Step 3. Edge length, envelope, and radial basis ===
     with nvtx_range("envelope"):
-        edge_len = safe_norm(edge_vec, eps)
-        if read_distance is not None:
-            read = read_distance(edge_len)
-            edge_vec = edge_vec * (read / edge_len)
-            edge_len = read
+        if read_distance is None:
+            edge_len = safe_norm(edge_vec, eps)
+        else:
+            edge_vec, edge_len = clamped_edge_geometry(edge_vec, read_distance, eps)
         if fused_radial is not None:
             edge_env, edge_rbf = fused_radial(edge_len, edge_keep_f)
         else:
@@ -425,6 +432,7 @@ def build_edge_cache_from_edges(
         dst=dst,
         edge_type_feat=edge_type_feat,
         edge_vec=edge_vec,
+        edge_len=edge_len,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
         D_full=D_full,
@@ -502,6 +510,7 @@ def _finalize_edge_cache(
     dst: torch.Tensor,
     edge_type_feat: torch.Tensor,
     edge_vec: torch.Tensor,
+    edge_len: torch.Tensor,
     edge_rbf: torch.Tensor,
     edge_env: torch.Tensor,
     D_full: torch.Tensor | None,
@@ -524,6 +533,8 @@ def _finalize_edge_cache(
         Per-edge type features with shape (E, C).
     edge_vec
         Edge vectors with shape (E, 3).
+    edge_len
+        Regularized read distances with shape (E, 1) in Å.
     edge_rbf
         Radial basis features with shape (E, n_radial).
     edge_env
@@ -561,6 +572,7 @@ def _finalize_edge_cache(
         dst=dst,
         edge_type_feat=edge_type_feat,
         edge_vec=edge_vec,
+        edge_len=edge_len,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
         deg=deg,
@@ -744,6 +756,7 @@ def edge_cache_to_dtype(
         dst=cache.dst,
         edge_type_feat=cache.edge_type_feat.to(dtype=dtype),
         edge_vec=cache.edge_vec.to(dtype=dtype),
+        edge_len=cache.edge_len.to(dtype=dtype),
         edge_rbf=cache.edge_rbf.to(dtype=dtype),
         edge_env=cache.edge_env.to(dtype=dtype),
         deg=cache.deg.to(dtype=dtype),

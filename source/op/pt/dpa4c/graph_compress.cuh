@@ -366,8 +366,8 @@ struct EdgeGeometry {
   float ux;
   float uy;
   float uz;
-  // True regularized length, which the direction and the analytical pair
-  // potential read.
+  float squared_distance;  // Unregularized, in Å².
+  // Descriptor-regularized length used for its direction.
   float radius;
   float inverse_radius;
   // Length the radial table and the envelope read: the clamped length inside
@@ -397,7 +397,8 @@ __device__ __forceinline__ EdgeGeometry load_geometry(const Arguments& args,
   const float x = args.edge_vec[edge * 3 + 0];
   const float y = args.edge_vec[edge * 3 + 1];
   const float z = args.edge_vec[edge * 3 + 2];
-  const float square = x * x + y * y + z * z + args.eps * args.eps;
+  geometry.squared_distance = x * x + y * y + z * z;
+  const float square = geometry.squared_distance + args.eps * args.eps;
   geometry.inverse_radius = rsqrtf(square);
   geometry.radius = square * geometry.inverse_radius;
   geometry.ux = x * geometry.inverse_radius;

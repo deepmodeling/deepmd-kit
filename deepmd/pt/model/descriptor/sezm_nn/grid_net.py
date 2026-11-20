@@ -663,13 +663,7 @@ class BaseGridNet(nn.Module):
         # grids without paired samples require the discrete projection.
         self._project_inversion = self.parity and (
             isinstance(projector, SO3GridProjector)
-            or (
-                projector.grid_method == "e3nn"
-                and (
-                    projector.phi_resolution % 2 != 0
-                    or projector.theta_resolution % 2 != 0
-                )
-            )
+            or (projector.grid_method == "e3nn" and projector.phi_resolution % 2 != 0)
         )
         self.lmax = int(projector.lmax)
         degree_index = _build_frame_degree_index(
@@ -871,7 +865,8 @@ class BaseGridNet(nn.Module):
     def _reflect(self, value: torch.Tensor) -> torch.Tensor:
         canonical, shape_info = self._to_ndfc(value)
         return self._restore_layout(
-            canonical * self._inversion_sign[None, :, None, None], shape_info
+            canonical * self._inversion_sign.to(value.dtype)[None, :, None, None],
+            shape_info,
         )
 
     def _forward(

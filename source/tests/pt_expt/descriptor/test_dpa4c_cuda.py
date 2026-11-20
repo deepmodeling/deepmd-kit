@@ -5703,6 +5703,7 @@ def test_native_certified_basis_preserves_descriptor_and_vjp(
         descriptor._store_compression_buffer("basis_matrix", empty.clone())
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     actual = evaluate()
+    _assert_dispatched(actual[0], expected[0])
     for value, reference, (atol, rtol) in zip(
         actual, expected, [(3e-5, 3e-5), (8e-6, 1e-4), (8e-6, 1e-4)], strict=True
     ):

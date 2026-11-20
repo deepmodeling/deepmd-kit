@@ -150,6 +150,8 @@ def test_hybrid_descriptor_aggregates_dense_comm() -> None:
     assert dpa4.dense_lower_supports_comm() is False
     assert sea.dense_lower_supports_comm() is True
 
+    with pytest.raises(ValueError, match="cannot update the contact clamp"):
+        DescrptHybrid(list=[_dpa4_descriptor(bridging=True), sea])
     mixed = DescrptHybrid(list=[dpa4, sea])
     # the hybrid itself stays on the DENSE lower ...
     assert mixed.uses_graph_lower() is False

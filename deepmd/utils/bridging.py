@@ -426,12 +426,11 @@ def resolve_bridging_options(inner_cfg: dict) -> dict:
 #: Descriptor options of the bridging window that the contact clamp replaced,
 #: in the spellings records carry: radii in Å, pair-relative fractions and the
 #: scale they are read on.
-_RETIRED_DESCRIPTOR_OPTIONS = (
+_RETIRED_CLAMP_RADII = (
     "inner_clamp_r_inner",
     "inner_clamp_r_outer",
     "inner_clamp_f_inner",
     "inner_clamp_f_outer",
-    "inner_clamp_scale",
 )
 
 
@@ -499,5 +498,9 @@ def drop_retired_descriptor_options(config: dict) -> None:
     config : dict
         Constructor arguments read back from a serialized descriptor.
     """
-    for key in _RETIRED_DESCRIPTOR_OPTIONS:
+    if any(config.get(key) is not None for key in _RETIRED_CLAMP_RADII):
+        raise ValueError(
+            "A descriptor trained with a bridging window requires retraining."
+        )
+    for key in (*_RETIRED_CLAMP_RADII, "inner_clamp_scale"):
         config.pop(key, None)

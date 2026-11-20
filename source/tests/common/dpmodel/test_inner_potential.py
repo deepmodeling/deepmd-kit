@@ -124,6 +124,15 @@ def test_energy_and_force_at_the_cutoff(mode: str, precision: str) -> None:
         )
 
 
+def test_pair_table_must_be_representable_in_compute_precision() -> None:
+    with pytest.raises(ValueError, match="non-finite pair coefficients in float32"):
+        InnerPotential(["H"], truncation=1e-12, precision="float32")
+    pot = InnerPotential(["H"], truncation=1e-12, precision="float64")
+    edges, index, mask = _two_atom_inputs(1.0)
+    energy = pot.call(edges, index, np.zeros(2, dtype=np.int64), mask, 2)
+    np.testing.assert_array_equal(energy, 0.0)
+
+
 def test_edge_mask_zeroes_edges():
     pot = InnerPotential(type_map=["O"])
     edge_vec, edge_index, _ = _two_atom_inputs(0.8)

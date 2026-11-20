@@ -832,13 +832,7 @@ class BaseGridNet(NativeOP):
         # grids without paired samples require the discrete projection.
         self._project_inversion = self.parity and (
             isinstance(projector, SO3GridProjector)
-            or (
-                projector.grid_method == "e3nn"
-                and (
-                    projector.phi_resolution % 2 != 0
-                    or projector.theta_resolution % 2 != 0
-                )
-            )
+            or (projector.grid_method == "e3nn" and projector.phi_resolution % 2 != 0)
         )
         self.lmax = int(projector.lmax)
         degree_index = _build_frame_degree_index(
@@ -989,7 +983,10 @@ class BaseGridNet(NativeOP):
     def _reflect(self, value: Any) -> Any:
         xp = array_api_compat.array_namespace(value)
         sign = xp_asarray_nodetach(
-            xp, self._inversion_sign, device=array_api_compat.device(value)
+            xp,
+            self._inversion_sign,
+            dtype=value.dtype,
+            device=array_api_compat.device(value),
         )
         canonical, shape_info = self._to_ndfc(value)
         return self._restore_layout(canonical * sign[None, :, None, None], shape_info)

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """The contact clamp of a bridged model: profile, contact record, edges and backends."""
 
+from pathlib import (
+    Path,
+)
+
 import numpy as np
 import pytest
 
@@ -24,6 +28,25 @@ def _read(clamp: ContactClamp, distance: np.ndarray, center: int, neighbor: int)
     return np.asarray(
         clamp.call(distance, types, np.full_like(types, neighbor))
     ).reshape(-1)
+
+
+def test_clamped_geometry_separates_read_radius_from_direction() -> None:
+    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+        clamped_edge_geometry,
+    )
+
+    clamp = ContactClamp(["O"], inner=0.75)
+    vec = np.zeros((4, 3))
+    vec[:, 0] = [0.0, 0.1, 0.2, 2.0]
+    types = np.zeros(4, dtype=np.int64)
+    mapped, radius = clamped_edge_geometry(
+        vec, lambda r: clamp.call(r, types, types), eps=0.1
+    )
+    np.testing.assert_array_equal(mapped[0], np.zeros(3))
+    np.testing.assert_array_equal(mapped[1], mapped[2])
+    np.testing.assert_array_equal(radius[:3], np.full((3, 1), radius[1, 0]))
+    np.testing.assert_allclose(radius[1, 0], np.hypot(mapped[1, 0], 0.1))
+    np.testing.assert_array_equal(mapped[-1], vec[-1])
 
 
 def test_initial_edges_are_the_covalent_bond_lengths() -> None:
@@ -69,8 +92,7 @@ def test_profile_is_non_decreasing_and_never_steeper_than_the_identity() -> None
 
 def test_profile_is_c4_at_both_ends_of_the_ramp() -> None:
     """Four derivatives of the read separation match across the edge and the freeze."""
-    import torch
-
+    torch = pytest.importorskip("torch")
     clamp = ContactClamp(TYPE_MAP, inner=0.7)
     edge = _edge(clamp, 0, 0)
 
@@ -255,8 +277,43 @@ def test_support_must_be_positive(support) -> None:
         ContactClamp(TYPE_MAP, support=support)
 
 
+def _check_synchronized_contacts(rank: int, store: str) -> None:
+    import torch
+    import torch.distributed as dist
+
+    from deepmd.pt_expt.utils.contact_clamp import ContactClamp as TorchClamp
+    from deepmd.pt_expt.utils.contact_clamp import (
+        synchronize_contact_edges,
+    )
+
+    module = torch.nn.Module()
+    module.clamp = TorchClamp(TYPE_MAP, inner=0.75, support=2).to("cpu")
+    values = torch.tensor(
+        ([0.5, 0.7], [0.6, 0.8])[rank], dtype=torch.float64, device="cpu"
+    )
+    atom_type = torch.zeros_like(values, dtype=torch.int64)
+    module.clamp.observe(
+        values, atom_type, atom_type + 1, values > 0, torch.arange(2, device="cpu")
+    )
+    dist.init_process_group(
+        "gloo", init_method=f"file://{store}", rank=rank, world_size=2
+    )
+    try:
+        synchronize_contact_edges(module)
+        torch.testing.assert_close(
+            module.clamp.contacts[0, 1], values.new_tensor([0.5, 0.6])
+        )
+        assert module.clamp.edges[0, 1].item() == pytest.approx(0.6)
+    finally:
+        dist.destroy_process_group()
+
+
 class TestTorchClamp:
     """The pt / pt_expt clamp: the dpmodel clamp on torch buffers, in place."""
+
+    @pytest.fixture(autouse=True)
+    def _require_torch(self) -> None:
+        pytest.importorskip("torch")
 
     @staticmethod
     def _clamp(support: int = 3):
@@ -355,36 +412,15 @@ class TestTorchClamp:
         synchronize_contact_edges(module)
         np.testing.assert_array_equal(module.clamp.edges.numpy(), start.numpy())
 
-    def test_synchronization_in_a_process_group_keeps_a_single_rank_record(
-        self, tmp_path
-    ) -> None:
-        import torch
+    def test_ranks_adopt_the_same_contact_record(self, tmp_path: Path) -> None:
         import torch.distributed as dist
+        import torch.multiprocessing as mp
 
-        from deepmd.pt_expt.utils.contact_clamp import (
-            synchronize_contact_edges,
+        if not dist.is_available() or not dist.is_gloo_available():
+            pytest.skip("Gloo process groups are unavailable")
+        mp.spawn(
+            _check_synchronized_contacts, args=(str(tmp_path / "store"),), nprocs=2
         )
-
-        clamp = self._clamp(support=2)
-        clamp.observe(
-            torch.tensor([0.5, 0.6], dtype=torch.float64, device="cpu"),
-            torch.zeros(2, dtype=torch.int64, device="cpu"),
-            torch.ones(2, dtype=torch.int64, device="cpu"),
-            torch.ones(2, dtype=torch.bool, device="cpu"),
-            torch.arange(2, dtype=torch.int64, device="cpu"),
-        )
-        record, edges = clamp.contacts.clone(), clamp.edges.clone()
-        module = torch.nn.Module()
-        module.clamp = clamp
-        dist.init_process_group(
-            "gloo", init_method=f"file://{tmp_path / 'store'}", rank=0, world_size=1
-        )
-        try:
-            synchronize_contact_edges(module)
-        finally:
-            dist.destroy_process_group()
-        assert torch.equal(clamp.contacts, record)
-        assert torch.equal(clamp.edges, edges)
 
     def test_a_coincident_contact_keeps_the_read_gradient_finite(self) -> None:
         import torch

@@ -66,6 +66,8 @@ class EdgeCache:
         Per-edge type embeddings with shape (E, C), computed as src+dst.
     edge_vec
         Edge vectors with shape (E, 3) in Å.
+    edge_len
+        Regularized read distances with shape (E, 1) in Å.
     edge_rbf
         Radial basis with shape (E, n_radial).
         The C^3 cutoff envelope is already baked in.
@@ -107,6 +109,7 @@ class EdgeCache:
     dst: Any
     edge_type_feat: Any
     edge_vec: Any
+    edge_len: Any
     edge_rbf: Any
     edge_env: Any
     deg: Any
@@ -118,6 +121,28 @@ class EdgeCache:
     csr_cache: dict[str, Any] | None = field(default_factory=dict)
     edge_quat: Any = None
     edge_mask: Any = None
+
+
+def clamped_edge_geometry(
+    edge_vec: Any, read_distance: Callable[[Any], Any], eps: float
+) -> tuple[Any, Any]:
+    """Map the physical radius while preserving each nonzero bond direction.
+
+    Coincident atoms have a zero direction and the same frozen read radius as
+    any other contact on the plateau. Regularize the radius after the clamp so
+    that angular and radial consumers see the same effective geometry.
+    """
+    xp = array_api_compat.array_namespace(edge_vec)
+    squared = xp.sum(edge_vec * edge_vec, axis=-1, keepdims=True)
+    nonzero = squared > 0
+    denominator = xp.linalg.vector_norm(
+        xp.where(nonzero, edge_vec, xp.ones_like(edge_vec)), axis=-1, keepdims=True
+    )
+    length = xp.where(nonzero, denominator, xp.zeros_like(denominator))
+    read = read_distance(length)
+    direction = xp.where(nonzero, edge_vec / denominator, xp.zeros_like(edge_vec))
+    mapped = xp.where(read == length, edge_vec, direction * read)
+    return mapped, xp.sqrt(read * read + eps * eps)
 
 
 def _edge_cache_from_arrays(
@@ -218,11 +243,10 @@ def _edge_cache_from_arrays(
     edge_vec = edge_vec + xp.concat([zeros2, 1.0 - edge_keep_f], axis=-1)
 
     # === Step 3. Edge length, envelope, and radial basis ===
-    edge_len = safe_norm(edge_vec, eps)
-    if read_distance is not None:
-        read = read_distance(edge_len)
-        edge_vec = edge_vec * (read / edge_len)
-        edge_len = read
+    if read_distance is None:
+        edge_len = safe_norm(edge_vec, eps)
+    else:
+        edge_vec, edge_len = clamped_edge_geometry(edge_vec, read_distance, eps)
     if fused_radial is not None:
         edge_env, edge_rbf = fused_radial(edge_len, edge_keep_f)
     else:
@@ -250,6 +274,7 @@ def _edge_cache_from_arrays(
         dst=dst,
         edge_type_feat=edge_type_feat,
         edge_vec=edge_vec,
+        edge_len=edge_len,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
         D_full=D_full,
@@ -337,6 +362,7 @@ def _finalize_edge_cache(
     dst: Any,
     edge_type_feat: Any,
     edge_vec: Any,
+    edge_len: Any,
     edge_rbf: Any,
     edge_env: Any,
     D_full: Any,
@@ -359,6 +385,8 @@ def _finalize_edge_cache(
         Per-edge type features with shape (E, C).
     edge_vec
         Edge vectors with shape (E, 3).
+    edge_len
+        Regularized read distances with shape (E, 1) in Å.
     edge_rbf
         Radial basis features with shape (E, n_radial).
     edge_env
@@ -398,6 +426,7 @@ def _finalize_edge_cache(
         dst=dst,
         edge_type_feat=edge_type_feat,
         edge_vec=edge_vec,
+        edge_len=edge_len,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
         deg=deg,
@@ -487,6 +516,7 @@ def edge_cache_to_dtype(cache: EdgeCache, dtype: Any) -> EdgeCache:
         dst=cache.dst,
         edge_type_feat=xp.astype(cache.edge_type_feat, dtype),
         edge_vec=xp.astype(cache.edge_vec, dtype),
+        edge_len=xp.astype(cache.edge_len, dtype),
         edge_rbf=xp.astype(cache.edge_rbf, dtype),
         edge_env=xp.astype(cache.edge_env, dtype),
         deg=xp.astype(cache.deg, dtype),

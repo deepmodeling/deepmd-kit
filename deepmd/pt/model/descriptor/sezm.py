@@ -109,7 +109,6 @@ from .sezm_nn import (
     has_lora,
     np_safe,
     nvtx_range,
-    safe_norm,
     safe_numpy_to_tensor,
 )
 
@@ -1946,7 +1945,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         """
         edge_quat = edge_cache.edge_quat
         if edge_quat is None:
-            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
+            edge_len = edge_cache.edge_len
             edge_quat = build_edge_quaternion(
                 edge_cache.edge_vec,
                 edge_len=edge_len,
@@ -2525,6 +2524,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             "Only descriptors of the same type can share params!"
         )
         if shared_level == 0:
+            if self.use_spin != base_class.use_spin or (
+                self.use_spin is not None and self.spin_mode != base_class.spin_mode
+            ):
+                raise ValueError(
+                    "Level-0 sharing requires identical spin masks and spin modes."
+                )
             # NOTE: ``nn.Module.__setattr__`` routes plain assignment of a
             # child ``nn.Module`` through the ``_modules`` dict, so iterating
             # that dict covers every learnable submodule registered by
