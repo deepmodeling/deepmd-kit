@@ -314,6 +314,10 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     ``_compile_model`` and raises an explicit error rather than silently
     producing a wrong compiled graph.
 
+    A contact clamp belongs to its task even when descriptor parameters
+    are shared. The graph captures its edge buffer, which contact
+    observations update in place, so reuse requires the same clamp.
+
     After ``share_params``, the fitting net's child sub-modules are the same
     Python objects across tasks, so ``id(first_child)`` is equal for all
     shared tasks and unique across unrelated models.
@@ -333,8 +337,12 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     tasks share a graph only when they share the module as well.
     """
     descriptor_id: int = 0
+    clamp_id = 0
     try:
         desc = model.get_descriptor()
+        clamp = getattr(desc, "contact_clamp", None)
+        if clamp is not None:
+            clamp_id = id(clamp)
         for _, p in desc.named_parameters():
             descriptor_id = id(p)
             break
@@ -363,6 +371,7 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     return (
         int(model.has_spin()),
         descriptor_id,
+        clamp_id,
         fitting_id,
         *vacuum_state,
         long_range_id,
