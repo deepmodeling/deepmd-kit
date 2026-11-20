@@ -248,6 +248,13 @@ class ContactClamp(NativeOP):
         Array
             Read separations with the shape and dtype of ``distance``.
         """
+        read, _ = self.read_with_identity_mask(distance, center_type, neighbor_type)
+        return read
+
+    def read_with_identity_mask(
+        self, distance: Array, center_type: Array, neighbor_type: Array
+    ) -> tuple[Array, Array]:
+        """Return the read separation and whether the physical separation is at or above its data edge."""
         xp = array_api_compat.array_namespace(distance)
         table = xp_asarray_nodetach(
             xp,
@@ -267,7 +274,8 @@ class ContactClamp(NativeOP):
         frozen = 0.5 * (1.0 + self.inner) * edge + width * rise
         # Both branches agree in value and in four derivatives at the edge, so
         # the selection keeps the read separation C⁴ there.
-        return xp.where(distance >= edge, distance, frozen)
+        identity = distance >= edge
+        return xp.where(identity, distance, frozen), identity
 
     def edges_of(self, contacts: Array) -> Array:
         """Data edges of a contact record.

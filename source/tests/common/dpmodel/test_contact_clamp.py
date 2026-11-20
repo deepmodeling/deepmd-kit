@@ -40,13 +40,47 @@ def test_clamped_geometry_separates_read_radius_from_direction() -> None:
     vec[:, 0] = [0.0, 0.1, 0.2, 2.0]
     types = np.zeros(4, dtype=np.int64)
     mapped, radius = clamped_edge_geometry(
-        vec, lambda r: clamp.call(r, types, types), eps=0.1
+        vec, lambda r: clamp.read_with_identity_mask(r, types, types), eps=0.1
     )
     np.testing.assert_array_equal(mapped[0], np.zeros(3))
     np.testing.assert_array_equal(mapped[1], mapped[2])
     np.testing.assert_array_equal(radius[:3], np.full((3, 1), radius[1, 0]))
     np.testing.assert_allclose(radius[1, 0], np.hypot(mapped[1, 0], 0.1))
     np.testing.assert_array_equal(mapped[-1], vec[-1])
+
+
+def test_geometry_keeps_the_clamp_derivatives_near_the_data_edge() -> None:
+    """Inside the ramp the scalar clamp sets the derivatives even at FP32 resolution."""
+    torch = pytest.importorskip("torch")
+    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+        clamped_edge_geometry,
+    )
+
+    clamp = ContactClamp(["O"])
+    edge = _edge(clamp, 0, 0)
+    r = torch.linspace(
+        0.98 * edge,
+        0.999 * edge,
+        256,
+        dtype=torch.float32,
+        device="cpu",
+        requires_grad=True,
+    )
+    types = torch.zeros_like(r, dtype=torch.long)
+    vec = torch.stack((r, torch.zeros_like(r), torch.zeros_like(r)), dim=1)
+    eps = 0.1
+    mapped, radius = clamped_edge_geometry(
+        vec, lambda length: clamp.read_with_identity_mask(length, types, types), eps
+    )
+    read = clamp.call(r, types, types)
+    for actual, expected in (
+        (mapped[:, 0], read),
+        (radius[:, 0], (read.square() + eps**2).sqrt()),
+    ):
+        for _ in range(2):
+            actual = torch.autograd.grad(actual.sum(), r, create_graph=True)[0]
+            expected = torch.autograd.grad(expected.sum(), r, create_graph=True)[0]
+            torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
 
 
 def test_initial_edges_are_the_covalent_bond_lengths() -> None:

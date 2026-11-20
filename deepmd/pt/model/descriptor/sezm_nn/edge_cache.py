@@ -316,7 +316,7 @@ def build_edge_cache_from_edges(
     compute_dtype: torch.dtype,
     eps: float,
     deg_norm_floor: float,
-    read_distance: Callable[[torch.Tensor], torch.Tensor] | None,
+    read_distance: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]] | None,
     edge_envelope: Callable[[torch.Tensor], torch.Tensor],
     radial_basis: Callable[[torch.Tensor], torch.Tensor],
     has_exclude_types: bool,
@@ -350,11 +350,8 @@ def build_edge_cache_from_edges(
         Floor added to the envelope-squared degree before inverse-sqrt
         normalization (see :func:`_finalize_edge_cache`).
     read_distance
-        Optional map from the edge lengths, shape (E, 1), to the lengths the
-        descriptor reads, the contact clamp of a bridged descriptor (see
-        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`). The edge
-        vectors are rescaled to the read lengths, so every geometric read
-        sees them while the directions stay exact.
+        Optional contact-clamp map returning the read lengths and a mask of
+        edges at or above their data edge, both with shape (E, 1).
     edge_envelope
         C^3 edge envelope module.
     radial_basis

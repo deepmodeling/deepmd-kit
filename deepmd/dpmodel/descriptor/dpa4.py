@@ -1578,7 +1578,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             None
             if self.contact_clamp is None
             else functools.partial(
-                self.contact_clamp.call,
+                self.contact_clamp.read_with_identity_mask,
                 center_type=xp.take(atype_flat, edge_index[1, ...]),
                 neighbor_type=xp.take(atype_flat, edge_index[0, ...]),
             )

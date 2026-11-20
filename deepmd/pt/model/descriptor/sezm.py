@@ -1619,7 +1619,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             None
             if self.contact_clamp is None
             else functools.partial(
-                self.contact_clamp.call,
+                self.contact_clamp.read_with_identity_mask,
                 center_type=atype_flat.index_select(0, edge_index[1]),
                 neighbor_type=atype_flat.index_select(0, edge_index[0]),
             )

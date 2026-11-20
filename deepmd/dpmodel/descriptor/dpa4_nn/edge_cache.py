@@ -124,7 +124,7 @@ class EdgeCache:
 
 
 def clamped_edge_geometry(
-    edge_vec: Any, read_distance: Callable[[Any], Any], eps: float
+    edge_vec: Any, read_distance: Callable[[Any], tuple[Any, Any]], eps: float
 ) -> tuple[Any, Any]:
     """Map the physical radius while preserving each nonzero bond direction.
 
@@ -139,10 +139,12 @@ def clamped_edge_geometry(
         xp.where(nonzero, edge_vec, xp.ones_like(edge_vec)), axis=-1, keepdims=True
     )
     length = xp.where(nonzero, denominator, xp.zeros_like(denominator))
-    read = read_distance(length)
+    read, unchanged = read_distance(length)
     direction = xp.where(nonzero, edge_vec / denominator, xp.zeros_like(edge_vec))
-    mapped = xp.where(read == length, edge_vec, direction * read)
-    return mapped, xp.sqrt(read * read + eps * eps)
+    mapped = xp.where(unchanged, edge_vec, direction * read)
+    # Keep the same squared norm as the unclamped path on identity edges.
+    read_squared = xp.where(unchanged, squared, read * read)
+    return mapped, xp.sqrt(read_squared + eps * eps)
 
 
 def _edge_cache_from_arrays(
@@ -154,7 +156,7 @@ def _edge_cache_from_arrays(
     compute_dtype: Any,
     eps: float,
     deg_norm_floor: float,
-    read_distance: Callable[[Any], Any] | None,
+    read_distance: Callable[[Any], tuple[Any, Any]] | None,
     edge_envelope: Callable[[Any], Any],
     radial_basis: Callable[[Any], Any],
     random_gamma: bool,
@@ -191,11 +193,8 @@ def _edge_cache_from_arrays(
         Floor added to the envelope-squared degree before inverse-sqrt
         normalization (see :func:`_finalize_edge_cache`).
     read_distance
-        Optional map from the edge lengths, shape (E, 1), to the lengths the
-        descriptor reads, the contact clamp of a bridged descriptor (see
-        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`). The edge
-        vectors are rescaled to the read lengths, so every geometric read
-        sees them while the directions stay exact.
+        Optional contact-clamp map returning the read lengths and a mask of
+        edges at or above their data edge, both with shape (E, 1).
     edge_envelope
         C^3 edge envelope module.
     radial_basis
