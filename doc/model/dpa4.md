@@ -317,7 +317,16 @@ is set.
 
 To add bridging to a trained model, keep its architecture, add the bridging
 settings and fine-tune; the data edges start at the covalent bond lengths and
-follow the fine-tuning data. Recalibrate an existing model's energy bias with
+follow the fine-tuning data.
+
+A checkpoint fitted with the earlier switching window does not contain a
+contact record and cannot reproduce its energies and forces with the truncated
+potential. In the PyTorch backend, `--force-load` can initialize the missing
+buffers, or a target with `bridging_clamp: null` can reuse the weights without
+a clamp. Both start from a different energy function and require retraining;
+neither restores the original potential.
+
+Recalibrate an existing model's energy bias with
 `dp change-bias --mode change`, which accounts for the model's complete energy,
 including the analytical term. See [changing the energy bias](change-bias.md).
 

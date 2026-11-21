@@ -555,24 +555,18 @@ def freeze(
                 f"Head '{head}' not found. "
                 f"Available: {list(model_params['model_dict'].keys())}"
             )
-        # Build full multi-task wrapper, load weights, extract single head
-        model_dict = {}
-        for key in model_params["model_dict"]:
-            from copy import (
-                deepcopy,
-            )
-
-            model_dict[key] = get_model(deepcopy(model_params["model_dict"][key]))
-        wrapper = ModelWrapper(model_dict)
-        wrapper.load_state_dict(state_dict)
-
-        m = wrapper.model[head]
         single_model_params = model_params["model_dict"][head]
+        prefix = f"model.{head}."
+        state_dict = {
+            key: value
+            for key, value in state_dict.items()
+            if key == "_extra_state" or key.startswith(prefix)
+        }
     else:
-        m = get_model(model_params)
-        wrapper = ModelWrapper(m)
-        wrapper.load_state_dict(state_dict)
         single_model_params = model_params
+    m = get_model(single_model_params)
+    wrapper = ModelWrapper({head: m} if multi_task else m)
+    wrapper.load_state_dict(state_dict)
 
     m.eval()
 

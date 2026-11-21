@@ -23,6 +23,9 @@ import zipfile
 from collections.abc import (
     Iterator,
 )
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 import pytest
@@ -197,6 +200,33 @@ def _make_sensitive_model(config: dict | None = None) -> torch.nn.Module:
         jitter_zero_arrays(learned.descriptor.serialize(), np.random.default_rng(3))
     )
     return model.to(torch.device("cpu")).eval()
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+def test_window_checkpoint_requires_retraining(tmp_path: Path, backend: str) -> None:
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt.train.wrapper import ModelWrapper as PTWrapper
+    from deepmd.pt_expt.train.wrapper import ModelWrapper as PTExptWrapper
+
+    config = copy.deepcopy(ZBL_CONFIG)
+    del config["bridging_clamp"], config["bridging_truncation"]
+    build, wrap = (
+        (pt_get_model, PTWrapper) if backend == "pt" else (get_model, PTExptWrapper)
+    )
+    state = wrap(build(copy.deepcopy(config)), model_params=config).state_dict()
+    # A window-based checkpoint stores the learned weights at version 1.3
+    # but has no trained contact record in either parameter dialect.
+    for key in list(state):
+        if ".contact_clamp." in key:
+            del state[key]
+        elif key.endswith(".version_tensor"):
+            state[key] = torch.full_like(state[key], 1.3)
+    checkpoint = tmp_path / "window.pt"
+    torch.save({"model": state}, checkpoint)
+    with pytest.raises(ValueError, match="requires retraining"):
+        DeepPot(str(checkpoint))
 
 
 class TestZBLBridgingPtExpt:

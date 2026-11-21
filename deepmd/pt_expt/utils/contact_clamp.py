@@ -91,6 +91,27 @@ register_dpmodel_mapping(
 )
 
 
+def require_checkpoint_contact_records(
+    wrapper: torch.nn.Module, state_dict: dict[str, Any], prefix: str, *args: Any
+) -> None:
+    """Require the state of each active clamp when restoring a wrapped model.
+
+    A bare descriptor can take weights from an unbridged source and retain its
+    own edges. A complete checkpoint must supply the edges used in inference
+    and the contact history used on restart. Explicit forced initialization
+    supplies target buffers before loading; a disabled clamp needs neither.
+    """
+    for name, module in wrapper.named_modules(remove_duplicate=False):
+        if isinstance(module, ContactClamp):
+            for buffer in ("edges", "contacts"):
+                key = f"{prefix}{name}.{buffer}"
+                if key not in state_dict:
+                    raise ValueError(
+                        f"Cannot restore the active contact clamp: missing {key!r}. "
+                        "A model trained with a bridging window requires retraining."
+                    )
+
+
 @torch.no_grad()
 def synchronize_contact_edges(module: torch.nn.Module) -> None:
     """Merge the contact records of every contact clamp of a module over all ranks.

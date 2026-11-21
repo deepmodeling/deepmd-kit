@@ -12,6 +12,10 @@ from typing import (
 
 import torch
 
+from deepmd.pt_expt.utils.contact_clamp import (
+    require_checkpoint_contact_records,
+)
+
 if torch.__version__.startswith("2"):
     import torch._dynamo
 
@@ -34,6 +38,7 @@ class ModelWrapper(torch.nn.Module):
         - config: The Dict-like configuration with training options.
         """
         super().__init__()
+        self.register_load_state_dict_pre_hook(require_checkpoint_contact_records)
         self.model_params = model_params if model_params is not None else {}
         self.train_infos = {
             "lr": 0,
