@@ -30,6 +30,8 @@ class DescriptorProfile:
         Descriptor coordinate of the first bispectrum entry.
     spin_width
         Width of the trailing native-spin invariant block.
+    spin_mode
+        Spin symmetry of the native-spin block.
     basis
         Width of the low-rank expansion of the scalar-only channels, zero for
         a profile that admits no expansion.
@@ -45,6 +47,7 @@ class DescriptorProfile:
     bispectrum_base: int
     spin_channels: int
     spin_width: int
+    spin_mode: str
     basis: int
 
     @property

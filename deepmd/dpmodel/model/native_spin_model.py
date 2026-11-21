@@ -45,9 +45,9 @@ class NativeSpinModelKind:
 def make_native_spin_model(T_Model: type) -> type:
     """Make a native-spin model class from a standard model class.
 
-    The native scheme injects the per-atom spin vector directly into the
-    descriptor as an equivariant feature and obtains the magnetic force as
-    the negative spin gradient of the energy. No virtual atoms are created
+    The native scheme conditions the descriptor on time-even contractions
+    of per-atom moments and obtains the magnetic force as the negative spin
+    gradient of the energy. No virtual atoms are created
     (unlike :class:`~deepmd.dpmodel.model.spin_model.SpinModel`), so the
     neighbor list, type map and selection stay at the real-system sizes.
 

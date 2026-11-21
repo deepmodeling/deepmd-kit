@@ -11,11 +11,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingSwitch as BridgingSwitchDP
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
@@ -46,32 +44,6 @@ register_dpmodel_mapping(SwiGLUDP, lambda v: SwiGLU())
 class C3CutoffEnvelope(C3CutoffEnvelopeDP):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
-
-
-@torch_module
-class InnerClamp(InnerClampDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-# InnerClamp/BridgingSwitch are parameter-free (the two window fractions only,
-# no serialize()); rebuild fresh from the stored constructor arguments.
-register_dpmodel_mapping(
-    InnerClampDP,
-    lambda v: InnerClamp(v.f_inner, v.f_outer),
-)
-
-
-@torch_module
-class BridgingSwitch(BridgingSwitchDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-register_dpmodel_mapping(
-    BridgingSwitchDP,
-    lambda v: BridgingSwitch(v.f_inner, v.f_outer),
-)
 
 
 # C3CutoffEnvelope carries only scalar configuration (cutoff radius and
@@ -135,12 +107,6 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     ),
     # dpa4_nn.embedding
     "SeZMTypeEmbedding": ("adam_type_embedding",),
-    # dpa4_nn.embedding (native spin): these are nn.Parameter in pt but land as
-    # numpy->buffer in dpmodel; mag_layer1/2 are NativeLayer and auto-promote,
-    # and _promote_trainable skips a missing buffer, so no-spin configs (where
-    # spin_scale is absent) stay safe.
-    "SpinEmbedding": ("adam_spin_vec_weight", "adam_spin_nbr_weight"),
-    "EnvironmentInitialEmbedding": ("spin_scale",),
     # dpa4_nn.attn_res
     "DepthAttnRes": ("adamw_pseudo_query",),
     # dpa4_nn.grid_net (residual_scale is None when disabled; _promote_trainable
@@ -198,11 +164,6 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
 class DescrptDPA4(DescrptDPA4DP):
     _update_sel_cls = UpdateSel
 
-    #: The per-element length scales of the bridging window follow from
-    #: ``type_map``, which the constructor resolves on every load, so the
-    #: buffer they land in stays out of the state dict.
-    CONFIG_DERIVED_ARRAYS = ("contact_radius",)
-
     def adam_route_patterns(self) -> list[str]:
         """
         Name patterns, relative to the descriptor, of the tensors that take the
@@ -236,19 +197,14 @@ class DescrptDPA4(DescrptDPA4DP):
         # distance and are cheap enough that the compiler inlines them into
         # every consumer and re-evaluates them there. Behind an operator
         # boundary the chain runs once per step.
-        self._cuda_radial_fn = None
+        self._cuda_infer_level = cuda_infer_level()
+        self._bind_radial_kernel()
         self._cuda_wigner_fn = None
-        if cuda_infer_level() >= 1:
-            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
-                make_cuda_edge_radial,
-            )
+        if self._cuda_infer_level >= 1:
             from deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense import (
                 make_cuda_wigner_dense,
             )
 
-            self._cuda_radial_fn = make_cuda_edge_radial(
-                self.edge_envelope, self.radial_basis
-            )
             # The dense Wigner pair otherwise costs five full-size passes
             # over the (E, D, D) tensors; the fused build pays only the
             # output writes.
@@ -273,7 +229,7 @@ class DescrptDPA4(DescrptDPA4DP):
         # Persisted descriptor version, for the same reason: pt_expt rebuilds
         # the module from config before loading, so without a buffer every
         # checkpoint would come back claiming the semantics of the running
-        # code and silently skip ``_migrate_variables``.
+        # code and silently skip ``_migrate_version``.
         torch.nn.Module.register_buffer(
             self,
             "version_tensor",
@@ -281,6 +237,28 @@ class DescrptDPA4(DescrptDPA4DP):
         )
         self.use_amp_infer = use_amp_infer()
         _promote_trainable_tree(self)
+
+    def _bind_radial_kernel(self) -> None:
+        """
+        Bind the fused radial operator to the current envelope and basis modules.
+
+        The operator reads the basis frequencies from the module it is bound to,
+        so it is bound again whenever loading variables replaces that module.
+        """
+        self._cuda_radial_fn = None
+        if self._cuda_infer_level >= 1:
+            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+                make_cuda_edge_radial,
+            )
+
+            self._cuda_radial_fn = make_cuda_edge_radial(
+                self.edge_envelope, self.radial_basis
+            )
+
+    def _load_variables(self, variables: dict[str, Any]) -> None:
+        """Load variables and bind the fused radial operator to the loaded basis."""
+        super()._load_variables(variables)
+        self._bind_radial_kernel()
 
     def _shared_wigner_runs(self, edge_cache: Any, lmax: int) -> torch.Tensor | None:
         """
@@ -342,49 +320,6 @@ class DescrptDPA4(DescrptDPA4DP):
         """
         return bool(self.training)
 
-    def _gate_partial_exchange(
-        self,
-        partials: torch.Tensor,
-        comm_dict: dict[str, torch.Tensor],
-    ) -> torch.Tensor:
-        """Reverse-accumulate ghost partials to owners, then broadcast back.
-
-        ``border_op_backward`` sums each ghost row into its owner across
-        ranks and zeroes the ghost rows; ``border_op`` refills them with the
-        completed owner values. Both ops carry autograd (the two are
-        transposes), so gate gradients cross ranks (issue #5906).
-
-        Parameters
-        ----------
-        partials
-            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
-        comm_dict
-            The border-exchange control tensors.
-
-        Returns
-        -------
-        torch.Tensor
-            The globally completed (n_nodes, 2) tensor.
-        """
-        # border_op exchanges rows by raw pointer arithmetic; a strided
-        # view would corrupt the exchange.
-        p = partials.contiguous()
-        comm_args = (
-            comm_dict["send_list"],
-            comm_dict["send_proc"],
-            comm_dict["recv_proc"],
-            comm_dict["send_num"],
-            comm_dict["recv_num"],
-        )
-        tail = (
-            comm_dict["communicator"],
-            comm_dict["nlocal"],
-            comm_dict["nghost"],
-        )
-        p = torch.ops.deepmd_export.border_op_backward(*comm_args, p, *tail)
-        p = torch.ops.deepmd_export.border_op(*comm_args, p, *tail)
-        return p
-
     def disable_graph_lower(self) -> None:
         """Persisted variant of the dpmodel escape hatch (see base class).
 
@@ -426,9 +361,7 @@ class DescrptDPA4(DescrptDPA4DP):
         if version_key not in state_dict:
             state_dict[version_key] = self.version_tensor.new_tensor(1.1)
         state_dict[version_key] = self.version_tensor.new_tensor(
-            self._migrate_variables(
-                state_dict, float(state_dict[version_key].item()), prefix
-            )
+            self._migrate_version(float(state_dict[version_key].item()))
         )
 
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)

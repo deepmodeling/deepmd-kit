@@ -208,7 +208,8 @@ class LoRASO2(SO2Linear):
     Per-``|m|``-group LoRA adapter for ``SO2Linear``.
 
     ``weight_m0`` (``(num_in_m0, F*num_out_m0)``) and each
-    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)``) get an independent 2D
+    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)`` for SO(2), or
+    ``(num_in_m, F*num_out_m)`` with reflection parity) get an independent 2D
     LoRA pair ``A``/``B``.  SO(2) equivariance is preserved because the
     ``|m|>0`` 2x2 complex block ``[[W_u, -W_v], [W_v, W_u]]`` stays intact
     when ``ΔW_m`` is absorbed into the concatenated ``[W_u | W_v]`` layout
@@ -244,6 +245,7 @@ class LoRASO2(SO2Linear):
         super().__init__(
             lmax=base.lmax,
             mmax=base.mmax,
+            parity=base.parity,
             in_channels=base.in_channels,
             out_channels=base.out_channels,
             n_focus=base.n_focus,
@@ -354,10 +356,10 @@ class LoRASO2(SO2Linear):
             ib = ni1 - ni0
             ob = no1 - no0
             w_eff = (w_base + self._compute_delta_m(m_idx)).view(
-                ib, self.n_focus, 2 * ob
+                ib, self.n_focus, (1 if self.parity else 2) * ob
             )
             w_u = w_eff[:, :, :ob]
-            w_v = w_eff[:, :, ob:]
+            w_v = torch.zeros_like(w_u) if self.parity else w_eff[:, :, ob:]
             weight[ni0:ni1, :, no0:no1] = w_u
             weight[ni0:ni1, :, po0:po1] = w_v
             weight[pi0:pi1, :, no0:no1] = -w_v
@@ -369,6 +371,7 @@ class LoRASO2(SO2Linear):
         base = SO2Linear(
             lmax=self.lmax,
             mmax=self.mmax,
+            parity=self.parity,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
             n_focus=self.n_focus,

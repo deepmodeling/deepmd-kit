@@ -23,14 +23,10 @@ the linear composition -- neither single-feature fixture exercises that.
 
 Multi-rank capable, and this fixture PINS that contract
 -------------------------------------------------------
-Bridging enables the descriptor's Source Freeze Propagation Gate, which folds
-into the envelope of an edge the amplitudes ``w`` of every pair of that edge's
-source OTHER than its own, and hands the full per-node product
-``eta_j = prod_{e: src_e = j} w_e`` to the model as the readout gate.
-Edges exist only for owned centres, so the per-node partials are
-rank-incomplete; the with-comm artifact completes them with one
-reverse-accumulate + forward-broadcast border exchange before the gate is
-applied (issue #5906).  ``_check_metadata`` asserts BOTH
+The learned child exchanges its ghost features between blocks like any
+message-passing DPA4, and the analytical child and the contact clamp read only
+the types of the two ends of every edge, so a bridged model runs multi-rank
+through the with-comm artifact.  ``_check_metadata`` asserts BOTH
 ``has_comm_artifact is True`` AND that the nested
 ``model/extra/forward_lower_with_comm.pt2`` entry is present (mirroring
 ``gen_dpa4_zbl.py``) -- the same contract as the UNbridged native-spin
@@ -38,8 +34,8 @@ fixture (``gen_dpa4_spin.py``).
 
 Generation mirrors ``gen_dpa4_spin_chgspin.py`` (the closest precedent): the
 dpmodel is built in-process from ``NATIVE_SPIN_CONFIG`` imported from
-``gen_dpa4_spin.py`` -- this fixture is THAT model plus the three bridging
-keys, and nothing else -- with a fixed weight-init seed, its zero-initialized
+``gen_dpa4_spin.py`` -- this fixture is THAT model plus the bridging key,
+and nothing else -- with a fixed weight-init seed, its zero-initialized
 residual projections are jittered away from exact zero with a fixed RNG seed
 (``jitter_zero_arrays``), and the result is frozen directly to the graph-kind
 ``.pt2``.  Both ``get_model``/weight-init and ``np.random.default_rng(seed)``
@@ -85,24 +81,21 @@ from gen_common import (
 )
 
 # The base native-spin DPA4 config, shared verbatim with the sibling
-# native-spin fixture: this archive is THAT model plus the bridging keys, so
+# native-spin fixture: this archive is THAT model plus the bridging key, so
 # importing (rather than re-typing) the config keeps the single difference
-# between the two fixtures visible in the three lines below.
+# between the two fixtures visible in the lines below.
 from gen_dpa4_spin import (
     NATIVE_SPIN_CONFIG,
 )
 
-# Bridging radii, identical to gen_dpa4_zbl.py's: they feed the descriptor's
-# InnerClamp AND BridgingSwitch (built together from the same radii) on the
-# LEARNED child, and are what makes the composition need the SFPG cross-rank
-# completion (hence the with-comm artifact) under domain decomposition.
-_BRIDGING_R_INNER = 0.8
-_BRIDGING_R_OUTER = 1.2
+from deepmd.utils.element_radii import (
+    covalent_radii_from_type_map,
+)
 
+# The bridging key, identical to gen_dpa4_zbl.py's: the truncated analytical
+# term and the contact clamp of the LEARNED child, both at their defaults.
 SPIN_ZBL_CONFIG = copy.deepcopy(NATIVE_SPIN_CONFIG)
 SPIN_ZBL_CONFIG["bridging_method"] = "ZBL"
-SPIN_ZBL_CONFIG["bridging_r_inner"] = _BRIDGING_R_INNER
-SPIN_ZBL_CONFIG["bridging_r_outer"] = _BRIDGING_R_OUTER
 
 # Fixed seed for jittering the zero-initialized residual projections away from
 # exact zero (see ``jitter_zero_arrays``'s docstring and the module docstring
@@ -113,8 +106,8 @@ SPIN_ZBL_CONFIG["bridging_r_outer"] = _BRIDGING_R_OUTER
 _JITTER_SEED = 20260727
 
 # Fixed 6-atom system (3 Ni, spin-active; 3 O, non-magnetic).  Coordinates and
-# cell verbatim from gen_dpa4_zbl.py -- atoms 0 and 1 sit 0.9 A apart, inside
-# ``bridging_r_outer``, so the analytical ZBL term contributes a large,
+# cell verbatim from gen_dpa4_zbl.py -- atoms 0 and 1 sit 0.9 A apart, far
+# inside the range of the analytical term, so it contributes a large,
 # unmistakable repulsion instead of a numerical afterthought (and BOTH members
 # of that close pair are spin-carrying Ni, so the ZBL and spin channels act on
 # the same atoms).  Spins verbatim from gen_dpa4_spin.py.  Spin is deliberately
@@ -157,8 +150,36 @@ _A_BOHR = 0.5291772109
 _Z_OF_TYPE = {0: 28.0, 1: 8.0}  # type_map ["Ni", "O"]
 
 
-def _analytic_zbl_total(coord: np.ndarray, atype: np.ndarray, rcut: float) -> float:
-    """Gas-phase ZBL total energy: a direct double loop over pairs < rcut.
+def _zbl_derivative(z_a: float, z_b: float, r: float, order: int) -> float:
+    """The ``order``-th radial derivative of the ZBL pair energy, in eV/Å^order.
+
+    Every term ``A exp(-c r) / r`` of the screened Coulomb series has the
+    closed-form derivatives ``(-1)^n n! A exp(-c r) / r^(n+1) *
+    sum_{j<=n} (c r)^j / j!``.
+    """
+    a_screen = 0.88534 * _A_BOHR / (z_a**0.23 + z_b**0.23)
+    total = 0.0
+    for a_k, b_k in zip(_ZBL_A_COEFF, _ZBL_B_COEFF, strict=True):
+        c = b_k / a_screen
+        series = sum((c * r) ** j / math.factorial(j) for j in range(order + 1))
+        total += (
+            (-1) ** order
+            * math.factorial(order)
+            * a_k
+            * math.exp(-c * r)
+            / r ** (order + 1)
+            * series
+        )
+    return _KE_EV_A * z_a * z_b * total
+
+
+def _analytic_zbl_total(coord: np.ndarray, atype: np.ndarray) -> float:
+    """Gas-phase truncated ZBL total energy: a direct double loop over pairs.
+
+    The analytical term of a bridged model ends at ``R = 1.1 (r_a + r_b)``,
+    the default truncation times the covalent bond length of the pair, and
+    below ``R`` it is the ZBL energy minus its cubic Taylor polynomial at
+    ``R``.
 
     Parameters
     ----------
@@ -167,29 +188,30 @@ def _analytic_zbl_total(coord: np.ndarray, atype: np.ndarray, rcut: float) -> fl
         considered, so this is only a complete reference for a gas-phase
         (no-box) evaluation.
     atype : np.ndarray
-        (natoms,) atom types, indexing ``_Z_OF_TYPE``.
-    rcut : float
-        Cutoff radius; pairs at or beyond it contribute nothing.
+        (natoms,) atom types, indexing ``_Z_OF_TYPE`` and the type map.
 
     Returns
     -------
     float
-        The summed ZBL pair energy in eV.
+        The summed truncated ZBL pair energy in eV.
     """
+    radius = covalent_radii_from_type_map(SPIN_ZBL_CONFIG["type_map"])
     zs = [_Z_OF_TYPE[int(t)] for t in atype]
     total = 0.0
     natoms = len(zs)
     for ii in range(natoms):
         for jj in range(ii + 1, natoms):
             r = float(np.linalg.norm(coord[ii] - coord[jj]))
-            if r >= rcut:
+            end = 1.1 * float(radius[int(atype[ii])] + radius[int(atype[jj])])
+            if r >= end:
                 continue
-            a_screen = 0.88534 * _A_BOHR / (zs[ii] ** 0.23 + zs[jj] ** 0.23)
-            phi = sum(
-                a_k * math.exp(-b_k * (r / a_screen))
-                for a_k, b_k in zip(_ZBL_A_COEFF, _ZBL_B_COEFF, strict=True)
+            taylor = sum(
+                _zbl_derivative(zs[ii], zs[jj], end, k)
+                * (r - end) ** k
+                / math.factorial(k)
+                for k in range(4)
             )
-            total += _KE_EV_A * zs[ii] * zs[jj] / r * phi
+            total += _zbl_derivative(zs[ii], zs[jj], r, 0) - taylor
     return total
 
 
@@ -272,9 +294,7 @@ def _assert_zbl_term_is_active(model_dict: dict) -> float:
     )
     delta = e_bridged - e_learned
 
-    zbl_ref = _analytic_zbl_total(
-        _COORDS[0], _ATYPES, float(SPIN_ZBL_CONFIG["descriptor"]["rcut"])
-    )
+    zbl_ref = _analytic_zbl_total(_COORDS[0], _ATYPES)
     # The two per-type constant offsets that live only in the composition.
     bias_inter = np.reshape(np.asarray(model.atomic_model.models[1].out_bias), (-1,))
     bias_linear = np.reshape(np.asarray(model.atomic_model.out_bias), (-1,))
@@ -357,15 +377,13 @@ def _check_metadata(pt2_path: str) -> None:
         f"the composition dropped the spin flag on the way to the freeze."
     )
     assert md["use_spin"] == [True, False]
-    # Multi-rank capable (issue #5906): the SFPG per-node partials are
-    # completed across ranks, so the with-comm artifact is embedded.  BOTH
-    # halves matter: the flag is what the C++ dispatch reads, the archive
-    # entry is what it loads.
+    # Multi-rank capable, so the with-comm artifact is embedded.  BOTH halves
+    # matter: the flag is what the C++ dispatch reads, the archive entry is
+    # what it loads.
     assert md["has_comm_artifact"] is True, (
         f"{pt2_path}: metadata has_comm_artifact = "
-        f"{md.get('has_comm_artifact')!r}, expected True; the SFPG cross-rank "
-        f"completion (issue #5906) makes bridged native-spin models "
-        f"multi-rank capable."
+        f"{md.get('has_comm_artifact')!r}, expected True; bridged native-spin "
+        f"models are multi-rank capable."
     )
     assert "model/extra/forward_lower_with_comm.pt2" in names, (
         f"{pt2_path}: the nested forward_lower_with_comm.pt2 is missing from "

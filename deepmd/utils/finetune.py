@@ -15,6 +15,7 @@ from deepmd.utils.model_branch_dict import (
 )
 from deepmd.utils.spin import (
     normalize_spin_use_spin,
+    parse_spin_scheme,
 )
 
 log = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ def _native_spin_types(
     spin_config = model_config.get("spin")
     if (
         not isinstance(spin_config, Mapping)
-        or str(spin_config.get("scheme", "deepspin")).lower() != "native"
+        or parse_spin_scheme(spin_config.get("scheme", "deepspin")) is None
     ):
         return None
 

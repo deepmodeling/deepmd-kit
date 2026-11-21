@@ -119,6 +119,7 @@ class EquivariantFFN(NativeOP):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         channels: int,
         hidden_channels: int,
         kmax: int = 1,
@@ -134,6 +135,7 @@ class EquivariantFFN(NativeOP):
         trainable: bool = True,
         seed: int | list[int] | None = None,
     ) -> None:
+        self.parity = bool(parity)
         self.lmax = int(lmax)
         self.channels = int(channels)
         self.hidden_channels = int(hidden_channels)
@@ -203,6 +205,7 @@ class EquivariantFFN(NativeOP):
             )
             if self.ffn_so3_grid:
                 self.act = SO3GridNet(
+                    parity=self.parity,
                     lmax=self.lmax,
                     kmax=self.kmax,
                     channels=self.hidden_channels,
@@ -218,6 +221,7 @@ class EquivariantFFN(NativeOP):
                 )
             else:
                 self.act = S2GridNet(
+                    parity=self.parity,
                     lmax=self.lmax,
                     channels=self.hidden_channels,
                     n_focus=1,
@@ -361,6 +365,7 @@ class EquivariantFFN(NativeOP):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "channels": self.channels,
                 "hidden_channels": self.hidden_channels,
                 "kmax": self.kmax,

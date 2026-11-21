@@ -49,6 +49,7 @@ from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
 )
 from ...dpa4_fixtures import (
+    four_atom_spin_inputs,
     jitter_zero_arrays,
 )
 
@@ -59,7 +60,7 @@ def _make_descriptor(
     rcut: float,
     precision: str = "float32",
     *,
-    source_gated: bool = False,
+    bridged: bool = False,
     env_exp: int | list[int] | None = None,
 ) -> DescrptDPA4:
     return DescrptDPA4(
@@ -81,9 +82,8 @@ def _make_descriptor(
         random_gamma=False,
         precision=precision,
         seed=7,
-        inner_clamp_f_inner=0.8 if source_gated else None,
-        inner_clamp_f_outer=1.2 if source_gated else None,
-        inner_clamp_scale="absolute",
+        type_map=["O", "H"][:ntypes] if bridged else None,
+        contact_clamp=0.75 if bridged else None,
     )
 
 
@@ -198,14 +198,55 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(output.sum(), coord)[0]
         return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
-    def test_source_gated_inference_takes_the_fused_convolution(
-        self, monkeypatch
+    def test_serialized_radial_basis_reaches_fused_inference(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Fused inference of a deserialized descriptor reads its learned basis."""
+        if not edge_radial.op_available():
+            pytest.skip("DPA4 CUDA radial operators are unavailable")
+        for name in (
+            "DP_TRITON_INFER",
+            "DP_CUDA_INFER",
+            "DP_CUTILE_INFER",
+            "DP_CUTE_INFER",
+        ):
+            monkeypatch.setenv(name, "0")
+        data = _make_descriptor(self.nt, self.sel_mix, self.rcut).serialize()
+        data = jitter_zero_arrays(data, np.random.default_rng(73))
+        variables = data["@variables"]
+        variables["radial_basis.adam_freqs"] = (
+            variables["radial_basis.adam_freqs"] + np.pi / self.rcut
+        )
+        reference = DescrptDPA4.deserialize(data).to(self.device).eval()
+        output_ref, gradient_ref = self._step(reference)
+        assert np.max(np.abs(gradient_ref)) > 1e-10
+
+        monkeypatch.setenv("DP_CUDA_INFER", "1")
+        restored = DescrptDPA4.deserialize(data).to(self.device).eval()
+        assert restored._cuda_radial_fn is not None
+        calls: list[tuple[int, ...]] = []
+        original = edge_radial.EdgeRadialCuda.__call__
+
+        def spy(operator, edge_len, keep):
+            calls.append(tuple(edge_len.shape))
+            return original(operator, edge_len, keep)
+
+        monkeypatch.setattr(edge_radial.EdgeRadialCuda, "__call__", spy)
+        output, gradient = self._step(restored)
+        assert calls, "the fused radial operator was not used"
+        np.testing.assert_allclose(output, output_ref, rtol=2e-4, atol=2e-5)
+        np.testing.assert_allclose(gradient, gradient_ref, rtol=2e-4, atol=2e-5)
+
+    def test_bridged_inference_takes_the_fused_convolution(self, monkeypatch) -> None:
         """A bridged descriptor runs the fused convolution and matches the dense path.
 
-        The source gate is folded into the edge envelope, so the fused
-        convolution and the flash attention see it through the one factor they
-        already weight by, and the dense per-edge rotations are not built.
+        The contact clamp acts on the edge lengths before the envelope and the
+        radial features are built, so the fused convolution and the flash
+        attention see it through the inputs they already read, and the dense
+        per-edge rotations are not built. The data edges are set so that the
+        pairs of the fixture lie in the frozen zone and in the transition zone
+        of their clamp, where the clamped descriptor differs from the
+        unbridged one.
         """
         if not so2_conv.op_available():
             pytest.skip("the DPA4 CUDA inference operators are unavailable")
@@ -225,10 +266,30 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             self.nt,
             self.sel_mix,
             self.rcut,
-            source_gated=True,
+            bridged=True,
         ).serialize()
+        # Pair distances of the fixture in Å: O-O 1.0 and 2.0, O-H 1.0 and
+        # sqrt(2). With the edges below, the O-O pair at 1.0 and the O-H
+        # pair at 1.0 are frozen, the O-H pair at sqrt(2) lies in the
+        # transition zone, and the O-O pair at 2.0 is read unchanged.
+        data["@variables"]["contact_clamp.edges"] = np.array(
+            [[1.5, 1.8, 1.0], [1.8, 1.4, 1.0], [1.0, 1.0, 1.0]]
+        )
+        data = jitter_zero_arrays(data, np.random.default_rng(3))
+        unbridged = {
+            **data,
+            "config": {**data["config"], "contact_clamp": None},
+            "@variables": {
+                key: value
+                for key, value in data["@variables"].items()
+                if key != "contact_clamp.edges"
+            },
+        }
         dense = DescrptDPA4.deserialize(data).to(self.device).eval()
         dense_output, dense_gradient = self._step(dense)
+        control = DescrptDPA4.deserialize(unbridged).to(self.device).eval()
+        control_output, _ = self._step(control)
+        assert np.abs(dense_output - control_output).max() > 1e-3
 
         monkeypatch.setenv("DP_TRITON_INFER", "1")
         monkeypatch.setenv("DP_CUDA_INFER", "2")
@@ -365,3 +426,143 @@ def test_wigner_kernels_are_device_buffers_outside_the_state_dict(lmax: int) -> 
             calculator.small_order_kernels, name.removeprefix("_small_order_")
         )
         assert isinstance(kernel, torch.Tensor), name
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_native_spin_cuda_matches_reference_and_symmetry(
+    monkeypatch: pytest.MonkeyPatch, spin_mode: str
+) -> None:
+    """The fused inference path preserves scalar spin conditioning and axial parity."""
+    if not so2_conv.op_available():
+        pytest.skip("the DPA4 CUDA inference operators are unavailable")
+    for name in (
+        "DP_TRITON_INFER",
+        "DP_CUDA_INFER",
+        "DP_CUTILE_INFER",
+        "DP_CUTE_INFER",
+        "DP_TRITON_TRAIN",
+        "DP_CUDA_TRAIN",
+    ):
+        monkeypatch.setenv(name, "0")
+    data = _make_descriptor(2, [16], 4.0).serialize()
+    data["config"].update(use_spin=[True, False], spin_mode=spin_mode)
+    native = DescrptDPA4(**data["config"])
+    data = jitter_zero_arrays(native.serialize(), np.random.default_rng(319))
+    reference = DescrptDPA4.deserialize(data).cuda().eval()
+    monkeypatch.setenv("DP_CUDA_INFER", "2")
+    fused = DescrptDPA4.deserialize(data).cuda().eval()
+    conv = fused.blocks[0].so2_conv
+    assert conv._cuda_conv_fn is not None
+    assert fused._cuda_radial_fn is not None
+    coord_array, atype_array, spin_array, nlist_array = four_atom_spin_inputs()
+    coord = torch.as_tensor(coord_array, dtype=torch.float32, device="cuda")
+    atype = torch.as_tensor(atype_array, device="cuda")
+    nlist = torch.as_tensor(nlist_array, device="cuda")
+    spin = torch.as_tensor(spin_array, dtype=torch.float32, device="cuda")
+
+    def evaluate(
+        model: DescrptDPA4, positions: torch.Tensor, moments: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        positions = positions.detach().requires_grad_(True)
+        moments = moments.detach().requires_grad_(True)
+        output = model(positions, atype, nlist, spin=moments)[0]
+        dr, ds = torch.autograd.grad(output.sum(), (positions, moments))
+        return output.detach(), dr.detach(), ds.detach()
+
+    expected = evaluate(reference, coord, spin)
+    actual = evaluate(fused, coord, spin)
+    assert actual[2].abs().max() > 1e-6
+    for got, want in zip(actual, expected, strict=True):
+        torch.testing.assert_close(got, want, atol=3e-5, rtol=3e-4)
+    reversed_spin = evaluate(fused, coord, -spin)
+    for got, want in zip(
+        reversed_spin, (actual[0], actual[1], -actual[2]), strict=True
+    ):
+        torch.testing.assert_close(got, want, atol=0, rtol=0)
+    inverted = evaluate(fused, -coord, spin)
+    for got, want in zip(inverted, (actual[0], -actual[1], actual[2]), strict=True):
+        torch.testing.assert_close(got, want, atol=3e-5, rtol=3e-4)
+    zero = evaluate(fused, coord, torch.zeros_like(spin))
+    torch.testing.assert_close(zero[2], torch.zeros_like(spin), atol=0, rtol=0)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+@pytest.mark.parametrize("autocast", [False, True])
+def test_grid_pair_eval_checks_actual_operand_dtype(
+    monkeypatch: pytest.MonkeyPatch, backend: str, autocast: bool
+) -> None:
+    """AMP grid products use the composition when operands exceed CUDA capability."""
+    if not grid_pair.op_available():
+        pytest.skip("the DPA4 CUDA grid operator is unavailable")
+    for name in (
+        "DP_TRITON_INFER",
+        "DP_CUDA_INFER",
+        "DP_CUTILE_INFER",
+        "DP_CUTE_INFER",
+        "DP_TRITON_TRAIN",
+        "DP_CUDA_TRAIN",
+    ):
+        monkeypatch.setenv(name, "0")
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    kwargs = {
+        "lmax": 2,
+        "mmax": 2,
+        "kmax": 1,
+        "channels": 32,
+        "n_focus": 1,
+        "mode": "self",
+        "op_type": "branch",
+        "layout": "ndfc",
+        "parity": True,
+        "trainable": True,
+        "seed": 17,
+    }
+    if backend == "pt":
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import SO3GridNet as PTGridNet
+
+        model = PTGridNet(**kwargs, dtype=torch.float32).cuda().eval()
+    else:
+        model = SO3GridNet(**kwargs, precision="float32").cuda().eval()
+    original = model._grid_pair_fn
+    assert original is not None
+    calls = []
+
+    def fused(
+        left: torch.Tensor,
+        right: torch.Tensor,
+        to_grid: torch.Tensor,
+        from_grid: torch.Tensor,
+    ) -> torch.Tensor:
+        calls.append(left.dtype)
+        return original(left, right, to_grid, from_grid)
+
+    model._grid_pair_fn = fused
+    generator = torch.Generator(device="cuda").manual_seed(731)
+    shape = (2, model.projector.coeff_dim // model.n_frames, 1, model.query_channels)
+    query = torch.randn(shape, device="cuda", generator=generator)
+    cotangent = torch.randn(
+        2, shape[1], 1, model.output_channels, device="cuda", generator=generator
+    )
+
+    def evaluate() -> tuple[torch.Tensor, torch.Tensor]:
+        value = query.detach().clone().requires_grad_(True)
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
+            output = model(value)
+            loss = (output * cotangent).sum()
+        gradient = torch.autograd.grad(loss, value)[0]
+        return output.detach(), gradient.detach()
+
+    actual = evaluate()
+    assert bool(calls) is not autocast
+    assert all(dtype == torch.float32 for dtype in calls)
+    model._grid_pair_fn = None
+    expected = evaluate()
+    for value, reference in zip(actual, expected, strict=True):
+        torch.testing.assert_close(
+            value,
+            reference,
+            atol=0.0 if autocast else 3e-5,
+            rtol=0.0 if autocast else 3e-4,
+        )

@@ -183,6 +183,24 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   # those of DPA4C_FOR_EACH_CHANNEL and the degrees those that
   # dpa4c/graph_compress.cu dispatches.
   set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC dpa4c/graph_compress.cu)
+  # Generated shards depend on their kernel and shared ABI declarations.
+  set(DPA4C_COMMON_HEADERS
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress.cuh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/pair_potential.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_launch.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/block_launch.h")
+  set_property(
+    SOURCE dpa4c/graph_compress.cu
+    APPEND
+    PROPERTY OBJECT_DEPENDS
+             ${DPA4C_COMMON_HEADERS}
+             "${CMAKE_CURRENT_SOURCE_DIR}/border_exchange.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/canonical_index.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/communicator.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/graph_ops.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/fitting_plan.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/long_range/charge_sum.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/long_range/domain_exchange.h")
   set(DPA4C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/dpa4c")
   set(DPA4C_KERNEL_HEADER
       "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_kernel.cuh")
@@ -227,6 +245,11 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
           "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}.cu"
       )
       configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      set_property(
+        SOURCE "${DPA4C_SHARD}"
+        APPEND
+        PROPERTY OBJECT_DEPENDS ${DPA4C_COMMON_HEADERS}
+                 "${DPA4C_KERNEL_HEADER}")
       list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
       # The kernels of the further message-passing blocks are instantiated in
       # shards of their own, which compile beside those of the first block.
@@ -238,6 +261,12 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
           "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}_block.cu"
       )
       configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      set_property(
+        SOURCE "${DPA4C_SHARD}"
+        APPEND
+        PROPERTY OBJECT_DEPENDS ${DPA4C_COMMON_HEADERS}
+                 "${DPA4C_KERNEL_HEADER}"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/simt_gemm.cuh")
       list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
       set(DPA4C_KERNEL_HEADER "${DPA4C_KERNEL_HEADER_SAVED}")
       unset(DPA4C_BLOCK_SHARD_INSTANTIATIONS)
@@ -255,6 +284,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   unset(DPA4C_SHARD_GROUPS)
   unset(DPA4C_SHARD_WIDTH)
   unset(DPA4C_KERNEL_HEADER)
+  unset(DPA4C_COMMON_HEADERS)
   unset(DPA4C_GENERATED_DIR)
   set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
       dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu

@@ -26,6 +26,12 @@ from types import (
 
 import pytest
 import torch
+from torch.func import (
+    functional_call,
+)
+from torch.fx.experimental.proxy_tensor import (
+    make_fx,
+)
 
 try:
     # Loads ``libdeepmd_op_pt.so``, which registers the hand-written operators.
@@ -103,9 +109,7 @@ def test_edge_runs_match_the_quaternion_dtype() -> None:
     lmax = 3
     run_coeff, _, run_exponents, _ = wigner_run_tables(lmax)
     value_path = SO2ValueTrainCuda.__new__(SO2ValueTrainCuda)
-    value_path._conv = SimpleNamespace(lmax=lmax)
-    value_path._run_coeff_cpu = run_coeff
-    value_path._run_coeff = None
+    value_path._conv = SimpleNamespace(lmax=lmax, _cuda_run_coeff=run_coeff.cuda())
     value_path._run_exponents = [int(value) for value in run_exponents.reshape(-1)]
 
     for dtype in (torch.bfloat16, torch.float32):
@@ -115,6 +119,42 @@ def test_edge_runs_match_the_quaternion_dtype() -> None:
         )
         runs = value_path.edge_runs(edge_cache)
         assert runs.dtype is dtype
+
+
+class _EdgeRuns(torch.nn.Module):
+    """A convolution stand-in with the CUDA value path bound to it."""
+
+    def __init__(self, lmax: int) -> None:
+        super().__init__()
+        self.conv = torch.nn.Module()
+        self.conv.lmax = lmax
+        self.conv.weight = torch.nn.Parameter(torch.zeros(1, device="cuda"))
+        self.value_path = SO2ValueTrainCuda(self.conv)
+
+    def forward(self, quaternion: torch.Tensor) -> torch.Tensor:
+        return self.value_path.edge_runs(
+            SimpleNamespace(edge_quat=quaternion, csr_cache={})
+        )
+
+
+def test_run_table_enters_every_trace_as_a_buffer() -> None:
+    """Every fake-tensor trace reads the run table as a convolution buffer.
+
+    A multi-task model traces its convolutions once per task, each time under
+    a new fake-tensor mode, with the module buffers as trace inputs. The run
+    table must reach every trace through those inputs, not as a tensor that an
+    earlier call left behind.
+    """
+    model = _EdgeRuns(lmax=2)
+    buffers = dict(model.named_buffers())
+    quaternion = torch.randn(8, 4, device="cuda")
+
+    def runs(state: dict[str, torch.Tensor], q: torch.Tensor) -> torch.Tensor:
+        return functional_call(model, state, (q,))
+
+    graphs = [make_fx(runs, tracing_mode="fake")(buffers, quaternion) for _ in range(2)]
+    for graph in graphs:
+        torch.testing.assert_close(graph(buffers, quaternion), model(quaternion))
 
 
 def _block_diagonal_mask(lmax: int, device: torch.device) -> torch.Tensor:

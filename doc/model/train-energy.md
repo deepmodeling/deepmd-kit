@@ -284,6 +284,30 @@ The {ref}`intensive_ener_virial <loss[ener]/intensive_ener_virial>` option (defa
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
 
+### Symmetric virial labels
+
+For symmetric stress or virial labels, set `loss.symm_virial` to `true`.
+The loss compares the symmetric parts of both tensors and retains the
+nine-component averaging convention. The default is `false`.
+This option supports PyTorch Exportable, JAX and TensorFlow 2 energy training.
+
+Training validation, including full validation and EMA validation, uses the
+same setting. Learning curves label the comparison as `rmse_symm_v` or
+`mae_symm_v`. Full validation uses `SYMM_V` and `SYMM_S` for virial and
+stress columns; no additional metric columns are added.
+The `validating.validation_metric` input stays `S:MAE`, `S:RMSE`, `V:MAE`
+or `V:RMSE`; it inherits `symm_virial` from the loss and needs no prefix.
+Model predictions still contain the complete virial. To evaluate a checkpoint
+or frozen model with the same convention, use:
+
+```bash
+dp test -m model.pt2 -s /path/to/system --symm-virial
+```
+
+Changing this setting when resuming full validation is rejected because the
+stored best-checkpoint scores use the previous convention. Start a new run
+when changing the comparison convention.
+
 ### Prefactor force loss with default atom preference
 
 > [!NOTE]

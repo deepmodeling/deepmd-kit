@@ -8,6 +8,9 @@ from typing import (
 )
 
 import pytest
+from dargs.dargs import (
+    ArgumentKeyError,
+)
 from jsonschema import (
     Draft202012Validator,
 )
@@ -212,3 +215,23 @@ def test_multi_task_branch_preset_and_shared_references(
     _assert_valid(validators[True], _input(model, multi_task=True))
     model["model_dict"]["a"]["preset"] = "unknown"
     assert not validators[True].is_valid(_input(model, multi_task=True))
+
+
+@pytest.mark.parametrize("descriptor", ["dpa4", "dpa4c"])
+def test_native_mode_has_one_public_configuration_entry(
+    validators: dict[bool, Draft202012Validator], descriptor: str
+) -> None:
+    data = _input(
+        {
+            "type_map": ["Fe"],
+            "descriptor": {"type": descriptor},
+            "fitting_net": {"type": "ener"},
+            "spin": {"scheme": "native:exchange", "use_spin": [True]},
+        }
+    )
+    _assert_valid(validators[False], data)
+    normalized = normalize(data)
+    assert "spin_mode" not in normalized["model"]["descriptor"]
+    data["model"]["descriptor"]["spin_mode"] = "exchange"
+    with pytest.raises(ArgumentKeyError, match="spin_mode"):
+        normalize(data)

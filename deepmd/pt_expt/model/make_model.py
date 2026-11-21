@@ -657,6 +657,23 @@ def make_model(
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
 
+        def observe_contacts(self, graph: Any, atype: torch.Tensor) -> None:
+            """Record the contacts of a training graph before it is evaluated.
+
+            A bridged learned part clamps the separations it reads below the
+            data edges of its training data; recording every training graph
+            first reads each batch with the edges that include its contacts.
+
+            Parameters
+            ----------
+            graph
+                Neighbor graph of the batch.
+            atype
+                Flat types of its nodes with shape (N,).
+            """
+            if self.training:
+                self.atomic_model.observe_contacts(graph, atype)
+
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Default forward delegates to call().
 
@@ -1008,6 +1025,7 @@ def make_model(
                 self.get_rcut(),
                 pair_excl,
             )
+            self.observe_contacts(graph, atype)
             topologies = self.atomic_model.build_topologies(
                 coord.detach(),
                 graph.n_node,
@@ -1128,6 +1146,7 @@ def make_model(
             # identity.
             ng, node_index = compact_nodes(ng, atype_flat >= 0)
             atype_flat = atype_flat[node_index]
+            self.observe_contacts(ng, atype_flat)
             # graph-lower ABI: aparam/spin are FLAT on the node axis, (N, nda)/(N, 3).
             ap_flat = (
                 ap.reshape(n_padded, self.get_dim_aparam())[node_index]

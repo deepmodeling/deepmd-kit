@@ -260,7 +260,8 @@ class LoRASO2(SO2Linear):
     Per-``|m|``-group LoRA adapter for ``SO2Linear``.
 
     ``weight_m0`` (``(num_in_m0, F*num_out_m0)``) and each
-    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)``) get an independent 2D
+    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)`` for SO(2), or
+    ``(num_in_m, F*num_out_m)`` with reflection parity) get an independent 2D
     LoRA pair ``A``/``B``.  SO(2) equivariance is preserved because the
     ``|m|>0`` 2x2 complex block ``[[W_u, -W_v], [W_v, W_u]]`` stays intact
     when ``ΔW_m`` is absorbed into the concatenated ``[W_u | W_v]`` layout
@@ -289,6 +290,7 @@ class LoRASO2(SO2Linear):
         *,
         lmax: int,
         mmax: int | None = None,
+        parity: bool = False,
         in_channels: int,
         out_channels: int,
         n_focus: int = 1,
@@ -304,6 +306,7 @@ class LoRASO2(SO2Linear):
         super().__init__(
             lmax=lmax,
             mmax=mmax,
+            parity=parity,
             in_channels=in_channels,
             out_channels=out_channels,
             n_focus=n_focus,
@@ -391,10 +394,10 @@ class LoRASO2(SO2Linear):
             w = xp.reshape(
                 xp_asarray_nodetach(xp, w[...], device=device)
                 + self._compute_delta_m(m_idx, xp, device),
-                (ib, self.n_focus, 2 * ob),
+                (ib, self.n_focus, (1 if self.parity else 2) * ob),
             )
             w_u = w[:, :, :ob]
-            w_v = w[:, :, ob:]
+            w_v = xp.zeros_like(w_u) if self.parity else w[:, :, ob:]
             left_pad = xp.zeros((ib, self.n_focus, no0), dtype=w.dtype, device=device)
             right_pad = xp.zeros(
                 (ib, self.n_focus, out_total - po1), dtype=w.dtype, device=device
@@ -410,6 +413,7 @@ class LoRASO2(SO2Linear):
         base = SO2Linear(
             lmax=self.lmax,
             mmax=self.mmax,
+            parity=self.parity,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
             n_focus=self.n_focus,

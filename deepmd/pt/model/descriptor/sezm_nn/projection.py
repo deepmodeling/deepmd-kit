@@ -196,12 +196,14 @@ class S2GridProjector(BaseGridProjector):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         mmax: int | None = None,
         dtype: torch.dtype,
         grid_resolution_list: list[int] | None = None,
         coefficient_layout: str = "packed",
         grid_method: str = "e3nn",
     ) -> None:
+        self.parity = bool(parity)
         lmax_i = int(lmax)
         mmax_i = int(lmax_i if mmax is None else mmax)
         self.grid_method = str(grid_method).lower()
@@ -259,7 +261,35 @@ class S2GridProjector(BaseGridProjector):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if self.grid_method == "lebedev":
             return self._build_lebedev_projection_mats(coeff_index)
-        return self._build_e3nn_projection_mats(coeff_index)
+        to_grid, from_grid = self._build_e3nn_projection_mats(coeff_index)
+        if (
+            self.parity
+            and self.phi_resolution % 2 == 0
+            and self.theta_resolution % 2 == 0
+        ):
+            # Antipodal grid points have equal quadrature weights. Project the
+            # fixed matrices onto that exact discrete symmetry, removing
+            # rounding asymmetry from the external grid construction.
+            alpha = torch.arange(
+                self.phi_resolution, dtype=torch.int64, device=to_grid.device
+            )
+            beta = torch.arange(
+                self.theta_resolution, dtype=torch.int64, device=to_grid.device
+            )
+            antipode = (
+                (self.theta_resolution - 1 - beta[:, None]) * self.phi_resolution
+                + (alpha[None, :] + self.phi_resolution // 2) % self.phi_resolution
+            ).reshape(-1)
+            sign = to_grid.new_tensor(
+                [(-1) ** math.isqrt(int(index)) for index in coeff_index]
+            )
+            to_grid = 0.5 * (
+                to_grid + to_grid.index_select(0, antipode) * sign[None, :]
+            )
+            from_grid = 0.5 * (
+                from_grid + from_grid.index_select(1, antipode) * sign[:, None]
+            )
+        return to_grid, from_grid
 
     def _build_e3nn_projection_mats(
         self,
@@ -338,6 +368,7 @@ class S2GridProjector(BaseGridProjector):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "mmax": self.mmax,
                 "precision": RESERVED_PRECISION_DICT[self.dtype],
                 "grid_resolution_list": self.grid_resolution_list,
@@ -611,6 +642,8 @@ def _normalize_s2_grid_resolution(
     resolution = [int(grid_resolution_list[0]), int(grid_resolution_list[1])]
     if resolution[0] < 1 or resolution[1] < 1:
         raise ValueError("grid resolutions must be positive")
+    if method == "e3nn" and resolution[1] % 2:
+        raise ValueError("The e3nn S2 grid requires an even polar resolution.")
     return resolution
 
 

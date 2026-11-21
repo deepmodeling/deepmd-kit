@@ -880,11 +880,9 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
 
     The dense lower is deprecated in this backend, and for a bridged model
     it does not exist at all: the analytical term's ``forward_atomic``
-    raises on the dense route, so the public default
-    ``lower_kind="nlist"`` used to fail deep inside the dense trace. The
-    resolution was previously an ``isinstance(NativeSpinModelKind)``
-    special case, which a bridged model is not an instance of; it now asks
-    the graph-lower capability, which covers both.
+    raises on the dense route. The default ``lower_kind="nlist"`` is
+    therefore resolved by the graph-lower capability of the model, which a
+    bridged composition answers like a native-spin model does.
     """
     import copy
     from unittest import (
@@ -903,8 +901,6 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
 
     config = copy.deepcopy(_DPA4_CONFIG)
     config["bridging_method"] = "ZBL"
-    config["bridging_r_inner"] = 0.8
-    config["bridging_r_outer"] = 1.2
     model = get_model(copy.deepcopy(config)).to(torch.device("cpu")).eval()
     wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
     ckpt = tmp_path / "model.pt"

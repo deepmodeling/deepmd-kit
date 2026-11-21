@@ -33,8 +33,9 @@ from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
 from deepmd.utils.bridging import (
-    DEFAULT_FRACTION_INNER,
-    DEFAULT_FRACTION_OUTER,
+    DEFAULT_CLAMP,
+    DEFAULT_SUPPORT,
+    DEFAULT_TRUNCATION,
 )
 from deepmd.utils.data_config import (
     data_group_configs,
@@ -234,8 +235,9 @@ def spin_args() -> list[Argument]:
     doc_scheme = (
         "The spin implementation scheme, only effective for descriptors that declare "
         "native spin support (currently DPA4/SeZM and DPA4C). "
-        "`native` injects the per-atom spin vector as an equivariant feature "
-        "directly into the descriptor and "
+        "`native:orbit` conditions the descriptor on time-even spin invariants "
+        "including spin-lattice coupling; `native:exchange` enforces independent "
+        "spin rotations. `native` is shorthand for `native:orbit`. Each native scheme "
         "derives the magnetic force as the negative spin gradient of the energy, "
         "without virtual atoms. Set this to `native` for DPA4/SeZM and DPA4C. "
         "Other models use the default `deepspin` virtual-atom representation."
@@ -671,7 +673,8 @@ def descrpt_se_zm_args() -> list[Argument]:
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
         "[s, s*r_hat] representation, and enable the non-scalar geometric initial "
         "embedding when l_schedule[0] + extra_node_l > 0. If False, the initial state contains "
-        "only atom-local scalar features before message passing. Internal dimensions "
+        "only atom-local scalar features before message passing. Native spin requires "
+        "use_env_seed=True to retain neighbor spin correlations. Internal dimensions "
         "are derived from channels: embed_dim=min(channels, 128), "
         "axis_dim=min(4 if embed_dim < 64 else 8, embed_dim-1), "
         "type_dim=clamp(channels//4, 8, 32), "
@@ -4257,34 +4260,34 @@ def _bridging_method_args() -> list[Argument]:
         "equivalent explicit `linear_ener` composition over the learned "
         "model and an `inner_potential` sub-model."
     )
-    doc_bridging_fraction_inner = (
-        "Inner radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to. A pair closer than this interacts "
-        "through the analytical potential alone. In DPA4 the distance the "
-        "descriptor reads for the pair is frozen just below the window midpoint, "
-        "the two atoms disappear from the descriptors of every other atom, and their "
-        "fitting output falls to the bias of their types, which under `vacuum_ref` "
-        "leaves them the energy of isolated atoms; in DPA4C the pair is removed "
-        "from the descriptor. Because the window follows each pair's own size, "
-        "one value describes every element combination. Only used when "
-        "`bridging_method` is enabled and no explicit radius is given."
+    doc_bridging_truncation = (
+        "Radius at which the analytical potential ends, as a fraction of the "
+        "covalent bond length of each atom pair. Below it the screened Coulomb "
+        "series minus its cubic Taylor polynomial at the end radius is added to "
+        "the learned energy, without any switching function: the term is "
+        "non-negative, decreasing, convex and C^3, and exactly zero beyond the "
+        "end radius. The default 1.1 reaches just beyond first-neighbor bonds, "
+        "so the term carries the pressure of every uniform compression."
     )
-    doc_bridging_fraction_outer = (
-        "Outer radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to. Pairs beyond it reach the learned "
-        "descriptor unchanged, and the transition zone between the two fractions "
-        "uses a C^3-continuous septic Hermite polynomial. Only used when "
-        "`bridging_method` is enabled and no explicit radius is given."
+    doc_bridging_clamp = (
+        "Fraction of each atom pair's data edge (the separation set by "
+        "`bridging_support` from the training contacts) at and below "
+        "which the separation the learned descriptor reads is frozen; between it "
+        "and the data edge the read separation rises smoothly to the true one. "
+        "The data edges are recorded from the training batches and stored with "
+        "the model, so the clamp is the identity on every training contact "
+        "except those of the fewer frames below an edge, and below the data the "
+        "analytical potential alone carries the repulsion. Set it to null to let "
+        "the descriptor read every separation unchanged."
     )
-    doc_bridging_r_inner = (
-        "Inner radius of the bridging window in Å, applied to every atom pair alike. "
-        "Giving it together with `bridging_r_outer` replaces the fractional window "
-        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
-    )
-    doc_bridging_r_outer = (
-        "Outer radius of the bridging window in Å, applied to every atom pair alike. "
-        "Giving it together with `bridging_r_inner` replaces the fractional window "
-        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
+    doc_bridging_support = (
+        "Rank, counted from the smallest, of the per-frame shortest separation "
+        "of an atom pair that becomes its data edge, capped at the pair's "
+        "covalent bond length; separations in the same 1e-6 Å bin count once. "
+        "1 takes the shortest contact of any frame; a larger value keeps a "
+        "single unusual frame from moving the edge into a range that no other "
+        "frame covers, where the learned part would be fitted to that one frame "
+        "alone."
     )
     return [
         Argument(
@@ -4295,32 +4298,25 @@ def _bridging_method_args() -> list[Argument]:
             doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
         ),
         Argument(
-            "bridging_fraction_inner",
+            "bridging_truncation",
             float,
             optional=True,
-            default=DEFAULT_FRACTION_INNER,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_inner,
+            default=DEFAULT_TRUNCATION,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_truncation,
         ),
         Argument(
-            "bridging_fraction_outer",
-            float,
+            "bridging_clamp",
+            [float, None],
             optional=True,
-            default=DEFAULT_FRACTION_OUTER,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_outer,
+            default=DEFAULT_CLAMP,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_clamp,
         ),
         Argument(
-            "bridging_r_inner",
-            float,
+            "bridging_support",
+            int,
             optional=True,
-            default=None,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
-        ),
-        Argument(
-            "bridging_r_outer",
-            float,
-            optional=True,
-            default=None,
-            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
+            default=DEFAULT_SUPPORT,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_support,
         ),
     ]
 
@@ -4557,25 +4553,31 @@ def inner_potential_model_args() -> Argument:
         "universal screened repulsion, and 'nlh', a repulsion refitted to "
         "self-consistent density-functional pair energies (case-insensitive)."
     )
-    doc_fraction_inner = (
-        "Inner radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to, derived onto the learned sibling's "
-        "descriptor: a closer atom pair interacts through the analytical potential "
-        "alone. Because the window follows each pair's own size, one value "
-        "describes every element combination."
+    doc_truncation = (
+        "Radius at which the analytical potential ends, as a fraction of the "
+        "covalent bond length of each atom pair. Below it the screened Coulomb "
+        "series minus its cubic Taylor polynomial at the end radius is added to "
+        "the learned energy, without any switching function: the term is "
+        "non-negative, decreasing, convex and C^3, and exactly zero beyond the "
+        "end radius. The default 1.1 reaches just beyond first-neighbor bonds, "
+        "so the term carries the pressure of every uniform compression."
     )
-    doc_fraction_outer = (
-        "Outer radius of the bridging window, as a fraction of the covalent bond "
-        "length of the atom pair it applies to. The transition zone between the "
-        "two fractions uses a C^3-continuous septic Hermite polynomial."
+    doc_clamp = (
+        "Fraction of each atom pair's data edge (the separation set by "
+        "`support` from the training contacts) at and below which the "
+        "separation the descriptor of the learned sibling reads is frozen; "
+        "between it and the data edge the read separation rises smoothly to the "
+        "true one. The data edges are recorded from the training batches and "
+        "stored with the model, so the clamp is the identity on every training "
+        "contact except those of the fewer frames below an edge, and below the "
+        "data the analytical potential alone carries the repulsion. Set it to "
+        "null to let the descriptor read every separation unchanged."
     )
-    doc_r_inner = (
-        "Inner radius of the bridging window in Å, applied to every atom pair "
-        "alike. Giving it together with `r_outer` replaces the fractional window."
-    )
-    doc_r_outer = (
-        "Outer radius of the bridging window in Å, applied to every atom pair "
-        "alike. Giving it together with `r_inner` replaces the fractional window."
+    doc_support = (
+        "Rank, counted from the smallest, of the per-frame shortest separation "
+        "of an atom pair that becomes the data edge of the clamp of the learned "
+        "sibling, capped at the pair's covalent bond length; separations in the "
+        "same 1e-6 Å bin count once."
     )
     ca = Argument(
         "inner_potential",
@@ -4583,26 +4585,31 @@ def inner_potential_model_args() -> Argument:
         [
             Argument("mode", str, optional=True, default="zbl", doc=doc_mode),
             Argument(
-                "fraction_inner",
+                "truncation",
                 float,
                 optional=True,
-                default=DEFAULT_FRACTION_INNER,
-                doc=doc_fraction_inner,
+                default=DEFAULT_TRUNCATION,
+                doc=doc_truncation,
             ),
             Argument(
-                "fraction_outer",
-                float,
+                "clamp",
+                [float, None],
                 optional=True,
-                default=DEFAULT_FRACTION_OUTER,
-                doc=doc_fraction_outer,
+                default=DEFAULT_CLAMP,
+                doc=doc_clamp,
             ),
-            Argument("r_inner", float, optional=True, default=None, doc=doc_r_inner),
-            Argument("r_outer", float, optional=True, default=None, doc=doc_r_outer),
+            Argument(
+                "support",
+                int,
+                optional=True,
+                default=DEFAULT_SUPPORT,
+                doc=doc_support,
+            ),
         ],
         doc=supported_backends("pt", "pt_expt")
-        + "Analytical short-range bridging pair potential (e.g. ZBL), usable "
-        "only as a sub-model of a `linear_ener` composition over one DPA4 or "
-        "DPA4C model; the window radii are derived onto the learned sibling's "
+        + "Analytical close-contact pair potential (e.g. ZBL), usable only as a "
+        "sub-model of a `linear_ener` composition over one DPA4 or DPA4C model; "
+        "its `clamp` and `support` are derived onto the learned sibling's "
         "descriptor at build time.",
     )
     return ca
@@ -5422,6 +5429,7 @@ def loss_ener() -> list[Argument]:
         "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
+        symm_virial_argument("pt_expt", "jax", "tf2"),
         Argument(
             "start_pref_e",
             [float, int],
@@ -5703,6 +5711,21 @@ def loss_dens() -> list[Argument]:
     ]
 
 
+def symm_virial_argument(*backends: str) -> Argument:
+    """Declare the shared energy and spin-energy virial comparison option."""
+    return Argument(
+        "symm_virial",
+        bool,
+        optional=True,
+        default=False,
+        doc=supported_backends(*backends)
+        + "Compare only the symmetric part of predicted and labeled virials. "
+        "Training validation uses the same convention. Model outputs remain "
+        "unchanged. Use --symm-virial for the same comparison in dp test. "
+        "Not supported by the PyTorch, TensorFlow 1 or Paddle training backends.",
+    )
+
+
 @loss_args_plugin.register("ener_spin", doc=supported_backends("tf", "pt", "pt_expt"))
 def loss_ener_spin() -> list[Argument]:
     doc_start_pref_e = start_pref("energy")
@@ -5734,6 +5757,7 @@ def loss_ener_spin() -> list[Argument]:
         "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
+        symm_virial_argument("pt_expt", "jax"),
         Argument(
             "start_pref_e",
             [float, int],
@@ -6230,10 +6254,6 @@ If MPI is used, the value should be considered as the batch size per task.'
         "Frames containing any atom pair closer than this distance are excluded "
         "from loss computation, as DFT labels for near-collision configurations "
         "are often unreliable. Set to 0 to disable (default). "
-        "A bridged model filters its training frames by the midpoint of its own "
-        "bridging window, below which its learned energy is throttled to less "
-        "than half of its amplitude; that radius is taken from the model, so this "
-        "key must be left unset for such a model and is an error otherwise. "
         "A batch left without a valid frame is never trained on: under "
         "distributed training the pt backend skips that step on every rank, and "
         "the pt_expt backend draws the next batch on the rank concerned. "
