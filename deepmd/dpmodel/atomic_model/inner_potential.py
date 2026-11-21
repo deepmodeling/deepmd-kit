@@ -94,15 +94,21 @@ _A_BOHR = 0.5291772109  # Bohr radius in Å
 #
 # The shipped numbers are MODIFIED material: they are this project's own refit
 # of that open data and are not the coefficients published by Nordlund,
-# Lehtola and Hobler. The fit imposes conditions the published one does not
-# carry -- non-negative amplitudes, amplitudes summing to one, and a bound on
-# the pair energy at long range -- because the term is added on every neighbour
-# pair inside the cutoff without a switching function. Two groups of rows come
-# from a different reference than the rest: B-Ne (Z1 = 5, Z2 = 10) is fitted to
-# the package's Hartree-Fock MP2 screening function, and every pair containing
-# an element with Z > 92, which the reference data does not cover, is fitted to
-# the Ziegler-Biersack-Littmark universal potential. Neither the authors of the
-# reference data nor the American Physical Society endorse this project.
+# Lehtola and Hobler. The fit imposes three physical conditions suited to
+# cubic-Taylor truncated zone bridging: non-negative amplitudes (making the
+# series completely monotone so the truncated remainder is positive,
+# decreasing, convex and C^3 at the truncation radius), amplitudes summing to
+# one (exact nuclear Coulomb limit at r -> 0), and live decay rates bounded
+# between the universal ZBL outer screening rate and the united-atom 1s
+# electron-density decay rate (preventing flat long-range tails and unphysical
+# spikes). Three groups of rows use a source other than raw DMol energies:
+# B-Ne (Z1 = 5, Z2 = 10) is fitted to the package's Hartree-Fock MP2 screening
+# function; Sc-Dy (21, 66), Xe-Pr (54, 59) and Xe-Pb (54, 82), whose raw DMol
+# files in the archive are truncated or mislabeled, use the normalized rows of
+# ``nlh/nlh_coeffs.dat`` from the same archive; and every pair containing an
+# element with Z > 92 uses the normalized Ziegler-Biersack-Littmark universal
+# series. Neither the authors of the reference data nor the American Physical
+# Society endorse this project.
 #
 # The same record, machine-readable, is in the file's ``meta`` entry and is
 # returned by :func:`nlh_provenance`.

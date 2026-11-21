@@ -250,15 +250,69 @@ def test_nlh_is_positive_and_strictly_decreasing():
     assert np.diff(v, axis=-1).max() < 0.0
 
 
-def test_nlh_tail_bound_holds_for_every_pair():
-    """The bound the fit imposes: 1 meV at 5 Å and 0.1 meV at 6 Å."""
+def test_nlh_decay_rates_stay_within_physical_bounds():
+    """Live NLH rates lie between ZBL's outer rate and the united-atom 1s rate."""
     pot = InnerPotential(type_map=_ALL_ELEMENTS, mode="nlh")
+    charge = np.asarray([ELEMENT_TO_Z[symbol] for symbol in _ALL_ELEMENTS], dtype=float)
     ntypes = len(_ALL_ELEMENTS)
     table = np.asarray(pot.pair_table)[:, :8].reshape(ntypes + 1, ntypes + 1, 8)
     amp, rate = table[:ntypes, :ntypes, :4], table[:ntypes, :ntypes, 4:]
-    for radius, bound in ((5.0, 1e-3), (6.0, 1e-4)):
-        v = (amp * np.exp(-rate * radius)).sum(-1) / radius
-        assert v.max() <= bound * (1.0 + 1e-6)
+    a_u = 0.88534 * _A_BOHR / (charge[:, None] ** 0.23 + charge[None, :] ** 0.23)
+    b_lo = (_B_COEFF[-1] / a_u)[..., None]
+    b_hi = (2.0 * (charge[:, None] + charge[None, :]) / _A_BOHR)[..., None]
+    live = amp > 0.0
+    assert np.all(rate[live] >= np.broadcast_to(b_lo, rate.shape)[live] * (1.0 - 1e-9))
+    assert np.all(rate[live] <= np.broadcast_to(b_hi, rate.shape)[live] * (1.0 + 1e-9))
+
+
+def test_nlh_damaged_archive_pairs_match_their_neighbors():
+    """Pairs with damaged or gapped raw DMol files stay smooth across atomic number."""
+    # Check Xe-Pb (54, 82), Xe-Pr (54, 59), Sc-Dy (21, 66), Dy-Pa (66, 91),
+    # and Nd-Rn (60, 86) against their immediate Z-neighbors on [0.01, 0.2] A.
+    symbols = [
+        "Sc",
+        "Ti",
+        "Ca",
+        "I",
+        "Xe",
+        "Cs",
+        "Ce",
+        "Pr",
+        "Nd",
+        "Pm",
+        "Tb",
+        "Dy",
+        "Ho",
+        "Tl",
+        "Pb",
+        "Bi",
+        "At",
+        "Rn",
+        "Fr",
+        "Th",
+        "Pa",
+        "U",
+    ]
+    pot = InnerPotential(type_map=symbols, mode="nlh")
+    idx = {s: i for i, s in enumerate(symbols)}
+    radii = np.array([0.01, 0.05, 0.1, 0.2])
+
+    def phi(a: str, b: str) -> np.ndarray:
+        amp, rate = _pair_series(pot, idx[a], idx[b])
+        scale = _KE * ELEMENT_TO_Z[a] * ELEMENT_TO_Z[b]
+        return (amp * np.exp(-rate * radii[:, None])).sum(-1) / scale
+
+    checks = [
+        (("Xe", "Pb"), [("I", "Pb"), ("Cs", "Pb"), ("Xe", "Tl"), ("Xe", "Bi")]),
+        (("Xe", "Pr"), [("I", "Pr"), ("Cs", "Pr"), ("Xe", "Ce"), ("Xe", "Nd")]),
+        (("Sc", "Dy"), [("Ca", "Dy"), ("Ti", "Dy"), ("Sc", "Tb"), ("Sc", "Ho")]),
+        (("Dy", "Pa"), [("Tb", "Pa"), ("Ho", "Pa"), ("Dy", "Th"), ("Dy", "U")]),
+        (("Nd", "Rn"), [("Pr", "Rn"), ("Pm", "Rn"), ("Nd", "At"), ("Nd", "Fr")]),
+    ]
+    for pair, neighbors in checks:
+        nb_mean = np.mean([phi(*n) for n in neighbors], axis=0)
+        rel_diff = np.max(np.abs(phi(*pair) / nb_mean - 1.0))
+        assert rel_diff < 0.06, (pair, rel_diff)
 
 
 def test_nlh_table_is_symmetric_and_padded():
@@ -300,6 +354,7 @@ def test_nlh_provenance_records_the_source_and_the_modification():
     assert "10.1103/PhysRevA.111.032818" in meta["source_paper"]["doi"]
     assert "not the coefficients published" in meta["modification"]
     assert "MP2" in meta["rows"]["Z1 = 5, Z2 = 10"]
+    assert "nlh_coeffs.dat" in meta["rows"]["Z1, Z2 in {(21, 66), (54, 59), (54, 82)}"]
     assert "ZBL" in meta["rows"]["Z1 > 92 or Z2 > 92"]
 
 

@@ -287,9 +287,12 @@ Enable it in the model configuration:
 }
 ```
 
-Choose `zbl` for the Ziegler–Biersack–Littmark potential or `nlh` for the
-Nordlund–Lehtola–Hobler form. `type_map` must contain chemical element names.
-See [the ZBL example](../../examples/water/dpa4/input-zbl.json) for a complete
+Choose `zbl` for the Ziegler–Biersack–Littmark universal potential or `nlh` for
+the pair-specific Nordlund–Lehtola–Hobler potential. Both use four exponential
+screening terms and subtract the cubic Taylor polynomial at each pair's end
+radius. The NLH coefficients are fitted to reference repulsive energies for
+individual element pairs, rather than to a universal screening curve.
+`type_map` must contain chemical element names. See [the ZBL example](../../examples/water/dpa4/input-zbl.json) for a complete
 input.
 
 The learned part reads each pair separation unchanged down to the data edge
@@ -322,9 +325,10 @@ Bridging works with native spin and multi-rank LAMMPS.
 
 The shipped NLH coefficients are this project's refit of the
 [Nordlund, Hobler and Lehtola reference data](https://doi.org/10.5281/zenodo.14172633)
-(v1.0, 2024, CC BY 4.0), rather than the published coefficients. They use the
+(v1.0, 2024, CC BY 4.0) for cubic-Taylor truncated zone bridging, rather than
+the published coefficients. They use the
 functional form in [Phys. Rev. A 111, 032818 (2025)](https://doi.org/10.1103/PhysRevA.111.032818).
-Pairs containing elements heavier than uranium use ZBL instead.
+Pairs containing elements heavier than uranium use normalized ZBL coefficients.
 
 ## Export and inference
 
