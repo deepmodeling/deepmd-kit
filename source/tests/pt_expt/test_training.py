@@ -553,6 +553,7 @@ class TestTraining(unittest.TestCase):
         config = _make_config(self.data_dir, numb_steps=2)
         config["training"]["save_freq"] = 100
         config["training"]["enable_ema"] = True
+        config["loss"]["symm_virial"] = True
         config["validating"] = {
             "full_validation": True,
             "ema_full_validation": True,
@@ -570,6 +571,10 @@ class TestTraining(unittest.TestCase):
             trainer = get_trainer(config)
             self.assertIsNotNone(trainer.full_validator)
             self.assertIsNotNone(trainer.ema_full_validator)
+            for validator in (trainer.full_validator, trainer.ema_full_validator):
+                self.assertIs(
+                    validator.state_store["full_validation_symm_virial"], True
+                )
             trainer.run()
 
             # The live flow improves at step 1, the EMA flow at step 2.
