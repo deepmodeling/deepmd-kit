@@ -9,9 +9,7 @@ from pathlib import (
 
 import numpy as np
 import pytest
-from lammps import (
-    lammps as Lammps,
-)
+from lammps import lammps as Lammps
 from write_lmp_data import (
     write_lmp_data,
 )
