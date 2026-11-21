@@ -4374,6 +4374,7 @@ def test_a_measured_table_names_only_its_departures_from_the_rules() -> None:
         types.SimpleNamespace(device=device, winner=winner), ws, largest
     )
     probes = {1, *(size + d for size in (*bands, start, end) for d in (0, 1))}
+    expected_choices = []
     for node_count in sorted(size for size in probes if size <= largest):
         rule = int(torch.ops.deepmd.graph_fitting_route_rule(ws, node_count))
         fastest = winner(node_count, rule, [])
@@ -4383,8 +4384,11 @@ def test_a_measured_table_names_only_its_departures_from_the_rules() -> None:
             if node_count <= bound
         )
         expected = fitting_routes.RULES if fastest == rule else fastest
+        if not expected_choices or expected_choices[-1] != expected:
+            expected_choices.append(expected)
         assert recorded == expected, node_count
-    assert fitting_routes.PER_LAYER in choices
+    # A device that already routes every run per layer has no departure.
+    assert choices == expected_choices
 
 
 def _route_stand_in(
@@ -5023,6 +5027,22 @@ def test_the_route_tuner_measures_a_table_that_changes_no_output(
     device = torch.device("cuda", torch.cuda.current_device())
     model = _route_model()
     fitting_routes.tune_fitting_routes(model, 0, device)
+    learned = model.atomic_model.fused_decomposition()[0]
+    fitting = learned.fitting_net.to(device).eval()
+    weights = list(fitting_operator_arguments(fitting).weights)
+    if not any(
+        torch.ops.deepmd.graph_fitting_route_choices(
+            device.index, weights[0].shape[1], nodes
+        )
+        for nodes in (1, 16384)
+    ):
+        assert not tables
+        assert all(
+            torch.ops.deepmd.graph_fitting_route_rule(weights, nodes)
+            == fitting_routes.PER_LAYER
+            for nodes in (1, 16384)
+        )
+        return
     (table,) = tables.values()
     table = list(table)
     fingerprint = list(fitting_routes._fingerprint(device))
@@ -5033,10 +5053,7 @@ def test_the_route_tuner_measures_a_table_that_changes_no_output(
     choices = table[header + intervals :]
     assert len(choices) == intervals
     assert bounds == sorted(set(bounds)) and all(0 < b < 16384 for b in bounds)
-    learned = model.atomic_model.fused_decomposition()[0]
     descriptor = learned.descriptor.to(device).eval()
-    fitting = learned.fitting_net.to(device).eval()
-    weights = list(fitting_operator_arguments(fitting).weights)
     bias = fitting.bias_atom_e[:, 0]
     for node_count, choice in zip([*bounds, 16384], choices, strict=True):
         if choice != fitting_routes.RULES:

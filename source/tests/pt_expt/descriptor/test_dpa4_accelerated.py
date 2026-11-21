@@ -213,7 +213,10 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             monkeypatch.setenv(name, "0")
         data = _make_descriptor(self.nt, self.sel_mix, self.rcut).serialize()
         data = jitter_zero_arrays(data, np.random.default_rng(73))
-        data["@variables"]["radial_basis.adam_freqs"] += np.pi / self.rcut
+        variables = data["@variables"]
+        variables["radial_basis.adam_freqs"] = (
+            variables["radial_basis.adam_freqs"] + np.pi / self.rcut
+        )
         reference = DescrptDPA4.deserialize(data).to(self.device).eval()
         output_ref, gradient_ref = self._step(reference)
         assert np.max(np.abs(gradient_ref)) > 1e-10
