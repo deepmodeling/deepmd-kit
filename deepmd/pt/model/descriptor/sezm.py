@@ -2782,11 +2782,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return local_jdata_cpy, min_nbor_dist
 
     def _migrate_version(self, version: float) -> float:
-        """Update a record version.
+        """Return the forward version for structurally compatible weights.
 
-        Records before 1.1 retain their forward semantics. Every record from
-        1.1 onward computes the current function and adopts the latest
-        version without a parameter transformation.
+        Records before 1.1 retain their forward semantics. Later compatible
+        records need no parameter transformation. Updating the version does
+        not convert weights between different architectures.
         """
         if 1.1 <= version < self.LATEST_VERSION:
             return self.LATEST_VERSION

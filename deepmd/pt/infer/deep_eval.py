@@ -50,6 +50,7 @@ from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
 from deepmd.pt.model.model import (
+    SeZMNativeSpinModel,
     get_model,
 )
 from deepmd.pt.model.model.transform_output import (
@@ -230,6 +231,16 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
             if missing:
+                if isinstance(model, SeZMNativeSpinModel):
+                    missing_weights = set(missing).intersection(
+                        name for name, _ in self.dp.named_parameters()
+                    )
+                    if missing_weights:
+                        raise ValueError(
+                            "Cannot evaluate a native-spin DPA4 checkpoint with missing "
+                            f"weights: {', '.join(sorted(missing_weights))}. Models trained "
+                            "with the previous native-spin architecture require retraining."
+                        )
                 log.warning(
                     "Checkpoint loaded with missing keys (likely from an older "
                     "version): %s",
