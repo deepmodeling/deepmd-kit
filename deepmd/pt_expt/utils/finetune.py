@@ -15,11 +15,9 @@ from deepmd.pt_expt.utils.env import (
 )
 from deepmd.utils.finetune import (
     FinetuneRuleItem,
-)
-from deepmd.utils.finetune import get_finetune_rule_single as get_finetune_rule_single
-from deepmd.utils.finetune import (
     get_finetune_rules_from_model_params,
 )
+from deepmd.utils.finetune import get_finetune_rule_single as get_finetune_rule_single
 
 __all__ = ["get_finetune_rule_single", "get_finetune_rules"]
 

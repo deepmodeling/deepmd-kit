@@ -469,11 +469,22 @@ from torch.fx.experimental.proxy_tensor import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import (
+        Generator,
+    )
 
-    from jaxtyping import Float, Int
-    from torch import Tensor
-    from deepmd.dpmodel.utils.neighbor_list import EdgeNeighborList, NeighborList
+    from jaxtyping import (
+        Float,
+        Int,
+    )
+    from torch import (
+        Tensor,
+    )
+
+    from deepmd.dpmodel.utils.neighbor_list import (
+        EdgeNeighborList,
+        NeighborList,
+    )
 
 from deepmd.dpmodel.atomic_model.inner_potential import (
     InnerPotential as InnerPotentialDP,

@@ -27,15 +27,11 @@ from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     SHARED_LIB_DIR,
     SHARED_LIB_MODULE,
-)
-from deepmd.env import get_default_nthreads as get_tf_default_nthreads
-from deepmd.env import (
     global_float_prec,
-)
-from deepmd.env import set_default_nthreads as set_tf_default_nthreads
-from deepmd.env import (
     set_env_if_empty,
 )
+from deepmd.env import get_default_nthreads as get_tf_default_nthreads
+from deepmd.env import set_default_nthreads as set_tf_default_nthreads
 
 if TYPE_CHECKING:
     from types import (
