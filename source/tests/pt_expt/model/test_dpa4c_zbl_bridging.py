@@ -37,14 +37,23 @@ from deepmd.pt_expt.model.get_model import (
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
 )
+from deepmd.pt_expt.train.wrapper import (
+    ModelWrapper,
+)
 from deepmd.pt_expt.utils import (
     env,
+)
+from deepmd.pt_expt.utils.multi_task import (
+    preprocess_shared_params,
 )
 from deepmd.pt_expt.utils.serialization import (
     _needs_with_comm_artifact,
     _resolve_lower_kind,
     _trace_and_export,
     build_synthetic_graph_inputs,
+)
+from deepmd.utils.bridging import (
+    expand_bridging_method,
 )
 
 TYPE_MAP = ["O", "H", "He"]
@@ -125,6 +134,65 @@ def _perturb(model: torch.nn.Module) -> None:
                     device="cpu",
                 )
                 parameter.add_(0.3 * noise.to(parameter.device))
+
+
+@pytest.mark.parametrize("methods", [("none", "zbl"), ("zbl", "none"), ("zbl", "zbl")])
+def test_multitask_shared_descriptor(methods: tuple[str, str]) -> None:
+    heads = {
+        key: {**ZBL_CONFIG, "descriptor": "rep", "bridging_method": method}
+        for key, method in zip(("first", "second"), methods, strict=True)
+    }
+    config, links = preprocess_shared_params(
+        {"shared_dict": {"rep": PLAIN_CONFIG["descriptor"]}, "model_dict": heads}
+    )
+    models = {key: get_model(params) for key, params in config["model_dict"].items()}
+    references = {
+        key: get_model(params) for key, params in config["model_dict"].items()
+    }
+    for key, model in models.items():
+        _perturb(model)
+        references[key].load_state_dict(model.state_dict())
+
+    wrapper = ModelWrapper(models)
+    wrapper.share_params(links, {"first": 0.5, "second": 0.5})
+    first, second = (model.get_descriptor() for model in models.values())
+    assert first is not second
+    shared = dict(first.named_parameters())
+    assert shared and all(p is shared[name] for name, p in second.named_parameters())
+
+    for key, distance in zip(heads, (0.4, 0.65), strict=True):
+        ref = references[key]
+        ref_params = dict(ref.get_descriptor().named_parameters())
+        with torch.no_grad():
+            for name, p in ref_params.items():
+                p.copy_(shared[name])
+        outputs = _evaluate(models[key], _cluster(distance))
+        expected = _evaluate(ref, _cluster(distance))
+        for field in ("energy", "force"):
+            torch.testing.assert_close(outputs[field], expected[field])
+        outputs["energy"].sum().backward()
+        expected["energy"].sum().backward()
+
+    ref_grads = [
+        dict(m.get_descriptor().named_parameters()) for m in references.values()
+    ]
+    for name, p in shared.items():
+        grads = [params[name].grad for params in ref_grads]
+        if all(g is None for g in grads):
+            assert p.grad is None
+        else:
+            torch.testing.assert_close(p.grad, sum(g for g in grads if g is not None))
+
+
+def test_linear_descriptor_selection() -> None:
+    config = expand_bridging_method(copy.deepcopy(ZBL_CONFIG))
+    config["models"].reverse()
+    model = get_model(config)
+    assert model.get_descriptor() is model.atomic_model.models[1].descriptor
+
+    config["models"][0] = copy.deepcopy(config["models"][1])
+    with pytest.raises(AttributeError, match="no unique learned descriptor"):
+        get_model(config).get_descriptor()
 
 
 class TestDPA4CZBLBridging:

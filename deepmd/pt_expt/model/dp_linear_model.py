@@ -12,8 +12,14 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     LinearEnergyAtomicModel,
+)
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
 )
 from deepmd.dpmodel.model.dp_model import (
     DPModelCommon,
@@ -66,6 +72,17 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     ) -> None:
         DPModelCommon.__init__(self)
         DPLinearModel_.__init__(self, *args, **kwargs)
+
+    def get_descriptor(self) -> BaseDescriptor:
+        """Return the unique learned descriptor in this composition."""
+        learned = [
+            child
+            for child in self.atomic_model.models
+            if isinstance(child, DPAtomicModel)
+        ]
+        if len(learned) != 1:
+            raise AttributeError("This linear model has no unique learned descriptor.")
+        return learned[0].descriptor
 
     def compute_fitting_input_stats(
         self, sampled_func: Callable[[], list[dict]]
