@@ -14,8 +14,8 @@ reference in both regimes.
 
 import os
 import unittest
-from unittest import (
-    mock,
+from unittest.mock import (
+    patch,
 )
 
 import torch
@@ -118,9 +118,7 @@ def _reference_output(module, cache, radial, zonal):
 def _spy_on_fused_operator():
     from deepmd.pt_expt.kernels.cuda.dpa4 import zonal_scatter as zonal_module
 
-    return mock.patch.object(
-        zonal_module, "zonal_scatter", wraps=zonal_module.zonal_scatter
-    )
+    return patch.object(zonal_module, "zonal_scatter", wraps=zonal_module.zonal_scatter)
 
 
 def _run_forward(module, cache, radial, zonal):
@@ -208,7 +206,7 @@ class TestSeZMZonalLevelGate(unittest.TestCase):
 
         os.environ["DP_TRITON_INFER"] = "1"
         os.environ["DP_CUDA_INFER"] = "0"
-        with mock.patch.object(zonal_module, "op_available", return_value=False):
+        with patch.object(zonal_module, "op_available", return_value=False):
             module = _seeded_embedding(DEVICE)
         self.assertFalse(module._cuda_scatter)
         cache, radial, zonal = _forward_inputs(DEVICE)
