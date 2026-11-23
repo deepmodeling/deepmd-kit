@@ -14,7 +14,9 @@ reference in both regimes.
 
 import os
 import unittest
-from unittest import mock
+from unittest import (
+    mock,
+)
 
 import torch
 
@@ -114,9 +116,7 @@ def _reference_output(module, cache, radial, zonal):
 
 
 def _spy_on_fused_operator():
-    from deepmd.pt_expt.kernels.cuda.dpa4 import (
-        zonal_scatter as zonal_module,
-    )
+    from deepmd.pt_expt.kernels.cuda.dpa4 import zonal_scatter as zonal_module
 
     return mock.patch.object(
         zonal_module, "zonal_scatter", wraps=zonal_module.zonal_scatter
@@ -204,9 +204,7 @@ class TestSeZMZonalLevelGate(unittest.TestCase):
     def test_missing_operator_runs_the_pytorch_fallback(self):
         # A build without the compiled operator: the availability probe
         # reports False at construction time, whatever the levels say.
-        from deepmd.pt_expt.kernels.cuda.dpa4 import (
-            zonal_scatter as zonal_module,
-        )
+        from deepmd.pt_expt.kernels.cuda.dpa4 import zonal_scatter as zonal_module
 
         os.environ["DP_TRITON_INFER"] = "1"
         os.environ["DP_CUDA_INFER"] = "0"
