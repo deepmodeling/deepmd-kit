@@ -1021,6 +1021,64 @@ def test_independent_restart_requires_every_rank_rng(missing_rank) -> None:
         )
 
 
+def _ddp_task_probability_worker(
+    rank: int, directory: str, rendezvous: str, sampling: str, first_probability: float
+) -> None:
+    torch.set_num_threads(1)
+    root = Path(directory)
+    dist.init_process_group("gloo", init_method=rendezvous, rank=rank, world_size=2)
+    try:
+        config = _config(root / "data", mode="directory")
+        config["training"].update(
+            task_sampling=sampling,
+            model_prob={"first": first_probability, "second": 1 - first_probability},
+            save_ckpt=str(root / "model.ckpt"),
+            disp_file=str(root / "lcurve.out"),
+        )
+        trainer = get_trainer(config)
+        try:
+            choices = [
+                trainer.select_task(trainer.training_tasks).key for _ in range(10000)
+            ]
+            ranks = [None, None]
+            dist.all_gather_object(ranks, choices)
+            for sequence in ranks:
+                assert set(sequence) == {"first", "second"}
+                # At p=0.1 or 0.9, 0.02 exceeds six binomial standard errors.
+                # Check each rank: pooled counts could hide a fixed task per rank.
+                assert sequence.count("first") / len(sequence) == pytest.approx(
+                    first_probability, abs=0.02
+                )
+            assert (ranks[0] == ranks[1]) == (sampling == "synchronized")
+        finally:
+            trainer._close_data_systems()
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_gloo_available(), reason="Requires Gloo")
+@pytest.mark.parametrize("sampling", ["synchronized", "independent"])
+@pytest.mark.parametrize("first_probability", [0.9, 0.1])
+def test_two_rank_task_sampling_honors_model_prob(
+    tmp_path, monkeypatch, sampling, first_probability
+) -> None:
+    """Both sampling modes preserve asymmetric task probabilities on every rank."""
+    monkeypatch.setenv("DEVICE", "cpu")
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    _write_directory(tmp_path / "data")
+    mp.spawn(
+        _ddp_task_probability_worker,
+        args=(
+            str(tmp_path),
+            (tmp_path / "rendezvous").as_uri(),
+            sampling,
+            first_probability,
+        ),
+        nprocs=2,
+        join=True,
+    )
+
+
 def _ddp_restart_worker(
     rank: int, directory: str, rendezvous: str, mode: str, sampling: str
 ) -> None:
