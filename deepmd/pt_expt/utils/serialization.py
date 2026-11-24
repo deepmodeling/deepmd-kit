@@ -1693,6 +1693,15 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
     with zipfile.ZipFile(model_file, "r") as zf:
         names = zf.namelist()
         if model_json_entry not in names:
+            if (
+                metadata_entry in names
+                and json.loads(zf.read(metadata_entry)).get("lower_input_kind")
+                == "edge_vec"
+            ):
+                raise ValueError(
+                    "This edge_vec archive contains no portable model weights. "
+                    "Modify the training checkpoint and freeze it with the PT backend."
+                )
             raise ValueError(
                 f"Invalid .pt2 file '{model_file}': missing '{model_json_entry}'"
             )
@@ -1708,6 +1717,9 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
     metadata = json.loads(metadata_json) if metadata_json else {}
     model_dict["lower_input_kind"] = metadata.get(
         "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
+    )
+    model_dict["has_comm_artifact"] = (
+        PT2_EXTRA_PREFIX + "forward_lower_with_comm.pt2" in names
     )
     model_dict["do_atomic_virial"] = bool(metadata.get("do_atomic_virial", False))
     if model_def_script_json:
