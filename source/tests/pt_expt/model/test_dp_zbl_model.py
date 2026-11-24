@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+import tempfile
 import unittest
 
 import numpy as np
@@ -178,6 +179,23 @@ class TestDPZBLModel(unittest.TestCase):
         self.assertIn("atom_energy", ret)
         self.assertIn("force", ret)
         self.assertIn("virial", ret)
+
+    def test_frozen_no_ghosts(self) -> None:
+        from deepmd.infer import DeepPot
+        from deepmd.pt_expt.utils.serialization import deserialize_to_file
+
+        model = self._make_dp_model()
+        eager = DPZBLModel.deserialize(model.serialize()).to(self.device).eval()
+        coord = self.coord.clone().requires_grad_(True)
+        expected = eager(coord, self.atype)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "zbl.pt2")
+            deserialize_to_file(path, {"model": model.serialize()}, lower_kind="nlist")
+            frozen = DeepPot(path, auto_batch_size=False)
+            result = frozen.eval(coord.detach().cpu().numpy(), None, self.atype[0].cpu().numpy())
+        for value, key in zip(result, ("energy", "force", "virial"), strict=True):
+            reference = expected[key].detach().cpu().numpy().reshape(value.shape)
+            np.testing.assert_allclose(value, reference, rtol=1e-7, atol=1e-8)
 
     def test_forward_lower_exportable(self) -> None:
         md_dp = self._make_dp_model()
