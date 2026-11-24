@@ -181,8 +181,12 @@ class TestDPZBLModel(unittest.TestCase):
         self.assertIn("virial", ret)
 
     def test_frozen_no_ghosts(self) -> None:
-        from deepmd.infer import DeepPot
-        from deepmd.pt_expt.utils.serialization import deserialize_to_file
+        from deepmd.infer import (
+            DeepPot,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+        )
 
         model = self._make_dp_model()
         eager = DPZBLModel.deserialize(model.serialize()).to(self.device).eval()
@@ -192,7 +196,9 @@ class TestDPZBLModel(unittest.TestCase):
             path = os.path.join(tmp, "zbl.pt2")
             deserialize_to_file(path, {"model": model.serialize()}, lower_kind="nlist")
             frozen = DeepPot(path, auto_batch_size=False)
-            result = frozen.eval(coord.detach().cpu().numpy(), None, self.atype[0].cpu().numpy())
+            result = frozen.eval(
+                coord.detach().cpu().numpy(), None, self.atype[0].cpu().numpy()
+            )
         for value, key in zip(result, ("energy", "force", "virial"), strict=True):
             reference = expected[key].detach().cpu().numpy().reshape(value.shape)
             np.testing.assert_allclose(value, reference, rtol=1e-7, atol=1e-8)
