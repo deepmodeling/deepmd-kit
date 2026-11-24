@@ -35,20 +35,20 @@ Keep your tuned `HybridMuon` learning rate, schedule, `weight_decay`, and `momen
     }
 ```
 
-| Option (`optimizer.*`) | Default | Description & tuning guidance |
-| --- | --- | --- |
-| `physmuon` | `false` | Master switch on the Muon route (`false` keeps baseline `HybridMuon` bit-for-bit unchanged). |
-| `physmuon_start_ratio` | `0.3077` | Fraction of `numb_steps` at which two-mode readout activates (~30% of training, after the early transient). Ignored if `physmuon_start_step` is set. |
-| `physmuon_start_step` | `null` | Explicit 0-based optimizer step to activate two-mode readout (overrides `physmuon_start_ratio`). |
-| `physmuon_beta_fast` | `0.90` | Fast-mode EMA decay (mean memory $\beta / (1 - \beta) = 9$ steps). Keep `0.90` (try `0.85` on smaller batches). |
-| `physmuon_beta_slow` | `0.995` | Slow-mode EMA decay (mean memory $199$ steps). **Primary knob:** scales with effective batch size (e.g., `0.98` ≈ 49 steps for smaller batches; scan roughly 50–350 steps). |
-| `physmuon_gate` | `true` | Enable per-tensor oscillation-gated fast-mode readout. Set `false` with `physmuon_w_fast: 0.0` for a staged fast-to-slow schedule. |
-| `physmuon_w_max` | `0.3` | Upper bound on the gated fast-mode weight when `physmuon_gate` is `true` (interatomic-potential default). |
-| `physmuon_w_fast` | `0.3` | Fixed fast-mode weight used only when `physmuon_gate` is `false` (`0.0` = slow mode only after switch). |
-| `physmuon_gate_beta` | `0.9` | EMA decay for gate oscillation/drift statistics (fixed default; nearly flat over `0.80–0.95`). |
-| `physmuon_shadow` | `true` | Track fast/slow modes and gate statistics from step 0 before the switch step (eliminates cold-start mismatch). |
-| `physmuon_spike_guard` | `0.0` | Slow-mode spike threshold $K$ (`<= 0` disables). Set e.g. `10.0` on large crystal datasets with rare extreme force spikes (e.g., MPtrj) to freeze the slow mode when pre-clip global gradient norm exceeds $K\times$ running median or is non-finite. |
-| `physmuon_spike_window` | `1000` | Sliding window length (steps) for the spike-guard running median. |
+| Option (`optimizer.*`)  | Default  | Description & tuning guidance                                                                                                                                                                                                                         |
+| ----------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `physmuon`              | `false`  | Master switch on the Muon route (`false` keeps baseline `HybridMuon` bit-for-bit unchanged).                                                                                                                                                          |
+| `physmuon_start_ratio`  | `0.3077` | Fraction of `numb_steps` at which two-mode readout activates (~30% of training, after the early transient). Ignored if `physmuon_start_step` is set.                                                                                                  |
+| `physmuon_start_step`   | `null`   | Explicit 0-based optimizer step to activate two-mode readout (overrides `physmuon_start_ratio`).                                                                                                                                                      |
+| `physmuon_beta_fast`    | `0.90`   | Fast-mode EMA decay (mean memory $\beta / (1 - \beta) = 9$ steps). Keep `0.90` (try `0.85` on smaller batches).                                                                                                                                       |
+| `physmuon_beta_slow`    | `0.995`  | Slow-mode EMA decay (mean memory $199$ steps). **Primary knob:** scales with effective batch size (e.g., `0.98` ≈ 49 steps for smaller batches; scan roughly 50–350 steps).                                                                           |
+| `physmuon_gate`         | `true`   | Enable per-tensor oscillation-gated fast-mode readout. Set `false` with `physmuon_w_fast: 0.0` for a staged fast-to-slow schedule.                                                                                                                    |
+| `physmuon_w_max`        | `0.3`    | Upper bound on the gated fast-mode weight when `physmuon_gate` is `true` (interatomic-potential default).                                                                                                                                             |
+| `physmuon_w_fast`       | `0.3`    | Fixed fast-mode weight used only when `physmuon_gate` is `false` (`0.0` = slow mode only after switch).                                                                                                                                               |
+| `physmuon_gate_beta`    | `0.9`    | EMA decay for gate oscillation/drift statistics (fixed default; nearly flat over `0.80–0.95`).                                                                                                                                                        |
+| `physmuon_shadow`       | `true`   | Track fast/slow modes and gate statistics from step 0 before the switch step (eliminates cold-start mismatch).                                                                                                                                        |
+| `physmuon_spike_guard`  | `0.0`    | Slow-mode spike threshold $K$ (`<= 0` disables). Set e.g. `10.0` on large crystal datasets with rare extreme force spikes (e.g., MPtrj) to freeze the slow mode when pre-clip global gradient norm exceeds $K\times$ running median or is non-finite. |
+| `physmuon_spike_window` | `1000`   | Sliding window length (steps) for the spike-guard running median.                                                                                                                                                                                     |
 
 **Recommended starting presets** (on top of `"type": "HybridMuon", "physmuon": true`):
 
@@ -60,8 +60,8 @@ Keep your tuned `HybridMuon` learning rate, schedule, `weight_decay`, and `momen
 **Quick tuning guide for a new task:**
 
 1. Keep your tuned `HybridMuon` `lr`, schedule, `weight_decay`, and baseline `momentum` unchanged.
-2. Keep the fixed and task-family defaults unchanged (`physmuon_gate_beta: 0.9`, `physmuon_shadow: true`, `physmuon_gate: true`, `physmuon_w_max: 0.3`, `physmuon_start_ratio: 0.3077`); add `physmuon_spike_guard: 10.0` if logs show rare extreme pre-clip gradient norms.
-3. Tune only `physmuon_beta_slow` to your task and effective batch size: mean memory length $L = \beta / (1 - \beta)$ steps (equivalently $\beta = L / (L + 1)$). Scan 3–4 values over roughly an order of magnitude—e.g., $L \in \{50, 100, 200, 350\}$ (`physmuon_beta_slow`: `0.9804`, `0.9901`, `0.9950`, `0.9972`); optimal $L$ grows with effective batch size.
+1. Keep the fixed and task-family defaults unchanged (`physmuon_gate_beta: 0.9`, `physmuon_shadow: true`, `physmuon_gate: true`, `physmuon_w_max: 0.3`, `physmuon_start_ratio: 0.3077`); add `physmuon_spike_guard: 10.0` if logs show rare extreme pre-clip gradient norms.
+1. Tune only `physmuon_beta_slow` to your task and effective batch size: mean memory length $L = \beta / (1 - \beta)$ steps (equivalently $\beta = L / (L + 1)$). Scan 3–4 values over roughly an order of magnitude—e.g., $L \in \{50, 100, 200, 350\}$ (`physmuon_beta_slow`: `0.9804`, `0.9901`, `0.9950`, `0.9972`); optimal $L$ grows with effective batch size.
 
 For the separate trainer-level fluctuation-calibrated budget and full paper benchmarks, see the [PhysMuon repository](https://github.com/Hyyu-Lab/PhysMuon).
 
