@@ -50,6 +50,16 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
 }
 
 template <class DeviceType>
+int PairDeepMDKokkos<DeviceType>::model_device() {
+#ifdef KOKKOS_ENABLE_CUDA
+  if (std::is_same<DeviceType, LMPDeviceType>::value) {
+    return Kokkos::Cuda().cuda_device();
+  }
+#endif
+  return PairDeepMD::model_device();
+}
+
+template <class DeviceType>
 PairDeepMDKokkos<DeviceType>::~PairDeepMDKokkos() {
   if (copymode) {
     return;

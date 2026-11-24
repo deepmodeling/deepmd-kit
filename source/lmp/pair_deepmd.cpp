@@ -675,7 +675,7 @@ void PairDeepMD::settings(int narg, char** arg) {
   numb_models = models.size();
   if (numb_models == 1) {
     try {
-      deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
+      deep_pot.init(arg[0], model_device(), get_file_content(arg[0]));
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
@@ -687,8 +687,8 @@ void PairDeepMD::settings(int narg, char** arg) {
     dim_chg_spin = deep_pot.dim_chg_spin();
   } else {
     try {
-      deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-      deep_pot_model_devi.init(models, get_node_rank(),
+      deep_pot.init(arg[0], model_device(), get_file_content(arg[0]));
+      deep_pot_model_devi.init(models, model_device(),
                                get_file_content(models));
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());

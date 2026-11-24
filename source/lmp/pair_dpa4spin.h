@@ -82,6 +82,7 @@ class PairDPA4Spin : public Pair {
   void* extract(const char*, int&) override;
 
  protected:
+  virtual int model_device() { return get_node_rank(); }
   void allocate();
   // Emit the DeePMD-kit and LAMMPS module banner through the LAMMPS logger.
   void print_summary(const std::string& pre) const;

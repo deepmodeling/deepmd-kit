@@ -233,7 +233,7 @@ void PairDPA4Spin::settings(int narg, char** arg) {
   }
 
   try {
-    deep_spin.init(arg[0], get_node_rank());
+    deep_spin.init(arg[0], model_device());
   } catch (deepmd_compat::deepmd_exception& e) {
     error->one(FLERR, e.what());
   }

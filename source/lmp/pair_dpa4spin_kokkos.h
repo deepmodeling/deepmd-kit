@@ -86,6 +86,7 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   void gather_moment_device();
 
  protected:
+  int model_device() override;
   // Model node set and the compact canonical graph over it.
   CompactCanonicalGraphKokkos<DeviceType> compact_graph;
   bool multi_rank;  // domain-decomposed run -> extended (local+ghost) node set
