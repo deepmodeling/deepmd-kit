@@ -418,14 +418,23 @@ class TestTraining(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported optimizer type: LKF"):
             get_trainer(config)
 
-    def _run_training(self, config: dict) -> None:
-        """Run training and verify lcurve + checkpoint creation."""
+    def _run_training(
+        self,
+        config: dict,
+        prepare: Callable[["training_module.Trainer"], None] | None = None,
+    ) -> "training_module.Trainer":
+        """Run training, verify lcurve + checkpoint creation, return the trainer.
+
+        ``prepare`` may adjust the trainer before the first step.
+        """
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_train_")
         try:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
                 trainer = get_trainer(config)
+                if prepare is not None:
+                    prepare(trainer)
                 trainer.run()
 
                 # Read lcurve to verify training ran
@@ -443,6 +452,7 @@ class TestTraining(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+        return trainer
 
     def test_training_loop(self) -> None:
         """Run a few training steps and verify outputs."""
@@ -543,6 +553,7 @@ class TestTraining(unittest.TestCase):
         config = _make_config(self.data_dir, numb_steps=2)
         config["training"]["save_freq"] = 100
         config["training"]["enable_ema"] = True
+        config["loss"]["symm_virial"] = True
         config["validating"] = {
             "full_validation": True,
             "ema_full_validation": True,
@@ -560,6 +571,10 @@ class TestTraining(unittest.TestCase):
             trainer = get_trainer(config)
             self.assertIsNotNone(trainer.full_validator)
             self.assertIsNotNone(trainer.ema_full_validator)
+            for validator in (trainer.full_validator, trainer.ema_full_validator):
+                self.assertIs(
+                    validator.state_store["full_validation_symm_virial"], True
+                )
             trainer.run()
 
             # The live flow improves at step 1, the EMA flow at step 2.
@@ -633,7 +648,9 @@ class TestTraining(unittest.TestCase):
         """Run compiled training of a ZBL-bridged DPA4C composition.
 
         The composition has no single fitting net, so the buffers the compiled
-        graph reads per call belong to its atomic model alone.
+        graph reads per call belong to its atomic model alone. The contact
+        clamp records the contacts of every batch outside the compiled graph:
+        edges started above every contact end at the shortest ones.
         """
         config = _make_config(self.data_dir, numb_steps=5)
         config["model"] = {
@@ -648,14 +665,27 @@ class TestTraining(unittest.TestCase):
             },
             "fitting_net": {"neuron": [16, 16], "seed": 1},
             "bridging_method": "zbl",
-            "bridging_r_inner": 0.5,
-            "bridging_r_outer": 0.8,
             "data_stat_nbatch": 1,
         }
         config["training"]["enable_compile"] = True
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
-        self._run_training(config)
+
+        def start_above_every_contact(trainer: "training_module.Trainer") -> None:
+            clamp = trainer.model.atomic_model.models[0].descriptor.contact_clamp
+            with torch.no_grad():
+                clamp.edges[:2, :2] = 10.0
+
+        trainer = self._run_training(config, prepare=start_above_every_contact)
+        clamp = trainer.model.atomic_model.models[0].descriptor.contact_clamp
+        edges = clamp.edges
+        # Only a contact below the covalent start of its pair enters the record:
+        # the O-H bond of the water frames does, the O-O and H-H separations do
+        # not and keep the covalent start as their edge.
+        self.assertTrue(torch.isfinite(clamp.contacts[0, 1]).all())
+        self.assertTrue((edges[:2, :2] < 10.0).all())
+        self.assertAlmostEqual(edges[0, 1].item(), clamp.contacts[0, 1, -1].item())
+        self.assertLess(edges[0, 1].item(), 1.2)
 
     @REQUIRES_SUPPORTED_COMPILE
     def test_training_loop_compiled_zbl(self) -> None:
@@ -1073,8 +1103,12 @@ class TestMinPairDistFilter(unittest.TestCase):
             raise unittest.SkipTest(f"Example data not found: {data_dir}")
         cls.data_dir = data_dir
 
-    def _trainer(self, min_pair_dist: float) -> "training_module.Trainer":
+    def _trainer(
+        self, min_pair_dist: float, model: dict | None = None
+    ) -> "training_module.Trainer":
         config = _make_config(self.data_dir, numb_steps=5)
+        if model is not None:
+            config["model"] = copy.deepcopy(model)
         config["training"]["training_data"]["batch_size"] = 8
         config["training"]["training_data"]["min_pair_dist"] = min_pair_dist
         config = normalize(update_deepmd_input(config, warning=False))
@@ -1092,9 +1126,9 @@ class TestMinPairDistFilter(unittest.TestCase):
 
     def test_frames_below_the_threshold_are_dropped(self) -> None:
         def body() -> None:
-            # A frame that clears its window carries a margin it reaches
-            # rather than its minimum, so the distances that set a splitting
-            # threshold are measured on the geometry itself.
+            # A frame that clears the filter radius carries a margin it
+            # reaches rather than its minimum, so the distances that set a
+            # splitting threshold are measured on the geometry itself.
             probe = self._trainer(1.0e-3)
             input_dict, label_dict = probe.get_data(is_train=True)
             self.assertEqual(label_dict["pair_margin"].numel(), 8)
@@ -1102,7 +1136,7 @@ class TestMinPairDistFilter(unittest.TestCase):
                 input_dict["coord"].detach().cpu().numpy(),
                 input_dict["box"].detach().cpu().numpy(),
                 input_dict["atype"].detach().cpu().numpy(),
-                pair_half_thresholds(1.0, "absolute", ntypes=8),
+                pair_half_thresholds(1.0, 8),
             )
             threshold = float(np.median(distances))
             self.assertTrue((distances < threshold).any())
@@ -1129,8 +1163,9 @@ class TestMinPairDistFilter(unittest.TestCase):
             # The statistics see the filtered frames, so they fail first.
             with self.assertRaisesRegex(RuntimeError, "beyond the filter radius"):
                 self._trainer(100.0)
-            # Widening the registered window past every pair empties every
-            # batch, which the training loop reports after one epoch of retries.
+            # Raising the registered filter radius past every pair empties
+            # every batch, which the training loop reports after one epoch of
+            # retries.
             trainer = self._trainer(1.0e-3)
             trainer.training_data_by_task[
                 training_module.DEFAULT_TASK_KEY
@@ -1154,6 +1189,38 @@ class TestMinPairDistFilter(unittest.TestCase):
             trainer = self._trainer(0.9)
             trainer.run()
             self.assertTrue(os.path.exists("lcurve.out"))
+
+        self._run(body)
+
+    def test_a_bridged_model_is_filtered_only_when_asked(self) -> None:
+        """A bridged model implies no frame filter; the dataset section owns it.
+
+        The contact clamp records the shortest contacts of the training data
+        and the analytical term repels the closer pairs, so no radius is
+        taken from the model: a bridged model without ``min_pair_dist``
+        trains on every frame, and with it filters at that distance like any
+        other model.
+        """
+        bridged = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 8,
+                "seed": 1,
+            },
+            "fitting_net": {"neuron": [16, 16], "seed": 1},
+            "bridging_method": "zbl",
+            "data_stat_nbatch": 1,
+        }
+
+        def body() -> None:
+            _, unfiltered = self._trainer(0.0, bridged).get_data(is_train=True)
+            self.assertNotIn("pair_margin", unfiltered)
+            _, filtered = self._trainer(0.9, bridged).get_data(is_train=True)
+            self.assertIn("pair_margin", filtered)
 
         self._run(body)
 

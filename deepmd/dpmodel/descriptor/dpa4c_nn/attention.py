@@ -131,9 +131,7 @@ class BlockAttention(NativeOP):
 
     Every output map starts at zero, so a block starts as the identity, and
     every term vanishes with the C³ envelope :math:`\chi_k` of the block at
-    its cutoff. Under zone bridging the first-block envelope :math:`\chi_{ij}`
-    carries the source gate, which removes a frozen atom from the numerator
-    and the denominator of the softmax alike. Source features are formed per
+    its cutoff. Source features are formed per
     node by :meth:`source_features` and center features by
     :meth:`center_features`; a distributed caller refreshes the ghost rows of
     the source features in between.
@@ -354,8 +352,7 @@ class BlockAttention(NativeOP):
             Cartesian harmonics of the edge directions with shape
             ``(E, (lmax + 1) ** 2)``.
         envelope
-            Masked C³ envelope of the first block with shape ``(E,)``,
-            including the bridging switch and the source gate.
+            Masked C³ envelope of the first block with shape ``(E,)``.
         block_envelope
             C³ envelope at the cutoff of this block with shape ``(E,)``.
         src, dst

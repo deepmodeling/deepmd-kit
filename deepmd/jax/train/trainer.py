@@ -371,6 +371,7 @@ class DPTrainer(AbstractTrainer):
         )
 
         return JAXFullValidator(
+            symm_virial=getattr(self.losses[DEFAULT_TASK_KEY], "symm_virial", False),
             validating_params=validating_params,
             validation_data=validation_data,
             model=self.models[DEFAULT_TASK_KEY],

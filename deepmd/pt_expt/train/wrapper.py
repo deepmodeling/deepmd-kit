@@ -18,6 +18,9 @@ from deepmd.dpmodel.utils.multi_task import (
 from deepmd.pt_expt.train.utils import (
     MatmulPrecisionPolicy,
 )
+from deepmd.pt_expt.utils.contact_clamp import (
+    require_checkpoint_contact_records,
+)
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +89,7 @@ class ModelWrapper(torch.nn.Module):
         matmul_precision: MatmulPrecisionPolicy | None = None,
     ) -> None:
         super().__init__()
+        self.register_load_state_dict_pre_hook(require_checkpoint_contact_records)
         self.model_params = model_params if model_params is not None else {}
         self.matmul_precision = (
             matmul_precision

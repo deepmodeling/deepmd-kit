@@ -955,16 +955,19 @@ class TestDPA4C:
             np.testing.assert_allclose(np.linalg.norm(coupling), 1.0, atol=1e-15)
 
 
-class TestDPA4CBridgingWindow:
-    """The bridging window removes a close pair from the descriptor."""
+class TestDPA4CContactClamp:
+    """The contact clamp freezes the separation a bridged descriptor reads."""
 
-    R_INNER = 0.5
-    R_OUTER = 0.8
+    #: Data edge of the type-0/type-2 pair, in Å; every other pair keeps an
+    #: edge below each separation of the test cluster.
+    EDGE = 0.8
+    INNER = 0.75
 
     def setup_method(self) -> None:
         self.config = {
             "rcut": 3.0,
             "ntypes": 3,
+            "type_map": ["O", "H", "C"],
             "channels": 8,
             "lmax": 3,
             "n_radial": 4,
@@ -972,20 +975,26 @@ class TestDPA4CBridgingWindow:
             "precision": "float64",
             "seed": 17,
         }
-        self.windowed = DescrptDPA4C(
-            **self.config,
-            inner_clamp_f_inner=self.R_INNER,
-            inner_clamp_f_outer=self.R_OUTER,
-            inner_clamp_scale="absolute",
-        )
+        self.clamped = self.build()
         self.plain = DescrptDPA4C(**self.config)
+
+    def build(self, **overrides: Any) -> DescrptDPA4C:
+        """Build a clamped descriptor whose only acting edge is the 0-2 pair."""
+        descriptor = DescrptDPA4C(
+            **{**self.config, **overrides}, contact_clamp=self.INNER
+        )
+        edges = descriptor.contact_clamp.edges.copy()
+        edges[:-1, :-1] = 0.2
+        edges[0, 2] = edges[2, 0] = self.EDGE
+        descriptor.contact_clamp.edges = edges
+        return descriptor
 
     @staticmethod
     def cluster(distance: float) -> tuple[np.ndarray, np.ndarray]:
         """Place a type-2 atom `distance` from the type-0 origin atom.
 
         The direction keeps it more than 1.3 Å from every other atom, so the
-        origin pair is the only one the window acts on.
+        origin pair is the only one the clamp acts on.
         """
         direction = np.array([0.8, 0.36, -0.48])
         coord = COORD.copy()
@@ -993,138 +1002,32 @@ class TestDPA4CBridgingWindow:
         atype = np.array([[0, 2, 1, 1, 1]], dtype=np.int64)
         return coord, atype
 
-    @pytest.mark.parametrize("distance", [0.05, 0.3, 0.5])
-    def test_frozen_pair_equals_removed_edge(self, distance: float) -> None:
-        coord, atype = self.cluster(distance)
-        removed = DescrptDPA4C(**self.config, exclude_types=[(0, 2), (2, 0)])
-        windowed = evaluate(self.windowed, coord, atype)
-        # The plain descriptor must see the pair, or the comparison is vacuous.
-        assert np.abs(evaluate(self.plain, coord, atype) - windowed).max() > 1e-3
-        np.testing.assert_array_equal(windowed, evaluate(removed, coord, atype))
-
-    def multi_block(self) -> DescrptDPA4C:
-        """Build a two-block windowed descriptor with random block maps."""
-        return randomize_attentions(
-            DescrptDPA4C(
-                **{**self.config, "rcut": 3.0, "n_blocks": 2},
-                inner_clamp_f_inner=self.R_INNER,
-                inner_clamp_f_outer=self.R_OUTER,
-                inner_clamp_scale="absolute",
-            )
+    def read(self, distance: float) -> float:
+        """Separation the clamped descriptor reads for the 0-2 pair."""
+        return float(
+            self.clamped.contact_clamp.call(
+                np.array([distance]), np.array([0]), np.array([2])
+            )[0]
         )
 
-    @pytest.mark.parametrize("distance", [0.05, 0.3, 0.5])
-    def test_frozen_pair_does_not_leak_through_a_neighbor(
-        self, distance: float
-    ) -> None:
-        # Atoms 0 and 1 form a frozen pair. The second block would otherwise
-        # hand the view of a third atom, which sees both, back to atom 0.
-        descriptor = self.multi_block()
-        coord, atype = self.cluster(distance)
-        reference = evaluate(descriptor, coord, atype)
-        moved = coord.copy()
-        moved[0, 1] = distance * np.array([-0.6, 0.0, 0.8])
-        perturbed = evaluate(descriptor, moved, atype)
-        # Moving atom 1 inside the frozen zone leaves atom 0 and every third
-        # atom unchanged, and the third atoms match the system without the
-        # pair.
-        unchanged = [0, 2, 3, 4]
-        np.testing.assert_allclose(
-            perturbed[0, unchanged], reference[0, unchanged], atol=1e-13, rtol=0.0
-        )
-        third = [2, 3, 4]
-        without = evaluate(descriptor, coord[:, third], atype[:, third])
-        np.testing.assert_allclose(
-            reference[0, third], without[0], atol=1e-13, rtol=0.0
-        )
-        # Without a window atom 0 sees atom 1 through a third atom, so the
-        # contract is not vacuous.
-        plain = randomize_attentions(
-            DescrptDPA4C(**{**self.config, "rcut": 3.0, "n_blocks": 2})
-        )
-        assert (
-            np.abs(
-                evaluate(plain, moved, atype)[0, 0]
-                - evaluate(plain, coord, atype)[0, 0]
-            ).max()
-            > 1e-6
-        )
-
-    def test_frozen_pair_window_keeps_the_multi_block_descriptor_smooth(self) -> None:
-        descriptor = self.multi_block()
-        distances = np.linspace(self.R_INNER - 0.02, self.R_OUTER + 0.02, 97)
-        probe = []
-        for distance in distances:
-            coord, atype = self.cluster(float(distance))
-            # Atom 1 moves; every other atom stops depending on it inside the
-            # frozen zone.
-            probe.append(evaluate(descriptor, coord, atype)[0, [0, 2, 3, 4]].sum())
-        probe = np.asarray(probe)
-        inner = distances <= self.R_INNER
-        np.testing.assert_allclose(probe[inner], probe[inner][0], atol=1e-12)
-        third = np.diff(probe, n=3)
-        assert np.abs(third).max() < 1e-2 * np.abs(probe).max()
-
-    def test_pairs_beyond_the_window_are_unchanged(self) -> None:
-        coord, atype = self.cluster(self.R_OUTER)
+    @pytest.mark.parametrize("offset", [0.0, 0.3])
+    def test_contacts_at_or_beyond_the_edge_read_unchanged(self, offset: float) -> None:
+        coord, atype = self.cluster(self.EDGE + offset)
         np.testing.assert_array_equal(
-            evaluate(self.windowed, coord, atype),
+            evaluate(self.clamped, coord, atype),
             evaluate(self.plain, coord, atype),
         )
 
-    def test_switch_rises_monotonically_across_the_window(self) -> None:
-        distances = np.linspace(self.R_INNER - 0.01, self.R_OUTER + 0.01, 65)
-        switch = []
-        for distance in distances:
-            coord, atype = self.cluster(float(distance))
-            graph, atype_local = build_graph(self.windowed, coord, atype)
-            edge = np.argmin(np.abs(np.linalg.norm(graph.edge_vec, axis=-1) - distance))
-            switch.append(
-                edge_features(self.windowed, graph, atype_local)[2][edge]
-                / edge_features(self.plain, graph, atype_local)[2][edge]
-            )
-        switch = np.asarray(switch)
-        inside = (distances > self.R_INNER) & (distances < self.R_OUTER)
-        assert np.all(switch[distances < self.R_INNER] == 0.0)
-        assert np.all(switch[distances > self.R_OUTER] == 1.0)
-        assert np.all(np.diff(switch[inside]) > 0.0)
-        # A C3 switch keeps its first three differences continuous across both
-        # radii, which bounds the fourth one by the fourth power of the spacing.
-        assert np.abs(np.diff(switch, n=4)).max() < 5.0e-4
-
-    def test_clamp_freezes_at_the_midpoint_and_opens_with_the_switch(self) -> None:
-        clamp = self.windowed.bridging_clamp
-        switch = self.windowed.bridging_switch
-        midpoint = 0.5 * (self.R_INNER + self.R_OUTER)
-        distances = np.linspace(0.05, self.R_OUTER + 0.2, 4001)
-        contact = np.ones_like(distances)
-        seen = clamp.call(distances, contact)
-        np.testing.assert_array_equal(seen[distances <= self.R_INNER], midpoint)
-        beyond = distances >= self.R_OUTER
-        np.testing.assert_array_equal(seen[beyond], distances[beyond])
-        # The clamp is the integral of the switch, so its slope is the switch.
-        np.testing.assert_allclose(
-            np.gradient(seen, distances)[2:-2],
-            switch.call(distances, contact)[2:-2],
-            atol=1.0e-6,
-        )
-
-    @pytest.mark.parametrize("distance", [0.55, 0.65, 0.75])
-    def test_edge_inside_the_window_reads_the_clamped_length(
+    @pytest.mark.parametrize("distance", [0.3, 0.6, 0.7])
+    def test_edge_below_the_data_edge_reads_the_clamped_length(
         self, distance: float
     ) -> None:
         """The radial features see the clamped length, the harmonics the true one."""
-        contact = np.ones(1)
-        seen = float(
-            self.windowed.bridging_clamp.call(np.array([distance]), contact)[0]
-        )
-        opening = float(
-            self.windowed.bridging_switch.call(np.array([distance]), contact)[0]
-        )
+        seen = self.read(distance)
         assert seen > distance
         features = {}
         for name, descriptor, length in (
-            ("windowed", self.windowed, distance),
+            ("clamped", self.clamped, distance),
             ("plain", self.plain, seen),
         ):
             coord, atype = self.cluster(length)
@@ -1133,45 +1036,85 @@ class TestDPA4CBridgingWindow:
             features[name] = [
                 block[edge] for block in edge_features(descriptor, graph, atype_local)
             ]
-        amplitude, harmonics, envelope = features["windowed"]
-        plain_amplitude, plain_harmonics, plain_envelope = features["plain"]
-        np.testing.assert_allclose(amplitude, opening * plain_amplitude, rtol=1.0e-12)
-        np.testing.assert_allclose(envelope, opening * plain_envelope, rtol=1.0e-12)
-        np.testing.assert_allclose(harmonics, plain_harmonics, rtol=1.0e-12)
+        for clamped, plain in zip(features["clamped"], features["plain"], strict=True):
+            np.testing.assert_allclose(clamped, plain, rtol=1.0e-12, atol=1.0e-14)
 
-    def test_serialization_roundtrip_keeps_the_window(self) -> None:
-        coord, atype = self.cluster(0.65)
-        data = self.windowed.serialize()
-        assert data["@version"] == 3
-        assert data["inner_clamp_f_inner"] == self.R_INNER
-        assert data["inner_clamp_f_outer"] == self.R_OUTER
-        assert data["inner_clamp_scale"] == "absolute"
+    @pytest.mark.parametrize("n_blocks", [1, 2])
+    def test_a_frozen_dimer_reads_one_separation(self, n_blocks: int) -> None:
+        """Below the frozen radius a dimer descriptor no longer depends on r."""
+        descriptor = randomize_attentions(self.build(n_blocks=n_blocks))
+        plain = randomize_attentions(
+            DescrptDPA4C(**{**self.config, "n_blocks": n_blocks})
+        )
+        direction = np.array([0.8, 0.36, -0.48])
+        atype = np.array([[0, 2]], dtype=np.int64)
+
+        def dimer(model: DescrptDPA4C, distance: float) -> np.ndarray:
+            coord = np.stack([np.zeros(3), distance * direction])[None]
+            return evaluate(model, coord, atype)
+
+        frozen = self.INNER * self.EDGE
+        reference = dimer(descriptor, frozen)
+        for distance in (0.15, 0.3, 0.45):
+            np.testing.assert_allclose(
+                dimer(descriptor, distance), reference, atol=1.0e-11, rtol=0.0
+            )
+        # Without the clamp the dimer reads the separation, so the contract is
+        # not vacuous.
+        assert np.abs(dimer(plain, 0.3) - dimer(plain, frozen)).max() > 1.0e-6
+
+    def test_clamp_keeps_the_multi_block_descriptor_smooth(self) -> None:
+        descriptor = randomize_attentions(self.build(n_blocks=2))
+        distances = np.linspace(self.INNER * self.EDGE - 0.02, self.EDGE + 0.02, 97)
+        probe = np.asarray(
+            [evaluate(descriptor, *self.cluster(float(d))).sum() for d in distances]
+        )
+        third = np.diff(probe, n=3)
+        assert np.abs(third).max() < 1e-2 * np.abs(probe).max()
+
+    def test_serialization_roundtrip_keeps_the_recorded_edges(self) -> None:
+        coord, atype = self.cluster(0.7)
+        data = self.clamped.serialize()
+        assert data["@version"] == 4
+        restored = DescrptDPA4C.deserialize(data)
         np.testing.assert_array_equal(
-            evaluate(DescrptDPA4C.deserialize(data), coord, atype),
-            evaluate(self.windowed, coord, atype),
+            restored.contact_clamp.edges, self.clamped.contact_clamp.edges
+        )
+        np.testing.assert_array_equal(
+            evaluate(restored, coord, atype),
+            evaluate(self.clamped, coord, atype),
         )
 
     def test_a_record_without_a_window_restores_the_plain_descriptor(self) -> None:
-        """A record of the first format carries no window and reads as unbridged."""
+        """A record of an earlier format with an empty window reads as unbridged."""
         data = self.plain.serialize()
-        data["@version"] = 1
-        for key in ("inner_clamp_f_inner", "inner_clamp_f_outer", "inner_clamp_scale"):
-            del data[key]
+        data["@version"] = 3
+        data.pop("contact_clamp")
+        data.update(
+            inner_clamp_f_inner=None,
+            inner_clamp_f_outer=None,
+            inner_clamp_scale="covalent",
+        )
         restored = DescrptDPA4C.deserialize(data)
-        assert restored.bridging_switch is None
+        assert restored.contact_clamp is None
         coord, atype = self.cluster(0.3)
         np.testing.assert_array_equal(
             evaluate(restored, coord, atype),
             evaluate(self.plain, coord, atype),
         )
 
-    def test_window_is_branch_local_under_parameter_sharing(self) -> None:
-        self.windowed.share_params(self.plain, shared_level=0)
+    def test_a_cutoff_inside_the_largest_contact_edge_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="largest contact edge"):
+            self.build(rcut=1.0)
+
+    def test_clamp_is_branch_local_under_parameter_sharing(self) -> None:
+        self.clamped.share_params(self.plain, shared_level=0)
         coord, atype = self.cluster(0.3)
-        assert self.windowed.radial_embedding is self.plain.radial_embedding
+        assert self.clamped.radial_embedding is self.plain.radial_embedding
+        assert self.clamped.contact_clamp is not None
         assert (
             np.abs(
-                evaluate(self.windowed, coord, atype)
+                evaluate(self.clamped, coord, atype)
                 - evaluate(self.plain, coord, atype)
             ).max()
             > 1e-3
@@ -1195,9 +1138,9 @@ class TestDPA4CBridgingWindow:
         ({"radial_modes": True}, ValueError),
         ({"radial_modes": -1}, ValueError),
         ({"spin": {}}, NotImplementedError),
-        ({"inner_clamp_f_inner": 0.5}, ValueError),
-        ({"inner_clamp_f_inner": 0.8, "inner_clamp_f_outer": 0.5}, ValueError),
-        ({"inner_clamp_scale": "bohr"}, ValueError),
+        ({"contact_clamp": 0.75}, ValueError),
+        ({"contact_clamp": 1.0, "type_map": ["H"]}, ValueError),
+        ({"contact_clamp": 0.0, "type_map": ["H"]}, ValueError),
     ],
 )
 def test_configuration_boundaries(
@@ -2440,3 +2383,82 @@ def test_virtual_atom_spin_scheme_is_refused() -> None:
                 "fitting_net": {"neuron": [8, 8], "seed": 1},
             }
         )
+
+
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+def test_native_spin_modes_preserve_signed_exchange(spin_mode: str) -> None:
+    descriptor = make_spin_descriptor(spin_mode=spin_mode)
+    coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.2, 0.3]]])
+    atype = np.zeros((1, 2), dtype=np.int64)
+    graph = neighbor_graph.build_neighbor_graph(
+        coord, atype, None, descriptor.get_rcut()
+    )
+    spin = np.array([[0.3, 0.4, 0.5], [0.3, 0.4, 0.5]])
+    parallel = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    spin[1] *= -1.0
+    antiparallel = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    # The first off-diagonal vector Gram is linear in the signed pair exchange.
+    exchange_index = descriptor.readout.get_dim_out() + 1
+    assert np.max(np.abs(parallel[:, exchange_index])) > 1e-8
+    np.testing.assert_allclose(
+        antiparallel[:, exchange_index], -parallel[:, exchange_index], atol=1e-12
+    )
+    restored = DescrptDPA4C.deserialize(descriptor.serialize())
+    assert restored.spin_mode == spin_mode
+    np.testing.assert_array_equal(
+        restored.call_graph(graph, atype.reshape(-1), spin=spin)[0], antiparallel
+    )
+
+
+def test_exchange_mode_has_independent_spin_rotations() -> None:
+    descriptor = make_spin_descriptor(spin_mode="exchange", rcut=[3.0, 2.5], n_blocks=2)
+    randomize_attentions(descriptor)
+    rng = np.random.default_rng(71)
+    spin = rng.normal(size=(SPIN_ATYPE.size, 3))
+    graph = neighbor_graph.build_neighbor_graph(
+        SPIN_COORD, SPIN_ATYPE, None, descriptor.get_rcut()
+    )
+    rotation, _ = np.linalg.qr(rng.normal(size=(3, 3)))
+    reference = descriptor.call_graph(graph, SPIN_ATYPE.reshape(-1), spin=spin)[0]
+    rotated = descriptor.call_graph(
+        graph, SPIN_ATYPE.reshape(-1), spin=spin @ rotation.T
+    )[0]
+    np.testing.assert_allclose(rotated, reference, atol=1e-12)
+    np.testing.assert_array_equal(
+        descriptor.call_graph(graph, SPIN_ATYPE.reshape(-1), spin=-spin)[0], reference
+    )
+    orbit = make_spin_descriptor(spin_mode="orbit")
+    assert descriptor.spin.edge_width < orbit.spin.edge_width
+    assert descriptor.spin.get_dim_out() < orbit.spin.get_dim_out()
+
+
+def test_projected_spin_gram_contains_collective_antisymmetric_exchange() -> None:
+    channels = SpinChannels(1, [1, 1, 1], [True], spin_mode="orbit", seed=7)
+    spin = np.array([[0.2, 0.7, -0.1], [-0.3, 0.1, 0.8]])
+    direction = np.array([[1.0, 0.0, 0.0], [0.6, 0.8, 0.0]])
+    atype = np.zeros(2, dtype=np.int64)
+    source = np.arange(2, dtype=np.int64)
+
+    def cross_neighbor_gram(moment: np.ndarray) -> float:
+        payload = channels.edge_payload(
+            moment,
+            atype,
+            source,
+            direction,
+            np.ones((2, 1)),
+            np.ones(2),
+            np.ones((2, 1)),
+            np.zeros((2, 1)),
+        )
+        # The projected family follows M0, Mw and the vector family.
+        projected = payload[:, 5:8]
+        return float(np.sum(np.sum(projected, axis=0) ** 2) - np.sum(projected**2))
+
+    antisymmetric = cross_neighbor_gram(spin) - cross_neighbor_gram(spin[::-1])
+    expected = (
+        2.0
+        * np.dot(direction[0], direction[1])
+        * np.dot(np.cross(direction[0], direction[1]), np.cross(spin[0], spin[1]))
+    )
+    assert abs(expected) > 1e-3
+    np.testing.assert_allclose(antisymmetric, expected, atol=1e-14)

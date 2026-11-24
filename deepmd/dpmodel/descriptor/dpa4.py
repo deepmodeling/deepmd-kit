@@ -50,7 +50,6 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
-    xp_scatter_sum,
 )
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
@@ -59,6 +58,9 @@ from deepmd.dpmodel.common import (
 )
 from deepmd.dpmodel.utils import (
     EnvMat,
+)
+from deepmd.dpmodel.utils.contact_clamp import (
+    ContactClamp,
 )
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
@@ -75,16 +77,11 @@ from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.utils.bridging import (
-    BRIDGING_RECORD_VERSION,
-    check_bridging_record_version,
-    check_window_inside_cutoff,
-    migrate_inner_clamp_keys,
+    DEFAULT_SUPPORT,
+    drop_retired_descriptor_options,
 )
 from deepmd.utils.charge_state import (
     validate_charge_state,
-)
-from deepmd.utils.element_radii import (
-    contact_radius_table,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -121,17 +118,13 @@ from .dpa4_nn.norm import (
     ScalarRMSNorm,
 )
 from .dpa4_nn.radial import (
-    BridgingSwitch,
     C3CutoffEnvelope,
-    InnerClamp,
     RadialBasis,
     RadialMLP,
-    pair_contact,
 )
 from .dpa4_nn.utils import (
     ATTN_RES_MODES,
     get_promoted_dtype,
-    safe_norm,
 )
 from .dpa4_nn.wignerd import (
     WignerDCalculator,
@@ -351,7 +344,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         apply environment matrix FiLM conditioning on l=0 features using 4D
         `[s, s*r_hat]` representation, and enable the non-scalar geometric
         initial embedding when `l_schedule[0] + extra_node_l > 0`. If False, the initial state
-        contains only atom-local scalar features before message passing. FiLM
+        contains only atom-local scalar features before message passing.
+        Native spin requires True to retain neighbor spin correlations. FiLM
         deltas are normalized and scaled with learnable strengths initialized
         to small values. Internal dimensions are derived from `channels`:
         `embed_dim=min(channels, 128)`,
@@ -592,21 +586,16 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Random seed(s).
     type_map
         Type names.
-    inner_clamp_f_inner
-        Inner radius of the zone-bridging window, as a fraction of each pair's
-        own length scale. When both fractions are set, the descriptor freezes
-        short-range geometry inside the window. Given together with
-        ``inner_clamp_f_outer`` or not at all.
-    inner_clamp_f_outer
-        Outer radius of the zone-bridging window, as a fraction of each pair's
-        own length scale. At or beyond it an edge contributes exactly as it
-        does without a window.
-    inner_clamp_scale
-        Length scale the two fractions measure against. ``"covalent"`` sizes
-        every pair by the sum of the covalent radii of its two elements, so one
-        window shape serves every element combination and a ``type_map`` is
-        required; ``"absolute"`` gives every element the unit radius, which
-        makes the pair scale 1 Å and the two fractions radii in Å.
+    contact_clamp
+        Fraction of each pair's data edge at and below which the separation the
+        descriptor reads is frozen; ``None`` reads every separation unchanged.
+        The bridging composition sets it beside its analytical potential (see
+        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`), and it needs
+        a ``type_map`` of element symbols.
+    contact_support
+        Rank, counted from the smallest, of the distinct per-frame shortest
+        separation of a pair that becomes its data edge (see
+        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`).
     add_chg_spin_ebd
         If True, add frame-level charge/spin condition embedding to scalar type
         features before edge features are built.
@@ -624,7 +613,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     """
 
     _ENV_DIM: int = 1  # Use se_r style (radial only) for EnvMatStatSe compatibility
-    LATEST_VERSION: float = 1.3
+    LATEST_VERSION: float = 1.5
 
     def __init__(
         self,
@@ -687,12 +676,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         trainable: bool = True,
         seed: int | list[int] | None = None,
         type_map: list[str] | None = None,
-        inner_clamp_f_inner: float | None = None,
-        inner_clamp_f_outer: float | None = None,
-        inner_clamp_scale: str = "covalent",
+        contact_clamp: float | None = None,
+        contact_support: int = DEFAULT_SUPPORT,
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
         use_spin: list[bool] | None = None,
+        spin_mode: str = "orbit",
     ) -> None:
         self.version = float(self.LATEST_VERSION)
         self._graph_lower_disabled = False
@@ -841,69 +830,36 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         )
 
         # === Native per-atom spin embedding ===
-        # The spin vector enters the descriptor as an l=0 magnitude scalar plus
-        # an l=1 direction feature (see ``SpinEmbedding``). Providing per-type
-        # ``use_spin`` flags enables the native spin embedding.
+        # Moments enter through time-even on-site and pair scalars. Per-type
+        # ``use_spin`` flags enable the native spin embedding.
         self.use_spin = None if use_spin is None else [bool(x) for x in use_spin]
+        self.spin_mode = spin_mode
+        if spin_mode not in {"exchange", "orbit"}:
+            raise ValueError("`spin_mode` must be exchange or orbit")
 
-        # === Zone bridging: InnerClamp + Source Freeze Propagation Gate ===
-        # Both the geometry clamp (``InnerClamp``) and the message-passing
-        # switch (``BridgingSwitch``) are activated together on the same
-        # window, two fractions of the length scale each pair contributes
-        # through ``contact_radius``. The switch spans the whole window; the
-        # clamp freezes the distance the descriptor sees on every ``(j, k)``
-        # edge two fifths into the window, just below the frame-filter point
-        # at the midpoint, so that the displayed distance still moves where
-        # the training data end and the network can fit the labels there. The
-        # switch feeds a per-edge C3 amplitude of the true length into
-        # ``compute_source_gates``, whose per-node product over every pair
-        # other than the edge's own is folded into the envelope of every edge
-        # the node emits, so that a node with a frozen neighbor is absent
-        # from every reduction of its other neighbors as if those edges were
-        # deleted, while the frozen pair keeps seeing itself at the clamped
-        # distance. The full per-node product also fades the learned atomic
-        # energy in the atomic model, so a frozen atom contributes the bias
-        # of its type alone. Both modules are parameter-free, so enabling
-        # bridging does not add any keys to the descriptor's state dict.
-        if (inner_clamp_f_inner is None) != (inner_clamp_f_outer is None):
+        # === Contact clamp of a bridged descriptor ===
+        # Below the data edge of a pair the separation every geometric read
+        # sees is frozen, so the analytical potential of the bridging
+        # composition alone carries the repulsion there.
+        if contact_clamp is not None and type_map is None:
             raise ValueError(
-                "`inner_clamp_f_inner` and `inner_clamp_f_outer` must be given "
-                "together."
+                "A contact clamp starts every pair at its covalent bond length, "
+                "so it needs a `type_map` of element symbols."
             )
-        if inner_clamp_scale not in ("covalent", "absolute"):
-            raise ValueError(
-                "`inner_clamp_scale` must be 'covalent' or 'absolute', got "
-                f"{inner_clamp_scale!r}."
+        self.contact_clamp = (
+            None
+            if contact_clamp is None
+            else ContactClamp(
+                list(type_map), inner=contact_clamp, support=contact_support
             )
-        self.bridging_f_inner = (
-            None if inner_clamp_f_inner is None else float(inner_clamp_f_inner)
         )
-        self.bridging_f_outer = (
-            None if inner_clamp_f_outer is None else float(inner_clamp_f_outer)
-        )
-        self.bridging_scale = str(inner_clamp_scale)
-        if self.bridging_f_inner is not None:
-            self.bridging_clamp: InnerClamp | None = InnerClamp(
-                self.bridging_f_inner, self.bridging_f_outer
-            )
-            self.bridging_switch: BridgingSwitch | None = BridgingSwitch(
-                self.bridging_f_inner, self.bridging_f_outer
-            )
-        else:
-            self.bridging_clamp = None
-            self.bridging_switch = None
-        # The table sizes a window, so an unbridged descriptor needs none and
-        # is not asked for the element symbols the covalent scale reads.
-        self.contact_radius = None
-        if self.bridging_f_inner is not None:
-            table = contact_radius_table(
-                self.ntypes, self.type_map, self.bridging_scale
-            )
-            check_window_inside_cutoff(table, self.bridging_f_outer, self.rcut)
-            self.contact_radius = table
 
         # === Env seed parameters ===
         self.use_env_seed = bool(use_env_seed)
+        if self.use_spin is not None and not self.use_env_seed:
+            raise ValueError(
+                "Native spin requires use_env_seed=True for neighbor spin correlations."
+            )
         self.env_seed_embed_dim = min(self.channels, 128)
         self.env_seed_type_dim = min(32, max(8, self.channels // 4))
         axis_dim = 4 if self.env_seed_embed_dim < 64 else 8
@@ -925,6 +881,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         # === L/M schedules ===
         self._init_lm_schedules(lmax, n_blocks, l_schedule, mmax, m_schedule)
+        if self.contact_clamp is not None:
+            self.contact_clamp.check_cutoff(self.rcut)
         self.kmax = int(kmax)
         if self.kmax < 0:
             raise ValueError("`kmax` must be non-negative")
@@ -1038,22 +996,17 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             self.charge_spin_embedding = None
 
         if self.use_spin is not None:
-            if self.node_init_lmax < 1:
-                raise ValueError(
-                    "`use_spin` requires a node degree >= 1 "
-                    "(lmax + extra_node_l) to host the l=1 spin feature."
-                )
             self.spin_embedding: SpinEmbedding | None = SpinEmbedding(
                 ntypes=self.ntypes,
                 channels=self.channels,
+                n_radial=self.n_radial,
+                spin_mode=self.spin_mode,
                 use_spin=self.use_spin,
                 activation_function=self.activation_function,
                 precision=self.compute_precision,  # force fp32+
                 seed=seed_spin_embedding,
                 trainable=self.trainable,
             )
-            # Packed rows hosting the l=1 spin coefficients (m = -1, 0, +1).
-            self._spin_l1_rows = np.arange(1, 4, dtype=np.int64)
         else:
             self.spin_embedding = None
 
@@ -1195,6 +1148,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             k_b = min(self.kmax, l_b)
             blocks.append(
                 SeZMInteractionBlock(
+                    parity=self.use_spin is not None,
                     lmax=l_b,
                     node_lmax=node_l_b,
                     mmax=m_b,
@@ -1306,8 +1260,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             "mlp_bias": self.mlp_bias,
             "trainable": self.trainable,
         }
+        # Intermediate tensors preserve native parity; the final Haar scalar
+        # readout pairs equal degrees and is intrinsically inversion-even.
         self.readout_pre_layers = [
-            EquivariantFFN(**readout_ffn_kwargs, seed=child_seed(seed_out, layer_index))
+            EquivariantFFN(
+                **readout_ffn_kwargs,
+                parity=self.use_spin is not None,
+                seed=child_seed(seed_out, layer_index),
+            )
             for layer_index in range(self.readout_layers - 1)
         ]
         self.output_ffn = EquivariantFFN(**readout_ffn_kwargs, seed=seed_out)
@@ -1316,12 +1276,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.stats: dict[str, Any] | None = None
         self.mean = np.zeros(0, dtype=PRECISION_DICT[self.precision])
         self.stddev = np.ones(0, dtype=PRECISION_DICT[self.precision])
-
-    def pair_contact(
-        self, center_type: Array, neighbor_type: Array, dtype: Any
-    ) -> Array:
-        """Length scale of each edge in Å, shape (E, 1); see :func:`pair_contact`."""
-        return pair_contact(self.contact_radius, center_type, neighbor_type, dtype)
 
     def call(
         self,
@@ -1336,7 +1290,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         spin: Array | None = None,
     ) -> tuple[
         Array,
-        Array | None,
         Array | None,
         Array | None,
         Array | None,
@@ -1383,12 +1336,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             None (not used).
         sw
             None (not used).
-        node_gate
-            Per-atom source gate of the bridging window with shape
-            (nf, nloc, 1), which fades the learned atomic energy; ``None``
-            for an unbridged descriptor. DPA4 always returns this sixth
-            element beyond the common five-element descriptor contract, and
-            the atomic model reads it by position.
 
         Raises
         ------
@@ -1438,7 +1385,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         graph, atype_flat = _graph_from_padded_nlist(
             coord_ext, atype_ext, nlist, mapping
         )
-        x_scalar, _, node_gate = self._run_graph(
+        x_scalar, _ = self._run_graph(
             graph,
             atype_flat,
             n_out_nodes=nf * nloc,
@@ -1449,16 +1396,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # ``_run_graph`` returns (nf*nloc, 1, 1, channels) already in
         # global precision; flatten the SO(3) singleton axes to (nf, nloc, C).
         descriptor = xp.reshape(x_scalar, (nf, nloc, self.channels))
-        if node_gate is not None:
-            node_gate = xp.reshape(node_gate, (nf, nloc, 1))
-        return (
-            descriptor,
-            None,
-            None,
-            None,
-            None,
-            node_gate,
-        )
+        return descriptor, None, None, None, None
 
     def call_graph(
         self,
@@ -1468,7 +1406,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         comm_dict: dict[str, Array] | None = None,
         spin: Array | None = None,
         charge_spin: Array | None = None,
-    ) -> tuple[Array, None, Array | None]:
+    ) -> tuple[Array, None]:
         """Graph-native descriptor forward on the flat node axis.
 
         Parameters
@@ -1507,11 +1445,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         Returns
         -------
-        tuple[Array, None, Array | None]
-            Flat ``(N, channels)`` descriptor in global precision, ``None``
-            (DPA4 produces no equivariant rot_mat for the fitting), and for
-            a bridged descriptor the flat ``(N,)`` per-node source gate that
-            fades the learned atomic energy (``None`` otherwise).
+        tuple[Array, None]
+            Flat ``(N, channels)`` descriptor in global precision and ``None``
+            (DPA4 produces no equivariant rot_mat for the fitting).
 
         Raises
         ------
@@ -1526,7 +1462,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             nf=nf,
             ref=graph.edge_vec,
         )
-        x_scalar, _, node_gate = self._run_graph(
+        x_scalar, _ = self._run_graph(
             graph, atype, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
         )
         # ``_run_graph`` returns the read-out with its SO(3) singleton
@@ -1534,7 +1470,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # graph-seam contract shape (n_nodes, channels).
         xp = array_api_compat.array_namespace(x_scalar)
         x_scalar = xp.reshape(x_scalar, (n_nodes, self.channels))
-        return x_scalar, None, node_gate
+        return x_scalar, None
 
     def _run_graph(
         self,
@@ -1546,7 +1482,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
-    ) -> tuple[Array, Array, Array | None]:
+    ) -> tuple[Array, Array]:
         """Graph-native descriptor forward shared by both descriptor entries.
 
         Both public entries -- the dense-nlist ``call`` adapter and the
@@ -1591,13 +1527,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         Returns
         -------
-        tuple[Array, Array, Array | None]
+        tuple[Array, Array]
             Read-out with the SO(3) singleton axes still attached, shape
-            ``(n_out_nodes, 1, 1, channels)``, in global precision, the
-            full multipole feature tensor ``x``, and the per-node source gate
-            of the read-out rows with shape ``(n_out_nodes,)`` in global
-            precision for a bridged descriptor (``None`` otherwise). The
-            public entries flatten
+            ``(n_out_nodes, 1, 1, channels)``, in global precision, and the
+            full multipole feature tensor ``x``. The public entries flatten
             the singleton axes.
 
         Raises
@@ -1631,35 +1564,23 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         n_nodes = type_ebed.shape[0]
 
-        # Native spin: condition the l=0 type features on the spin magnitude
-        # and hold the l=1 direction coefficients for the backbone seed.
-        spin_vec = None
+        # Native spin conditions the scalar type features on moment magnitude.
         if self.spin_embedding is not None and spin is not None:
-            type_ebed, spin_vec = self._apply_spin_embedding(
+            type_ebed = self._apply_spin_embedding(
                 type_ebed, spin, atype_flat, n_nodes=n_nodes
             )
 
-        # Cross-rank SFPG completion (issue #5906): only a bridged model
-        # under domain decomposition needs it -- the gate's src-keyed
-        # per-node partials are rank-incomplete then.
-        node_partial_exchange = None
-        if comm_dict is not None and self.bridging_switch is not None:
-            node_partial_exchange = functools.partial(
-                self._gate_partial_exchange, comm_dict=comm_dict
-            )
         # === Step 3. Build edge cache once (sparse edges) ===
         training = self._in_training_mode()
         compute_dtype = get_xp_precision(xp, self.compute_precision)
-        # The window of every edge is sized by the two types at its ends, so
-        # the descriptor, which owns the radius table, resolves it here and the
-        # edge cache receives one per-edge length scale.
-        edge_contact = (
+        # The contact clamp reads the types at both ends of every edge.
+        read_distance = (
             None
-            if self.contact_radius is None
-            else self.pair_contact(
-                xp.take(atype_flat, edge_index[1, ...]),
-                xp.take(atype_flat, edge_index[0, ...]),
-                compute_dtype,
+            if self.contact_clamp is None
+            else functools.partial(
+                self.contact_clamp.read_with_identity_mask,
+                center_type=xp.take(atype_flat, edge_index[1, ...]),
+                neighbor_type=xp.take(atype_flat, edge_index[0, ...]),
             )
         )
         edge_cache = _edge_cache_from_arrays(
@@ -1670,9 +1591,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             compute_dtype=compute_dtype,
             eps=self.eps,
             deg_norm_floor=(self.deg_norm_floor if self.version >= 1.1 else self.eps),
-            bridging_clamp=self.bridging_clamp,
-            bridging_switch=self.bridging_switch,
-            edge_contact=edge_contact,
+            read_distance=read_distance,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
             fused_radial=None if training else self._cuda_radial_fn,
@@ -1682,8 +1601,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             random_gamma=self.random_gamma and training,
             wigner_calc=self.wigner_calc,
             build_wigner=self._build_full_wigner(),
-            node_partial_exchange=node_partial_exchange,
         )
+
+        if self.spin_embedding is not None and spin is not None:
+            edge_cache.edge_rbf = (
+                edge_cache.edge_rbf
+                + self.spin_embedding.edge_features(
+                    xp.reshape(spin, (n_nodes, 3)), atype_flat, edge_cache
+                )
+            )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
         x0 = type_ebed  # (N, C)
@@ -1750,16 +1676,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             axis=1,
         )  # (N, D, 1, C)
 
-        # === Step 7. Geometric Initial Embedding (+ neighbor spin l=1) ===
+        # === Step 7. Geometric Initial Embedding ===
         if self.use_gie:
             zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
-            spin_l1_message = (
-                self.spin_embedding.edge_l1(
-                    xp.reshape(spin, (n_nodes, 3)), atype_flat, edge_cache
-                )
-                if (self.spin_embedding is not None and spin is not None)
-                else None
-            )
             x = (
                 x
                 + self.gie(
@@ -1767,20 +1686,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
                     zonal_coupling=zonal_coupling,
-                    spin_l1_message=spin_l1_message,
                 )[:, :, None, :]
             )
-
-        # === Step 8. Add the on-site native spin l=1 to the backbone ===
-        # The neighbor-spin l=1 is aggregated inside GIE; the
-        # atom's own spin direction is added here, un-normalized.
-        if spin_vec is not None:
-            spin_l1_rows = xp_asarray_nodetach(xp, self._spin_l1_rows, device=device)
-            spin_l1_src = spin_vec[:, :, None, :]  # (N, 3, 1, C)
-            scatter_index = xp.broadcast_to(
-                xp.reshape(spin_l1_rows, (1, 3, 1, 1)), spin_l1_src.shape
-            )
-            x = xp_scatter_sum(x, 1, scatter_index, spin_l1_src)
 
         # === Step 9. Fuse edge type features into radial features (fp32+) ===
         radial_feat = xp.astype(radial_feat, get_xp_precision(xp, self.precision))
@@ -1816,15 +1723,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         # === Step 12. Final l=0 output mixing ===
         x_scalar = self._apply_readout(x, n_out_nodes)
-
-        node_gate = (
-            None
-            if edge_cache.node_gate is None
-            else xp.astype(
-                edge_cache.node_gate[:n_out_nodes], get_xp_precision(xp, "global")
-            )
-        )
-        return xp.astype(x_scalar, get_xp_precision(xp, "global")), x, node_gate
+        return xp.astype(x_scalar, get_xp_precision(xp, "global")), x
 
     def _forward_blocks(
         self,
@@ -2008,7 +1907,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         edge_quat = edge_cache.edge_quat
         if edge_quat is None:
-            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
+            edge_len = edge_cache.edge_len
             edge_quat = build_edge_quaternion(
                 edge_cache.edge_vec,
                 edge_len=edge_len,
@@ -2134,37 +2033,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         atype_flat: Array,
         *,
         n_nodes: int,
-    ) -> tuple[Array, Array]:
-        """
-        Inject the per-atom spin embedding into the node features.
-
-        The l=0 magnitude scalar is added to the flattened type embedding so it
-        propagates into the scalar backbone, the per-edge type features, and
-        every block's radial features (exactly like the type embedding). The l=1
-        direction coefficients are returned for the caller to add to the
-        equivariant backbone after the geometric initial embedding.
-
-        Parameters
-        ----------
-        type_ebed
-            Flattened type embedding with shape (N, channels).
-        spin
-            Per-atom spin vectors with shape (nf, nloc, 3) or (N, 3).
-        atype_flat
-            Flattened local atom types with shape (N,).
-        n_nodes
-            Number of local nodes ``N = nf * nloc``.
-
-        Returns
-        -------
-        tuple[Array, Array]
-            The l=0-conditioned type embedding with shape (N, channels) and the
-            packed l=1 direction coefficients with shape (N, 3, channels).
-        """
+    ) -> Array:
+        """Add time-even moment magnitude features to the scalar type state."""
         xp = array_api_compat.array_namespace(type_ebed, spin)
-        scalar, vector = self.spin_embedding(xp.reshape(spin, (n_nodes, 3)), atype_flat)
-        type_ebed = type_ebed + xp.astype(scalar, type_ebed.dtype)
-        return type_ebed, vector
+        scalar = self.spin_embedding(xp.reshape(spin, (n_nodes, 3)), atype_flat)
+        return type_ebed + xp.astype(scalar, type_ebed.dtype)
 
     @staticmethod
     def _broadcast_grid_setting(
@@ -2365,40 +2238,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             raise ValueError("`charge_spin` first dimension must match nframes.")
         return charge_spin
 
-    def _gate_partial_exchange(
-        self,
-        partials: Array,
-        comm_dict: dict[str, Array],
-    ) -> Array:
-        """Complete the SFPG per-node partials across ranks.
-
-        Reverse-accumulate ghost rows into their owners, then broadcast the
-        completed owner values back — the backend-specific pt_expt subclass
-        implements it on ``border_op_backward``/``border_op``; dpmodel is
-        the single-process reference and rejects comm outright.
-
-        Parameters
-        ----------
-        partials
-            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
-        comm_dict
-            The border-exchange control tensors.
-
-        Returns
-        -------
-        Array
-            The globally completed (n_nodes, 2) tensor.
-
-        Raises
-        ------
-        NotImplementedError
-            Always, in the dpmodel backend.
-        """
-        raise NotImplementedError(
-            "Multi-rank SFPG partial exchange (comm_dict) is not supported "
-            "in the dpmodel backend."
-        )
-
     def _block_comm(
         self,
         block_idx: int,
@@ -2495,12 +2334,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         return True
 
     def supports_edge_parallel(self) -> bool:
-        """Bridging included: multi-rank is supported for every SeZM config.
-
-        The SFPG per-node partials are completed across ranks by
-        ``_gate_partial_exchange`` (reverse-accumulate + broadcast) before
-        the gate is applied (issue #5906).
-        """
+        """Multi-rank inference is supported for every SeZM configuration."""
         return True
 
     def dense_lower_supports_comm(self) -> bool:
@@ -2526,14 +2360,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             (``disable_graph_lower()`` / ``_graph_lower_disabled``). Every
             conditioning input DPA4 supports -- native spin
             (``spin_embedding``), charge/spin FiLM (``charge_spin_embedding``),
-            and SFPG bridging (``bridging_switch``) -- rides the graph lower:
-            spin and charge_spin are threaded through ``call_graph`` like any
-            other per-node/per-frame input, and bridging is applied inside
-            the shared ``_run_graph`` forward with no extra threading (it
-            reads ``self.bridging_switch`` directly). Bridging models are
-            multi-rank capable too: their SFPG per-node partials are
-            completed across ranks by ``_gate_partial_exchange`` before the
-            gate is applied (issue #5906).
+            and the contact clamp of a bridged model (``contact_clamp``) --
+            rides the graph lower: spin and charge_spin are threaded through
+            ``call_graph`` like any other per-node/per-frame input, and the
+            clamp acts on the edge lengths inside the shared ``_run_graph``
+            forward.
         """
         return not self._graph_lower_disabled
 
@@ -2781,6 +2612,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # === Output FFN ===
         for key, value in self.output_ffn._variables().items():
             variables[f"output_ffn.{key}"] = value
+        # === Contact record and data edges (bridged descriptors only) ===
+        if self.contact_clamp is not None:
+            for name in ("edges", "contacts"):
+                variables[f"contact_clamp.{name}"] = to_numpy_array(
+                    getattr(self.contact_clamp, name)
+                ).astype(np.float64)
         return variables
 
     def _load_variables(self, variables: dict[str, np.ndarray]) -> None:
@@ -2805,6 +2642,18 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # transient: they are rebuilt at construction, so they are ignored here.
         self.mean = np.asarray(variables["mean"], dtype=prec)
         self.stddev = np.asarray(variables["stddev"], dtype=prec)
+        # === Contact record and data edges (bridged descriptors only) ===
+        # A record of an unbridged descriptor holds none, and its clamp keeps
+        # the empty record and the covalent bond lengths it starts from.
+        if self.contact_clamp is not None:
+            for name in ("edges", "contacts"):
+                key = f"contact_clamp.{name}"
+                if key in variables:
+                    setattr(
+                        self.contact_clamp,
+                        name,
+                        np.asarray(variables[key], dtype=np.float64),
+                    )
         # === Type embedding (always present) ===
         self.type_embedding = load(self.type_embedding, "type_embedding.")
         # === Frame charge/spin embedding (optional) ===
@@ -2850,81 +2699,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # === Output FFN ===
         self.output_ffn._load_variables(take_prefix("output_ffn."))
 
-    def _migrate_variables(
-        self,
-        variables: dict[str, Any],
-        version: float,
-        prefix: str = "",
-    ) -> float:
-        """Rewrite stored variables whose meaning changed since ``version``.
+    def _migrate_version(self, version: float) -> float:
+        """Return the forward version for structurally compatible weights.
 
-        Operates on the flat mapping keyed by ``state_dict`` names, BEFORE
-        anything is assigned to a module: ``load_state_dict`` restores a
-        module's own buffers before descending into its children, so a
-        migration applied to live attributes would rewrite values the child
-        load is about to overwrite. Both checkpoints and portable records
-        pass through this migration. A bridged receiving descriptor rejects
-        legacy states before its tensors are restored. Other differences that
-        no rewrite can absorb stay forward-time branches on :attr:`version`,
-        so a migrated descriptor never changes its own math.
-
-        Version 1.2 moved the env-seed spin gate from the spin coordinate to
-        the resulting environment quadratic form. For an active-spin model,
-        squaring the stored amplitude preserves the represented function.
-        Legacy native-spin models with no magnetic types instead carry
-        dormant, unconstrained spin-route values; those output-controlling
-        values are canonicalized to the zero function before the routes can
-        be activated by fine-tuning. Versions below 1.1 predate the
-        native-spin route and retain their original forward semantics.
-
-        Version 1.3 changes only bridging. A version-1.2 state loaded into an
-        unbridged descriptor adopts the current record version without changing
-        its function. A bridged receiving descriptor rejects every pre-1.3 state:
-        state dictionaries do not identify the source's bridging configuration.
-        Fine-tuning first loads a compatible plain checkpoint into its original
-        unbridged model, migrates it, then transfers the state to the bridged
-        target. Legacy bridged checkpoints cannot be migrated this way.
-
-        Parameters
-        ----------
-        variables
-            Stored variables keyed by ``state_dict`` name, mutated in place.
-        version
-            Version the variables were written at.
-        prefix
-            Key prefix of this descriptor within ``variables``.
-
-        Returns
-        -------
-        float
-            Version the variables express after migration.
+        Records before 1.1 retain their forward semantics. Later compatible
+        records need no parameter transformation. Updating the version does
+        not convert weights between different architectures.
         """
-        check_bridging_record_version(
-            {"inner_clamp_f_inner": self.bridging_f_inner}, version
-        )
-        if 1.1 <= version < 1.2:
-            gate_key = prefix + "env_seed_embedding.spin_scale"
-            if self.use_spin is not None and not any(self.use_spin):
-                # dpmodel serialization names NativeLayer weights ``matrix``;
-                # pt_expt state dictionaries expose the wrapped attribute as ``w``.
-                dormant_keys = (
-                    "spin_embedding.mag_layer2.matrix",
-                    "spin_embedding.mag_layer2.w",
-                    "spin_embedding.adam_spin_vec_weight",
-                    "spin_embedding.adam_spin_nbr_weight",
-                    "env_seed_embedding.spin_scale",
-                )
-                for name in dormant_keys:
-                    key = prefix + name
-                    if key in variables:
-                        xp = array_api_compat.array_namespace(variables[key])
-                        variables[key] = xp.zeros_like(variables[key])
-            elif gate_key in variables:
-                variables[gate_key] = variables[gate_key] ** 2
-            version = 1.2
-
-        if 1.2 <= version < BRIDGING_RECORD_VERSION:
-            return BRIDGING_RECORD_VERSION
+        if 1.1 <= version < self.LATEST_VERSION:
+            return self.LATEST_VERSION
         return version
 
     def serialize(self) -> dict[str, Any]:
@@ -2994,12 +2777,18 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "eps": self.eps,
                 "trainable": self.trainable,
                 "seed": self.seed,
-                "inner_clamp_f_inner": self.bridging_f_inner,
-                "inner_clamp_f_outer": self.bridging_f_outer,
-                "inner_clamp_scale": self.bridging_scale,
+                "contact_clamp": (
+                    None if self.contact_clamp is None else self.contact_clamp.inner
+                ),
+                "contact_support": (
+                    DEFAULT_SUPPORT
+                    if self.contact_clamp is None
+                    else self.contact_clamp.support
+                ),
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
                 "use_spin": self.use_spin,
+                "spin_mode": self.spin_mode,
             },
             "@variables": self._variables(),
             "env_mat": EnvMat(self.rcut, self.rcut, self.eps).serialize(),
@@ -3020,9 +2809,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         variables = data.pop("@variables")
         data.pop("env_mat", None)
         config.pop("s2_grid_resolution", None)
-        migrate_inner_clamp_keys(config)
+        drop_retired_descriptor_options(config)
         obj = cls(**config)
-        obj.version = obj._migrate_variables(variables, version)
+        obj.version = obj._migrate_version(version)
         obj._load_variables(variables)
         return obj
 

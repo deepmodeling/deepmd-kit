@@ -366,6 +366,61 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             atol=1e-12,
         )
 
+    @pytest.mark.parametrize(
+        "options",  # learned pseudo-query vs input-dependent query
+        [{"block_attn_res": "independent"}, {"full_attn_res": "dependent"}],
+    )
+    def test_depth_attention_residual_keeps_symbolic_node_count(
+        self, options: dict
+    ) -> None:
+        """A depth-attention residual exported at one node count serves another."""
+        descriptor = make_descriptor(self.nt, self.sel_mix, self.rcut, **options)
+        attention = (
+            descriptor.final_block_attn_res
+            if "block_attn_res" in options
+            else descriptor.final_full_attn_res
+        ).cpu()
+        generator = torch.Generator().manual_seed(17)
+        with torch.no_grad():
+            for parameter in attention.parameters():
+                parameter.copy_(
+                    torch.randn(
+                        parameter.shape, generator=generator, dtype=torch.float64
+                    )
+                )
+
+        class Aggregate(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attention = attention
+
+            def forward(
+                self, first: torch.Tensor, second: torch.Tensor, third: torch.Tensor
+            ) -> torch.Tensor:
+                return self.attention(
+                    sources=[first, second, third],
+                    scalar_extractor=lambda value: value[:, 0, 0, :],
+                    current_x=third,
+                )
+
+        def values(n_node: int) -> tuple[torch.Tensor, ...]:
+            return tuple(
+                torch.randn(n_node, 9, 1, 16, generator=generator, dtype=torch.float64)
+                for _ in range(3)
+            )
+
+        n_node = torch.export.Dim("n_node", min=2)
+        exported = torch.export.export(
+            Aggregate(),
+            values(7),
+            dynamic_shapes=tuple({0: n_node} for _ in range(3)),
+            strict=False,
+        )
+        replay = values(5)
+        torch.testing.assert_close(
+            exported.module()(*replay), Aggregate()(*replay), rtol=1e-12, atol=1e-12
+        )
+
     def test_trainable_parameters(self) -> None:
         # `_promote_trainable_tree` must promote every weight that is a
         # trainable nn.Parameter in the reference pt SeZM implementation

@@ -8,19 +8,13 @@ This pins the spin+ZBL variant end-to-end, which previously had NO LAMMPS
 coverage at all: single-rank pair/virial against a LIVE ``DeepPot`` reference
 computed at test-setup time on this module's own geometry, AND 2-rank vs
 1-rank MPI parity -- including a close-pair geometry whose ~0.978 A Ni-Ni
-pair straddles the ``processors 2 1 1`` domain boundary INSIDE the bridging
-transition zone (the generator sets ``bridging_r_inner = 0.8`` /
-``bridging_r_outer = 1.2``, verbatim from ``gen_dpa4_zbl.py``; 0.8 < 0.978 <
-1.2).  Bridging enables the descriptor's Source Freeze Propagation Gate,
-whose per-node ``[log_eta, zero_count]`` partials fold a node's FULL
-outgoing-edge set; edges exist only for owned centres, so the partials are
-rank-incomplete.  The SFPG cross-rank completion -- one reverse-accumulate
-(``border_op_backward``) + forward-broadcast (``border_op``) exchange of the
-per-node partials inside the with-comm artifact -- completes them before the
-gate is applied, which is what makes bridged models multi-rank capable
-(issue #5906).  The close-pair test is the geometry that actually exercises
-that exchange: without a bridging-zone pair split across ranks the parity
-comparison would be vacuous.
+pair straddles the ``processors 2 1 1`` domain boundary inside the range of
+the analytical term and below the frozen radius of its contact clamp (Ni-Ni:
+data edge 2.20 A at the covalent start, frozen below 1.65 A).  The analytical
+term and the clamp read the types of both ends of every edge, and the source
+of an edge that crosses the boundary is a ghost row, so the close-pair test
+is the geometry that exercises the ghost handling of both, besides the
+per-block ghost feature exchange of the with-comm artifact.
 
 Reference (energy / force / force_mag / virial) values are computed LIVE at
 test-setup time via ``deepmd.infer.DeepPot.eval`` on the archive for the
@@ -139,10 +133,9 @@ def test_pair_deepspin_virial(lammps) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Multi-rank: the spin+ZBL graph .pt2 carries the nested with-comm artifact
-# (which includes the SFPG reverse-accumulate + broadcast exchange, issue
-# #5906), so a 2-rank run must REPRODUCE the 1-rank result (energy, force
-# and force_mag) rather than fail fast.
+# Multi-rank: the spin+ZBL graph .pt2 carries the nested with-comm artifact,
+# so a 2-rank run must REPRODUCE the 1-rank result (energy, force and
+# force_mag) rather than fail fast.
 # ---------------------------------------------------------------------------
 
 
@@ -165,14 +158,14 @@ def test_pair_deepspin_mpi_matches_single_rank() -> None:
     The spin+ZBL DPA4 graph ``.pt2`` carries the nested with-comm artifact,
     so ``DeepSpinPTExpt::compute_inner`` drives a real domain-decomposed run
     through ``run_model_graph_with_comm``: the per-block ghost FEATURE
-    refresh (including the SFPG partials exchange) rides ``border_op`` /
+    refresh rides ``border_op`` /
     ``border_op_backward`` while ghost SPINS arrive via the LAMMPS ``sp``
     forward-comm.  Both the conservative force and the MAGNETIC force must
     be rank-count invariant.
 
     With this (unshifted) geometry the close Ni-Ni pair sits entirely on
     one rank's subdomain, so this test pins the baseline multi-rank route;
-    the boundary-straddling bridging-zone pair is exercised by
+    the boundary-straddling close pair is exercised by
     ``test_pair_deepspin_mpi_close_pair_across_ranks`` below.
     """
     single = _run_mpi(data_file, 1, "1 1 1")
@@ -187,21 +180,17 @@ def test_pair_deepspin_mpi_matches_single_rank() -> None:
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
 def test_pair_deepspin_mpi_close_pair_across_ranks() -> None:
-    """2-rank vs 1-rank parity with the bridging-zone Ni-Ni pair straddling
-    the rank boundary.
+    """2-rank vs 1-rank parity with the close Ni-Ni pair straddling the rank
+    boundary.
 
     The shifted geometry places the ~0.978 A Ni-Ni pair at x = 6.93 / 6.19,
     on OPPOSITE sides of the ``processors 2 1 1`` boundary at lx/2 = 6.5,
-    and 0.8 < 0.978 < 1.2 puts the pair inside the bridging transition zone
-    -- so each rank's per-node ``[log_eta, zero_count]`` SFPG partial for
-    the pair is rank-incomplete and correctness depends on the
-    reverse-accumulate + broadcast exchange inside the with-comm artifact
-    (issue #5906).
+    inside the range of the analytical term and below the frozen radius of
+    the pair's contact clamp, so both read the type of a ghost source.
     """
     # Static straddle guard: the two Ni atoms must sit on opposite sides of
-    # the lx/2 boundary.  Without this the SFPG-exchange parity below is
-    # vacuous (the whole bridging-zone pair would be owned by one rank and
-    # the cross-rank completion would never be exercised).
+    # the lx/2 boundary, or the whole close pair would be owned by one rank
+    # and no ghost source would be read.
     half_lx = box[1] / 2.0
     x_lo, x_hi = sorted(coord_close_pair[:2, 0])
     assert x_lo < half_lx < x_hi, (

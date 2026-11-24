@@ -1045,10 +1045,9 @@ def _freeze_sezm_to_pt2(
 
     # Second artifact: the LAMMPS multi-rank with-comm graph. It threads the
     # eight border_op communication tensors so cross-rank ghost features are
-    # exchanged between interaction blocks. Bridging models take this path: they
-    # report supports_edge_parallel()=True since the Source Freeze Propagation
-    # gate's per-node partials are completed across ranks by
-    # DescrptSeZM._gate_partial_exchange (issue #5906).
+    # exchanged between interaction blocks. Bridged models take this path as
+    # well: the contact clamp acts on each edge alone and the analytical term
+    # reads the extended types, so neither needs a cross-rank exchange.
     has_comm_artifact = (
         with_comm
         and model.export_lower_input_kind() == "edge_vec"

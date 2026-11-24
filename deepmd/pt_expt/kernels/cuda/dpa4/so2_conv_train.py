@@ -1009,19 +1009,18 @@ class SO2ValueTrainCuda:
         )
 
         run_coeff, _, run_exponents, _ = wigner_run_tables(conv.lmax)
-        self._run_coeff_cpu = run_coeff
-        self._run_coeff: Tensor | None = None
+        # The table is a non-persistent buffer of the convolution: it moves
+        # with the module and every trace captures it as a real tensor.
+        conv.register_buffer(
+            "_cuda_run_coeff",
+            run_coeff.to(device=next(conv.parameters()).device),
+            persistent=False,
+        )
         self._run_exponents = [int(value) for value in run_exponents.reshape(-1)]
 
-    def _run_coefficients(self, device: torch.device, dtype: torch.dtype) -> Tensor:
-        """Return the packed-run coefficient table on the compute device."""
-        if (
-            self._run_coeff is None
-            or self._run_coeff.device != device
-            or self._run_coeff.dtype != dtype
-        ):
-            self._run_coeff = self._run_coeff_cpu.to(device=device, dtype=dtype)
-        return self._run_coeff
+    def _run_coefficients(self, dtype: torch.dtype) -> Tensor:
+        """Return the packed-run coefficient table in the compute dtype."""
+        return self._conv._cuda_run_coeff.to(dtype=dtype)
 
     @torch.amp.autocast("cuda", enabled=False)
     def edge_runs(self, edge_cache: Any) -> Tensor:
@@ -1042,9 +1041,7 @@ class SO2ValueTrainCuda:
             )
             runs = torch.matmul(
                 monomials,
-                self._run_coefficients(quaternion.device, monomials.dtype).transpose(
-                    0, 1
-                ),
+                self._run_coefficients(monomials.dtype).transpose(0, 1),
             )
             if store is not None:
                 store[key] = runs

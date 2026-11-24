@@ -398,8 +398,9 @@ def test_compiled_lower_accepts_a_compacted_node_axis(vacuum_ref: bool) -> None:
                 torch.testing.assert_close(actual, reference)
 
 
-def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
-    """A referenced task cannot supply the compiled graph of a plain task."""
+@pytest.mark.parametrize("task_state", ["vacuum_reference", "contact_edges"])
+def test_shared_weights_preserve_task_local_compiled_outputs(task_state: str) -> None:
+    """Sharing weights preserves each task's own energy, force and virial."""
     from deepmd.pt_expt.train.training import (
         _CompiledModel,
         _detect_task_buffers,
@@ -407,10 +408,13 @@ def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
     )
 
     models = []
-    for has_preset in (True, False):
+    for task in range(2):
+        has_preset = task_state == "vacuum_reference" and task == 0
         config = _config()
         config["type_map"] = ["O", "H"]
         config["descriptor"].update({"channels": 8, "lmax": 2})
+        if task_state == "contact_edges":
+            config["descriptor"]["contact_clamp"] = 0.75
         config["fitting_net"].update(
             {"neuron": [8, 8], "dim_case_embd": 2, "vacuum_ref": True}
         )
@@ -427,14 +431,26 @@ def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
             )
         models.append(model)
 
+    if task_state == "contact_edges":
+        # Only the second task has observed three shorter O-H contacts.
+        clamp = models[1].get_descriptor().contact_clamp
+        types = torch.zeros(3, dtype=torch.long, device=env.DEVICE)
+        clamp.observe(
+            torch.tensor([0.21, 0.22, 0.23], dtype=torch.float64, device=env.DEVICE),
+            types,
+            types + 1,
+            types == 0,
+            torch.arange(3, device=env.DEVICE),
+        )
     coord = torch.tensor(
-        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        [[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [0.0, 1.0, 0.0]],
         dtype=torch.float64,
         device=env.DEVICE,
     )
     atype = torch.tensor([0, 1, 1], device=env.DEVICE)
     n_node = torch.tensor([3], device=env.DEVICE)
     shared_graphs = {}
+    reference_energies = []
     for model in models:
         key = _get_model_structure_key(model)
         group = [other for other in models if _get_model_structure_key(other) == key]
@@ -447,9 +463,11 @@ def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
             compiled_by_structure=shared_graphs,
         )
         expected = model.forward_ragged(coord, atype, n_node)
+        reference_energies.append(expected["energy"].detach())
         actual = compiled.forward_ragged(coord, atype, n_node)
         for name in ("energy", "force", "virial"):
             torch.testing.assert_close(actual[name], expected[name])
+    assert not torch.allclose(*reference_energies)
 
 
 def test_vacuum_descriptor_never_materializes_the_neighbor_capacity(
