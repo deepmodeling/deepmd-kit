@@ -7,12 +7,26 @@ import zipfile
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.model.model import get_model
-from deepmd.infer import DeepPot
-from deepmd.pt_expt.entrypoints.main import change_bias
-from deepmd.pt_expt.utils.serialization import deserialize_to_file, serialize_from_file
-from ..common.dpmodel.test_dpa4_native_spin_model import NATIVE_SPIN_CONFIG
-from ..dpa4_fixtures import jitter_zero_arrays
+from deepmd.dpmodel.model.model import (
+    get_model,
+)
+from deepmd.infer import (
+    DeepPot,
+)
+from deepmd.pt_expt.entrypoints.main import (
+    change_bias,
+)
+from deepmd.pt_expt.utils.serialization import (
+    deserialize_to_file,
+    serialize_from_file,
+)
+
+from ..common.dpmodel.test_dpa4_native_spin_model import (
+    NATIVE_SPIN_CONFIG,
+)
+from ..dpa4_fixtures import (
+    jitter_zero_arrays,
+)
 
 
 @pytest.mark.parametrize("spin", [False, True])
@@ -43,7 +57,9 @@ def test_graph_round_trip(tmp_path, spin):
                 coords, np.eye(3) * 8, atype, **kwargs
             )
         )
-    from deepmd.pt_expt.model.model import BaseModel
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
 
     old_bias = (
         BaseModel.deserialize(model).get_out_bias().detach().cpu().numpy().ravel()
