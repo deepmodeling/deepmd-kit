@@ -5314,6 +5314,132 @@ def optimizer_hybrid_muon() -> list[Argument]:
             "per Muon block, applies EMA smoothing, and rescales Muon updates "
             "to improve stability. Adam/AdamW routes are unchanged.",
         ),
+        Argument(
+            "physmuon",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt")
+            + "Enable the optimizer-side PhysMuon extensions (arXiv:2608.22994) "
+            "on the Muon route: two-mode relaxation memory, oscillation-gated "
+            "readout, step-0 background tracking, and optional spike guard. "
+            "When false (default), HybridMuon uses its standard single-EMA "
+            "momentum bit-for-bit and parameter routing is unchanged. Setting "
+            "physmuon=true activates the general interatomic-potential preset "
+            "(fast/slow EMAs 0.90/0.995, gated readout w_max=0.3, switch at "
+            "30.77% of training).",
+        ),
+        Argument(
+            "physmuon_start_ratio",
+            float,
+            optional=True,
+            default=0.3077,
+            doc=supported_backends("pt")
+            + "Fraction of total training steps at which the PhysMuon two-mode "
+            "readout switches on (default 0.3077). Ignored when "
+            "physmuon_start_step is explicitly set.",
+        ),
+        Argument(
+            "physmuon_start_step",
+            [int, type(None)],
+            optional=True,
+            default=None,
+            doc=supported_backends("pt")
+            + "Explicit zero-based optimizer step at which the PhysMuon "
+            "two-mode readout switches on. Overrides physmuon_start_ratio "
+            "when set.",
+        ),
+        Argument(
+            "physmuon_beta_fast",
+            float,
+            optional=True,
+            default=0.90,
+            doc=supported_backends("pt")
+            + "EMA decay of the fast relaxation mode in PhysMuon "
+            "(default 0.90; mean memory length beta/(1-beta) = 9 steps).",
+        ),
+        Argument(
+            "physmuon_beta_slow",
+            float,
+            optional=True,
+            default=0.995,
+            doc=supported_backends("pt")
+            + "EMA decay of the slow relaxation mode in PhysMuon "
+            "(default 0.995; mean memory length 199 steps). Tune per task "
+            "and batch size.",
+        ),
+        Argument(
+            "physmuon_w_fast",
+            float,
+            optional=True,
+            default=0.3,
+            doc=supported_backends("pt")
+            + "Fixed fast-mode readout weight used when physmuon_gate is false "
+            "(default 0.3). Set physmuon_w_fast=0.0 with physmuon_gate=false "
+            "for a staged fast-to-slow schedule (useful to compare on "
+            "large-batch runs).",
+        ),
+        Argument(
+            "physmuon_gate",
+            bool,
+            optional=True,
+            default=True,
+            doc=supported_backends("pt")
+            + "Enable oscillation-gated fast-mode readout per Muon parameter "
+            "tensor (default true).",
+        ),
+        Argument(
+            "physmuon_w_max",
+            float,
+            optional=True,
+            default=0.3,
+            doc=supported_backends("pt")
+            + "Upper bound on the gated fast-mode readout weight when "
+            "physmuon_gate is true (default 0.3 for interatomic potentials).",
+        ),
+        Argument(
+            "physmuon_gate_beta",
+            float,
+            optional=True,
+            default=0.9,
+            doc=supported_backends("pt")
+            + "EMA decay for PhysMuon gate oscillation and drift statistics "
+            "(default 0.9; performance is nearly flat over 0.80-0.95).",
+        ),
+        Argument(
+            "physmuon_shadow",
+            bool,
+            optional=True,
+            default=True,
+            doc=supported_backends("pt")
+            + "Track the fast/slow modes and gate statistics from step 0 "
+            "(default true). Before the switch step, "
+            "updates match baseline HybridMuon while the modes warm up. "
+            "When false, both modes are seeded from the live momentum buffer "
+            "at the switch step.",
+        ),
+        Argument(
+            "physmuon_spike_guard",
+            float,
+            optional=True,
+            default=0.0,
+            doc=supported_backends("pt")
+            + "Optional heavy-tailed gradient safeguard threshold K (disabled "
+            "when <= 0.0). Set to e.g. 10.0 on large crystal datasets with "
+            "heavy-tailed force gradients (such as MPtrj) to leave the slow "
+            "mode unchanged on steps whose pre-clip "
+            "global gradient norm exceeds K times the running median (or is "
+            "non-finite).",
+        ),
+        Argument(
+            "physmuon_spike_window",
+            int,
+            optional=True,
+            default=1000,
+            doc=supported_backends("pt")
+            + "Sliding window length (steps) for the PhysMuon spike-guard "
+            "running median (default 1000).",
+        ),
     ]
 
 

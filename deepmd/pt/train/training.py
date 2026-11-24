@@ -1006,6 +1006,7 @@ class Trainer:
         # TODO add optimizers for multitask
         # author: iProzd
         initial_lr = self.lr_schedule.value(self.start_step)
+        self._hybrid_muon_optimizer: HybridMuonOptimizer | None = None
         if self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
@@ -1032,6 +1033,19 @@ class Trainer:
                 }
             elif self.opt_type == "HybridMuon":
                 cls = HybridMuonOptimizer
+                pm_start_step = self.opt_param.get("physmuon_start_step")
+                if pm_start_step is None:
+                    pm_start_ratio = float(
+                        self.opt_param.get("physmuon_start_ratio", 0.3077)
+                    )
+                    if not (0.0 <= pm_start_ratio <= 1.0):
+                        raise ValueError(
+                            "physmuon_start_ratio must be in [0, 1], "
+                            f"got {pm_start_ratio}."
+                        )
+                    pm_start_step = round(self.num_steps * pm_start_ratio)
+                else:
+                    pm_start_step = int(pm_start_step)
                 extra = {
                     "adam_betas": adam_betas,
                     "momentum": float(self.opt_param["momentum"]),
@@ -1049,6 +1063,31 @@ class Trainer:
                     # fall back to the per-tensor path under zero_stage >= 2.
                     # DDP / ZeRO-1 keep plain tensors and use the default.
                     "use_foreach": False if self.sharding.shards_parameters else None,
+                    "physmuon": bool(self.opt_param.get("physmuon", False)),
+                    "physmuon_start_step": pm_start_step,
+                    "physmuon_beta_fast": float(
+                        self.opt_param.get("physmuon_beta_fast", 0.90)
+                    ),
+                    "physmuon_beta_slow": float(
+                        self.opt_param.get("physmuon_beta_slow", 0.995)
+                    ),
+                    "physmuon_w_fast": float(
+                        self.opt_param.get("physmuon_w_fast", 0.3)
+                    ),
+                    "physmuon_gate": bool(self.opt_param.get("physmuon_gate", True)),
+                    "physmuon_w_max": float(self.opt_param.get("physmuon_w_max", 0.3)),
+                    "physmuon_gate_beta": float(
+                        self.opt_param.get("physmuon_gate_beta", 0.9)
+                    ),
+                    "physmuon_shadow": bool(
+                        self.opt_param.get("physmuon_shadow", True)
+                    ),
+                    "physmuon_spike_guard": float(
+                        self.opt_param.get("physmuon_spike_guard", 0.0)
+                    ),
+                    "physmuon_spike_window": int(
+                        self.opt_param.get("physmuon_spike_window", 1000)
+                    ),
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -1064,7 +1103,12 @@ class Trainer:
                     self.optimizer.optim if self.sharding.stage == 1 else self.optimizer
                 )
                 target_optimizer.set_param_names(runtime_named_parameters)
+                self._hybrid_muon_optimizer = target_optimizer
             self._load_optimizer_state(optimizer_state_dict)
+            if self._hybrid_muon_optimizer is not None and self.restart_training:
+                for group in self._hybrid_muon_optimizer.param_groups:
+                    if group.get("physmuon", False) and "pm_step" not in group:
+                        group["pm_step"] = int(self.start_step)
             self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
                 self.lr_schedule,
@@ -1435,6 +1479,8 @@ class Trainer:
                         stable=not self.sharding.shards_parameters,
                     )
                     self.nonfinite_grad_guard.update(total_norm)
+                if self._hybrid_muon_optimizer is not None and total_norm is not None:
+                    self._hybrid_muon_optimizer.set_pre_clip_grad_norm(total_norm)
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
