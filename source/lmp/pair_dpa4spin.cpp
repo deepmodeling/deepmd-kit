@@ -449,6 +449,11 @@ void PairDPA4Spin::coeff(int narg, char** arg) {
 }
 
 void PairDPA4Spin::init_style() {
+  if (comm->style != Comm::BRICK) {
+    error->all(FLERR,
+               "DeepMD pair styles do not support comm_style tiled; "
+               "use comm_style brick");
+  }
   neighbor->add_request(this, NeighConst::REQ_FULL);
 
   const std::string style = force->pair_style;
