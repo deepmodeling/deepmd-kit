@@ -90,12 +90,12 @@ when available. Without an optional search library,
 the native extended-coordinate search has quadratic cost in the number of
 atoms (including periodic images).
 
-| `nlist_backend` | Neighbor search |
-| --- | --- |
-| `"auto"` | Select by availability and frame count. |
-| `"native"` | Use the native extended-coordinate builder for neighbor-list inputs. |
-| `"vesin"` | Use Vesin's cell-list search, which scales as $O(N)$ at fixed density and cutoff. Install `vesin[torch]>=0.6`. Explicitly requesting Vesin without the Torch bindings raises `ImportError`. |
-| `"nv"` | Use the CPU or CUDA search provided by `nvalchemi-toolkit-ops`. |
+| `nlist_backend` | Neighbor search                                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"auto"`        | Select by availability and frame count.                                                                                                                                                     |
+| `"native"`      | Use the native extended-coordinate builder for neighbor-list inputs.                                                                                                                        |
+| `"vesin"`       | Use Vesin's cell-list search, which scales as $O(N)$ at fixed density and cutoff. Install `vesin[torch]>=0.6`. Explicitly requesting Vesin without the Torch bindings raises `ImportError`. |
+| `"nv"`          | Use the CPU or CUDA search provided by `nvalchemi-toolkit-ops`.                                                                                                                             |
 
 ```py
 from deepmd.calculator import DP
