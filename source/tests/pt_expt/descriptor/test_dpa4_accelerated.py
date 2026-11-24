@@ -451,6 +451,9 @@ def test_native_spin_cuda_matches_reference_and_symmetry(
     data = jitter_zero_arrays(native.serialize(), np.random.default_rng(319))
     reference = DescrptDPA4.deserialize(data).cuda().eval()
     monkeypatch.setenv("DP_CUDA_INFER", "2")
+    # Test fused numerics with the calibrated device ridge, independently of
+    # the runtime profitability heuristic that can decline this shape.
+    monkeypatch.setattr(so2_conv, "_device_ridge_scale", lambda: 1.0)
     fused = DescrptDPA4.deserialize(data).cuda().eval()
     conv = fused.blocks[0].so2_conv
     assert conv._cuda_conv_fn is not None
