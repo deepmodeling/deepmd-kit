@@ -21,7 +21,7 @@ env:
 jobs:
   test_python:
     name: Test Python on CUDA (${{ matrix.shard }})
-    runs-on: gpu
+    runs-on: [self-hosted, gpu, linux-x64]
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +122,7 @@ jobs:
 
   test_cc:
     name: Test ${{ matrix.name }} on CUDA
-    runs-on: gpu
+    runs-on: [self-hosted, gpu, linux-x64]
     strategy:
       fail-fast: false
       matrix:
