@@ -24,7 +24,7 @@ The {ref}`optimizer <optimizer>` section in `input.json` is given as follows
 
 ### HybridMuon with PhysMuon
 
-For the PyTorch backend, {ref}`HybridMuon <optimizer[HybridMuon]>` optionally supports the optimizer-side [PhysMuon](https://github.com/Hyyu-Lab/PhysMuon) ([arXiv:2608.22994](https://arxiv.org/abs/2608.22994)) extensions on its Muon route: two-mode relaxation memory, oscillation-gated readout, step-0 background tracking, and an optional running-median spike guard. All PhysMuon options default to off (`"physmuon": false`), keeping baseline `HybridMuon` (including parameter routing, Newton-Schulz, Magma-lite, and CUDA graphs) bit-for-bit unchanged.
+For the PyTorch backends (`--pt` and `--pt-expt`), {ref}`HybridMuon <optimizer[HybridMuon]>` optionally supports the optimizer-side [PhysMuon](https://github.com/Hyyu-Lab/PhysMuon) ([arXiv:2608.22994](https://arxiv.org/abs/2608.22994)) extensions on its Muon route: two-mode relaxation memory, oscillation-gated readout, step-0 background tracking, and an optional running-median spike guard. All PhysMuon options default to off (`"physmuon": false`), keeping baseline `HybridMuon` (including parameter routing, Newton-Schulz, Magma-lite, and CUDA graphs) bit-for-bit unchanged.
 
 Keep your tuned `HybridMuon` learning rate, schedule, `weight_decay`, and `momentum`, and enable it via:
 
