@@ -509,7 +509,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--system",
         default=".",
         type=str,
-        help="The system dir. Recursively detect systems in this directory",
+        help="The system dir or LMDB dataset. Recursively detect systems in this directory",
     )
     parser_eval_desc_subgroup.add_argument(
         "-f",
@@ -523,7 +523,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         default="desc",
         type=str,
-        help="Output directory for descriptor files. Descriptors will be saved as desc/(system_name).npy",
+        help="Output directory for descriptor files. Descriptors will be saved as desc/(system_name).npy (or desc/(system_name)_nloc(N).npy for mixed-nloc LMDB datasets)",
     )
     parser_eval_desc.add_argument(
         "--dtype",
@@ -569,7 +569,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--system",
         default=".",
         type=str,
-        help="The system dir. Recursively detect systems in this directory",
+        help="The system dir or LMDB dataset. Recursively detect systems in this directory",
     )
     parser_embedding_subgroup.add_argument(
         "-f",
@@ -583,7 +583,8 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         default="embedding.hdf5",
         type=str,
-        help="Output HDF5 file. Each system is stored as a group holding the "
+        help="Output HDF5 file. Each system (or each atom-count group of a "
+        "mixed-nloc LMDB dataset) is stored as a group holding the "
         "descriptor, atomic_feature, and structural_feature datasets.",
     )
     parser_embedding.add_argument(

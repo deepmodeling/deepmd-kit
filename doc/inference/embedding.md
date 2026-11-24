@@ -37,9 +37,10 @@ typical usage is
 dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
 ```
 
-where `-m` gives the model, `-s` the path to the system directory (or `-f` for a
-datafile listing system directories, one per line), and `-o` the output HDF5
-file. The model is a training checkpoint (`.pt`) or a frozen model: a `.pth`
+where `-m` gives the model, `-s` the path to the system directory or LMDB
+dataset (or `-f` for a datafile listing system directories or LMDB datasets,
+one per line), and `-o` the output HDF5 file. The model is a training
+checkpoint (`.pt`) or a frozen model: a `.pth`
 written by `dp --pt freeze`, or a `.pt2` or `.pte` written by
 `dp --pt-expt freeze`. The `.pt2` that `dp --pt freeze` writes for DPA4/SeZM is
 not supported; read the training checkpoint of such a model instead. Use
@@ -68,7 +69,11 @@ dp embed --help
 
 The output is a single HDF5 file. Each system is stored as a group named after
 the system directory, with the source directory recorded in the group's
-`system` attribute. Each group holds the datasets `descriptor`,
+`system` attribute. LMDB datasets are read in ascending storage order without
+shuffling: a single-atom-count LMDB produces one group named after the LMDB
+directory, while a mixed-`nloc` LMDB is partitioned in ascending `nloc` order
+into groups named `<basename>_nloc<N>` (with `system` attribute
+`<path> [nloc=<N>]`). Each group holds the datasets `descriptor`,
 `atomic_feature`, `structural_feature`, and `atom_types` (with shape
 (nframes, natoms); the frame axis follows the system's frame order), together
 with an `nframes` attribute. In a system whose frames are padded to a common
