@@ -20,8 +20,8 @@
 // the current stream and on a caller's stream, without the optional outputs
 // and inputs, after its inputs change in place, across a change of its key,
 // while another thread holds a capture of its own open, and under a charge
-// state applied at run time. A graph with halo nodes, which domain
-// decomposition hands over, is evaluated eagerly instead.
+// state applied at run time. The extended-node tests also cover domains with
+// ghost atoms, including changes in the number of owned atoms.
 //
 // The cases form a typed test suite in this namespace, which each suite
 // instantiates in the same namespace.
@@ -754,21 +754,35 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_new_key_releases_the_replay) {
 
 TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
              a_graph_with_halo_nodes_matches_the_host_entry) {
-  // The unfolded graph gives every ghost atom a node, whose forces the caller
-  // adds to those of its owner, as the reverse communication of domain
-  // decomposition does; the extents of such a graph change with every
-  // neighbor rebuild, so it is evaluated eagerly. Its rows are those of the
-  // folded graph, so its energies, folded forces and virial agree with the
-  // host entry points up to the summation order of the run, which the node
-  // count of the graph configures.
+  // Every ghost has a node of its own; reverse communication adds its force
+  // to the owner. Compare the extended graph to the folded host reference
+  // after warmup, capture and replay.
   const auto graph = this->build_graph(this->system, /*fold=*/false);
   ASSERT_FALSE(this->dp.canonical_graph_requires_halo());
   this->use_graph(graph);
   ASSERT_GT(this->nodes, this->natoms);
   this->allocate_outputs();
-  for (int call = 0; call < 2; ++call) {
+  for (int call = 0; call < 3; ++call) {
     SCOPED_TRACE("call " + std::to_string(call));
     this->expect_folded(this->evaluate(), graph.owner);
+  }
+  if constexpr (!TypeParam::kSpin) {
+    // Promote the first empty ghost row to a local atom with no neighbours.
+    // Keep all buffer addresses stable and reserve one extra output for it.
+    ASSERT_GT(this->nodes, this->natoms + 1);
+    ++this->natoms;
+    this->allocate_outputs();
+    const auto reference = this->evaluate();
+    --this->natoms;
+    this->out_atom_energy.fill_(123456.0);
+    this->run_device_entry(nullptr);
+    EXPECT_DOUBLE_EQ(
+        this->out_atom_energy[this->natoms].template item<double>(), 123456.0);
+    ++this->natoms;
+    this->expect_equal(
+        this->evaluate(), reference,
+        "a replay after the owned count changes in the same bucket");
+    --this->natoms;
   }
   const DP_HaloExchange unused{};
   EXPECT_THROW(this->run_device_entry(nullptr, true, true, &unused),

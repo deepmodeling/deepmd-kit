@@ -1186,10 +1186,11 @@ class CompactCanonicalGraphKokkos : protected Pointers {
   // asks for it. Bond vectors are the center-to-neighbor displacements divided
   // by ``dist_unit_cvt_factor``, the same conversion the pair style applies to
   // coordinates it hands the model.
-  void build(class NeighList* list,
-             double cutoff,
-             double dist_unit_cvt_factor,
-             bool source_csr) {
+  int build(class NeighList* list,
+            double cutoff,
+            double dist_unit_cvt_factor,
+            bool source_csr,
+            bool pad_nodes = false) {
     refresh_nodes();
     auto* k_list = static_cast<NeighListKokkos<DeviceType>*>(list);
     const int inum = k_list->inum;
@@ -1226,6 +1227,20 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     const int node_count_int = nnode_model;
     const std::size_t node_count = static_cast<std::size_t>(node_count_int);
     const int nall = atom->nlocal + atom->nghost;
+    // Keep the extended-node axis stable across small changes to a domain.
+    // Only the model sees the extra rows; physical neighbor construction and
+    // the scatter back to LAMMPS still use the exact node count.
+    constexpr std::size_t width = 256;
+    std::size_t capacity = node_count;
+    if (pad_nodes && nloc_model < nnode_model) {
+      capacity = std::min<std::size_t>((node_count + width - 1) / width * width,
+                                       std::numeric_limits<int>::max());
+      // Reuse the preceding bucket on small decreases in the ghost count.
+      const auto reserved = d_destination_row_ptr.extent(0);
+      if (reserved > capacity + 1 && reserved - 1 - capacity <= width) {
+        capacity = reserved - 1;
+      }
+    }
 
     // === Node types in the artifact's index layout ===
     // The single-pass fill writes them alongside the rows; every other
@@ -1233,9 +1248,10 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     atomKK->sync(execution_space, TYPE_MASK);
     auto type = atomKK->k_type.template view<DeviceType>();
     auto type_map = d_type_map;
-    if ((int)d_model_type.extent(0) < node_count_int) {
+    if (d_model_type.extent(0) < capacity) {
       d_model_type = Kokkos::View<std::int64_t*, DeviceType>(
-          "compact_canonical:model_type", nall);
+          "compact_canonical:model_type",
+          std::max<std::size_t>(nall, capacity));
     }
     auto model_type = d_model_type;
 
@@ -1243,17 +1259,17 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     auto x = atomKK->k_x.template view<DeviceType>();
     auto tag = atomKK->k_tag.template view<DeviceType>();
 
-    if (d_destination_row_ptr.extent(0) < node_count + 1) {
+    if (d_destination_row_ptr.extent(0) < capacity + 1) {
       d_destination_row_ptr = Kokkos::View<std::int64_t*, DeviceType>(
-          "compact_canonical:destination_row_ptr", node_count + 1);
+          "compact_canonical:destination_row_ptr", capacity + 1);
     }
-    if (source_csr && d_source_row_ptr.extent(0) < node_count + 1) {
+    if (source_csr && d_source_row_ptr.extent(0) < capacity + 1) {
       d_source_counts = Kokkos::View<std::int64_t*, DeviceType>(
-          "compact_canonical:source_counts", node_count);
+          "compact_canonical:source_counts", capacity);
       d_source_row_ptr = Kokkos::View<std::int64_t*, DeviceType>(
-          "compact_canonical:source_row_ptr", node_count + 1);
+          "compact_canonical:source_row_ptr", capacity + 1);
       d_source_cursor = Kokkos::View<std::int64_t*, DeviceType>(
-          "compact_canonical:source_cursor", node_count);
+          "compact_canonical:source_cursor", capacity);
     }
     if (source_csr) {
       Kokkos::deep_copy(typename DeviceType::execution_space(), d_source_counts,
@@ -1261,7 +1277,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     }
     if (node_count_int == 0) {
       storage_count = 0;
-      return;
+      return 0;
     }
     auto destination_row_ptr = d_destination_row_ptr;
     auto source_counts = d_source_counts;
@@ -1631,8 +1647,18 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     }
     reserve_edges(edge_count);
     storage_count = static_cast<std::int64_t>(edge_capacity);
+    if (capacity > node_count) {
+      Kokkos::parallel_for(
+          "compact_canonical:pad_nodes",
+          Kokkos::RangePolicy<DeviceType>(node_count_int,
+                                          static_cast<int>(capacity)),
+          KOKKOS_LAMBDA(const int m) {
+            model_type(m) = -1;
+            destination_row_ptr(m + 1) = destination_row_ptr(node_count_int);
+          });
+    }
     if (!source_csr) {
-      return;
+      return static_cast<int>(capacity);
     }
 
     // === Source-major CSR and the permutation into source order ===
@@ -1726,6 +1752,16 @@ class CompactCanonicalGraphKokkos : protected Pointers {
             source_order(edge) = edge;
           });
     }
+    if (capacity > node_count) {
+      Kokkos::parallel_for(
+          "compact_canonical:pad_source_rows",
+          Kokkos::RangePolicy<DeviceType>(node_count_int,
+                                          static_cast<int>(capacity)),
+          KOKKOS_LAMBDA(const int m) {
+            source_row_ptr(m + 1) = source_row_ptr(node_count_int);
+          });
+    }
+    return static_cast<int>(capacity);
   }
 
   // CUDA requires a named public enclosing function for an extended lambda.

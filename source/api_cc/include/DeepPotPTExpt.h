@@ -534,6 +534,10 @@ class DeepPotPTExpt : public DeepPotBackend {
   // declared after the loader and the cell so that the graph is released
   // before the constants and the cell it reads.
   std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
+  torch::Tensor canonical_local_count_;
+  torch::Tensor canonical_local_energy_;
+  const void* canonical_local_stream_ = nullptr;
+  std::unique_ptr<deepmd::ptexpt::GraphReplay> domain_replay_;
   // Serializes the runs of the model, which runs on a single-threaded runner,
   // the device-resident entry points, whose replay of canonical evaluations
   // keeps its graph across calls, and the replacement of the constants. The

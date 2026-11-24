@@ -39,6 +39,7 @@
 #include "block_launch.h"
 #include "graph_compress.cuh"
 #include "graph_compress_launch.h"
+#include "local_node_extent.h"
 
 namespace {
 
@@ -3078,7 +3079,10 @@ dpa4c_canonical_compress_energy_force(
   // A node set with halo rows evaluates its owned rows: the halo rows carry
   // no edges, and every feature of theirs that an edge reads arrives from the
   // rank that owns them.
-  const long owned = halo.owned;
+  const long owned =
+      block_count == 0 && frame_count == 1
+          ? deepmd::LocalNodeExtent::lookup(n_local.data_ptr(), halo.owned)
+          : halo.owned;
   const auto f32 = edge_vec.options().dtype(torch::kFloat32);
   const auto f64 = edge_vec.options().dtype(torch::kFloat64);
   const auto i64 = edge_vec.options().dtype(torch::kInt64);
@@ -3100,15 +3104,16 @@ dpa4c_canonical_compress_energy_force(
   // With further blocks the runs cover the owned rows alone, and every node
   // backward adds its on-site magnetic gradient, so the node buffers the
   // epilogue reads start cleared.
-  auto raw_energy = node_buffer(block_count, {node_count}, f64);
+  const bool clear_rows = block_count > 0 || owned < node_count;
+  auto raw_energy = node_buffer(clear_rows, {node_count}, f64);
   auto seed = torch::empty({node_count}, f64);
   auto node_type = torch::empty({node_count}, i64);
   auto force_fixed = torch::empty({node_count, kForceWords}, i64);
-  auto node_virial = node_buffer(block_count, {node_count, 9}, f32);
+  auto node_virial = node_buffer(clear_rows, {node_count, 9}, f32);
   // The on-site magnetic gradient is node local, so a run writes only its own
   // rows. The neighbour part belongs to source nodes that other runs own and
   // accumulates in fixed point like the force.
-  auto spin_gradient = has_spin ? node_buffer(block_count, {node_count, 3}, f32)
+  auto spin_gradient = has_spin ? node_buffer(clear_rows, {node_count, 3}, f32)
                                 : torch::Tensor();
   auto spin_fixed =
       has_spin ? torch::empty({node_count, kForceWords}, i64) : torch::Tensor();
