@@ -41,6 +41,8 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
       reverse_virial(false),
       reverse_used_host(false) {
   respa_enable = 0;
+  // This style tallies the model virial explicitly, also for FDOTR requests.
+  no_virial_fdotr_compute = 1;
   kokkosable = 1;
   atomKK = (AtomKokkos*)atom;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
