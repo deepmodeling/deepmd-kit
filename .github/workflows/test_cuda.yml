@@ -90,7 +90,7 @@ jobs:
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
         env:
           DP_VARIANT: cuda
-          DP_ENABLE_NATIVE_OPTIMIZATION: 1
+          DP_ENABLE_NATIVE_OPTIMIZATION: "0"
           DP_ENABLE_PYTORCH: 1
           # The float64 DPA4 training kernels serve the consistency tests only.
           CMAKE_ARGS: -DDEEPMD_ENABLE_DPA4_FP64=ON
@@ -177,7 +177,7 @@ jobs:
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
         env:
           DP_VARIANT: cuda
-          DP_ENABLE_NATIVE_OPTIMIZATION: 1
+          DP_ENABLE_NATIVE_OPTIMIZATION: "0"
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
       - name: Verify the two-rank MPI runtime
