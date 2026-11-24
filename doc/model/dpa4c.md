@@ -651,7 +651,7 @@ communication and host/device synchronization. Build the DeePMD-kit plugin
 against the same LAMMPS and Kokkos build used to run it; see the
 [Kokkos build instructions](../install/install-lammps.md#install-lammps-plugin-mode).
 
-By default the pair styles store the precession magnetic force that the LAMMPS
+Both pair styles require `units metal`. By default they store the precession magnetic force that the LAMMPS
 SPIN package expects, the negative energy gradient `-dE/dS` scaled by the
 moment magnitude over `hbar`. `min_style spin` reads this force and relaxes the
 moment directions. The `fix nve/spin` of a stock LAMMPS build does not use this
@@ -663,7 +663,7 @@ build whose integrator reads the magnetic force of these pair styles.
 
 A Newtonian integrator of the Cartesian spin vector needs `-dE/dS` itself
 rather than the precession force. The keyword `magnetic_force cartesian`
-selects `-dE/dS` and requires `units metal`:
+selects `-dE/dS`:
 
 ```lammps
 pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian

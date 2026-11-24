@@ -126,10 +126,8 @@ PairDPA4Spin::PairDPA4Spin(LAMMPS* lmp)
   if (lmp->citeme) {
     lmp->citeme->add(cite_user_deepmd_package);
   }
-  if (strcmp(update->unit_style, "lj") == 0) {
-    error->all(FLERR,
-               "pair style dpa4spin does not support unit style lj; use a "
-               "physical unit style such as metal or real.");
+  if (strcmp(update->unit_style, "metal") != 0) {
+    error->all(FLERR, "Pair style dpa4spin requires units metal");
   }
   ener_unit_cvt_factor = force->boltz / 8.617343e-5;
   dist_unit_cvt_factor = force->angstrom;
@@ -307,13 +305,6 @@ void PairDPA4Spin::settings(int narg, char** arg) {
                             "keywords charge_spin and magnetic_force, not '" +
                             key + "'.");
     }
-  }
-
-  // Cartesian moments use the model's spin units and energies in eV.
-  if (fm_cartesian_force && strcmp(update->unit_style, "metal") != 0) {
-    error->all(FLERR,
-               "pair style " + style +
-                   " keyword magnetic_force cartesian requires units metal.");
   }
 
   // A charge/spin condition named on the pair_style line holds for the whole

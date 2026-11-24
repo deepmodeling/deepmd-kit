@@ -232,6 +232,8 @@ def test_pair_scale_and_repeated_compute(adapter, data_file: Path, selection: st
             "metal",
             "magnetic_force may appear only once",
         ),
+        ("", "real", "requires units metal"),
+        ("magnetic_force precession", "si", "requires units metal"),
         ("magnetic_force cartesian", "real", "requires units metal"),
     ],
 )
