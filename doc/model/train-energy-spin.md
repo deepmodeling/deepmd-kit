@@ -20,12 +20,9 @@ keeping other sections the same as the normal energy model's input script.
 >   If you are using descriptors with mixed types, to achieve better performance,
 >   you should manually extend your sel number (maybe double) depending on the balance between performance and efficiency.
 >
-> The DPA4/SeZM model with {ref}`model.spin.scheme: "native" <model/spin>` is an exception:
-> the native scheme passes the per-atom spin vector directly into the descriptor and
-> introduces neither virtual atoms nor a doubled type map. On the pt_expt backend,
-> native DPA4 is graph-only, and graph neighbor construction is `sel`-free (every edge
-> within the cutoff is retained), so the `sel`-extension advice above applies only to
-> the dense virtual-atom routes, not to native DPA4.
+> Native spin in DPA4/SeZM and DPA4C uses only real atoms, so it requires no
+> virtual-type or neighbor-count adjustment. In PyTorch-Exportable, the native
+> graph neighbor search retains every edge within the cutoff.
 
 ## Spin
 
@@ -62,6 +59,7 @@ so far supports the following descriptors:
 - `dpa2`
 - `dpa3`
 - `dpa4`
+- `dpa4c` (native scheme in PyTorch-Exportable/DP)
 
 See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.json`, the {ref}`spin <model/spin>` section is defined as the following with a much more clear interface:
 
@@ -82,17 +80,21 @@ See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.
   List of float values with shape of `ntypes` or `ntypes_spin` or one single float value for all types,
   only used when {ref}`use_spin <model/spin[ener_spin]/use_spin>` is True for each atom type.
 
-The `se_e2_a`, `dpa1`, `dpa2`, and `dpa3` descriptors use the `deepspin`
-(virtual-atom) scheme. DPA4 uses the `native` scheme
-({ref}`model.spin.scheme <model/spin>`), which passes the per-atom spin vector
-directly into the descriptor; see the [DPA4 spin documentation](dpa4.md#spin).
+The descriptors `se_e2_a`, `dpa1`, `dpa2`, and `dpa3` use the default
+`deepspin` (virtual-atom) scheme. DPA4/SeZM and DPA4C use native spin:
+`native:orbit` and `native:exchange` ({ref}`model.spin.scheme <model/spin>`)
+use time-even spin contractions without virtual atoms. The shorthand `native`
+selects `native:orbit`. See the [DPA4 spin documentation](dpa4.md#spin) and
+[DPA4C native-spin documentation](dpa4c.md#native-spin) for their physical
+symmetries and configuration.
 
 > [!NOTE]
-> It should be noted that the spin models in PyTorch-TorchScript/PyTorch-Exportable/DP are capable of addressing scenarios where the spin approaches zero
-> (indicating the virtual atom is in close proximity to the real atom) by adjusting the non-zero
-> {ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` parameter within the descriptor.
-> This parameter is set to 0.01 by default in the spin model. It appears that a value of 0.01 is generally sufficient for maintaining model stability.
-> For systems with nearly zero spin, users can also consider tuning this parameter to potentially enhance stability.
+> In the `deepspin` scheme, a virtual atom approaches its real atom as the
+> moment approaches zero. Descriptors based on environment matrices use a
+> nonzero {ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>`
+> to regularize this short-distance geometry. Native DPA4/SeZM and DPA4C use
+> smooth spin contractions at zero moment and do not use this virtual-atom
+> protection parameter.
 
 ## Spin Loss
 
@@ -157,6 +159,12 @@ When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_fr`, `rms
 The {ref}`intensive_ener_virial <loss[ener_spin]/intensive_ener_virial>` option (default is `false`) controls the normalization of the energy and virial loss terms when `loss_func="mse"`. If set to `true`, these terms are normalized by $1/N^2$ (intensive), ensuring the loss scale is independent of the system size $N$. If `false`, the legacy $1/N$ normalization is used.
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` to 0.
+
+For symmetric stress or virial labels, set `loss.symm_virial` to `true` in
+PyTorch Exportable or JAX training. This supervises only the symmetric virial;
+the default is `false`. Training validation inherits the setting. Use
+`dp test --symm-virial` for the same comparison in a separate evaluation.
+See [symmetric virial labels](train-energy.md#symmetric-virial-labels).
 
 ## Data format
 

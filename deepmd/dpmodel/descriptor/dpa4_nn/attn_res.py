@@ -165,7 +165,9 @@ class DepthAttnRes(NativeOP):
             return source0
         xp = array_api_compat.array_namespace(source0)
         device = array_api_compat.device(source0)
-        batch_size = int(source0.shape[0])
+        # The node count is kept as a size, not converted to a Python integer,
+        # so that a traced graph serves every batch.
+        batch_size = source0.shape[0]
         value_dtype = source0.dtype
 
         # === Step 1. Build the query vector ===
@@ -199,22 +201,16 @@ class DepthAttnRes(NativeOP):
         alpha = alpha / xp.sum(alpha, axis=1, keepdims=True)  # (B, S)
 
         # === Step 3. Broadcast scalar weights to equivariant values ===
-        value_stack = xp.stack(
-            [
-                xp.astype(source, get_xp_precision(xp, self.precision))
-                for source in sources
-            ],
-            axis=1,
+        # The weighted sum runs over the sources one by one, so no stacked copy
+        # of the equivariant values is formed.
+        prec = get_xp_precision(xp, self.precision)
+        broadcast = (batch_size, *([1] * (source0.ndim - 1)))
+        aggregated = xp.reshape(alpha[:, 0], broadcast) * xp.astype(
+            source0, prec, copy=False
         )
-        alpha = xp.reshape(
-            alpha,
-            (
-                batch_size,
-                source_count,
-                *([1] * (value_stack.ndim - 2)),
-            ),
-        )
-        aggregated = xp.sum(alpha * value_stack, axis=1)
+        for index in range(1, source_count):
+            value = xp.astype(sources[index], prec, copy=False)
+            aggregated = aggregated + xp.reshape(alpha[:, index], broadcast) * value
         return xp.astype(aggregated, value_dtype)
 
     def serialize(self) -> dict[str, Any]:

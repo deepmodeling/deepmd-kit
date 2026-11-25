@@ -49,8 +49,8 @@ def _sugar_config() -> dict:
         "descriptor": _descriptor(),
         "fitting_net": _fitting(),
         "bridging_method": "ZBL",
-        "bridging_r_inner": 0.8,
-        "bridging_r_outer": 1.2,
+        "bridging_truncation": 1.05,
+        "bridging_clamp": 0.7,
     }
 
 
@@ -68,23 +68,72 @@ def _canonical_config() -> dict:
             {
                 "type": "inner_potential",
                 "mode": "ZBL",
-                "r_inner": 0.8,
-                "r_outer": 1.2,
+                "truncation": 1.05,
+                "clamp": 0.7,
             },
         ],
     }
 
 
-def test_canonical_builds_sezm_model() -> None:
-    model = get_model(_canonical_config())
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+def test_canonical_builds_sezm_model(precision: str) -> None:
+    config = _canonical_config()
+    config["models"][0]["descriptor"]["precision"] = precision
+    model = get_model(config)
     assert isinstance(model, SeZMModel)
     assert model.bridging_method == "ZBL"
-    # The window belongs to the descriptor, which is what the composition's
-    # radii have to reach for the learned side to honour them.
-    descriptor = model.atomic_model.descriptor
-    assert descriptor.bridging_f_inner == 0.8
-    assert descriptor.bridging_f_outer == 1.2
-    assert descriptor.bridging_scale == "absolute"
+    # The truncation belongs to the analytical term and the clamp to the
+    # descriptor, which is what the composition's options have to reach.
+    assert model.inter_potential.truncation == 1.05
+    assert (
+        model.inter_potential.pair_table.dtype
+        == model.atomic_model.descriptor.compute_dtype
+    )
+    assert model.atomic_model.descriptor.contact_clamp.inner == 0.7
+
+
+def test_contact_observations_use_the_evaluation_domain() -> None:
+    import torch
+
+    cfg = _sugar_config()
+    cfg["bridging_support"] = 1
+    model = get_model(cfg).to("cpu").train()
+    clamp = model.atomic_model.descriptor.contact_clamp
+    types = torch.tensor([[0, 0], [1, 1]], device="cpu")
+    indices = torch.tensor([[2, 3], [3, 2]], device="cpu")
+    kwargs = {
+        "coord": torch.zeros((2, 2, 3), dtype=torch.float64, device="cpu"),
+        "atype": types,
+        "edge_index": indices,
+        "edge_scatter_index": indices,
+        "edge_vec": torch.tensor(
+            [[0.4, 0, 0], [-0.4, 0, 0]], dtype=torch.float64, device="cpu"
+        ),
+        "edge_mask": torch.ones(2, dtype=torch.bool, device="cpu"),
+        "use_compile": False,
+    }
+    with pytest.raises(ValueError, match="extended_atype"):
+        model.forward_common_lower(**kwargs, comm_dict={})
+    assert torch.isinf(clamp.contacts).all()
+    extended = torch.tensor([[0, 0, 0], [1, 1, 1]], device="cpu")
+    model.forward_common_lower(**kwargs, extended_atype=extended)
+    assert clamp.contacts[1, 1, 0].item() == pytest.approx(0.4)
+    assert torch.isinf(clamp.contacts[0, 1]).all()
+
+
+def test_version_one_model_requires_retraining_only_with_bridging() -> None:
+    model = get_model(_canonical_config())
+    record = model.serialize()
+    record["@version"] = 1
+    record.pop("bridging_truncation")
+    with pytest.raises(ValueError, match="requires retraining"):
+        SeZMModel.deserialize(record)
+    plain = _sugar_config()
+    plain["bridging_method"] = "none"
+    plain_record = get_model(plain).serialize()
+    plain_record["@version"] = 1
+    plain_record.pop("bridging_truncation")
+    assert SeZMModel.deserialize(plain_record).inter_potential is None
 
 
 def test_canonical_matches_sugar_serialize() -> None:
@@ -257,10 +306,10 @@ def test_is_sezm_checkpoint_recognizes_canonical_params(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("method", ["none", "ZBL"])  # bridging disabled / enabled
-def test_normalized_checkpoint_with_optional_radii_loads(
+def test_normalized_checkpoint_with_default_options_loads(
     tmp_path: Path, method: str
 ) -> None:
-    """Checkpoint loading preserves the normalized optional window radii."""
+    """A checkpoint of a normalized config with default bridging options loads."""
     import numpy as np
     import torch
 
@@ -276,14 +325,14 @@ def test_normalized_checkpoint_with_optional_radii_loads(
 
     config = _sugar_config()
     config["bridging_method"] = method
-    config.pop("bridging_r_inner")
-    config.pop("bridging_r_outer")
+    config.pop("bridging_truncation")
+    config.pop("bridging_clamp")
     config["descriptor"].update(channels=4, n_radial=3, lmax=1, mmax=1, n_blocks=1)
     config["use_compile"] = False
     params = model_args().normalize_value(config, trim_pattern="_*")
     model_args().check_value(params, strict=True)
-    assert params["bridging_r_inner"] is None
-    assert params["bridging_r_outer"] is None
+    assert params["bridging_truncation"] == 1.1
+    assert params["bridging_clamp"] == 0.75
     model = get_model(copy.deepcopy(params)).eval()
     wrapper = ModelWrapper(model, model_params=params)
     checkpoint = tmp_path / "model.pt"

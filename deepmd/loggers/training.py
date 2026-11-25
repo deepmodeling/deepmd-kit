@@ -115,6 +115,15 @@ def format_training_message(
     return msg
 
 
+def _metric_sort_key(name: str) -> tuple[str, str, int]:
+    """Group force errors in ordinary, real-atom, magnetic order."""
+    prefix, _, quantity = name.partition("_")
+    force_order = {"f": 0, "fr": 1, "fm": 2}
+    if quantity in force_order:
+        return prefix, "f", force_order[quantity]
+    return prefix, quantity, 0
+
+
 def format_training_message_per_task(
     batch: int,
     task_name: str,
@@ -148,8 +157,8 @@ def format_training_message_per_task(
         lr = ""
     else:
         lr = f", lr = {learning_rate:8.2e}"
-    # sort rmse
-    rmse = dict(sorted(rmse.items()))
+    # Force metrics share a display group: real atoms precede magnetic moments.
+    rmse = dict(sorted(rmse.items(), key=lambda item: _metric_sort_key(item[0])))
     msg = (
         f"Batch {batch:7d}: {task_name}"
         f"{', '.join([f'{kk} = {vv:8.2e}' for kk, vv in rmse.items()])}"

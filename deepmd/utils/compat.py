@@ -18,6 +18,9 @@ import numpy as np
 from deepmd.common import (
     j_deprecated,
 )
+from deepmd.utils.bridging import (
+    drop_retired_window_options,
+)
 from deepmd.utils.model_preset import (
     expand_model_preset,
 )
@@ -464,7 +467,8 @@ def update_deepmd_input(
 
     jdata = migrate_training_warmup(jdata, warning=warning)
     jdata = convert_optimizer_v31_to_v32(jdata, warning=warning)
-    jdata["model"] = resolve_preset_out_bias_tables(expand_model_preset(jdata["model"]))
+    model = resolve_preset_out_bias_tables(expand_model_preset(jdata["model"]))
+    jdata["model"] = drop_retired_window_options(model)
     return jdata
 
 

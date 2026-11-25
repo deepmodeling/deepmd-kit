@@ -647,7 +647,6 @@ class SeZMEnergyFittingNet(InvarFitting):
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
-        node_gate: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Run the SeZM fitting path with optional case FiLM."""
         if not self.case_film_embd:
@@ -661,7 +660,6 @@ class SeZMEnergyFittingNet(InvarFitting):
                 aparam,
                 vacuum_descriptor=vacuum_descriptor,
                 return_atomic_feature=return_atomic_feature,
-                node_gate=node_gate,
             )
         return self._forward_case_film(
             descriptor,
@@ -670,7 +668,6 @@ class SeZMEnergyFittingNet(InvarFitting):
             aparam,
             vacuum_descriptor=vacuum_descriptor,
             return_atomic_feature=return_atomic_feature,
-            node_gate=node_gate,
         )
 
     def _forward_case_film(
@@ -681,7 +678,6 @@ class SeZMEnergyFittingNet(InvarFitting):
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
-        node_gate: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Forward path for SeZM case FiLM.
@@ -702,9 +698,6 @@ class SeZMEnergyFittingNet(InvarFitting):
         return_atomic_feature
             When True, also return the last hidden activation under the
             ``atomic_feature`` key.
-        node_gate
-            Per-atom source gate of a bridged descriptor with shape
-            (nf, nloc, 1); the learned part of the output fades with it.
 
         Returns
         -------
@@ -746,11 +739,6 @@ class SeZMEnergyFittingNet(InvarFitting):
                 fitting(xx_vac, self.case_embd), atype
             )
         outs = atom_property + self.bias_atom_e[atype].to(self.prec)
-        # The readout gate of a bridging window fades the learned part of the
-        # output, its deviation from the bias of the type.
-        if node_gate is not None:
-            reference = self.readout_reference()[atype].to(self.prec)
-            outs = reference + node_gate.to(self.prec) * (outs - reference)
 
         mask = self.emask(atype).to(torch.bool)
         outs = torch.where(mask[:, :, None], outs, 0.0)

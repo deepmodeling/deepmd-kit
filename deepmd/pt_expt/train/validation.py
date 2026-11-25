@@ -32,6 +32,9 @@ from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 from deepmd.dpmodel.train import (
     ShardingPolicy,
 )
+from deepmd.dpmodel.train.validation import (
+    record_virial_convention,
+)
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
     LmdbTestDataNlocView,
@@ -64,6 +67,7 @@ from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     SPIN_FULL_VALIDATION_PROFILE,
     FullValidationMetricProfile,
+    metric_family_label,
 )
 from deepmd.utils.weight_avg import (
     weighted_average,
@@ -156,12 +160,17 @@ def parse_validation_metric(
 
 
 def format_metric_for_log(
-    metric_name: str, metric_value: float, profile: FullValidationMetricProfile
+    metric_name: str,
+    metric_value: float,
+    profile: FullValidationMetricProfile,
+    *,
+    symm_virial: bool = False,
 ) -> tuple[str, float, str]:
     """Format a full validation metric for user-facing logging."""
     metric_family, metric_kind = metric_name.split(":")
     metric_unit, metric_scale = profile.unit_by_family[metric_family]
-    metric_label = f"{metric_family.upper()}:{metric_kind.upper()}"
+    family_label = metric_family_label(metric_family, symm_virial=symm_virial)
+    metric_label = f"{family_label}:{metric_kind.upper()}"
     return metric_label, metric_value * metric_scale, metric_unit
 
 
@@ -213,6 +222,7 @@ class FullValidator:
         num_steps: int,
         rank: int,
         restart_training: bool,
+        symm_virial: bool = False,
         sharding: ShardingPolicy = ShardingPolicy(),
         checkpoint_dir: Path | None = None,
         full_val_file: str | Path | None = None,
@@ -233,6 +243,13 @@ class FullValidator:
             else MatmulPrecisionPolicy(enable_tf32=False)
         )
         self.profile = select_metric_profile(model)
+        self.symm_virial = symm_virial
+        record_virial_convention(
+            state_store,
+            symm_virial,
+            restart_training,
+            (metric_name_info_key, topk_records_info_key, *stale_state_keys),
+        )
         self.state_store = state_store
         self.rank = rank
         self.sharding = sharding
@@ -283,7 +300,9 @@ class FullValidator:
         )
         self.auto_batch_size = AutoBatchSize(silent=True)
         self.table_column_specs = []
-        for column_name, metric_key in self.profile.columns(self.metric_name):
+        for column_name, metric_key in self.profile.columns(
+            self.metric_name, symm_virial=self.symm_virial
+        ):
             _, metric_unit = format_metric_value_for_table(
                 metric_key, 1.0, self.profile
             )
@@ -561,13 +580,21 @@ class FullValidator:
             and bool(test_data.get("find_fparam", 0.0))
             else None,
             aparam=test_data["aparam"] if self.model.get_dim_aparam() > 0 else None,
+            charge_spin=test_data["charge_spin"].reshape(nframes, -1)
+            if self.model.has_chg_spin_ebd()
+            and bool(test_data.get("find_charge_spin", 0.0))
+            else None,
             spin=spin,
             include_virial=include_virial,
             natoms=natoms,
             nframes=nframes,
         )
         return self.profile.compute_system_metrics(
-            prediction, test_data, natoms, data_system.pbc
+            prediction,
+            test_data,
+            natoms,
+            data_system.pbc,
+            symm_virial=self.symm_virial,
         )
 
     def _predict_outputs(
@@ -578,6 +605,7 @@ class FullValidator:
         box: np.ndarray | None,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
         spin: np.ndarray | None,
         include_virial: bool,
         natoms: int,
@@ -587,7 +615,9 @@ class FullValidator:
 
         Energy and real-atom force are always produced. The virial is added
         for periodic energy-type systems, while magnetic force and its atom
-        mask are added for spin systems.
+        mask are added for spin systems. ``charge_spin`` holds the frame-level
+        charge and spin condition of each frame; without it a conditioned
+        model evaluates every frame at its default condition.
         """
 
         def predict_batch(
@@ -596,6 +626,7 @@ class FullValidator:
             box_batch: np.ndarray | None,
             fparam_batch: np.ndarray | None,
             aparam_batch: np.ndarray | None,
+            charge_spin_batch: np.ndarray | None,
             spin_batch: np.ndarray | None,
         ) -> dict[str, np.ndarray]:
             coord_input = torch.tensor(
@@ -636,6 +667,11 @@ class FullValidator:
                 )
             else:
                 aparam_input = None
+            charge_spin_kwargs = (
+                {}
+                if charge_spin_batch is None
+                else {"charge_spin": to_torch_tensor(charge_spin_batch.reshape(-1, 2))}
+            )
             if spin_batch is not None:
                 spin_kwargs = {
                     "spin": torch.tensor(
@@ -659,6 +695,7 @@ class FullValidator:
                 box=box_input,
                 fparam=fparam_input,
                 aparam=aparam_input,
+                **charge_spin_kwargs,
                 **spin_kwargs,
             )
             if isinstance(batch_output, tuple):
@@ -703,6 +740,7 @@ class FullValidator:
             box,
             fparam,
             aparam,
+            charge_spin,
             spin,
         )
         prediction = {
@@ -888,7 +926,10 @@ class FullValidator:
         self._write_log_file(result)
         if self.emit_best_save_log and result.saved_best_path is not None:
             metric_label, metric_value, metric_unit = format_metric_for_log(
-                self.metric_name, result.selected_metric_value, self.profile
+                self.metric_name,
+                result.selected_metric_value,
+                self.profile,
+                symm_virial=self.symm_virial,
             )
             log.info(
                 f"Saved best model to {result.saved_best_path} "
@@ -925,7 +966,10 @@ class FullValidator:
             fout.write(line)
             if result.saved_best_path is not None:
                 metric_label, metric_value, metric_unit = format_metric_for_log(
-                    self.metric_name, result.selected_metric_value, self.profile
+                    self.metric_name,
+                    result.selected_metric_value,
+                    self.profile,
+                    symm_virial=self.symm_virial,
                 )
                 fout.write(
                     "# saved best checkpoint: "
@@ -960,6 +1004,7 @@ def build_full_validators(
     restart_training: bool,
     checkpoint_dir: Path,
     ensure_supported: Callable[[], None],
+    symm_virial: bool = False,
     model_ema: Any | None = None,
     ema_weight_model: torch.nn.Module | dict[str, torch.nn.Module] | None = None,
     sharding: ShardingPolicy | None = None,
@@ -1039,6 +1084,7 @@ def build_full_validators(
         return FullValidator(
             validation_data=validation_data,
             model=model,
+            symm_virial=symm_virial,
             num_steps=num_steps,
             rank=rank,
             sharding=ShardingPolicy() if sharding is None else sharding,

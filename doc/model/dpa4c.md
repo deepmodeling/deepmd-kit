@@ -230,49 +230,43 @@ a physical repulsive wall instead of an extrapolated network output:
 E_i = E_i^{\mathrm{DPA4C}} + E_i^{\mathrm{pair}}.
 ```
 
+The pair term follows the descriptor precision: FP64 for a double-precision
+descriptor, FP32 otherwise.
+
 A model with several message-passing blocks needs it most: in contacts closer
 than about 0.45 of the covalent bond length, which no training set samples, it
 extrapolates worse than a single block.
 
 Two potentials are available. `bridging_method: "zbl"` uses the
-Ziegler-Biersack-Littmark screened nuclear potential, which is derived from
-frozen atomic electron densities and covers every element.
-`bridging_method: "nlh"` uses the Nordlund-Lehtola-Hobler form, whose
-coefficients are fitted to self-consistent quantum-chemical pair energies and
-therefore follow the real repulsive wall much more closely; it leaves a smaller
-residual repulsion at ordinary bond lengths, which is energy the learned model
-would otherwise have to cancel. `zbl` is the default; whether `nlh` yields a
-better trained model has not been established.
+Ziegler–Biersack–Littmark universal screened nuclear potential, with a single
+screening curve scaled by atomic number. `bridging_method: "nlh"` uses a
+Nordlund–Lehtola–Hobler screening curve fitted to repulsive energies for each
+element pair. Use it for close collisions where pair-specific repulsion
+matters. Bridging is disabled unless you select a potential.
 
 > [!NOTE]
-> The `nlh` coefficients shipped with DeePMD-kit are this project's own refit and
-> are **not** the coefficients published by Nordlund, Lehtola and Hobler. They are
-> fitted independently to the same open reference data — K. Nordlund, G. Hobler and
-> S. Lehtola, Zenodo [10.5281/zenodo.14172633](https://doi.org/10.5281/zenodo.14172633)
-> v1.0 (2024), CC BY 4.0 — under conditions this use requires, and are therefore
-> modified material. The functional form is that of
+> The `nlh` coefficients shipped with DeePMD-kit are this project's own refit
+> for cubic-Taylor truncated zone bridging and are **not** the coefficients
+> published by Nordlund, Lehtola and Hobler. They are fitted independently to
+> the same open reference data — K. Nordlund, G. Hobler and S. Lehtola, Zenodo
+> [10.5281/zenodo.14172633](https://doi.org/10.5281/zenodo.14172633) v1.0
+> (2024), CC BY 4.0 — under physical conditions that guarantee complete
+> monotonicity and smooth $C^3$ truncation, and are therefore modified material.
+> The functional form is that of
 > [Phys. Rev. A **111**, 032818 (2025)](https://doi.org/10.1103/PhysRevA.111.032818).
-> Pairs containing an element heavier than uranium, which the reference data does
-> not cover, fall back to ZBL.
+> Pairs containing an element heavier than uranium, which the reference data
+> does not cover, use normalized ZBL coefficients.
 
-The analytical term acts on every pair inside `rcut`, and a window between an
-inner and an outer radius hands each pair over between the two descriptions.
-Below the inner radius a pair leaves the learned model entirely: both atoms are
-described exactly as if the other one were absent, and the pair interacts
-through the analytical term alone. Across the window the pair enters the
-learned model smoothly, and beyond the outer radius the learned model is the
-same as without bridging. The energy stays three times continuously
-differentiable through the window, as it does at the outer cutoff.
+The analytical potential ends at `bridging_truncation` times the pair's
+covalent bond length (default 1.1). Subtracting its cubic Taylor polynomial
+there makes the energy and its first three derivatives vanish at that radius.
+The learned part reads the physical distance down to the pair's data edge,
+set by default from the third smallest distinct per-frame closest contact,
+capped at the covalent bond length. Below that edge the read distance changes
+smoothly and becomes constant at `bridging_clamp` times the edge (default
+0.75). The analytical potential always reads the physical separation.
 
-The two radii follow the size of the pair they apply to. Each is a fraction of
-the covalent bond length of that element pair, so a hydrogen pair is described
-down to a much shorter separation than a caesium pair, and one setting covers
-every element combination in the type map. The defaults place the outer radius
-at 0.80 of the bond length, below all but the shortest multiple bonds, and
-the inner radius at 0.26, deep inside the repulsive wall where the analytical
-term is the responsible description.
-
-Enable it on the model:
+Enable bridging on the model:
 
 ```json
 {
@@ -290,27 +284,15 @@ Enable it on the model:
 }
 ```
 
-`type_map` must name chemical elements, because the analytical term is built
-from their nuclear charges and the window from their covalent radii.
-`bridging_fraction_inner` and `bridging_fraction_outer` adjust the two
-fractions. Giving `bridging_r_inner` and `bridging_r_outer` instead replaces
-the rule with one window in Å applied to every pair alike, which is worth doing
-only for a single-element system or to reproduce an earlier model. See
-`examples/water/dpa4c/input-zbl.json` for a complete input.
+Choose `zbl` for the Ziegler–Biersack–Littmark universal potential or `nlh` for
+the pair-specific Nordlund–Lehtola–Hobler potential. `type_map` must contain
+chemical element names. See [zone bridging](dpa4.md#zone-bridging) for
+configuration options and the provenance of the refitted NLH table.
 
-Training leaves out frames that contain a pair closer than the midpoint of its
-window, where the learned model has too little influence on the energy to fit a
-label. The threshold follows from the window of each element pair, so
-`training_data.min_pair_dist` must stay unset on a bridged model. The data
-statistics, including those of `dp change-bias`, use the same filter, while
-validation batches are not filtered, so a validation error also covers frames
-that training leaves out.
-
-Bridging therefore relies on short-range training data. The labels that are
-kept have to reach into the window of every element pair, which in practice
-means adding dimer scans that run down to about half the covalent bond length.
-Labels inside the window keep the hand-over smooth; a pair whose window holds
-no label can show spurious force maxima there.
+Training keeps every frame. Bridging alone does not ensure accurate forces at
+short range without training data there. Include short-range configurations,
+such as dimer scans, to constrain the learned energy between the training
+bond lengths and the frozen close-contact region.
 
 The same model can be written explicitly as a `linear_ener` model over the
 DPA4C model and an `inner_potential` sub-model with `weights: "sum"`; the
@@ -330,10 +312,9 @@ architecture, and start from the earlier checkpoint:
 dp --pt-expt train input-zbl.json --finetune model.ckpt.pt
 ```
 
-The descriptor and the fitting network carry over. Fine-tuning is required
-rather than optional: the bridging window changes what the descriptor sees at
-short range, so the learned part is trained against the analytical term it is
-now summed with.
+The descriptor and fitting weights carry over. Fine-tune them because the
+contact clamp changes the short-range distances the descriptor reads and the
+analytical term changes the energy that the learned part must fit.
 
 ## Model compression
 
@@ -589,9 +570,21 @@ The spin part of the descriptor has no options of its own; its width follows
 
 ### Enabling native spin
 
-Native spin is requested at the model level, not on the descriptor. The
-`use_spin` list marks the magnetic types, either as booleans over the type map
-or by element name:
+Native spin is requested at the model level, not on the descriptor. Set
+`model.spin.scheme` according to the training data:
+
+| Scheme            | Use                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `native:orbit`    | Data with spin-orbit coupling (SOC). The energy can depend on moment directions relative to the lattice.     |
+| `native:exchange` | Data without SOC. Rotating all moments together while holding the lattice fixed leaves the energy unchanged. |
+| `native`          | Shorthand for `native:orbit`.                                                                                |
+
+Both modes describe energies without an external magnetic field, and reversing
+all moments leaves the energy unchanged. DPA4C does not support the `deepspin`
+virtual-atom scheme.
+
+The `use_spin` list marks the magnetic types, either as booleans over the type
+map or by element name:
 
 ```json
 {

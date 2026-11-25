@@ -2059,6 +2059,43 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         self.assertTrue(tc.has_tile_config("flash_bwd_edge", key))
         self.assertTrue(tc.has_tile_config("flash_bwd_block", key))
 
+    def test_tune_missing_configs_runs_the_real_fp16x3_sweep(self):
+        """The fp16x3 sweep validates a candidate and compares the stack routes.
+
+        A single pipeliner-free candidate is swept, so the sweep reaches its
+        whole-force-path comparison with the fp32 stack and records either
+        the candidate or ``None``.
+        """
+        import contextlib
+        import io
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            sweep_tile_configs,
+        )
+
+        tc = self.tile_configs
+        config = (64, 64, 32, 4, 1)
+        specs = {"fp16x3": sweep_tile_configs._SWEEP_SPECS["fp16x3"]}
+        with (
+            mock.patch.object(tc, "_builtin_tables", return_value={}),
+            mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, specs, clear=True),
+            mock.patch.object(sweep_tile_configs, "_FP16X3_GEMM_CANDIDATES", (config,)),
+            mock.patch.object(sweep_tile_configs, "_FP16X3_PIN_CANDIDATES", (config,)),
+            mock.patch.object(sweep_tile_configs, "_FP16X3_FINITE_EDGES", ()),
+            contextlib.redirect_stdout(io.StringIO()) as report,
+        ):
+            registered = sweep_tile_configs.tune_missing_configs(
+                [(32, 2, 1, 1)], level=3, device="cuda", n_edge=16384
+            )
+        self.assertIn("[stack whole force path:", report.getvalue())
+        key = (32, 2)
+        self.assertEqual(sorted(registered), ["stack_fp16x3"])
+        self.assertIn(registered["stack_fp16x3"][key], (None, (config,) * 4))
+        self.assertTrue(tc.has_tile_config("stack_fp16x3", key))
+
 
 if __name__ == "__main__":
     unittest.main()

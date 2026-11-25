@@ -195,9 +195,9 @@ class EdgeRadialCuda:
     """Model entry binding one envelope and one basis to the fused operator.
 
     The Horner series are compile-time constants of the two modules and are
-    materialized once per device; the basis frequencies are read from the live
-    parameter on every call, so a checkpoint loaded after construction is
-    picked up.
+    materialized once per device; the basis frequencies are read from the
+    bound module on every call, so an in-place load reaches the operator,
+    while a replaced module requires binding the operator again.
     """
 
     def __init__(self, envelope: Any, basis: Any) -> None:

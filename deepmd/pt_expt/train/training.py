@@ -70,6 +70,14 @@ from deepmd.dpmodel.train.data_progress import (
     preserve_training_data_progress,
     restore_training_data_progress,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    make_task_rng,
+    restore_task_rng,
+    task_rng_checkpoint,
+    task_rng_rank_state,
+    task_sampling_mode,
+    validate_task_rng_checkpoint,
+)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
@@ -162,6 +170,9 @@ from deepmd.pt_expt.train.validation import (
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
+)
+from deepmd.pt_expt.utils.contact_clamp import (
+    synchronize_contact_edges,
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,
@@ -311,6 +322,10 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     ``_compile_model`` and raises an explicit error rather than silently
     producing a wrong compiled graph.
 
+    A contact clamp belongs to its task even when descriptor parameters
+    are shared. The graph captures its edge buffer, which contact
+    observations update in place, so reuse requires the same clamp.
+
     After ``share_params``, the fitting net's child sub-modules are the same
     Python objects across tasks, so ``id(first_child)`` is equal for all
     shared tasks and unique across unrelated models.
@@ -330,8 +345,12 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     tasks share a graph only when they share the module as well.
     """
     descriptor_id: int = 0
+    clamp_id = 0
     try:
         desc = model.get_descriptor()
+        clamp = getattr(desc, "contact_clamp", None)
+        if clamp is not None:
+            clamp_id = id(clamp)
         for _, p in desc.named_parameters():
             descriptor_id = id(p)
             break
@@ -360,6 +379,7 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     return (
         int(model.has_spin()),
         descriptor_id,
+        clamp_id,
         fitting_id,
         *vacuum_state,
         long_range_id,
@@ -1710,6 +1730,7 @@ class _CompiledModel(torch.nn.Module):
                 aparam = aparam[node_index]
             if spin is not None:
                 spin = spin[node_index]
+        _model.observe_contacts(ng, atype_flat)
         # The topologies the atomic model declares are built here as well,
         # outside the compiled region, on the node axis of the graph.
         topologies = _model.atomic_model.build_topologies(
@@ -1925,16 +1946,22 @@ class Trainer(AbstractTrainer):
         self.is_distributed = dist.is_available() and dist.is_initialized()
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
-        # Rank-local data draws must not change the shared task-selection sequence.
-        self._task_rng = np.random.default_rng(
-            None
-            if self._configured_data_seed is None
-            else self._configured_data_seed % (2**32)
+        self.task_sampling = task_sampling_mode(training_params, self.num_model)
+        # Keep task draws separate from rank-local data-loader draws.
+        self._task_rng = make_task_rng(
+            self.task_sampling, self._configured_data_seed, self.rank
+        )
+        log.info(
+            "Task sampling: %s, rank %d/%d",
+            self.task_sampling,
+            self.rank,
+            self.world_size,
         )
         if (
             self.is_distributed
             and self.multi_task
             and self._configured_data_seed is None
+            and self.task_sampling == "synchronized"
         ):
             self._task_rng.bit_generator.state = self._broadcast_value_from_rank0(
                 self._task_rng.bit_generator.state if self.rank == 0 else None
@@ -2020,7 +2047,6 @@ class Trainer(AbstractTrainer):
                 add_training_data_requirements(
                     self.training_data_by_task[model_key],
                     task_params["training_data"],
-                    self.model_params_by_task[model_key],
                     data_requirement,
                     lambda data, requirements: data.add_data_requirements(requirements),
                 )
@@ -2613,6 +2639,8 @@ class Trainer(AbstractTrainer):
             validation_model = self._unwrapped.model[DEFAULT_TASK_KEY]
         return build_full_validators(
             validating_params=validating_params,
+            symm_virial=not self.multi_task
+            and getattr(self.loss, "symm_virial", False),
             validation_data=validation_data,
             model=validation_model,
             state_store=self._unwrapped.train_infos,
@@ -2949,11 +2977,8 @@ class Trainer(AbstractTrainer):
                 raise RuntimeError(
                     f"No training frame of task {task_key!r} keeps every atom "
                     "pair beyond the frame-filter radius within "
-                    f"{discarded} consecutive batches. A bridged model filters "
-                    "at the midpoint of its bridging window, so lower "
-                    "`bridging_fraction_inner` or `bridging_fraction_outer` "
-                    "there, or `training_data.min_pair_dist` on any other "
-                    "model, or clean the dataset."
+                    f"{discarded} consecutive batches; lower "
+                    "`training_data.min_pair_dist` or clean the dataset."
                 )
 
     def _epoch_length(self, model_key: str) -> int:
@@ -3205,17 +3230,15 @@ class Trainer(AbstractTrainer):
     def _collect_data_progress(self) -> dict[str, Any]:
         """Gather compact rank-local progress only at a checkpoint boundary."""
         local_progress = collect_training_data_progress(self.training_data_by_task)
+        sampling = getattr(self, "task_sampling", "synchronized")
+        local_progress.update(task_rng_rank_state(sampling, self._task_rng))
         ranks: list[Any] = [local_progress]
         if self.is_distributed:
             ranks = [None] * self.world_size
             dist.all_gather_object(ranks, local_progress)
-        return {
-            "version": 1,
-            "world_size": self.world_size,
-            "configured_seed": self._configured_data_seed,
-            "task_rng": self._task_rng.bit_generator.state,
-            "ranks": ranks,
-        }
+        return task_rng_checkpoint(
+            sampling, self._configured_data_seed, self._task_rng, ranks
+        )
 
     def _restore_data_progress(
         self, progress: Mapping[str, Any] | None, *, reset: bool = False
@@ -3228,18 +3251,10 @@ class Trainer(AbstractTrainer):
         """
         if progress is None:
             return
-        if not isinstance(progress, Mapping):
-            raise ValueError("Data-progress checkpoint must be a mapping.")
-        if type(progress.get("version")) is not int or progress["version"] != 1:
-            raise ValueError("Unsupported distributed data-progress version.")
-        saved_world_size = progress.get("world_size")
-        if type(saved_world_size) is not int or saved_world_size < 1:
-            raise ValueError("Data-progress checkpoint world size must be positive.")
-        ranks = progress.get("ranks")
-        if not isinstance(ranks, list) or len(ranks) != saved_world_size:
-            raise ValueError("Data-progress checkpoint must contain every rank.")
-        if not all(isinstance(state, Mapping) for state in ranks):
-            raise ValueError("Data-progress checkpoint rank states must be mappings.")
+        sampling = getattr(self, "task_sampling", "synchronized")
+        saved_world_size, ranks = validate_task_rng_checkpoint(
+            progress, sampling=sampling, reset=reset
+        )
         if reset:
             if self.rank == 0:
                 log.warning(
@@ -3263,18 +3278,11 @@ class Trainer(AbstractTrainer):
                     self.world_size,
                 )
             return
-        if "configured_seed" not in progress or "task_rng" not in progress:
-            raise ValueError(
-                "Data-progress checkpoint lacks its seed or task RNG identity; "
-                "set training.reset_data_progress=true to restart data sampling."
-            )
-        if progress["configured_seed"] != self._configured_data_seed:
-            raise ValueError(
-                "Training data progress is incompatible: training.seed changed; "
-                "set training.reset_data_progress=true to restart data sampling."
-            )
-        task_rng = np.random.default_rng(0)
-        task_rng.bit_generator.state = progress["task_rng"]
+        task_rng = restore_task_rng(
+            progress,
+            seed=self._configured_data_seed,
+            rank=self.rank,
+        )
         restore_training_data_progress(self.training_data_by_task, ranks[self.rank])
         self._task_rng = task_rng
 
@@ -3625,13 +3633,7 @@ class Trainer(AbstractTrainer):
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
         """Select a task independently of rank-local data draws."""
-        if not tasks.is_multitask:
-            return tasks[tasks.keys[0]]
-        model_index = self._task_rng.choice(
-            np.arange(len(tasks), dtype=np.int_),
-            p=tasks.probabilities,
-        )
-        return tasks[tasks.keys[int(model_index)]]
+        return tasks.select(choice=self._task_rng.choice)
 
     def on_train_begin(self, tasks: TrainingTaskCollection) -> None:
         """Switch the wrapper to training mode."""
@@ -3697,6 +3699,7 @@ class Trainer(AbstractTrainer):
             )
 
         self._optimizer_step()
+        synchronize_contact_edges(self.wrapper)
         if self.model_ema is not None:
             self.model_ema.update()
         return TrainStepResult(

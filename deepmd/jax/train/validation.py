@@ -49,6 +49,7 @@ class JAXFullValidator(FullValidatorBase):
         num_steps: int,
         rank: int,
         restart_training: bool,
+        symm_virial: bool = False,
         checkpoint_dir: Any = None,
     ) -> None:
         self.validation_data = validation_data
@@ -60,6 +61,7 @@ class JAXFullValidator(FullValidatorBase):
             num_steps=num_steps,
             rank=rank,
             restart_training=restart_training,
+            symm_virial=symm_virial,
             checkpoint_dir=checkpoint_dir,
             best_checkpoint_suffix=".jax",
         )
@@ -136,6 +138,7 @@ class JAXFullValidator(FullValidatorBase):
             test_data=test_data,
             natoms=natoms,
             has_pbc=has_pbc,
+            symm_virial=self.symm_virial,
         )
         return shared_metrics.as_weighted_average_errors(
             FULL_VALIDATION_WEIGHTED_METRIC_KEYS

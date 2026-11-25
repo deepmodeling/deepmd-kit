@@ -237,6 +237,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return any(model.has_message_passing() for model in self.models)
 
+    def observe_contacts(self, graph: Any, atype: Array) -> None:
+        """Every child records the contacts of the shared graph."""
+        for model in self.models:
+            model.observe_contacts(graph, atype)
+
     def has_message_passing_across_ranks(self) -> bool:
         """ANY child needing the exchange makes the composition need it."""
         return any(m.has_message_passing_across_ranks() for m in self.models)

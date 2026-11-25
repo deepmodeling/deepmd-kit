@@ -709,8 +709,8 @@ class LmdbDecodeConfig:
     dataset
         Dataset identifier used in frame-level diagnostics.
     type_map
-        Element symbols of the model types, from which a derived field sizes
-        the per-type length scale it measures against.
+        Names of the model types, quoted in diagnostics of source types the
+        model does not define.
     frame_transform
         Optional callable applied to every decoded frame, as
         ``transform(frame, frame_index)``. Self-supervised objectives corrupt
@@ -900,7 +900,7 @@ def _resolve_derived_batch(
     requirement : Any
         Its data requirement.
     config : LmdbDecodeConfig
-        Decoder state, which fixes the field dtype and the pair length scale.
+        Decoder state, which fixes the field dtype and the number of types.
     layout : BatchLayout
         Where each frame's per-atom rows are, which tells a ragged batch from
         a rectangular one.
@@ -940,10 +940,9 @@ def _derived_half_thresholds(
     Parameters
     ----------
     requirement : Any
-        The data requirement, whose default carries the filter radius and
-        whose length scale names the per-element radii it multiplies.
+        The data requirement, whose default carries the filter distance in Å.
     config : LmdbDecodeConfig
-        Decoder state, which carries the model type map.
+        Decoder state, which carries the number of model types.
 
     Returns
     -------
@@ -953,8 +952,6 @@ def _derived_half_thresholds(
     """
     return requirement_half_thresholds(
         float(_requirement_value(requirement, "default", 0.0)),
-        str(_requirement_value(requirement, "length_scale", "absolute")),
-        None if config.type_map is None else tuple(config.type_map),
         config.ntypes,
     )
 

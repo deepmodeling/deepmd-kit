@@ -18,8 +18,8 @@ focus-stream count, an attention layout matching the value stream, two or more
 mixing layers with an identity final layer, and a radial mixer that is either
 absent or ``degree_channel`` of any rank. The kernels are templated on degree
 and focus width only; every other dimension is a runtime argument. A bridged
-model reaches the kernels unchanged, because its source gate is folded into the
-edge envelope the kernels already weight by.
+model reaches the kernels unchanged, because its contact clamp acts on the edge
+lengths before the envelope and the radial features are built.
 
 Usage and pitfalls
 ------------------

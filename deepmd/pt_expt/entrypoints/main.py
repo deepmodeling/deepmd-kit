@@ -14,9 +14,6 @@ from typing import (
     Any,
 )
 
-from deepmd.dpmodel.atomic_model.inner_potential import (
-    InnerPotentialAtomicModel,
-)
 from deepmd.dpmodel.train import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
@@ -24,6 +21,9 @@ from deepmd.dpmodel.train import (
     iter_training_task_configs,
     make_task_maps,
     print_data_summaries,
+)
+from deepmd.dpmodel.train.task_sampling import (
+    task_sampling_mode,
 )
 from deepmd.loggers import (
     is_node_main_process,
@@ -35,9 +35,6 @@ from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
 from deepmd.utils import random as dp_random
-from deepmd.utils.data import (
-    min_pair_dist_requirement,
-)
 from deepmd.utils.data_config import (
     DataConfig,
 )
@@ -139,6 +136,10 @@ def get_trainer(
 
     training_params = config["training"]
     multi_task = "model_dict" in config["model"]
+
+    task_sampling_mode(
+        training_params, len(config["model"]["model_dict"]) if multi_task else 1
+    )
 
     data_seed = training_params.get("seed", None)
     is_distributed = dist.is_available() and dist.is_initialized()
@@ -561,24 +562,18 @@ def freeze(
                 f"Head '{head}' not found. "
                 f"Available: {list(model_params['model_dict'].keys())}"
             )
-        # Build full multi-task wrapper, load weights, extract single head
-        model_dict = {}
-        for key in model_params["model_dict"]:
-            from copy import (
-                deepcopy,
-            )
-
-            model_dict[key] = get_model(deepcopy(model_params["model_dict"][key]))
-        wrapper = ModelWrapper(model_dict)
-        wrapper.load_state_dict(state_dict)
-
-        m = wrapper.model[head]
         single_model_params = model_params["model_dict"][head]
+        prefix = f"model.{head}."
+        state_dict = {
+            key: value
+            for key, value in state_dict.items()
+            if key == "_extra_state" or key.startswith(prefix)
+        }
     else:
-        m = get_model(model_params)
-        wrapper = ModelWrapper(m)
-        wrapper.load_state_dict(state_dict)
         single_model_params = model_params
+    m = get_model(single_model_params)
+    wrapper = ModelWrapper({head: m} if multi_task else m)
+    wrapper.load_state_dict(state_dict)
 
     m.eval()
 
@@ -800,34 +795,13 @@ def change_bias(
         mock_loss = get_loss({"inference": True}, 1.0, len(type_map), model_to_change)
         data.add_data_requirements(mock_loss.label_requirement)
         data.add_data_requirements(get_additional_data_requirement(model_to_change))
-        # A bridged model draws its statistics under the frame filter of its
-        # window, as training does. The filter is read from the training
-        # configuration; an archive that carries none cannot be filtered and
-        # is refused rather than read unfiltered.
-        if model_params is None:
-            children = getattr(model_to_change.atomic_model, "models", ())
-            if any(isinstance(child, InnerPotentialAtomicModel) for child in children):
-                raise ValueError(
-                    f"'{input_file}' carries no training configuration, so the "
-                    "frame filter of its bridging window cannot be derived; run "
-                    "change-bias on the checkpoint (.pt) instead."
-                )
-            pair_filter = None
-        else:
-            pair_filter = min_pair_dist_requirement(model_params, 0.0)
-        if pair_filter is not None:
-            data.add_data_requirements([pair_filter])
         if numb_batch != 0:
             nbatches = numb_batch
         else:
             # Cap at the minimum across systems so no system wraps and
             # overweights short systems (matching PT behavior).
             nbatches = min(data.get_nbatches())
-        sampled_data = make_stat_input(
-            data,
-            nbatches,
-            0.0 if pair_filter is None else float(pair_filter.default),
-        )
+        sampled_data = make_stat_input(data, nbatches)
         model_to_change = model_change_out_bias(
             model_to_change,
             sampled_data,

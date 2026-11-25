@@ -402,6 +402,9 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
     supplies the cross-degree mixing that the local-frame ``SO2Linear`` provided,
     but in the global frame and without any Wigner-D rotation.
 
+    ``parity=True`` uses the projected anticommutator operator, so the
+    output obeys the natural inversion parity of each angular degree.
+
     Parameters
     ----------
     lmax : int
@@ -431,6 +434,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         focus_dim: int,
         n_focus: int,
         n_layers: int,
@@ -452,6 +456,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
             seed=seed,
             trainable=trainable,
         )
+        self.parity = bool(parity)
         self.eps = float(eps)
 
         # Non-persistent: a deterministic constant rebuilt on construction, so it
@@ -462,7 +467,12 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         basis = build_cartesian_basis(
             self.lmax, dtype=PRECISION_DICT[self.precision.lower()]
         )
-        self.right_mult_proj = np.einsum("pij,dik->pdkj", basis, basis)
+        projection = np.einsum("pij,dik->pdkj", basis, basis)
+        if self.parity:
+            # Inversion transposes the Cartesian tensor. The projected
+            # anticommutator preserves this law without doubling runtime work.
+            projection = 0.5 * (projection + np.einsum("pki,dji->pdkj", basis, basis))
+        self.right_mult_proj = projection
 
     def call(
         self,
@@ -557,6 +567,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "focus_dim": self.focus_dim,
                 "n_focus": self.n_focus,
                 "n_layers": self.n_layers,

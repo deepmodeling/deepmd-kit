@@ -126,6 +126,9 @@ from deepmd.pt_expt.train.validation import (
     FullValidator,
     build_full_validators,
 )
+from deepmd.pt_expt.utils.contact_clamp import (
+    synchronize_contact_edges,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
     has_data_requirement,
@@ -466,7 +469,6 @@ class Trainer:
             filter_enabled = add_training_data_requirements(
                 training_data,
                 training_params["training_data"],
-                model_params,
                 data_requirement,
                 lambda data, requirements: data.add_data_requirement(requirements),
             )
@@ -528,7 +530,6 @@ class Trainer:
                 filter_enabled = add_training_data_requirements(
                     training_data[model_key],
                     training_params["data_dict"][model_key]["training_data"],
-                    model_params["model_dict"][model_key],
                     data_requirement,
                     lambda data, requirements: data.add_data_requirement(requirements),
                 )
@@ -813,6 +814,13 @@ class Trainer:
                                 if ".models.0." in new_key:
                                     new_key = new_key.replace(".models.0.", ".")
                                 elif ".models.1." in new_key:
+                                    use_random_initialization = True
+                                elif new_key.endswith(
+                                    (".contact_clamp.edges", ".contact_clamp.contacts")
+                                ):
+                                    # A bridged target fine-tuned from an
+                                    # unbridged source records its contacts
+                                    # and data edges from the covalent start.
                                     use_random_initialization = True
                                 else:
                                     raise KeyError(
@@ -1482,6 +1490,7 @@ class Trainer:
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
+            synchronize_contact_edges(self.wrapper)
             if self.model_ema is not None:
                 self.model_ema.update()
 
@@ -2084,11 +2093,8 @@ class Trainer:
         raise RuntimeError(
             "Unable to collect a globally valid training batch for task "
             f"{task_key!r} after {max_attempts} attempts: no frame keeps every "
-            "atom pair beyond the frame-filter radius. A bridged model filters at "
-            "the midpoint of its bridging window, so lower "
-            "`bridging_fraction_inner` or `bridging_fraction_outer` there, or "
-            "`training_data.min_pair_dist` on any other model, or clean the "
-            "dataset."
+            "atom pair beyond `training_data.min_pair_dist`; lower it or clean "
+            "the dataset."
         )
 
     def get_data(

@@ -124,8 +124,6 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
         "focus_compete_bias",
     ),
     "SeZMTypeEmbedding": ("adam_type_embedding",),
-    "SpinEmbedding": ("adam_spin_vec_weight", "adam_spin_nbr_weight"),
-    "EnvironmentInitialEmbedding": ("spin_scale",),
     "DepthAttnRes": ("adamw_pseudo_query",),
     "S2GridNet": ("residual_scale",),
     "SO3GridNet": ("residual_scale",),

@@ -92,8 +92,9 @@ class TestInferDeepSpinDpa4ZblPtExpt : public ::testing::Test {
  protected:
   // 6-atom system (3 Ni, spin-active; 3 O, non-magnetic) -- verbatim from
   // gen_dpa4_spin_zbl.py's _COORDS/_CELL/_SPINS/_ATYPES.  Atoms 0 and 1 sit
-  // 0.9 A apart, inside bridging_r_outer, and are BOTH spin-carrying Ni, so
-  // the analytical and spin channels act on the same atoms.
+  // 0.9 A apart, inside the range of the truncated ZBL term, and are BOTH
+  // spin-carrying Ni, so the analytical and spin channels act on the same
+  // atoms.
   std::vector<VALUETYPE> coord = {1.0, 1.0, 1.0, 1.9, 1.0, 1.0, 1.3, 1.8, 1.0,
                                   0.4, 1.2, 1.6, 3.6, 2.0, 1.3, 3.4, 0.7, 1.7};
   std::vector<VALUETYPE> spin = {0.11,  0.05,  -0.02, -0.07, 0.09,  0.03,

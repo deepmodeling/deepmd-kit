@@ -18,6 +18,18 @@ An explanation will be provided
 
 ```
 
+For an energy or spin-energy model with symmetric virial labels, use:
+
+```bash
+dp test -m model.pt2 -s /path/to/system --symm-virial
+```
+
+The command compares symmetric virials and the corresponding stresses in both
+metrics and detail files. Logs and detail headers include `# symm_v=1`; metric
+columns and filenames are unchanged. The option is off by default and is not
+inferred from the model or its training input. It works with every backend
+supported by energy-model testing.
+
 ## Evaluate descriptors
 
 The descriptors of a model can be evaluated and saved using `dp eval-desc`. A typical usage of `dp eval-desc` is

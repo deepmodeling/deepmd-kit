@@ -64,6 +64,15 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     forward_lower_canonical_graph_exportable = (
         EnergyModel.forward_lower_canonical_graph_exportable
     )
+    # Every child of a graph-capable composition evaluates on the one shared
+    # graph, so the composition reads a flat node axis exactly as a single
+    # graph model does and takes the ragged entry with its key translation.
+    # This entry lets ``mix:N`` training hand a composition the same shuffled,
+    # unpadded batches a standard model receives instead of padded batches of
+    # frames sorted by atom count.
+    forward_ragged = EnergyModel.forward_ragged
+    _translate_eager_call = EnergyModel._translate_eager_call
+    _to_public_keys = EnergyModel._to_public_keys
 
     def __init__(
         self,

@@ -43,9 +43,7 @@ def segment_envelope_gated_softmax(
     The physical mass of an edge is ``edge_env**2 * exp(logits)`` and the
     denominator of its destination is the sum of the edge masses plus the
     positive null mass ``softplus(z_bias_raw) + eps``. An edge whose envelope
-    is zero is therefore absent from both, which is what the frozen-zone
-    invariance of a bridged model needs, since its envelope carries the
-    source gate.
+    is zero is therefore absent from both.
 
     Parameters
     ----------
