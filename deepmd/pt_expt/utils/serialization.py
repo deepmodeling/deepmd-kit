@@ -1096,6 +1096,14 @@ def synthetic_border_plan(
     )
 
 
+def _graph_node_dim() -> torch.export.Dim:
+    # Every node has three force components in an int64-indexed tensor. Its
+    # finite extent also bounds open-ended node slices during AOT lowering.
+    return torch.export.Dim(
+        "n_node_total", min=1, max=torch.iinfo(torch.int64).max // 3
+    )
+
+
 def _build_canonical_graph_dynamic_shapes(
     *,
     is_native_spin: bool = False,
@@ -1117,11 +1125,7 @@ def _build_canonical_graph_dynamic_shapes(
     be zero.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
-    # Every node has three force components in an int64-indexed tensor. Its
-    # finite extent also bounds open-ended node slices during AOT lowering.
-    node_dim = torch.export.Dim(
-        "n_node_total", min=1, max=torch.iinfo(torch.int64).max // 3
-    )
+    node_dim = _graph_node_dim()
     edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
     # The source CSR keeps extents of its own: a caller that declines the
     # per-atom virial passes two-entry placeholders in its place.
@@ -1290,7 +1294,7 @@ def _build_graph_dynamic_shapes(
         :func:`_topology_dynamic_shapes`).
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
-    n_node_total_dim = torch.export.Dim("n_node_total", min=1)
+    n_node_total_dim = _graph_node_dim()
     nedge_dim = torch.export.Dim("nedge", min=2)
     base = (
         {0: n_node_total_dim},  # atype: (N,)
@@ -1379,7 +1383,7 @@ def _build_graph_dynamic_shapes_with_comm(
     aparam = sample_inputs[11]
     charge_spin = sample_inputs[12]
     nframes_val = 1
-    n_node_total_dim = torch.export.Dim("n_node_total", min=1)
+    n_node_total_dim = _graph_node_dim()
     nedge_dim = torch.export.Dim("nedge", min=2)
     return (
         {0: n_node_total_dim},  # atype: (N,)
@@ -2271,14 +2275,14 @@ def deserialize_to_file(
             )
 
 
-def _canonical_symbolic_shapes(active: bool) -> contextlib.AbstractContextManager:
-    """Preserve zero and one in the dynamic shape ranges of a canonical program.
+def _graph_symbolic_shapes(lower_kind: str) -> contextlib.AbstractContextManager:
+    """Trace and lower variable-size graphs without specializing to sample sizes.
 
-    A single frame is a valid deployment input, including graphs with zero
-    or one physical edge. Size-oblivious symbols retain these extents through
-    both the tracing and the AOTInductor compilation of every compact program.
+    A single frame and small node sets are valid deployment inputs. In
+    particular, a matrix-multiply heuristic on the example's node count must
+    not become a lower bound on the number of atoms accepted by the archive.
     """
-    if not active:
+    if lower_kind not in ("graph", CANONICAL_LOWER_KIND):
         return contextlib.nullcontext()
     from torch.fx.experimental import _config as symbolic_config
 
@@ -2298,7 +2302,7 @@ def _trace_and_export(
     target_device = _env.DEVICE
     with (
         _dpa4_kernel_levels_for_target(data["model"], target_device),
-        _canonical_symbolic_shapes(lower_kind == CANONICAL_LOWER_KIND),
+        _graph_symbolic_shapes(lower_kind),
     ):
         return _trace_and_export_impl(
             data,
@@ -3507,7 +3511,7 @@ def _deserialize_to_file_pt2(
         "typically several minutes)...",
         _env.DEVICE,
     )
-    with _canonical_symbolic_shapes(lower_kind == CANONICAL_LOWER_KIND):
+    with _graph_symbolic_shapes(lower_kind):
         aoti_compile_and_package(
             exported, package_path=model_file, inductor_configs=lower_configs
         )
@@ -3541,7 +3545,7 @@ def _deserialize_to_file_pt2(
             # regular one (graph freeze -> graph with-comm trace).
             lower_kind=lower_kind,
         )
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, _graph_symbolic_shapes(lower_kind):
             wc_path = os.path.join(td, "forward_lower_with_comm.pt2")
             aoti_compile_and_package(
                 exported_wc, package_path=wc_path, inductor_configs=aoti_configs

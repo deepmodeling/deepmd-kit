@@ -741,10 +741,17 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
     if tune_train >= 2:
         compile_options["max_autotune_gemm"] = True
     if inference:
+        release = _torch_release()
+        # PyTorch 2.10 can miscompile masked CPU loop tails in dynamic
+        # inference graphs, producing incorrect forces or corrupting the
+        # heap on small systems. Full SIMD blocks and parallel loops remain
+        # enabled; only the remainder uses scalar code.
+        if release == (2, 10):
+            compile_options["cpp.enable_loop_tail_vec"] = False
         # PyTorch 2.11 CPU SIMD codegen can reuse a scatter's index array
         # in an earlier gather before its declaration, even without
         # horizontal fusion. Scalar codegen preserves the dynamic graph.
-        if _torch_release() == (2, 11):
+        elif release == (2, 11):
             compile_options["cpp.simdlen"] = 1
         # The peak-memory reordering pass sizes buffers through
         # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
@@ -777,7 +784,7 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
             # reductions, so its memory-safety fixtures use serial codegen.
             compile_options["cpp.dynamic_threads"] = False
             compile_options["cpp.threads"] = 1
-        elif _torch_release() != (2, 11):
+        elif release != (2, 11):
             compile_options["cpp.min_chunk_size"] = 1
             # Resolve the thread count at run time instead of baking the
             # freezing host's into the generated code. A deployed artifact is

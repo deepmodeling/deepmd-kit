@@ -36,18 +36,27 @@ class TestForbiddenDimsFromModel:
         assert forbidden_dims_from_model(torch.nn.Module(), []) == set()
 
 
-def test_fusion_size_defaults_to_eight(monkeypatch) -> None:
+@pytest.mark.parametrize("release", [(2, 10), (2, 13)])
+def test_default_inductor_options(
+    monkeypatch: pytest.MonkeyPatch, release: tuple[int, int]
+) -> None:
     monkeypatch.delenv("DP_FUSION_SIZE", raising=False)
     monkeypatch.delenv("DP_GEN_UNDER_SANITIZER", raising=False)
-    monkeypatch.setattr(compile_compat, "_torch_release", lambda: (2, 13))
+    monkeypatch.setattr(compile_compat, "_torch_release", lambda: release)
 
-    assert build_inductor_compile_options()["max_fusion_size"] == 8
+    training_options = build_inductor_compile_options()
+    assert training_options["max_fusion_size"] == 8
+    assert "cpp.enable_loop_tail_vec" not in training_options
     inference_options = build_inductor_compile_options(inference=True)
     assert inference_options["max_fusion_size"] == 8
     assert inference_options["cpp.min_chunk_size"] == 1
     assert inference_options["cpp.dynamic_threads"] is True
     assert "cpp.max_horizontal_fusion_size" not in inference_options
     assert "cpp.simdlen" not in inference_options
+    if release == (2, 10):
+        assert inference_options["cpp.enable_loop_tail_vec"] is False
+    else:
+        assert "cpp.enable_loop_tail_vec" not in inference_options
 
 
 def test_torch_211_inference_keeps_default_cpp_parallelism(monkeypatch) -> None:
