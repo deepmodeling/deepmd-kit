@@ -6,6 +6,9 @@ import unittest
 from importlib.util import (
     find_spec,
 )
+from types import (
+    SimpleNamespace,
+)
 
 import numpy as np
 import optax
@@ -25,6 +28,7 @@ from deepmd.jax.optimizer import (
 from deepmd.jax.optimizer.hybrid_muon import (
     MuonState,
     _gram_newton_schulz_orth,
+    _matrix_product,
     _newton_schulz_orth,
     _parameter_name,
     _route_parameter,
@@ -314,6 +318,23 @@ def test_orthogonalization(shape: tuple[int, ...]) -> None:
         np.testing.assert_allclose(
             np.asarray(result, dtype=np.float32), expected, rtol=0, atol=tolerance
         )
+
+
+@pytest.mark.parametrize(("capability", "operand"), [("7.0", "f32"), ("8.0", "bf16")])
+def test_cuda_bfloat16_matrix_product(
+    monkeypatch: pytest.MonkeyPatch, capability: str, operand: str
+) -> None:
+    """Both CUDA targets accumulate in FP32 with hardware-supported operands."""
+    matrix = jax.ShapeDtypeStruct((2, 2), jnp.bfloat16)
+    device = SimpleNamespace(
+        client=SimpleNamespace(platform_version="cuda"),
+        compute_capability=capability,
+    )
+    with monkeypatch.context() as scoped:
+        scoped.setattr(jax, "local_devices", lambda: [device])
+        program = jax.jit(lambda x: _matrix_product(x, x)).lower(matrix)
+    dot = next(line for line in program.as_text().splitlines() if "dot_general" in line)
+    assert f"(tensor<2x2x{operand}>, tensor<2x2x{operand}>) -> tensor<2x2xf32>" in dot
 
 
 @pytest.mark.skipif(not TEST_PT, reason="PyTorch is required")

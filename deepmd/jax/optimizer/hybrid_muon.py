@@ -267,13 +267,29 @@ def _route_parameter(
     return _Route("muon", (math.prod(effective[:-2]), effective[-2], effective[-1]))
 
 
-def _matmul(left: jax.Array, right: jax.Array) -> jax.Array:
-    product = jnp.matmul(
+def _matrix_product(left: jax.Array, right: jax.Array) -> jax.Array:
+    """Accumulate the BF16 recurrence in FP32 on the target hardware."""
+    # An FP32 accumulator does not change the input type passed to cuBLAS.
+    # Pre-Ampere CUDA devices have no BF16 matrix multiply. Widening the
+    # already rounded operands is exact; the caller retains each BF16
+    # iteration boundary.
+    if left.dtype == jnp.bfloat16 and any(
+        int(device.compute_capability.split(".")[0]) < 8
+        for device in jax.local_devices()
+        if "cuda" in device.client.platform_version.lower()
+    ):
+        left = left.astype(jnp.float32)
+        right = right.astype(jnp.float32)
+    return jnp.matmul(
         left,
         right,
         precision=jax.lax.Precision.HIGHEST,
         preferred_element_type=jnp.float32,
     )
+
+
+def _matmul(left: jax.Array, right: jax.Array) -> jax.Array:
+    product = _matrix_product(left, right)
     return jax.lax.optimization_barrier(product.astype(left.dtype))
 
 
@@ -285,12 +301,7 @@ def _addmm(
     alpha: float = 1.0,
 ) -> jax.Array:
     """Accumulate matrix products and scalar coefficients before rounding."""
-    product = jnp.matmul(
-        left,
-        right,
-        precision=jax.lax.Precision.HIGHEST,
-        preferred_element_type=jnp.float32,
-    )
+    product = _matrix_product(left, right)
     result = (beta * base.astype(jnp.float32) + alpha * product).astype(base.dtype)
     # Each recurrence consumes the rounded low-precision matrix. XLA may
     # otherwise retain excess precision across fused GEMM epilogues, changing
