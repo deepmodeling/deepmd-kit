@@ -7,28 +7,22 @@ from typing import (
 
 import numpy as np
 import pytest
-from packaging.version import (
-    Version,
-)
 
 from deepmd.jax.common import (
     as_pure,
     to_flat_state,
 )
 from deepmd.jax.env import (
-    flax_version,
     jax,
     jnp,
     nnx,
 )
 from deepmd.jax.optimizer import (
     build_adam,
+    update_optimizer,
 )
 from deepmd.jax.train.parameter_activity import (
     parameter_activity,
-)
-from deepmd.jax.train.trainer import (
-    _legacy_optimizer_update,
 )
 
 
@@ -82,10 +76,7 @@ def test_unused_parameters_skip_decay_and_moment_clocks() -> None:
 
         active = parameter_activity(objective, model)
         gradients = nnx.grad(objective)(model)
-        if Version(flax_version) >= Version("0.11.0"):
-            optimizer.update(model, gradients, learning_rate=0.01, active=active)
-        else:
-            _legacy_optimizer_update(optimizer, gradients, 0.01, active=active)
+        update_optimizer(optimizer, model, gradients, learning_rate=0.01, active=active)
 
     initial = nnx.state(model).to_pure_dict()
     step(model, optimizer)

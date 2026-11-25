@@ -14,19 +14,18 @@ from typing import (
 import numpy as np
 import pytest
 import torch
-from packaging.version import (
-    Version,
-)
 
 from deepmd.entrypoints.convert_backend import (
     convert_backend,
+)
+from deepmd.infer import (
+    DeepPot,
 )
 from deepmd.jax.common import (
     as_pure,
     to_flat_state,
 )
 from deepmd.jax.env import (
-    flax_version,
     jax,
     jnp,
     nnx,
@@ -36,9 +35,7 @@ from deepmd.jax.model.base_model import (
 )
 from deepmd.jax.optimizer import (
     build_optimizer,
-)
-from deepmd.jax.train.trainer import (
-    _legacy_optimizer_update,
+    update_optimizer,
 )
 from deepmd.jax.utils.checkpoint import (
     import_training_state,
@@ -103,7 +100,7 @@ def _checkpoint(
             if parameter.requires_grad:
                 parameter.grad = torch.full_like(parameter, 0.1 + step * 0.03)
         optimizer.step()
-        average.update(reference)
+        average.update()
     wrapper.train_infos.update(step=2, lr=0.0004)
     checkpoint = {
         "model": wrapper.state_dict(),
@@ -210,10 +207,7 @@ def test_converted_hybrid_muon_continues_the_pt_parameter_trajectory(
         if parameter.requires_grad:
             parameter.grad = torch.full_like(parameter, 0.21)
     reference_optimizer.step()
-    if Version(flax_version) >= Version("0.11.0"):
-        optimizer.update(models, gradients, learning_rate=0.0004)
-    else:
-        _legacy_optimizer_update(optimizer, gradients, 0.0004)
+    update_optimizer(optimizer, models, gradients, learning_rate=0.0004)
     expected = dict(wrapper.named_parameters())
     for path, variable in to_flat_state(nnx.state(models, nnx.Param)):
         name = "model." + jax_to_pt_parameter_name(".".join(map(str, path)))
@@ -294,7 +288,7 @@ def test_multitask_conversion_preserves_shared_optimizer_and_ema(
             if parameter.requires_grad:
                 parameter.grad = torch.full_like(parameter, 0.11)
         optimizer.step()
-        average.update(models)
+        average.update()
     wrapper.train_infos.update(step=2, lr=0.0005)
     source = {
         "model": wrapper.state_dict(),
@@ -335,6 +329,12 @@ def test_multitask_conversion_preserves_shared_optimizer_and_ema(
         actual_models["zeta"].get_descriptor().type_embedding
         is actual_models["alpha"].get_descriptor().type_embedding
     )
+    selected = DeepPot(str(restored), head="alpha")
+    torch.testing.assert_close(
+        selected.deep_eval.dp.model["Default"].cpu().state_dict(),
+        actual_models["alpha"].state_dict(),
+    )
+    selected.close()
     expected = export_pt_training(source, wrapper)
     actual = export_pt_training(result, actual_wrapper)
     assert expected["optimizer"]["state"].keys() == actual["optimizer"]["state"].keys()

@@ -20,6 +20,7 @@ from deepmd.jax.optimizer import (
     build_hybrid_muon,
     export_hybrid_muon_state,
     import_hybrid_muon_state,
+    update_optimizer,
 )
 from deepmd.jax.optimizer.hybrid_muon import (
     MuonState,
@@ -198,7 +199,7 @@ class TestHybridMuonState(unittest.TestCase):
         @nnx.jit
         def step(model: NativeLayer, optimizer: nnx.Optimizer, rate: jax.Array) -> None:
             gradients = nnx.grad(lambda m: jnp.sum(m(jnp.ones((2, 3))) ** 2))(model)
-            optimizer.update(model, gradients, learning_rate=rate)
+            update_optimizer(optimizer, model, gradients, learning_rate=rate)
 
         before = np.asarray(model.w[...])
         step(model, optimizer, jnp.asarray(0.01))

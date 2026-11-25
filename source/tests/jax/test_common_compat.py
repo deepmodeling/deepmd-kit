@@ -147,9 +147,9 @@ def test_legacy_optimizer_updates_shared_models_and_preserves_inactive_heads() -
     """Dictionary gradients and activity masks retain the optimizer state tree."""
     from deepmd.jax.optimizer import (
         build_hybrid_muon,
+        update_optimizer,
     )
     from deepmd.jax.train.trainer import (
-        _legacy_optimizer_update,
         _task_parameter_masks,
     )
 
@@ -173,10 +173,11 @@ def test_legacy_optimizer_updates_shared_models_and_preserves_inactive_heads() -
             + jnp.sum(values["first"].head.value ** 2)
         )
     )(models)
-    _legacy_optimizer_update(
+    update_optimizer(
         optimizer,
+        models,
         gradients,
-        1e-3,
+        learning_rate=1e-3,
         active=_task_parameter_masks(models)["first"],
     )
     assert int(optimizer.step.value) == 1

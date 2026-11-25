@@ -13,6 +13,19 @@ import optax
 from jax.sharding import (
     NamedSharding,
 )
+from packaging.version import (
+    Version,
+)
+
+from deepmd.jax.common import (
+    from_flat_state,
+    to_flat_state,
+)
+from deepmd.jax.env import (
+    flax_version,
+    jax,
+    nnx,
+)
 
 from .adam import (
     build_adam,
@@ -89,10 +102,56 @@ def build_optimizer(
     )
 
 
+def update_optimizer(
+    optimizer: nnx.Optimizer,
+    model: Any,
+    grads: Any,
+    *,
+    learning_rate: float | jax.Array,
+    **kwargs: Any,
+) -> None:
+    """Apply gradients and Optax extra arguments across the NNX optimizer APIs.
+
+    Flax 0.11 and later take the model at update time. Earlier optimizers own
+    the model and do not forward extra arguments to their transformation.
+    """
+    if Version(flax_version) >= Version("0.11.0"):
+        optimizer.update(model, grads, learning_rate=learning_rate, **kwargs)
+        return
+
+    from flax.nnx.training.optimizer import (
+        _opt_state_variables_to_state,
+        _update_opt_state,
+    )
+
+    params = nnx.state(optimizer.model, optimizer.wrt)
+    # Older NNX differentiates a model dictionary into nested State objects,
+    # whereas optimizer initialization stores one State with nested mappings.
+    # Flattening and rebuilding preserves variable metadata and makes both
+    # the gradient and activity trees match the parameter container structure.
+    grads = from_flat_state(to_flat_state(nnx.State(grads)))
+    active = kwargs.get("active")
+    if active is not None:
+        kwargs["active"] = from_flat_state(to_flat_state(nnx.State(active)))
+    opt_state = _opt_state_variables_to_state(optimizer.opt_state)
+    updates, new_opt_state = optimizer.tx.update(
+        grads,
+        opt_state,
+        params,
+        learning_rate=learning_rate,
+        **kwargs,
+    )
+    new_params = optax.apply_updates(params, updates)
+    optimizer.step.value += 1
+    nnx.update(optimizer.model, new_params)
+    _update_opt_state(optimizer.opt_state, new_opt_state)
+
+
 __all__ = [
     "build_adam",
     "build_hybrid_muon",
     "build_optimizer",
     "export_hybrid_muon_state",
     "import_hybrid_muon_state",
+    "update_optimizer",
 ]

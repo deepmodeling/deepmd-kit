@@ -34,11 +34,7 @@ if TYPE_CHECKING:
     )
 
 import numpy as np
-import optax
 import orbax.checkpoint as ocp
-from packaging.version import (
-    Version,
-)
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
@@ -120,7 +116,6 @@ from deepmd.jax.common import (
 )
 from deepmd.jax.env import (
     OptState,
-    flax_version,
     jax,
     jnp,
     nnx,
@@ -130,6 +125,9 @@ from deepmd.jax.model.base_model import (
 )
 from deepmd.jax.model.model import (
     get_model,
+)
+from deepmd.jax.optimizer import (
+    update_optimizer,
 )
 from deepmd.jax.train.distributed import (
     DistributedTraining,
@@ -1303,10 +1301,7 @@ class DPTrainer(AbstractTrainer):
                     optimizer.nonfinite_gradient_seen[...] | ~jnp.isfinite(total_norm),
                 )
                 grads = _clip_gradients(grads, gradient_max_norm, total_norm=total_norm)
-            if Version(flax_version) >= Version("0.11.0"):
-                optimizer.update(models, grads, learning_rate=lr, active=active)
-            else:
-                _legacy_optimizer_update(optimizer, grads, lr, active=active)
+            update_optimizer(optimizer, models, grads, learning_rate=lr, active=active)
             if ema_models is not None:
                 parameters = nnx.state(models, nnx.Param)
                 shadow = nnx.state(ema_models, nnx.Param)
@@ -1902,38 +1897,6 @@ def get_additional_data_requirement(model: BaseModel) -> list[DataRequirementIte
             )
         )
     return requirements
-
-
-def _legacy_optimizer_update(
-    optimizer: Any, grads: Any, lr: float, **kwargs: Any
-) -> None:
-    """Run an NNX optimizer update with extra args on Flax before 0.11."""
-    from flax.nnx.training.optimizer import (
-        _opt_state_variables_to_state,
-        _update_opt_state,
-    )
-
-    params = nnx.state(optimizer.model, optimizer.wrt)
-    # Older NNX differentiates a model dictionary into nested State objects,
-    # whereas optimizer initialization stores one State with nested mappings.
-    # Flattening and rebuilding preserves variable metadata and makes both
-    # the gradient and activity trees match the parameter container structure.
-    grads = from_flat_state(to_flat_state(nnx.State(grads)))
-    active = kwargs.get("active")
-    if active is not None:
-        kwargs["active"] = from_flat_state(to_flat_state(nnx.State(active)))
-    opt_state = _opt_state_variables_to_state(optimizer.opt_state)
-    updates, new_opt_state = optimizer.tx.update(
-        grads,
-        opt_state,
-        params,
-        learning_rate=lr,
-        **kwargs,
-    )
-    new_params = optax.apply_updates(params, updates)
-    optimizer.step.value += 1
-    nnx.update(optimizer.model, new_params)
-    _update_opt_state(optimizer.opt_state, new_opt_state)
 
 
 def _copy_matching_state_tree(

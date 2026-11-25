@@ -12,9 +12,6 @@ import numpy as np
 import optax
 import pytest
 import torch
-from packaging.version import (
-    Version,
-)
 
 from deepmd.jax.common import (
     as_pure,
@@ -30,7 +27,6 @@ from deepmd.jax.descriptor.lora import (
     serialize_merged_model,
 )
 from deepmd.jax.env import (
-    flax_version,
     jax,
     jnp,
     nnx,
@@ -43,13 +39,11 @@ from deepmd.jax.model.model import (
 )
 from deepmd.jax.optimizer import (
     build_hybrid_muon,
+    update_optimizer,
 )
 from deepmd.jax.optimizer.hybrid_muon import (
     MuonState,
     _parameter_name,
-)
-from deepmd.jax.train.trainer import (
-    _legacy_optimizer_update,
 )
 from deepmd.jax.utils.multi_task import (
     preprocess_shared_params,
@@ -379,10 +373,7 @@ def test_force_loss_trains_adapters_and_preserves_frozen_weights() -> None:
         grads = gradient(model)
         for value in jax.tree_util.tree_leaves(grads):
             assert np.all(np.isfinite(value))
-        if Version(flax_version) >= Version("0.11.0"):
-            optimizer.update(model, grads, learning_rate=0.001)
-        else:
-            _legacy_optimizer_update(optimizer, grads, 0.001)
+        update_optimizer(optimizer, model, grads, learning_rate=0.001)
     final = _arrays(model)
     frozen = {name for name in initial if name not in _arrays(model, nnx.Param)}
     for name in frozen:

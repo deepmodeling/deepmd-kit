@@ -34,6 +34,7 @@ from deepmd.jax.model.model import (
 from deepmd.jax.optimizer import (
     build_adam,
     build_hybrid_muon,
+    update_optimizer,
 )
 from deepmd.jax.train.distributed import (
     DistributedTraining,
@@ -147,7 +148,9 @@ def _step(distributed: DistributedTraining, *, group_count: int = 1) -> Any:
         gradients = distributed.constrain_gradients(gradients)
         norm = optax.global_norm(gradients)
         clipped = _clip_gradients(gradients, 0.05)
-        optimizer.update(models, clipped, learning_rate=learning_rate, active=active)
+        update_optimizer(
+            optimizer, models, clipped, learning_rate=learning_rate, active=active
+        )
         shadow = jax.tree.map(
             lambda average, current: average + 0.2 * (current - average),
             nnx.state(ema_models, nnx.Param),
@@ -282,12 +285,11 @@ def test_frame_filter_retries_whole_device_group() -> None:
 
     distributed = DistributedTraining({}, devices=jax.local_devices()[:2])
     data = Data([[0.5], [2.0], [2.0, 0.5], [2.0]])
-    first, second = distributed.get_batch_group(
-        data, task_key="task", filter_enabled=True
-    )
+    group = distributed.get_batch_group(data, task_key="task", filter_enabled=True)
     assert data.index == 4
-    np.testing.assert_array_equal(first["energy"], [[20]])
-    np.testing.assert_array_equal(second["energy"], [[30]])
+    np.testing.assert_array_equal(
+        [batch["energy"] for batch in group], [[[20]], [[30]]]
+    )
     invalid = Data([[0.5], [2.0], [0.5], [2.0]])
     with pytest.raises(RuntimeError, match="No globally valid training batch group"):
         distributed.get_batch_group(invalid, task_key="task", filter_enabled=True)
@@ -437,7 +439,7 @@ def test_optimizer_model_alias_remains_replicated() -> None:
     ) -> Any:
         del batch, active, ema
         gradients = nnx.grad(lambda current: jnp.sum(current.weight[...] ** 2))(model)
-        optimizer.update(model, gradients, learning_rate=rate)
+        update_optimizer(optimizer, model, gradients, learning_rate=rate)
         return model.weight[...]
 
     step(model, optimizer, 0.01, None, None, None)
@@ -502,8 +504,12 @@ def test_shared_task_state_and_checkpoint(tmp_path: Path) -> None:
                 lambda tree: jnp.mean(tree[task](batch) ** 2)
             )(models)
             gradients = context.constrain_gradients(gradients)
-            optimizer.update(
-                models, _clip_gradients(gradients, 0.1), learning_rate=rate, active=mask
+            update_optimizer(
+                optimizer,
+                models,
+                _clip_gradients(gradients, 0.1),
+                learning_rate=rate,
+                active=mask,
             )
             nnx.update(
                 ema,
