@@ -139,7 +139,13 @@ def _write_hdf5(path: Path) -> None:
             )
 
 
-def _config(path: str | Path, *, mode: str, multitask: bool = True) -> dict:
+def _config(
+    path: str | Path,
+    *,
+    mode: str,
+    multitask: bool = True,
+    task_sampling: str | None = None,
+) -> dict:
     descriptor = {
         "type": "se_e2_a",
         "sel": [4, 4],
@@ -180,6 +186,8 @@ def _config(path: str | Path, *, mode: str, multitask: bool = True) -> dict:
         "disp_freq": 3,
         "save_freq": 10,
     }
+    if task_sampling is not None:
+        training["task_sampling"] = task_sampling
     config = {
         "learning_rate": {
             "type": "exp",
@@ -961,13 +969,232 @@ def test_malformed_rank_envelope_is_rejected(
     assert "training.reset_data_progress is true" not in caplog.text
 
 
-def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -> None:
+@pytest.mark.parametrize("saved_mode", ["synchronized", "independent"])
+@pytest.mark.parametrize("current_size", [1, 2])
+@pytest.mark.parametrize("reset", [False, True])
+def test_task_sampling_mode_change_requires_reset(
+    saved_mode, current_size, reset
+) -> None:
+    """A restart cannot silently switch the meaning of its saved task stream."""
+    trainer = Trainer.__new__(Trainer)
+    trainer.rank = 0
+    trainer.world_size = current_size
+    trainer._configured_data_seed = 19
+    trainer.task_sampling = (
+        "independent" if saved_mode == "synchronized" else "synchronized"
+    )
+    trainer._task_rng = np.random.default_rng(19)
+    before = deepcopy(trainer._task_rng.bit_generator.state)
+    progress = {
+        **(
+            {"format": "per_rank_task_rng"}
+            if saved_mode == "independent"
+            else {"version": 1}
+        ),
+        "task_sampling": saved_mode,
+        "configured_seed": 19,
+        "world_size": 1,
+        "task_rng": np.random.default_rng(91).bit_generator.state,
+        "ranks": [{}],
+    }
+    with patch(
+        "deepmd.pt_expt.train.training.restore_training_data_progress"
+    ) as restore:
+        if reset:
+            trainer._restore_data_progress(progress, reset=True)
+        else:
+            with pytest.raises(ValueError, match="Task sampling changed"):
+                trainer._restore_data_progress(progress)
+    restore.assert_not_called()
+    assert trainer._task_rng.bit_generator.state == before
+
+
+@pytest.mark.parametrize("missing_rank", [0, 1])
+def test_independent_restart_requires_every_rank_rng(missing_rank) -> None:
+    """Do not fall back to the chief's RNG when another rank's state is absent."""
+    trainer = Trainer.__new__(Trainer)
+    trainer.rank = 0
+    trainer.world_size = 2
+    trainer._configured_data_seed = 19
+    trainer.task_sampling = "independent"
+    rng = np.random.default_rng(19).bit_generator.state
+    ranks = [{"task_rng": rng}, {"task_rng": rng}]
+    ranks[missing_rank] = {}
+    with pytest.raises(ValueError, match="every rank's RNG state"):
+        trainer._restore_data_progress(
+            {
+                "format": "per_rank_task_rng",
+                "task_sampling": "independent",
+                "configured_seed": 19,
+                "world_size": 2,
+                "task_rng": rng,
+                "ranks": ranks,
+            }
+        )
+
+
+@pytest.mark.parametrize("sampling", ["synchronized", "independent"])
+@pytest.mark.parametrize("multitask", [False, True])
+def test_explicit_task_sampling_requires_multiple_models(
+    tmp_path, sampling, multitask
+) -> None:
+    """Reject normal single-task and one-entry model_dict, including direct calls."""
+    config = _config(tmp_path / "missing-data", mode="directory", multitask=multitask)
+    if multitask:
+        config["model"]["model_dict"].pop("second")
+        config["training"]["data_dict"].pop("second")
+        config["training"]["model_prob"].pop("second")
+        config["loss_dict"].pop("second")
+    config["training"]["task_sampling"] = sampling
+    with pytest.raises((ValueError, RuntimeError), match="at least two tasks"):
+        get_trainer(deepcopy(config))
+    # The normal configuration path must reject the option too, before any I/O.
+    from dargs.dargs import (
+        ArgumentError,
+    )
+
+    with pytest.raises((ValueError, ArgumentError), match="task_sampling"):
+        normalize(config, multi_task=multitask)
+
+
+@pytest.mark.parametrize("seed", [19, None])
+def test_single_process_independent_restart(tmp_path, monkeypatch, seed) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    _write_directory(tmp_path / "data")
+    config = _config(tmp_path / "data", mode="directory", task_sampling="independent")
+    config["training"]["seed"] = seed
+    trainer = get_trainer(deepcopy(config))
+    expected = _record_training(trainer)
+    restarted = get_trainer(
+        deepcopy(config), restart_model=str(tmp_path / "model.ckpt-10.pt")
+    )
+    actual = _record_training(restarted)
+    _assert_records_equal(expected[10:], actual)
+
+
+@pytest.mark.parametrize("mode", ["directory", "lmdb"])
+def test_task_sampling_does_not_change_within_task_batches(tmp_path, monkeypatch, mode):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    path = tmp_path / ("data" if mode == "directory" else "data.lmdb")
+    if mode == "directory":
+        _write_directory(path)
+    else:
+        _write_lmdb(path, mixed=False)
+    records = []
+    for sampling in ("synchronized", "independent"):
+        trainer = get_trainer(_config(path, mode=mode, task_sampling=sampling))
+        batches = []
+        try:
+            for _ in range(5):
+                # Task draws must not perturb the task-local data streams.
+                for _ in range(17):
+                    trainer.select_task(trainer.training_tasks)
+                for key in trainer.training_tasks.keys:
+                    inputs, labels = trainer.get_data(task_key=key)
+                    batches.append((inputs["coord"].clone(), labels["energy"].clone()))
+        finally:
+            trainer._close_data_systems()
+        records.append(batches)
+    for first, second in zip(*records, strict=True):
+        for a, b in zip(first, second, strict=True):
+            torch.testing.assert_close(a, b, rtol=0, atol=0)
+
+
+def test_independent_topology_change_resets_all_progress(caplog) -> None:
+    trainer = Trainer.__new__(Trainer)
+    trainer.rank = 0
+    trainer.world_size = 1
+    trainer.task_sampling = "independent"
+    trainer._task_rng = np.random.default_rng(19)
+    before = deepcopy(trainer._task_rng.bit_generator.state)
+    trainer.training_data_by_task = {}
+    trainer._restore_data_progress(
+        {
+            "format": "per_rank_task_rng",
+            "task_sampling": "independent",
+            "world_size": 2,
+            "ranks": [{}, {}],
+        }
+    )
+    assert trainer._task_rng.bit_generator.state == before
+    assert "Checkpoint world size changed" in caplog.text
+
+
+def _ddp_task_probability_worker(
+    rank: int, directory: str, rendezvous: str, sampling: str, first_probability: float
+) -> None:
+    torch.set_num_threads(1)
+    root = Path(directory)
+    dist.init_process_group("gloo", init_method=rendezvous, rank=rank, world_size=2)
+    try:
+        config = _config(root / "data", mode="directory", task_sampling=sampling)
+        config["training"].update(
+            model_prob={"first": first_probability, "second": 1 - first_probability},
+            save_ckpt=str(root / "model.ckpt"),
+            disp_file=str(root / "lcurve.out"),
+        )
+        config = normalize(config, multi_task=True)
+        trainer = get_trainer(config)
+        try:
+            choices = [
+                trainer.select_task(trainer.training_tasks).key for _ in range(10000)
+            ]
+            ranks = [None, None]
+            dist.all_gather_object(ranks, choices)
+            for sequence in ranks:
+                assert set(sequence) == {"first", "second"}
+                # At p=0.1 or 0.9, 0.02 exceeds six binomial standard errors.
+                # Check each rank: pooled counts could hide a fixed task per rank.
+                assert sequence.count("first") / len(sequence) == pytest.approx(
+                    first_probability, abs=0.02
+                )
+            assert (ranks[0] == ranks[1]) == (sampling == "synchronized")
+        finally:
+            trainer._close_data_systems()
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_gloo_available(), reason="Requires Gloo")
+@pytest.mark.parametrize("sampling", ["synchronized", "independent"])
+@pytest.mark.parametrize("first_probability", [0.9, 0.1])
+def test_two_rank_task_sampling_honors_model_prob(
+    tmp_path, monkeypatch, sampling, first_probability
+) -> None:
+    """Both sampling modes preserve asymmetric task probabilities on every rank."""
+    monkeypatch.setenv("DEVICE", "cpu")
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    _write_directory(tmp_path / "data")
+    mp.spawn(
+        _ddp_task_probability_worker,
+        args=(
+            str(tmp_path),
+            (tmp_path / "rendezvous").as_uri(),
+            sampling,
+            first_probability,
+        ),
+        nprocs=2,
+        join=True,
+    )
+
+
+def _ddp_restart_worker(
+    rank: int,
+    directory: str,
+    rendezvous: str,
+    mode: str,
+    sampling: str,
+    seed: int | None,
+) -> None:
     torch.set_num_threads(1)
     root = Path(directory)
     dist.init_process_group("gloo", init_method=rendezvous, rank=rank, world_size=2)
     try:
         path = root / ("data" if mode == "directory" else "data.lmdb")
-        config = _config(path, mode=mode)
+        config = _config(path, mode=mode, task_sampling=sampling)
+        config["training"]["seed"] = seed
         config["training"].update(
             save_ckpt=str(root / "model.ckpt"),
             disp_file=str(root / "lcurve.out"),
@@ -977,13 +1204,27 @@ def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -
             unseeded_config["training"]["seed"] = None
             unseeded = get_trainer(unseeded_config)
             choices = [
-                unseeded.select_task(unseeded.training_tasks).key for _ in range(8)
+                unseeded.select_task(unseeded.training_tasks).key for _ in range(64)
             ]
             ranks = [None, None]
             dist.all_gather_object(ranks, choices)
-            assert ranks[0] == ranks[1]
+            assert (ranks[0] == ranks[1]) == (sampling == "synchronized")
             unseeded._close_data_systems()
-        dp_random.seed(19)
+        if sampling == "independent" and seed is not None:
+            sequences = []
+            for _ in range(2):
+                fresh = get_trainer(deepcopy(config))
+                try:
+                    sequences.append(
+                        [fresh.select_task(fresh.training_tasks).key for _ in range(64)]
+                    )
+                finally:
+                    fresh._close_data_systems()
+            assert sequences[0] == sequences[1]
+            ranks = [None, None]
+            dist.all_gather_object(ranks, sequences[0])
+            assert ranks[0] != ranks[1]
+        dp_random.seed([rank, 19])
         trainer = get_trainer(deepcopy(config))
         with preserve_training_data_progress(trainer.training_data_by_task):
             first = next(iter(trainer.training_data_by_task.values()))
@@ -993,9 +1234,9 @@ def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -
         assert ranks[0] != ranks[1]
         expected = _record_training(trainer, data_rng_draws=rank + 1)
         dist.all_gather_object(ranks, [record[0] for record in expected])
-        assert ranks[0] == ranks[1]
+        assert (ranks[0] == ranks[1]) == (sampling == "synchronized")
         dist.barrier()
-        dp_random.seed(9876)
+        dp_random.seed([rank, 9876])
         restarted = get_trainer(
             deepcopy(config), restart_model=str(root / "model.ckpt-10.pt")
         )
@@ -1007,7 +1248,11 @@ def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -
 
 @pytest.mark.skipif(not dist.is_gloo_available(), reason="Requires Gloo")
 @pytest.mark.parametrize("mode", ["directory", "lmdb"])
-def test_two_rank_restart_preserves_each_rank(tmp_path, monkeypatch, mode) -> None:
+@pytest.mark.parametrize("sampling", ["synchronized", "independent"])
+@pytest.mark.parametrize("seed", [19, None])
+def test_two_rank_restart_preserves_each_rank(
+    tmp_path, monkeypatch, mode, sampling, seed
+) -> None:
     """Chief-only statistics/display do not desynchronize saved rank cursors."""
     monkeypatch.setenv("DEVICE", "cpu")
     monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
@@ -1017,7 +1262,7 @@ def test_two_rank_restart_preserves_each_rank(tmp_path, monkeypatch, mode) -> No
         _write_lmdb(tmp_path / "data.lmdb", mixed=False)
     mp.spawn(
         _ddp_restart_worker,
-        args=(str(tmp_path), (tmp_path / "rendezvous").as_uri(), mode),
+        args=(str(tmp_path), (tmp_path / "rendezvous").as_uri(), mode, sampling, seed),
         nprocs=2,
         join=True,
     )
