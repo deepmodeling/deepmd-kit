@@ -237,6 +237,15 @@ def test_version_descriptor_options(family: str, version: str, options: dict) ->
             assert {key: descriptor[key] for key in options} == options
 
 
+@pytest.mark.parametrize(
+    ("version", "channels"), [("v20260901", 8), ("v20260911", 8), ("v20261111", 16)]
+)
+def test_dpa4c_nano_width(version: str, channels: int) -> None:
+    model = get_model_preset(f"dpa4c-nano-{version}")
+    assert model["descriptor"]["channels"] == channels
+    assert model["fitting_net"]["neuron"] == [96, 96, 96]
+
+
 @pytest.mark.parametrize("grade", ["mini", "neo", "air", "plus"])
 def test_duo_preset_adds_one_block_to_its_grade(grade: str) -> None:
     single = get_model_preset(f"dpa4c-{grade}-v20260911")
