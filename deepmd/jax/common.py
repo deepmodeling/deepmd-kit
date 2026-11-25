@@ -37,7 +37,11 @@ from deepmd.jax.env import (
 )
 
 
-class ArrayAPIVariable(nnx.Variable):
+class ArrayAPIMixin:
+    """Expose the wrapped JAX array to backend-independent model code."""
+
+    value: Any
+
     def __array__(self, *args: Any, **kwargs: Any) -> np.ndarray:
         return self.value.__array__(*args, **kwargs)
 
@@ -49,6 +53,16 @@ class ArrayAPIVariable(nnx.Variable):
 
     def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack_device__(*args, **kwargs)
+
+    if not hasattr(nnx.Variable, "set_value"):
+        # Legacy NNX forwards indexed writes to the array itself. JAX arrays
+        # are immutable; the variable owns the result of the functional update.
+        def __setitem__(self, key: Any, value: Any) -> None:
+            self.value = self.value.at[key].set(value)
+
+
+class ArrayAPIVariable(ArrayAPIMixin, nnx.Variable):
+    """A non-parameter NNX variable exposing the array API."""
 
 
 @overload

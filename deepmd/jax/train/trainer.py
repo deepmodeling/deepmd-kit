@@ -1201,8 +1201,8 @@ class DPTrainer(AbstractTrainer):
                 if adapter_fields.intersection(path):
                     continue
                 raise ValueError(f"Init-model checkpoint is missing state {name!r}.")
-            value = source[path][...]
-            expected = variable[...]
+            value = as_pure(source[path])
+            expected = as_pure(variable)
             if value.shape != expected.shape:
                 raise ValueError(
                     f"Init-model state {name!r} expects shape {expected.shape}, "

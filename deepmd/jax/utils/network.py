@@ -4,8 +4,6 @@ from typing import (
     ClassVar,
 )
 
-import numpy as np
-
 from deepmd.dpmodel.common import (
     NativeOP,
 )
@@ -22,6 +20,7 @@ from deepmd.dpmodel.utils.network import (
     make_multilayer_network,
 )
 from deepmd.jax.common import (
+    ArrayAPIMixin,
     ArrayAPIVariable,
     flax_module,
     register_dpmodel_mapping,
@@ -32,18 +31,8 @@ from deepmd.jax.env import (
 )
 
 
-class ArrayAPIParam(nnx.Param):
-    def __array__(self, *args: Any, **kwargs: Any) -> np.ndarray:
-        return self.value.__array__(*args, **kwargs)
-
-    def __array_namespace__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.value.__array_namespace__(*args, **kwargs)
-
-    def __dlpack__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.value.__dlpack__(*args, **kwargs)
-
-    def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.value.__dlpack_device__(*args, **kwargs)
+class ArrayAPIParam(ArrayAPIMixin, nnx.Param):
+    """A trainable NNX variable exposing the array API."""
 
 
 @flax_module
