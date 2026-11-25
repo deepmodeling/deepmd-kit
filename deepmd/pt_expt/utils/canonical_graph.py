@@ -515,9 +515,11 @@ def neighbor_graph_from_canonical(
     slot = torch.arange(source.shape[0], dtype=torch.int64, device=source.device)
     physical = slot < graph.destination_row_ptr[-1:]
     guard = slot % node_count
+    # Row i owns [row_ptr[i], row_ptr[i + 1]). Searching the full offsets
+    # keeps the boundary tensor at storage offset zero in the compiled graph.
     destination = torch.where(
         physical,
-        torch.searchsorted(graph.destination_row_ptr[1:], slot, right=True),
+        torch.searchsorted(graph.destination_row_ptr, slot, right=True) - 1,
         guard,
     )
     return NeighborGraph(
