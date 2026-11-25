@@ -25,6 +25,9 @@ from deepmd.dpmodel.train import (
     make_task_maps,
     print_data_summaries,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    task_sampling_mode,
+)
 from deepmd.loggers import (
     is_node_main_process,
 )
@@ -139,6 +142,10 @@ def get_trainer(
 
     training_params = config["training"]
     multi_task = "model_dict" in config["model"]
+
+    task_sampling_mode(
+        training_params, len(config["model"]["model_dict"]) if multi_task else 1
+    )
 
     data_seed = training_params.get("seed", None)
     is_distributed = dist.is_available() and dist.is_initialized()
