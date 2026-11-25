@@ -307,6 +307,7 @@ def test_kokkos_report_commands_preserve_pytest_status(
         "report = Path(next(a.split('=', 1)[1] for a in sys.argv if a.startswith('--junitxml=')))\n"
         "expected = {\n"
         "    'spin.xml': {'test_dpa4spin_kokkos_magnetic_force.py',\n"
+        "                 'test_lammps_kokkos_atom_energy.py',\n"
         "                 'test_lammps_dpa4c_multiblock_kokkos.py',\n"
         "                 'test_lammps_model_devi_canonical.py'},\n"
         "    'long-range.xml': {'test_lammps_dpa4c_long_range_kokkos.py'},\n"

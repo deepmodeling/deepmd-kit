@@ -124,6 +124,7 @@ PY
 mkdir -p "${BUILD_ROOT}/test-reports"
 TEST_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")
 DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
+	"${REPO_ROOT}/source/lmp/tests/test_lammps_kokkos_atom_energy.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_multiblock_kokkos.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_lammps_model_devi_canonical.py" \

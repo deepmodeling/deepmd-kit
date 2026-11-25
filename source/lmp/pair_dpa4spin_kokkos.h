@@ -63,10 +63,8 @@ template <class DeviceType>
 class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
  public:
   typedef DeviceType device_type;
-  typedef ArrayTypes<DeviceType> AT;
 
   PairDPA4SpinKokkos(class LAMMPS*);
-  ~PairDPA4SpinKokkos() override;
 
   void compute(int, int) override;
   void init_style() override;
@@ -113,17 +111,6 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   Kokkos::View<double*, DeviceType> d_atom_virial;    // (9 * nnode_model)
   // Virial of the whole compact canonical graph.
   Kokkos::View<double[9], DeviceType> d_graph_virial;
-
-  // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
-  // downstream per-atom computes/dumps see it after the device-to-host sync).
-  // The transformed accumulator view was added in the 10Sep2025 release.
-#if LAMMPS_VERSION_NUMBER < 20250910
-  DAT::tdual_double_1d k_eatom;
-  typename AT::t_double_1d d_eatom;
-#else
-  DAT::ttransform_kkacc_1d k_eatom;
-  typename AT::t_kkacc_1d d_eatom;
-#endif
 
   bool reverse_used_host;  // the host pack/unpack overrides ran
   // Device-packed fold that replaces the host reverse communication.

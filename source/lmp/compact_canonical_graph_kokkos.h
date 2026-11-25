@@ -1261,6 +1261,37 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     d_model2loc = k_model2loc.template view<DeviceType>();
   }
 
+  // Pair owns the host tally and may reallocate it when atom capacity grows.
+  // Model energies follow the owned-atom order with NULL types omitted.
+  void copy_local_energies(const Kokkos::View<double*, DeviceType>& energy,
+                           double scale,
+                           double* eatom) {
+    const int nlocal = atom->nlocal;
+    if (nlocal == 0) {
+      return;
+    }
+    auto values = energy;
+    if (nloc_model != nlocal || scale != 1.0) {
+      if (d_local_energy.extent(0) < static_cast<std::size_t>(nlocal)) {
+        d_local_energy = Kokkos::View<double*, DeviceType>(
+            "compact_canonical:eatom", nlocal);
+      }
+      auto mapped = d_local_energy;
+      auto loc2model = d_loc2model;
+      Kokkos::parallel_for(
+          "compact_canonical:map_local_energies",
+          Kokkos::RangePolicy<DeviceType>(0, nlocal),
+          KOKKOS_LAMBDA(const int i) {
+            const int m = loc2model(i);
+            mapped(i) = m < 0 ? 0.0 : scale * energy(m);
+          });
+      values = mapped;
+    }
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host(
+        eatom, nlocal);
+    Kokkos::deep_copy(host, Kokkos::subview(values, std::make_pair(0, nlocal)));
+  }
+
   // Build the compact canonical graph of the current configuration from the
   // Kokkos full neighbor list, with the source-major CSR when ``source_csr``
   // asks for it. Bond vectors are the center-to-neighbor displacements divided
@@ -1951,6 +1982,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
 
   ExecutionSpace execution_space;
   Kokkos::View<std::int64_t, Kokkos::SharedHostPinnedSpace> h_edge_count;
+  Kokkos::View<double*, DeviceType> d_local_energy;
   std::vector<int> host_type_map;
   bool extended_nodes;
   std::size_t edge_capacity;

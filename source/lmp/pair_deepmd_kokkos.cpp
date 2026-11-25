@@ -18,7 +18,6 @@
 #include "error.h"
 #include "force.h"
 #include "kokkos.h"
-#include "memory_kokkos.h"
 #include "neigh_list_kokkos.h"
 #include "neigh_request.h"
 #include "neighbor.h"
@@ -76,14 +75,6 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
   datamask_read = X_MASK | TYPE_MASK | ENERGY_MASK | VIRIAL_MASK;
   datamask_modify = F_MASK | ENERGY_MASK | VIRIAL_MASK;
   reverse_comm_device = 1;
-}
-
-template <class DeviceType>
-PairDeepMDKokkos<DeviceType>::~PairDeepMDKokkos() {
-  if (copymode) {
-    return;
-  }
-  memoryKK->destroy_kokkos(k_eatom, eatom);
 }
 
 template <class DeviceType>
@@ -486,15 +477,6 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   }
 
   const int nlocal = atom->nlocal;
-  // Per-atom energy is scattered on the device into a DualView that aliases the
-  // base Pair ``eatom`` array; (re)allocate it here as the standard Kokkos
-  // pair styles do. The centroid per-atom virial has no Kokkos device path, so
-  // it is filled on the host below.
-  if (eflag_atom) {
-    memoryKK->destroy_kokkos(k_eatom, eatom);
-    memoryKK->create_kokkos(k_eatom, eatom, maxeatom, "deepmd/kk:eatom");
-    d_eatom = k_eatom.template view<DeviceType>();
-  }
   int nedge = 0;
   // The source CSR feeds the source-attributed per-atom virial, and every
   // force assembly of an artifact that groups edges by source.
@@ -750,17 +732,8 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   }
 
   if (eflag_atom) {
-    auto atom_energy = d_atom_energy;
-    auto eatom_v = d_eatom;
-    const double escale = scale[1][1] * ener_unit_cvt_factor;
-    Kokkos::deep_copy(d_eatom, 0.0);  // virtual atoms keep zero energy
-    Kokkos::parallel_for(
-        "deepmd/kk:eatom", Kokkos::RangePolicy<DeviceType>(0, nloc_m),
-        KOKKOS_LAMBDA(const int m) {
-          eatom_v(model2loc(m)) = escale * atom_energy(m);
-        });
-    k_eatom.template modify<DeviceType>();
-    k_eatom.sync_host();
+    compact_graph.copy_local_energies(
+        d_atom_energy, scale[1][1] * ener_unit_cvt_factor, eatom);
   }
 
   if (cvflag_atom) {

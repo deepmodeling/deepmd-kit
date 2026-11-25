@@ -62,10 +62,8 @@ template <class DeviceType>
 class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
  public:
   typedef DeviceType device_type;
-  typedef ArrayTypes<DeviceType> AT;
 
   PairDeepMDKokkos(class LAMMPS*);
-  ~PairDeepMDKokkos() override;
 
   void compute(int, int) override;
   void init_style() override;
@@ -122,17 +120,6 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // the whole graph alongside the per-node outputs, and output_virial() sums
   // it from the per-node virial of the edge-input form.
   Kokkos::View<double[9], DeviceType> d_graph_virial;
-
-  // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
-  // downstream per-atom computes/dumps see it after the device-to-host sync).
-  // The transformed accumulator view was added in the 10Sep2025 release.
-#if LAMMPS_VERSION_NUMBER < 20250910
-  DAT::tdual_double_1d k_eatom;
-  typename AT::t_double_1d d_eatom;
-#else
-  DAT::ttransform_kkacc_1d k_eatom;
-  typename AT::t_kkacc_1d d_eatom;
-#endif
 
   int edge_capacity;     // allocated edges in d_edge_index / d_edge_vec
   bool edge_vec_fp32;    // model graph ABI consumes edge vectors in fp32
