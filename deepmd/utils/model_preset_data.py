@@ -336,7 +336,6 @@ _DPA4C_VERSIONS: dict[str, dict[str, Any]] = {
     # gives the isolated-atom energies (``preset_out_bias``).
     "v20261111": {
         "descriptor": {"basis_type": "gaussian/fix", "density_floor": 8.0},
-        "grade_descriptors": {"nano": {"channels": 16}},
         "fitting_net": {"vacuum_ref": True},
         "grades": tuple(_DPA4C_GRADES),
     },
@@ -359,8 +358,7 @@ def _build_family(
     and ``fitting_net`` hold the options shared by every grade and version.
     Each grade in ``grades`` adds its own ``descriptor`` and ``fitting_net``
     options, and each version in ``versions`` defines its ``descriptor`` and
-    ``fitting_net`` options and available grades. Its ``grade_descriptors``
-    override descriptor options for individual grades of that version.
+    ``fitting_net`` options and available grades.
     """
     presets: dict[str, dict[str, Any]] = {}
     for version, spec in versions.items():
@@ -372,7 +370,6 @@ def _build_family(
                     **descriptor,
                     **spec.get("descriptor", {}),
                     **grades[grade].get("descriptor", {}),
-                    **spec.get("grade_descriptors", {}).get(grade, {}),
                 },
                 "fitting_net": {
                     **fitting_net,
