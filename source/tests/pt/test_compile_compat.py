@@ -53,10 +53,7 @@ def test_default_inductor_options(
     assert inference_options["cpp.dynamic_threads"] is True
     assert "cpp.max_horizontal_fusion_size" not in inference_options
     assert "cpp.simdlen" not in inference_options
-    if release == (2, 10):
-        assert inference_options["cpp.enable_loop_tail_vec"] is False
-    else:
-        assert "cpp.enable_loop_tail_vec" not in inference_options
+    assert inference_options["cpp.enable_loop_tail_vec"] is False
 
 
 def test_torch_211_inference_keeps_default_cpp_parallelism(monkeypatch) -> None:
