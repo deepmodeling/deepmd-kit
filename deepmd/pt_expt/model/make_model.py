@@ -22,6 +22,7 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
     compact_nodes,
     expand_node_values,
     flatten_topologies,
@@ -1495,6 +1496,19 @@ def make_model(
                     charge_spin: torch.Tensor | None,
                     *topology_vals: torch.Tensor,
                 ) -> dict[str, torch.Tensor]:
+                    topologies = unflatten_topologies(topology_names, topology_vals)
+                    if PME_MESH in topologies:
+                        # A real FFT on an even grid has one more frequency
+                        # than half the grid width. Expose the positive pair
+                        # count so that tracing its adjoint preserves this
+                        # relation through the half- and full-spectrum slices.
+                        mesh = topologies[PME_MESH]
+                        pairs = mesh.mode_3.reshape(-1, 2)
+                        torch.ops.aten._assert_scalar.default(
+                            pairs.shape[0] >= 1,
+                            "The PME grid must contain at least two modes.",
+                        )
+                        mesh.mode_3 = pairs.flatten()
                     return model.forward_common_lower_graph(
                         atype,
                         n_node,
@@ -1511,7 +1525,7 @@ def make_model(
                         fparam=fparam,
                         aparam=aparam,
                         charge_spin=charge_spin,
-                        topologies=unflatten_topologies(topology_names, topology_vals),
+                        topologies=topologies,
                     )
 
                 return make_fx(fn_topologies, **make_fx_kwargs)(

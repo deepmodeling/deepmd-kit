@@ -1096,10 +1096,12 @@ def synthetic_border_plan(
     )
 
 
-def _graph_vector_dim(name: str, minimum: int) -> torch.export.Dim:
-    # Node forces and edge displacements each have three Cartesian components.
-    # Their signed-int64 element counts also bound open-ended slices during AOT.
-    return torch.export.Dim(name, min=minimum, max=torch.iinfo(torch.int64).max // 3)
+def _graph_dim(name: str, minimum: int, components: int) -> torch.export.Dim:
+    # Cells have nine components, forces and displacements three. The tensor's
+    # signed-int64 element count bounds its row axis, including open-ended slices.
+    return torch.export.Dim(
+        name, min=minimum, max=torch.iinfo(torch.int64).max // components
+    )
 
 
 def _build_canonical_graph_dynamic_shapes(
@@ -1122,9 +1124,9 @@ def _build_canonical_graph_dynamic_shapes(
     the swap table of the border plan have extents of their own, which may
     be zero.
     """
-    nframes_dim = torch.export.Dim("nframes", min=1)
-    node_dim = _graph_vector_dim("n_node_total", 1)
-    edge_storage_dim = _graph_vector_dim("nedge_storage", 2)
+    nframes_dim = _graph_dim("nframes", 1, 9)
+    node_dim = _graph_dim("n_node_total", 1, 3)
+    edge_storage_dim = _graph_dim("nedge_storage", 2, 3)
     # The source CSR keeps extents of its own: a caller that declines the
     # per-atom virial passes two-entry placeholders in its place.
     source_row_dim = torch.export.Dim("n_source_row", min=2)
@@ -1242,7 +1244,7 @@ def _topology_dynamic_shapes(
         dims["slot"] = torch.export.Dim(f"{name}_slots", min=2)
         dims["k_point"] = torch.export.Dim(f"{name}_block_points", min=2)
         for axis in ("mesh_1", "mesh_2", "mesh_3"):
-            dims[axis] = 2 * torch.export.Dim(f"{name}_{axis}_half", min=1)
+            dims[axis] = 2 * _graph_dim(f"{name}_{axis}_half", 1, 2)
         specs += [
             {dim: dims[axis] for dim, axis in cls.AXES[field.name].items()}
             for field in dataclasses.fields(cls)
@@ -1287,9 +1289,9 @@ def _build_graph_dynamic_shapes(
         Topologies whose fields follow the inputs above (see
         :func:`_topology_dynamic_shapes`).
     """
-    nframes_dim = torch.export.Dim("nframes", min=1)
-    n_node_total_dim = _graph_vector_dim("n_node_total", 1)
-    nedge_dim = _graph_vector_dim("nedge", 2)
+    nframes_dim = _graph_dim("nframes", 1, 9)
+    n_node_total_dim = _graph_dim("n_node_total", 1, 3)
+    nedge_dim = _graph_dim("nedge", 2, 3)
     base = (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_dim},  # n_node: (nf,)
@@ -1377,8 +1379,8 @@ def _build_graph_dynamic_shapes_with_comm(
     aparam = sample_inputs[11]
     charge_spin = sample_inputs[12]
     nframes_val = 1
-    n_node_total_dim = _graph_vector_dim("n_node_total", 1)
-    nedge_dim = _graph_vector_dim("nedge", 2)
+    n_node_total_dim = _graph_dim("n_node_total", 1, 3)
+    nedge_dim = _graph_dim("nedge", 2, 3)
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_val},  # n_node: (nf,) — nf STATIC at 1
