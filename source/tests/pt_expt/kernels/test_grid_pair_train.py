@@ -580,24 +580,6 @@ def test_aotautograd_reuses_multifocus_stride_across_batch_shapes() -> None:
     assert compile_counter.frame_count == 1
 
 
-@pytest.fixture
-def tf32_disabled() -> Iterator[None]:
-    """Disable TF32 in cuBLAS and cuDNN for one test and restore it afterwards.
-
-    The flags are restored through their own attributes: the cuBLAS flag is
-    served by the ``__getattr__`` of its module rather than an attribute
-    entry, which ``monkeypatch.setattr`` of pytest 9.2 records as absent and
-    deletes at teardown.
-    """
-    backends = (torch.backends.cuda.matmul, torch.backends.cudnn)
-    previous = [backend.allow_tf32 for backend in backends]
-    for backend in backends:
-        backend.allow_tf32 = False
-    yield
-    for backend, allow_tf32 in zip(backends, previous, strict=True):
-        backend.allow_tf32 = allow_tf32
-
-
 @pytest.mark.usefixtures("tf32_disabled")
 @pytest.mark.parametrize(
     ("n_focus", "channels", "amp", "force_reference"),
