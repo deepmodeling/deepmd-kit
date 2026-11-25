@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Task-stream parity and checkpoint layout without a backend or collectives."""
 
-from copy import deepcopy
+from copy import (
+    deepcopy,
+)
 
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.train import TrainingTask, TrainingTaskCollection
+from deepmd.dpmodel.train import (
+    TrainingTask,
+    TrainingTaskCollection,
+)
 from deepmd.dpmodel.train.task_sampling import (
     make_task_rng,
     restore_task_rng,

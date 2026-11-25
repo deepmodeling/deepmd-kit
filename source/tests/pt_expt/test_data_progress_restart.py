@@ -1049,7 +1049,9 @@ def test_explicit_task_sampling_requires_multiple_models(
     with pytest.raises((ValueError, RuntimeError), match="at least two tasks"):
         get_trainer(deepcopy(config))
     # The normal configuration path must reject the option too, before any I/O.
-    from dargs.dargs import ArgumentError
+    from dargs.dargs import (
+        ArgumentError,
+    )
 
     with pytest.raises((ValueError, ArgumentError), match="task_sampling"):
         normalize(config, multi_task=multitask)

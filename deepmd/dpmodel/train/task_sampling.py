@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Task-selection random streams, independent of backend communication."""
 
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import (
+    Mapping,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
