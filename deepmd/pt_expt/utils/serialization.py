@@ -114,6 +114,51 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
 _SOURCE_CSR_INPUTS = ("source_order", "source_row_ptr")
 
 
+def _move_graph_program(
+    exported: torch.export.ExportedProgram,
+    device: torch.device,
+    *,
+    canonical: bool,
+) -> torch.export.ExportedProgram:
+    """Move a CPU-traced graph, preserving the compact ABI's host inputs.
+
+    The border operators read the MPI communicator and swap table on the
+    host. The compact long-range operator also reads its cell on the host.
+    These are opaque operator inputs: their example tensors and FX input
+    metadata must agree with the Python and C++ callers of the archive.
+    """
+    from torch.export.passes import (
+        move_to_device_pass,
+    )
+
+    if not canonical:
+        return move_to_device_pass(exported, device)
+    host_names = {"communicator", "halo_swaps", "box"}
+    host_meta = {
+        node.name: node.meta["val"]
+        for node in exported.graph.nodes
+        if node.op == "placeholder" and node.name in host_names
+    }
+    examples = exported.example_inputs
+    moved = move_to_device_pass(exported, device)
+    if host_meta:
+        args, kwargs = moved.example_inputs
+        moved.example_inputs = (
+            tuple(
+                old if name in host_meta else new
+                for name, old, new in zip(
+                    moved.graph_signature.user_inputs, examples[0], args, strict=True
+                )
+            ),
+            kwargs,
+        )
+        for node in moved.graph.nodes:
+            if node.name in host_meta:
+                node.meta["val"] = host_meta[node.name]
+        moved.validate()
+    return moved
+
+
 def _graph_reads_source_csr(exported: Any) -> bool:
     """Return whether an exported graph lower consumes the source CSR.
 
@@ -1072,7 +1117,11 @@ def _build_canonical_graph_dynamic_shapes(
     be zero.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
-    node_dim = torch.export.Dim("n_node_total", min=1)
+    # Every node has three force components in an int64-indexed tensor. Its
+    # finite extent also bounds open-ended node slices during AOT lowering.
+    node_dim = torch.export.Dim(
+        "n_node_total", min=1, max=torch.iinfo(torch.int64).max // 3
+    )
     edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
     # The source CSR keeps extents of its own: a caller that declines the
     # per-atom virial passes two-entry placeholders in its place.
@@ -2227,8 +2276,7 @@ def _canonical_symbolic_shapes(active: bool) -> contextlib.AbstractContextManage
 
     A single frame is a valid deployment input, including graphs with zero
     or one physical edge. Size-oblivious symbols retain these extents through
-    the tracing of every compact program, and through the AOTInductor
-    compilation of the fused ones, without disabling runtime guards.
+    both the tracing and the AOTInductor compilation of every compact program.
     """
     if not active:
         return contextlib.nullcontext()
@@ -2801,11 +2849,7 @@ def _trace_and_export_impl(
         metadata["graph_source_csr"] = _graph_reads_source_csr(exported)
 
         if target_device.type != "cpu":
-            from torch.export.passes import (
-                move_to_device_pass,
-            )
-
-            exported = move_to_device_pass(exported, target_device)
+            exported = _move_graph_program(exported, target_device, canonical=canonical)
 
         metadata["do_atomic_virial"] = do_atomic_virial
         # The AOTI forward accepts any edge
@@ -3453,9 +3497,7 @@ def _deserialize_to_file_pt2(
     # call, so a charge state applied at run time stays consistent. The setting
     # applies to the compact canonical lower alone, the program whose constant
     # updates the tests check; the other packages of the archive keep the
-    # shared options. A program that runs the graph forward of its model
-    # compiles as the graph lower does: AOTInductor resolves the slices of its
-    # node axis from the hints of backed symbols.
+    # shared options.
     lower_configs = dict(aoti_configs)
     fused = metadata.get("canonical_evaluator") in ("dpa1", "dpa4c")
     if fused:
@@ -3465,7 +3507,7 @@ def _deserialize_to_file_pt2(
         "typically several minutes)...",
         _env.DEVICE,
     )
-    with _canonical_symbolic_shapes(fused):
+    with _canonical_symbolic_shapes(lower_kind == CANONICAL_LOWER_KIND):
         aoti_compile_and_package(
             exported, package_path=model_file, inductor_configs=lower_configs
         )

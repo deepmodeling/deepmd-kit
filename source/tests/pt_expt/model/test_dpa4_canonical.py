@@ -399,7 +399,9 @@ def test_halo_rows_match_the_folded_frame(variant: str, swaps: str) -> None:
 
 @_CUDA
 @pytest.mark.parametrize("variant", ["plain", "spin"])
-def test_compact_canonical_freeze(tmp_path: Path, variant: str) -> None:
+def test_compact_canonical_freeze(
+    tmp_path: Path, variant: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A DPA4 model freezes with the compact canonical lower by default.
 
     The archive records the schema, its reads of the source CSR, of the
@@ -456,7 +458,10 @@ def test_compact_canonical_freeze(tmp_path: Path, variant: str) -> None:
         plan.send_nodes,
         plan.swaps,
     ]
-    outputs = aoti_load_package(str(archive))(*inputs)
+    monkeypatch.setenv("AOTI_RUNTIME_CHECK_INPUTS", "1")
+    runner = aoti_load_package(str(archive))
+    outputs = runner(*inputs)
+    torch.cuda.synchronize(env.DEVICE)
     keys = ["energy", "atom_energy", "force", "virial", "atom_virial"]
     if variant == "spin":
         keys.append("force_mag")
