@@ -19,7 +19,17 @@ from deepmd.dpmodel.train.task_sampling import (
     task_rng_rank_state,
     task_sampling_mode,
     validate_task_rng_checkpoint,
+    validate_task_sampling_backend,
 )
+
+
+@pytest.mark.parametrize("backend", ["pt", "pd", "tf", "tf2", "jax"])
+@pytest.mark.parametrize("sampling", ["synchronized", "independent"])
+def test_unsupported_backend_rejects_explicit_sampling(backend, sampling) -> None:
+    with pytest.raises(ValueError, match=rf"task_sampling.*{backend} backend"):
+        validate_task_sampling_backend({"task_sampling": sampling}, backend)
+    validate_task_sampling_backend({}, backend)
+    validate_task_sampling_backend({"task_sampling": sampling}, "pt_expt")
 
 
 @pytest.mark.parametrize("sampling", ["synchronized", "independent"])

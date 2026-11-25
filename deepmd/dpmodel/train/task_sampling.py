@@ -11,6 +11,15 @@ from typing import (
 import numpy as np
 
 
+def validate_task_sampling_backend(training: Mapping[str, Any], backend: str) -> None:
+    """Reject unsupported explicit options instead of silently ignoring them."""
+    if "task_sampling" in training and backend != "pt_expt":
+        raise ValueError(
+            f"training.task_sampling is not supported by the {backend} backend; "
+            "omit this field or use dp --pt-expt train."
+        )
+
+
 def task_sampling_mode(training: Mapping[str, Any], num_tasks: int) -> str:
     """Resolve the default while rejecting explicit options without task choices."""
     if "task_sampling" in training and num_tasks < 2:
