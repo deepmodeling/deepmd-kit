@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import bisect
+import copy
 import math
 import unittest
 
@@ -1720,13 +1721,570 @@ class TestHybridMuonPhysMuon(unittest.TestCase):
             {"physmuon_gate_beta": 1.5},
             {"physmuon_w_fast": 1.2},
             {"physmuon_w_max": -0.2},
+            {"physmuon_budget_lam": -0.1},
+            {"physmuon_budget_lam": float("nan")},
+            {"physmuon_budget_lam": float("inf")},
+            {"physmuon_budget_clamp": 0.5},
+            {"physmuon_budget_clamp": float("nan")},
+            {"physmuon_budget_clamp": float("inf")},
+            {"physmuon_budget_beta": -0.1},
+            {"physmuon_budget_beta": 1.0},
+            {"physmuon_budget_beta": float("nan")},
             {"physmuon_spike_guard": -1.0},
+            {"physmuon_spike_guard": float("nan")},
+            {"physmuon_spike_guard": float("inf")},
             {"physmuon_spike_window": 0},
         ]
         for kw in bad_kwargs:
             with self.subTest(**kw):
                 with self.assertRaises(ValueError):
                     HybridMuonOptimizer([p], physmuon=True, **kw)
+
+    def test_no_shadow_initial_slow_mode_ignores_spike_and_nan(self) -> None:
+        """With shadow=False, a spike or NaN on start_step does not pollute pm_m_slow."""
+        for spike_kind in ("finite_spike", "nan_spike", "normal"):
+            torch.manual_seed(303)
+            w = torch.nn.Parameter(torch.randn(8, 8, device=self.device))
+            opt = HybridMuonOptimizer(
+                [w],
+                lr=0.01,
+                momentum=0.9,
+                weight_decay=0.0,
+                enable_gram=False,
+                physmuon=True,
+                physmuon_start_step=3,
+                physmuon_shadow=False,
+                physmuon_spike_guard=5.0,
+                physmuon_spike_window=3,
+            )
+            # Warm up 3 pre-switch steps with norm=1.0 so the guard is ready at step 3.
+            for _ in range(3):
+                w.grad = torch.ones_like(w) * 0.1
+                opt.set_pre_clip_grad_norm(1.0)
+                opt.step()
+            pre_buf = opt.state[w]["momentum_buffer"].clone()
+
+            if spike_kind == "finite_spike":
+                w.grad = torch.ones_like(w) * 100.0
+                opt.set_pre_clip_grad_norm(100.0)
+            elif spike_kind == "nan_spike":
+                w.grad = torch.full_like(w, float("nan"))
+                opt.set_pre_clip_grad_norm(float("nan"))
+            else:
+                w.grad = torch.ones_like(w) * 0.1
+                opt.set_pre_clip_grad_norm(1.0)
+            opt.step()
+
+            slow = opt.state[w]["pm_m_slow"]
+            if spike_kind in ("finite_spike", "nan_spike"):
+                self.assertTrue(torch.isfinite(slow).all())
+                torch.testing.assert_close(slow, pre_buf, rtol=0.0, atol=0.0)
+                self.assertEqual(
+                    int(opt.param_groups[0]["pm_spike_frozen_steps"].item()), 1
+                )
+            else:
+                torch.testing.assert_close(
+                    slow, opt.state[w]["momentum_buffer"], rtol=0.0, atol=0.0
+                )
+                self.assertEqual(
+                    int(opt.param_groups[0]["pm_spike_frozen_steps"].item()), 0
+                )
+
+    def test_bucketed_foreach_matches_per_tensor_physmuon_bf16(self) -> None:
+        """BF16 gated readout matches bit-for-bit between bucketed and scalar paths."""
+        torch.manual_seed(404)
+        base = [
+            torch.randn(8, 8, dtype=torch.bfloat16, device=self.device),
+            torch.randn(8, 8, dtype=torch.bfloat16, device=self.device),
+            torch.randn(4, 16, dtype=torch.bfloat16, device=self.device),
+        ]
+        params_b = [torch.nn.Parameter(t.clone()) for t in base]
+        params_s = [torch.nn.Parameter(t.clone()) for t in base]
+        opt_b = HybridMuonOptimizer(
+            params_b,
+            lr=0.02,
+            weight_decay=0.01,
+            enable_gram=False,
+            use_foreach=True,
+            physmuon=True,
+            physmuon_start_step=2,
+            physmuon_gate=True,
+            physmuon_shadow=True,
+        )
+        opt_s = HybridMuonOptimizer(
+            params_s,
+            lr=0.02,
+            weight_decay=0.01,
+            enable_gram=False,
+            use_foreach=False,
+            physmuon=True,
+            physmuon_start_step=2,
+            physmuon_gate=True,
+            physmuon_shadow=True,
+        )
+        for step in range(8):
+            torch.manual_seed(500 + step)
+            grads = [torch.randn_like(t) for t in base]
+            for pb, ps, g in zip(params_b, params_s, grads, strict=True):
+                pb.grad = g.clone()
+                ps.grad = g.clone()
+            opt_b.step()
+            opt_s.step()
+        for pb, ps in zip(params_b, params_s, strict=True):
+            torch.testing.assert_close(pb, ps, rtol=0.0, atol=0.0)
+            for key in ("momentum_buffer", "pm_m_fast", "pm_m_slow"):
+                torch.testing.assert_close(
+                    opt_b.state[pb][key], opt_s.state[ps][key], rtol=0.0, atol=0.0
+                )
+
+    def test_spike_guard_records_norm_on_adam_only_step(self) -> None:
+        """A nonempty step with no active Muon entries still updates the spike ring."""
+        torch.manual_seed(606)
+        w = torch.nn.Parameter(torch.randn(8, 8, device=self.device))
+        b = torch.nn.Parameter(torch.zeros(8, device=self.device))
+        opt = HybridMuonOptimizer(
+            [w, b],
+            lr=0.01,
+            enable_gram=False,
+            physmuon=True,
+            physmuon_start_step=0,
+            physmuon_spike_guard=5.0,
+            physmuon_spike_window=1,
+        )
+        # Step 0: Muon + Adam with large norm 100.
+        w.grad = torch.ones_like(w)
+        b.grad = torch.ones_like(b)
+        opt.set_pre_clip_grad_norm(100.0)
+        opt.step()
+        self.assertEqual(int(opt.param_groups[0]["pm_spike_count"].item()), 1)
+
+        # Step 1: Adam-only step (w.grad is None) with norm 1.0 must overwrite the window.
+        w.grad = None
+        b.grad = torch.ones_like(b)
+        opt.set_pre_clip_grad_norm(1.0)
+        opt.step()
+        self.assertEqual(int(opt.param_groups[0]["pm_spike_count"].item()), 1)
+        self.assertAlmostEqual(
+            float(opt.param_groups[0]["pm_spike_ring"][0].item()), 1.0, places=5
+        )
+
+        # Step 2: Muon step with norm 10.0 > 5 * 1.0 must now be flagged and freeze slow mode.
+        slow_before = opt.state[w]["pm_m_slow"].clone()
+        w.grad = torch.ones_like(w) * 10.0
+        b.grad = torch.ones_like(b)
+        opt.set_pre_clip_grad_norm(10.0)
+        opt.step()
+        self.assertEqual(int(opt.param_groups[0]["pm_spike_frozen_steps"].item()), 1)
+        torch.testing.assert_close(
+            opt.state[w]["pm_m_slow"], slow_before, rtol=0.0, atol=0.0
+        )
+
+    def test_finalize_physmuon_state_load_wrapper_sync_and_preservation(self) -> None:
+        """Wrapper-boundary migration preserves ZeRO-1 opt-in and saved PhysMuon state."""
+        torch.manual_seed(707)
+        # Part A: Baseline (physmuon=False) -> ZeRO-like wrapper resume with physmuon=True.
+        w_base = torch.nn.Parameter(torch.randn(8, 8, device=self.device))
+        opt_base = HybridMuonOptimizer(
+            [w_base], lr=0.01, enable_gram=False, physmuon=False
+        )
+        for _ in range(4):
+            w_base.grad = torch.randn_like(w_base)
+            opt_base.step()
+        base_sd = opt_base.state_dict()
+
+        w_pm = torch.nn.Parameter(w_base.detach().clone())
+        opt_pm = HybridMuonOptimizer(
+            [w_pm],
+            lr=0.01,
+            enable_gram=False,
+            physmuon=True,
+            physmuon_start_step=4,
+            physmuon_beta_slow=0.99,
+            physmuon_spike_guard=8.0,
+            physmuon_spike_window=10,
+        )
+        # Simulate ZeroRedundancyOptimizer.load_state_dict bypassing HybridMuonOptimizer.load_state_dict.
+        wrapper_groups = [dict(opt_pm.param_groups[0])]
+        prior_cfgs = opt_pm.snapshot_physmuon_configs()
+        for k, v in base_sd["param_groups"][0].items():
+            if k != "params":
+                wrapper_groups[0][k] = v
+                opt_pm.param_groups[0][k] = v
+        opt_pm.state[w_pm] = {
+            k: v.clone() if torch.is_tensor(v) else v
+            for k, v in base_sd["state"][0].items()
+        }
+        opt_pm.finalize_physmuon_state_load(
+            prior_cfgs, wrapper_param_groups=wrapper_groups, resume_step=4
+        )
+        # Simulate ZeroRedundancyOptimizer._local_step syncing wrapper -> inner before step().
+        for k, v in wrapper_groups[0].items():
+            if k != "params":
+                opt_pm.param_groups[0][k] = v
+        self.assertTrue(opt_pm.param_groups[0]["physmuon"])
+        self.assertEqual(opt_pm.param_groups[0]["physmuon_beta_slow"], 0.99)
+        self.assertEqual(opt_pm.param_groups[0]["pm_step"], 4)
+        self.assertEqual(wrapper_groups[0]["pm_step"], 4)
+        w_pm.grad = torch.randn_like(w_pm)
+        opt_pm.set_pre_clip_grad_norm(1.0)
+        opt_pm.step()
+        self.assertIn("pm_m_slow", opt_pm.state[w_pm])
+        self.assertEqual(opt_pm.param_groups[0]["pm_step"], 5)
+
+        # Part B: Already-enabled PhysMuon checkpoint preserves saved settings & counters.
+        pm_sd = opt_pm.state_dict()
+        w_res = torch.nn.Parameter(w_pm.detach().clone())
+        opt_res = HybridMuonOptimizer(
+            [w_res],
+            lr=0.01,
+            enable_gram=False,
+            physmuon=True,
+            physmuon_beta_slow=0.95,  # different from checkpoint's 0.99
+        )
+        wrapper_groups_2 = [dict(opt_res.param_groups[0])]
+        prior_cfgs_2 = opt_res.snapshot_physmuon_configs()
+        for k, v in pm_sd["param_groups"][0].items():
+            if k != "params":
+                wrapper_groups_2[0][k] = v
+                opt_res.param_groups[0][k] = v
+        opt_res.finalize_physmuon_state_load(
+            prior_cfgs_2, wrapper_param_groups=wrapper_groups_2, resume_step=99
+        )
+        self.assertEqual(opt_res.param_groups[0]["physmuon_beta_slow"], 0.99)
+        self.assertEqual(wrapper_groups_2[0]["physmuon_beta_slow"], 0.99)
+        self.assertEqual(opt_res.param_groups[0]["pm_step"], 5)
+        self.assertEqual(wrapper_groups_2[0]["pm_step"], 5)
+        self.assertEqual(int(opt_res.param_groups[0]["pm_spike_count"].item()), 1)
+
+    def test_compute_global_grad_norm_readonly_and_overflow_safe(self) -> None:
+        """compute_global_grad_norm is read-only, overflow-safe, and handles mixed dtypes."""
+        # Empty gradient list returns a finite CPU zero even under fake default devices.
+        norm_empty = HybridMuonOptimizer.compute_global_grad_norm([], stable=True)
+        self.assertEqual(norm_empty.device.type, "cpu")
+        self.assertEqual(float(norm_empty.item()), 0.0)
+
+        p1 = torch.nn.Parameter(
+            torch.zeros(4, 4, dtype=torch.float32, device=self.device)
+        )
+        p2 = torch.nn.Parameter(
+            torch.zeros(4, 4, dtype=torch.bfloat16, device=self.device)
+        )
+        p1.grad = torch.full((4, 4), 1e25, dtype=torch.float32, device=self.device)
+        p2.grad = torch.ones((4, 4), dtype=torch.bfloat16, device=self.device)
+        g1_before = p1.grad.clone()
+        norm_mixed = HybridMuonOptimizer.compute_global_grad_norm([p1, p2], stable=True)
+        self.assertTrue(torch.isfinite(norm_mixed))
+        self.assertAlmostEqual(float(norm_mixed.item()), 4e25, delta=1e21)
+        torch.testing.assert_close(p1.grad, g1_before, rtol=0.0, atol=0.0)
+
+        # Same-dtype fast path overflow-safe check.
+        p3 = torch.nn.Parameter(
+            torch.zeros(4, 4, dtype=torch.float32, device=self.device)
+        )
+        p3.grad = torch.full((4, 4), 1e25, dtype=torch.float32, device=self.device)
+        norm_same = HybridMuonOptimizer.compute_global_grad_norm([p1, p3], stable=True)
+        self.assertTrue(torch.isfinite(norm_same))
+
+        # Non-finite propagation checks (NaN and Inf).
+        p3.grad[0, 0] = float("nan")
+        norm_nan = HybridMuonOptimizer.compute_global_grad_norm([p1, p3], stable=True)
+        self.assertFalse(bool(torch.isfinite(norm_nan).item()))
+        p3.grad[0, 0] = float("inf")
+        norm_inf = HybridMuonOptimizer.compute_global_grad_norm([p1, p3], stable=True)
+        self.assertFalse(bool(torch.isfinite(norm_inf).item()))
+
+    def test_budget_exact_math_parity_gram_and_square(self) -> None:
+        """Change 2 output budget matches exact weighted-NS math on Gram and square paths."""
+        torch.manual_seed(808)
+        shapes = [(8, 8), (8, 16), (16, 8), (3, 8, 12)]
+        init_tensors = [torch.randn(sh, device=self.device) for sh in shapes]
+
+        p_bud = [torch.nn.Parameter(t.clone()) for t in init_tensors]
+        p_nobud = [torch.nn.Parameter(t.clone()) for t in init_tensors]
+        p_base = [torch.nn.Parameter(t.clone()) for t in init_tensors]
+
+        lam, clamp, beta = 0.5, 2.0, 0.90
+        opt_bud = HybridMuonOptimizer(
+            p_bud,
+            lr=0.02,
+            weight_decay=0.0,
+            enable_gram=True,
+            magma_muon=False,
+            physmuon=True,
+            physmuon_start_step=2,
+            physmuon_gate=False,
+            physmuon_w_fast=0.3,
+            physmuon_shadow=True,
+            physmuon_budget=True,
+            physmuon_budget_lam=lam,
+            physmuon_budget_clamp=clamp,
+            physmuon_budget_beta=beta,
+        )
+        opt_nobud = HybridMuonOptimizer(
+            p_nobud,
+            lr=0.02,
+            weight_decay=0.0,
+            enable_gram=True,
+            magma_muon=False,
+            physmuon=True,
+            physmuon_start_step=2,
+            physmuon_gate=False,
+            physmuon_w_fast=0.3,
+            physmuon_shadow=True,
+            physmuon_budget=False,
+        )
+        opt_base = HybridMuonOptimizer(
+            p_base,
+            lr=0.02,
+            weight_decay=0.0,
+            enable_gram=True,
+            magma_muon=False,
+            physmuon=False,
+        )
+
+        # Pre-switch steps (0, 1): shadow budget tracks EMAs while updates stay bitwise baseline.
+        heat_ref: list[list[torch.Tensor] | None] = [None] * len(shapes)
+        for step in range(2):
+            torch.manual_seed(900 + step)
+            fluct_bud: dict[torch.nn.Parameter, tuple[torch.Tensor, torch.Tensor]] = {}
+            fluct_nobud: dict[
+                torch.nn.Parameter, tuple[torch.Tensor, torch.Tensor]
+            ] = {}
+            for i, sh in enumerate(shapes):
+                g = torch.randn(sh, device=self.device)
+                p_bud[i].grad = g.clone()
+                p_nobud[i].grad = g.clone()
+                p_base[i].grad = g.clone()
+                bs = 1 if len(sh) == 2 else sh[0]
+                rows, cols = sh[-2], sh[-1]
+                r_raw = torch.linspace(1.0, 16.0, rows, device=self.device).unsqueeze(
+                    0
+                ).expand(bs, rows) * (1.0 + 0.1 * step)
+                c_raw = torch.linspace(16.0, 1.0, cols, device=self.device).unsqueeze(
+                    0
+                ).expand(bs, cols) * (1.0 + 0.2 * step)
+                fluct_bud[p_bud[i]] = (r_raw.clone(), c_raw.clone())
+                fluct_nobud[p_nobud[i]] = (r_raw.clone(), c_raw.clone())
+                if heat_ref[i] is None:
+                    heat_ref[i] = [r_raw.clone(), c_raw.clone()]
+                else:
+                    heat_ref[i][0] = torch.lerp(heat_ref[i][0], r_raw, 1.0 - beta)
+                    heat_ref[i][1] = torch.lerp(heat_ref[i][1], c_raw, 1.0 - beta)
+            opt_bud.observe_grad_fluctuations(fluct_bud)
+            opt_nobud.observe_grad_fluctuations(fluct_nobud)
+            opt_bud.step()
+            opt_nobud.step()
+            opt_base.step()
+
+        # Before start_step, all three trajectories must be bit-for-bit identical.
+        for pb, pn, p0 in zip(p_bud, p_nobud, p_base, strict=True):
+            torch.testing.assert_close(pb, p0, rtol=0.0, atol=0.0)
+            torch.testing.assert_close(pn, p0, rtol=0.0, atol=0.0)
+
+        # Step 2 (switch step): compare against exact weighted-NS reference on every shape.
+        torch.manual_seed(902)
+        p_before = [p.detach().clone() for p in p_bud]
+        fluct_bud = {}
+        raw_grads = []
+        for i, sh in enumerate(shapes):
+            g = torch.randn(sh, device=self.device)
+            raw_grads.append(g)
+            p_bud[i].grad = g.clone()
+            p_nobud[i].grad = g.clone()
+            bs = 1 if len(sh) == 2 else sh[0]
+            rows, cols = sh[-2], sh[-1]
+            r_raw = (
+                torch.linspace(1.0, 25.0, rows, device=self.device)
+                .unsqueeze(0)
+                .expand(bs, rows)
+            )
+            c_raw = (
+                torch.linspace(25.0, 1.0, cols, device=self.device)
+                .unsqueeze(0)
+                .expand(bs, cols)
+            )
+            fluct_bud[p_bud[i]] = (r_raw.clone(), c_raw.clone())
+            assert heat_ref[i] is not None
+            heat_ref[i][0] = torch.lerp(heat_ref[i][0], r_raw, 1.0 - beta)
+            heat_ref[i][1] = torch.lerp(heat_ref[i][1], c_raw, 1.0 - beta)
+
+        # Snapshot pre-step fast/slow modes to compute exact Nesterov input u.
+        pre_mf = [opt_bud.state[p]["pm_m_fast"].clone() for p in p_bud]
+        pre_ms = [opt_bud.state[p]["pm_m_slow"].clone() for p in p_bud]
+        opt_bud.observe_grad_fluctuations(fluct_bud)
+        opt_bud.step()
+        opt_nobud.step()
+
+        gram_orth = opt_bud._get_gram_orthogonalizer()
+        for i, sh in enumerate(shapes):
+            assert heat_ref[i] is not None
+            torch.testing.assert_close(
+                opt_bud.state[p_bud[i]]["pm_budget_row"],
+                heat_ref[i][0],
+                rtol=1e-6,
+                atol=1e-6,
+            )
+            torch.testing.assert_close(
+                opt_bud.state[p_bud[i]]["pm_budget_col"],
+                heat_ref[i][1],
+                rtol=1e-6,
+                atol=1e-6,
+            )
+            bs = 1 if len(sh) == 2 else sh[0]
+            rows, cols = sh[-2], sh[-1]
+            mf = torch.lerp(pre_mf[i], raw_grads[i], 1.0 - 0.90)
+            ms = torch.lerp(pre_ms[i], raw_grads[i], 1.0 - 0.995)
+            m_eff = 0.3 * mf + 0.7 * ms
+            u = torch.lerp(raw_grads[i], m_eff, 0.95).reshape(bs, rows, cols)
+
+            hr, hc = heat_ref[i]
+            bi = (
+                (
+                    (hr / hr.mean(-1, keepdim=True).clamp_min(1e-30)).clamp_min(1e-30)
+                    ** lam
+                )
+                .clamp(1.0 / clamp, clamp)
+                .rsqrt()
+            )
+            ai = (
+                (
+                    (hc / hc.mean(-1, keepdim=True).clamp_min(1e-30)).clamp_min(1e-30)
+                    ** lam
+                )
+                .clamp(1.0 / clamp, clamp)
+                .rsqrt()
+            )
+            u_in = (u.float() * bi[:, :, None] * ai[:, None, :]).to(u.dtype)
+            scale = 0.18 * (max(rows, cols) ** 0.5)
+            if rows != cols:
+                transposed = rows > cols
+                mat = u_in.transpose(-2, -1) if transposed else u_in
+                orth = gram_orth(mat)
+                if transposed:
+                    orth = orth.transpose(-2, -1)
+                d = orth.float() * bi[:, :, None] * ai[:, None, :]
+                d = d * (
+                    orth.float().norm(dim=(-2, -1), keepdim=True)
+                    / (d.norm(dim=(-2, -1), keepdim=True) + 1e-12)
+                )
+                delta = (d.to(orth.dtype) * scale).reshape(sh)
+            else:
+                orth = _batched_newton_schulz_orth(u_in) * scale
+                d = orth.float() * bi[:, :, None] * ai[:, None, :]
+                d = d * (
+                    orth.float().norm(dim=(-2, -1), keepdim=True)
+                    / (d.norm(dim=(-2, -1), keepdim=True) + 1e-12)
+                )
+                delta = d.to(orth.dtype).reshape(sh)
+            expected_p = p_before[i] - 0.02 * delta
+            torch.testing.assert_close(p_bud[i], expected_p, rtol=2e-4, atol=2e-4)
+            # Budget scaling must genuinely alter the post-switch update vs. budget=False.
+            self.assertGreater((p_bud[i] - p_nobud[i]).abs().max().item(), 1e-4)
+
+    def test_budget_spike_nan_immunity_and_state_dict_roundtrip(self) -> None:
+        """Budget EMAs skip spike/non-finite steps and round-trip bit-for-bit across resume."""
+        torch.manual_seed(809)
+        w = torch.nn.Parameter(torch.randn(8, 12, device=self.device))
+        opt = HybridMuonOptimizer(
+            [w],
+            lr=0.01,
+            weight_decay=0.0,
+            enable_gram=True,
+            magma_muon=False,
+            physmuon=True,
+            physmuon_start_step=0,
+            physmuon_budget=True,
+            physmuon_spike_guard=5.0,
+            physmuon_spike_window=3,
+        )
+        # 3 normal steps warm up spike guard and populate pm_budget_row/col.
+        for step in range(3):
+            w.grad = torch.ones_like(w) * (0.1 + 0.01 * step)
+            opt.set_pre_clip_grad_norm(1.0)
+            r_raw = torch.linspace(1.0, 8.0, 8, device=self.device).unsqueeze(0)
+            c_raw = torch.linspace(12.0, 1.0, 12, device=self.device).unsqueeze(0)
+            opt.observe_grad_fluctuations({w: (r_raw, c_raw)})
+            opt.step()
+
+        row_before = opt.state[w]["pm_budget_row"].clone()
+        col_before = opt.state[w]["pm_budget_col"].clone()
+
+        # Flagged finite spike step must NOT update budget EMAs.
+        w.grad = torch.ones_like(w) * 100.0
+        opt.set_pre_clip_grad_norm(100.0)
+        opt.observe_grad_fluctuations(
+            {
+                w: (
+                    torch.full((1, 8), 1e10, device=self.device),
+                    torch.full((1, 12), 1e10, device=self.device),
+                )
+            }
+        )
+        opt.step()
+        torch.testing.assert_close(
+            opt.state[w]["pm_budget_row"], row_before, rtol=0.0, atol=0.0
+        )
+        torch.testing.assert_close(
+            opt.state[w]["pm_budget_col"], col_before, rtol=0.0, atol=0.0
+        )
+
+        # Non-finite fluctuation observation on a normal-norm step must also be ignored.
+        w.grad = torch.ones_like(w) * 0.1
+        opt.set_pre_clip_grad_norm(1.0)
+        bad_r = torch.ones((1, 8), device=self.device)
+        bad_r[0, 0] = float("nan")
+        opt.observe_grad_fluctuations(
+            {w: (bad_r, torch.ones((1, 12), device=self.device))}
+        )
+        opt.step()
+        torch.testing.assert_close(
+            opt.state[w]["pm_budget_row"], row_before, rtol=0.0, atol=0.0
+        )
+        torch.testing.assert_close(
+            opt.state[w]["pm_budget_col"], col_before, rtol=0.0, atol=0.0
+        )
+
+        # state_dict round-trip (forcing 0-D pm_budget_init onto CPU like ZeRO-1).
+        sd = copy.deepcopy(opt.state_dict())
+        w_res = torch.nn.Parameter(w.detach().clone())
+        opt_res = HybridMuonOptimizer(
+            [w_res],
+            lr=0.01,
+            weight_decay=0.0,
+            enable_gram=True,
+            magma_muon=False,
+            physmuon=True,
+            physmuon_start_step=0,
+            physmuon_budget=True,
+            physmuon_spike_guard=5.0,
+            physmuon_spike_window=3,
+        )
+        opt_res.load_state_dict(sd)
+        opt_res.state[w_res]["pm_budget_init"] = opt_res.state[w_res][
+            "pm_budget_init"
+        ].cpu()
+
+        for step in range(4):
+            torch.manual_seed(950 + step)
+            g = torch.randn_like(w)
+            r_raw = torch.rand((1, 8), device=self.device) + 0.1
+            c_raw = torch.rand((1, 12), device=self.device) + 0.1
+            w.grad = g.clone()
+            w_res.grad = g.clone()
+            opt.set_pre_clip_grad_norm(1.0)
+            opt_res.set_pre_clip_grad_norm(1.0)
+            opt.observe_grad_fluctuations({w: (r_raw.clone(), c_raw.clone())})
+            opt_res.observe_grad_fluctuations({w_res: (r_raw.clone(), c_raw.clone())})
+            opt.step()
+            opt_res.step()
+
+        torch.testing.assert_close(w, w_res, rtol=0.0, atol=0.0)
+        torch.testing.assert_close(
+            opt.state[w]["pm_budget_row"],
+            opt_res.state[w_res]["pm_budget_row"],
+            rtol=0.0,
+            atol=0.0,
+        )
 
 
 @unittest.skipIf(not torch.cuda.is_available(), "CUDA graph capture needs CUDA")
@@ -1745,6 +2303,7 @@ class TestHybridMuonPhysMuonCudaGraph(unittest.TestCase):
         graph_on: bool,
         shadow: bool,
         spike_guard: float,
+        budget: bool = False,
     ) -> tuple[list[torch.Tensor], HybridMuonOptimizer]:
         torch.manual_seed(77)
         model = _MixedRouteModel(self.device)
@@ -1757,6 +2316,7 @@ class TestHybridMuonPhysMuonCudaGraph(unittest.TestCase):
             physmuon_start_step=4,
             physmuon_gate=True,
             physmuon_shadow=shadow,
+            physmuon_budget=budget,
             physmuon_spike_guard=spike_guard,
             physmuon_spike_window=6,
         )
@@ -1772,6 +2332,24 @@ class TestHybridMuonPhysMuonCudaGraph(unittest.TestCase):
                 opt.set_pre_clip_grad_norm(
                     torch.tensor(norm_val, dtype=torch.float32, device=self.device)
                 )
+            if budget:
+                fluct: dict[torch.nn.Parameter, tuple[torch.Tensor, torch.Tensor]] = {}
+                for _, param in model.named_parameters():
+                    if param.ndim >= 2:
+                        bs = 1 if param.ndim == 2 else param.shape[0]
+                        rows, cols = param.shape[-2], param.shape[-1]
+                        r_var = (
+                            torch.linspace(1.0, 10.0 + step, rows, device=self.device)
+                            .unsqueeze(0)
+                            .expand(bs, rows)
+                        )
+                        c_var = (
+                            torch.linspace(10.0 + step, 1.0, cols, device=self.device)
+                            .unsqueeze(0)
+                            .expand(bs, cols)
+                        )
+                        fluct[param] = (r_var, c_var)
+                opt.observe_grad_fluctuations(fluct)
             opt.step()
         torch.cuda.synchronize()
         return [p.detach().clone() for p in model.parameters()], opt
@@ -1802,6 +2380,39 @@ class TestHybridMuonPhysMuonCudaGraph(unittest.TestCase):
         self.assertEqual(len(graph_opt._graphs), 1)
         for pe, pg in zip(eager_params, graph_params, strict=True):
             torch.testing.assert_close(pe, pg, rtol=0.0, atol=0.0)
+
+    def test_physmuon_budget_graph_matches_eager_without_recapture(self) -> None:
+        """Shadow + output budget crosses start_step on one captured graph, bitwise exact."""
+        eager_params, eager_opt = self._run_trajectory(
+            graph_on=False, shadow=True, spike_guard=5.0, budget=True
+        )
+        graph_params, graph_opt = self._run_trajectory(
+            graph_on=True, shadow=True, spike_guard=5.0, budget=True
+        )
+        self.assertEqual(len(graph_opt._graphs), 1)
+        self.assertEqual(
+            int(graph_opt.param_groups[0]["pm_spike_frozen_steps"].item()), 1
+        )
+        for pe, pg in zip(eager_params, graph_params, strict=True):
+            torch.testing.assert_close(pe, pg, rtol=0.0, atol=0.0)
+        # Verify budget EMAs genuinely advanced inside the captured graph replay.
+        budget_states = [st for st in graph_opt.state.values() if "pm_budget_row" in st]
+        self.assertGreater(len(budget_states), 0)
+        for st in budget_states:
+            self.assertEqual(float(st["pm_budget_init"].item()), 1.0)
+            self.assertGreater((st["pm_budget_row"] - 1.0).abs().max().item(), 0.5)
+        # Eager and graph budget EMAs must also match bit-for-bit.
+        for pe_st, pg_st in zip(
+            [st for st in eager_opt.state.values() if "pm_budget_row" in st],
+            budget_states,
+            strict=True,
+        ):
+            torch.testing.assert_close(
+                pe_st["pm_budget_row"], pg_st["pm_budget_row"], rtol=0.0, atol=0.0
+            )
+            torch.testing.assert_close(
+                pe_st["pm_budget_col"], pg_st["pm_budget_col"], rtol=0.0, atol=0.0
+            )
 
 
 if __name__ == "__main__":

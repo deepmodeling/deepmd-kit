@@ -5419,17 +5419,57 @@ def optimizer_hybrid_muon() -> list[Argument]:
             "at the switch step.",
         ),
         Argument(
+            "physmuon_budget",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt")
+            + "Enable PhysMuon fluctuation-calibrated output budget (change 2). "
+            "Weights Newton-Schulz inputs and outputs by diagonal channel metrics "
+            "estimated from cross-rank gradient variance via a DDP communication "
+            "hook. Requires physmuon=True and multi-rank DDP (zero_stage 0 or 1 "
+            "with >= 2 ranks).",
+        ),
+        Argument(
+            "physmuon_budget_lam",
+            float,
+            optional=True,
+            default=0.5,
+            doc=supported_backends("pt")
+            + "Exponent lambda >= 0 for the PhysMuon output-budget channel metric "
+            "(default 0.5).",
+        ),
+        Argument(
+            "physmuon_budget_clamp",
+            float,
+            optional=True,
+            default=2.0,
+            doc=supported_backends("pt")
+            + "Symmetric clamp bound c >= 1 for the PhysMuon output-budget "
+            "channel metric entries in [1/c, c] (default 2.0).",
+        ),
+        Argument(
+            "physmuon_budget_beta",
+            float,
+            optional=True,
+            default=0.95,
+            doc=supported_backends("pt")
+            + "EMA decay in [0, 1) for the PhysMuon output-budget row/column "
+            "gradient-fluctuation statistics (default 0.95).",
+        ),
+        Argument(
             "physmuon_spike_guard",
             float,
             optional=True,
             default=0.0,
             doc=supported_backends("pt")
-            + "Optional heavy-tailed gradient safeguard threshold K (disabled "
-            "when <= 0.0). Set to e.g. 10.0 on large crystal datasets with "
-            "heavy-tailed force gradients (such as MPtrj) to leave the slow "
-            "mode unchanged on steps whose pre-clip "
-            "global gradient norm exceeds K times the running median (or is "
-            "non-finite).",
+            + "Optional heavy-tailed gradient safeguard threshold K (0.0 "
+            "disables; negative values raise ValueError). Set to e.g. 10.0 on "
+            "large crystal datasets with heavy-tailed force gradients (such as "
+            "MPtrj): non-finite norms are flagged immediately, and after "
+            "min(100, physmuon_spike_window) finite steps with a positive "
+            "running median, steps whose pre-clip global gradient norm "
+            "exceeds K times the running median leave the slow mode unchanged.",
         ),
         Argument(
             "physmuon_spike_window",

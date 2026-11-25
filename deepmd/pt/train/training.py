@@ -76,6 +76,7 @@ from deepmd.pt.optimizer import (
     LKFOptimizer,
 )
 from deepmd.pt.optimizer.hybrid_muon import (
+    DDPPhysMuonBudgetHook,
     adam_route_patterns,
 )
 from deepmd.pt.train.wrapper import (
@@ -1007,6 +1008,7 @@ class Trainer:
         # author: iProzd
         initial_lr = self.lr_schedule.value(self.start_step)
         self._hybrid_muon_optimizer: HybridMuonOptimizer | None = None
+        self._physmuon_budget_hook: DDPPhysMuonBudgetHook | None = None
         if self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
@@ -1082,6 +1084,18 @@ class Trainer:
                     "physmuon_shadow": bool(
                         self.opt_param.get("physmuon_shadow", True)
                     ),
+                    "physmuon_budget": bool(
+                        self.opt_param.get("physmuon_budget", False)
+                    ),
+                    "physmuon_budget_lam": float(
+                        self.opt_param.get("physmuon_budget_lam", 0.5)
+                    ),
+                    "physmuon_budget_clamp": float(
+                        self.opt_param.get("physmuon_budget_clamp", 2.0)
+                    ),
+                    "physmuon_budget_beta": float(
+                        self.opt_param.get("physmuon_budget_beta", 0.95)
+                    ),
                     "physmuon_spike_guard": float(
                         self.opt_param.get("physmuon_spike_guard", 0.0)
                     ),
@@ -1104,11 +1118,46 @@ class Trainer:
                 )
                 target_optimizer.set_param_names(runtime_named_parameters)
                 self._hybrid_muon_optimizer = target_optimizer
+            prior_pm_configs = (
+                self._hybrid_muon_optimizer.snapshot_physmuon_configs()
+                if self._hybrid_muon_optimizer is not None and self.restart_training
+                else None
+            )
             self._load_optimizer_state(optimizer_state_dict)
-            if self._hybrid_muon_optimizer is not None and self.restart_training:
-                for group in self._hybrid_muon_optimizer.param_groups:
-                    if group.get("physmuon", False) and "pm_step" not in group:
-                        group["pm_step"] = int(self.start_step)
+            if prior_pm_configs is not None:
+                assert self._hybrid_muon_optimizer is not None
+                self._hybrid_muon_optimizer.finalize_physmuon_state_load(
+                    prior_pm_configs,
+                    wrapper_param_groups=(
+                        self.optimizer.param_groups
+                        if self.optimizer is not self._hybrid_muon_optimizer
+                        else None
+                    ),
+                    resume_step=int(self.start_step),
+                )
+            if (
+                self._hybrid_muon_optimizer is not None
+                and self._hybrid_muon_optimizer.needs_grad_fluctuations
+            ):
+                if not (
+                    isinstance(self.wrapper, DDP)
+                    and dist.is_available()
+                    and dist.is_initialized()
+                    and dist.get_world_size() >= 2
+                ):
+                    raise ValueError(
+                        "optimizer.physmuon_budget=True requires "
+                        "DistributedDataParallel (zero_stage 0 or 1) with at "
+                        "least 2 ranks so per-channel gradient fluctuations "
+                        "can be measured across ranks. Disable "
+                        "physmuon_budget for single-rank or FSDP2 "
+                        "(zero_stage >= 2) runs."
+                    )
+                self._physmuon_budget_hook = (
+                    HybridMuonOptimizer.register_ddp_budget_hook(
+                        self.wrapper, self._hybrid_muon_optimizer
+                    )
+                )
             self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
                 self.lr_schedule,
@@ -1479,8 +1528,20 @@ class Trainer:
                         stable=not self.sharding.shards_parameters,
                     )
                     self.nonfinite_grad_guard.update(total_norm)
-                if self._hybrid_muon_optimizer is not None and total_norm is not None:
+                if (
+                    self._hybrid_muon_optimizer is not None
+                    and self._hybrid_muon_optimizer.needs_pre_clip_grad_norm
+                ):
+                    if total_norm is None:
+                        total_norm = HybridMuonOptimizer.compute_global_grad_norm(
+                            self.wrapper.parameters(),
+                            stable=not self.sharding.shards_parameters,
+                        )
                     self._hybrid_muon_optimizer.set_pre_clip_grad_norm(total_norm)
+                if self._physmuon_budget_hook is not None:
+                    self._physmuon_budget_hook.sync_to_optimizer(
+                        self._hybrid_muon_optimizer
+                    )
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
