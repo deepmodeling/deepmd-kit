@@ -1096,12 +1096,10 @@ def synthetic_border_plan(
     )
 
 
-def _graph_node_dim() -> torch.export.Dim:
-    # Every node has three force components in an int64-indexed tensor. Its
-    # finite extent also bounds open-ended node slices during AOT lowering.
-    return torch.export.Dim(
-        "n_node_total", min=1, max=torch.iinfo(torch.int64).max // 3
-    )
+def _graph_vector_dim(name: str, minimum: int) -> torch.export.Dim:
+    # Node forces and edge displacements each have three Cartesian components.
+    # Their signed-int64 element counts also bound open-ended slices during AOT.
+    return torch.export.Dim(name, min=minimum, max=torch.iinfo(torch.int64).max // 3)
 
 
 def _build_canonical_graph_dynamic_shapes(
@@ -1125,8 +1123,8 @@ def _build_canonical_graph_dynamic_shapes(
     be zero.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
-    node_dim = _graph_node_dim()
-    edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
+    node_dim = _graph_vector_dim("n_node_total", 1)
+    edge_storage_dim = _graph_vector_dim("nedge_storage", 2)
     # The source CSR keeps extents of its own: a caller that declines the
     # per-atom virial passes two-entry placeholders in its place.
     source_row_dim = torch.export.Dim("n_source_row", min=2)
@@ -1261,12 +1259,8 @@ def _build_graph_dynamic_shapes(
     """Build dynamic-shape specifications for the graph-form forward_lower export.
 
     ``nframes`` (the ``n_node`` axis), ``N`` (the flat node axis), and the edge
-    axis ``E`` are all dynamic dimensions. ``E`` is marked
-    ``Dim("nedge", min=2)`` so
-    the AOTI artifact accepts any system size with no capacity ceiling. The
-    ``min=2`` lower bound mirrors the dense path's ``Dim("nnei", min=...)`` and
-    matches the carry-all builder's
-    ``min_edges=2`` guard (every dynamic graph carries >=2 edges).
+    axis ``E`` are all dynamic dimensions. Every graph carries at least two
+    edge storage slots, including guards, with no model-specific capacity limit.
 
     Parameters
     ----------
@@ -1294,8 +1288,8 @@ def _build_graph_dynamic_shapes(
         :func:`_topology_dynamic_shapes`).
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
-    n_node_total_dim = _graph_node_dim()
-    nedge_dim = torch.export.Dim("nedge", min=2)
+    n_node_total_dim = _graph_vector_dim("n_node_total", 1)
+    nedge_dim = _graph_vector_dim("nedge", 2)
     base = (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_dim},  # n_node: (nf,)
@@ -1383,8 +1377,8 @@ def _build_graph_dynamic_shapes_with_comm(
     aparam = sample_inputs[11]
     charge_spin = sample_inputs[12]
     nframes_val = 1
-    n_node_total_dim = _graph_node_dim()
-    nedge_dim = torch.export.Dim("nedge", min=2)
+    n_node_total_dim = _graph_vector_dim("n_node_total", 1)
+    nedge_dim = _graph_vector_dim("nedge", 2)
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_val},  # n_node: (nf,) — nf STATIC at 1
@@ -2217,8 +2211,8 @@ def deserialize_to_file(
         (``extended_coord``/``extended_atype``/``nlist``/``mapping``);
         ``"graph"`` traces the NeighborGraph schema
         (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask`` and
-        the destination/source CSR views) with a DYNAMIC edge axis ``E``
-        (``Dim("nedge", min=2)``), so the artifact accepts any system size.
+        the destination/source CSR views) with a dynamic edge axis ``E`` that
+        holds at least two storage slots, including guards.
         ``"auto"`` resolves to ``"graph"``, or to the compact canonical schema
         of an eligible model, for an exportable graph-lower ``.pt2`` and to
         ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`).
