@@ -103,7 +103,8 @@ This pair style takes the deep potential defined in a model file that usually ha
 
 The model deviation evaluates the consistency of the force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lammps.org/pair_hybrid.html) is not applied.
-The models share the type map of the first model, through which the atom types of LAMMPS reach every model.
+Every element selected by `pair_coeff` must have the same index in every
+model's type map. Elements not selected by the simulation may differ.
 The Kokkos variant `deepmd/kk` computes the model deviation in the same way, for models of one cutoff frozen alike: either every model carries the compact canonical lower, which a compressed DPA4C model and a single-precision DPA4 model frozen with `dp --pt-expt freeze` on a CUDA device carry, or none does and all are frozen in the same precision; and either every model carries a long-range module or none does.
 
 By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation of the force will be output, including values output by the keyword `atomic`. The relative model deviation of the force on atom $i$ is defined by
@@ -259,7 +260,7 @@ Evaluate the interaction of a system with magnetic moments by a native-spin DPA4
 
 The pair style stores the magnetic force in the convention of the LAMMPS SPIN package, as [pair_style `deepspin`](#pair_style-deepspin) does: the negative energy gradient `-dE/dS` with respect to the moment, all three components of it, scaled by the moment magnitude over `hbar`. The TSPIN fixes of the SPIN package, `fix nve/tspin` and its thermostats, integrate the direction and the magnitude of every moment from this force.
 
-The model deviation of the force and the magnetic force is written as by [pair_style `deepspin`](#pair_style-deepspin), with the same columns, and the magnetic force enters it as the negative energy gradient `-dE/dS` that the models return. The models of an ensemble share the type map of the first one, and with `dpa4spin/kk` its cutoff as well; the same `charge_spin` is fed to every model.
+The model deviation of the force and the magnetic force is written as by [pair_style `deepspin`](#pair_style-deepspin), with the same columns, and the magnetic force enters it as the negative energy gradient `-dE/dS` that the models return. Selected elements must have the same indices in all models. With `dpa4spin/kk`, the cutoffs must also agree; the same `charge_spin` is fed to every model.
 
 ### Restrictions
 

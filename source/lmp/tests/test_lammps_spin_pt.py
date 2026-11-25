@@ -272,6 +272,17 @@ def test_pair_deepmd_virial(lammps) -> None:
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
     reason="Skip test because TensorFlow support is not enabled.",
 )
+def test_model_deviation_requires_the_selected_elements(lammps) -> None:
+    # Both models define Ni and O, but only the first defines H.
+    lammps.pair_style(f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_freq 0")
+    with pytest.raises(Exception, match="must designate the same element"):
+        lammps.pair_coeff("* * H O")
+
+
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
         f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"

@@ -429,6 +429,7 @@ void PairDPA4Spin::coeff(int narg, char** arg) {
     }
   }
 
+  check_ensemble_types(type_idx_map, deep_spin, ensemble, error);
   std::string excluded;
   for (int ii = 0; ii < ntypes; ++ii) {
     if (type_idx_map[ii] < 0) {

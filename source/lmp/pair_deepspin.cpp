@@ -687,6 +687,7 @@ void PairDeepSpin::coeff(int narg, char** arg) {
       }
     }
   }
+  check_ensemble_types(type_idx_map, deep_spin, ensemble, error);
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo, i); j <= jhi; j++) {
       setflag[i][j] = 1;

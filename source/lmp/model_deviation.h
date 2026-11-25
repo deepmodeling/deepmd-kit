@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <deque>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -117,12 +118,10 @@ class ModelDeviation : protected Pointers {
 
 // Load the models of an ensemble, named by ``paths``: the first into
 // ``first``, which drives the dynamics, and the others into ``others``.
-// ``init(model, path)`` loads one model. Every model reads the atom types
-// through the type mapping of the first one and the frame and atomic
-// parameters the pair style builds for it, so the models must share its type
-// map and the dimensions of those parameters. Returns the largest cutoff of
-// the models, in their length unit, which the neighbor list of the ensemble
-// covers; each model selects the neighbors within its own cutoff.
+// ``init(model, path)`` loads one model. Every model reads the same frame and
+// atomic parameter arrays, so their dimensions must agree. The atom type
+// mapping is checked when pair_coeff selects the elements. The ensemble
+// neighbor list covers the largest cutoff; each model selects its neighbors.
 template <class Model, class Init>
 double load_ensemble(const std::vector<std::string>& paths,
                      Model& first,
@@ -136,24 +135,64 @@ double load_ensemble(const std::vector<std::string>& paths,
     others.emplace_back();
     init(others.back(), paths[ii]);
   }
-  std::string type_map;
-  first.get_type_map(type_map);
   double cutoff = first.cutoff();
   for (Model& model : others) {
-    std::string other_type_map;
-    model.get_type_map(other_type_map);
-    if (other_type_map != type_map ||
-        model.dim_fparam() != first.dim_fparam() ||
+    if (model.dim_fparam() != first.dim_fparam() ||
         model.dim_aparam() != first.dim_aparam()) {
       error->all(FLERR, "pair style " + style +
-                            ": the models of an ensemble share the type map "
-                            "and the frame and atomic parameter dimensions of "
-                            "the first model, whose mapping of the atom types "
-                            "and parameters they read.");
+                            ": ensemble models must have the same frame and "
+                            "atomic parameter dimensions.");
     }
     cutoff = std::max(cutoff, model.cutoff());
   }
   return cutoff;
+}
+
+// Every model receives the type indices selected by pair_coeff for the first
+// model. Unselected elements may differ. A model with no element names still
+// has numb_types() positional types. An out-of-range index is compatible
+// only if every model ignores it.
+template <class Model>
+void check_ensemble_types(const std::vector<int>& mapping,
+                          Model& first,
+                          std::deque<Model>& others,
+                          Error* error) {
+  if (others.empty()) {
+    return;
+  }
+  const auto types = [](Model& model) {
+    std::string text;
+    model.get_type_map(text);
+    std::istringstream input(text);
+    std::vector<std::string> names;
+    for (std::string name; input >> name;) {
+      names.push_back(name);
+    }
+    if (names.empty()) {
+      names.resize(model.numb_types());
+    }
+    return names;
+  };
+  const auto first_types = types(first);
+  for (auto& model : others) {
+    const auto other_types = types(model);
+    for (std::size_t ii = 0; ii < mapping.size(); ++ii) {
+      if (mapping[ii] < 0) {
+        continue;  // NULL in pair_coeff
+      }
+      const std::size_t type = mapping[ii];
+      const bool present = type < first_types.size();
+      if (present != (type < other_types.size()) ||
+          (present && first_types[type] != other_types[type])) {
+        error->all(
+            FLERR,
+            "Incompatible model ensemble: pair_coeff maps atom type " +
+                std::to_string(ii + 1) + " to model index " +
+                std::to_string(type) +
+                ", which must designate the same element in every model.");
+      }
+    }
+  }
 }
 
 }  // namespace LAMMPS_NS
