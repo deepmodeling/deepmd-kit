@@ -496,6 +496,7 @@ def test_compiled_large_cutoff_axis(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.usefixtures("calibrated_so2_device")
 @pytest.mark.parametrize("training", [False, True])
 @pytest.mark.parametrize("path", ["cuda", "triton", "cuda-triton"])
 @pytest.mark.parametrize("rcut", [4.0, [4.0, 2.5], [2.5, 4.0]])

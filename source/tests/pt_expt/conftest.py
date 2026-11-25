@@ -69,3 +69,13 @@ def tf32_disabled() -> Iterator[None]:
     finally:
         for backend, allow_tf32 in zip(backends, previous, strict=True):
             backend.allow_tf32 = allow_tf32
+
+
+@pytest.fixture
+def calibrated_so2_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the calibration GPU's compute-to-bandwidth ratio for SO(2) dispatch."""
+    from deepmd.pt_expt.kernels.cuda.dpa4 import (
+        so2_conv,
+    )
+
+    monkeypatch.setattr(so2_conv, "_device_ridge_scale", lambda: 1.0)

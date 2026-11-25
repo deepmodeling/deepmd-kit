@@ -150,16 +150,14 @@ def test_fp32_only_cuda_bindings(
     )
 
 
-def test_profitability_counts_the_shared_parity_block(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.usefixtures("calibrated_so2_device")
+def test_profitability_counts_the_shared_parity_block() -> None:
     """The fused convolution is judged on the arithmetic it executes.
 
     A parity map multiplies both signs of an order by one shared ``W_u``
     block, half the order arithmetic of the plain layer of the same shape, so
     a shape whose plain layer exceeds the budget can stay within it.
     """
-    monkeypatch.setattr(so2_conv, "_device_ridge_scale", lambda: 1.0)
 
     def conv(parity: bool) -> object:
         # lmax 1, focus width 64, two focus streams: 73728 multiply-adds per
@@ -206,6 +204,7 @@ def test_cuda_edge_csr_preserves_symbolic_node_count() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.usefixtures("calibrated_so2_device")
 class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
     def setup_method(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
@@ -497,6 +496,7 @@ def test_wigner_kernels_are_device_buffers_outside_the_state_dict(lmax: int) -> 
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.usefixtures("calibrated_so2_device")
 @pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_native_spin_cuda_matches_reference_and_symmetry(
     monkeypatch: pytest.MonkeyPatch, spin_mode: str
@@ -519,9 +519,6 @@ def test_native_spin_cuda_matches_reference_and_symmetry(
     data = jitter_zero_arrays(native.serialize(), np.random.default_rng(319))
     reference = DescrptDPA4.deserialize(data).cuda().eval()
     monkeypatch.setenv("DP_CUDA_INFER", "2")
-    # Test fused numerics with the calibrated device ridge, independently of
-    # the runtime profitability heuristic that can decline this shape.
-    monkeypatch.setattr(so2_conv, "_device_ridge_scale", lambda: 1.0)
     fused = DescrptDPA4.deserialize(data).cuda().eval()
     conv = fused.blocks[0].so2_conv
     assert conv._cuda_conv_fn is not None

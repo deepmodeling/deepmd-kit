@@ -1767,7 +1767,7 @@ def test_o3_energy_force_with_bridging(native: bool, bridging: str) -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
-@pytest.mark.usefixtures("tf32_disabled")
+@pytest.mark.usefixtures("tf32_disabled", "calibrated_so2_device")
 @pytest.mark.parametrize(
     "backend,native", [("pt_expt", False), ("pt_expt", True), ("pt", True)]
 )
@@ -1793,14 +1793,6 @@ def test_o3_accelerated_model_matches_dense(
     if not native:
         config.pop("spin")
     config["enable_tf32"] = False
-    if gate == "DP_CUDA_INFER":
-        from deepmd.pt_expt.kernels.cuda.dpa4 import (
-            so2_conv,
-        )
-
-        # Exercise the supported fused operator independently of the device's
-        # performance ranking; the binding assertion still checks dispatch.
-        monkeypatch.setattr(so2_conv, "_profitable", lambda conv: True)
     # The PyTorch backend preserves inversion through native spin alone and
     # takes a constant degree schedule and mixing depth.
     schedule = (
