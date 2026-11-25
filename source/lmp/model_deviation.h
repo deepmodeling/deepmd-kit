@@ -133,7 +133,8 @@ double load_ensemble(const std::vector<std::string>& paths,
   init(first, paths[0]);
   others.clear();
   for (std::size_t ii = 1; ii < paths.size(); ++ii) {
-    init(others.emplace_back(), paths[ii]);
+    others.emplace_back();
+    init(others.back(), paths[ii]);
   }
   std::string type_map;
   first.get_type_map(type_map);
