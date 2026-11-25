@@ -371,16 +371,15 @@ class _GridPairCase:
             else torch.autocast("cuda", enabled=False)
         )
         with context:
-            evaluate = grid_pair_train if fused else _eager_pair
-            if self.parity and fused:
-                out = evaluate(
+            if fused:
+                out = grid_pair_train(
                     left,
                     right,
                     to_grid,
                     from_grid,
                     self.n_frames,
-                    self.parity_order,
-                    self.even_count,
+                    self.parity_order if self.parity else None,
+                    self.even_count if self.parity else 0,
                 )
             else:
                 if self.parity:
@@ -390,7 +389,7 @@ class _GridPairCase:
                     from_grid = 0.5 * torch.cat(
                         [from_grid, from_grid * self.slot_sign[None, :]], dim=0
                     )
-                out = evaluate(left, right, to_grid, from_grid, self.n_frames)
+                out = _eager_pair(left, right, to_grid, from_grid, self.n_frames)
         return grad_chain(out, [left, right], self.cotangent, self.second_cotangents)
 
 

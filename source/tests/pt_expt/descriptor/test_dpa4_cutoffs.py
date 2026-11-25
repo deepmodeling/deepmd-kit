@@ -428,11 +428,7 @@ def _assert_compiled_cutoff_model(
         def capture_edges(module: torch.nn.Module, args: tuple) -> None:
             compact_edge_counts.append(args[1].src.shape[0] - 2)
 
-        hook = (
-            reference.get_descriptor()
-            .blocks[-1]
-            .register_forward_pre_hook(capture_edges)
-        )
+        reference.get_descriptor().blocks[-1].register_forward_pre_hook(capture_edges)
     for frames, scale in cases:
         coord, atype, _ = system(scale)
         coord, atype = coord.repeat(frames, 1, 1), atype.repeat(frames, 1)
@@ -471,7 +467,6 @@ def _assert_compiled_cutoff_model(
                     atol=1e-4 if fused else 1e-8,
                 )
     if large:
-        hook.remove()
         assert compact_edge_counts[-1] > 32_766
 
 
