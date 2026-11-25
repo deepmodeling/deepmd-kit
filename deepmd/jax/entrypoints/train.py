@@ -18,6 +18,9 @@ from deepmd.dpmodel.train import (
     make_task_maps,
     print_data_summaries,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    validate_task_sampling_backend,
+)
 from deepmd.dpmodel.utils.lmdb_data_system import (
     LmdbDataSystem,
 )
@@ -141,6 +144,7 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
         options: TrainEntrypointOptions,
     ) -> None:
         """Validate currently unsupported JAX train features."""
+        validate_task_sampling_backend(config.get("training", {}), "jax")
         if options.init_frz_model:
             raise NotImplementedError(
                 "JAX training does not support init_frz_model yet"

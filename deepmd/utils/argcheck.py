@@ -6884,6 +6884,15 @@ def training_args(
         data_args
         if not multi_task
         else [
+            Argument(
+                "task_sampling",
+                str,
+                optional=True,
+                extra_check=lambda x: x in ("synchronized", "independent"),
+                doc=supported_backends("pt_expt")
+                + "Multitask selection across ranks: synchronized or independent. "
+                "Requires at least two tasks; omission uses synchronized sampling.",
+            ),
             Argument("model_prob", dict, optional=True, default={}, doc=doc_model_prob),
             Argument(
                 "num_epoch_dict",
@@ -7104,6 +7113,12 @@ def training_args(
     def training_extra_check(data: dict | None) -> bool:
         if data is None:
             return True
+        if (
+            multi_task
+            and "task_sampling" in data
+            and len(data.get("data_dict", {})) < 2
+        ):
+            raise ValueError("training.task_sampling requires at least two tasks.")
         if multi_task:
             for model_key, data_dict in data.get("data_dict", {}).items():
                 _validate_stat_file_mode(

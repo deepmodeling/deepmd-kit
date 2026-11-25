@@ -25,6 +25,9 @@ from deepmd.common import (
     expand_sys_str,
     j_loader,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    validate_task_sampling_backend,
+)
 from deepmd.env import (
     GLOBAL_CONFIG,
 )
@@ -149,6 +152,7 @@ def get_trainer(
     shared_links: dict[str, Any] | None = None,
     finetune_links: dict[str, Any] | None = None,
 ) -> training.Trainer:
+    validate_task_sampling_backend(config.get("training", {}), "pt")
     multi_task = "model_dict" in config.get("model", {})
 
     def prepare_trainer_input_single(
@@ -307,6 +311,7 @@ def train(
     if is_node_main_process():
         SummaryPrinter()()
     config = j_loader(input_file)
+    validate_task_sampling_backend(config.get("training", {}), "pt")
     config["model"] = expand_model_preset(config["model"])
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pt"):
