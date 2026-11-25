@@ -121,6 +121,7 @@ from __future__ import (
 import argparse
 import itertools
 import logging
+import os
 import statistics
 from contextlib import (
     contextmanager,
@@ -137,6 +138,11 @@ import torch
 import triton
 from torch.library import (
     wrap_triton,
+)
+
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
+    triton_train_level,
 )
 
 if TYPE_CHECKING:
@@ -190,6 +196,7 @@ from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
 )
 
 __all__ = [
+    "autotune_sezm",
     "collect_model_shape_keys",
     "tune_missing_configs",
 ]
@@ -344,6 +351,27 @@ def _runtime_config_scope(
         else:
             runtime.pop(key, None)
         raise
+
+
+@contextmanager
+def _infer_level_scope(level: int) -> Iterator[None]:
+    """Pin ``DP_TRITON_INFER`` to the level being tuned for the sweep duration.
+
+    The sweeps that drive a real dispatch (the fused per-layer backward)
+    resolve the Triton level from the ambient environment at call time, so
+    the tuning run must execute under the same level it tunes for -- the
+    level the caller already fixed through the existing ``DP_TRITON_INFER``
+    mechanism.  The prior value is restored on exit.
+    """
+    saved = os.environ.get("DP_TRITON_INFER")
+    os.environ["DP_TRITON_INFER"] = str(level)
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop("DP_TRITON_INFER", None)
+        else:
+            os.environ["DP_TRITON_INFER"] = saved
 
 
 def _bench(fn: Callable[[], object], iters: int = 20) -> float:
@@ -2074,6 +2102,262 @@ def sweep_fp16x3(
     return {"stack_fp16x3": {key: conclusion}}
 
 
+# ======================================================================
+# Fused mixing-stack backward (fused vs relay selection)
+# ======================================================================
+def sweep_stack_bwd_fused(
+    cf: int,
+    lmax: int,
+    *,
+    n_focus: int = 2,
+    n_edge: int | None = None,
+    device: torch.device | str = "cuda",
+) -> SweepResult:
+    """Select between the fused per-layer backward and the unfused relay.
+
+    The comparison drives the real :func:`_stack_backward_traversal` over a
+    synthetic stack (three gated layers plus the final linear layer, alpha
+    enabled), so the baseline includes exactly the relay chain production
+    runs -- the gate-sigmoid recompute, the pointwise backward and the
+    tuned GEMM launches -- and each candidate replaces it with one fused
+    launch per layer.  A candidate only qualifies when the traversal
+    outputs match the relay bit-for-bit; the fastest qualifying candidate
+    is registered, otherwise the key records that the relay won (``None``).
+
+    Parameters
+    ----------
+    cf : int
+        Per-focus channel width ``Cf``.
+    lmax : int
+        Maximum spherical harmonic degree.
+    n_focus : int
+        Focus count of the synthetic tensors.
+    n_edge : int or None
+        Edge count of the synthetic tensors; ``None`` selects a saturating
+        count.
+    device : torch.device or str
+        CUDA device to sweep on.
+
+    Returns
+    -------
+    SweepResult
+        The ``stack_bwd_fused`` entry under ``(cf, lmax)``: the winning
+        ``(BLOCK_M, BLOCK_N, num_warps, num_stages)`` or ``None``.
+    """
+    from .so2_value_path import (
+        _stack_backward_traversal,
+    )
+    from .tile_configs import (
+        _runtime_tile_configs,
+        register_tile_configs,
+        stack_fp32_configs,
+    )
+
+    device = torch.device(device)
+    if n_edge is None:
+        n_edge = _saturating_edges(cf)
+    key = (cf, lmax)
+
+    # ``CF == block_k`` is the bitwise reduction-order contract; without it
+    # the dispatch can never take the fused kernel, so the relay wins by
+    # construction and no benchmark is needed.
+    _, _, bwd_cfg = stack_fp32_configs(cf, lmax)
+    if bwd_cfg[2] != cf or cf & (cf - 1) or cf >= GATE_BMM_MIN_FOCUS_DIM:
+        register_tile_configs("stack_bwd_fused", {key: None})
+        print(
+            f"[stack_bwd_fused] ({cf},{lmax}) relay by dispatch contract, "
+            "no sweep needed"
+        )
+        return {"stack_bwd_fused": {key: None}}
+
+    # The fused candidate engages through the production dispatch, which
+    # selects it only at Triton level >= 2 (the table-tuned level); the
+    # sweep drives that same dispatch.  At a lower ambient level every
+    # "candidate" timing would silently run the relay, so refuse to measure
+    # a comparison that never engaged the candidates.  The training level
+    # tops out at 1, so in practice only DP_TRITON_INFER>=2 satisfies the
+    # dispatch predicate the sweep mirrors.
+    if max(triton_infer_level(), triton_train_level()) < 2:
+        raise RuntimeError(
+            "sweep_stack_bwd_fused requires DP_TRITON_INFER>=2 in the "
+            "environment: the production dispatch engages the fused "
+            "candidate only at that level, so a sweep at a lower level "
+            "would time the relay against itself"
+        )
+
+    n_layers = 4
+    n_gated = n_layers - 1
+    m0 = (lmax + 1) * cf
+    row = (3 * lmax + 1) * cf
+    half = lmax * cf
+
+    generator = torch.Generator(device=device).manual_seed(0)
+
+    def randn(*shape: int, scale: float = 1.0) -> torch.Tensor:
+        return torch.randn(*shape, device=device, generator=generator) * scale
+
+    grad_out = randn(n_edge, n_focus, row, scale=0.05)
+    z_all = randn(n_gated, n_focus, n_edge, row, scale=0.5)
+    u_final = randn(n_edge, n_focus, row, scale=0.05)
+    alpha = (
+        torch.rand(
+            n_edge, n_focus, device=device, dtype=torch.float32, generator=generator
+        )
+        + 0.5
+    )
+    w0t_all = randn(n_layers, n_focus, m0, m0, scale=0.02)
+    block_u = randn(n_layers, n_focus, half, half, scale=0.02)
+    block_v = randn(n_layers, n_focus, half, half, scale=0.02)
+    w1t_all = torch.cat(
+        [
+            torch.cat([block_u, block_v], dim=3),
+            torch.cat([-block_v, block_u], dim=3),
+        ],
+        dim=2,
+    )
+    gw_all = randn(n_gated, n_focus, cf, lmax * cf, scale=0.05)
+    gwt_all = gw_all.transpose(2, 3).contiguous()
+
+    def run_traversal() -> tuple[torch.Tensor, torch.Tensor]:
+        g, ga, _, _ = _stack_backward_traversal(
+            grad_out,
+            grad_out,
+            z_all,
+            u_final,
+            alpha,
+            w0t_all,
+            w1t_all,
+            gw_all,
+            gwt_all,
+            None,
+            None,
+            lmax,
+            cf,
+            True,
+            with_weights=False,
+            keep=False,
+        )
+        return g.clone(), ga.clone()
+
+    candidates = (
+        (32, 64, 4, 3),
+        (64, 64, 4, 3),
+        (32, 128, 4, 3),
+        (64, 128, 8, 3),
+        (16, 64, 4, 2),
+        (128, 64, 8, 4),
+    )
+    runtime = _runtime_tile_configs("stack_bwd_fused")
+    saved = dict(runtime)
+    # The sweep must observe each candidate actually engaging the fused
+    # launch (output equality alone passes with both runs on the relay), so
+    # a counting stand-in wraps the real launcher for the whole measurement.
+    from deepmd.pt_expt.kernels.triton.sezm import (
+        so2_value_path,
+    )
+
+    fused_launches = [0]
+    real_launch = so2_value_path._launch_stack_bwd_fused
+
+    def counting_launch(*args: Any, **kwargs: Any) -> Any:
+        fused_launches[0] += 1
+        return real_launch(*args, **kwargs)
+
+    so2_value_path._launch_stack_bwd_fused = counting_launch
+    try:
+        # Baseline: an explicit None entry forces the relay whatever the
+        # built-in tables say, so the comparison reflects this GPU only.
+        register_tile_configs("stack_bwd_fused", {key: None})
+        with torch.no_grad():
+            ref_g, ref_ga = run_traversal()
+            relay_ms = _bench(run_traversal, iters=50)
+
+        # Prefilter: bitwise equality plus a short timing per candidate.
+        # Only known rejections disqualify a candidate -- an output
+        # mismatch, or the launch not fitting this device.  Any other
+        # failure is an internal error of the sweep itself and propagates
+        # (with the key left uncovered) instead of being recorded as a
+        # measured "relay won" conclusion.
+        ranked: list[tuple[float, tuple[int, int, int, int]]] = []
+        for cfg in candidates:
+            register_tile_configs("stack_bwd_fused", {key: cfg})
+            try:
+                # Both the correctness call and the timing must run under
+                # no_grad: the traversal selects the fused kernel only when
+                # grad mode is off, so timing outside this context would
+                # silently benchmark the relay instead of the candidate.
+                with torch.no_grad():
+                    fused_launches[0] = 0
+                    got_g, got_ga = run_traversal()
+                    if fused_launches[0] == 0:
+                        raise RuntimeError(
+                            f"stack_bwd_fused sweep: candidate {cfg} for "
+                            f"({cf},{lmax}) never engaged the fused launch"
+                        )
+                    if not (torch.equal(got_g, ref_g) and torch.equal(got_ga, ref_ga)):
+                        print(
+                            f"[stack_bwd_fused] ({cf},{lmax}) candidate "
+                            f"{cfg} rejected: outputs differ from the relay"
+                        )
+                        continue
+                    fused_ms = _bench(run_traversal, iters=6)
+            except (torch.cuda.OutOfMemoryError, triton.runtime.errors.OutOfResources):
+                print(
+                    f"[stack_bwd_fused] ({cf},{lmax}) candidate {cfg} "
+                    "rejected: not launchable on this device"
+                )
+                continue
+            print(
+                f"[stack_bwd_fused] ({cf},{lmax}) candidate {cfg}: "
+                f"{fused_ms:.3f} ms (relay {relay_ms:.3f} ms)"
+            )
+            ranked.append((fused_ms, cfg))
+
+        # Repeat timing over rotating orders; medians decide.  This follows
+        # the fp32 stack selection (_select_fp32_config): a single
+        # relay-first sequence lets clock and thermal drift favor whatever
+        # runs last, which the 2% margin below cannot offset.
+        finalists = [cfg for _ms, cfg in sorted(ranked)[:3]]
+        samples: dict[tuple[int, int, int, int] | None, list[float]] = {
+            entry: [] for entry in [*finalists, None]
+        }
+        if finalists:
+            order: list[tuple[int, int, int, int] | None] = [*finalists, None]
+            for shift in range(3):
+                rotated = order[shift % len(order) :] + order[: shift % len(order)]
+                for entry in rotated:
+                    register_tile_configs("stack_bwd_fused", {key: entry})
+                    with torch.no_grad():
+                        samples[entry].append(_bench(run_traversal, iters=20))
+        else:
+            samples[None] = [relay_ms]
+    finally:
+        so2_value_path._launch_stack_bwd_fused = real_launch
+        runtime.clear()
+        runtime.update(saved)
+
+    # A 2% margin over the relay median keeps run-to-run noise from
+    # registering a coin-flip as a winner; anything below it records the
+    # relay.
+    relay_med = statistics.median(samples[None])
+    best_ms, best_cfg = float("inf"), None
+    for cfg in finalists:
+        cfg_ms = statistics.median(samples[cfg])
+        if cfg_ms < best_ms:
+            best_ms, best_cfg = cfg_ms, cfg
+    if best_cfg is not None and best_ms < relay_med * 0.98:
+        winner: tuple | None = best_cfg
+        print(
+            f"[stack_bwd_fused] ({cf},{lmax}) fused {winner} wins: "
+            f"{best_ms:.3f} vs {relay_med:.3f} ms (relay median)"
+        )
+    else:
+        winner = None
+        print(f"[stack_bwd_fused] ({cf},{lmax}) relay wins: {relay_med:.3f} ms")
+    register_tile_configs("stack_bwd_fused", {key: winner})
+    return {"stack_bwd_fused": {key: winner}}
+
+
 @dataclass(frozen=True)
 class _SweepSpec:
     """Describe one independently covered launch-configuration sweep."""
@@ -2103,6 +2387,7 @@ _SWEEP_SPECS = {
     "fp32": _SweepSpec(sweep_fp32, "stack_fp32", "focus"),
     "m0_gate": _SweepSpec(sweep_m0_gate, "stack_m0_gate", "focus"),
     "fp16x3": _SweepSpec(sweep_fp16x3, "stack_fp16x3", "focus", min_level=3),
+    "stack_bwd_fused": _SweepSpec(sweep_stack_bwd_fused, "stack_bwd_fused", "focus"),
 }
 
 
@@ -2233,6 +2518,9 @@ def tune_missing_configs(
         Shapes as returned by :func:`collect_model_shape_keys`.
     level : int
         The active Triton inference level; levels below 2 tune nothing.
+        Sweeps that drive a real dispatch execute with ``DP_TRITON_INFER``
+        pinned to this level (see :func:`_infer_level_scope`), so candidate
+        selection during tuning matches the level being tuned for.
     device : torch.device or str
         CUDA device to sweep on.
     n_edge : int or None
@@ -2276,15 +2564,16 @@ def tune_missing_configs(
             [group for group, _spec in pending],
         )
         for _group, spec in pending:
-            result = _run_sweep(
-                spec,
-                cf,
-                lmax,
-                n_focus=n_focus,
-                n_head=n_head,
-                n_edge=n_edge,
-                device=device,
-            )
+            with _infer_level_scope(level):
+                result = _run_sweep(
+                    spec,
+                    cf,
+                    lmax,
+                    n_focus=n_focus,
+                    n_head=n_head,
+                    n_edge=n_edge,
+                    device=device,
+                )
             for family, entries in result.items():
                 register_tile_configs(family, entries)
                 registered.setdefault(family, {}).update(entries)
@@ -2292,6 +2581,84 @@ def tune_missing_configs(
             # returning them to the driver between groups keeps consecutive
             # sweeps (and the model being frozen) from fragmenting into OOM.
             torch.cuda.empty_cache()
+    return registered
+
+
+def autotune_sezm(
+    model: torch.nn.Module,
+    level: int,
+    device: torch.device,
+) -> SweepResult:
+    """Tune and register the SeZM launch tables for a model about to be frozen.
+
+    Shared tuning flow behind both freeze paths: the PT ``.pt2`` freeze
+    calls this directly, and the PT-expt export reaches it through the
+    freeze-time autotuner registry (registered at the bottom of
+    :mod:`.so2_value_path`, driven by
+    :func:`deepmd.pt_expt.kernels.autotune.run_autotune`).  Sweeps every
+    shape key the model's fused-value-path convolutions need that the
+    tables do not yet cover, then rebinds the per-module value paths: the
+    fp32-versus-fp16x3 stack selection is fixed at construction time,
+    which predates the registrations made here.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model about to be frozen; its convolutions fix the shape keys.
+    level : int
+        The active Triton inference level; levels below 2 tune nothing.
+    device : torch.device
+        The target CUDA device the artifact will run on.
+
+    Returns
+    -------
+    SweepResult
+        The entries registered by this call, empty when every key was
+        already covered.
+    """
+    if level < 2:
+        return {}
+    if device.type != "cuda" or not torch.cuda.is_available():
+        return {}
+    from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+        SO2_VALUE_PATH_TRITON_AVAILABLE,
+        make_triton_value_path,
+    )
+
+    if not SO2_VALUE_PATH_TRITON_AVAILABLE:
+        return {}
+
+    # The built-in tables and the sweep both resolve against the current
+    # device; pin it to the freeze target so a freeze aimed at a secondary
+    # GPU tunes and looks up the right hardware (mixed-model hosts).
+    if device.index is not None:
+        torch.cuda.set_device(device)
+
+    shape_keys = collect_model_shape_keys(model)
+    registered = tune_missing_configs(shape_keys, level=level, device=device)
+    if registered:
+        log.info(
+            "Registered freshly tuned Triton launch configurations: %s",
+            {family: sorted(entries) for family, entries in registered.items()},
+        )
+    else:
+        log.info(
+            "Triton launch tables already cover this checkpoint's shapes on %s; "
+            "no tuning needed.",
+            torch.cuda.get_device_name(device),
+        )
+    # Rebind unconditionally: the fp32-versus-fp16x3 stack selection was
+    # made at construction time, possibly against a different current
+    # device's tables, and must reflect the target device and any fresh
+    # registrations.  The interface probe (not an isinstance against a
+    # backend-specific SO2Convolution class) keeps the rebind effective
+    # for both the PT and the PT-expt descriptor modules.
+    for module in model.modules():
+        if (
+            _has_so2_value_path_interface(module)
+            and getattr(module, "triton_infer_level", 0) >= 2
+        ):
+            module._triton_value_path = make_triton_value_path(module)
     return registered
 
 
