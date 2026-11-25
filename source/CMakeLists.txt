@@ -404,8 +404,10 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   else()
     set(DEEPMD_TORCH_HAS_CUDA FALSE)
   endif()
-  # PyTorch 2.14 raised the minimum C++ standard from C++17 to C++20.
-  if(NOT Torch_VERSION VERSION_LESS "2.14.0")
+  # PyTorch 2.14 requires C++20. MSVC also needs it for the designated
+  # initializers and bit-field defaults already present in PyTorch 2.13 headers.
+  if(NOT Torch_VERSION VERSION_LESS "2.14.0"
+     OR (MSVC AND NOT Torch_VERSION VERSION_LESS "2.13.0"))
     set_if_higher(CMAKE_CXX_STANDARD 20)
   elseif(NOT Torch_VERSION VERSION_LESS "2.1.0")
     set_if_higher(CMAKE_CXX_STANDARD 17)
