@@ -19,6 +19,9 @@ from deepmd.pt.utils.env import (
     DEVICE,
     JIT,
 )
+from deepmd.utils.pt_checkpoint import (
+    select_checkpoint_head,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -49,14 +52,8 @@ class Tester:
                 f"Specified head {head} not found in model {model_ckpt}! "
                 f"Available ones are {list(model_params['model_dict'].keys())}."
             )
-            model_params = model_params["model_dict"][head]
-            state_dict_head = {"_extra_state": state_dict["_extra_state"]}
-            for item in state_dict:
-                if f"model.{head}." in item:
-                    state_dict_head[
-                        item.replace(f"model.{head}.", "model.Default.")
-                    ] = state_dict[item].clone()
-            state_dict = state_dict_head
+            state_dict = select_checkpoint_head(state_dict, head)
+            model_params = state_dict["_extra_state"]["model_params"]
 
         model_params.pop(
             "hessian_mode", None

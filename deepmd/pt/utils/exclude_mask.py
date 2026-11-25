@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 import torch
 
@@ -8,7 +12,21 @@ from deepmd.pt.utils.utils import (
 )
 
 
-class AtomExcludeMask(torch.nn.Module):
+class _ExcludeMask(torch.nn.Module):
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # TorchScript archives include nonpersistent buffers. The lookup table
+        # is derived from this model's exclusion list, not checkpoint state.
+        state_dict.pop(prefix + "type_mask", None)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+
+class AtomExcludeMask(_ExcludeMask):
     """Computes the type exclusion mask for atoms."""
 
     def __init__(
@@ -65,7 +83,7 @@ class AtomExcludeMask(torch.nn.Module):
         return self.type_mask[atype].view(nf, natom).to(atype.device)
 
 
-class PairExcludeMask(torch.nn.Module):
+class PairExcludeMask(_ExcludeMask):
     """Computes the type exclusion mask for atom pairs."""
 
     def __init__(

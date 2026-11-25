@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate deeppot_dpa4.pth and deeppot_dpa4.pt2 test models.
+"""Generate the DPA4 test archives and verify them against eager PyTorch.
 
 Creates a DPA4/SeZM model from a pt_expt config, serializes, and exports
-to both .pt2 (pt_expt / AOTInductor) and .pth (pt) from the same weights.
+to both .pt2 (pt_expt / AOTInductor) and .pt (eager pt) from the same weights.
 Also writes a sidecar reference file (PBC and NoPbc per-atom energy/force/
 virial) consumed by the C++ tests.
 """
@@ -12,6 +12,9 @@ import copy
 import os
 import shutil
 import sys
+from tempfile import (
+    TemporaryDirectory,
+)
 
 import numpy as np
 
@@ -98,7 +101,7 @@ def main():
         "version": "3.0.0",
     }
 
-    # ---- 3. Export to .pt2 and .pth ----
+    # ---- 3. Export the dense archive ----
     from deepmd.pt.utils.serialization import (
         deserialize_to_file as pt_deserialize_to_file,
     )
@@ -120,15 +123,6 @@ def main():
     pt_expt_deserialize_to_file(
         pt2_path, copy.deepcopy(data), do_atomic_virial=True, lower_kind="nlist"
     )
-
-    pth_path = os.path.join(base_dir, "deeppot_dpa4.pth")
-    print(f"Exporting to {pth_path} ...")  # noqa: T201
-    try:
-        pt_deserialize_to_file(pth_path, copy.deepcopy(data))
-    except RuntimeError as e:
-        # Custom ops may not be available in all build environments;
-        # .pth generation is not critical.
-        print(f"WARNING: .pth export failed ({e}), skipping.")  # noqa: T201
 
     print("Export done.")  # noqa: T201
 
@@ -192,46 +186,18 @@ def main():
     )
     print(f"Wrote {ref_path}")  # noqa: T201
 
-    # ---- 6. Verify .pth gives same results ----
-    if os.path.exists(pth_path):
-        dp_pth = DeepPot(pth_path)
-        e_pth, f_pth, v_pth, ae_pth, av_pth = dp_pth.eval(
-            coord, box, atype, atomic=True
-        )
-        # PBC parity assertions
-        pbc_e_diff = abs(e1[0, 0] - e_pth[0, 0])
-        pbc_f_diff = np.max(np.abs(f1 - f_pth))
-        pbc_v_diff = np.max(np.abs(v1 - v_pth))
-        print(f"\n// .pth PBC total energy: {e_pth[0, 0]:.18e}")  # noqa: T201
-        print(f"// .pth vs .pt2 energy diff: {pbc_e_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 force max diff: {pbc_f_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 virial max diff: {pbc_v_diff:.2e}")  # noqa: T201
-        tol = 1e-10
-        assert pbc_e_diff < tol, f"PBC energy parity failed: diff={pbc_e_diff:.2e}"
-        assert pbc_f_diff < tol, f"PBC force parity failed: diff={pbc_f_diff:.2e}"
-        # NOTE: ``v1``/``v_pth`` are the *global* virials (3rd return value).
-        # The per-atom virial distribution legitimately differs between pt's
-        # edge-force scatter and pt_expt's generic assembly (#5518); only the
-        # global virial (their sum) is a physical observable, so we assert on
-        # the global virial here.
-        assert pbc_v_diff < tol, f"PBC virial parity failed: diff={pbc_v_diff:.2e}"
-
-        e_pth_np, f_pth_np, v_pth_np, ae_pth_np, av_pth_np = dp_pth.eval(
-            coord, None, atype, atomic=True
-        )
-        # NoPbc parity assertions
-        np_e_diff = abs(e_np[0, 0] - e_pth_np[0, 0])
-        np_f_diff = np.max(np.abs(f_np - f_pth_np))
-        np_v_diff = np.max(np.abs(v_np - v_pth_np))
-        print(f"// .pth NoPbc total energy: {e_pth_np[0, 0]:.18e}")  # noqa: T201
-        print(f"// .pth vs .pt2 NoPbc energy diff: {np_e_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 NoPbc force diff: {np_f_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 NoPbc virial diff: {np_v_diff:.2e}")  # noqa: T201
-        assert np_e_diff < tol, f"NoPbc energy parity failed: diff={np_e_diff:.2e}"
-        assert np_f_diff < tol, f"NoPbc force parity failed: diff={np_f_diff:.2e}"
-        assert np_v_diff < tol, f"NoPbc virial parity failed: diff={np_v_diff:.2e}"
-    else:
-        print("\n// Skipping .pth verification (file not generated).")  # noqa: T201
+    # The edge-force scatter and the dense lower can assign different virials
+    # to individual atoms. The total energy, forces and total virial agree.
+    with TemporaryDirectory() as tmp:
+        pt_path = os.path.join(tmp, "deeppot_dpa4.pt")
+        pt_deserialize_to_file(pt_path, copy.deepcopy(data))
+        eager = DeepPot(pt_path)
+        for cell, expected in ((box, (e1, f1, v1)), (None, (e_np, f_np, v_np))):
+            observed = eager.eval(coord, cell, atype, atomic=True)[:3]
+            for result, reference in zip(observed, expected, strict=True):
+                assert np.isfinite(reference).all()
+                np.testing.assert_allclose(result, reference, atol=1e-10, rtol=0.0)
+        eager.close()
 
     # ============================================================
     # Section B: graph .pt2 export (jittered weights, non-vacuous)
