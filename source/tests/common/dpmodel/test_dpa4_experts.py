@@ -500,8 +500,10 @@ class TestExpertMaps:
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 class TestExpertModel:
     def test_initial_model_equals_the_plain_model(self, variant) -> None:
-        np.testing.assert_array_equal(
-            energy(build_model(variant)), energy(build_model())
+        # The expert increments vanish at initialization. Its batched matrix
+        # products can round differently from the plain dense products.
+        np.testing.assert_array_max_ulp(
+            energy(build_model(variant)), energy(build_model()), maxulp=2
         )
 
     def test_symmetries_and_serialization(self, variant) -> None:

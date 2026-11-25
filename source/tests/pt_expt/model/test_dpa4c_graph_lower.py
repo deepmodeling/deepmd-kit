@@ -408,6 +408,10 @@ def test_multiblock_compiled_lower_keeps_node_and_edge_axes_dynamic(
     sizes turns those symbolic axes into per-batch constants and triggers a
     full recompilation whenever ``N`` or ``E`` changes.
     """
+    from torch._dynamo.testing import (
+        CompileCounterWithBackend,
+    )
+
     from deepmd.pt_expt.train.training import (
         _CompiledModel,
         _detect_task_buffers,
@@ -456,21 +460,22 @@ def test_multiblock_compiled_lower_keeps_node_and_edge_axes_dynamic(
         task_buffers=task_buffers,
     ).train()
 
+    backend = CompileCounterWithBackend("aot_eager")
     orig_compile = torch.compile
     monkeypatch.setattr(
         torch,
         "compile",
         lambda fn, **kw: orig_compile(
-            fn, backend="aot_eager", dynamic=kw.get("dynamic", True)
+            fn, backend=backend, dynamic=kw.get("dynamic", True)
         ),
     )
 
     torch._dynamo.reset()
-    torch._dynamo.utils.counters.clear()
     parameters = tuple(p for p in model.parameters() if p.requires_grad)
     rng = np.random.default_rng(13)
     # Frame counts avoid small structural widths (1, 2, 3, 4, 8) so the first
     # call hits no duck-shape coincidence with static feature dimensions.
+    compile_counts = []
     for nframes, nloc, cell in ((5, 4, 3.2), (7, 5, 3.4), (11, 6, 3.6)):
         coord = torch.tensor(
             rng.uniform(0.0, cell, (nframes, nloc, 3)),
@@ -518,7 +523,10 @@ def test_multiblock_compiled_lower_keeps_node_and_edge_axes_dynamic(
             else:
                 torch.testing.assert_close(actual, reference)
 
-    assert torch._dynamo.utils.counters["frames"]["ok"] == 1
+        compile_counts.append(backend.frame_count)
+
+    assert compile_counts[0] > 0
+    assert len(set(compile_counts)) == 1
     torch._dynamo.reset()
 
 

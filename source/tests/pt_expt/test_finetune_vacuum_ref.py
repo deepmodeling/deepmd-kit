@@ -82,8 +82,9 @@ class TestFinetuneVacuumReference(unittest.TestCase):
     """The reference of the target task, not of the pretrained model, holds."""
 
     def setUp(self) -> None:
-        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.pretrained = self.tmp / "pretrained.pt"
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.pretrained = Path(tmp.name) / "pretrained.pt"
         # The pretrained task takes (0, 1) in every frame and names no
         # condition, so its reference is the default condition.
         params = model_config({"energy": {"O": -3.0, "H": 0.5}})

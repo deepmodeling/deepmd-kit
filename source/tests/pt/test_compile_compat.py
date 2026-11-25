@@ -132,6 +132,9 @@ def test_fusion_size_rejects_invalid_values(monkeypatch, value: str) -> None:
 
 def test_make_fx_decompositions_keep_abs_double_backward_dynamic() -> None:
     """``build_make_fx_decompositions`` keeps ``abs`` + ``silu`` dynamic in 2nd backward."""
+    from torch._dynamo.testing import (
+        CompileCounterWithBackend,
+    )
     from torch.fx.experimental.proxy_tensor import (
         make_fx,
     )
@@ -155,8 +158,8 @@ def test_make_fx_decompositions_keep_abs_double_backward_dynamic() -> None:
     traced = rebuild_graph_module(traced)
 
     torch._dynamo.reset()
-    torch._dynamo.utils.counters.clear()
-    compiled = torch.compile(traced, backend="aot_eager", dynamic=True)
+    backend = CompileCounterWithBackend("aot_eager")
+    compiled = torch.compile(traced, backend=backend, dynamic=True)
     for index, rows in enumerate((8, 13, 19)):
         generator = torch.Generator(device="cpu").manual_seed(100 + index)
         sample = torch.randn(
@@ -176,5 +179,5 @@ def test_make_fx_decompositions_keep_abs_double_backward_dynamic() -> None:
         torch.testing.assert_close(loss_got, loss_ref)
         torch.testing.assert_close(weight.grad, grad_w_ref)
 
-    assert torch._dynamo.utils.counters["frames"]["ok"] == 1
+    assert backend.frame_count == 1
     torch._dynamo.reset()

@@ -349,7 +349,7 @@ def test_cross_backend_optimizer_resume() -> None:
     for step in range(3):
         torch_step(reference, pt_params, step)
     params = {
-        name: jnp.asarray(value.detach().cpu().numpy())
+        name: jnp.array(value.detach().cpu().numpy(), copy=True)
         for name, value in pt_params.items()
     }
     named = {}

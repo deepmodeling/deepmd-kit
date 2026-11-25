@@ -2274,6 +2274,7 @@ class TestParityTileConfigs(_TileConfigRuntimeIsolation):
         )
         self.assertLessEqual(expected, set(table["stack_fp32_parity"]))
 
+    @unittest.skipUnless(TRITON_AVAILABLE, "the sweep module requires Triton")
     def test_tune_missing_configs_routes_by_parity(self):
         from dataclasses import (
             replace,
@@ -2346,6 +2347,7 @@ class TestParityTileConfigs(_TileConfigRuntimeIsolation):
             self.assertEqual(configs(*key, True), parity)
             self.assertEqual(configs(*key), plain)
 
+    @unittest.skipUnless(TRITON_AVAILABLE, "the sweep module requires Triton")
     def test_tune_missing_configs_routes_fp16x3_by_parity(self):
         from dataclasses import (
             replace,
