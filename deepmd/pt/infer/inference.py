@@ -19,6 +19,9 @@ from deepmd.pt.utils.env import (
     DEVICE,
     JIT,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -40,7 +43,9 @@ class Tester:
         state_dict = torch.load(model_ckpt, map_location=DEVICE, weights_only=True)
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        model_params = state_dict["_extra_state"]["model_params"]
+        model_params = normalize_pt_model_params(
+            state_dict["_extra_state"]["model_params"]
+        )
         self.multi_task = "model_dict" in model_params
         if self.multi_task:
             assert head is not None, "Head must be specified in multitask mode!"

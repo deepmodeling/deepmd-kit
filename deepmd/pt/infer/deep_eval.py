@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import io
 import json
 import logging
-from collections.abc import (
-    Callable,
-)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -92,9 +92,18 @@ from deepmd.utils.econf_embd import (
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 if TYPE_CHECKING:
-    import ase.neighborlist
+    from collections.abc import (
+        Callable,
+    )
+
+    from ase.neighborlist import (
+        NewPrimitiveNeighborList,
+    )
 
     from deepmd.pt.model.model.model import (
         BaseModel,
@@ -161,7 +170,7 @@ class DeepEval(DeepEvalBackend):
         output_def: ModelOutputDef,
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
-        neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        neighbor_list: NewPrimitiveNeighborList | None = None,
         head: str | int | None = None,
         no_jit: bool = False,
         nlist_backend: str = "auto",
@@ -182,7 +191,9 @@ class DeepEval(DeepEvalBackend):
             )
             if "model" in state_dict:
                 state_dict = state_dict["model"]
-            self.input_param = state_dict["_extra_state"]["model_params"]
+            self.input_param = normalize_pt_model_params(
+                state_dict["_extra_state"]["model_params"]
+            )
             self.model_def_script = self.input_param
             self.multi_task = "model_dict" in self.input_param
             if self.multi_task:
@@ -441,7 +452,7 @@ class DeepEval(DeepEvalBackend):
             raise NotImplementedError
 
     @property
-    def model_type(self) -> type["DeepEvalWrapper"]:
+    def model_type(self) -> type[DeepEvalWrapper]:
         """The the evaluator of the model type."""
         model_output_type = self.dp.model["Default"].model_output_type()
         if "energy" in model_output_type:
@@ -1189,7 +1200,7 @@ class DeepEval(DeepEvalBackend):
             "observed_type": sort_element_type(observed_type_list),
         }
 
-    def get_model(self) -> "BaseModel":
+    def get_model(self) -> BaseModel:
         """Get the PyTorch model.
 
         Returns
