@@ -120,6 +120,8 @@ with lammps.lammps(cmdargs=["-log", "none", "-screen", "none"]) as lmp:
     print(f"Verified matching LAMMPS Python and shared library: {mapped_libraries}")
 PY
 
+# For the dedicated two-GPU run, launch this script with
+# CUDA_VISIBLE_DEVICES=0,1 DEEPMD_KOKKOS_TWO_GPUS_REQUIRED=1.
 # Keep each invocation and each pytest process separate, including failures.
 mkdir -p "${BUILD_ROOT}/test-reports"
 TEST_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")

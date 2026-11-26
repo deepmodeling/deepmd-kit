@@ -22,10 +22,16 @@ import pytest
     ],
 )
 def test_explicit_cuda_device(tmp_path: Path, style: str, filename: str) -> None:
-    if os.environ.get("DPA4SPIN_KOKKOS_REQUIRED") != "1":
+    require_two = os.environ.get("DEEPMD_KOKKOS_TWO_GPUS_REQUIRED") == "1"
+    if not require_two and os.environ.get("DPA4SPIN_KOKKOS_REQUIRED") != "1":
         pytest.skip("requires the matching Kokkos LAMMPS build")
-    torch = pytest.importorskip("torch")
+    if require_two:
+        import torch
+    else:
+        torch = pytest.importorskip("torch")
     if torch.cuda.device_count() < 2:
+        if require_two:
+            pytest.fail("two visible CUDA devices are required")
         pytest.skip("requires two visible CUDA devices")
     executable = shutil.which("lmp")
     infer = Path(__file__).resolve().parents[2] / "tests/infer"
