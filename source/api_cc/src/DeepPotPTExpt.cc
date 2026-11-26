@@ -2989,21 +2989,11 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
 
     // The host already supplied nloc through the canonical C API. Only
     // independent short-range domains may replay without an MPI exchange.
-    const bool domain = nloc != nall_nodes && !reads_halo && !long_range;
-    constexpr std::int64_t alignment = 256;
-    std::int64_t rows = domain ? std::min(nall_nodes, (nloc + alignment - 1) /
-                                                          alignment * alignment)
-                               : nloc;
+    const bool domain = nloc != nall_nodes && !reads_halo && !long_range &&
+                        !canonical_requires_source_csr_;
+    const std::int64_t rows =
+        domain ? canonical_local_bucket_.update(nloc, nall_nodes) : nloc;
     if (domain) {
-      // At a bucket boundary atoms can move back and forth on every rebuild.
-      // Retain at most one extra bucket to avoid alternating captures.
-      if (rows > 0 && canonical_local_energy_.defined()) {
-        const auto previous = canonical_local_energy_.numel();
-        if (previous > rows && previous <= nall_nodes &&
-            previous - rows <= alignment) {
-          rows = previous;
-        }
-      }
       if (!canonical_local_count_.defined() ||
           canonical_local_stream_ != stream ||
           canonical_local_energy_.numel() != rows) {

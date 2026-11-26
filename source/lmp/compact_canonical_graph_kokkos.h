@@ -1341,17 +1341,11 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     // Keep the extended-node axis stable across small changes to a domain.
     // Only the model sees the extra rows; physical neighbor construction and
     // the scatter back to LAMMPS still use the exact node count.
-    constexpr std::size_t width = 256;
-    std::size_t capacity = node_count;
-    if (pad_nodes && nloc_model < nnode_model) {
-      capacity = std::min<std::size_t>((node_count + width - 1) / width * width,
-                                       std::numeric_limits<int>::max());
-      // Reuse the preceding bucket on small decreases in the ghost count.
-      const auto reserved = d_destination_row_ptr.extent(0);
-      if (reserved > capacity + 1 && reserved - 1 - capacity <= width) {
-        capacity = reserved - 1;
-      }
-    }
+    const std::size_t capacity =
+        pad_nodes && nloc_model < nnode_model
+            ? node_bucket.update(node_count_int,
+                                 std::numeric_limits<int>::max())
+            : node_count;
 
     // === Node types in the artifact's index layout ===
     // The single-pass fill writes them alongside the rows; every other
@@ -2021,6 +2015,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
   Kokkos::View<double*, DeviceType> d_local_energy;
   std::vector<int> host_type_map;
   bool extended_nodes;
+  deepmd::CanonicalNodeBucket node_bucket;
   std::size_t edge_capacity;
   // Longest candidate list of the current neighbor list, or -1 before the
   // first build, and the candidates of all model centers.

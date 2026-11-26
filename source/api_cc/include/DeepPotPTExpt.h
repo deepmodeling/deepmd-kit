@@ -541,6 +541,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   // declared after the loader, the cell and the condition so that the graph
   // is released before the constants, the cell and the condition it reads.
   std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
+  CanonicalNodeBucket canonical_local_bucket_;
   torch::Tensor canonical_local_count_;
   torch::Tensor canonical_local_energy_;
   const void* canonical_local_stream_ = nullptr;

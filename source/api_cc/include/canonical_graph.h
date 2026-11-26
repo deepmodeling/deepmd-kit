@@ -44,6 +44,24 @@ typedef struct DP_HaloExchange {
 
 #ifdef __cplusplus
 namespace deepmd {
+/** Logical model rows for graph replay, independent of storage capacity. */
+class CanonicalNodeBucket {
+ public:
+  int64_t update(int64_t count, int64_t limit) {
+    constexpr int64_t width = 256;
+    const int64_t padding = (width - count % width) % width;
+    const int64_t rounded = padding > limit - count ? limit : count + padding;
+    if (count == 0 || rows_ < rounded || rows_ > limit ||
+        rows_ - rounded > width) {
+      rows_ = rounded;
+    }
+    return rows_;
+  }
+
+ private:
+  int64_t rows_ = 0;
+};
+
 /** Select node-index width, preserving signed words at native host boundaries.
  */
 inline DP_CanonicalIndexWidth canonical_index_width(int64_t node_count) {
