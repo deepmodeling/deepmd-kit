@@ -874,7 +874,7 @@ def change_bias(
             export_data,
             do_atomic_virial=pte_data["do_atomic_virial"],
             lower_kind=lower_kind,
-            with_comm=pte_data.get("has_comm_artifact", True),
+            with_comm=pte_data.get("has_comm_artifact", False),
         )
     log.info(f"Saved model to {output_path}")
 

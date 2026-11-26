@@ -29,14 +29,16 @@ from ..dpa4_fixtures import (
 )
 
 
-@pytest.mark.parametrize("spin", [False, True])
-def test_graph_round_trip(tmp_path, spin):
+@pytest.mark.parametrize(
+    ("spin", "suffix"), [(False, "pt2"), (True, "pt2"), (True, "pte")]
+)
+def test_graph_round_trip(tmp_path, spin, suffix):
     cfg = copy.deepcopy(NATIVE_SPIN_CONFIG)
     if not spin:
         del cfg["spin"]
     rng = np.random.default_rng(5959)
     model = jitter_zero_arrays(get_model(cfg).serialize(), rng)
-    before, after = (str(tmp_path / name) for name in ["before.pt2", "after.pt2"])
+    before, after = (str(tmp_path / name) for name in [f"before.{suffix}", "after.pt2"])
     deserialize_to_file(before, {"model": model}, lower_kind="graph", with_comm=spin)
     change_bias(before, bias_value=[0.25, -0.5], output=after)
     atype = np.array([0, 1, 0, 1])
@@ -47,11 +49,12 @@ def test_graph_round_trip(tmp_path, spin):
         data = serialize_from_file(path)
         assert data["lower_input_kind"] == "graph"
         assert data["do_atomic_virial"]
-        assert data["has_comm_artifact"] == spin
+        expected_comm = spin and suffix == "pt2"
+        assert data.get("has_comm_artifact", False) == expected_comm
         with zipfile.ZipFile(path) as archive:
             assert (
                 "model/extra/forward_lower_with_comm.pt2" in archive.namelist()
-            ) == spin
+            ) == expected_comm
         outputs.append(
             DeepPot(path, auto_batch_size=False).eval(
                 coords, np.eye(3) * 8, atype, **kwargs
