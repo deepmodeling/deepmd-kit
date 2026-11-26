@@ -893,7 +893,8 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
         EXPECT_DOUBLE_EQ(actual.atom_energy.at(count), 123456.0);
       }
       actual.atom_energy.resize(count);
-      this->expect_equal(actual, count == full ? large : small, "owned count");
+      this->expect_agreement(actual, count == full ? large : small,
+                             "owned count");
       EXPECT_GT(replays, before) << "expected same-key CUDA graph replay";
     }
   }
