@@ -4,7 +4,9 @@ import os
 import shutil
 import subprocess
 import zipfile
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 import pytest
