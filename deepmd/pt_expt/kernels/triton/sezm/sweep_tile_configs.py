@@ -2009,7 +2009,8 @@ def sweep_fp16x3(
             u0, alpha, w0_all, w1_all, gw_all, lmax, cf, True
         )
         # the fp16x3 operator returns (x_local, z_all); its backward
-        # recovers the final identity input internally, unlike the fp32 one
+        # computes the input gradient from grad_out and the saved z_all
+        # without the fp32 path's separately returned identity input
         x_fp16_speed, z_fp16_speed = _mixing_stack_fp16x3_op(
             u0, alpha, w0_all, w1_all, gw_all, lmax, cf, True
         )
