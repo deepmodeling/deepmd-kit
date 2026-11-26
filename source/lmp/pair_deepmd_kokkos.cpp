@@ -483,9 +483,10 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   const bool source_csr = canonical_source_csr || cvflag_atom;
   int model_rows = 0;
   if (canonical_graph) {
+    // Keep the exact node extent for source-attributed atomic virials.
     model_rows = compact_graph.build(
         list, cutoff, dist_unit_cvt_factor, source_csr,
-        multi_rank && !canonical_halo && !long_range && !canonical_source_csr);
+        multi_rank && !canonical_halo && !long_range && !source_csr);
   } else {
     nedge = build_edges_device();
     model_rows = compact_graph.nnode_model;
