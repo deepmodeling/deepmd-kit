@@ -3043,7 +3043,7 @@ class TestSeZMWignerBandOp(unittest.TestCase):
         import sys
         import textwrap
 
-        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wignerd_mod
+        from deepmd.pt.model.descriptor.sezm_nn import wignerd as wignerd_mod
 
         tree = pathlib.Path(wignerd_mod.__file__).resolve().parents[5]
         child = textwrap.dedent(
@@ -3181,7 +3181,7 @@ class TestSeZMWignerBandOp(unittest.TestCase):
             mock,
         )
 
-        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
+        from deepmd.pt.model.descriptor.sezm_nn import wignerd as wd
 
         for lmax in (1, 2, 3):
             with self.subTest(lmax=lmax):
@@ -3223,7 +3223,7 @@ class TestSeZMWignerBandOp(unittest.TestCase):
             mock,
         )
 
-        import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
+        from deepmd.pt.model.descriptor.sezm_nn import wignerd as wd
 
         calc = self._make_calc(3)
         quat = torch.randn(32, 4, device="cuda")
