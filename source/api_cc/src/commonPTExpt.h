@@ -354,6 +354,7 @@ class GraphReplay {
   void run(const Key& key, const int device, Evaluate&& evaluate) {
 #ifdef DEEPMD_TORCH_HAS_CUDA
     if (graph_ && key == key_) {
+      RECORD_USER_SCOPE("deepmd::canonical_graph_replay");
       graph_->replay();
       return;
     }

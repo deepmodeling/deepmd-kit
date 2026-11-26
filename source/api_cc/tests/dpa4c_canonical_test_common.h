@@ -47,6 +47,8 @@
 #include "commonPT.h"
 #ifdef DEEPMD_TORCH_HAS_CUDA
 #include <ATen/cuda/Sleep.h>
+#include <ATen/record_function.h>
+#include <c10/util/ScopeExit.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
 #include <cuda_runtime_api.h>
@@ -545,7 +547,9 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
   void run_device_entry(void* stream,
                         const bool source_csr = true,
                         const bool virial = true,
-                        const DP_HaloExchange* halo = nullptr) {
+                        const DP_HaloExchange* halo = nullptr,
+                        Evaluator* evaluator = nullptr) {
+    auto& model = evaluator ? *evaluator : dp;
     double* const atom_energy = out_atom_energy.data_ptr<double>();
     double* const force = out_force.data_ptr<double>();
     double* const total_virial =
@@ -562,14 +566,14 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
     const std::int64_t* const source_order =
         source_csr ? graph_source_order.data_ptr<std::int64_t>() : nullptr;
     if constexpr (Case::kSpin) {
-      dp.compute_canonical_graph_gpu(
+      model.compute_canonical_graph_gpu(
           atom_energy, force, out_force_mag.data_ptr<double>(), total_virial,
           atom_virial, atype, source, deepmd::canonical_index_width(nodes),
           edge_vec, destination_row_ptr, source_row_ptr, source_order,
           graph_spin.data_ptr<float>(), /*world=*/nullptr, halo, natoms, nodes,
           edge_storage, stream);
     } else {
-      dp.compute_canonical_graph_gpu(
+      model.compute_canonical_graph_gpu(
           atom_energy, force, total_virial, atom_virial, atype, source,
           deepmd::canonical_index_width(nodes), edge_vec, destination_row_ptr,
           source_row_ptr, source_order,
@@ -767,22 +771,39 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
     this->expect_folded(this->evaluate(), graph.owner);
   }
   if constexpr (!TypeParam::kSpin) {
-    // Promote the first empty ghost row to a local atom with no neighbours.
-    // Keep all buffer addresses stable and reserve one extra output for it.
-    ASSERT_GT(this->nodes, this->natoms + 1);
-    ++this->natoms;
-    this->allocate_outputs();
-    const auto reference = this->evaluate();
-    --this->natoms;
-    this->out_atom_energy.fill_(123456.0);
-    this->run_device_entry(nullptr);
-    EXPECT_DOUBLE_EQ(
-        this->out_atom_energy[this->natoms].template item<double>(), 123456.0);
-    ++this->natoms;
-    this->expect_equal(
-        this->evaluate(), reference,
-        "a replay after the owned count changes in the same bucket");
-    --this->natoms;
+    const auto eager = [&](int count) {
+      typename TypeParam::Evaluator fresh;
+      fresh.init(TypeParam::kModelPath);
+      this->natoms = count;
+      this->reset_outputs();
+      this->run_device_entry(nullptr, true, true, nullptr, &fresh);
+      auto result = this->read_back();
+      result.atom_energy.resize(count);
+      return result;
+    };
+    const int full = this->natoms;
+    const auto large = eager(full);
+    const auto small = eager(full - 1);
+    ASSERT_GT(max_difference(small.force, large.force), 1e-8);
+    static thread_local int replays;
+    replays = 0;
+    const auto handle = at::addThreadLocalCallback(at::RecordFunctionCallback(
+        [](const at::RecordFunction& event) -> std::unique_ptr<at::ObserverContext> {
+          if (std::string(event.name()) == "deepmd::canonical_graph_replay") ++replays;
+          return nullptr;
+        }).scopes({at::RecordScope::USER_SCOPE}));
+    const auto cleanup = c10::make_scope_exit([&]() { at::removeCallback(handle); });
+    for (const int count : {full - 1, full}) {
+      const int before = replays;
+      this->natoms = count;
+      this->out_atom_energy.fill_(123456.0);
+      this->run_device_entry(nullptr);
+      auto actual = this->read_back();
+      if (count < full) EXPECT_DOUBLE_EQ(actual.atom_energy.at(count), 123456.0);
+      actual.atom_energy.resize(count);
+      this->expect_equal(actual, count == full ? large : small, "owned count");
+      EXPECT_GT(replays, before) << "expected same-key CUDA graph replay";
+    }
   }
   const DP_HaloExchange unused{};
   EXPECT_THROW(this->run_device_entry(nullptr, true, true, &unused),
