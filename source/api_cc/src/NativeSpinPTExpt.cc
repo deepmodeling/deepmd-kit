@@ -310,25 +310,21 @@ void NativeSpinPTExpt::init(const std::string& model,
     return;
   }
 
-  // Register the deepmd_export::* schemas with torch's dispatcher before the
-  // AOTI module resolves the operators its compiled graph calls into.
-  deepmd::load_op_library(deepmd::DPBackend::PyTorchExportable);
-
   if (!file_content.empty()) {
     throw deepmd::deepmd_exception(
         "In-memory file_content loading is not supported for .pt2 models. "
         "Please provide a file path instead.");
   }
 
-  const int gpu_num = torch::cuda::device_count();
-  gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
-  gpu_enabled = torch::cuda::is_available();
+  preselect_torch_device(gpu_rank, gpu_id, gpu_enabled);
+
+  // Register the deepmd_export::* schemas with torch's dispatcher before the
+  // AOTI module resolves the operators its compiled graph calls into.
+  deepmd::load_op_library(deepmd::DPBackend::PyTorchExportable);
+
   if (!gpu_enabled) {
     std::cout << "load model from: " << model << " to cpu" << std::endl;
   } else {
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    DPErrcheck(DPSetDevice(gpu_id));
-#endif
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
   }
