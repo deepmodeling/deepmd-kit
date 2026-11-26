@@ -93,7 +93,8 @@ def test_ordinary_pytest_reporting_preserves_commands_and_failure_handlers(workf
     if filename == "test_cc.yml":
         assert commands == [
             "source/install/retry_on_sigterm.sh 3 source/install/pytest_with_junit.sh "
-            "lammps pytest --cov=deepmd source/lmp/tests",
+            "lammps python -X faulthandler -m pytest -vv --capture=tee-sys "
+            "--cov=deepmd source/lmp/tests",
             "source/install/pytest_with_junit.sh ipi pytest --cov=deepmd source/ipi/tests",
         ]
     else:
