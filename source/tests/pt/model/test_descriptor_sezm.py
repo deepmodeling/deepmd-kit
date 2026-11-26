@@ -3404,5 +3404,114 @@ class TestSeZMPackedWignerEndToEnd(_SeZMTestCase):
             self.assertTrue(records[-1])
 
 
+@unittest.skipUnless(
+    importlib.util.find_spec("triton") is not None,
+    "the regression needs the Triton level to bind on CPU",
+)
+class TestSeZMPackedWignerCpuInference(unittest.TestCase):
+    """A level-enabled CPU evaluation keeps the dense Wigner surfaces.
+
+    The Triton level binds on import availability and layout, not on the
+    device, so a CPU evaluation at that level is a real configuration.  The
+    band is addressed by Triton kernels that require CUDA operands: a CPU
+    forward that builds it raises at the first consumer, where the same
+    forward evaluates correctly through the dense surfaces.
+    """
+
+    # The same small uniform-degree model the CUDA end-to-end class drives.
+    _kwargs = TestSeZMPackedWignerEndToEnd._kwargs
+
+    def setUp(self):
+        self._saved = {
+            key: os.environ.get(key)
+            for key in ("DP_TRITON_INFER", "DP_CUDA_INFER", "DP_TRITON_TRAIN")
+        }
+        os.environ["DP_CUDA_INFER"] = "0"
+        os.environ["DP_TRITON_TRAIN"] = "0"
+
+    def tearDown(self):
+        for key, old in self._saved.items():
+            if old is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old
+
+    def _cpu_model(self):
+        # The same seed gives the level-on and level-off builds the same
+        # weights, so their outputs are directly comparable.
+        torch.manual_seed(20261123)
+        model = DescrptSeZM(**self._kwargs()).to("cpu")
+        model.eval()
+        return model
+
+    @staticmethod
+    def _evaluate(model):
+        """Run both production entries on one CPU frame, without gradients."""
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [0.0, 0.0, 1.5]]], dtype=torch.float32, device="cpu"
+        )
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device="cpu")
+        nlist = torch.tensor([[[0, 1], [1, -1]]], dtype=torch.long, device="cpu")
+        edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long, device="cpu")
+        edge_vec = torch.tensor(
+            [[0.0, 0.0, 1.5], [0.0, 0.0, -1.5]], dtype=torch.float32, device="cpu"
+        )
+        edge_mask = torch.ones(2, dtype=torch.bool, device="cpu")
+        with torch.no_grad():
+            by_nlist = model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
+            by_edges = model.forward_with_edges(
+                extended_coord=coord,
+                extended_atype=atype,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+            )[0]
+        return by_nlist, by_edges
+
+    def test_cpu_eval_keeps_dense_and_matches_the_level_off_forward(self):
+        import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
+
+        os.environ["DP_TRITON_INFER"] = "2"
+        leveled = self._cpu_model()
+
+        records = []
+        real_build = edge_cache_mod._build_edge_wigner
+
+        def spy(*args, **kwargs):
+            built = real_build(*args, **kwargs)
+            records.append(built[3] is not None)
+            return built
+
+        with mock.patch.object(edge_cache_mod, "_build_edge_wigner", spy):
+            with torch.no_grad():
+                self.assertTrue(
+                    leveled._packed_wigner_ok(),
+                    "precondition: the structural gate admits on CPU as well",
+                )
+                # The regression raised here, at the first band consumer.
+                leveled_nlist, leveled_edges = self._evaluate(leveled)
+        self.assertTrue(records, "both entries must reach the Wigner build")
+        self.assertFalse(
+            any(records),
+            "a CPU forward must keep the dense surfaces at every entry",
+        )
+
+        os.environ["DP_TRITON_INFER"] = "0"
+        reference = self._cpu_model()
+        for key, value in leveled.state_dict().items():
+            self.assertTrue(
+                torch.equal(value, reference.state_dict()[key]),
+                f"fixture: the two builds must share weights ({key})",
+            )
+        reference_nlist, reference_edges = self._evaluate(reference)
+        for entry, got, want in (
+            ("nlist entry", leveled_nlist, reference_nlist),
+            ("with-edges entry", leveled_edges, reference_edges),
+        ):
+            with self.subTest(entry=entry):
+                self.assertTrue(bool(torch.isfinite(got).all()))
+                torch.testing.assert_close(got, want)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -969,6 +969,119 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
             any("dpa4_edge_radial" in target for target in captured_targets)
         )
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_trace_layout_follows_the_freeze_target(self) -> None:
+        """The AOTI target, not the CPU tracing inputs, decides the Wigner layout.
+
+        The band is read by Triton kernels that need CUDA operands, so an
+        ordinary CPU forward keeps the dense surfaces.  A freeze traces on
+        CPU inputs for its target device, so the seam pins the decision to
+        the target: a CUDA-target trace carries the band operator, a
+        CPU-target trace keeps the dense Wigner surfaces.
+        """
+        import importlib.util
+
+        import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
+
+        if importlib.util.find_spec("triton") is None:
+            self.skipTest("Triton is required to bind the band consumers")
+
+        captured_targets: set[str] = set()
+        layouts: list[bool] = []
+
+        def fake_compile(
+            exported: torch.export.ExportedProgram,
+            package_path: str,
+        ) -> None:
+            captured_targets.update(
+                str(node.target) for node in exported.graph_module.graph.nodes
+            )
+            with zipfile.ZipFile(package_path, "w") as archive:
+                archive.writestr("model/data.pkl", b"")
+
+        real_build = edge_cache_mod._build_edge_wigner
+
+        def spy(*args, **kwargs):
+            built = real_build(*args, **kwargs)
+            layouts.append(built[3] is not None)
+            return built
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            # The smallest configuration whose structural gate admits the
+            # band: a uniform degree, fp32, the 32-wide focus the fused value
+            # path supports, and the two-layer gated stack it requires.
+            params = _tiny_sezm_model_params()
+            params["descriptor"] = {
+                "type": "SeZM",
+                "rcut": 3.0,
+                "sel": [2, 2],
+                "l_schedule": [1, 1],
+                "mmax": 1,
+                "channels": 32,
+                "focus_dim": 32,
+                "n_focus": 2,
+                "n_radial": 3,
+                "radial_mlp": [6],
+                "ffn_neurons": 8,
+                "ffn_blocks": 1,
+                "n_atten_head": 1,
+                "mlp_bias": False,
+                "precision": "float32",
+                "radial_so2_mode": "degree_channel",
+                "radial_so2_rank": 2,
+            }
+            params["fitting_net"]["precision"] = "float32"
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
+            levels = {
+                "DP_TRITON_INFER": "2",
+                "DP_CUDA_INFER": "0",
+                "DP_CUTILE_INFER": "0",
+                "DP_CUTE_INFER": "0",
+            }
+            for target, expect_band in (
+                (torch.device("cuda"), True),
+                (torch.device("cpu"), False),
+            ):
+                with self.subTest(target=target.type):
+                    captured_targets.clear()
+                    layouts.clear()
+                    with (
+                        mock.patch.dict(os.environ, levels),
+                        mock.patch(
+                            "torch._inductor.aoti_compile_and_package",
+                            side_effect=fake_compile,
+                        ),
+                        mock.patch(
+                            "deepmd.pt.entrypoints.freeze_pt2._export_with_comm_artifact",
+                            return_value=b"",
+                        ),
+                        # The launch-table sweep is not under test, and takes
+                        # minutes on a configuration it has not seen.
+                        mock.patch(
+                            "deepmd.pt.entrypoints.freeze_pt2._tune_triton_configs"
+                        ),
+                        mock.patch.object(edge_cache_mod, "_build_edge_wigner", spy),
+                    ):
+                        freeze_sezm_to_pt2(
+                            str(ckpt_path),
+                            str(tmp_path / f"{target.type}_trace.pt2"),
+                            device=target,
+                        )
+                    self.assertTrue(layouts, "the trace must reach the Wigner build")
+                    self.assertEqual(
+                        set(layouts),
+                        {expect_band},
+                        "every Wigner build of the trace must use one layout",
+                    )
+                    self.assertEqual(
+                        any("wigner_band" in target_ for target_ in captured_targets),
+                        expect_band,
+                        "the traced graph must carry the band operator exactly "
+                        "when the trace built the band",
+                    )
+
     def test_metadata_records_ntypes_when_type_map_is_empty(self) -> None:
         """Metadata-only loaders need ntypes even when no type names are exported."""
         model = _build_tiny_sezm_model()

@@ -2089,6 +2089,25 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
 
         self.addCleanup(restore)
 
+    def _bind_device_chain(self, stub):
+        """Attach the real device-decision methods to a stand-in descriptor.
+
+        The band decision is a chain of three methods; a ``SimpleNamespace``
+        stand-in carries attributes only, so the methods under test are
+        bound onto it explicitly.  The structural gate stays a stub.
+        """
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        stub._packed_wigner_on_cuda = lambda operands: (
+            DescrptSeZM._packed_wigner_on_cuda(stub, operands)
+        )
+        stub._use_packed_wigner = lambda operands: DescrptSeZM._use_packed_wigner(
+            stub, operands
+        )
+        return stub
+
     def test_packed_gate_requires_uniform_degree(self):
         """A decreasing ``l_schedule`` must keep the dense surfaces.
 
@@ -2275,13 +2294,17 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
         )
 
         self._with_levels("2", "0")
+        # A freeze traces on CPU inputs while the artifact runs on its CUDA
+        # target, so the pin -- not the operand device -- speaks for a trace.
+        cpu_operands = torch.empty(0, device="cpu", dtype=torch.float32)
 
-        def _descriptor(schedule, mp_lmax, cuda_fn, packed_ok):
-            return SimpleNamespace(
+        def _descriptor(schedule, mp_lmax, cuda_fn, packed_ok, pinned=True):
+            stub = SimpleNamespace(
                 training=False,
                 _blocks_have_so2_conv=True,
                 mp_init_lmax=mp_lmax,
                 _cuda_wigner_fn=cuda_fn,
+                _force_packed_wigner=pinned,
                 # The gate itself is covered by the uniform-degree test;
                 # stub its verdict so this test isolates the selection.
                 _packed_wigner_ok=lambda: packed_ok,
@@ -2296,23 +2319,77 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
                     for lmax in schedule
                 ],
             )
+            return self._bind_device_chain(stub)
 
         cuda_fn = object()
         self.assertIsNone(
-            DescrptSeZM._inference_wigner_fn(_descriptor([3, 3], 3, cuda_fn, True)),
+            DescrptSeZM._inference_wigner_fn(
+                _descriptor([3, 3], 3, cuda_fn, True), cpu_operands
+            ),
             "an admitted band must resolve the band-capable calculator",
         )
         self.assertIs(
-            DescrptSeZM._inference_wigner_fn(_descriptor([3, 2], 3, cuda_fn, False)),
+            DescrptSeZM._inference_wigner_fn(
+                _descriptor([3, 2], 3, cuda_fn, False), cpu_operands
+            ),
             cuda_fn,
             "a dense-consuming build keeps the CUDA pair",
+        )
+        self.assertIs(
+            DescrptSeZM._inference_wigner_fn(
+                _descriptor([3, 3], 3, cuda_fn, True, pinned=None), cpu_operands
+            ),
+            cuda_fn,
+            "a CPU forward keeps the CUDA pair: the band is never built on CPU operands",
         )
         training_desc = _descriptor([3, 3], 3, cuda_fn, True)
         training_desc.training = True
         self.assertIsNone(
-            DescrptSeZM._inference_wigner_fn(training_desc),
+            DescrptSeZM._inference_wigner_fn(training_desc, cpu_operands),
             "training never substitutes the fused pair",
         )
+
+    def test_band_needs_cuda_operands_unless_pinned(self):
+        """The structural gate alone does not build the band.
+
+        The band is addressed by Triton kernels that require CUDA operands.
+        The Triton level binds on import availability and layout, not on the
+        device, so without the operand check a level-enabled CPU evaluation
+        would build a band that the first consumer then rejects.
+        """
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        # The structural gate is stubbed open: only the device may decide.
+        admitted = self._bind_device_chain(
+            SimpleNamespace(_force_packed_wigner=None, _packed_wigner_ok=lambda: True)
+        )
+        cpu_operands = torch.empty(0, device="cpu", dtype=torch.float32)
+        self.assertFalse(
+            DescrptSeZM._use_packed_wigner(admitted, cpu_operands),
+            "an admitted gate must still keep CPU operands dense",
+        )
+        # The freeze traces on CPU inputs for a CUDA target.
+        admitted._force_packed_wigner = True
+        self.assertTrue(
+            DescrptSeZM._use_packed_wigner(admitted, cpu_operands),
+            "the AOTI target pin must admit the band for the CPU trace",
+        )
+        # A CPU-target freeze stays dense whatever the operands look like.
+        admitted._force_packed_wigner = False
+        self.assertFalse(DescrptSeZM._use_packed_wigner(admitted, cpu_operands))
+        if torch.cuda.is_available():
+            admitted._force_packed_wigner = None
+            cuda_operands = torch.empty(0, device="cuda", dtype=torch.float32)
+            self.assertTrue(
+                DescrptSeZM._use_packed_wigner(admitted, cuda_operands),
+                "an admitted gate builds the band on CUDA operands",
+            )
 
     def test_gate_follows_mode_and_captured_levels(self):
         """The gate derives from the per-block captured levels, like dispatch."""
@@ -2589,6 +2666,15 @@ class TestSeZMWignerBandOp(unittest.TestCase):
             import sys
 
             tree = pathlib.Path(sys.argv[1])
+            # Warm the package while the editable finder is alive (a
+            # scikit-build editable install serves ``deepmd.lib`` through
+            # it), then drop the cached deepmd modules except the C
+            # extension so the tree path takes over the pure-Python
+            # resolution below.
+            import torch
+
+            import deepmd.lib  # noqa: F401  (plain deepmd is lazy; warm the C ext)
+
             sys.meta_path = [
                 f
                 for f in sys.meta_path
@@ -2597,9 +2683,18 @@ class TestSeZMWignerBandOp(unittest.TestCase):
                 and "editable" not in getattr(f, "__name__", "").lower()
             ]
             sys.path.insert(0, str(tree))
+            for _name in [k for k in list(sys.modules) if k.startswith("deepmd")]:
+                if _name != "deepmd.lib":
+                    del sys.modules[_name]
+            # Re-link the cached C extension onto the freshly imported
+            # parent package: a plain cache-hit import does NOT restore
+            # the submodule attribute, so assign it explicitly.
+            import deepmd
+
+            sys.modules["deepmd"].lib = sys.modules["deepmd.lib"]
+
             import importlib
 
-            import torch
             import torch.distributed._functional_collectives  # noqa: F401
 
             import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd

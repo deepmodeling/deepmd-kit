@@ -1199,6 +1199,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # boundary the chain runs once per step.
         self._cuda_radial_fn = None
         self._cuda_wigner_fn = None
+        # The band is read by Triton kernels that need CUDA operands, so a
+        # forward that does not execute on CUDA keeps the dense surfaces.
+        # ``None`` keeps the runtime operand-device dispatch; the freeze pins
+        # it to the AOTI target because tracing always runs on CPU.
+        self._force_packed_wigner: bool | None = None
         if cuda_infer_level() >= 1:
             from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
                 make_cuda_edge_radial,
@@ -1493,7 +1498,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
-                packed_wigner=self._packed_wigner_ok(),
+                packed_wigner=self._use_packed_wigner(extended_coord),
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1802,7 +1807,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
                 fused_radial=(None if self.training else self._cuda_radial_fn),
-                fused_wigner=self._inference_wigner_fn(),
+                fused_wigner=self._inference_wigner_fn(edge_vec),
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
                 # Random local-Z roll is a training-only augmentation;
@@ -1810,7 +1815,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
-                packed_wigner=self._packed_wigner_ok(),
+                packed_wigner=self._use_packed_wigner(edge_vec),
                 node_partial_exchange=node_partial_exchange,
             )
 
@@ -2147,22 +2152,40 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             for block in self.blocks
         )
 
-    def _inference_wigner_fn(self) -> Any:
+    def _packed_wigner_on_cuda(self, operands: torch.Tensor) -> bool:
+        """Whether this forward's Wigner operands execute on CUDA.
+
+        The band is addressed by Triton kernels that require CUDA operands,
+        so a CPU forward keeps the dense surfaces whatever the structural
+        gate says -- the Triton level binds on import availability and
+        layout, not on the device, which makes the level-enabled CPU
+        inference configuration a real one.
+        """
+        if self._force_packed_wigner is not None:
+            return self._force_packed_wigner
+        return operands.is_cuda
+
+    def _use_packed_wigner(self, operands: torch.Tensor) -> bool:
+        """Whether this forward builds the band: admitted, and on CUDA."""
+        return self._packed_wigner_on_cuda(operands) and self._packed_wigner_ok()
+
+    def _inference_wigner_fn(self, operands: torch.Tensor) -> Any:
         """The fused CUDA Wigner pair to substitute, if it serves this build.
 
-        The CUDA calculator produces the dense pair only.  When every block
-        admits the banded layout (the structural gate of the inference
-        levels -- no per-optimization opt-in), substituting that calculator
-        would veto the band at the cache build (it has no
-        ``forward_band``), so the module's own band-capable ``wigner_calc``
-        resolves instead -- the dense pair is never materialized on that
-        path, so the CUDA dense speedup is not lost, it is unused.  Any
-        dense-consuming build (a dense-layout consumer selected, training,
-        or the gate closed) keeps the CUDA calculator.
+        The CUDA calculator produces the dense pair only.  When this forward
+        builds the band (the structural gate of the inference levels admits
+        and the operands execute on CUDA -- no per-optimization opt-in),
+        substituting that calculator would veto the band at the cache build
+        (it has no ``forward_band``), so the module's own band-capable
+        ``wigner_calc`` resolves instead -- the dense pair is never
+        materialized on that path, so the CUDA dense speedup is not lost, it
+        is unused.  Any dense-consuming build (a dense-layout consumer
+        selected, a CPU forward, training, or the gate closed) keeps the CUDA
+        calculator.
         """
         if self.training:
             return None
-        if self._cuda_wigner_fn is not None and self._packed_wigner_ok():
+        if self._cuda_wigner_fn is not None and self._use_packed_wigner(operands):
             return None
         return self._cuda_wigner_fn
 

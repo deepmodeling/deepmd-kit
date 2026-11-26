@@ -53,6 +53,9 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.pt.model.descriptor.sezm import (
+    DescrptSeZM,
+)
 from deepmd.pt.model.descriptor.sezm_nn.embedding import (
     GeometricInitialEmbedding,
 )
@@ -1013,7 +1016,8 @@ def _freeze_sezm_to_pt2(
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
-    # contraction, while CUDA targets also bake the fused GIE scatter.
+    # contraction, while CUDA targets also bake the fused GIE scatter and the
+    # banded Wigner storage.
     force_block_diag = target_device.type != "cpu"
     force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
@@ -1021,6 +1025,8 @@ def _freeze_sezm_to_pt2(
             module._force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
             module._force_fused_scatter = force_fused_scatter
+        if isinstance(module, DescrptSeZM):
+            module._force_packed_wigner = force_fused_scatter
 
     # Sweep any Triton launch-table keys this checkpoint needs that are not
     # covered for the local GPU, so the traced graph bakes tuned launches.
