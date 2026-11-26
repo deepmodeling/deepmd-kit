@@ -25,11 +25,9 @@ from deepmd.pretrained.registry import (
 )
 from deepmd.skills import (
     add_parser,
-)
-from deepmd.skills import run as run_skills
-from deepmd.skills import (
     workflow_help,
 )
+from deepmd.skills import run as run_skills
 
 try:
     from deepmd._version import version as __version__

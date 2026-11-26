@@ -31,7 +31,10 @@ from deepmd.dpmodel.utils.neighbor_list import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
+
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_ij_shifts,
     merge_frame_edge_schemas,

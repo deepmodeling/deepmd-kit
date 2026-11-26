@@ -13,7 +13,9 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import (
+        Generator,
+    )
 
     from deepmd.pd.model.network.init import (
         PaddleGenerator,
