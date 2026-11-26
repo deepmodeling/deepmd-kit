@@ -205,9 +205,15 @@ class TestDPZBLModel(unittest.TestCase):
                         cell.cpu().numpy() if cell is not None else None,
                         self.atype[0].cpu().numpy(),
                     )
-                    for value, key in zip(result, ("energy", "force", "virial"), strict=True):
-                        reference = expected[key].detach().cpu().numpy().reshape(value.shape)
-                        np.testing.assert_allclose(value, reference, rtol=1e-7, atol=1e-8)
+                    for value, key in zip(
+                        result, ("energy", "force", "virial"), strict=True
+                    ):
+                        reference = (
+                            expected[key].detach().cpu().numpy().reshape(value.shape)
+                        )
+                        np.testing.assert_allclose(
+                            value, reference, rtol=1e-7, atol=1e-8
+                        )
 
     def test_forward_lower_exportable(self) -> None:
         md_dp = self._make_dp_model()
