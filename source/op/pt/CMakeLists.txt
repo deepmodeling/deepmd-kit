@@ -4,18 +4,20 @@ option(
   "Embed a lowest-supported PTX fallback in the PyTorch CUDA operator library"
   ON)
 
-# Graph-lower operators of the CPU backend. The schemas are declared in their
-# own translation units so that an operator stays visible when the CUDA half is
-# absent, and each instruction-set instantiation is compiled with only that
-# level's flags: the library ships in a wheel and in the LAMMPS deployment tree,
-# so it must load on a host older than the one that built it and select its
-# kernels through CPUID at run time.
+# Graph-lower operators of the CPU backend, and the border exchange of a
+# decomposed node set, which serves host and CUDA rows alike. The schemas are
+# declared in their own translation units so that an operator stays visible when
+# the CUDA half is absent, and each instruction-set instantiation is compiled
+# with only that level's flags: the library ships in a wheel and in the LAMMPS
+# deployment tree, so it must load on a host older than the one that built it
+# and select its kernels through CPUID at run time.
 set(DPA4C_CPU_ISA_SRC
     dpa4c/graph_compress_cpu_scalar.cc dpa4c/graph_compress_cpu_avx2.cc
     dpa4c/graph_compress_cpu_avx512.cc)
 list(
   APPEND
   OP_SRC
+  border_exchange.cc
   graph_ops_schema.cc
   cpu/allocator_policy.cc
   cpu/edge_force_virial_cpu.cc
@@ -23,7 +25,8 @@ list(
   cpu/neighbor_search_cpu.cc
   dpa4c/ops.cc
   dpa4c/graph_compress_cpu.cc
-  ${DPA4C_CPU_ISA_SRC})
+  ${DPA4C_CPU_ISA_SRC}
+  long_range/ops.cc)
 # The architecture level is pinned per unit rather than added to it: the project
 # may be configured with ENABLE_NATIVE_OPTIMIZATION, and a trailing -march wins,
 # so this is what keeps the fallback units free of instructions the dispatcher
@@ -51,6 +54,15 @@ endif()
 # only within its own subtree, which does not cover this target.
 if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  # The fused fitting network launches thread-block clusters through
+  # cudaLaunchKernelEx and the cluster occupancy queries, which CUDA 11.8
+  # introduced.
+  if(CUDAToolkit_VERSION VERSION_LESS "11.8")
+    message(
+      FATAL_ERROR
+        "The CUDA operators of the PyTorch backend require CUDA 11.8 or later, "
+        "found CUDA ${CUDAToolkit_VERSION}")
+  endif()
   option(DEEPMD_ENABLE_DPA1_HIGH_LMAX
          "Instantiate experimental DPA1 CUDA kernels for lmax greater than one"
          OFF)
@@ -162,10 +174,120 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   unset(DPA4_TRAIN_TYPE_bf16)
   unset(DPA4_TRAIN_TYPE_f64)
   unset(DPA4_TRAIN_DTYPES)
-  set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC
-      dpa4c/graph_compress.cu dpa4c/graph_compress_c8.cu
-      dpa4c/graph_compress_c16.cu dpa4c/graph_compress_c32.cu
-      dpa4c/graph_compress_c64.cu dpa4c/graph_compress_c128.cu)
+  # The compressed DPA4C descriptor kernels form a compile-time grid over the
+  # scalar width and the angular degree, both directions of a degree sharing
+  # most of their code. They follow the generated-shard layout of the DPA4
+  # training kernels, so that the widest profiles, whose degrees take the
+  # longest to compile, do not serialize behind one nvcc invocation: 64 and 128
+  # channels take one source per degree. A narrower width keeps its degrees in
+  # one source, whose kernels share most of their code, so that its fatbinary,
+  # compressed as one, takes about a third of the size of three. The widths are
+  # those of DPA4C_FOR_EACH_CHANNEL and the degrees those that
+  # dpa4c/graph_compress.cu dispatches.
+  set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC dpa4c/graph_compress.cu)
+  # Generated shards depend on their kernel and shared ABI declarations.
+  set(DPA4C_COMMON_HEADERS
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress.cuh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/pair_potential.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_launch.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/block_launch.h")
+  set_property(
+    SOURCE dpa4c/graph_compress.cu
+    APPEND
+    PROPERTY OBJECT_DEPENDS
+             ${DPA4C_COMMON_HEADERS}
+             "${CMAKE_CURRENT_SOURCE_DIR}/border_exchange.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/canonical_index.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/communicator.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/graph_ops.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/fitting_plan.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/long_range/charge_sum.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/long_range/domain_exchange.h")
+  set(DPA4C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/dpa4c")
+  set(DPA4C_KERNEL_HEADER
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_kernel.cuh")
+  file(MAKE_DIRECTORY "${DPA4C_GENERATED_DIR}")
+  foreach(DPA4C_SHARD_WIDTH IN ITEMS 8 16 32 64 128)
+    if(DPA4C_SHARD_WIDTH GREATER_EQUAL 64)
+      set(DPA4C_SHARD_GROUPS 2 3 4)
+    else()
+      set(DPA4C_SHARD_GROUPS 234)
+    endif()
+    foreach(DPA4C_SHARD_GROUP IN LISTS DPA4C_SHARD_GROUPS)
+      set(DPA4C_SHARD_INSTANTIATIONS)
+      string(LENGTH "${DPA4C_SHARD_GROUP}" DPA4C_SHARD_DEGREES)
+      math(EXPR DPA4C_SHARD_LAST "${DPA4C_SHARD_DEGREES} - 1")
+      foreach(DPA4C_SHARD_INDEX RANGE ${DPA4C_SHARD_LAST})
+        string(SUBSTRING "${DPA4C_SHARD_GROUP}" ${DPA4C_SHARD_INDEX} 1
+                         DPA4C_SHARD_LMAX)
+        foreach(DPA4C_SHARD_DIRECTION IN ITEMS forward backward)
+          string(
+            APPEND
+            DPA4C_SHARD_INSTANTIATIONS
+            "template void launch_${DPA4C_SHARD_DIRECTION}<"
+            "${DPA4C_SHARD_WIDTH}, ${DPA4C_SHARD_LMAX}>(\n"
+            "    const Arguments& arguments, cudaStream_t stream);\n")
+        endforeach()
+        string(
+          APPEND
+          DPA4C_SHARD_INSTANTIATIONS
+          "template void launch_first_stage<"
+          "${DPA4C_SHARD_WIDTH}, ${DPA4C_SHARD_LMAX}>(\n"
+          "    FirstStage stage, const Arguments& arguments,\n"
+          "    cudaStream_t stream);\n")
+        string(
+          APPEND
+          DPA4C_BLOCK_SHARD_INSTANTIATIONS
+          "template void launch_block<"
+          "${DPA4C_SHARD_WIDTH}, ${DPA4C_SHARD_LMAX}>(\n"
+          "    BlockStage stage, const BlockArguments& arguments,\n"
+          "    cudaStream_t stream);\n")
+      endforeach()
+      set(DPA4C_SHARD
+          "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}.cu"
+      )
+      configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      set_property(
+        SOURCE "${DPA4C_SHARD}"
+        APPEND
+        PROPERTY OBJECT_DEPENDS ${DPA4C_COMMON_HEADERS}
+                 "${DPA4C_KERNEL_HEADER}")
+      list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
+      # The kernels of the further message-passing blocks are instantiated in
+      # shards of their own, which compile beside those of the first block.
+      set(DPA4C_SHARD_INSTANTIATIONS "${DPA4C_BLOCK_SHARD_INSTANTIATIONS}")
+      set(DPA4C_KERNEL_HEADER_SAVED "${DPA4C_KERNEL_HEADER}")
+      set(DPA4C_KERNEL_HEADER
+          "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/block_kernel.cuh")
+      set(DPA4C_SHARD
+          "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}_block.cu"
+      )
+      configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      set_property(
+        SOURCE "${DPA4C_SHARD}"
+        APPEND
+        PROPERTY OBJECT_DEPENDS ${DPA4C_COMMON_HEADERS}
+                 "${DPA4C_KERNEL_HEADER}"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/simt_gemm.cuh")
+      list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
+      set(DPA4C_KERNEL_HEADER "${DPA4C_KERNEL_HEADER_SAVED}")
+      unset(DPA4C_BLOCK_SHARD_INSTANTIATIONS)
+    endforeach()
+  endforeach()
+  unset(DPA4C_KERNEL_HEADER_SAVED)
+  unset(DPA4C_SHARD)
+  unset(DPA4C_SHARD_DIRECTION)
+  unset(DPA4C_SHARD_LMAX)
+  unset(DPA4C_SHARD_INDEX)
+  unset(DPA4C_SHARD_LAST)
+  unset(DPA4C_SHARD_DEGREES)
+  unset(DPA4C_SHARD_INSTANTIATIONS)
+  unset(DPA4C_SHARD_GROUP)
+  unset(DPA4C_SHARD_GROUPS)
+  unset(DPA4C_SHARD_WIDTH)
+  unset(DPA4C_KERNEL_HEADER)
+  unset(DPA4C_COMMON_HEADERS)
+  unset(DPA4C_GENERATED_DIR)
   set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
       dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu
       dpa1_graph_compress_c32.cu dpa1_graph_compress_c64.cu
@@ -179,6 +301,10 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     ${DPA4C_GRAPH_COMPRESS_KERNEL_SRC}
     graph_fitting.cu
     edge_force_virial.cu
+    long_range/direct_sum.cu
+    long_range/domain_exchange.cc
+    long_range/latent_charge_sum.cu
+    long_range/mesh_sum.cu
     dpa1_graph_energy_force.cu
     dpa4/so2_conv.cu
     ${DPA4_SO2_CONV_KERNEL_SRC}
@@ -213,7 +339,10 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     set_property(TARGET deepmd_op_pt PROPERTY CUDA_ARCHITECTURES
                                               ${DEEPMD_PT_CUDA_ARCHITECTURES})
   endif()
-  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublas CUDA::cublasLt)
+  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublasLt CUDA::cufft)
+  # Operators that serve host and device rows order the device ones through the
+  # c10 CUDA stream API of a CUDA-enabled PyTorch.
+  target_compile_definitions(deepmd_op_pt PRIVATE DEEPMD_TORCH_HAS_CUDA)
   # libtorch headers require at least C++17, and PyTorch 2.14+ requires C++20.
   # Preserve an explicitly higher CUDA standard requested by the user.
   set(DEEPMD_PT_CUDA_STANDARD 17)
@@ -239,12 +368,25 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   set_source_files_properties(
     ${DPA4_SO2_CONV_KERNEL_SRC} dpa1_graph_descriptor.cu
     PROPERTIES COMPILE_OPTIONS "--threads=2")
-  # The compressed DPA1 and DPA4C kernels are instantiated one translation unit
-  # per channel width so their angular-degree and topology specializations
-  # compile in parallel.
+  # The compressed DPA1 kernels, instantiated one translation unit per channel
+  # width, and the compressed DPA4C sources -- the generated shards and the
+  # bindings, whose own kernels use double arithmetic and fmaxf alone -- are
+  # compiled with fast math.
   set_source_files_properties(
     ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} ${DPA4C_GRAPH_COMPRESS_KERNEL_SRC}
     PROPERTIES COMPILE_OPTIONS "--use_fast_math")
+  # The DPA4C dispatch names one instantiation per width and degree, which only
+  # the generated shards define. The module is loaded at run time, where a
+  # missing definition would make the loading fail and take every operator of
+  # the library with it, so the link resolves every symbol instead.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(deepmd_op_pt PRIVATE "LINKER:--no-undefined")
+  endif()
+  # The pair loop of the long-range direct sum calls exp2f and rsqrtf, which
+  # fast math, without denormal handling, compiles to a single special-function
+  # instruction each.
+  set_source_files_properties(long_range/direct_sum.cu
+                              PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})
   target_link_libraries(deepmd_op_pt PRIVATE ${LIB_DEEPMD})

@@ -8,6 +8,9 @@ from typing import (
 )
 
 import pytest
+from dargs.dargs import (
+    ArgumentKeyError,
+)
 from jsonschema import (
     Draft202012Validator,
 )
@@ -47,6 +50,27 @@ def _input(model: dict[str, Any], multi_task: bool = False) -> dict[str, Any]:
 def _assert_valid(validator: Draft202012Validator, data: dict[str, Any]) -> None:
     errors = list(validator.iter_errors(data))
     assert not errors, [(list(error.path), error.message) for error in errors]
+
+
+@pytest.mark.parametrize("multi_task", [False, True])
+def test_training_group_schema(
+    validators: dict[bool, Draft202012Validator], multi_task: bool
+) -> None:
+    model = {"preset": "dpa4-nano-v20260911"}
+    if multi_task:
+        model = {"model_dict": {"a": model}}
+    data = _input(model, multi_task)
+    task = data["training"]["data_dict"]["a"] if multi_task else data["training"]
+    task["training_data"] = [
+        {"systems": "first.lmdb", "prob": 0.6},
+        {"systems": ["second.lmdb", "third.lmdb"], "prob": 0.4},
+    ]
+    _assert_valid(validators[multi_task], data)
+
+    task["training_data"][1]["batch_size"] = False
+    assert not validators[multi_task].is_valid(data)
+    task["training_data"] = []
+    assert not validators[multi_task].is_valid(data)
 
 
 def test_preset_user_example(validators: dict[bool, Draft202012Validator]) -> None:
@@ -176,6 +200,8 @@ def test_multi_task_branch_preset_and_shared_references(
         "shared_dict": {
             "type_map": ["O", "H"],
             "descriptor": {"type": "dpa4", "use_amp": True},
+            "spin": {"scheme": "native", "use_spin": ["O"]},
+            "bias": {"energy": {"O": -430.1, "H": -13.6}},
         },
         "model_dict": {
             "a": {
@@ -183,6 +209,8 @@ def test_multi_task_branch_preset_and_shared_references(
                 "type_map": "type_map",
                 "descriptor": "descriptor:1",
                 "fitting_net": {"seed": 42},
+                "spin": "spin",
+                "preset_out_bias": "bias",
             }
         },
     }
@@ -191,3 +219,23 @@ def test_multi_task_branch_preset_and_shared_references(
     _assert_valid(validators[True], _input(model, multi_task=True))
     model["model_dict"]["a"]["preset"] = "unknown"
     assert not validators[True].is_valid(_input(model, multi_task=True))
+
+
+@pytest.mark.parametrize("descriptor", ["dpa4", "dpa4c"])
+def test_native_mode_has_one_public_configuration_entry(
+    validators: dict[bool, Draft202012Validator], descriptor: str
+) -> None:
+    data = _input(
+        {
+            "type_map": ["Fe"],
+            "descriptor": {"type": descriptor},
+            "fitting_net": {"type": "ener"},
+            "spin": {"scheme": "native:exchange", "use_spin": [True]},
+        }
+    )
+    _assert_valid(validators[False], data)
+    normalized = normalize(data)
+    assert "spin_mode" not in normalized["model"]["descriptor"]
+    data["model"]["descriptor"]["spin_mode"] = "exchange"
+    with pytest.raises(ArgumentKeyError, match="spin_mode"):
+        normalize(data)

@@ -99,12 +99,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmpdir)
 
-    def test_freeze_pte(self) -> None:
-        """Freeze to .pte and verify the file is created."""
-        output = os.path.join(self.tmpdir, "frozen_model.pte")
-        freeze(model=self.ckpt_file, output=output)
-        self.assertTrue(os.path.exists(output))
-
     def test_freeze_main_dispatcher(self) -> None:
         """Test main() CLI dispatcher with freeze command."""
         output_file = os.path.join(self.tmpdir, "frozen_via_main.pte")
@@ -173,7 +167,7 @@ class TestDPFreezePtExpt(unittest.TestCase):
 
         captured: dict = {}
 
-        def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
+        def _fake_freeze(model, output, head=None, lower_kind="auto", **kw):
             captured["output"] = output
             captured["lower_kind"] = lower_kind
 
@@ -226,34 +220,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
             metadata = json.loads(zf.read(meta_name))
         self.assertEqual(metadata["lower_input_kind"], "graph")
 
-    def test_freeze_pt2(self) -> None:
-        """Freeze to .pt2 (AOTInductor) and verify the file is loadable."""
-        self.assertTrue(os.path.exists(self.shared_pt2))
-
-        # Verify the .pt2 can be loaded and evaluated via DeepPot
-        import numpy as np
-
-        from deepmd.infer import (
-            DeepPot,
-        )
-
-        dp = DeepPot(self.shared_pt2)
-        self.assertEqual(dp.get_type_map(), ["O", "H", "B"])
-        rcut = dp.get_rcut()
-        self.assertGreater(rcut, 0.0)
-
-        # Quick smoke-test eval
-        coord = np.array(
-            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
-            dtype=np.float64,
-        )
-        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
-        atype = [0, 1, 2]
-        e, f, v = dp.eval(coord, box, atype)
-        self.assertEqual(e.shape, (1, 1))
-        self.assertEqual(f.shape, (1, 3, 3))
-        self.assertEqual(v.shape, (1, 9))
-
     def test_freeze_pt2_eval_consistency(self) -> None:
         """Verify .pte and .pt2 produce identical results."""
         import numpy as np
@@ -269,11 +235,18 @@ class TestDPFreezePtExpt(unittest.TestCase):
         box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
         atype = [0, 1, 2]
 
+        self.assertTrue(os.path.exists(self.shared_pte))
+        self.assertTrue(os.path.exists(self.shared_pt2))
         dp_pte = DeepPot(self.shared_pte)
         dp_pt2 = DeepPot(self.shared_pt2)
+        self.assertEqual(dp_pt2.get_type_map(), ["O", "H", "B"])
+        self.assertGreater(dp_pt2.get_rcut(), 0.0)
 
         e_pte, f_pte, v_pte = dp_pte.eval(coord, box, atype)
         e_pt2, f_pt2, v_pt2 = dp_pt2.eval(coord, box, atype)
+        self.assertEqual(e_pt2.shape, (1, 1))
+        self.assertEqual(f_pt2.shape, (1, 3, 3))
+        self.assertEqual(v_pt2.shape, (1, 9))
 
         np.testing.assert_allclose(e_pte, e_pt2, atol=1e-10)
         np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
@@ -319,9 +292,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
             DeepPot,
         )
 
-        pt2_path = os.path.join(self.tmpdir, "nonspin_reject.pt2")
-        freeze(model=self.ckpt_file, output=pt2_path)
-
         coord = np.array(
             [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
             dtype=np.float64,
@@ -330,7 +300,7 @@ class TestDPFreezePtExpt(unittest.TestCase):
         atype = [0, 1, 2]
         spin = np.zeros(9, dtype=np.float64)
 
-        dp = DeepPot(pt2_path)
+        dp = DeepPot(self.shared_pt2)
         with self.assertRaises(ValueError):
             dp.eval(coord, box, atype, spin=spin)
 
@@ -346,22 +316,24 @@ class TestDPFreezePtExpt(unittest.TestCase):
         pytest.param(True, id="native_spin"),  # native-spin variant of the same
     ],
 )
-def test_dpa4_variant_default_freeze_graph_with_comm(tmp_path, add_native_spin) -> None:
+def test_dpa4_variant_default_freeze_is_multi_rank(tmp_path, add_native_spin) -> None:
     """The default ``dp freeze`` invocation on a DPA4 VARIANT yields a
-    with-comm graph ``.pt2`` -- aligned with standard DPA4 (issue #5906
-    Task 12b).
+    multi-rank capable graph ``.pt2`` -- aligned with standard DPA4 (issue
+    #5906 Task 12b).
 
-    No ``--lower-kind`` flag means ``freeze()``'s ``lower_kind="nlist"``
-    default, which the nlist->graph auto-override in
-    ``deepmd/pt_expt/entrypoints/main.py`` must resolve to the graph lower
-    for every graph-capable model -- for the ZBL composition and the
-    native-spin variant exactly as for standard DPA4 (the plain native-spin
-    case is already pinned by ``test_native_spin_default_freeze_routes_to_
-    graph`` in ``model/test_dpa4_export.py``; these two cases pin the
-    variants).  Beyond the routing, the frozen archive must carry the nested
-    with-comm artifact (``has_comm_artifact is True``): a variant that
-    silently dropped it would freeze fine, pass every single-rank test, and
-    only fail (or worse, silently mis-answer) on multi-rank LAMMPS.
+    No ``--lower-kind`` flag means ``freeze()``'s ``lower_kind="auto"``
+    default, which ``deepmd/pt_expt/entrypoints/main.py`` must resolve to the
+    graph lower for every graph-capable model -- for the ZBL composition and
+    the native-spin variant exactly as for standard DPA4 (the plain
+    native-spin case is already pinned by ``test_native_spin_default_freeze_
+    routes_to_graph`` in ``model/test_dpa4_export.py``; these two cases pin
+    the variants).  Beyond the routing, the frozen archive must serve
+    multi-rank LAMMPS: the energy composition through the nested with-comm
+    artifact (``has_comm_artifact is True``), the native-spin variant through
+    the halo exchange its graph lower carries in its main program
+    (``has_comm_artifact is False``).  A variant that silently dropped either
+    would freeze fine, pass every single-rank test, and only fail (or worse,
+    silently mis-answer) on multi-rank LAMMPS.
     """
     import json
     import zipfile
@@ -387,7 +359,8 @@ def test_dpa4_variant_default_freeze_graph_with_comm(tmp_path, add_native_spin) 
     with zipfile.ZipFile(pt2) as zf:
         metadata = json.loads(zf.read("model/extra/metadata.json"))
     assert metadata["lower_input_kind"] == "graph"
-    assert metadata["has_comm_artifact"] is True
+    assert metadata["has_message_passing"] is True
+    assert metadata["has_comm_artifact"] is (not add_native_spin)
 
 
 if __name__ == "__main__":

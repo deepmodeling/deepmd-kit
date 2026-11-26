@@ -151,13 +151,15 @@ limit of the model is pinned. Two model options provide this together:
 
 `omat24` is one of the bundled tables of isolated-atom energies in eV:
 
-| Name     | Reference calculation | Elements                                  |
-| -------- | --------------------- | ----------------------------------------- |
-| `mptraj` | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
-| `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
-| `omol25` | OMol25, neutral atoms | 83, H to Bi                               |
-| `omc25`  | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
-| `odac25` | ODAC25                | 94, H to Pu                               |
+| Name             | Reference calculation | Elements                                  |
+| ---------------- | --------------------- | ----------------------------------------- |
+| `domain_cluster` | Domain_cluster        | 9: Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, Au     |
+| `openmd`         | OpenMD, ABACUS PBE PW | 83, H to Bi                               |
+| `mptraj`         | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omat24`         | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omol25`         | OMol25, neutral atoms | 83, H to Bi                               |
+| `omc25`          | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
+| `odac25`         | ODAC25                | 94, H to Pu                               |
 
 The `mptraj` table uses the final VASP `free energy TOTEN`, in eV.
 
@@ -165,6 +167,24 @@ The `omat24`, `omol25`, `omc25` and `odac25` tables are the isolated-atom
 reference energies of the UMA training tasks published with fairchem
 (`configs/uma/training_release/element_refs/iso_atom_elem_refs.yaml`, MIT
 license).
+
+The `openmd` table contains the OpenMD ABACUS PBE plane-wave atomic
+reference energies from `ABACUS_PBE_PW_atom_E0.json` (H to Bi), in eV.
+Use `"preset_out_bias": {"energy": "openmd"}` to select it.
+These are ABACUS 3.9.0 `!FINAL_ETOT_IS` values calculated with the OpenMD
+UPF pseudopotentials, a 100 Ry cutoff, a 30 Angstrom cubic cell, Gamma-point
+sampling, `nspin=1`, no SOC, and Gaussian smearing of 0.01 Ry.
+They are finite-smearing, non-spin-polarized references, rather than
+spin-polarized free-atom ground-state energies. The La value
+(-950.8377156904378 eV) is the accepted final-step energy after 120 SCF
+iterations; its final density residual was 1.2043e-7 against a target of
+1e-8. The other 82 elements met that SCF threshold.
+
+The `domain_cluster` table contains the supplied Domain_cluster atomic energy
+reference biases in eV for Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, and Au. Select it
+with `"preset_out_bias": {"energy": "domain_cluster"}`. Elements outside these
+nine entries are unassigned; every element present in the training data must
+have a reference value.
 
 Each table is on the energy scale of its own reference calculation
 (the OMat24 table gives H = -1.117 eV, the OMol25 table H = -13.446 eV), so a
@@ -177,27 +197,96 @@ processed and its values are stored in the model, so a trained model depends
 neither on the file nor on the bundled data.
 
 In multi-task training `preset_out_bias` is given in each branch, so a branch
-trained on another reference calculation names its own table; written once
-next to `model_dict`, it applies to every branch that does not set its own. A
-branch without a table takes its bias from the statistics and keeps the plain
-network output even when it shares a fitting network with `vacuum_ref`: the
-shared network then represents the same binding energy in every branch, the
-branches differ by a constant per element that the case embedding carries, and
-the isolated-atom energies of the branches with a table stay exactly their
-presets.
+trained on another reference calculation names its own table; written once next
+to `model_dict`, it applies to every branch that does not set its own. A table
+used by some of the branches is defined once in `shared_dict` and named in
+those branches, e.g. `"preset_out_bias": "my_bias"`. A branch without a table
+takes its bias from the statistics and keeps the plain network output even when
+it shares a fitting network with `vacuum_ref`: the shared network then
+represents the same binding energy in every branch, the branches differ by a
+constant per element that the case embedding carries, and the isolated-atom
+energies of the branches with a table stay exactly their presets.
 `examples/water/dpa4/input_e0.json` and
 `examples/water/dpa4/input_multitask_e0.json` show the single-task and the
 multi-task setup on the water example, whose reference calculation is not one
 of the bundled tables: the first reads the table from `e0.json` next to the
 input, the second gives every branch an explicit dictionary.
 
-The reference atom is the neutral atom in its ground state. With charge/spin
-conditioning (`add_chg_spin_ebd`) the reference carries zero charge and the
-ground-state spin multiplicity of the element, and with
-[native spin](dpa4.md#native-scheme) it carries a spin vector of one Bohr
-magneton per unpaired electron; charged, excited or differently magnetized
-isolated atoms keep the deviation the network learns for them. The type names
-must then be element symbols.
+With charge/spin conditioning (`add_chg_spin_ebd`) the condition of the
+reference atom comes from the table. A table computed from one electronic
+state of every element names that state per element with `charge` and
+`multiplicity`; a table computed under one common setting names none, and
+every element with a preset energy is then referenced to `default_chg_spin`.
+An atom without neighbors in the condition of its reference atom has exactly
+its preset energy. A type with a preset energy but no condition of its own and
+no `default_chg_spin` is an error, while a type without a preset energy needs
+none, which lets a table of a subset of the elements sit on a type map of all
+of them; an atom of such a type that occurs in the data is an error when the
+model is built or when the data are read.
+
+The bundled `omol25` table is configured with the neutral ground state of each
+atom (charge zero and the Hund multiplicity), which is the convention of the
+UMA reference it holds, and an isolated ion or excited atom is a learned
+difference from it. The materials tables (`omat24`, `omc25`, `odac25`,
+`openmd`, `mptraj`) name no condition, and their isolated atoms are pinned at
+the table values when `default_chg_spin` is the condition their data take.
+
+The resolved condition belongs to the model. When an element's entry names
+none, it is filled in from `default_chg_spin` once, when the model is built,
+and stored with the preset; a later change of the default condition, such as
+the one `moe-merge --charge-spin` writes, does not move the reference. An
+element the table does not assign has no reference atom and keeps no stored
+condition, so a later preset names the state of that element itself. Fine-
+tuning resolves the reference of the target model from its own preset, so a
+target that names the condition of an element uses it, one that names none
+takes the default condition of the target, and one without a preset at all
+runs without the reference.
+
+The scheme leaves a defect worth knowing under a table that names a ground
+state. The charge and spin multiplicity describe a frame as a whole, so atoms
+pulled apart inside a frame still carry the condition of the frame while their
+reference atoms are ground-state atoms, and the difference for each element
+and condition is learned rather than exact; the dissociation limit of a
+neutral molecule is therefore not pinned to the table. A reference computed
+under one condition, which is also the condition of every frame, is pinned
+exactly.
+
+With [native spin](dpa4.md#spin) the reference atom carries a spin vector of
+one Bohr magneton per unpaired electron of the neutral ground-state atom; a
+differently magnetized isolated atom keeps the deviation the network learns
+for it. The type names must then be element symbols.
+
+An entry of `preset_out_bias` names the isolated atom its value belongs to.
+The charge and spin condition of the atom is given with `charge` and
+`multiplicity`, and the magnitude of its spin moment with `spin`, in the units
+of the spin input of the model:
+
+```json
+{
+  "preset_out_bias": {
+    "energy": {
+      "Fe": {
+        "value": -3.4,
+        "spin": 3.0
+      },
+      "H": {
+        "value": -13.4,
+        "charge": 0,
+        "multiplicity": 2
+      },
+      "O": -1.5
+    }
+  }
+}
+```
+
+A native-spin model gives the reference atom of such an element this moment,
+so an atom without neighbors that carries it has exactly the preset energy.
+The magnitude alone is given, for collinear and non-collinear moments alike,
+because the energy of an isolated atom does not depend on the direction of its
+moment. An element whose entry names no moment keeps the unpaired-electron
+count. A type that is not an element symbol, such as a separate type for a
+Hubbard-corrected species, names its moment and its condition.
 
 The reference follows the network parameters at every training step. Freezing
 evaluates the vacuum descriptor of every type once and removes the reference
@@ -211,9 +300,13 @@ the autograd route instead.
 
 `vacuum_ref` is available for DPA4/SeZM on the PyTorch backend and for the
 graph-native models (DPA1, DPA2, DPA4 and DPA4C) on the pt_expt backend, whose
-flat node axis carries the reference atoms. Fine-tuning and `dp change-bias`
-keep the reference; a `preset_out_bias` given to them fixes the bias again
-without statistics.
+flat node axis carries the reference atoms. Fine-tuning keeps the reference
+and applies its configured `preset_out_bias` without fitting assigned outputs.
+Standalone `dp change-bias` also keeps the reference, but fits residuals from
+the stored bias without reapplying checkpoint presets. Non-finite stored bias
+cells covered by a finite checkpoint preset are recovered before residual
+fitting; finite adjusted values are preserved. To set an energy bias explicitly
+without statistics, use `dp change-bias --bias-value ...`.
 
 ## Loss
 
@@ -259,6 +352,30 @@ When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_f`, `rmse
 The {ref}`intensive_ener_virial <loss[ener]/intensive_ener_virial>` option (default is `false`) controls the normalization of the energy and virial loss terms when `loss_func="mse"`. If set to `true`, these terms are normalized by $1/N^2$ (making them "intensive"), ensuring the loss scale remains consistent across different system sizes $N$. If `false`, the legacy $1/N$ normalization is used. This option is highly recommended for multi-task learning.
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
+
+### Symmetric virial labels
+
+For symmetric stress or virial labels, set `loss.symm_virial` to `true`.
+The loss compares the symmetric parts of both tensors and retains the
+nine-component averaging convention. The default is `false`.
+This option supports PyTorch Exportable, JAX and TensorFlow 2 energy training.
+
+Training validation, including full validation and EMA validation, uses the
+same setting. Learning curves label the comparison as `rmse_symm_v` or
+`mae_symm_v`. Full validation uses `SYMM_V` and `SYMM_S` for virial and
+stress columns; no additional metric columns are added.
+The `validating.validation_metric` input stays `S:MAE`, `S:RMSE`, `V:MAE`
+or `V:RMSE`; it inherits `symm_virial` from the loss and needs no prefix.
+Model predictions still contain the complete virial. To evaluate a checkpoint
+or frozen model with the same convention, use:
+
+```bash
+dp test -m model.pt2 -s /path/to/system --symm-virial
+```
+
+Changing this setting when resuming full validation is rejected because the
+stored best-checkpoint scores use the previous convention. Start a new run
+when changing the comparison convention.
 
 ### Prefactor force loss with default atom preference
 

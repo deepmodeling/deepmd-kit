@@ -24,7 +24,6 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     DynamicRadialDegreeMixer,
     EdgeCartesianTensorProduct,
     ForceEmbedding,
-    InnerClamp,
     NodeCartesianTensorProduct,
     RadialBasis,
     RadialMLP,
@@ -597,7 +596,7 @@ class TestDescrptSeZM(_SeZMTestCase):
                 )
                 edge_vec = flat[edge_index[0]] - flat[edge_index[1]]
                 edge_mask = torch.ones(2, dtype=torch.bool, device=self.device)
-                desc_e, latent, _, _ = model.forward_with_edges(
+                desc_e, latent, _ = model.forward_with_edges(
                     extended_coord=coord.reshape(1, -1),
                     extended_atype=atype,
                     edge_index=edge_index,
@@ -1093,7 +1092,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             nlist,
             charge_spin=torch.tensor([[0.0, 1.0]], device=self.device),
         )
-        desc_ref, _, _, _ = model.forward_with_edges(
+        desc_ref, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1101,7 +1100,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             edge_mask=edge_mask,
             charge_spin=torch.tensor([[0.0, 1.0]], device=self.device),
         )
-        desc_shifted, _, _, _ = model.forward_with_edges(
+        desc_shifted, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1110,7 +1109,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             charge_spin=torch.tensor([[1.0, 1.0]], device=self.device),
         )
         restored = DescrptSeZM.deserialize(model.serialize())
-        desc_restored, _, _, _ = restored.forward_with_edges(
+        desc_restored, _, _ = restored.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1170,117 +1169,129 @@ class TestDescrptSeZM(_SeZMTestCase):
                 msg="Smooth weight differs for models with same seed",
             )
 
+    def test_shared_spin_descriptors_preserve_the_branch_scheme(self) -> None:
+        config = _descriptor_kwargs(use_env_seed=True, use_spin=[True, False])
+        orbit = DescrptSeZM(**config, spin_mode="orbit")
+        exchange = DescrptSeZM(**config, spin_mode="exchange")
+        original = exchange.type_embedding
+        with self.assertRaisesRegex(ValueError, "spin modes"):
+            exchange.share_params(orbit, 0)
+        self.assertIs(exchange.type_embedding, original)
+        exchange.share_params(orbit, 1)
+        self.assertIs(exchange.type_embedding, orbit.type_embedding)
+        self.assertIsNot(exchange.spin_embedding, orbit.spin_embedding)
+
+    def test_shared_descriptor_binds_fused_radial_to_shared_basis(self) -> None:
+        """Fused radial inference of a linked branch reads the shared basis."""
+        from deepmd.pt_expt.kernels.cuda.dpa4 import (
+            edge_radial,
+        )
+
+        if self.device.type != "cuda" or not edge_radial.op_available():
+            self.skipTest("DPA4 CUDA radial operators are unavailable")
+        levels = {
+            "DP_CUDA_INFER": "1",
+            "DP_TRITON_INFER": "0",
+            "DP_CUTILE_INFER": "0",
+            "DP_CUTE_INFER": "0",
+        }
+        with mock.patch.dict(os.environ, levels):
+            base = DescrptSeZM(**_descriptor_kwargs()).to(self.device)
+            link = DescrptSeZM(**_descriptor_kwargs()).to(self.device)
+        self.assertIsNotNone(link._cuda_radial_fn)
+        with torch.no_grad():
+            base.radial_basis.adam_freqs += 0.5
+        link.share_params(base, 0)
+        self.assertIs(link.radial_basis, base.radial_basis)
+        edge_len = torch.linspace(0.5, 2.9, 16, device=self.device).reshape(-1, 1)
+        keep = torch.ones_like(edge_len)
+        shared = link._cuda_radial_fn(edge_len, keep)
+        reference = base._cuda_radial_fn(edge_len, keep)
+        for value, expected in zip(shared, reference, strict=True):
+            torch.testing.assert_close(value, expected)
+
+    def test_exportable_backend_options_are_refused(self) -> None:
+        """Options of the exportable backend load at their defaults and fail otherwise.
+
+        The refusal comes before the neighbor statistics as well, which read
+        ``rcut`` before the descriptor is built.
+        """
+        defaults = {"density_floor": None, "readout_norm": False, "parity": False}
+        DescrptSeZM(**_descriptor_kwargs(**defaults))
+        for options in (
+            {"density_floor": 8.0},
+            {"readout_norm": True},
+            {"readout_kmax": 1},
+            {"parity": True},
+            {"rcut": [2.0, 3.0]},
+            {"mixing_layers": [1, 2]},
+            {"moe": {}},
+        ):
+            config = _descriptor_kwargs(**options)
+            for build in (
+                lambda: DescrptSeZM(**config),
+                lambda: DescrptSeZM.update_sel(None, None, config),
+            ):
+                with (
+                    self.subTest(options=options),
+                    self.assertRaisesRegex(NotImplementedError, "pt_expt backend only"),
+                ):
+                    build()
+
 
 class TestSeZMSpinEmbedding(_SeZMTestCase):
     """Test the native per-atom spin embedding and its descriptor injection."""
 
-    def test_cart_to_l1_intertwines_wigner_rotation(self) -> None:
-        """The l=1 spin map must rotate with the descriptor's Wigner-D block."""
+    def test_time_even_pair_features_and_signed_exchange(self) -> None:
+        """Global reversal preserves the features; a local reversal retains exchange sign."""
         dtype = torch.float64
-        module = SpinEmbedding(
-            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=1
-        ).to(self.device)
-        cart_to_l1 = module.cart_to_l1
-        # cart_to_l1 == sqrt(2) * S with S the unit l=1 basis of WignerDCalculator.
-        expected = math.sqrt(2.0) * torch.tensor(
-            [[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]],
+        atype = torch.tensor([0, 0, 1], device=self.device)
+        spin = torch.tensor(
+            [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]],
             dtype=dtype,
             device=self.device,
         )
-        torch.testing.assert_close(cart_to_l1, expected, atol=1e-12, rtol=1e-12)
-
-        quat = _random_quaternion(5, device=self.device, dtype=dtype)
-        rot = quaternion_to_rotation_matrix(quat)  # (5, 3, 3)
-        wigner = WignerDCalculator(lmax=1, dtype=dtype).to(self.device)
-        d_full, _ = wigner(quat)
-        d1 = d_full[:, 1:4, 1:4]  # (5, 3, 3)
-        vec = torch.randn(5, 3, dtype=dtype, device=self.device)
-        # cart_to_l1(R v) == D1 (cart_to_l1 v)
-        lhs = torch.einsum(
-            "dk,bk->bd", cart_to_l1, torch.einsum("bij,bj->bi", rot, vec)
+        edge = SimpleNamespace(
+            src=torch.tensor([1, 2], device=self.device),
+            dst=torch.tensor([0, 2], device=self.device),
+            edge_vec=torch.tensor(
+                [[1.0, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=dtype, device=self.device
+            ),
+            edge_env=torch.ones(2, 1, dtype=dtype, device=self.device),
         )
-        rhs = torch.einsum("bij,bj->bi", d1, torch.einsum("dk,bk->bd", cart_to_l1, vec))
-        torch.testing.assert_close(lhs, rhs, atol=1e-10, rtol=1e-10)
-
-    def test_spin_embedding_smooth_and_masked(self) -> None:
-        """l=1 is linear in spin (zero at s=0); non-magnetic types are gated off."""
-        dtype = torch.float64
         module = SpinEmbedding(
-            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=2
+            ntypes=2,
+            channels=4,
+            n_radial=3,
+            use_spin=[True, False],
+            spin_mode="exchange",
+            dtype=dtype,
+            seed=2,
         ).to(self.device)
-        atype = torch.tensor([0, 0, 1], device=self.device)
-        spin = torch.randn(3, 3, dtype=dtype, device=self.device)
-
-        # Linear in spin: vector(0) == 0 and vector(2 s) == 2 vector(s).
-        zero_scalar, zero_vec = module(torch.zeros_like(spin), atype)
-        self.assertTrue(torch.allclose(zero_vec, torch.zeros_like(zero_vec)))
-        _, vec1 = module(spin, atype)
-        _, vec2 = module(2.0 * spin, atype)
-        torch.testing.assert_close(vec2, 2.0 * vec1, atol=1e-12, rtol=1e-12)
-
-        # Non-magnetic type (index 1) is gated to exactly zero on both branches.
-        scalar, vector = module(spin, atype)
-        self.assertTrue(torch.allclose(scalar[2], torch.zeros_like(scalar[2])))
-        self.assertTrue(torch.allclose(vector[2], torch.zeros_like(vector[2])))
-
-        # The l=0 magnitude branch is smooth at s=0: its spin gradient vanishes.
-        spin_leaf = torch.zeros(2, 3, dtype=dtype, device=self.device).requires_grad_(
-            True
-        )
-        scalar0, _ = module(spin_leaf, torch.tensor([0, 0], device=self.device))
-        (grad,) = torch.autograd.grad(scalar0.sum(), spin_leaf)
-        self.assertTrue(torch.allclose(grad, torch.zeros_like(grad), atol=1e-12))
-
-    def test_edge_l1_equivariance_and_masking(self) -> None:
-        """The per-edge neighbor-spin l=1 message rotates as l=1, is linear and masked."""
-        dtype = torch.float64
-        module = SpinEmbedding(
-            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=3
-        ).to(self.device)
-        # Perturb the per-type neighbor weight off zero so the map is non-trivial.
         with torch.no_grad():
-            module.adam_spin_nbr_weight.copy_(
-                torch.randn_like(module.adam_spin_nbr_weight)
+            module.pair_layer.matrix.copy_(
+                torch.eye(3, dtype=dtype, device=self.device)
             )
-        atype = torch.tensor([0, 0, 1], device=self.device)  # node 2 is non-magnetic
-        # Edges 0, 1 have magnetic sources; edge 2's source (node 2) is not.
-        src = torch.tensor([0, 1, 2], dtype=torch.long, device=self.device)
-        edge_cache = SimpleNamespace(
-            src=src,
-            edge_env=torch.rand(3, 1, dtype=dtype, device=self.device) + 0.1,
+        pair = module.edge_features(spin, atype, edge)
+        torch.testing.assert_close(pair[0], spin.new_tensor([1.0, 4.0, 2.0]))
+        torch.testing.assert_close(pair[1], torch.zeros_like(pair[1]))
+        torch.testing.assert_close(module.edge_features(-spin, atype, edge), pair)
+        flipped = spin.clone()
+        flipped[1] *= -1
+        torch.testing.assert_close(
+            module.edge_features(flipped, atype, edge)[0],
+            spin.new_tensor([1.0, 4.0, -2.0]),
         )
-        spin = torch.randn(3, 3, dtype=dtype, device=self.device)
-
-        msg = module.edge_l1(spin, atype, edge_cache)  # (E, 3, C)
-        self.assertEqual(msg.shape, (3, 3, module.channels))
-
-        # Linear in spin: zero at s=0 and homogeneous of degree one.
-        zero = module.edge_l1(torch.zeros_like(spin), atype, edge_cache)
-        self.assertTrue(torch.allclose(zero, torch.zeros_like(zero)))
-        msg2 = module.edge_l1(2.0 * spin, atype, edge_cache)
-        torch.testing.assert_close(msg2, 2.0 * msg, atol=1e-12, rtol=1e-12)
-
-        # The non-magnetic source (edge 2) contributes exactly zero.
-        torch.testing.assert_close(msg[2], torch.zeros_like(msg[2]))
-        self.assertGreater(msg[0].abs().max().item(), 0.0)
-
-        # l=1 equivariance: rotating the spin rotates each edge message by D^1(R),
-        # the packed Wigner-D block conjugate to cart_to_l1.
-        quat = _random_quaternion(1, device=self.device, dtype=dtype)
-        rot = quaternion_to_rotation_matrix(quat)[0]  # (3, 3)
-        d1 = module.cart_to_l1 @ rot @ torch.linalg.inv(module.cart_to_l1)
-        msg_rot = module.edge_l1(
-            torch.einsum("ij,nj->ni", rot, spin), atype, edge_cache
+        zero = torch.zeros_like(spin, requires_grad=True)
+        (grad,) = torch.autograd.grad(
+            module.edge_features(zero, atype, edge).sum(), zero
         )
-        expected = torch.einsum("de,nec->ndc", d1, msg)
-        torch.testing.assert_close(msg_rot, expected, atol=1e-10, rtol=1e-10)
+        torch.testing.assert_close(grad, torch.zeros_like(grad), atol=0.0, rtol=0.0)
 
     def test_descriptor_spin_joint_rotation_invariance(self) -> None:
         """The scalar descriptor is invariant under a joint rotation of geometry and spin.
 
-        Covers both spin injection routes by toggling ``use_env_seed``: the
-        env-seed branch adds the neighbor spin to the environment matrix, while
-        the backbone branch carries the on-site and neighbor-aggregated l=1.
+        Covers on-site, pair and neighbor spin conditioning.
         """
         dtype = torch.float64
         coord, atype, edge_index, edge_vec, edge_mask = _spin_edge_system(
@@ -1291,57 +1302,55 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
         quat = _random_quaternion(1, device=self.device, dtype=dtype)
         rot = quaternion_to_rotation_matrix(quat)[0]  # (3, 3)
 
-        for use_env_seed in (False, True):
-            with self.subTest(use_env_seed=use_env_seed):
-                model = DescrptSeZM(
-                    **_descriptor_kwargs(
-                        precision="float64",
-                        use_spin=[True, False],
-                        use_env_seed=use_env_seed,
-                        seed=7,
-                    )
-                )
-                # Perturb away from the near-identity initialization so the
-                # rotation check exercises a non-trivial spin-dependent
-                # descriptor (env-seed output_proj is otherwise zero-init).
-                torch.manual_seed(0)
-                with torch.no_grad():
-                    for p in model.parameters():
-                        p.copy_(torch.randn_like(p) * 0.1)
-                model.eval()
+        model = DescrptSeZM(
+            **_descriptor_kwargs(
+                precision="float64",
+                use_spin=[True, False],
+                use_env_seed=True,
+                seed=7,
+            )
+        )
+        # Perturb away from the near-identity initialization so the
+        # rotation check exercises a non-trivial spin-dependent
+        # descriptor (env-seed output_proj is otherwise zero-init).
+        torch.manual_seed(0)
+        with torch.no_grad():
+            for p in model.parameters():
+                p.copy_(torch.randn_like(p) * 0.1)
+        model.eval()
 
-                desc, _, _, _ = model.forward_with_edges(
-                    extended_coord=coord,
-                    extended_atype=atype,
-                    edge_index=edge_index,
-                    edge_vec=edge_vec,
-                    edge_mask=edge_mask,
-                    spin=spin,
-                )
-                desc_rot, _, _, _ = model.forward_with_edges(
-                    extended_coord=coord,
-                    extended_atype=atype,
-                    edge_index=edge_index,
-                    edge_vec=torch.einsum("ij,ej->ei", rot, edge_vec),
-                    edge_mask=edge_mask,
-                    spin=torch.einsum("ij,nkj->nki", rot, spin),
-                )
-                torch.testing.assert_close(desc, desc_rot, atol=1e-9, rtol=1e-9)
+        desc, _, _ = model.forward_with_edges(
+            extended_coord=coord,
+            extended_atype=atype,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+            spin=spin,
+        )
+        desc_rot, _, _ = model.forward_with_edges(
+            extended_coord=coord,
+            extended_atype=atype,
+            edge_index=edge_index,
+            edge_vec=torch.einsum("ij,ej->ei", rot, edge_vec),
+            edge_mask=edge_mask,
+            spin=torch.einsum("ij,nkj->nki", rot, spin),
+        )
+        torch.testing.assert_close(desc, desc_rot, atol=1e-9, rtol=1e-9)
 
-                # Spin actually changes the descriptor (injection is not a no-op).
-                desc_zero, _, _, _ = model.forward_with_edges(
-                    extended_coord=coord,
-                    extended_atype=atype,
-                    edge_index=edge_index,
-                    edge_vec=edge_vec,
-                    edge_mask=edge_mask,
-                    spin=torch.zeros_like(spin),
-                )
-                self.assertFalse(torch.allclose(desc, desc_zero, atol=1e-6))
+        # Spin actually changes the descriptor (injection is not a no-op).
+        desc_zero, _, _ = model.forward_with_edges(
+            extended_coord=coord,
+            extended_atype=atype,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+            spin=torch.zeros_like(spin),
+        )
+        self.assertFalse(torch.allclose(desc, desc_zero, atol=1e-6))
 
 
-class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
-    """The env-seed spin gate: placement, zero point and version migration."""
+class TestSeZMEnvSeedSpinProjection(_SeZMTestCase):
+    """The independent spin projection has a trainable zero initialization."""
 
     def _kwargs(self) -> dict:
         """Config of a spin descriptor with the env-seed route enabled."""
@@ -1356,16 +1365,15 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
         """A spin descriptor with non-route weights moved off initialization.
 
         The env-seed output projection is zero-initialized, so an unperturbed
-        descriptor is insensitive to the environment matrix. The four
-        output-controlling spin routes stay at zero so the tests exercise the
-        same starting point used by a fresh or migrated spin-free model.
+        descriptor is insensitive to the environment matrix. The
+        spin output projections stay at zero so the tests exercise the
+        initialization used by a fresh native-spin model.
         """
         model = DescrptSeZM(**self._kwargs())
         spin_routes = {
             "spin_embedding.mag_layer2.matrix",
-            "spin_embedding.adam_spin_vec_weight",
-            "spin_embedding.adam_spin_nbr_weight",
-            "env_seed_embedding.spin_scale",
+            "spin_embedding.pair_layer.matrix",
+            "env_seed_embedding.spin_output_proj.matrix",
         }
         torch.manual_seed(0)
         with torch.no_grad():
@@ -1391,122 +1399,15 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
             "edge_mask": edge_mask,
         }, spin
 
-    def test_zero_gate_receives_a_gradient(self) -> None:
-        """A zero gate is a starting point, not a fixed point.
-
-        The gate multiplies the spin block of the environment matrix after
-        the quadratic form, so the descriptor is LINEAR in it and its
-        gradient at zero is that block. A pre-quadratic amplitude would carry
-        a gradient proportional to itself and could never leave zero, which
-        is why the gate sits where it does.
-        """
+    def test_zero_projection_receives_a_gradient(self) -> None:
+        """The zero projection receives gradients from nonzero spin statistics."""
         model = self._descriptor()
         kwargs, spin = self._inputs()
-        desc, _, _, _ = model.forward_with_edges(**kwargs, spin=spin)
+        desc, _, _ = model.forward_with_edges(**kwargs, spin=spin)
         desc.sum().backward()
-        gate_grad = model.env_seed_embedding.spin_scale.grad
-        self.assertIsNotNone(gate_grad)
-        self.assertGreater(float(gate_grad.abs().max()), 1e-8)
-
-    def test_gate_placement_differs_from_the_legacy_one_by_a_square(self) -> None:
-        """The version-1.2 gate ``a**2`` is the version-1.1 amplitude ``a``.
-
-        The amplitude scaled the neighbor-spin channel, which enters the
-        environment matrix linearly, so the legacy forward is reproduced by a
-        unit gate on a spin scaled by ``a``. With the remaining spin routes
-        reset, the env-seed gate is the only difference between the two.
-        """
-        model = self._descriptor()
-        kwargs, spin = self._inputs()
-        amplitude = 2.0
-        with torch.no_grad():
-            model.env_seed_embedding.spin_scale.fill_(amplitude**2)
-        migrated, _, _, _ = model.forward_with_edges(**kwargs, spin=spin)
-        with torch.no_grad():
-            model.env_seed_embedding.spin_scale.fill_(1.0)
-        legacy, _, _, _ = model.forward_with_edges(**kwargs, spin=amplitude * spin)
-        torch.testing.assert_close(migrated, legacy, atol=1e-12, rtol=1e-12)
-
-    def test_loading_a_legacy_state_squares_the_gate(self) -> None:
-        """A version-1.1 state is retagged 1.2 with its gate squared.
-
-        The gate is a CHILD parameter, so the migration has to rewrite the
-        incoming state: the descriptor's own buffers load before torch
-        descends into ``env_seed_embedding``, and a migration applied to the
-        live parameter would be overwritten by that descent.
-        """
-        state = self._descriptor().state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        state["env_seed_embedding.spin_scale"] = torch.full_like(
-            state["env_seed_embedding.spin_scale"], 2.0
-        )
-        model = DescrptSeZM(**self._kwargs())
-        model.load_state_dict(state)
-        torch.testing.assert_close(
-            model.env_seed_embedding.spin_scale.detach(),
-            torch.full_like(model.env_seed_embedding.spin_scale, 4.0),
-        )
-        self.assertEqual(model.version, 1.3)
-        self.assertEqual(float(model.version_tensor.item()), 1.3)
-
-    def test_loading_legacy_spin_free_state_zeros_dormant_routes(self) -> None:
-        kwargs = {**self._kwargs(), "use_spin": [False, False]}
-        state = DescrptSeZM(**kwargs).state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        dormant_keys = (
-            "spin_embedding.mag_layer2.matrix",
-            "spin_embedding.adam_spin_vec_weight",
-            "spin_embedding.adam_spin_nbr_weight",
-            "env_seed_embedding.spin_scale",
-        )
-        for key in dormant_keys:
-            state[key] = torch.full_like(state[key], 3.0)
-        state["spin_embedding.mag_layer1.matrix"] = torch.full_like(
-            state["spin_embedding.mag_layer1.matrix"], 5.0
-        )
-
-        model = DescrptSeZM(**kwargs)
-        model.load_state_dict(state)
-
-        migrated = model.state_dict()
-        for key in dormant_keys:
-            torch.testing.assert_close(migrated[key], torch.zeros_like(migrated[key]))
-        torch.testing.assert_close(
-            migrated["spin_embedding.mag_layer1.matrix"],
-            torch.full_like(migrated["spin_embedding.mag_layer1.matrix"], 5.0),
-        )
-        self.assertEqual(model.version, 1.3)
-
-    def test_a_migrated_state_is_migrated_only_once(self) -> None:
-        """A migrated descriptor advertises its current format; a reload is inert."""
-        state = self._descriptor().state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        state["env_seed_embedding.spin_scale"] = torch.full_like(
-            state["env_seed_embedding.spin_scale"], 2.0
-        )
-        migrated = DescrptSeZM(**self._kwargs())
-        migrated.load_state_dict(state)
-        reloaded = DescrptSeZM(**self._kwargs())
-        reloaded.load_state_dict(migrated.state_dict())
-        torch.testing.assert_close(
-            reloaded.env_seed_embedding.spin_scale.detach(),
-            torch.full_like(reloaded.env_seed_embedding.spin_scale, 4.0),
-        )
-        self.assertEqual(reloaded.version, 1.3)
-
-    def test_serialize_roundtrip_migrates_a_legacy_payload(self) -> None:
-        """The dp-format path shares the rule with the state-dict path."""
-        data = self._descriptor().serialize()
-        data["@version"] = 1.1
-        data["@variables"]["env_seed_embedding.spin_scale"] = (
-            0.0 * data["@variables"]["env_seed_embedding.spin_scale"] + 3.0
-        )
-        model = DescrptSeZM.deserialize(data)
-        torch.testing.assert_close(
-            model.env_seed_embedding.spin_scale.detach(),
-            torch.full_like(model.env_seed_embedding.spin_scale, 9.0),
-        )
-        self.assertEqual(model.version, 1.3)
+        projection_grad = model.env_seed_embedding.spin_output_proj.matrix.grad
+        self.assertIsNotNone(projection_grad)
+        self.assertGreater(float(projection_grad.abs().max()), 1e-8)
 
 
 class TestBuildEdgeQuaternion(_SeZMTestCase):
@@ -2123,129 +2024,6 @@ class TestCartesianTensorProduct(_SeZMTestCase):
                 )
 
 
-class TestInnerClamp(_SeZMTestCase):
-    """The distance clamp of a bridging window.
-
-    Below the freeze point the distance the descriptor is shown stays at that
-    point, above the outer radius the clamp is the identity, and the septic
-    Hermite profile joins the two with three continuous derivatives. The
-    freeze point sits two fifths into the window, just below the midpoint
-    where the frame filter ends the training data, so the shown distance
-    still moves at the filter point.
-    """
-
-    def setUp(self) -> None:
-        super().setUp()
-        # A unit pair length scale makes the two fractions the window radii in
-        # Å directly, so every boundary below is read at the plain distance.
-        self.r_inner = 0.5
-        self.r_outer = 1.5
-        self.r_freeze = 0.9
-        self.contact = torch.tensor(1.0, dtype=torch.float64, device=self.device)
-        self.clamp = InnerClamp(self.r_inner, self.r_outer)
-        self.assertAlmostEqual(self.clamp.f_freeze, self.r_freeze, places=14)
-
-    def _derivatives(self, r: torch.Tensor, order: int) -> list[torch.Tensor]:
-        """Successive derivatives of the clamp, from the first to ``order``."""
-        r = r.detach().clone().requires_grad_(True)
-        value = self.clamp(r, self.contact)
-        derivatives = []
-        for step in range(order):
-            value = torch.autograd.grad(value.sum(), r, create_graph=step + 1 < order)[
-                0
-            ]
-            derivatives.append(value.detach())
-        return derivatives
-
-    def test_monotonicity(self) -> None:
-        """The shown distance never decreases as the true distance grows."""
-        r = torch.linspace(0.0, 3.0, 1000, dtype=torch.float64, device=self.device)
-        out = self.clamp(r, self.contact)
-        diff = out[1:] - out[:-1]
-        self.assertTrue((diff >= -1e-14).all(), "InnerClamp is not monotonic")
-
-    def test_frozen_zone_sits_at_the_freeze_point(self) -> None:
-        """Below the freeze point the shown distance is that point itself."""
-        r = torch.tensor(
-            [0.0, 0.3, 0.5, 0.8, 0.89],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        torch.testing.assert_close(
-            self.clamp(r, self.contact),
-            torch.full_like(r, self.r_freeze),
-            atol=1e-14,
-            rtol=0,
-        )
-        grads = self._derivatives(r, 1)[0]
-        torch.testing.assert_close(
-            grads,
-            torch.zeros_like(grads),
-            atol=1e-14,
-            rtol=0,
-            msg="the frozen zone must carry no gradient",
-        )
-
-    def test_identity_zone_unit_gradient(self) -> None:
-        """Beyond the outer radius the clamp returns the distance unchanged."""
-        r = torch.tensor(
-            [1.5, 1.6, 2.0, 3.0, 5.0],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        torch.testing.assert_close(self.clamp(r, self.contact), r, atol=0, rtol=0)
-        grads = self._derivatives(r, 1)[0]
-        torch.testing.assert_close(
-            grads,
-            torch.ones_like(grads),
-            atol=1e-14,
-            rtol=0,
-            msg="the identity zone must carry a unit gradient",
-        )
-
-    def test_c3_continuity_at_boundaries(self) -> None:
-        """Three derivatives match across both ends of the transition.
-
-        The septic profile vanishes together with its first two derivatives at
-        the freeze point and reaches unit slope with vanishing curvature at the
-        outer radius, so the clamp joins the frozen and the identity branch
-        with three continuous derivatives. The step ``eps`` is small enough
-        that the genuine variation of the third derivative over it stays far
-        below the tolerance, which leaves a real discontinuity as the only way
-        to fail.
-        """
-        eps = 1.0e-9
-        for boundary in (self.r_freeze, self.r_outer):
-            r = torch.tensor(
-                [boundary - eps, boundary, boundary + eps],
-                dtype=torch.float64,
-                device=self.device,
-            )
-            for order, values in enumerate(self._derivatives(r, 3), start=1):
-                left, center, right = (float(v) for v in values)
-                self.assertAlmostEqual(
-                    left,
-                    center,
-                    delta=1e-4,
-                    msg=f"derivative {order} jumps below {boundary}",
-                )
-                self.assertAlmostEqual(
-                    center,
-                    right,
-                    delta=1e-4,
-                    msg=f"derivative {order} jumps above {boundary}",
-                )
-
-    def test_invalid_params(self) -> None:
-        """Test that invalid parameters raise ValueError."""
-        with self.assertRaises(ValueError):
-            InnerClamp(1.5, 1.0)
-        with self.assertRaises(ValueError):
-            InnerClamp(-1.0, 1.0)
-        with self.assertRaises(ValueError):
-            InnerClamp(1.0, 1.0)
-
-
 class TestCutoffNumerics(_SeZMTestCase):
     """Numerical stability at cutoff-vanishing attention boundaries."""
 
@@ -2528,7 +2306,7 @@ class TestEdgeNorm(_SeZMTestCase):
                 torch.testing.assert_close(sw1, sw2, atol=atol, rtol=rtol)
 
 
-class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
+class _EnergyCurveFixture(_SeZMTestCase):
     """Test PES smoothness from scaled symmetric eight-atom probes."""
 
     RANDOM_WEIGHT_BASE_SEED = 184
@@ -2540,8 +2318,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
     # ~(rcut - r)^4, so the energy bowl is only resolvable above noise a little
     # inside the cutoff; 4.5 keeps a robust smooth-bowl signal for this guard.
     RCUT_NEAR_DISTANCE = 4.5
-    BRIDGING_R_INNER = 0.8
-    BRIDGING_R_OUTER = 1.2
     ENERGY_SPAN_MARGIN = 1.0e-7
     FIRST_DERIVATIVE_MARGIN = 5.0e-7
     SECOND_DERIVATIVE_MARGIN = 5.0e-4
@@ -2578,8 +2354,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         n_focus: int = 1,
         edge_cartesian: bool = False,
         bridging_method: str = "none",
-        bridging_r_inner: float = 0.8,
-        bridging_r_outer: float = 1.2,
     ) -> dict:
         """Build the SeZM probe model used for one PES scan."""
         params = {
@@ -2621,8 +2395,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         }
         if bridging_method.lower() != "none":
             params["bridging_method"] = bridging_method
-            params["bridging_r_inner"] = bridging_r_inner
-            params["bridging_r_outer"] = bridging_r_outer
         return params
 
     def _build_scaled_symmetric_structure(
@@ -2654,8 +2426,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         n_focus: int = 1,
         edge_cartesian: bool = False,
         bridging_method: str = "none",
-        bridging_r_inner: float = 0.8,
-        bridging_r_outer: float = 1.2,
     ) -> torch.nn.Module:
         """Build a probe model and randomize all floating-point parameters."""
         model = get_sezm_model(
@@ -2665,8 +2435,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                 n_focus=n_focus,
                 edge_cartesian=edge_cartesian,
                 bridging_method=bridging_method,
-                bridging_r_inner=bridging_r_inner,
-                bridging_r_outer=bridging_r_outer,
             )
         ).to(
             device=self.device,
@@ -2694,6 +2462,8 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         model.eval()
         return model
 
+
+class TestDescriptorEnergyCurveSmoothness(_EnergyCurveFixture):
     def _scan_total_energy_curve(
         self,
         model: torch.nn.Module,
@@ -2855,7 +2625,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                         edge_cartesian=True,
                     )
 
-    def _assert_bridging_force_consistent_across_switch(
+    def _assert_bridging_force_consistent_across_the_junction(
         self,
         model: torch.nn.Module,
         *,
@@ -2865,22 +2635,26 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
 
         A finite, isolated cluster keeps the neighbor count bounded and equal to
         the physical neighbors within ``rcut``, so the check is independent of
-        the periodic-image count and of ``sel``.  Atom 1 slides along ``x`` from
-        below ``r_inner`` to above ``r_outer`` while the spectator atoms stay
-        beyond ``r_outer``; if the ``BridgingSwitch`` blend kinked at either
-        boundary, the analytical force (``-dE/dx``) would diverge from the
-        central finite difference there.
+        the periodic-image count and of ``sel``. The Na-Cl probe pair closes
+        from beyond the end of the truncated term (1.1 x 2.54 Å) through the
+        contact clamp (its edge starts at the 2.54 Å covalent bond length) to
+        well inside its freeze, while the spectators stay beyond both. A kink
+        at the truncation end or at either end of the clamp ramp would make
+        the analytical force (``-dE/dx``) diverge from the central difference.
         """
-        distances = torch.linspace(0.70, 1.30, 25, dtype=self.dtype, device=self.device)
-        # Isolated cluster: atom 0 anchor, atom 1 probe (slides on x), spectators
-        # fixed beyond r_outer but inside rcut so only the probe crosses a switch.
+        distances = torch.linspace(1.0, 3.2, 45, dtype=self.dtype, device=self.device)
+        clamp = model.atomic_model.descriptor.contact_clamp
+        edge = clamp.edges[0, 1]
+        end = model.inter_potential.pair_table[1, 8]
+        junctions = torch.stack((edge * clamp.inner, edge, end)).to(distances)
+        distances = torch.cat((distances, junctions - eps, junctions + eps))
         template = torch.tensor(
             [
                 [0.0, 0.0, 0.0],
                 [0.0, 0.0, 0.0],
-                [0.0, 2.6, 0.0],
-                [0.0, 0.0, 2.8],
-                [-3.0, 0.2, 0.0],
+                [0.0, 3.6, 0.0],
+                [0.0, 0.0, 3.8],
+                [-4.0, 0.2, 0.0],
             ],
             dtype=self.dtype,
             device=self.device,
@@ -2897,20 +2671,30 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         energy = result["energy"][:, 0].reshape(-1, 3)
         self.assertTrue(torch.isfinite(energy).all().item())
         fd_force = -(energy[:, 1] - energy[:, 2]) / (2.0 * eps)
-        analytical_force = result["force"][::3, 1, 0]
+        forces = result["force"][:, 1, 0].reshape(-1, 3)
+        analytical_force = forces[:, 0]
+        # Extrapolate the one-sided forces from h and 2h to each junction.
+        left, right = forces[-6:-3], forces[-3:]
+        torch.testing.assert_close(
+            2 * left[:, 0] - left[:, 2],
+            2 * right[:, 0] - right[:, 1],
+            atol=1e-6,
+            rtol=1e-6,
+        )
         torch.testing.assert_close(analytical_force, fd_force, atol=1.0e-6, rtol=1.0e-4)
-        # Below r_inner the gate freezes the network term and the ZBL repulsion
-        # dominates, so the closest probe must be pushed outward (+x).
+        # Below the freeze the learned energy no longer depends on the pair
+        # separation and the truncated ZBL term dominates, so the closest
+        # probe must be pushed outward (+x).
         self.assertGreater(
             analytical_force[0].item(),
             0.0,
             "bridged short-range force should be repulsive",
         )
 
-    def test_bridging_force_consistent_across_switch_boundaries(self) -> None:
-        """The bridged total energy stays conservative and C1-smooth across both
-        switch boundaries on a bounded, sel-independent isolated cluster, and is
-        repulsive at short range.
+    def test_bridging_force_consistent_across_the_junction(self) -> None:
+        """The bridged total energy stays conservative and C1-smooth through
+        the truncation end and the clamp ramp on a bounded, sel-independent
+        isolated cluster, and is repulsive at short range.
         """
         for use_amp in (False, True):
             for n_atten_head in (0, 1, 2):
@@ -2923,215 +2707,88 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                             use_amp=use_amp,
                             n_focus=n_focus,
                             bridging_method="ZBL",
-                            bridging_r_inner=self.BRIDGING_R_INNER,
-                            bridging_r_outer=self.BRIDGING_R_OUTER,
                         )
-                        self._assert_bridging_force_consistent_across_switch(model)
+                        self._assert_bridging_force_consistent_across_the_junction(
+                            model
+                        )
 
 
-class TestSourceFreezePropagationGate(TestDescriptorEnergyCurveSmoothness):
+class TestContactClampFreeze(_EnergyCurveFixture):
     """
-    Sharper correctness probes for the Source Freeze Propagation Gate.
+    The learned energy of a bridged model stops depending on a closing pair.
 
-    ``TestDescriptorEnergyCurveSmoothness`` already validates that the
-    bridged PES is a single smooth repulsive bowl near ``r_inner`` and
-    ``r_outer``; that family exercises the combined ``InnerClamp`` +
-    ``BridgingSwitch`` machinery on a realistic 8-atom layout and is
-    sensitive to discontinuities.
-
-    The tests below add a tighter, analytical guardrail that
-    ``InnerClamp`` alone cannot satisfy once the model grows past one
-    interaction block. Setup: three atoms ``(A, B, C)`` with ``A`` at
-    the origin, ``B`` sliding rigidly on a sphere of radius
-    ``r_AB < r_inner`` around ``A`` and ``C`` anchored in the normal
-    zone. Under this motion
-
-    * ``r_AB`` is constant, so ``V_ZBL(r_AB)`` is constant and the
-      analytical half-energy assigned to ``A`` does not move;
-    * the direction ``r_hat_AB`` varies, and so do ``r_BC`` and
-      ``r_hat_BC`` — these are exactly the channels through which the
-      direction and multi-hop leaks manifest in the user's analysis.
-
-    The gate leaves the two edges between ``A`` and ``B`` alive, so the
-    descriptors of the frozen pair still follow each other at the clamped
-    distance; what leaves the graph are the edges the pair emits into
-    ``C``, and what closes the remaining channel is the per-node gate,
-    which is zero on ``A`` and on ``B``. The guarantee is therefore sharp
-    at the level of the energy: **the atomic energy of ``A`` is the per-type
-    bias of the fitting plus the analytical halves of its own pairs, and
-    stays strictly constant** along the trajectory. ``E_B`` moves only
-    through the analytical term of its genuine bond with ``C``.
+    Two atoms ``A`` and ``B`` close along the x axis with no other atom
+    inside the cutoff, so their separation is the only geometric quantity
+    that changes. The contact clamp freezes the separation the descriptor
+    reads below ``inner`` times the pair's data edge, and every message about
+    the pair is built from what the descriptor reads. Below the freeze the
+    learned part of both atomic energies is therefore strictly constant, and
+    the energy of the pair changes only through the analytical term, which is
+    evaluated on the true separation.
     """
 
-    NEAR_DISTANCE = 0.6  # < BRIDGING_R_INNER, stays frozen for all samples
-    N_SPHERE_POINTS = 16
+    N_SCAN_POINTS = 9
     INVARIANCE_TOLERANCE = 1.0e-10
 
-    def _build_three_atom_box(
-        self,
-        *,
-        near_distance: float,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Build a 3-atom open-box probe ``(A, B, C)`` with frozen pair ``(A, B)``.
-
-        ``A`` is anchored at the origin, ``B`` is placed inside the frozen
-        sphere at distance ``near_distance`` along the initial direction,
-        and ``C`` sits well outside the bridging window so ``(A, C)`` and
-        ``(B, C)`` are ordinary GNN edges.
-        """
-        coord = torch.tensor(
-            [
-                [0.0, 0.0, 0.0],
-                [near_distance, 0.0, 0.0],
-                [2.4, 0.0, 0.0],
-            ],
-            dtype=self.dtype,
-            device=self.device,
-        ).unsqueeze(0)
-        atype = torch.tensor([[0, 1, 0]], dtype=torch.int32, device=self.device)
-        # Large enough cubic cell to keep the system aperiodic under rcut=5.
-        box = torch.tensor(
-            [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
-            dtype=self.dtype,
-            device=self.device,
-        )
-        return coord, atype, box
-
-    def _sphere_positions(
-        self,
-        n_points: int,
-        radius: float,
-    ) -> torch.Tensor:
-        """Deterministic Fibonacci-like sphere sampling around the origin."""
-        indices = torch.arange(n_points, dtype=self.dtype, device=self.device)
-        phi = math.pi * (3.0 - math.sqrt(5.0))  # golden-angle step
-        z = 1.0 - 2.0 * (indices + 0.5) / float(n_points)
-        rho = torch.sqrt(torch.clamp(1.0 - z * z, min=0.0))
-        theta = phi * indices
-        positions = torch.stack(
-            [
-                radius * rho * torch.cos(theta),
-                radius * rho * torch.sin(theta),
-                radius * z,
-            ],
-            dim=-1,
-        )
-        return positions  # (n_points, 3)
-
-    def _evaluate_frozen_sphere_atom_energies(
-        self,
-        model: torch.nn.Module,
-    ) -> torch.Tensor:
-        """Evaluate per-atom energies while ``B`` rigidly slides on the frozen sphere.
-
-        The per-edge local-``+Z`` gauge roll is turned off so every edge uses
-        the deterministic canonical edge quaternion. This removes the only
-        non-determinism that would otherwise mask the ``< 1e-10`` invariance
-        SFPG is supposed to deliver in fp64; the gauge roll is pure
-        training-time augmentation and does not change the physical content.
-        """
+    def _atom_energies(
+        self, model: torch.nn.Module, separations: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Per-atom bridged and learned energies along the A-B scan."""
         descriptor = model.atomic_model.descriptor
         previous_random_gamma = descriptor.random_gamma
         descriptor.random_gamma = False
         try:
-            coord0, atype, box = self._build_three_atom_box(
-                near_distance=self.NEAR_DISTANCE
+            coord = torch.zeros(
+                (separations.shape[0], 2, 3), dtype=self.dtype, device=self.device
             )
-            directions = self._sphere_positions(
-                self.N_SPHERE_POINTS, radius=self.NEAR_DISTANCE
-            )
-            coord = coord0.repeat(directions.shape[0], 1, 1)
-            coord[:, 1, :] = directions  # rotate B around A, radius fixed
-            result = model(
-                coord,
-                atype.expand(directions.shape[0], -1),
-                box=box.expand(directions.shape[0], -1),
-            )
+            coord[:, 1, 0] = separations
+            atype = torch.tensor(
+                [[0, 1]], dtype=torch.int32, device=self.device
+            ).expand(separations.shape[0], -1)
+            bridged = model(coord, atype, box=None)["atom_energy"].detach()
+            potential = model.inter_potential
+            model.inter_potential = None
+            try:
+                learned = model(coord, atype, box=None)["atom_energy"].detach()
+            finally:
+                model.inter_potential = potential
         finally:
             descriptor.random_gamma = previous_random_gamma
-        return result["atom_energy"].detach()  # (n_samples, 3, 1)
+        return bridged, learned
 
-    def _atomic_energy_span(
-        self,
-        atom_energies: torch.Tensor,
-        atom_index: int,
-    ) -> float:
-        """Range of one atom's energy across the sphere trajectory."""
-        values = atom_energies[:, atom_index, 0]
-        return float((values.max() - values.min()).abs())
-
-    def test_sfpg_preserves_atomic_energy_of_frozen_partner(self) -> None:
-        """
-        With SFPG active, the atomic energy of the frozen-partner atom
-        ``A`` must be strictly constant along the sphere trajectory.
-
-        ``A``'s atomic energy decomposes as ``E_A_GNN + V_ZBL(r_AB)/2
-        + V_ZBL(r_AC)/2``. Both ZBL half-terms are constant because
-        ``r_AB`` is fixed on the frozen sphere and ``r_AC`` does not
-        change either, so any residual variation must come from the
-        GNN branch. ``E_C`` is deliberately not probed here because
-        ``V_ZBL(r_BC)/2`` that sits on the ``C`` side is of order
-        several eV at ``r_BC ≈ r_outer`` and moves with ``B`` even
-        though the GNN piece of ``E_C`` remains strictly invariant.
-        Writing the test on ``E_A`` keeps the assertion clean and
-        purely diagnostic of SFPG rather than of ZBL geometry.
-        """
+    def test_learned_energy_is_frozen_below_the_clamp(self) -> None:
         model = self._build_random_weight_model(
             n_atten_head=2,
             use_amp=False,
             n_focus=2,
             bridging_method="ZBL",
-            bridging_r_inner=self.BRIDGING_R_INNER,
-            bridging_r_outer=self.BRIDGING_R_OUTER,
         )
-        atom_energies = self._evaluate_frozen_sphere_atom_energies(model)
-        self.assertTrue(torch.isfinite(atom_energies).all().item())
-
-        span_a = self._atomic_energy_span(atom_energies, atom_index=0)
-        self.assertLess(
-            span_a,
-            self.INVARIANCE_TOLERANCE,
-            (
-                "SFPG must freeze the atomic energy of ``A`` under rigid "
-                f"motion of its frozen partner; observed span {span_a:.3e} "
-                f"> {self.INVARIANCE_TOLERANCE:.3e}."
-            ),
+        clamp = model.atomic_model.descriptor.contact_clamp
+        edge = float(clamp.edges[0, 1])
+        freeze = clamp.inner * edge
+        below = torch.linspace(
+            0.3 * freeze,
+            freeze,
+            self.N_SCAN_POINTS,
+            dtype=self.dtype,
+            device=self.device,
         )
+        bridged, learned = self._atom_energies(model, below)
+        span = float((learned - learned[:1]).abs().max())
+        self.assertLess(span, self.INVARIANCE_TOLERANCE)
+        # The analytical term adds a repulsion that grows as the pair closes.
+        added = (bridged - learned).sum(dim=(1, 2))
+        self.assertTrue(torch.all(added > 0.0))
+        self.assertTrue(torch.all(added[:-1] > added[1:]))
 
-    def test_sfpg_leaks_reopen_when_gate_is_disabled(self) -> None:
-        """
-        Ablation: clearing ``bridging_switch`` must re-expose the leak.
-
-        This test is the contrapositive of the previous one: if SFPG is
-        the only mechanism that closes the direction / multi-hop leak,
-        disabling it must produce a measurably non-constant ``E_A`` on
-        the same frozen-sphere trajectory. Keeping this ablation in the
-        suite pins down which component owns the invariance, so any
-        future regression that silently disables SFPG is caught
-        immediately.
-        """
-        model = self._build_random_weight_model(
-            n_atten_head=2,
-            use_amp=False,
-            n_focus=2,
-            bridging_method="ZBL",
-            bridging_r_inner=self.BRIDGING_R_INNER,
-            bridging_r_outer=self.BRIDGING_R_OUTER,
+        # Inside the ramp the learned energy still follows the pair.
+        ramp = torch.tensor(
+            [0.5 * (freeze + edge), edge], dtype=self.dtype, device=self.device
         )
-        # Drop only the per-source gate: InnerClamp and ZBL stay active.
-        model.atomic_model.descriptor.bridging_switch = None
-        atom_energies = self._evaluate_frozen_sphere_atom_energies(model)
-
-        span_a = self._atomic_energy_span(atom_energies, atom_index=0)
+        _, learned_ramp = self._atom_energies(model, ramp)
         self.assertGreater(
-            span_a,
+            float((learned_ramp[0] - learned_ramp[1]).abs().max()),
             self.INVARIANCE_TOLERANCE,
-            (
-                "Clearing SFPG should re-expose the direction / multi-hop "
-                f"leak on ``E_A``; observed span {span_a:.3e} is not above "
-                f"the invariance tolerance {self.INVARIANCE_TOLERANCE:.3e}."
-            ),
         )
 
 

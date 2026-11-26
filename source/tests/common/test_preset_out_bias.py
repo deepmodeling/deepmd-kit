@@ -13,14 +13,53 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
 )
 from deepmd.utils.preset_out_bias import (
+    REFERENCE_CHARGE_SPIN_KEY,
+    REFERENCE_SPIN_KEY,
     bundled_preset_out_bias_tables,
+    check_preset_out_bias,
     load_preset_out_bias_table,
     normalize_preset_out_bias,
     override_assigned_bias,
     preset_out_bias_rows,
+    recover_nonfinite_preset_bias,
     remap_preset_out_bias,
     resolve_preset_out_bias_tables,
 )
+
+
+class TestRecoverNonfinitePresetBias(unittest.TestCase):
+    def test_recovers_only_assigned_nonfinite_cells(self) -> None:
+        stored = np.array(
+            [
+                [[np.nan, 0, 0], [7, 0, 0], [np.inf, 0, 0]],
+                [[1, np.nan, 3], [4, np.inf, 6], [7, 8, -np.inf]],
+                [[np.nan, 0, 0], [1, 0, 0], [2, 0, 0]],
+            ]
+        )
+        original = stored.copy()
+        preset = {
+            "energy": [[-10], [-13.6], [-3]],
+            "tensor": [[10, 11, 12], None, [30, 31, 32]],
+        }
+        rows = recover_nonfinite_preset_bias(
+            preset, ["O", "H", "B"], stored, ["energy", "tensor", "other"], [1, 3, 1]
+        )
+        np.testing.assert_array_equal(rows["energy"], [[-10], [7], [-3]])
+        np.testing.assert_array_equal(
+            rows["tensor"], [[1, 11, 3], [4, np.inf, 6], [7, 8, 32]]
+        )
+        self.assertNotIn("other", rows)
+        np.testing.assert_array_equal(stored, original)
+
+    def test_finite_adjusted_bias_needs_no_recovery(self) -> None:
+        rows = recover_nonfinite_preset_bias(
+            {"energy": [[-10], [-13.6]]},
+            ["O", "H"],
+            np.array([[[7.0], [8.0]]]),
+            ["energy"],
+            [1],
+        )
+        self.assertEqual(rows, {})
 
 
 class TestNormalizePresetOutBias(unittest.TestCase):
@@ -94,6 +133,133 @@ class TestNormalizePresetOutBias(unittest.TestCase):
                     {"energy": str(Path(tmp) / "list.json")}, self.type_map
                 )
 
+    def test_spin_moment_entries(self) -> None:
+        # a moment is named with the value, in the dict and in the list form
+        for preset in (
+            {"energy": {"O": {"value": -3.0, "spin": 2}, "H": -13.6}},
+            {"energy": [{"value": [-3.0], "spin": 2.0}, -13.6, None]},
+        ):
+            out = normalize_preset_out_bias(preset, self.type_map)
+            self.assertEqual(out["energy"], [[-3.0], [-13.6], None])
+            self.assertEqual(out[REFERENCE_SPIN_KEY], [2.0, None, None])
+            # the moments are not an output of the model
+            check_preset_out_bias(out, ["energy"])
+            self.assertEqual(normalize_preset_out_bias(out, self.type_map), out)
+            self.assertEqual(
+                normalize_preset_out_bias(json.loads(json.dumps(out)), self.type_map),
+                out,
+            )
+        # outputs that name the same moment of a type agree
+        out = normalize_preset_out_bias(
+            {
+                "energy": {"O": {"value": -3.0, "spin": 2.0}},
+                "dos": {"O": {"value": 1.0, "spin": 2.0}, "B": {"value": 0.5}},
+            },
+            self.type_map,
+        )
+        self.assertEqual(out[REFERENCE_SPIN_KEY], [2.0, None, None])
+        self.assertEqual(out["dos"], [[1.0], None, [0.5]])
+        # a preset without a moment keeps the plain canonical form
+        self.assertNotIn(
+            REFERENCE_SPIN_KEY,
+            normalize_preset_out_bias(
+                {"energy": {"O": {"value": -3.0}}}, self.type_map
+            ),
+        )
+
+    def test_spin_moment_errors(self) -> None:
+        for bad in (
+            {"energy": {"O": {"spin": 2.0}}},
+            {"energy": {"O": {"value": None, "spin": 2.0}}},
+            {"energy": {"O": {"value": -3.0, "moment": 2.0}}},
+            {"energy": {"O": {"value": -3.0, "spin": -1.0}}},
+            {"energy": {"O": {"value": -3.0, "spin": np.inf}}},
+            {"energy": {"O": {"value": -3.0, "spin": [0.0, 0.0, 2.0]}}},
+            {"energy": {"O": {"value": -3.0, "spin": True}}},
+            {
+                "energy": {"O": {"value": -3.0, "spin": 2.0}},
+                "dos": {"O": {"value": 1.0, "spin": 1.0}},
+            },
+            {"energy": {"O": -3.0}, REFERENCE_SPIN_KEY: [2.0]},
+        ):
+            with self.assertRaises(ValueError):
+                normalize_preset_out_bias(bad, self.type_map)
+
+    def test_charge_spin_condition_entries(self) -> None:
+        # the condition of the isolated atom is named with the value, in the
+        # dict and in the list form
+        for preset in (
+            {
+                "energy": {
+                    "O": {"value": -3.0, "charge": 0, "multiplicity": 3},
+                    "H": -13.6,
+                }
+            },
+            {
+                "energy": [
+                    {"value": [-3.0], "charge": 0, "multiplicity": 3},
+                    -13.6,
+                    None,
+                ]
+            },
+        ):
+            out = normalize_preset_out_bias(preset, self.type_map)
+            self.assertEqual(out["energy"], [[-3.0], [-13.6], None])
+            self.assertEqual(out[REFERENCE_CHARGE_SPIN_KEY], [[0.0, 3.0], None, None])
+            check_preset_out_bias(out, ["energy"])
+            self.assertEqual(normalize_preset_out_bias(out, self.type_map), out)
+            self.assertEqual(
+                normalize_preset_out_bias(json.loads(json.dumps(out)), self.type_map),
+                out,
+            )
+        # a value, a moment and a condition belong to one atom
+        out = normalize_preset_out_bias(
+            {
+                "energy": {
+                    "B": {"value": -3.0, "spin": 1.0, "charge": 0, "multiplicity": 2}
+                }
+            },
+            self.type_map,
+        )
+        self.assertEqual(out[REFERENCE_SPIN_KEY], [None, None, 1.0])
+        self.assertEqual(out[REFERENCE_CHARGE_SPIN_KEY], [None, None, [0.0, 2.0]])
+        # outputs that name the same condition of a type agree
+        out = normalize_preset_out_bias(
+            {
+                "energy": {"O": {"value": -3.0, "charge": 1, "multiplicity": 2}},
+                "dos": {"O": {"value": 1.0, "charge": 1, "multiplicity": 2}},
+            },
+            self.type_map,
+        )
+        self.assertEqual(out[REFERENCE_CHARGE_SPIN_KEY], [[1.0, 2.0], None, None])
+        self.assertNotIn(
+            REFERENCE_CHARGE_SPIN_KEY,
+            normalize_preset_out_bias(
+                {"energy": {"O": {"value": -3.0}}}, self.type_map
+            ),
+        )
+
+    def test_charge_spin_condition_errors(self) -> None:
+        for bad in (
+            # a condition is a pair
+            {"energy": {"O": {"value": -3.0, "charge": 0}}},
+            {"energy": {"O": {"value": -3.0, "multiplicity": 3}}},
+            # no table row answers a non-integral state
+            {"energy": {"O": {"value": -3.0, "charge": 0, "multiplicity": 2.5}}},
+            {"energy": {"O": {"value": -3.0, "charge": 0.5, "multiplicity": 3}}},
+            # a boolean is not an integer, although it converts like one
+            {"energy": {"O": {"value": -3.0, "charge": True, "multiplicity": 3}}},
+            {"energy": {"O": {"value": -3.0, "charge": 0, "multiplicity": True}}},
+            # one type names two conditions
+            {
+                "energy": {"O": {"value": -3.0, "charge": 0, "multiplicity": 3}},
+                "dos": {"O": {"value": 1.0, "charge": 0, "multiplicity": 1}},
+            },
+            {"energy": {"O": -3.0}, REFERENCE_CHARGE_SPIN_KEY: [[0.0, 3.0]]},
+        ):
+            with self.assertRaises(ValueError):
+                normalize_preset_out_bias(bad, self.type_map)
+
     def test_errors(self) -> None:
         for bad in (
             {"energy": [None]},
@@ -109,6 +275,68 @@ class TestNormalizePresetOutBias(unittest.TestCase):
 
 
 class TestBundledTables(unittest.TestCase):
+    def test_omol25_names_the_neutral_ground_state(self) -> None:
+        # the table is computed from neutral ground-state atoms, so every
+        # entry names the charge and the Hund multiplicity of its atom
+        from deepmd.utils.vacuum_reference import (
+            unpaired_electrons,
+        )
+
+        table = load_preset_out_bias_table("omol25")
+        elements = list(table)
+        multiplicities = (unpaired_electrons(elements) + 1).tolist()
+        for name, multiplicity in zip(elements, multiplicities, strict=True):
+            self.assertEqual(
+                table[name],
+                {
+                    "value": table[name]["value"],
+                    "charge": 0,
+                    "multiplicity": multiplicity,
+                },
+            )
+        # the tables of materials data are computed under one common setting
+        # and name no condition
+        for name in ("omat24", "omc25", "odac25", "openmd", "mptraj"):
+            for value in load_preset_out_bias_table(name).values():
+                self.assertNotIsInstance(value, dict, name)
+
+    def test_domain_cluster(self) -> None:
+        table = load_preset_out_bias_table("domain_cluster")
+        self.assertEqual(
+            set(table), {"Al", "Si", "Ni", "Cu", "Ru", "Pd", "Ag", "Pt", "Au"}
+        )
+        out = normalize_preset_out_bias(
+            {"energy": "domain_cluster"}, ["Au", "Al", "Cu", "H"]
+        )
+        self.assertEqual(
+            out["energy"],
+            [[-901.9377033597224], [-52.96613964130058], [-1306.1758472225818], None],
+        )
+        resolved = resolve_preset_out_bias_tables(
+            {"preset_out_bias": {"energy": "domain_cluster"}}
+        )
+        self.assertEqual(resolved["preset_out_bias"], {"energy": table})
+
+    def test_openmd(self) -> None:
+        table = load_preset_out_bias_table("openmd")
+        self.assertEqual(len(table), 83)
+        out = normalize_preset_out_bias(
+            {"energy": "openmd"}, ["O", "H", "La", "Bi", "Pu"]
+        )
+        self.assertEqual(
+            out["energy"],
+            [
+                [-443.0343602483389],
+                [-12.560490553805243],
+                [-950.8377156904378],
+                [-6345.199411321936],
+                None,
+            ],
+        )
+        config = {"type_map": ["H"], "preset_out_bias": {"energy": "openmd"}}
+        resolved = resolve_preset_out_bias_tables(config)
+        self.assertEqual(resolved["preset_out_bias"], {"energy": table})
+
     def test_name_before_path(self) -> None:
         tables = bundled_preset_out_bias_tables()
         self.assertEqual(load_preset_out_bias_table("omat24"), tables["omat24"])
@@ -148,6 +376,16 @@ class TestResolvePresetOutBiasTables(unittest.TestCase):
             )
             self.assertIs(out["model_dict"]["b"], multi["model_dict"]["b"])
             self.assertIs(out["model_dict"]["c"], multi["model_dict"]["c"])
+
+    def test_shared_reference(self) -> None:
+        # A branch that names an entry of shared_dict receives its preset
+        # from the multi-task preprocessing.
+        multi = {
+            "shared_dict": {"bias": {"energy": {"H": -13.6}}},
+            "model_dict": {"a": {"type_map": ["H"], "preset_out_bias": "bias"}},
+        }
+        out = resolve_preset_out_bias_tables(multi)
+        self.assertIs(out["model_dict"]["a"], multi["model_dict"]["a"])
 
     def test_without_tables(self) -> None:
         config = {"type_map": ["H"], "preset_out_bias": {"energy": [1.0]}}
@@ -245,6 +483,22 @@ class TestRemapPresetOutBias(unittest.TestCase):
                     self.assertIsNone(got)
                 else:
                     self.assertEqual(got, [want])
+
+    def test_spin_moments_follow_their_types(self) -> None:
+        old_map = ["O", "H", "Fe"]
+        preset = normalize_preset_out_bias(
+            {
+                "energy": {
+                    "O": {"value": 1.0, "spin": 2.0},
+                    "Fe": {"value": 3.0, "spin": 4.0},
+                }
+            },
+            old_map,
+        )
+        remap_index, _ = get_index_between_two_maps(old_map, ["Fe", "N", "O"])
+        remapped = remap_preset_out_bias(preset, remap_index)
+        self.assertEqual(remapped["energy"], [[3.0], None, [1.0]])
+        self.assertEqual(remapped[REFERENCE_SPIN_KEY], [4.0, None, 2.0])
 
     def test_none(self) -> None:
         self.assertIsNone(remap_preset_out_bias(None, [0, 1]))

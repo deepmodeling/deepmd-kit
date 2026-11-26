@@ -268,6 +268,35 @@ def _make_spin_task_config() -> dict:
 
 
 class TestValidationHelpers(unittest.TestCase):
+    @staticmethod
+    def _run_best_candidate(
+        validator: FullValidator,
+        *,
+        display_step: int,
+        selected_metric_value: float,
+        directory_checkpoint: bool = False,
+    ) -> str:
+        """Exercise selection, writing and reconciliation through the public flow."""
+
+        def save_checkpoint(path: Path, **kwargs) -> None:
+            if directory_checkpoint:
+                path.mkdir()
+            else:
+                path.touch()
+
+        with patch.object(
+            validator,
+            "evaluate_all_systems",
+            return_value={validator.metric_key: selected_metric_value},
+        ):
+            result = validator.run(
+                step_id=display_step,
+                display_step=display_step,
+                lr=1e-3,
+                save_checkpoint=save_checkpoint,
+            )
+        return result.saved_best_path
+
     def test_resolve_full_validation_start_step(self) -> None:
         self.assertEqual(resolve_full_validation_start_step(0, 2000000), 0)
         self.assertEqual(resolve_full_validation_start_step(0.1, 2000000), 200000)
@@ -349,26 +378,23 @@ class TestValidationHelpers(unittest.TestCase):
                     rank=0,
                     restart_training=False,
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).touch()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 
@@ -453,7 +479,8 @@ class TestValidationHelpers(unittest.TestCase):
                 )
                 # The directory is created recursively at construction time.
                 self.assertTrue(best_dir.is_dir())
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
@@ -486,26 +513,26 @@ class TestValidationHelpers(unittest.TestCase):
                     restart_training=False,
                     best_checkpoint_suffix=".jax",
                 )
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=2,
                     selected_metric_value=1.0,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
 
-                new_best_path = validator._update_best_state(
+                new_best_path = self._run_best_candidate(
+                    validator,
+                    directory_checkpoint=True,
                     display_step=3,
                     selected_metric_value=1.5,
                 )
-                Path(new_best_path).mkdir()
-                validator._reconcile_best_checkpoints()
             finally:
                 os.chdir(old_cwd)
 
@@ -933,6 +960,89 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
         self.assertIn("mae_fr", metrics)
         self.assertNotIn("mae_fm", metrics)
 
+    def test_full_validator_conditions_on_the_frame_charge_spin(self) -> None:
+        """A charge/spin-conditioned model is validated at each frame's own state.
+
+        The labels are the model's own predictions at a state other than its
+        default, so the validation error vanishes exactly when the frame's
+        charge/spin reaches the model.
+        """
+        model = get_model(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "dpa3",
+                    "repflow": {
+                        "n_dim": 8,
+                        "e_dim": 6,
+                        "a_dim": 4,
+                        "nlayers": 1,
+                        "e_rcut": 4.0,
+                        "e_rcut_smth": 0.5,
+                        "e_sel": 12,
+                        "a_rcut": 3.5,
+                        "a_rcut_smth": 0.5,
+                        "a_sel": 8,
+                        "axis_neuron": 4,
+                        "update_angle": False,
+                    },
+                    "add_chg_spin_ebd": True,
+                    "default_chg_spin": [0.0, 1.0],
+                    "seed": 1,
+                },
+                "fitting_net": {"neuron": [8, 8], "seed": 1},
+            }
+        ).to(DEVICE)
+        nframes, natoms = 2, 5
+        rng = np.random.default_rng(3)
+        coord = 3.0 * rng.random((nframes, natoms * 3))
+        atom_types = np.tile(np.array([0, 0, 1, 1, 1]), (nframes, 1))
+        charge_spin = np.array([[1.0, 2.0], [-1.0, 2.0]])
+        label = model(
+            torch.tensor(coord.reshape(nframes, natoms, 3), device=DEVICE),
+            torch.tensor(atom_types, device=DEVICE),
+            charge_spin=torch.tensor(charge_spin, device=DEVICE),
+        )
+        test_data = {
+            "coord": coord,
+            "type": atom_types,
+            "box": None,
+            "charge_spin": charge_spin,
+            "find_charge_spin": 1.0,
+            "energy": label["energy"].detach().cpu().numpy().reshape(nframes, 1),
+            "force": label["force"].detach().cpu().numpy().reshape(nframes, -1),
+            "find_energy": 1.0,
+            "find_force": 1.0,
+        }
+        data_system = MagicMock(pbc=False)
+        data_system.get_test.return_value = test_data
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "save_best": False,
+                        "max_best_ckpt": 1,
+                        "validation_metric": "E:MAE",
+                        "full_val_file": "val.log",
+                        "full_val_start": 0.0,
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=model,
+                    state_store={},
+                    num_steps=10,
+                    rank=0,
+                    restart_training=False,
+                )
+                metrics = validator._evaluate_system(data_system)
+            finally:
+                os.chdir(old_cwd)
+        self.assertAlmostEqual(metrics["mae_e_per_atom"][0], 0.0, places=10)
+        self.assertAlmostEqual(metrics["mae_f"][0], 0.0, places=10)
+
     def test_predict_outputs_emits_real_and_magnetic_forces(self) -> None:
         model = get_model(deepcopy(model_spin)).to(DEVICE)
         nframes = 2
@@ -970,6 +1080,7 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
                     box=box,
                     fparam=None,
                     aparam=None,
+                    charge_spin=None,
                     spin=spin,
                     include_virial=False,
                     natoms=natoms,

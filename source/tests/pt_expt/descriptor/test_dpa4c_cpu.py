@@ -9,6 +9,7 @@ rank, and the two topology forms -- is covered, because each selects a
 different compiled body or a different addressing mode.
 """
 
+import math
 from typing import (
     Any,
 )
@@ -17,6 +18,7 @@ import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
     attach_edge_csr,
     graph_from_dense_quartet,
 )
@@ -27,10 +29,18 @@ from deepmd.pt_expt.descriptor.dpa4c import (
     DescrptDPA4C,
 )
 from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+    _portable_inputs,
+    _radial_knots,
+    _reference_backward,
     _reference_descriptor,
+    _reference_forward,
     build_compression_artifacts,
-    contact_radius_input,
+    build_low_rank_table,
+    build_radial_table,
+    compressed_operator_arguments,
+    contact_edges_input,
     descriptor_profile,
+    dpa4c_graph_compress,
     ensure_registered,
     op_available,
 )
@@ -57,24 +67,41 @@ _CPU_FITTING = pytest.mark.skipif(
 )
 
 
-#: Element symbols of the two test types. They fix the covalent radii, whose
-#: pairwise sums give the three distinct length scales the window is measured
-#: against, so a kernel that gathered the wrong radius would misplace it.
+#: Element symbols of the two test types.
 _TYPE_MAP = ["O", "H"]
 
-#: A bridging window wide enough that the random test cluster populates its
-#: frozen zone, its transition zone and the plain zone beyond it. The bounds
-#: are fractions of each pair's own length scale, not distances in Å.
-_WINDOW = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.6}
+#: Data edges of the three type pairs in Å, in the order OO, OH, HH, wide
+#: enough that the random test cluster populates the frozen zone, the
+#: transition zone and the plain zone of the contact clamp of every pair.
+#: The pairs differ, so a kernel that gathered the edge of the wrong pair would
+#: misplace the window.
+_EDGES = {(0, 0): 2.4, (0, 1): 2.0, (1, 1): 1.6}
+
+#: Inner fraction of the contact clamp of the test descriptors.
+_CLAMP = {"contact_clamp": 0.6}
+
+
+def _set_contact_edges(descriptor: DescrptDPA4C) -> None:
+    """Replace the data edges of the clamp of a descriptor by ``_EDGES``.
+
+    The edges are a runtime buffer of the clamp, updated in place during
+    training; the test cluster is random, so its shortest contacts are not the
+    covalent bond lengths a fresh clamp starts from.
+    """
+    edges = descriptor.contact_clamp.edges
+    with torch.no_grad():
+        for (center, neighbor), value in _EDGES.items():
+            edges[center, neighbor] = value
+            edges[neighbor, center] = value
 
 
 def _build_descriptor(
     channels: int,
     lmax: int = 2,
     radial_modes: int = 0,
-    **window: float,
+    **clamp: float,
 ) -> DescrptDPA4C:
-    return DescrptDPA4C(
+    descriptor = DescrptDPA4C(
         rcut=3.0,
         ntypes=2,
         channels=channels,
@@ -84,20 +111,36 @@ def _build_descriptor(
         precision="float32",
         seed=17,
         type_map=_TYPE_MAP,
-        **window,
+        **clamp,
     ).eval()
+    if descriptor.contact_clamp is not None:
+        _set_contact_edges(descriptor)
+    return descriptor
 
 
-def _reduced_distance(
+def _contact_zones(
     descriptor: DescrptDPA4C,
     graph: Any,
     atype: torch.Tensor,
-) -> torch.Tensor:
-    """Return the valid edge distances in units of each pair's length scale."""
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Count the valid edges frozen, in transition and beyond the data edge.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        The number of valid edges at or below ``a e``, between ``a e`` and
+        ``e``, and at or beyond ``e``, for the data edge ``e`` of each pair.
+    """
     source, destination = graph.edge_index[0], graph.edge_index[1]
-    distance = graph.edge_vec.norm(dim=-1, keepdim=True)
-    contact = descriptor.pair_contact(atype[destination], atype[source], distance.dtype)
-    return (distance / contact)[graph.edge_mask, 0]
+    distance = graph.edge_vec.norm(dim=-1)
+    edge = descriptor.contact_clamp.edges.to(distance.dtype)[
+        atype[destination], atype[source]
+    ]
+    inner = descriptor.contact_clamp.inner
+    valid = graph.edge_mask
+    frozen = (distance <= inner * edge) & valid
+    plain = (distance >= edge) & valid
+    return frozen.sum(), (valid & ~frozen & ~plain).sum(), plain.sum()
 
 
 def test_fixed_basis_types_freeze_the_basis() -> None:
@@ -122,9 +165,13 @@ def test_fixed_basis_types_freeze_the_basis() -> None:
 
 
 def test_adam_route_patterns_name_the_first_radial_layer() -> None:
-    """The descriptor routes the layer that reads the radial basis to AdamW."""
+    """The descriptor routes the layer that reads the radial basis to AdamW.
+
+    The attention of a multi-block descriptor stays on the default route.
+    """
     descriptor = DescrptDPA4C(
-        rcut=3.0,
+        rcut=[3.0, 2.5],
+        n_blocks=2,
         ntypes=2,
         channels=8,
         lmax=2,
@@ -173,6 +220,8 @@ def _arguments(descriptor: DescrptDPA4C, graph, atype: torch.Tensor) -> tuple:
         graph.destination_row_ptr,
         atype,
         artifacts["data"],
+        artifacts["basis_table"],
+        artifacts["basis_matrix"],
         artifacts["pair_film"],
         artifacts["pair_mixing"],
         artifacts["type_embedding"],
@@ -185,12 +234,11 @@ def _arguments(descriptor: DescrptDPA4C, graph, atype: torch.Tensor) -> tuple:
         artifacts["spin_type"][:0],
         artifacts["spin_pair"],
         artifacts["spin_type"],
-        contact_radius_input(descriptor),
+        contact_edges_input(descriptor),
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *(float(value) for value in artifacts["info"]),
-        descriptor.bridging_f_inner or 0.0,
-        descriptor.bridging_f_outer or 0.0,
+        0.0 if descriptor.contact_clamp is None else descriptor.contact_clamp.inner,
     )
 
 
@@ -208,8 +256,13 @@ def _descriptor_backward(
 
 
 def _spin_free(arguments: tuple) -> tuple:
-    """Drop the native spin block, which the CPU kernel does not implement."""
-    return (*arguments[:15], *arguments[18:])
+    """Drop the low-rank table and the native spin block for the CPU reference.
+
+    The reference reads the radial table itself, and the CPU kernel implements
+    no spin.
+    """
+    portable = _portable_inputs(arguments)
+    return (*portable[:15], *portable[18:])
 
 
 def _check_parity(descriptor: DescrptDPA4C, canonical: bool) -> None:
@@ -244,18 +297,18 @@ def test_forward_backward_parity(channels: int, canonical: bool) -> None:
 
 @_CPU
 @pytest.mark.parametrize("canonical", [False, True])
-def test_bridging_window_parity(canonical: bool) -> None:
-    """The switched envelope reproduces the portable descriptor.
+def test_contact_clamp_parity(canonical: bool) -> None:
+    """The clamped separation reproduces the portable descriptor.
 
-    The reference evaluates the window in its own form, so it is first pinned
-    to the descriptor equations and then serves the kernel comparison.
+    The reference evaluates the clamp in its own form, so it is first pinned
+    to the descriptor equations and then serves the kernel comparison. The
+    test cluster populates the frozen zone, the transition zone and the plain
+    zone of the clamp.
     """
-    descriptor = _build_descriptor(32, lmax=3, radial_modes=2, **_WINDOW)
+    descriptor = _build_descriptor(32, lmax=3, radial_modes=2, **_CLAMP)
     graph, atype = _build_graph(descriptor, canonical)
-    reduced = _reduced_distance(descriptor, graph, atype)
-    inner, outer = _WINDOW.values()
-    assert (reduced < inner).any() and (reduced > outer).any()
-    assert ((reduced > inner) & (reduced < outer)).sum() > 8
+    frozen, transition, plain = _contact_zones(descriptor, graph, atype)
+    assert frozen > 8 and transition > 8 and plain > 8
     reference = _reference_descriptor(
         graph.edge_vec, *_spin_free(_arguments(descriptor, graph, atype))
     )
@@ -268,23 +321,25 @@ def test_bridging_window_parity(canonical: bool) -> None:
 
 @_CPU
 @pytest.mark.parametrize("mode", ["zbl", "nlh"])
-@pytest.mark.parametrize("windowed", [True, False])
+@pytest.mark.parametrize("clamped", [True, False])
 @pytest.mark.parametrize("canonical", [False, True])
 def test_pair_potential_matches_the_portable_term(
     canonical: bool,
-    windowed: bool,
+    clamped: bool,
     mode: str,
 ) -> None:
-    """The backward scan evaluates the analytical pair potential of a bridged model.
+    """The backward scan evaluates the truncated pair potential of a bridged model.
 
     A vanishing descriptor cotangent isolates the term: the edge gradient is
     then the pair slope alone, weighted by the energy cotangent of the
-    destination, and the scan returns the pair energy of every node. Edges
-    inside the bridging window leave the descriptor but keep the pair term,
-    and the portable reference backs the traced form of the fused operator.
-    Without a window the pair table alone selects the bridged backward, behind
-    a plain forward. The scan reads the coefficients of whichever potential
+    destination, and the scan returns the pair energy of every node. The
+    portable reference backs the traced form of the fused operator. Without a
+    contact clamp the pair table alone selects the bridged backward, behind a
+    plain forward. The scan reads the coefficients of whichever potential
     filled the table, so both supported modes ride the same kernel.
+
+    The end radii of the pairs lie inside the cluster, so the test covers
+    bonds on both sides of the truncation.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
         InnerPotential,
@@ -293,21 +348,34 @@ def test_pair_potential_matches_the_portable_term(
         _reference_backward,
     )
 
-    descriptor = _build_descriptor(32, **(_WINDOW if windowed else {}))
+    descriptor = _build_descriptor(32, **(_CLAMP if clamped else {}))
     graph, atype = _build_graph(descriptor, canonical)
     arguments = _arguments(descriptor, graph, atype)
-    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
-    potential = InnerPotential(type_map=["O", "H"], mode=mode)
+    potential = InnerPotential(type_map=["O", "H"], mode=mode, precision="float32")
     pair_table = torch.as_tensor(potential.pair_table)
     # Ghost nodes carry no energy, so their cotangent vanishes.
     seed = (torch.arange(atype.shape[0], device="cpu") % 3 != 0).to(torch.float64)
 
-    edge = graph.edge_vec.double().requires_grad_(True)
+    source, destination = graph.edge_index
+    end = pair_table[atype[destination] * 3 + atype[source], 8]
+    # Isolate the small radial force just inside one pair's cutoff.
+    near = torch.nonzero(graph.edge_mask & seed[destination].bool())[0, 0]
+    vectors = graph.edge_vec.clone()
+    vectors[near] = 0
+    vectors[near, 0] = end[near] * 0.999
+    close = torch.nonzero(graph.edge_mask & seed[destination].bool())[1, 0]
+    vectors[close] = 0
+    vectors[close, 0] = 1e-8
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(vectors, *arguments)
+    edge = vectors.double().requires_grad_(True)
     reference = potential.call(
         edge, graph.edge_index, atype, graph.edge_mask, atype.shape[0]
     )[0]
     (reference_gradient,) = torch.autograd.grad((reference[:, 0] * seed).sum(), edge)
-    assert reference.max() > 10.0
+    assert reference.max() > 1.0
+    length = vectors.norm(dim=-1)
+    assert ((length < end) & graph.edge_mask).sum() > 8
+    assert ((length >= end) & graph.edge_mask).sum() > 8
     for backward in (
         torch.ops.deepmd.dpa4c_graph_compress_backward,
         _reference_backward,
@@ -315,10 +383,14 @@ def test_pair_potential_matches_the_portable_term(
         edge_gradient, _, _, pair_energy = backward(
             torch.zeros_like(output),
             state,
-            graph.edge_vec,
+            vectors,
             *arguments,
             pair_table,
             seed,
+        )
+        assert reference_gradient[near, 0] < 0
+        torch.testing.assert_close(
+            edge_gradient[near].double(), reference_gradient[near], atol=0, rtol=1e-3
         )
         torch.testing.assert_close(pair_energy, reference, atol=3e-5, rtol=3e-5)
         torch.testing.assert_close(
@@ -327,7 +399,7 @@ def test_pair_potential_matches_the_portable_term(
 
     no_pair = graph.edge_vec.new_empty(0)
     plain_gradient, _, _, absent = torch.ops.deepmd.dpa4c_graph_compress_backward(
-        torch.zeros_like(output), state, graph.edge_vec, *arguments, no_pair, no_pair
+        torch.zeros_like(output), state, vectors, *arguments, no_pair, no_pair
     )
     assert absent.numel() == 0
     assert torch.count_nonzero(plain_gradient).item() == 0
@@ -611,6 +683,254 @@ def test_prepared_table_is_reused_across_calls() -> None:
 
 
 @_CPU
+@pytest.mark.parametrize("canonical", [False, True])
+def test_leading_table_views_keep_their_interval_count(canonical: bool) -> None:
+    """A short leading view must not supply the prepared table for a full one."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=canonical)
+    arguments = _arguments(descriptor, graph, atype)
+    table = arguments[5]
+    short_arguments = (*arguments[:5], table[:1], *arguments[6:])
+    assert short_arguments[5].data_ptr() == table.data_ptr()
+    # Populate the cache using only the first interval. The subsequent call
+    # needs later intervals from the same storage and the same data address.
+    torch.ops.deepmd.dpa4c_graph_compress(
+        torch.zeros_like(graph.edge_vec), *short_arguments
+    )
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
+    reference = _reference_descriptor(reference_edge, *_spin_free(arguments))
+    torch.testing.assert_close(output, reference, atol=3.0e-5, rtol=3.0e-5)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    (reference_gradient,) = torch.autograd.grad(
+        (reference * cotangent).sum(), reference_edge
+    )
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=8.0e-6, rtol=1.0e-4)
+
+
+def _check_cached_table_views(graph: Any, arguments: tuple) -> None:
+    """Compare shared-storage views with freshly prepared native tables."""
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    fresh = tuple(
+        argument.clone() if index in (5, 8, 9) else argument
+        for index, argument in enumerate(arguments)
+    )
+    reference, reference_state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec, *fresh
+    )
+    torch.testing.assert_close(output, reference, atol=0, rtol=0)
+    torch.testing.assert_close(state, reference_state, atol=0, rtol=0)
+    cotangent = torch.linspace(-0.7, 1.3, output.numel()).reshape_as(output)
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+    reference_gradient = _descriptor_backward(
+        cotangent, reference_state, graph.edge_vec, *fresh
+    )[0]
+    torch.testing.assert_close(gradient, reference_gradient, atol=0, rtol=0)
+
+
+@_CPU
+@pytest.mark.parametrize("radial_modes", [0, 2])
+def test_leading_pair_table_views_keep_their_type_count(radial_modes: int) -> None:
+    """The full type table needs pair rows absent from a shorter leading view."""
+    descriptor = _build_descriptor(16, radial_modes=radial_modes)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    short = list(arguments)
+    # The smaller configuration has one real type and one padding type.
+    # Its warm-up graph contains only the real type, so every read is valid.
+    short[4] = torch.zeros_like(atype)
+    short[8] = arguments[8][:4]
+    short[9] = arguments[9][:4]
+    short[10] = arguments[10][:2]
+    short[20] = arguments[20][:2]
+    for index in (5, 8, 9):
+        assert short[index].is_contiguous()
+        assert short[index].data_ptr() == arguments[index].data_ptr()
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *short)
+
+    _check_cached_table_views(graph, arguments)
+
+
+@_CPU
+@pytest.mark.parametrize(
+    ("channels", "radial_modes"), [(8, 4), (16, 2)], ids=["channels", "modes"]
+)
+def test_reshaped_table_views_keep_their_layout(
+    channels: int, radial_modes: int
+) -> None:
+    """Identical storage addresses do not imply identical coefficient packing."""
+    descriptor = _build_descriptor(16, radial_modes=4)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    smaller = list(
+        _arguments(_build_descriptor(channels, radial_modes=radial_modes), graph, atype)
+    )
+    for index in (5, 8, 9):
+        original = arguments[index]
+        target = smaller[index]
+        smaller[index] = original.flatten()[: target.numel()].view(target.shape)
+        assert smaller[index].is_contiguous()
+        assert smaller[index].data_ptr() == original.data_ptr()
+    assert smaller[5].shape[0] == arguments[5].shape[0]
+    # Warm the larger layout first: even a stale cache leaves sufficient
+    # buffer space for the smaller call, but its coefficient packing is wrong.
+    torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    _check_cached_table_views(graph, tuple(smaller))
+
+
+@_CPU
+@pytest.mark.parametrize("rewrite", ["rebound", "in_place"])
+@pytest.mark.parametrize("table", [8, 9], ids=["pair_film", "pair_mixing"])
+def test_new_pair_tables_reach_the_kernel(table: int, rewrite: str) -> None:
+    """New ordered pair tables reach the kernel beside the same radial table.
+
+    A charge-state rebuild leaves the radial table bound and brings new
+    ordered pair tables in one of two ways: the eager descriptor binds new
+    tensors, while a frozen lower has its constants rewritten in place, after
+    which AOTInductor wraps the same bytes in a new tensor, as the DLPack
+    import does here. In neither case may the call be served the tables
+    prepared for the previous contents. The FiLM and mode-mixing tables
+    follow the radial and low-rank tables among the operator arguments.
+    """
+    descriptor = _build_descriptor(16, radial_modes=2)
+    graph, atype = _build_graph(descriptor, canonical=False)
+    arguments = list(_arguments(descriptor, graph, atype))
+    first, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    contents = 1.5 * arguments[table] + 0.2
+    if rewrite == "in_place":
+        arguments[table] = torch.from_dlpack(arguments[table].copy_(contents))
+    else:
+        arguments[table] = contents
+    second, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+
+    reference = _reference_descriptor(graph.edge_vec, *_spin_free(tuple(arguments)))
+    torch.testing.assert_close(second, reference, atol=3.0e-5, rtol=3.0e-5)
+    assert (second - first).abs().max() > 1.0e-3
+
+
+@_CPU
+@pytest.mark.parametrize("table", ["data", "pair_film", "pair_mixing"])
+@pytest.mark.parametrize("load", ["copy", "assign", "assign_alias"])
+@pytest.mark.parametrize("inference", [False, True])
+def test_loaded_compression_tables_replace_prepared_tables(
+    table: str, load: str, inference: bool
+) -> None:
+    """Loading a snapshot must not reuse tables prepared before the load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    artifacts = build_compression_artifacts(descriptor, stride=0.01)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    with torch.inference_mode(inference):
+        # Cloning here also covers inference tensors, which have no version
+        # counters for a native cache to consult.
+        descriptor._set_compression(
+            {name: value.clone() for name, value in artifacts.items()}
+        )
+        assert descriptor.compress_data.is_inference() == inference
+
+        def arguments() -> tuple:
+            return (
+                graph.edge_index,
+                graph.edge_mask,
+                graph.destination_order,
+                graph.destination_row_ptr,
+                atype,
+                *compressed_operator_arguments(descriptor),
+                bool(graph.destination_sorted),
+                descriptor.lmax,
+                *descriptor._compression_scalars,
+            )
+
+        ensure_registered()
+        before, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        state = descriptor.state_dict()
+        if load != "assign_alias":
+            state = {name: value.clone() for name, value in state.items()}
+        # The alias case retains the state dict's original shared storage,
+        # including when assign=True restores those very tensors.
+        state[f"compress_{table}"].mul_(1.5).add_(0.2)
+        descriptor.load_state_dict(state, assign=load != "copy")
+        after, _ = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments())
+        _check_cached_table_views(graph, arguments())
+        assert (after - before).abs().max() > 1.0e-3
+
+
+@_CPU
+@pytest.mark.parametrize("assign", [False, True])
+@pytest.mark.parametrize("partial", [False, True])
+def test_loaded_compression_metadata_reaches_the_kernel(
+    assign: bool, partial: bool
+) -> None:
+    """A same-shaped replacement table must use its own radial stride."""
+    descriptor = _build_descriptor(16, radial_modes=2, **_CLAMP)
+    replacement = _build_descriptor(16, radial_modes=2, **_CLAMP)
+    # Both valid strides need twelve rows, so an ordinary state load can
+    # replace the coefficients without changing the buffer's shape.
+    descriptor.enable_compression(0.5, table_stride_1=0.25)
+    replacement.enable_compression(0.5, table_stride_1=0.26)
+    assert descriptor.compress_data.shape == replacement.compress_data.shape
+    graph, atype = _build_graph(descriptor, canonical=True)
+    expected = dpa4c_graph_compress(replacement, graph, atype)
+    dpa4c_graph_compress(descriptor, graph, atype)
+    clamp = descriptor._compression_scalars[descriptor.compress_info.numel() :]
+
+    # A parent exercises the state-key prefix for full and partial loads.
+    parent = torch.nn.ModuleList([descriptor])
+    state = torch.nn.ModuleList([replacement]).state_dict()
+    if partial:
+        state = {
+            name: value
+            for name, value in state.items()
+            if name in ("0.compress_data", "0.compress_info")
+        }
+    parent.load_state_dict(state, assign=assign, strict=not partial)
+    output = dpa4c_graph_compress(descriptor, graph, atype)
+    torch.testing.assert_close(output, expected, atol=0, rtol=0)
+    assert descriptor._compression_scalars == (
+        *replacement.compress_info.tolist(),
+        *clamp,
+    )
+
+
+def test_loaded_contact_edges_reach_the_compressed_kernel() -> None:
+    """A state load moves the frozen copy of the contact edges with the clamp."""
+    descriptor = _build_descriptor(16, radial_modes=2, **_CLAMP)
+    replacement = _build_descriptor(16, radial_modes=2, **_CLAMP)
+    with torch.no_grad():
+        replacement.contact_clamp.edges.mul_(0.5)
+    descriptor.enable_compression(0.5, table_stride_1=0.25)
+    before = descriptor.compress_contact_edges.clone()
+    # The replacement is not compressed, so only the shared weights and the
+    # clamp are loaded.
+    descriptor.load_state_dict(replacement.state_dict(), strict=False)
+    loaded = contact_edges_input(descriptor)
+    assert not torch.equal(loaded, before)
+    torch.testing.assert_close(
+        descriptor.compress_contact_edges, loaded, atol=0, rtol=0
+    )
+
+
+@pytest.mark.parametrize("assign", [False, True])
+def test_compression_state_can_load_after_inference_mode(assign: bool) -> None:
+    """An inference-mode load must not prevent a later ordinary state load."""
+    descriptor = _build_descriptor(16, radial_modes=2)
+    descriptor.enable_compression(0.5, table_stride_1=0.01)
+    # Load through a parent to exercise the descriptor's state-key prefix.
+    parent = torch.nn.ModuleList([descriptor])
+    # Keep the input ordinary to isolate whether rebinding under the caller's
+    # inference mode creates buffers that the next ordinary load cannot update.
+    # Loading inference tensors themselves is covered by the cache tests above.
+    state = {name: value.clone() for name, value in parent.state_dict().items()}
+    with torch.inference_mode():
+        parent.load_state_dict(state, assign=assign)
+    parent.load_state_dict(state)
+    for name, value in parent.state_dict().items():
+        torch.testing.assert_close(value, state[name], atol=0, rtol=0)
+
+
+@_CPU
 def test_spin_descriptor_keeps_the_reference_path() -> None:
     """A spin-conditioned descriptor is declined rather than mis-evaluated.
 
@@ -660,3 +980,180 @@ def test_empty_graph_produces_the_isolated_atom_descriptor() -> None:
     assert torch.isfinite(state).all()
     torch.testing.assert_close(state[:, 0], torch.full_like(state[:, 0], 0.5))
     torch.testing.assert_close(state[:, 1], torch.full_like(state[:, 1], 0.5))
+
+
+@pytest.mark.parametrize("node_count", [0, 2])
+def test_empty_multiblock_reference_preserves_feature_width(node_count: int) -> None:
+    """Zero-edge graphs retain the declared node and feature axes through backward."""
+    descriptor = _build_descriptor(8, n_blocks=2).cpu()
+    counts = torch.tensor([node_count], dtype=torch.int64, device="cpu")
+    order = torch.empty(0, dtype=torch.int64, device="cpu")
+    rows = torch.zeros(node_count + 1, dtype=torch.int64, device="cpu")
+    graph = NeighborGraph(
+        n_node=counts,
+        n_local=counts,
+        edge_index=torch.empty(2, 0, dtype=torch.int64, device="cpu"),
+        edge_vec=torch.empty(0, 3, dtype=torch.float32, device="cpu"),
+        edge_mask=torch.empty(0, dtype=torch.bool, device="cpu"),
+        destination_order=order,
+        destination_row_ptr=rows,
+        source_order=order,
+        source_row_ptr=rows,
+    )
+    atype = torch.arange(node_count, dtype=torch.int64, device="cpu") % 2
+    expected, _ = descriptor.call_graph(graph, atype)
+    artifacts = build_compression_artifacts(descriptor)
+    arguments = _arguments(descriptor, graph, atype)
+    output, state = _reference_forward(
+        graph.edge_vec, *arguments, blocks_record=artifacts["blocks"]
+    )
+    assert output.shape == (node_count, descriptor.get_dim_out())
+    torch.testing.assert_close(output, expected)
+    gradients = _reference_backward(
+        torch.ones_like(output),
+        state,
+        graph.edge_vec,
+        *arguments,
+        graph.edge_vec.new_empty(0),
+        graph.edge_vec.new_empty(0),
+        blocks_record=artifacts["blocks"],
+    )
+    assert gradients[0].shape == (0, 3)
+    for gradient in gradients:
+        assert torch.isfinite(gradient).all()
+
+
+def _restrict_scalar_rank(descriptor: DescrptDPA4C, rank: int) -> None:
+    """Confine the scalar-only radial channels to a span of ``rank`` functions.
+
+    The radial map is the bias-free output layer applied to a shared hidden
+    state, so replacing the output columns from ``C1`` on by combinations of
+    ``rank`` of them confines those channels to the span of ``rank`` functions
+    at every distance.
+    """
+    first = descriptor_profile(descriptor.channels, descriptor.lmax).degree_channels[1]
+    weight = descriptor.radial_embedding.layers[-1].w
+    generator = torch.Generator(device=weight.device).manual_seed(31)
+    mixing = torch.randn(
+        rank,
+        descriptor.channels - first,
+        generator=generator,
+        device=weight.device,
+        dtype=weight.dtype,
+    ) / math.sqrt(rank)
+    with torch.no_grad():
+        weight[:, first:] = weight[:, first : first + rank] @ mixing
+
+
+def _channel_coefficients(table: torch.Tensor, width: int) -> torch.Tensor:
+    """Return the quintic coefficients of a table with shape ``(S, width, 6)``.
+
+    A table row holds the leading four coefficients of every channel, then the
+    trailing two.
+    """
+    quartets = table[:, : 4 * width].reshape(table.shape[0], width, 4)
+    pairs = table[:, 4 * width :].reshape(table.shape[0], width, 2)
+    return torch.cat([quartets, pairs], dim=-1)
+
+
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes"),
+    [(64, 2, 0), (64, 3, 4), (128, 3, 4)],
+)
+def test_low_rank_table_reconstructs_the_radial_table(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+) -> None:
+    """The low-rank basis and its expansion reproduce the scalar-only channels.
+
+    The quintic coefficients are linear in the knot data, so the expansion of
+    the basis coefficients reproduces the coefficients of every scalar-only
+    channel of the radial table up to the rounding of their fp32 storage, and
+    the degree-one channels and the mode profiles are tabulated unchanged.
+    """
+    descriptor = _build_descriptor(channels, lmax, radial_modes)
+    _restrict_scalar_rank(descriptor, rank=8)
+    basis_table, basis_matrix = build_low_rank_table(descriptor)
+    direct, _info = build_radial_table(descriptor)
+    first = descriptor_profile(channels, lmax).degree_channels[1]
+    basis = basis_matrix.shape[0]
+    assert basis_matrix.shape == (32, channels - first)
+    direct_coefficients = _channel_coefficients(
+        direct.double(), channels + radial_modes
+    )
+    basis_coefficients = _channel_coefficients(
+        basis_table.double(), first + basis + radial_modes
+    )
+    assert torch.equal(basis_coefficients[:, :first], direct_coefficients[:, :first])
+    assert torch.equal(
+        basis_coefficients[:, first + basis :], direct_coefficients[:, channels:]
+    )
+    expanded = torch.einsum(
+        "skj,kc->scj",
+        basis_coefficients[:, first : first + basis],
+        basis_matrix.double(),
+    )
+    scalar = direct_coefficients[:, first:channels]
+    scale = scalar.abs().amax(dim=0, keepdim=True).clamp_min(1e-30)
+    torch.testing.assert_close(expanded / scale, scalar / scale, atol=1e-5, rtol=0)
+
+
+@pytest.mark.parametrize("channels", [64, 128])
+def test_full_rank_radial_map_keeps_the_direct_table(channels: int) -> None:
+    """A radial map whose scalar-only channels exceed the basis keeps none.
+
+    The knot data of the scalar-only channels is replaced by independent
+    random samples, which span as many functions as there are such channels,
+    more than the basis holds, so the compression leaves both low-rank
+    artifacts empty and the single-type scans read the radial table.
+    """
+    descriptor = _build_descriptor(channels)
+    first = descriptor_profile(channels, descriptor.lmax).degree_channels[1]
+    generator = torch.Generator().manual_seed(7)
+
+    def full_rank(knot_data: torch.Tensor) -> torch.Tensor:
+        knot_data = knot_data.clone()
+        knot_data[:, first:channels] = torch.randn(
+            knot_data.shape[0],
+            channels - first,
+            dtype=knot_data.dtype,
+            generator=generator,
+        )
+        return knot_data
+
+    knots = tuple(full_rank(data) for data in _radial_knots(descriptor, 0.002))
+    basis_table, basis_matrix = build_low_rank_table(descriptor, knots=knots)
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0
+
+
+def test_coarse_knots_keep_the_direct_table() -> None:
+    """Knots too few to determine the basis leave the direct table in place.
+
+    A stride so coarse that the knots give no more samples than the basis has
+    functions would let any channels pass the reproduction check, so no basis
+    is adopted, while the same descriptor adopts one at the default stride.
+    """
+    descriptor = _build_descriptor(64)
+    _restrict_scalar_rank(descriptor, rank=8)
+    assert build_low_rank_table(descriptor)[1].shape[0] == 32
+    basis_table, basis_matrix = build_low_rank_table(
+        descriptor, stride=descriptor.rcut / 8
+    )
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0
+
+
+def test_unfolded_mode_counts_keep_the_direct_table() -> None:
+    """A descriptor with more modes than the folded scans carry keeps none.
+
+    Its single-type scans read the ordered pair of every edge, so they never
+    read a low-rank table, which compression therefore does not build even
+    for scalar-only channels of low rank.
+    """
+    descriptor = _build_descriptor(64, radial_modes=8)
+    _restrict_scalar_rank(descriptor, rank=8)
+    basis_table, basis_matrix = build_low_rank_table(descriptor)
+    assert basis_table.numel() == 0
+    assert basis_matrix.numel() == 0

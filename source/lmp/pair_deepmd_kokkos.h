@@ -19,6 +19,7 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "compact_canonical_graph_kokkos.h"
 #include "kokkos_base.h"
@@ -53,23 +54,27 @@ using DeepMDKokkosCommBuffer = DAT::tdual_double_1d;
 // > 2 * cutoff along every periodic direction); domain decomposition uses the
 // extended local-plus-ghost node set and folds ghost forces onto their owners
 // through reverse communication.
+//
+// The further models of an ensemble evaluate the graph of the first one, at
+// the steps that write the model deviation, so they share its cutoff and its
+// input schema.
 template <class DeviceType>
 class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
  public:
   typedef DeviceType device_type;
-  typedef ArrayTypes<DeviceType> AT;
 
   PairDeepMDKokkos(class LAMMPS*);
-  ~PairDeepMDKokkos() override;
 
   void compute(int, int) override;
   void init_style() override;
   // Fold extended (ghost) node outputs onto their owners. The KOKKOS package
   // forces 'newton off' with a full neighbor list, disabling the integrator's
   // automatic reverse communication, so the extended multi-domain path drives
-  // it explicitly for force and centroid per-atom virial. The Kokkos overrides
-  // run device-resident with GPU-aware MPI; the plain overrides serve the
-  // host-staged path.
+  // it explicitly for the force, the centroid per-atom virial and the outputs
+  // of the models of an ensemble. The Kokkos overrides pack and unpack on the
+  // device, in the device path of the KOKKOS package and in the fold that
+  // replaces its host path (CompactCanonicalGhostFold); the plain overrides
+  // serve communication styles other than the Kokkos brick communication.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   int pack_reverse_comm_kokkos(int, int, DeepMDKokkosCommBuffer&) override;
@@ -81,6 +86,13 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // neighbor list, returning the edge count. Public because it launches
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
+  // Positions of the model nodes in model-node order and in the length unit
+  // of the model, relative to the origin of the box for a model with a
+  // long-range module; public for the same reason.
+  const double* model_node_positions();
+  // Virial of the outputs of the model evaluated last, in its units, with
+  // shape (9); public for the same reason.
+  std::vector<double> output_virial();
 
  protected:
   // Model node set and, for a compact canonical artifact, the graph itself.
@@ -89,7 +101,7 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
       d_model_type;  // (nnode_model) edge-input type per model node
   bool multi_rank;   // domain-decomposed run -> extended (local+ghost) node set
   Kokkos::View<double*, DeviceType>
-      d_coord_model;  // (3 * nnode_model), NULL case
+      d_coord_model;  // (3 * nnode_model), model-unit positions of nodes
 
   // Compact edge schema: edge_index is [2 * nedge] (src rows then dst rows),
   // edge_vec is [3 * nedge]; offsets is the per-atom exclusive edge prefix.
@@ -102,28 +114,32 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // Model outputs on the device. Energy is per local atom; force and virial
   // span the model node set (up to ``nall`` under domain decomposition).
   Kokkos::View<double*, DeviceType> d_atom_energy;  // (nlocal)
-  Kokkos::View<double*, DeviceType> d_out_force;    // (3 * nall)
-  Kokkos::View<double*, DeviceType> d_atom_virial;  // (9 * nall)
-  DAT::tdual_double_1d
-      k_reverse_virial;  // (9 * nall), atom-order ghost contributions
+  Kokkos::View<double*, DeviceType> d_out_force;    // (3 * nnode_model)
+  Kokkos::View<double*, DeviceType> d_atom_virial;  // (9 * nnode_model)
+  // Virial of the evaluation: the compact canonical artifact returns it for
+  // the whole graph alongside the per-node outputs, and output_virial() sums
+  // it from the per-node virial of the edge-input form.
+  Kokkos::View<double[9], DeviceType> d_graph_virial;
 
-  // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
-  // downstream per-atom computes/dumps see it after the device-to-host sync).
-  // The transformed accumulator view was added in the 10Sep2025 release.
-#if LAMMPS_VERSION_NUMBER < 20250910
-  DAT::tdual_double_1d k_eatom;
-  typename AT::t_double_1d d_eatom;
-#else
-  DAT::ttransform_kkacc_1d k_eatom;
-  typename AT::t_kkacc_1d d_eatom;
-#endif
-
-  int edge_capacity;       // allocated edges in d_edge_index / d_edge_vec
-  bool edge_vec_fp32;      // model graph ABI consumes edge vectors in fp32
-  bool canonical_graph;    // compact source-only graph artifact
+  int edge_capacity;     // allocated edges in d_edge_index / d_edge_vec
+  bool edge_vec_fp32;    // model graph ABI consumes edge vectors in fp32
+  bool canonical_graph;  // compact source-only graph artifact
+  // A canonical model of the ensemble reads the source CSR on every call, not
+  // only for the per-atom virial.
+  bool canonical_source_csr;
+  // A canonical model of the ensemble reads features of the ghost nodes of an
+  // extended node set from their owners through its halo exchange.
+  bool canonical_halo;
   bool device_path_ok;     // resolved once in init_style
-  bool reverse_virial;     // reverse communication operates on centroid virial
-  bool reverse_used_host;  // force reverse communication selected host staging
+  bool reverse_used_host;  // the host pack/unpack overrides ran
+  // Device-packed fold that replaces the host reverse communication.
+  CompactCanonicalGhostFold<DeviceType, DeepMDKokkosCommBuffer> ghost_fold;
+  // Halo exchange of the extended node set for ``canonical_halo``.
+  CompactCanonicalHalo<DeviceType> halo_exchange;
+
+  // Store the outputs of the model evaluated last as those of model
+  // ``model`` of the ensemble.
+  void store_outputs(int model);
 };
 
 }  // namespace LAMMPS_NS

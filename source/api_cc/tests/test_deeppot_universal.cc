@@ -410,7 +410,11 @@ class UniversalDeepPotTest : public ::testing::TestWithParam<ModelCase> {
     }
     ASSERT_TRUE(path_exists(param.model_path))
         << "Model artifact is not available: " << param.model_path;
+  }
 
+  // Call after capability skips so unsupported cases do not load a model.
+  void InitModel() {
+    const auto& param = GetParam();
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_universal_" + param.name + ".pb";
@@ -475,7 +479,11 @@ class VariantDeepPotTest : public ::testing::TestWithParam<VariantDeepPotCase> {
         no_pbc_ref = &loaded_no_pbc_ref;
       }
     }
+  }
 
+  // Call after capability skips so unsupported cases do not load a model.
+  void InitModel() {
+    const auto& param = GetParam();
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_variant_" + param.name + ".pb";
@@ -515,7 +523,11 @@ class FParamAParamDeepPotTest
       loaded_ref = load_fparam_ref(param.ref_path);
       ref = &loaded_ref;
     }
+  }
 
+  // Call after capability skips so unsupported cases do not load a model.
+  void InitModel() {
+    const auto& param = GetParam();
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_fparam_aparam_" + param.name + ".pb";
@@ -552,11 +564,14 @@ class DefaultFParamDeepPotTest
     ref = load_fparam_ref(param.ref_path);
     override_ref = load_expected_ref(param.ref_path, "override");
     ref.has_default_fparam = true;
-    dp.init(param.model_path);
   }
+
+  // Keep initialization outside EXPECT_THROW so load errors cannot pass a test.
+  void InitModel() { dp.init(GetParam().model_path); }
 };
 
 TEST_P(UniversalDeepPotTest, Metadata) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const auto& ref = *GetParam().ref;
   std::string type_map;
 
@@ -1345,6 +1360,7 @@ void check_fparam_lmp_nlist(deepmd::DeepPot& dp,
 }
 
 TEST_P(UniversalDeepPotTest, ComputeDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<double>(dp, *GetParam().ref, GetParam().double_tol);
 }
 
@@ -1353,10 +1369,12 @@ TEST_P(UniversalDeepPotTest, ComputeFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<float>(dp, *GetParam().ref, GetParam().float_tol);
 }
 
 TEST_P(UniversalDeepPotTest, ComputeSimpleDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<double>(dp, *GetParam().ref, GetParam().double_tol);
 }
 
@@ -1365,10 +1383,12 @@ TEST_P(UniversalDeepPotTest, ComputeSimpleFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<float>(dp, *GetParam().ref, GetParam().float_tol);
 }
 
 TEST_P(UniversalDeepPotTest, FiniteDifferenceDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_finite_difference<double>(dp);
 }
 
@@ -1377,10 +1397,12 @@ TEST_P(UniversalDeepPotTest, FiniteDifferenceFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_finite_difference<float>(dp);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<double>(dp, *GetParam().ref, GetParam().double_tol, 1.0,
                           GetParam().supports_lmp_nlist_mapping);
 }
@@ -1390,11 +1412,13 @@ TEST_P(UniversalDeepPotTest, LmpNlistFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<float>(dp, *GetParam().ref, GetParam().float_tol, 1.0,
                          GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistAtomicDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_atomic<double>(dp, *GetParam().ref, GetParam().double_tol,
                                  GetParam().supports_lmp_nlist_mapping);
 }
@@ -1404,11 +1428,13 @@ TEST_P(UniversalDeepPotTest, LmpNlistAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_atomic<float>(dp, *GetParam().ref, GetParam().float_tol,
                                 GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistDoubleCutoffTwice) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<double>(dp, *GetParam().ref, GetParam().double_tol, 2.0,
                           GetParam().supports_lmp_nlist_mapping);
 }
@@ -1418,11 +1444,13 @@ TEST_P(UniversalDeepPotTest, LmpNlistFloatCutoffTwice) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<float>(dp, *GetParam().ref, GetParam().float_tol, 2.0,
                          GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistSkinBelowModelWidthDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_skin_below_model_width<double>(
       dp, *GetParam().ref, GetParam().double_tol,
       GetParam().supports_lmp_nlist_mapping);
@@ -1433,12 +1461,14 @@ TEST_P(UniversalDeepPotTest, LmpNlistSkinBelowModelWidthFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_skin_below_model_width<float>(
       dp, *GetParam().ref, GetParam().float_tol,
       GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistTypeSelDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_type_sel<double>(dp, *GetParam().ref, GetParam().double_tol,
                                    false,
                                    GetParam().supports_lmp_nlist_mapping);
@@ -1449,11 +1479,13 @@ TEST_P(UniversalDeepPotTest, LmpNlistTypeSelFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_type_sel<float>(dp, *GetParam().ref, GetParam().float_tol,
                                   false, GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistTypeSelAtomicDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_type_sel<double>(dp, *GetParam().ref, GetParam().double_tol,
                                    true, GetParam().supports_lmp_nlist_mapping);
 }
@@ -1463,6 +1495,7 @@ TEST_P(UniversalDeepPotTest, LmpNlistTypeSelAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_type_sel<float>(dp, *GetParam().ref, GetParam().float_tol,
                                   true, GetParam().supports_lmp_nlist_mapping);
 }
@@ -1472,6 +1505,7 @@ TEST_P(UniversalDeepPotTest, ComputeNoPbcDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<double>(dp, *GetParam().no_pbc_ref,
                                GetParam().double_tol, false);
 }
@@ -1485,6 +1519,7 @@ TEST_P(UniversalDeepPotTest, ComputeNoPbcFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<float>(dp, *GetParam().no_pbc_ref, GetParam().float_tol,
                               false);
 }
@@ -1494,6 +1529,7 @@ TEST_P(UniversalDeepPotTest, ComputeSimpleNoPbcDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<double>(dp, *GetParam().no_pbc_ref,
                                GetParam().double_tol, false);
 }
@@ -1507,17 +1543,22 @@ TEST_P(UniversalDeepPotTest, ComputeSimpleNoPbcFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<float>(dp, *GetParam().no_pbc_ref, GetParam().float_tol,
                               false);
 }
 
-TEST_P(UniversalDeepPotTest, PrintSummary) { dp.print_summary(""); }
+TEST_P(UniversalDeepPotTest, PrintSummary) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
+  dp.print_summary("");
+}
 
 TEST_P(UniversalDeepPotTest, NFramesComputeDouble) {
   if (!GetParam().supports_nframes) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_frames_simple<double>(dp, *GetParam().ref,
                                       GetParam().double_tol, 2);
 }
@@ -1531,6 +1572,7 @@ TEST_P(UniversalDeepPotTest, NFramesComputeFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_frames_simple<float>(dp, *GetParam().ref, GetParam().float_tol,
                                      2);
 }
@@ -1540,6 +1582,7 @@ TEST_P(UniversalDeepPotTest, NFramesComputeAtomicDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_frames_atomic<double>(dp, *GetParam().ref,
                                       GetParam().double_tol, 2);
 }
@@ -1553,6 +1596,7 @@ TEST_P(UniversalDeepPotTest, NFramesComputeAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_frames_atomic<float>(dp, *GetParam().ref, GetParam().float_tol,
                                      2);
 }
@@ -1562,6 +1606,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_frames<double>(dp, *GetParam().ref, GetParam().double_tol, 2,
                                  false, 1.0,
                                  GetParam().supports_lmp_nlist_mapping);
@@ -1576,6 +1621,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_frames<float>(dp, *GetParam().ref, GetParam().float_tol, 2,
                                 false, 1.0,
                                 GetParam().supports_lmp_nlist_mapping);
@@ -1586,6 +1632,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistAtomicDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_frames<double>(dp, *GetParam().ref, GetParam().double_tol, 2,
                                  true, 1.0,
                                  GetParam().supports_lmp_nlist_mapping);
@@ -1600,6 +1647,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_frames<float>(dp, *GetParam().ref, GetParam().float_tol, 2,
                                 true, 1.0,
                                 GetParam().supports_lmp_nlist_mapping);
@@ -1610,6 +1658,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistDoubleCutoffTwice) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_frames<double>(dp, *GetParam().ref, GetParam().double_tol, 2,
                                  false, 2.0,
                                  GetParam().supports_lmp_nlist_mapping);
@@ -1624,6 +1673,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistFloatCutoffTwice) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_frames<float>(dp, *GetParam().ref, GetParam().float_tol, 2,
                                 false, 2.0,
                                 GetParam().supports_lmp_nlist_mapping);
@@ -1634,6 +1684,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
   check_lmp_nlist_type_sel_frames<double>(
       dp, *GetParam().ref, GetParam().double_tol, 2, false, set_mapping);
@@ -1648,6 +1699,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
   check_lmp_nlist_type_sel_frames<float>(
       dp, *GetParam().ref, GetParam().float_tol, 2, false, set_mapping);
@@ -1658,6 +1710,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelAtomicDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
   check_lmp_nlist_type_sel_frames<double>(
       dp, *GetParam().ref, GetParam().double_tol, 2, true, set_mapping);
@@ -1672,6 +1725,7 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
   check_lmp_nlist_type_sel_frames<float>(
       dp, *GetParam().ref, GetParam().float_tol, 2, true, set_mapping);
@@ -1686,6 +1740,7 @@ TEST_P(UniversalDeepPotTest, NFramesComputeNoPbcDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_frames_simple<double>(dp, *GetParam().no_pbc_ref,
                                       GetParam().double_tol, 2, false);
 }
@@ -1703,11 +1758,13 @@ TEST_P(UniversalDeepPotTest, NFramesComputeNoPbcFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " NoPBC reference is not available.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_frames_simple<float>(dp, *GetParam().no_pbc_ref,
                                      GetParam().float_tol, 2, false);
 }
 
 TEST_P(VariantDeepPotTest, ComputeDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<double>(dp, *ref, GetParam().double_tol);
 }
 
@@ -1716,10 +1773,12 @@ TEST_P(VariantDeepPotTest, ComputeFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<float>(dp, *ref, GetParam().float_tol);
 }
 
 TEST_P(VariantDeepPotTest, ComputeSimpleDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<double>(dp, *ref, GetParam().double_tol);
 }
 
@@ -1728,6 +1787,7 @@ TEST_P(VariantDeepPotTest, ComputeSimpleFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<float>(dp, *ref, GetParam().float_tol);
 }
 
@@ -1736,6 +1796,7 @@ TEST_P(VariantDeepPotTest, FiniteDifferenceDouble) {
     GTEST_SKIP() << GetParam().name
                  << " finite-difference coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_finite_difference<double>(dp);
 }
 
@@ -1748,6 +1809,7 @@ TEST_P(VariantDeepPotTest, FiniteDifferenceFloat) {
     GTEST_SKIP() << GetParam().name
                  << " finite-difference coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   // DPA4 computes in reduced precision (same established bound for both the
   // dense-nlist and graph lowers -- they share the same descriptor/fitting
   // math, only the lower schema differs).
@@ -1763,6 +1825,7 @@ TEST_P(VariantDeepPotTest, LmpNlistDouble) {
   if (!GetParam().supports_lmp_nlist) {
     GTEST_SKIP() << GetParam().name << " LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<double>(dp, *ref, GetParam().double_tol);
 }
 
@@ -1774,6 +1837,7 @@ TEST_P(VariantDeepPotTest, LmpNlistFloat) {
   if (!GetParam().supports_lmp_nlist) {
     GTEST_SKIP() << GetParam().name << " LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<float>(dp, *ref, GetParam().float_tol);
 }
 
@@ -1782,6 +1846,7 @@ TEST_P(VariantDeepPotTest, LmpNlistAtomicDouble) {
     GTEST_SKIP() << GetParam().name
                  << " atomic LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_atomic<double>(dp, *ref, GetParam().double_tol);
 }
 
@@ -1794,6 +1859,7 @@ TEST_P(VariantDeepPotTest, LmpNlistAtomicFloat) {
     GTEST_SKIP() << GetParam().name
                  << " atomic LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_atomic<float>(dp, *ref, GetParam().float_tol);
 }
 
@@ -1802,6 +1868,7 @@ TEST_P(VariantDeepPotTest, LmpNlistDoubleCutoffTwice) {
     GTEST_SKIP() << GetParam().name
                  << " doubled-cutoff LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<double>(dp, *ref, GetParam().double_tol, 2.0);
 }
 
@@ -1814,6 +1881,7 @@ TEST_P(VariantDeepPotTest, LmpNlistFloatCutoffTwice) {
     GTEST_SKIP() << GetParam().name
                  << " doubled-cutoff LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist<float>(dp, *ref, GetParam().float_tol, 2.0);
 }
 
@@ -1822,6 +1890,7 @@ TEST_P(VariantDeepPotTest, LmpNlistTypeSelDouble) {
     GTEST_SKIP() << GetParam().name
                  << " type-selected LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_type_sel<double>(dp, *ref, GetParam().double_tol, false);
 }
 
@@ -1834,6 +1903,7 @@ TEST_P(VariantDeepPotTest, LmpNlistTypeSelFloat) {
     GTEST_SKIP() << GetParam().name
                  << " type-selected LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_lmp_nlist_type_sel<float>(dp, *ref, GetParam().float_tol, false);
 }
 
@@ -1841,6 +1911,7 @@ TEST_P(VariantDeepPotTest, PrintSummary) {
   if (!GetParam().supports_print_summary) {
     GTEST_SKIP() << GetParam().name << " summary coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   dp.print_summary("");
 }
 
@@ -1848,6 +1919,7 @@ TEST_P(VariantDeepPotTest, ComputeSimpleNoPbcDouble) {
   if (!GetParam().supports_no_pbc_simple) {
     GTEST_SKIP() << GetParam().name << " NoPBC coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<double>(dp, *no_pbc_ref, GetParam().double_tol, false);
 }
 
@@ -1859,6 +1931,7 @@ TEST_P(VariantDeepPotTest, ComputeSimpleNoPbcFloat) {
   if (!GetParam().supports_no_pbc_simple) {
     GTEST_SKIP() << GetParam().name << " NoPBC coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_simple<float>(dp, *no_pbc_ref, GetParam().float_tol, false);
 }
 
@@ -1866,6 +1939,7 @@ TEST_P(VariantDeepPotTest, ComputeNoPbcDouble) {
   if (!GetParam().supports_no_pbc_atomic) {
     GTEST_SKIP() << GetParam().name << " atomic NoPBC coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<double>(dp, *no_pbc_ref, GetParam().double_tol, false);
 }
 
@@ -1877,6 +1951,7 @@ TEST_P(VariantDeepPotTest, ComputeNoPbcFloat) {
   if (!GetParam().supports_no_pbc_atomic) {
     GTEST_SKIP() << GetParam().name << " atomic NoPBC coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_compute_atomic<float>(dp, *no_pbc_ref, GetParam().float_tol, false);
 }
 
@@ -1885,6 +1960,7 @@ TEST_P(VariantDeepPotTest, NoPbcLmpNlistDouble) {
     GTEST_SKIP() << GetParam().name
                  << " NoPBC LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_no_pbc_lmp_nlist<double>(dp, *no_pbc_ref, GetParam().double_tol, false);
 }
 
@@ -1897,6 +1973,7 @@ TEST_P(VariantDeepPotTest, NoPbcLmpNlistFloat) {
     GTEST_SKIP() << GetParam().name
                  << " NoPBC LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_no_pbc_lmp_nlist<float>(dp, *no_pbc_ref, GetParam().float_tol, false);
 }
 
@@ -1905,6 +1982,7 @@ TEST_P(VariantDeepPotTest, NoPbcLmpNlistAtomicDouble) {
     GTEST_SKIP() << GetParam().name
                  << " atomic NoPBC LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_no_pbc_lmp_nlist<double>(dp, *no_pbc_ref, GetParam().double_tol, true);
 }
 
@@ -1917,10 +1995,12 @@ TEST_P(VariantDeepPotTest, NoPbcLmpNlistAtomicFloat) {
     GTEST_SKIP() << GetParam().name
                  << " atomic NoPBC LAMMPS nlist coverage is not enabled.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_no_pbc_lmp_nlist<float>(dp, *no_pbc_ref, GetParam().float_tol, true);
 }
 
 TEST_P(FParamAParamDeepPotTest, Metadata) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   EXPECT_EQ(dp.dim_fparam(), 1);
   EXPECT_EQ(dp.dim_aparam(), 1);
   EXPECT_FALSE(dp.has_default_fparam());
@@ -1930,6 +2010,7 @@ TEST_P(FParamAParamDeepPotTest, JAXRejectsMissingRequiredFParam) {
   if (GetParam().backend != Backend::JAX) {
     GTEST_SKIP() << "This regression targets JAX SavedModel tensor inputs.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const std::vector<double> coord = deepmd_test::deeppot_coord();
   const std::vector<int> atype = deepmd_test::fparam_aparam_atype();
   const std::vector<double> box = deepmd_test::deeppot_box();
@@ -1943,6 +2024,7 @@ TEST_P(FParamAParamDeepPotTest, JAXRejectsMissingRequiredFParam) {
 }
 
 TEST_P(FParamAParamDeepPotTest, ComputeDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_atomic<double>(dp, *ref, GetParam().double_tol,
                                       deepmd_test::fparam_value());
 }
@@ -1952,11 +2034,13 @@ TEST_P(FParamAParamDeepPotTest, ComputeFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_atomic<float>(dp, *ref, GetParam().float_tol,
                                      deepmd_test::fparam_value());
 }
 
 TEST_P(FParamAParamDeepPotTest, ComputeSimpleDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_simple<double>(dp, *ref, GetParam().double_tol,
                                       deepmd_test::fparam_value());
 }
@@ -1966,11 +2050,13 @@ TEST_P(FParamAParamDeepPotTest, ComputeSimpleFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_simple<float>(dp, *ref, GetParam().float_tol,
                                      deepmd_test::fparam_value());
 }
 
 TEST_P(FParamAParamDeepPotTest, LmpNlistDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<double>(dp, *ref, GetParam().double_tol,
                                  deepmd_test::fparam_value(), false);
 }
@@ -1980,11 +2066,13 @@ TEST_P(FParamAParamDeepPotTest, LmpNlistFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<float>(dp, *ref, GetParam().float_tol,
                                 deepmd_test::fparam_value(), false);
 }
 
 TEST_P(FParamAParamDeepPotTest, LmpNlistAtomicDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<double>(dp, *ref, GetParam().double_tol,
                                  deepmd_test::fparam_value(), true);
 }
@@ -1994,11 +2082,13 @@ TEST_P(FParamAParamDeepPotTest, LmpNlistAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<float>(dp, *ref, GetParam().float_tol,
                                 deepmd_test::fparam_value(), true);
 }
 
 TEST_P(FParamAParamDeepPotTest, LmpNlistDoubleCutoffTwice) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<double>(dp, *ref, GetParam().double_tol,
                                  deepmd_test::fparam_value(), false, 2.0);
 }
@@ -2008,17 +2098,20 @@ TEST_P(FParamAParamDeepPotTest, LmpNlistFloatCutoffTwice) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<float>(dp, *ref, GetParam().float_tol,
                                 deepmd_test::fparam_value(), false, 2.0);
 }
 
 TEST_P(DefaultFParamDeepPotTest, Metadata) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   EXPECT_EQ(dp.dim_fparam(), 1);
   EXPECT_EQ(dp.dim_aparam(), 1);
   EXPECT_TRUE(dp.has_default_fparam());
 }
 
 TEST_P(DefaultFParamDeepPotTest, ComputeWithEmptyFParamDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_simple<double>(dp, ref, GetParam().double_tol, {});
 }
 
@@ -2027,10 +2120,12 @@ TEST_P(DefaultFParamDeepPotTest, ComputeWithEmptyFParamFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_simple<float>(dp, ref, GetParam().float_tol, {});
 }
 
 TEST_P(DefaultFParamDeepPotTest, ComputeWithExplicitFParamDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_simple<double>(dp, override_ref, GetParam().double_tol,
                                       override_fparam);
 }
@@ -2040,11 +2135,13 @@ TEST_P(DefaultFParamDeepPotTest, ComputeWithExplicitFParamFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_simple<float>(dp, override_ref, GetParam().float_tol,
                                      override_fparam);
 }
 
 TEST_P(DefaultFParamDeepPotTest, LmpNlistWithEmptyFParamDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<double>(dp, ref, GetParam().double_tol, {}, false, 1.0,
                                  1);
 }
@@ -2054,11 +2151,13 @@ TEST_P(DefaultFParamDeepPotTest, LmpNlistWithEmptyFParamFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<float>(dp, ref, GetParam().float_tol, {}, false, 1.0,
                                 1);
 }
 
 TEST_P(DefaultFParamDeepPotTest, LmpNlistWithExplicitFParamDouble) {
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<double>(dp, override_ref, GetParam().double_tol,
                                  override_fparam, false, 1.0, 1);
 }
@@ -2068,6 +2167,7 @@ TEST_P(DefaultFParamDeepPotTest, LmpNlistWithExplicitFParamFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_lmp_nlist<float>(dp, override_ref, GetParam().float_tol,
                                 override_fparam, false, 1.0, 1);
 }
@@ -2076,6 +2176,7 @@ TEST_P(DefaultFParamDeepPotTest, JAXBroadcastsFParamAcrossFrames) {
   if (GetParam().backend != Backend::JAX) {
     GTEST_SKIP() << "This regression targets JAX SavedModel tensor inputs.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const int nframes = 2;
   const std::vector<double> coord =
       repeat_values(deepmd_test::deeppot_coord(), nframes);
@@ -2117,6 +2218,7 @@ TEST_P(DefaultFParamDeepPotTest, JAXRejectsInvalidFParamSize) {
   if (GetParam().backend != Backend::JAX) {
     GTEST_SKIP() << "This regression targets JAX SavedModel tensor inputs.";
   }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
   const std::vector<double> coord = deepmd_test::deeppot_coord();
   const std::vector<int> atype = deepmd_test::fparam_aparam_atype();
   const std::vector<double> box = deepmd_test::deeppot_box();

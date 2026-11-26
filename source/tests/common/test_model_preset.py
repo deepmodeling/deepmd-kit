@@ -154,8 +154,30 @@ def test_preset_catalog() -> None:
             "max",
             "ultra",
         ),
+        ("dpa4.5", "v20261111"): ("nano", "mini", "neo", "air", "plus", "pro", "max"),
         ("dpa4c", "v20260901"): ("nano", "mini", "neo", "air", "plus"),
-        ("dpa4c", "v20260911"): ("nano", "mini", "neo", "air", "plus"),
+        ("dpa4c", "v20260911"): (
+            "nano",
+            "mini",
+            "neo",
+            "air",
+            "plus",
+            "mini-duo",
+            "neo-duo",
+            "air-duo",
+            "plus-duo",
+        ),
+        ("dpa4c", "v20261111"): (
+            "nano",
+            "mini",
+            "neo",
+            "air",
+            "plus",
+            "mini-duo",
+            "neo-duo",
+            "air-duo",
+            "plus-duo",
+        ),
     }
     assert set(MODEL_PRESETS) == {
         f"{family}-{grade}-{version}"
@@ -182,8 +204,30 @@ def test_preset_catalog() -> None:
                 "basis_type": "gaussian/fix",
             },
         ),
+        (
+            "dpa4.5",
+            "v20261111",
+            {
+                "edge_norm": [False, False, True],
+                "sandwich_norm": [True, False, True, False],
+                "env_exp": 5,
+                "basis_type": "gaussian/fix",
+                "density_floor": 8.0,
+                "readout_norm": True,
+                "parity": True,
+                "kmax": 0,
+                "message_node_so3": False,
+                "add_chg_spin_ebd": True,
+                "default_chg_spin": [0.0, 1.0],
+            },
+        ),
         ("dpa4c", "v20260901", {"basis_type": "bessel"}),
         ("dpa4c", "v20260911", {"basis_type": "gaussian/fix"}),
+        (
+            "dpa4c",
+            "v20261111",
+            {"basis_type": "gaussian/fix", "density_floor": 8.0},
+        ),
     ],
 )
 def test_version_descriptor_options(family: str, version: str, options: dict) -> None:
@@ -193,13 +237,34 @@ def test_version_descriptor_options(family: str, version: str, options: dict) ->
             assert {key: descriptor[key] for key in options} == options
 
 
+@pytest.mark.parametrize("grade", ["mini", "neo", "air", "plus"])
+def test_duo_preset_adds_one_block_to_its_grade(grade: str) -> None:
+    single = get_model_preset(f"dpa4c-{grade}-v20260911")
+    duo = get_model_preset(f"dpa4c-{grade}-duo-v20260911")
+    assert duo["descriptor"] == {**single["descriptor"], "n_blocks": 2}
+    assert duo["fitting_net"] == single["fitting_net"]
+
+
 def test_presets_carry_no_runtime_options() -> None:
     for name, preset in MODEL_PRESETS.items():
         for region in ("descriptor", "fitting_net"):
             for key in ("use_amp", "seed", "sel", "trainable"):
                 assert key not in preset[region], (name, region, key)
-        for key in ("add_chg_spin_ebd", "default_chg_spin", "so2_layers"):
-            assert key not in preset["descriptor"], (name, key)
+        assert "so2_layers" not in preset["descriptor"], name
+        # DPA4.5 conditions its descriptor on the state of the frame, and every
+        # family above DPA4C references its atoms to the isolated atoms; the
+        # charge/spin pair stays with DPA4.5 alone, because the other families
+        # take it from the input.
+        if not name.startswith("dpa4.5-"):
+            for key in ("add_chg_spin_ebd", "default_chg_spin"):
+                assert key not in preset["descriptor"], (name, key)
+        if name.startswith("dpa4.5-"):
+            assert preset["descriptor"]["add_chg_spin_ebd"] is True, name
+            assert preset["descriptor"]["default_chg_spin"] == [0.0, 1.0], name
+        if name.startswith("dpa4.5-") or name.endswith("-v20261111"):
+            assert preset["fitting_net"]["vacuum_ref"] is True, name
+        else:
+            assert "vacuum_ref" not in preset["fitting_net"], name
 
 
 def test_periodic_table_matches_econf_type_map() -> None:
@@ -417,6 +482,57 @@ def test_shared_dict_role_is_recognised_through_a_branch_default() -> None:
     expanded = expand_model_preset(model)
     assert expanded["shared_dict"]["desc"] == {**nano["descriptor"], "seed": 42}
     assert expanded["model_dict"]["water_1"]["descriptor"] == "desc"
+
+
+def test_multi_task_shared_settings_match_inline_entries() -> None:
+    """A branch that names a shared `spin` or `preset_out_bias` entry is
+    processed as the branch that writes the entry out.
+    """
+    spin = {"scheme": "native", "use_spin": ["O"]}
+    bias = {"energy": "omat24"}
+
+    def preprocess(spin_entry: dict | str, bias_entry: dict | str) -> tuple[dict, dict]:
+        plain = {
+            "descriptor": "descriptor",
+            "fitting_net": {"seed": 1},
+            "preset_out_bias": bias_entry,
+        }
+        magnetic = {**plain, "spin": spin_entry}
+        model = {
+            "preset": "dpa4-nano-v20260911",
+            "type_map": ["O", "H"],
+            "shared_dict": {"descriptor": {"rcut": 6.0}, "spin": spin, "bias": bias},
+            "model_dict": {"a": magnetic, "b": magnetic, "c": plain},
+        }
+        return preprocess_shared_params(
+            expand_model_preset(copy.deepcopy(model)), lambda item_key, params: dict
+        )
+
+    def normalized_branches(model: dict) -> dict:
+        tasks = list(model["model_dict"])
+        config = {
+            "model": model,
+            "loss_dict": {task: {} for task in tasks},
+            "training": {
+                "data_dict": {
+                    task: {"training_data": {"systems": ["fake"]}} for task in tasks
+                },
+                "numb_steps": 10,
+            },
+        }
+        config = update_deepmd_input(config, warning=False)
+        return normalize(config, multi_task=True)["model"]["model_dict"]
+
+    shared, shared_links = preprocess("spin", "bias")
+    inline, _ = preprocess(spin, bias)
+    # Only the networks are linked; every branch owns a copy of a setting.
+    assert set(shared_links) == {"descriptor"}
+    branches = shared["model_dict"]
+    assert branches["a"]["spin"] == branches["b"]["spin"] == spin
+    assert branches["a"]["spin"] is not branches["b"]["spin"]
+    assert "spin" not in branches["c"]
+    assert branches["c"]["preset_out_bias"] == bias
+    assert normalized_branches(shared) == normalized_branches(inline)
 
 
 def test_update_deepmd_input_expands_presets() -> None:

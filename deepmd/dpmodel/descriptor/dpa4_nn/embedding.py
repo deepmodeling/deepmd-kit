@@ -30,7 +30,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
-    xp_scatter_sum,
+    xp_matmul,
 )
 from deepmd.dpmodel.common import (
     get_xp_precision,
@@ -54,9 +54,6 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
-from .cartesian import (
-    build_cartesian_basis,
-)
 from .indexing import (
     build_gie_zonal_index,
     get_so3_dim_of_lmax,
@@ -250,10 +247,6 @@ class GeometricInitialEmbedding(NativeOP):
         self.non_scalar_row_index = node_row_index
         self.zonal_m0_col_index_for_row = node_zonal_m0_col_index
         self.radial_slot_index_for_row = node_radial_l_index
-        # The l=1 coefficients (packed rows 1..3) are the first three entries of
-        # the non-scalar sequence ``node_row_index = [1, 2, ..., D-1]``, so the
-        # native neighbor-spin l=1 message folds in at these local positions.
-        self.l1_local_index = np.arange(3, dtype=np.int64)
 
     def call(
         self,
@@ -262,7 +255,6 @@ class GeometricInitialEmbedding(NativeOP):
         edge_cache: EdgeCache,
         radial_feat: Any,
         zonal_coupling: Any = None,
-        spin_l1_message: Any = None,
     ) -> Any:
         """
         Parameters
@@ -276,12 +268,6 @@ class GeometricInitialEmbedding(NativeOP):
         zonal_coupling
             Optional precomputed zonal coupling with shape (E, D-1). If None,
             it is gathered from ``edge_cache.Dt_full``.
-        spin_l1_message
-            Optional per-edge neighbor-spin l=1 message with shape (E, 3, C) for
-            the native spin scheme (built by ``SpinEmbedding.edge_l1``). It is
-            added to the l=1 rows of the per-edge message, so it shares this
-            module's scatter and degree normalization with the geometric
-            message.
 
         Returns
         -------
@@ -319,11 +305,7 @@ class GeometricInitialEmbedding(NativeOP):
         # Each non-scalar packed row reuses the radial feature of its degree l.
         # The fused operator spans this broadcast and the scatter of Step 4, so
         # it takes over whenever nothing else joins the message in between.
-        if (
-            self._can_fuse_scatter(zonal_coupling)
-            and spin_l1_message is None
-            and edge_cache.csr_cache is not None
-        ):
+        if self._can_fuse_scatter(zonal_coupling) and edge_cache.csr_cache is not None:
             return self.forward_fused_scatter(
                 n_nodes, edge_cache, radial_feat, zonal_coupling
             )
@@ -337,19 +319,6 @@ class GeometricInitialEmbedding(NativeOP):
         non_scalar_message = (
             zonal_coupling[:, :, None] * radial_value_for_row
         )  # (E, D-1, C)
-
-        # === Step 3b. Fold in the neighbor-spin l=1 message (native spin) ===
-        # The l=1 coefficients occupy the first three packed non-scalar rows, so
-        # the neighbor-spin message joins the geometric message there and then
-        # shares the scatter and degree normalization below.
-        if spin_l1_message is not None:
-            l1_local_index = xp_asarray_nodetach(xp, self.l1_local_index, device=device)
-            scatter_index = xp.broadcast_to(
-                xp.reshape(l1_local_index, (1, 3, 1)), spin_l1_message.shape
-            )
-            non_scalar_message = xp_scatter_sum(
-                non_scalar_message, 1, scatter_index, spin_l1_message
-            )
 
         # === Step 4. Scatter to nodes and normalize ===
         # Destination scatter-add over ``edge_cache.dst`` (pt ``index_add_``),
@@ -424,7 +393,90 @@ class GeometricInitialEmbedding(NativeOP):
         return cls(**data)
 
 
-class EnvironmentInitialEmbedding(NativeOP):
+def spin_environment_coordinates(moment: Any) -> Any:
+    r"""Build homogeneous spin coordinates before applying the edge envelope.
+
+    The output contains the vector, squared magnitude, and five normalized
+    degree-two harmonics, with shape (..., 9). The harmonic normalization gives
+    Q(s) . Q(t) = 3/2 (s . t)^2 - 1/2 |s|^2 |t|^2. All coordinates are
+    polynomial at zero moment. The input moment already carries its type mask.
+    """
+    xp = array_api_compat.array_namespace(moment)
+    x, y, z = moment[..., 0], moment[..., 1], moment[..., 2]
+    magnitude = xp.sum(moment * moment, axis=-1, keepdims=True)
+    root_three = math.sqrt(3.0)
+    quadrupole = xp.stack(
+        [
+            root_three * x * y,
+            root_three * y * z,
+            0.5 * (2.0 * z * z - x * x - y * y),
+            root_three * x * z,
+            0.5 * root_three * (x * x - y * y),
+        ],
+        axis=-1,
+    )
+    return xp.concat([moment, magnitude, quadrupole], axis=-1)
+
+
+def spin_environment_invariants(moments: Any, axis_dim: int) -> Any:
+    """Contract normalized spin densities into independent invariant blocks.
+
+    Parameters
+    ----------
+    moments
+        Vector, magnitude and quadrupole densities with shape (N, 9, K).
+    axis_dim
+        Number of leading radial channels retained on the second Gram axis.
+
+    Returns
+    -------
+    Array
+        Concatenated magnitude density, vector Gram and quadrupole Gram with
+        shape (N, K + 2 * K * axis_dim). No cross-family contractions occur.
+    """
+    xp = array_api_compat.array_namespace(moments)
+    nodes, _, channels = moments.shape
+    vector = moments[:, :3, :]
+    quadrupole = moments[:, 4:, :]
+    vector_gram = xp_matmul(xp.permute_dims(vector, (0, 2, 1)), vector[:, :, :axis_dim])
+    quadrupole_gram = xp_matmul(
+        xp.permute_dims(quadrupole, (0, 2, 1)), quadrupole[:, :, :axis_dim]
+    )
+    return xp.concat(
+        [
+            moments[:, 3, :],
+            xp.reshape(vector_gram, (nodes, channels * axis_dim)),
+            xp.reshape(quadrupole_gram, (nodes, channels * axis_dim)),
+        ],
+        axis=-1,
+    )
+
+
+class SharesLearnedLayers:
+    """Sharing of the learned layers an embedding builds.
+
+    An embedding whose layers depend on its configuration lists the shared
+    ones in ``LEARNED_LAYERS``; the flags that select them stay those of the
+    replica, so replicas of differing configuration share every common layer.
+    """
+
+    LEARNED_LAYERS: tuple[str, ...] = ()
+
+    def share_params(self, base: SharesLearnedLayers) -> None:
+        """
+        Take the learned layers of ``base`` that this embedding builds.
+
+        Parameters
+        ----------
+        base : SharesLearnedLayers
+            Embedding of the same class that owns the shared layers.
+        """
+        for name in self.LEARNED_LAYERS:
+            if getattr(self, name, None) is not None:
+                setattr(self, name, getattr(base, name))
+
+
+class EnvironmentInitialEmbedding(SharesLearnedLayers, NativeOP):
     """
     Environment matrix initial embedding for l=0 features.
 
@@ -444,6 +496,11 @@ class EnvironmentInitialEmbedding(NativeOP):
         3. env_agg: aggregate outer product `r_tilde ⊗ g` by destination node
         4. D matrix: `D = env_agg^T @ env_agg[:, :, :axis_dim]`
         5. Output: projection of flattened D matrix into FiLM logits
+
+    Native spin adds masked vector, squared-magnitude and homogeneous
+    quadrupole densities to the same reduction. Their magnitude density and
+    separate vector/quadrupole Grams feed an independent output projection;
+    the geometric projection retains its own weights and contraction.
 
     Parameters
     ----------
@@ -469,11 +526,10 @@ class EnvironmentInitialEmbedding(NativeOP):
     eps : float
         Small epsilon for numerical stability.
     use_spin : list[bool] | None
-        Per-type spin flags (native spin scheme). When provided, the neighbor
-        spin is appended as extra coordinate channels of the environment matrix,
-        so the inner product ``D = M^T M`` additionally yields the neighbor
-        spin-spin invariants. A per-type mask gates the channel, so a
-        non-magnetic neighbor contributes zero and carries zero magnetic force.
+        Per-type spin flags. Masked neighbor vector, magnitude and quadrupole
+        densities share the geometric radial/type weights and have independent
+        invariant output weights. Non-magnetic moments contribute zero at every
+        derivative order.
     precision : str
         Parameter precision.
     trainable : bool
@@ -483,6 +539,16 @@ class EnvironmentInitialEmbedding(NativeOP):
     """
 
     CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+    # Learned layers; ``spin_output_proj`` exists only with native spin.
+    LEARNED_LAYERS = (
+        "rbf_proj_layer1",
+        "rbf_proj_layer2",
+        "env_type_embed",
+        "g_layer1",
+        "g_layer2",
+        "output_proj",
+        "spin_output_proj",
+    )
 
     def __init__(
         self,
@@ -523,13 +589,12 @@ class EnvironmentInitialEmbedding(NativeOP):
             raise ValueError("`use_spin` length must equal `ntypes`")
         self.precision = precision
         self.trainable = bool(trainable)
-        # The environment matrix carries the 4 geometric channels ``[s, s*r_hat]``
-        # plus, for the native spin scheme, the 3 envelope-gated neighbor-spin
-        # components, so the inner product ``D = M^T M`` yields the neighbor
-        # spin-spin invariants alongside the geometric ones.
+        # Geometry and spin families share the radial/type weights and the
+        # destination reduction. Independent contractions retain their distinct
+        # spatial and time-reversal transformation laws.
         self.geometry_coord_dim = 4
         self.coord_dim = self.geometry_coord_dim + (
-            3 if self.spin_flags is not None else 0
+            9 if self.spin_flags is not None else 0
         )
 
         # === RBF projection: n_radial -> rbf_out_dim (two-layer MLP) ===
@@ -608,19 +673,25 @@ class EnvironmentInitialEmbedding(NativeOP):
             dtype=PRECISION_DICT[self.precision.lower()],
         )
 
-        # === Native spin: per-type mask and post-quadratic activation gate ===
-        # The mask gates the neighbor-spin channel by source type, so a
-        # non-magnetic neighbor contributes zero and (critically) carries zero
-        # magnetic force ``-dE/ds``. ``spin_scale`` multiplies the spin-only
-        # contribution after the environment quadratic form, providing a
-        # linear gate that can start from exactly zero.
+        # === Native spin: masked densities and independent invariant readout ===
         if self.spin_flags is not None:
             self.spin_mask = np.array(
                 [1.0 if flag else 0.0 for flag in self.spin_flags],
                 dtype=PRECISION_DICT[self.precision.lower()],
             )
-            self.spin_scale = np.zeros(
-                (1,), dtype=PRECISION_DICT[self.precision.lower()]
+            spin_width = self.embed_dim * (1 + 2 * self.axis_dim)
+            self.spin_output_proj = NativeLayer(
+                spin_width,
+                2 * self.channels,
+                bias=False,
+                activation_function=None,
+                precision=self.precision,
+                seed=child_seed(seed, 4),
+                trainable=self.trainable,
+            )
+            self.spin_output_proj.w = np.zeros(
+                (spin_width, 2 * self.channels),
+                dtype=PRECISION_DICT[self.precision.lower()],
             )
 
     def call(
@@ -644,10 +715,9 @@ class EnvironmentInitialEmbedding(NativeOP):
             Number of nodes (N = nf * nloc).
         spin : Array | None
             Per-node spin vectors with shape (N, 3) for the native spin scheme.
-            Used only when ``use_spin`` is set; the source (neighbor) spin is
-            appended to the environment matrix as an envelope-gated coordinate
-            channel. When ``None`` the spin channels are zero-padded so the
-            coordinate dimension stays fixed.
+            Used only when ``use_spin`` is set. The masked source moment forms
+            vector, magnitude and quadrupole coordinates before envelope gating.
+            When ``None`` these coordinates are zero-padded.
 
         Returns
         -------
@@ -663,17 +733,15 @@ class EnvironmentInitialEmbedding(NativeOP):
 
         # === Step 1. Construct r_tilde = [s, s*r_hat] ===
         # s = edge_env * (1/r), r_hat = edge_vec / r
-        r_sq = xp.sum(edge_vec * edge_vec, axis=-1, keepdims=True)  # (E, 1)
-        inv_r = 1.0 / xp.sqrt(r_sq + self.eps * self.eps)  # (E, 1)
+        inv_r = 1.0 / edge_cache.edge_len
         s = edge_env * inv_r  # (E, 1)
         r_hat = edge_vec * inv_r  # (E, 3)
         r_tilde = xp.concat([s, s * r_hat], axis=-1)  # (E, 4)
 
-        # === Step 1b. Append neighbor spin as extra coordinate channels ===
-        # The source (neighbor) spin enters the environment matrix gated by the
-        # same C^3 envelope as the geometry, so it decays smoothly at rcut and a
-        # non-magnetic neighbor (s_j = 0) contributes exactly zero. The linear
-        # form keeps the magnetic force continuous at s = 0.
+        # === Step 1b. Form the masked spin families before envelope gating ===
+        # Vector, magnitude and quadrupole coordinates are homogeneous in the
+        # moment. The common C3 envelope multiplies each family once, retaining
+        # smooth coordinate and spin derivatives at zero and at the cutoff.
         if self.spin_flags is not None:
             device = array_api_compat.device(edge_vec)
             if spin is not None:
@@ -689,10 +757,10 @@ class EnvironmentInitialEmbedding(NativeOP):
                     xp.take(xp.astype(atype_flat, xp.int64), src_i, axis=0),
                     axis=0,
                 )[:, None]  # (E, 1)
-                spin_chan = edge_env * spin_src * mask  # (E, 3)
+                spin_chan = edge_env * spin_environment_coordinates(spin_src * mask)
             else:
                 spin_chan = xp.zeros(
-                    (r_tilde.shape[0], 3), dtype=r_tilde.dtype, device=device
+                    (r_tilde.shape[0], 9), dtype=r_tilde.dtype, device=device
                 )
             r_tilde = xp.concat([r_tilde, spin_chan], axis=-1)  # (E, coord_dim)
 
@@ -747,35 +815,31 @@ class EnvironmentInitialEmbedding(NativeOP):
         env_agg = env_agg * xp.astype(edge_cache.inv_sqrt_deg, env_agg.dtype)
 
         # === Step 5. D matrix construction: D = env_agg^T @ env_agg[:,:,:axis_dim] ===
-        # Summing over the coordinate axis makes D invariant to a joint rotation
-        # of the geometry and the spin channels; with the spin channels present,
-        # D additionally carries the neighbor spin-spin invariants.
+        # Each family contracts independently: geometric invariants retain
+        # their projection, while spin invariants receive separate output
+        # weights without spin/geometry or odd-time-reversal cross terms.
         if self.spin_flags is None:
             env_agg_t = xp.permute_dims(env_agg, (0, 2, 1))
             env_agg_axis = env_agg[:, :, : self.axis_dim]
-            D = xp.matmul(env_agg_t, env_agg_axis)
+            D = xp_matmul(env_agg_t, env_agg_axis)
         else:
             geometry_agg = env_agg[:, : self.geometry_coord_dim, :]
-            spin_agg = env_agg[:, self.geometry_coord_dim :, :]
-            D_geometry = xp.matmul(
+            D = xp_matmul(
                 xp.permute_dims(geometry_agg, (0, 2, 1)),
                 geometry_agg[:, :, : self.axis_dim],
             )
-            D_spin = xp.matmul(
-                xp.permute_dims(spin_agg, (0, 2, 1)),
-                spin_agg[:, :, : self.axis_dim],
-            )
-            spin_scale = xp.astype(
-                xp_asarray_nodetach(xp, self.spin_scale[...], device=device),
-                D_spin.dtype,
-            )
-            D = D_geometry + spin_scale * D_spin
 
         # === Step 6. Output projection for FiLM logits ===
         D_flat = xp.reshape(
             D, (n_nodes, self.embed_dim * self.axis_dim)
         )  # (N, embed_dim*axis_dim)
-        return self.output_proj(D_flat)
+        logits = self.output_proj(D_flat)
+        if self.spin_flags is not None:
+            spin_features = spin_environment_invariants(
+                env_agg[:, self.geometry_coord_dim :, :], self.axis_dim
+            )
+            logits = logits + self.spin_output_proj(spin_features)
+        return logits
 
     def _variables(self) -> dict[str, np.ndarray]:
         """Variables keyed by the pt ``state_dict`` key names."""
@@ -795,7 +859,9 @@ class EnvironmentInitialEmbedding(NativeOP):
             variables["g_layer1.bias"] = to_numpy_array(self.g_layer1.b)
             variables["g_layer2.bias"] = to_numpy_array(self.g_layer2.b)
         if self.spin_flags is not None:
-            variables["spin_scale"] = to_numpy_array(self.spin_scale)
+            variables["spin_output_proj.matrix"] = to_numpy_array(
+                self.spin_output_proj.w
+            )
         return variables
 
     def _load_variables(self, variables: dict[str, Any]) -> None:
@@ -823,7 +889,9 @@ class EnvironmentInitialEmbedding(NativeOP):
             self.g_layer1.b = np.asarray(variables["g_layer1.bias"], dtype=prec)
             self.g_layer2.b = np.asarray(variables["g_layer2.bias"], dtype=prec)
         if self.spin_flags is not None:
-            self.spin_scale = np.asarray(variables["spin_scale"], dtype=prec)
+            self.spin_output_proj.w = np.asarray(
+                variables["spin_output_proj.matrix"], dtype=prec
+            )
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -1000,54 +1068,62 @@ class ChargeSpinEmbedding(NativeOP):
         return obj
 
 
-class SpinEmbedding(NativeOP):
+def spin_pair_invariants(
+    moment: Any, src: Any, dst: Any, edge_vec: Any, spin_mode: str
+) -> Any:
+    r"""Form time-even pair scalars from masked moments and bond vectors.
+
+    The exchange block is (|s_i|², |s_j|², s_i·s_j). The orbit block appends
+    ((s_i·u)², (s_j·u)², (s_i·u)(s_j·u)), with u = r / sqrt(r² + 1e-20).
+    The regularized direction is smooth at coincident positions and transforms
+    as a polar vector. Only the simultaneous reversal of all moments is imposed;
+    the signed exchange correlation distinguishes parallel and antiparallel spins.
     """
-    Per-atom spin embedding for the native spin scheme.
+    xp = array_api_compat.array_namespace(moment)
+    si = xp.take(moment, xp.astype(dst, xp.int64), axis=0)
+    sj = xp.take(moment, xp.astype(src, xp.int64), axis=0)
+    features = [
+        xp.sum(si * si, axis=-1),
+        xp.sum(sj * sj, axis=-1),
+        xp.sum(si * sj, axis=-1),
+    ]
+    if spin_mode == "orbit":
+        u = edge_vec / xp.sqrt(
+            xp.sum(edge_vec * edge_vec, axis=-1, keepdims=True) + 1e-20
+        )
+        pi = xp.sum(si * u, axis=-1)
+        pj = xp.sum(sj * u, axis=-1)
+        features.extend([pi * pi, pj * pj, pi * pj])
+    return xp.stack(features, axis=-1)
 
-    The per-atom spin vector ``s`` is injected as an equivariant extension of
-    the type embedding, producing two additive contributions to the descriptor
-    node features:
 
-    - **l = 0 (invariant):** a small network of the squared magnitude ``|s|^2``
-      yields a per-channel scalar added to the scalar type embedding. The
-      squared magnitude is used (rather than ``|s|``) so the feature is smooth
-      at ``s = 0`` and its gradient there vanishes, keeping the magnetic force
-      continuous as a spin crosses zero.
-    - **l = 1 (equivariant):** the Cartesian spin vector is mapped to the packed
-      ``l = 1`` coefficients through the SeZM Wigner-D convention (derived from
-      :func:`build_cartesian_basis`), then scaled by a per-type per-channel
-      weight. The map is linear in ``s``, so the contribution vanishes at
-      ``s = 0`` and rotates as an ``l = 1`` object under SO(3), i.e.
-      ``cart_to_l1(R s) = D^1(R) cart_to_l1(s)``.
+class SpinEmbedding(SharesLearnedLayers, NativeOP):
+    r"""Embed time-even on-site and pair spin invariants.
 
-    Both contributions are gated by a per-type spin mask, so atom types without
-    spin contribute exactly zero regardless of their (nominally zero) input.
+    ``exchange`` uses the two squared moments and their signed dot product.
+    ``orbit`` also uses the two squared bond projections and their product.
+    For an orthogonal spatial map R, a moment transforms as det(R) R s:
+    each bond projection gains det(R), so every emitted product is invariant.
+    All inputs have even total spin order; arbitrary subsequent nonlinearities
+    therefore preserve global time reversal. A single-site flip is not a
+    symmetry because the signed pair dot product changes sign.
 
-    Parameters
-    ----------
-    ntypes
-        Number of (real) atom types.
-    channels
-        Number of channels per (l, m) coefficient.
-    use_spin
-        Per-type boolean flags marking which atom types carry spin.
-    activation_function
-        Activation used by the magnitude network.
-    precision
-        Parameter precision.
-    seed
-        Random seed for initialization.
-    trainable
-        Whether parameters are trainable.
+    The on-site map conditions scalar type features. The pair map conditions
+    the shared radial basis and hence every interaction block. Its output is
+    multiplied by the edge envelope, including the exclusion mask.
+    Both output maps start at zero to preserve spin-free initialization.
     """
 
     CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+    LEARNED_LAYERS = ("mag_layer1", "mag_layer2", "pair_layer")
 
     def __init__(
         self,
         *,
         ntypes: int,
         channels: int,
+        n_radial: int,
+        spin_mode: str = "orbit",
         use_spin: list[bool],
         activation_function: str = "silu",
         precision: str = DEFAULT_PRECISION,
@@ -1056,6 +1132,10 @@ class SpinEmbedding(NativeOP):
     ) -> None:
         self.ntypes = int(ntypes)
         self.channels = int(channels)
+        self.n_radial = int(n_radial)
+        self.spin_mode = spin_mode
+        if spin_mode not in {"exchange", "orbit"}:
+            raise ValueError("`spin_mode` must be exchange or orbit")
         self.activation_function = str(activation_function)
         self.precision = precision
         self.trainable = bool(trainable)
@@ -1075,11 +1155,6 @@ class SpinEmbedding(NativeOP):
         self.spin_mask = np.array(
             [1.0 if bool(flag) else 0.0 for flag in use_spin], dtype=prec
         )
-
-        # === Cartesian -> packed l=1 projection ===
-        # Derived from the SeZM packed basis so a spin vector rotates with the
-        # same Wigner-D block as the geometry. Non-persistent constant.
-        self.cart_to_l1 = self._build_cart_to_l1_matrix()
 
         # === l=0 magnitude network: |s|^2 -> channels ===
         # The leading ``1 -> channels`` layer carries a singleton input
@@ -1108,164 +1183,62 @@ class SpinEmbedding(NativeOP):
             dtype=prec,
         )
 
-        # === l=1 per-type per-channel weight ===
-        # ``adam_`` prefix routes the table to Adam in HybridMuon, matching the
-        # type-embedding treatment for per-type lookup parameters.
-        self.adam_spin_vec_weight = np.zeros(
-            (self.ntypes, self.channels),
-            dtype=prec,
+        self.pair_layer = NativeLayer(
+            3 if spin_mode == "exchange" else 6,
+            self.n_radial,
+            bias=False,
+            activation_function=None,
+            precision=self.precision,
+            seed=child_seed(seed, 1),
+            trainable=self.trainable,
+        )
+        self.pair_layer.w = np.zeros(
+            (3 if spin_mode == "exchange" else 6, self.n_radial), dtype=prec
         )
 
-        # === l=1 per-source-type per-channel weight for neighbor aggregation ===
-        # Separate from the on-site weight: this scales the neighbor's spin
-        # direction before it is aggregated into the center node's l=1 seed.
-        self.adam_spin_nbr_weight = np.zeros(
-            (self.ntypes, self.channels),
-            dtype=prec,
-        )
-
-    def call(self, spin: Any, atype: Any) -> tuple[Any, Any]:
-        """
-        Compute the l=0 and l=1 spin contributions.
-
-        Parameters
-        ----------
-        spin
-            Per-atom spin vectors with shape (N, 3).
-        atype
-            Per-atom types with shape (N,).
-
-        Returns
-        -------
-        tuple[Array, Array]
-            ``(scalar, vector)`` where ``scalar`` has shape (N, channels) for
-            the l=0 contribution and ``vector`` has shape (N, 3, channels) for
-            the packed l=1 contribution (orders m = -1, 0, +1). Both are exactly
-            zero for atom types without spin.
-        """
+    def conditioned_spin(self, spin: Any, atype: Any) -> Any:
+        """Mask non-magnetic moments before forming any contraction."""
         xp = array_api_compat.array_namespace(spin)
-        device = array_api_compat.device(spin)
-        dtype = get_xp_precision(xp, self.precision)
-        spin = xp.astype(spin, dtype)
-        index = xp.astype(atype, xp.int64)
-        spin_mask = xp_asarray_nodetach(xp, self.spin_mask[...], device=device)
-        mask = xp.take(spin_mask, index, axis=0)[:, None]  # (N, 1)
-
-        # === l=0: smooth invariant magnitude embedding ===
-        mag2 = xp.sum(spin * spin, axis=-1, keepdims=True)  # (N, 1)
-        scalar = self.mag_layer2(self.mag_layer1(mag2)) * mask  # (N, C)
-
-        # === l=1: equivariant direction embedding (linear in spin) ===
-        cart_to_l1 = xp.astype(
-            xp_asarray_nodetach(xp, self.cart_to_l1[...], device=device), dtype
+        mask = xp_asarray_nodetach(
+            xp, self.spin_mask, device=array_api_compat.device(spin)
         )
-        # einsum "dk,nk->nd" as a matmul against the transposed projection.
-        l1 = xp.matmul(spin, xp.permute_dims(cart_to_l1, (1, 0)))  # (N, 3)
-        weight_table = xp_asarray_nodetach(
-            xp, self.adam_spin_vec_weight[...], device=device
+        return (
+            xp.astype(spin, get_xp_precision(xp, self.precision))
+            * xp.take(mask, xp.astype(atype, xp.int64), axis=0)[:, None]
         )
-        weight = xp.take(weight_table, index, axis=0)  # (N, C)
-        vector = l1[:, :, None] * weight[:, None, :] * mask[:, :, None]  # (N, 3, C)
 
-        return scalar, vector
-
-    def edge_l1(
-        self,
-        spin: Any,
-        atype: Any,
-        edge_cache: EdgeCache,
-    ) -> Any:
-        """
-        Build the per-edge neighbor-spin l=1 message for the GIE aggregation.
-
-        Each edge carries the packed ``l = 1`` coefficients of the source
-        (neighbor) spin, scaled by a per-source-type per-channel weight and
-        gated by the C^3 envelope. The message is returned per edge; the
-        geometric initial embedding folds it into the l=1 rows and applies the
-        shared scatter and degree normalization, so a neighbor's spin direction
-        enters an atom's l=1 backbone before any interaction block (the spin
-        analogue of the geometric initial embedding).
-
-        Parameters
-        ----------
-        spin
-            Per-node spin vectors with shape (N, 3).
-        atype
-            Per-node types with shape (N,).
-        edge_cache
-            Edge cache providing ``src`` and ``edge_env``.
-
-        Returns
-        -------
-        Array
-            Per-edge packed l=1 message with shape (E, 3, channels), exactly
-            zero for non-magnetic neighbors.
-        """
+    def call(self, spin: Any, atype: Any) -> Any:
+        """Return scalar type conditioning with shape (N, channels)."""
         xp = array_api_compat.array_namespace(spin)
-        device = array_api_compat.device(spin)
-        dtype = get_xp_precision(xp, self.precision)
-        spin = xp.astype(spin, dtype)
-        src = xp.astype(edge_cache.src, xp.int64)
-        spin_src = xp.take(spin, src, axis=0)  # (E, 3)
-        atype_src = xp.take(xp.astype(atype, xp.int64), src, axis=0)  # (E,)
-
-        # Packed l=1 of the neighbor spin; the global-frame vector needs no
-        # Wigner-D rotation (it rotates with the geometry by construction).
-        cart_to_l1 = xp.astype(
-            xp_asarray_nodetach(xp, self.cart_to_l1[...], device=device), dtype
+        moment = self.conditioned_spin(spin, atype)
+        magnitude = xp.sum(moment * moment, axis=-1, keepdims=True)
+        # Subtract the activation at zero, including for sigmoid-like choices.
+        hidden = self.mag_layer1(magnitude) - self.mag_layer1(
+            xp.zeros((1, 1), dtype=moment.dtype, device=array_api_compat.device(moment))
         )
-        # einsum "dk,ek->ed" as a matmul against the transposed projection.
-        l1 = xp.matmul(spin_src, xp.permute_dims(cart_to_l1, (1, 0)))  # (E, 3)
-        weight_table = xp_asarray_nodetach(
-            xp, self.adam_spin_nbr_weight[...], device=device
+        return self.mag_layer2(hidden)
+
+    def edge_features(self, spin: Any, atype: Any, edge_cache: EdgeCache) -> Any:
+        """Return enveloped pair conditioning with shape (E, n_radial)."""
+        moment = self.conditioned_spin(spin, atype)
+        features = spin_pair_invariants(
+            moment, edge_cache.src, edge_cache.dst, edge_cache.edge_vec, self.spin_mode
         )
-        weight = xp.take(weight_table, atype_src, axis=0)  # (E, C)
-        spin_mask = xp_asarray_nodetach(xp, self.spin_mask[...], device=device)
-        mask = xp.take(spin_mask, atype_src, axis=0)  # (E,)
-        gate = edge_cache.edge_env * mask[:, None]  # (E, 1)
-        return gate[:, :, None] * l1[:, :, None] * weight[:, None, :]  # (E, 3, C)
-
-    def _build_cart_to_l1_matrix(self) -> np.ndarray:
-        """
-        Build the ``(3, 3)`` Cartesian-to-packed-``l=1`` projection.
-
-        The packed ``l = 1`` coefficient of a vector ``v`` is obtained by
-        projecting the skew-symmetric matrix ``[v]_x`` onto the antisymmetric
-        ``l = 1`` block of :func:`build_cartesian_basis`. With packed order
-        ``m = -1, 0, +1``, row ``d`` and Cartesian component ``k`` give
-        ``M[d, k] = <[e_k]_x, B[1 + d]>_F``, so ``coeff = M @ v`` and
-        ``M @ (R v) = D^1(R) (M @ v)``.
-        """
-        prec = PRECISION_DICT[self.precision.lower()]
-        basis_l1 = build_cartesian_basis(1, dtype=prec)[1:4]
-        # Skew (cross-product) matrices of the Cartesian unit vectors, following
-        # ``[v]_x w = v x w`` (matching ``build_edge_cartesian_tensors``).
-        skew_basis = np.zeros((3, 3, 3), dtype=prec)
-        skew_basis[0, 1, 2], skew_basis[0, 2, 1] = -1.0, 1.0
-        skew_basis[1, 0, 2], skew_basis[1, 2, 0] = 1.0, -1.0
-        skew_basis[2, 0, 1], skew_basis[2, 1, 0] = -1.0, 1.0
-        return np.einsum("kij,dij->dk", skew_basis, basis_l1)
+        return self.pair_layer(features) * edge_cache.edge_env
 
     def _variables(self) -> dict[str, np.ndarray]:
-        """Variables keyed by the pt ``state_dict`` key names."""
+        """Return variables keyed by the PyTorch state names."""
         return {
             "mag_layer1.matrix": to_numpy_array(self.mag_layer1.w),
             "mag_layer2.matrix": to_numpy_array(self.mag_layer2.w),
-            "adam_spin_vec_weight": to_numpy_array(self.adam_spin_vec_weight),
-            "adam_spin_nbr_weight": to_numpy_array(self.adam_spin_nbr_weight),
+            "pair_layer.matrix": to_numpy_array(self.pair_layer.w),
         }
 
     def _load_variables(self, variables: dict[str, Any]) -> None:
-        """Load variables keyed by the pt ``state_dict`` key names."""
+        """Load the scalar and pair projections."""
         prec = PRECISION_DICT[self.precision.lower()]
-        self.mag_layer1.w = np.asarray(variables["mag_layer1.matrix"], dtype=prec)
-        self.mag_layer2.w = np.asarray(variables["mag_layer2.matrix"], dtype=prec)
-        self.adam_spin_vec_weight = np.asarray(
-            variables["adam_spin_vec_weight"], dtype=prec
-        )
-        self.adam_spin_nbr_weight = np.asarray(
-            variables["adam_spin_nbr_weight"], dtype=prec
-        )
+        for name in ("mag_layer1", "mag_layer2", "pair_layer"):
+            getattr(self, name).w = np.asarray(variables[f"{name}.matrix"], dtype=prec)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the SpinEmbedding to a dict."""
@@ -1275,6 +1248,8 @@ class SpinEmbedding(NativeOP):
             "config": {
                 "ntypes": self.ntypes,
                 "channels": self.channels,
+                "n_radial": self.n_radial,
+                "spin_mode": self.spin_mode,
                 "use_spin": self.spin_flags,
                 "activation_function": self.activation_function,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,

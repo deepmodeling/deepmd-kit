@@ -51,6 +51,13 @@ def xp_asarray_nodetach(
     """
     if array_api_compat.is_array_api_obj(obj):
         if array_api_compat.array_namespace(obj) is xp:
+            # NNX variables expose the JAX namespace but are not JAX array
+            # leaves. Materialize their differentiable array value before
+            # passing it to compiled array operations.
+            if array_api_compat.is_jax_namespace(
+                xp
+            ) and not array_api_compat.is_jax_array(obj):
+                obj = xp.asarray(obj)
             if dtype is not None and obj.dtype != dtype:
                 obj = xp.astype(obj, dtype)
             if device is not None and array_api_compat.device(obj) != device:
@@ -120,6 +127,18 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     return xp_swapaxes(out, axis, -1)
 
 
+def xp_matmul(left: Array, right: Array) -> Array:
+    """Multiply matrices using the backend's active precision policy."""
+    xp = array_api_compat.array_namespace(left, right)
+    if array_api_compat.is_jax_namespace(xp):
+        from deepmd.jax.utils.precision import (
+            matmul,
+        )
+
+        return matmul(left, right)
+    return xp.matmul(left, right)
+
+
 def xp_einsum(subscripts: str, *operands: Array) -> Array:
     """Contract *operands* according to the Einstein summation *subscripts*.
 
@@ -176,10 +195,12 @@ def xp_einsum(subscripts: str, *operands: Array) -> Array:
         return torch.einsum(subscripts, *operands)
     if array_api_compat.is_numpy_array(operands[0]):
         return np.einsum(subscripts, *operands)
-    if array_api_compat.is_jax_array(operands[0]):
-        import jax.numpy as jnp
+    if array_api_compat.is_jax_namespace(array_api_compat.array_namespace(*operands)):
+        from deepmd.jax.utils.precision import (
+            einsum,
+        )
 
-        return jnp.einsum(subscripts, *operands)
+        return einsum(subscripts, *operands)
     return _xp_einsum_fallback(subscripts, *operands)
 
 
@@ -383,14 +404,13 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
 
 
 def xp_hint_dynamic_size(x: Array) -> None:
-    """Mark a data-dependent leading dimension as a valid size for torch.export.
+    """Check that a data-dependent leading dimension is nonnegative for torch.export.
 
     Under symbolic tracing (``make_fx`` / ``torch.export``) the length of a
     data-dependent array (e.g. the output of ``nonzero`` or a tensor-``repeat``)
-    is an UNBACKED SymInt; guarding Python control flow or allocations on it
-    raises ``GuardOnDataDependentSymNode``. ``torch._check_is_size`` registers
-    the ``>= 0`` size hint that lets the tracer treat it as a proper dimension
-    (recorded as a ``sym_constrain_range_for_size`` node, preserved by AOTI).
+    is an unbacked SymInt. These operations already mark their output dimensions
+    as sizes; ``torch._check`` expresses the nonnegative constraint without
+    guarding on a concrete value.
 
     No-op for numpy / jax / eager-torch concrete shapes — safe to call
     unconditionally from dpmodel code (torch imported lazily, torch arrays only).
@@ -398,7 +418,7 @@ def xp_hint_dynamic_size(x: Array) -> None:
     if array_api_compat.is_torch_array(x):
         import torch
 
-        torch._check_is_size(x.shape[0])
+        torch._check(x.shape[0] >= 0)
 
 
 def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
@@ -514,6 +534,26 @@ def xp_sigmoid(x: Array) -> Array:
         return torch.sigmoid(x)
     xp = array_api_compat.array_namespace(x)
     return 1 / (1 + xp.exp(-x))
+
+
+def xp_softmax(logits: Array) -> Array:
+    """Compute the softmax over the last axis.
+
+    The logits are shifted by their maximum, so large logits do not overflow.
+
+    Parameters
+    ----------
+    logits : Array
+        Input array with shape (..., K).
+
+    Returns
+    -------
+    Array
+        Weights with shape (..., K), summing to one over the last axis.
+    """
+    xp = array_api_compat.array_namespace(logits)
+    shifted = xp.exp(logits - xp.max(logits, axis=-1, keepdims=True))
+    return shifted / xp.sum(shifted, axis=-1, keepdims=True)
 
 
 def xp_erf(x: Array) -> Array:

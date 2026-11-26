@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Numerical safeguards around the gradient of a training step.
 
-Two hazards are handled here, both of which have to be addressed without
+Three hazards are handled here, all of which have to be addressed without
 slowing the step down.
 
 A gradient that is large but still representable can overflow the sum of
@@ -13,6 +13,10 @@ A gradient that is genuinely non-finite must stop the run before it reaches
 a checkpoint, but reading that condition back on every step would serialize
 the host against the device. The condition is therefore accumulated on
 device and read only at a checkpoint boundary.
+
+Gradients of different parameters that share memory take every in-place update,
+such as the scaling of clipping, more than once. Copying one gradient of every
+such pair before it is accumulated separates them.
 """
 
 from __future__ import (
@@ -24,6 +28,7 @@ from typing import (
 )
 
 import torch
+import torch.distributed as dist
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -35,6 +40,7 @@ __all__ = [
     "NonFiniteGradGuard",
     "clip_grad_norm_",
     "raise_nonfinite_gradient_norm",
+    "separate_gradient_storage",
 ]
 
 
@@ -93,6 +99,26 @@ def clip_grad_norm_(
     return total_norm
 
 
+def separate_gradient_storage(parameters: Iterable[torch.nn.Parameter]) -> None:
+    """
+    Give the gradient of every parameter storage of its own.
+
+    The backward of a sum of two joined arrays hands slices of one buffer to
+    the parameters of both, in eager and in compiled execution, and autograd
+    stores such a slice as the gradient without a copy. The hook copies the
+    gradient of a parameter before it is accumulated; copying one side of every
+    pair suffices.
+
+    Parameters
+    ----------
+    parameters : Iterable[torch.nn.Parameter]
+        Parameters whose gradients may share memory with the gradient of
+        another parameter; those without gradients and repetitions are skipped.
+    """
+    for parameter in {id(p): p for p in parameters if p.requires_grad}.values():
+        parameter.register_hook(torch.clone)
+
+
 class NonFiniteGradGuard:
     """
     Detect non-finite gradient norms without a per-step host synchronization.
@@ -123,6 +149,8 @@ class NonFiniteGradGuard:
     def raise_if_nonfinite(
         self,
         named_parameters: Callable[[], Iterable[tuple[str, torch.nn.Parameter]]],
+        *,
+        synchronize: bool = False,
     ) -> None:
         """
         Raise if any norm accumulated since the previous call was non-finite.
@@ -134,15 +162,22 @@ class NonFiniteGradGuard:
         ----------
         named_parameters : Callable[[], Iterable[tuple[str, torch.nn.Parameter]]]
             Accessor for the model's named parameters, consulted only when raising.
+        synchronize : bool, optional
+            Agree on divergence across all ranks before raising or entering
+            checkpoint collectives. Every rank must participate when enabled.
 
         Raises
         ------
         RuntimeError
             If a non-finite gradient norm was recorded.
         """
-        if self._nonfinite is None:
-            return
-        diverged = bool(self._nonfinite)
+        diverged = self._nonfinite is not None and bool(self._nonfinite)
+        if synchronize:
+            # Agree before diagnostics too: inspecting sharded gradients can
+            # itself require collectives, so all ranks must take that path.
+            gathered = [False] * dist.get_world_size()
+            dist.all_gather_object(gathered, diverged)
+            diverged = any(gathered)
         self._nonfinite = None
         if diverged:
             raise_nonfinite_gradient_norm(named_parameters())

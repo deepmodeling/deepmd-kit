@@ -40,6 +40,7 @@ Specifically, there are several parts that need to be modified:
 - {ref}`model/shared_dict <model/shared_dict>`: The parameter definition of the shared part, including various descriptors,
   type maps (or even fitting nets can be shared). Each module can be defined with a user-defined `part_key`, such as `my_descriptor`.
   The content needs to align with the corresponding definition in the single-task training model component, such as the definition of the descriptor.
+  The {ref}`spin <model/spin>` and `preset_out_bias` settings can be defined here as well, so that branches with the same magnetic elements or the same reference energies write them once.
 
 - {ref}`model/model_dict <model/model_dict>`: The core definition of the model part and the explanation of sharing rules,
   starting with user-defined model name keys `model_key`, such as `my_model_1`.
@@ -58,6 +59,7 @@ Specifically, there are several parts that need to be modified:
       - Level 1: Shares type embedding only
     - Not all descriptors support all levels (e.g., se_a only supports level 0)
   - For fitting nets, we only support the default `shared_level`=0, where all parameters will be shared except for `bias_atom_e` and `case_embd`.
+  - `spin` and `preset_out_bias` are filled in the same way, such as `"spin": "my_spin"`. Each branch that names the entry uses it as if it were written in the branch; a branch that does not name it is unaffected.
   - To conduct multitask training, there are two typical approaches:
     1. **Descriptor sharing only**: Share the descriptor with `shared_level`=0. See [here](../../examples/water_multi_task/pytorch_example/input_torch.json) for an example.
     1. **Descriptor and fitting network sharing with data identification**:
@@ -76,7 +78,7 @@ Specifically, there are several parts that need to be modified:
 
 - (Optional) {ref}`training/model_prob <training/model_prob>`: The sampling weight settings corresponding to each `model_key`, i.e., the probability weight in the training step.
   You can specify any positive real number weight for each task. The higher the weight, the higher the probability of being sampled in each training.
-  This setting is optional, and if not set, tasks will be sampled with weights proportional to the number of systems in each task. It is only used when `num_epoch_dict` is not set.
+  This setting is optional and is only used when `num_epoch_dict` is not set. The default weights use each task's native data size: the number of NPY/HDF5 systems, or the number of retained LMDB frames on the PyTorch and PyTorch Exportable backends. Grouped inputs add these native sizes, without applying within-task group probabilities. Both PyTorch backends follow the established PyTorch rule; default task weights do not depend on batch size or nominal epoch length.
 
 - (Optional) {ref}`training/num_epoch_dict <training/num_epoch_dict>`: The number of training epochs for each model branch, specified as a dictionary mapping `model_key` to epoch values (can be fractional).
   This allows different tasks to train for different numbers of epochs, which is particularly useful for multi-task fine-tuning scenarios
@@ -85,6 +87,16 @@ Specifically, there are several parts that need to be modified:
   `model_prob[i] = num_epoch_dict[i] * per_task_total[i] / sum_j(num_epoch_dict[j] * per_task_total[j])`.
   The total training steps are computed as `ceil(sum_i(num_epoch_dict[i] * per_task_total[i]))`.
   This parameter is mutually exclusive with `training/model_prob` and `training/num_steps`.
+
+- (Optional, PyTorch Exportable only) {ref}`training/task_sampling <training/task_sampling>` controls task selection across distributed ranks.
+  This option requires at least two tasks; omit it for single-task training.
+  The default, `"synchronized"`, selects the same task on every rank at each step.
+  With `"independent"`, each rank samples its own task using the same task probabilities; one distributed update can therefore combine gradients from different tasks.
+  Task probabilities and within-task data sampling are unchanged. These modes have the same expected task proportions but need not produce equivalent optimizer updates.
+  Independent task random streams are derived from `training/seed` and the rank, and each rank's stream is saved in checkpoints for restart.
+  Changing the mode when restarting requires `training/reset_data_progress: true`, which resets data progress as well as task selection.
+  Independent-mode checkpoints identify their data-progress layout with `format: "per_rank_task_rng"` and store the authoritative selection RNG state for each rank.
+  The default mode retains the existing `version: 1` data-progress format. Independent-mode checkpoints require a reader that supports the new format tag.
 
 An example input for multi-task training two models in water system is shown as following:
 

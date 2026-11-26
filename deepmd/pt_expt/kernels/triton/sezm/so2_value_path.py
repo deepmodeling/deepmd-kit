@@ -308,6 +308,36 @@ def _rotate_mix_backward_reference(
     return grad_x_edge, grad_wigner, grad_kc
 
 
+def _order_bmm(value: Tensor, weight: Tensor) -> Tensor:
+    """Contract the order stripes against either a dense or shared weight."""
+    if value.shape[-1] == weight.shape[-2]:
+        return torch.bmm(value, weight)
+    focus, edges, _ = value.shape
+    width = weight.shape[-2]
+    return torch.bmm(value.reshape(focus, 2 * edges, width), weight).reshape(
+        focus, edges, 2 * weight.shape[-1]
+    )
+
+
+def _order_weight_grad(
+    transposed_input: Tensor,
+    grad: Tensor,
+    *,
+    out: Tensor | None = None,
+    width: int | None = None,
+) -> Tensor:
+    """Sum both component contractions for a shared order weight."""
+    width = out.shape[-2] if out is not None else width
+    if width == transposed_input.shape[-2]:
+        return torch.bmm(transposed_input, grad, out=out)
+    result = torch.bmm(transposed_input[:, :width], grad[:, :, :width])
+    result = result + torch.bmm(transposed_input[:, width:], grad[:, :, width:])
+    if out is not None:
+        out.copy_(result)
+        return out
+    return result
+
+
 def _mixing_stack_reference(
     u0: Tensor,
     alpha: Tensor,
@@ -332,7 +362,7 @@ def _mixing_stack_reference(
     z_saved = []
     for layer in range(n_gated):
         z0 = torch.bmm(u[:, :, :m0], w0_all[layer])
-        z1 = torch.bmm(u[:, :, m0:], w1_all[layer])
+        z1 = _order_bmm(u[:, :, m0:], w1_all[layer])
         z_saved.append(torch.cat([z0, z1], dim=-1))
         z_scalar = z0[:, :, :focus_dim]
         sig = torch.sigmoid(torch.bmm(z_scalar, gw_all[layer]))  # (F, E, lmax*Cf)
@@ -348,7 +378,7 @@ def _mixing_stack_reference(
     u_final = u
     out = u.clone()
     out[:, :, :m0] += torch.bmm(u[:, :, :m0], w0_all[n_gated])
-    out[:, :, m0:] += torch.bmm(u[:, :, m0:], w1_all[n_gated])
+    out[:, :, m0:] += _order_bmm(u[:, :, m0:], w1_all[n_gated])
     if apply_alpha:
         out = out * alpha.transpose(0, 1).unsqueeze(-1).to(out.dtype)
     x_local = out.permute(1, 0, 2).contiguous()
@@ -408,11 +438,15 @@ def _mixing_stack_backward_reference(
     g = g_edge.permute(1, 0, 2)  # (F, E, ROW)
     g_cur = g.clone()
     g_cur[:, :, :m0] += torch.bmm(g[:, :, :m0], w0t_all[n_gated])
-    g_cur[:, :, m0:] += torch.bmm(g[:, :, m0:], w1t_all[n_gated])
+    g_cur[:, :, m0:] += _order_bmm(g[:, :, m0:], w1t_all[n_gated])
     if grad_u_upstream is not None:
         g_cur = g_cur + grad_u_upstream
     grad_w0_layers.append(torch.bmm(u_final[:, :, :m0].transpose(1, 2), g[:, :, :m0]))
-    grad_w1_layers.append(torch.bmm(u_final[:, :, m0:].transpose(1, 2), g[:, :, m0:]))
+    grad_w1_layers.append(
+        _order_weight_grad(
+            u_final[:, :, m0:].transpose(1, 2), g[:, :, m0:], width=w1t_all.shape[-1]
+        )
+    )
     u_next = u_final
     for layer in range(n_gated - 1, -1, -1):
         upstream_layers.append(g_cur)
@@ -457,11 +491,15 @@ def _mixing_stack_backward_reference(
         u_next = u_next - act
         input_layers.append(u_next)
         grad_w0_layers.append(torch.bmm(u_next[:, :, :m0].transpose(1, 2), gz0))
-        grad_w1_layers.append(torch.bmm(u_next[:, :, m0:].transpose(1, 2), gz1))
+        grad_w1_layers.append(
+            _order_weight_grad(
+                u_next[:, :, m0:].transpose(1, 2), gz1, width=w1t_all.shape[-1]
+            )
+        )
         grad_gw_layers.append(torch.bmm(z_scalar.transpose(1, 2), g_logit))
         g_next = g_cur.clone()
         g_next[:, :, :m0] += torch.bmm(gz0, w0t_all[layer])
-        g_next[:, :, m0:] += torch.bmm(gz1, w1t_all[layer])
+        g_next[:, :, m0:] += _order_bmm(gz1, w1t_all[layer])
         g_cur = g_next
     n_focus = g_cur.shape[0]
     grad_w0_all = torch.stack(grad_w0_layers[:0:-1] + grad_w0_layers[:1])
@@ -504,13 +542,16 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
     def _rotate_mix_fwd_kernel(
         x_ptr,  # (N, D, C_wide), strides (x_sn, x_sd, 1)
         src_ptr,  # (E,)
-        w_ptr,  # (E, D, D) block-diagonal Wigner-D, contiguous
+        w_ptr,  # (E, D_w, D_w) block-diagonal Wigner-D, D_w >= (L + 1)^2
         kc_ptr,  # (E, KSZ * RANK) compact kernel, or (E, L+1, CW) when RANK == 0
         cb_ptr,  # (RANK, CW) channel basis (unread when RANK == 0)
         u_ptr,  # (F, E, ROW) focus-major output
         n_edge,
         x_sn,
         x_sd,
+        w_se,  # Wigner strides: edge, row, column
+        w_sr,
+        w_sk,
         L: tl.constexpr,
         CF: tl.constexpr,
         CW: tl.constexpr,  # true C_wide; BC = next_power_of_2(CW) lanes with mask
@@ -541,10 +582,11 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         x_base = x_ptr + src * x_sn
         # PACKED: wigner holds the (E, 3*D-2) structural band (flash packed
         # convention); the band slots replace the dense (row, column) offsets.
+        # A dense surface is addressed through its own strides.
         if PACKED:
             d_base = w_ptr + edge * (3 * DIM - 2)
         else:
-            d_base = w_ptr + edge * DIM * DIM
+            d_base = w_ptr + edge * w_se
 
         # === Phase 1. Rotate to the local frame (registers) ===
         xrows = ()
@@ -561,20 +603,24 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             acc0 = tl.zeros((BC,), dtype=tl.float32)
             accm = tl.zeros((BC,), dtype=tl.float32)
             accp = tl.zeros((BC,), dtype=tl.float32)
+            # The band slots are contiguous; a dense surface steps through
+            # its column stride.
             if PACKED:
                 off0, offm, offp = base, DIM + base - 1, 2 * DIM + base - 2
+                sk = 1
             else:
                 off0, offm, offp = (
-                    r0 * DIM + base,
-                    (r0 - 1) * DIM + base,
-                    (r0 + 1) * DIM + base,
+                    r0 * w_sr + base * w_sk,
+                    (r0 - 1) * w_sr + base * w_sk,
+                    (r0 + 1) * w_sr + base * w_sk,
                 )
+                sk = w_sk
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[l * l + j]
-                acc0 += tl.load(d_base + off0 + j) * xv
+                acc0 += tl.load(d_base + off0 + j * sk) * xv
                 if l >= 1:
-                    accm += tl.load(d_base + offm + j) * xv
-                    accp += tl.load(d_base + offp + j) * xv
+                    accm += tl.load(d_base + offm + j * sk) * xv
+                    accp += tl.load(d_base + offp + j * sk) * xv
             rows0 = rows0 + (acc0,)
             if l >= 1:
                 rows_m = rows_m + (accm,)
@@ -657,6 +703,12 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         n_edge,
         x_sn,
         x_sd,
+        w_se,  # Wigner strides: edge, row, column
+        w_sr,
+        w_sk,
+        gw_se,  # Wigner-gradient strides: edge, row, column
+        gw_sr,
+        gw_sk,
         L: tl.constexpr,
         CF: tl.constexpr,
         CW: tl.constexpr,
@@ -692,7 +744,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         if PACKED:
             d_base = w_ptr + edge * (3 * DIM - 2)
         else:
-            d_base = w_ptr + edge * DIM * DIM
+            d_base = w_ptr + edge * w_se
         if RANK == 0:
             kc_base = kc_ptr + edge * NS0 * CW
             gkc_base = gkc_ptr + edge * NS0 * CW
@@ -716,20 +768,24 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             acc0 = tl.zeros((BC,), dtype=tl.float32)
             accm = tl.zeros((BC,), dtype=tl.float32)
             accp = tl.zeros((BC,), dtype=tl.float32)
+            # The band slots are contiguous; a dense surface steps through
+            # its column stride.
             if PACKED:
                 off0, offm, offp = base, DIM + base - 1, 2 * DIM + base - 2
+                sk = 1
             else:
                 off0, offm, offp = (
-                    r0 * DIM + base,
-                    (r0 - 1) * DIM + base,
-                    (r0 + 1) * DIM + base,
+                    r0 * w_sr + base * w_sk,
+                    (r0 - 1) * w_sr + base * w_sk,
+                    (r0 + 1) * w_sr + base * w_sk,
                 )
+                sk = w_sk
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[l * l + j]
-                acc0 += tl.load(d_base + off0 + j) * xv
+                acc0 += tl.load(d_base + off0 + j * sk) * xv
                 if l >= 1:
-                    accm += tl.load(d_base + offm + j) * xv
-                    accp += tl.load(d_base + offp + j) * xv
+                    accm += tl.load(d_base + offm + j * sk) * xv
+                    accp += tl.load(d_base + offp + j * sk) * xv
             rows0 = rows0 + (acc0,)
             if l >= 1:
                 rows_m = rows_m + (accm,)
@@ -784,7 +840,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         if PACKED:
             gd_base = gw_ptr + edge * (3 * DIM - 2)
         else:
-            gd_base = gw_ptr + edge * DIM * DIM
+            gd_base = gw_ptr + edge * gw_se
         for l in tl.static_range(L + 1):
             base = l * l
             r0 = base + l
@@ -828,22 +884,28 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                 col = base + j
                 if PACKED:
                     a0, am, ap = col, DIM + col - 1, 2 * DIM + col - 2
+                    ga0, gam, gap = a0, am, ap
                 else:
                     a0, am, ap = (
-                        r0 * DIM + col,
-                        (r0 - 1) * DIM + col,
-                        (r0 + 1) * DIM + col,
+                        r0 * w_sr + col * w_sk,
+                        (r0 - 1) * w_sr + col * w_sk,
+                        (r0 + 1) * w_sr + col * w_sk,
+                    )
+                    ga0, gam, gap = (
+                        r0 * gw_sr + col * gw_sk,
+                        (r0 - 1) * gw_sr + col * gw_sk,
+                        (r0 + 1) * gw_sr + col * gw_sk,
                     )
                 xv = xrows[l * l + j]
                 w0 = tl.load(d_base + a0)
                 gx_row = w0 * g0
-                tl.store(gd_base + a0, tl.sum(g0 * xv))
+                tl.store(gd_base + ga0, tl.sum(g0 * xv))
                 if l >= 1:
                     wmv = tl.load(d_base + am)
                     wpv = tl.load(d_base + ap)
                     gx_row += wmv * gm + wpv * gp
-                    tl.store(gd_base + am, tl.sum(gm * xv))
-                    tl.store(gd_base + ap, tl.sum(gp * xv))
+                    tl.store(gd_base + gam, tl.sum(gm * xv))
+                    tl.store(gd_base + gap, tl.sum(gp * xv))
                 tl.store(
                     gxe_ptr + edge * DIM * CW + col * CW + chan, gx_row, mask=cmask
                 )
@@ -862,6 +924,12 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         n_edge,
         x_sn,
         x_sd,
+        w_se,  # Wigner strides: edge, row, column
+        w_sr,
+        w_sk,
+        gw_se,  # Wigner-gradient strides: edge, row, column
+        gw_sr,
+        gw_sk,
         L: tl.constexpr,
         CF: tl.constexpr,
         CW: tl.constexpr,
@@ -916,8 +984,8 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             d_base = w_ptr + eq * (3 * DIM - 2)
             gd_base = gw_ptr + eq * (3 * DIM - 2)
         else:
-            d_base = w_ptr + eq * DIM * DIM
-            gd_base = gw_ptr + eq * DIM * DIM
+            d_base = w_ptr + eq * w_se
+            gd_base = gw_ptr + eq * gw_se
         gxe_base = gxe_ptr + (eq * DIM * CW)[:, None]
         if RANK == 0:
             kc_base = kc_ptr + (eq * NS0 * CW)[:, None]
@@ -960,21 +1028,25 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             xl0 = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
             xlm = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
             xlp = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+            # The band slots are contiguous; a dense surface steps through
+            # its column stride.
             if PACKED:
                 off0, offm, offp = base, DIM + base - 1, 2 * DIM + base - 2
+                sk = 1
             else:
                 off0, offm, offp = (
-                    r0 * DIM + base,
-                    (r0 - 1) * DIM + base,
-                    (r0 + 1) * DIM + base,
+                    r0 * w_sr + base * w_sk,
+                    (r0 - 1) * w_sr + base * w_sk,
+                    (r0 + 1) * w_sr + base * w_sk,
                 )
+                sk = w_sk
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[j]
-                w0 = tl.load(d_base + off0 + j, mask=e_mask, other=0.0)
+                w0 = tl.load(d_base + off0 + j * sk, mask=e_mask, other=0.0)
                 xl0 += w0[:, None] * xv
                 if l >= 1:
-                    wm = tl.load(d_base + offm + j, mask=e_mask, other=0.0)
-                    wp = tl.load(d_base + offp + j, mask=e_mask, other=0.0)
+                    wm = tl.load(d_base + offm + j * sk, mask=e_mask, other=0.0)
+                    wp = tl.load(d_base + offp + j * sk, mask=e_mask, other=0.0)
                     xlm += wm[:, None] * xv
                     xlp += wp[:, None] * xv
 
@@ -1029,22 +1101,28 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                 col = base + j
                 if PACKED:
                     a0, am, ap = col, DIM + col - 1, 2 * DIM + col - 2
+                    ga0, gam, gap = a0, am, ap
                 else:
                     a0, am, ap = (
-                        r0 * DIM + col,
-                        (r0 - 1) * DIM + col,
-                        (r0 + 1) * DIM + col,
+                        r0 * w_sr + col * w_sk,
+                        (r0 - 1) * w_sr + col * w_sk,
+                        (r0 + 1) * w_sr + col * w_sk,
+                    )
+                    ga0, gam, gap = (
+                        r0 * gw_sr + col * gw_sk,
+                        (r0 - 1) * gw_sr + col * gw_sk,
+                        (r0 + 1) * gw_sr + col * gw_sk,
                     )
                 xv = xrows[j]
                 w0 = tl.load(d_base + a0, mask=e_mask, other=0.0)
                 gx_row = w0[:, None] * g0
-                tl.store(gd_base + a0, tl.sum(g0 * xv, axis=1), mask=e_mask)
+                tl.store(gd_base + ga0, tl.sum(g0 * xv, axis=1), mask=e_mask)
                 if l >= 1:
                     wm = tl.load(d_base + am, mask=e_mask, other=0.0)
                     wp = tl.load(d_base + ap, mask=e_mask, other=0.0)
                     gx_row += wm[:, None] * gm + wp[:, None] * gp
-                    tl.store(gd_base + am, tl.sum(gm * xv, axis=1), mask=e_mask)
-                    tl.store(gd_base + ap, tl.sum(gp * xv, axis=1), mask=e_mask)
+                    tl.store(gd_base + gam, tl.sum(gm * xv, axis=1), mask=e_mask)
+                    tl.store(gd_base + gap, tl.sum(gp * xv, axis=1), mask=e_mask)
                 tl.store(gxe_base + col * CW + chan[None, :], gx_row, mask=em)
 
     @triton.jit
@@ -1337,13 +1415,15 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
+        PARITY: tl.constexpr = False,
     ):
         """``|m| = 1`` block GEMM with the gate / residual / alpha epilogue fused."""
         M0: tl.constexpr = (L + 1) * CF
-        M1: tl.constexpr = 2 * L * CF
+        M1: tl.constexpr = (1 if PARITY else 2) * L * CF
         ROW: tl.constexpr = (3 * L + 1) * CF
         LG: tl.constexpr = L * CF
-        NT: tl.constexpr = (M1 + BLOCK_N - 1) // BLOCK_N
+        NT_HALF: tl.constexpr = (M1 + BLOCK_N - 1) // BLOCK_N
+        NT: tl.constexpr = (2 if PARITY else 1) * NT_HALF
 
         pid = tl.program_id(0)
         fid = tl.program_id(1).to(tl.int64)
@@ -1356,20 +1436,23 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         mm = m_mask[:, None]
         u_row = u_ptr + fid * n_edge * ROW + offs_m * ROW
         offs_k = tl.arange(0, BLOCK_K)
-        offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+        sign = pid_n // NT_HALF if PARITY else 0
+        offs_n = (pid_n % NT_HALF) * BLOCK_N + tl.arange(0, BLOCK_N)
+        out_n = sign * M1 + offs_n
         n_mask = offs_n < M1
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        a_ptrs = u_row[:, None] + (M0 + offs_k)[None, :]
+        a_ptrs = u_row[:, None] + (M0 + sign * M1 + offs_k)[None, :]
         w_ptrs = (
             w1_ptr
             + (layer * n_focus + fid) * M1 * M1
             + offs_k[:, None] * M1
             + offs_n[None, :]
         )
-        for _ in range(0, M1, BLOCK_K):
-            a = tl.load(a_ptrs, mask=mm, other=0.0)
-            w = tl.load(w_ptrs, mask=n_mask[None, :], other=0.0)
+        for k0 in range(0, M1, BLOCK_K):
+            km = (k0 + offs_k) < M1
+            a = tl.load(a_ptrs, mask=mm & km[None, :], other=0.0)
+            w = tl.load(w_ptrs, mask=km[:, None] & n_mask[None, :], other=0.0)
             acc = tl.dot(a, w, acc, input_precision="ieee")
             a_ptrs += BLOCK_K
             w_ptrs += BLOCK_K * M1
@@ -1377,11 +1460,11 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         if SAVE_Z:
             z_row = z_ptr + (layer * n_focus + fid) * n_edge * ROW + offs_m * ROW
             tl.store(
-                z_row[:, None] + (M0 + offs_n)[None, :], acc, mask=mm & n_mask[None, :]
+                z_row[:, None] + (M0 + out_n)[None, :], acc, mask=mm & n_mask[None, :]
             )
         if HAS_GATE:
             # Both |m| = 1 stripes of degree group g share gate group g.
-            sig_cols = ((offs_n // CF) % L) * CF + (offs_n % CF)
+            sig_cols = ((out_n // CF) % L) * CF + (out_n % CF)
             sig = tl.load(
                 sig_ptr + (fid * n_edge + offs_m)[:, None] * LG + sig_cols[None, :],
                 mask=mm & n_mask[None, :],
@@ -1389,7 +1472,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             )
             acc = acc * sig
         u_t = tl.load(
-            u_row[:, None] + (M0 + offs_n)[None, :],
+            u_row[:, None] + (M0 + out_n)[None, :],
             mask=mm & n_mask[None, :],
             other=0.0,
         )
@@ -1401,9 +1484,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             v_row = v_ptr + fid * ROW + offs_m * (n_focus * ROW)
         else:
             v_row = v_ptr + fid * n_edge * ROW + offs_m * ROW
-        tl.store(
-            v_row[:, None] + (M0 + offs_n)[None, :], acc, mask=mm & n_mask[None, :]
-        )
+        tl.store(v_row[:, None] + (M0 + out_n)[None, :], acc, mask=mm & n_mask[None, :])
 
     @triton.jit
     def _stack_recompute_kernel(
@@ -2060,6 +2141,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
+        PARITY: tl.constexpr = False,
     ):
         """Backward block GEMM ``g_u = residual + gz @ W^T`` over both blocks.
 
@@ -2069,10 +2151,11 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         derived in-kernel on int64 offsets (see ``_stack_gemm_m0_kernel``).
         """
         M0: tl.constexpr = (L + 1) * CF
-        M1: tl.constexpr = 2 * L * CF
+        M1: tl.constexpr = (1 if PARITY else 2) * L * CF
         ROW: tl.constexpr = (3 * L + 1) * CF
         NT0: tl.constexpr = (M0 + BLOCK_N - 1) // BLOCK_N
-        NT1: tl.constexpr = (M1 + BLOCK_N - 1) // BLOCK_N
+        NT_HALF: tl.constexpr = (M1 + BLOCK_N - 1) // BLOCK_N
+        NT1: tl.constexpr = (2 if PARITY else 1) * NT_HALF
         NT: tl.constexpr = NT0 + NT1
 
         pid = tl.program_id(0)
@@ -2116,25 +2199,27 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             col0 = offs_n
             col_mask = n_mask
         else:
-            offs_n = (pid_n - NT0) * BLOCK_N + tl.arange(0, BLOCK_N)
+            sign = (pid_n - NT0) // NT_HALF if PARITY else 0
+            offs_n = ((pid_n - NT0) % NT_HALF) * BLOCK_N + tl.arange(0, BLOCK_N)
             n_mask = offs_n < M1
             acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-            a_ptrs = gz_row[:, None] + (M0 + offs_k)[None, :]
+            a_ptrs = gz_row[:, None] + (M0 + sign * M1 + offs_k)[None, :]
             w_ptrs = (
                 w1t_ptr
                 + (layer * n_focus + fid) * M1 * M1
                 + offs_k[:, None] * M1
                 + offs_n[None, :]
             )
-            for _ in range(0, M1, BLOCK_K):
-                a = tl.load(a_ptrs, mask=mm, other=0.0)
+            for k0 in range(0, M1, BLOCK_K):
+                km = (k0 + offs_k) < M1
+                a = tl.load(a_ptrs, mask=mm & km[None, :], other=0.0)
                 if FOLD_ALPHA:
                     a = a * alpha[:, None]
-                w = tl.load(w_ptrs, mask=n_mask[None, :], other=0.0)
+                w = tl.load(w_ptrs, mask=km[:, None] & n_mask[None, :], other=0.0)
                 acc = tl.dot(a, w, acc, input_precision="ieee")
                 a_ptrs += BLOCK_K
                 w_ptrs += BLOCK_K * M1
-            col0 = M0 + offs_n
+            col0 = M0 + sign * M1 + offs_n
             col_mask = n_mask
 
         if FOLD_ALPHA:
@@ -2304,7 +2389,7 @@ def _stack_weight_gradients(
         gz_flat[:, :, :m0],
         out=gw0[:n_gated].view(n_gated * n_focus, m0, m0),
     )
-    torch.bmm(
+    _order_weight_grad(
         u_flat[:, :, m0:].transpose(1, 2),
         gz_flat[:, :, m0:],
         out=gw1[:n_gated].view(n_gated * n_focus, m1, m1),
@@ -2312,7 +2397,7 @@ def _stack_weight_gradients(
     torch.bmm(
         u_final[:, :, :m0].transpose(1, 2), grad_final[:, :, :m0], out=gw0[n_gated]
     )
-    torch.bmm(
+    _order_weight_grad(
         u_final[:, :, m0:].transpose(1, 2), grad_final[:, :, m0:], out=gw1[n_gated]
     )
     if u0 is not None:
@@ -2321,7 +2406,7 @@ def _stack_weight_gradients(
             state.grad_z[0][:, :, :m0],
             out=gw0[0],
         )
-        torch.bmm(
+        _order_weight_grad(
             u0[:, :, m0:].transpose(1, 2),
             state.grad_z[0][:, :, m0:],
             out=gw1[0],
@@ -2512,6 +2597,17 @@ def _launch_stack_point_backward(
 # ======================================================================
 # Operator implementations (Triton on CUDA fp32, eager reference otherwise)
 # ======================================================================
+def _wigner_kernel_strides(wigner: Tensor, packed: bool) -> tuple[int, ...]:
+    """Edge, row and column strides of a Wigner operand for the kernels.
+
+    The band is 2-D and the packed kernels address it by band slot, so its
+    row and column strides are compiled out; zeros keep the argument list.
+    """
+    if packed:
+        return wigner.stride(0), 0, 0
+    return wigner.stride()
+
+
 def _rotate_mix_impl(
     x: Tensor,
     src: Tensor,
@@ -2553,6 +2649,7 @@ def _rotate_mix_impl(
         n_edge,
         x.stride(0),
         x.stride(1),
+        *_wigner_kernel_strides(wigner, packed),
         L=int(lmax),
         CF=focus_dim,
         CW=c_wide,
@@ -2616,6 +2713,8 @@ def _rotate_mix_bwd_impl(
             n_edge,
             x.stride(0),
             x.stride(1),
+            *_wigner_kernel_strides(wigner, packed),
+            *_wigner_kernel_strides(grad_wigner, packed),
             L=int(lmax),
             CF=c_wide // int(n_focus),
             CW=c_wide,
@@ -2641,6 +2740,8 @@ def _rotate_mix_bwd_impl(
         n_edge,
         x.stride(0),
         x.stride(1),
+        *_wigner_kernel_strides(wigner, packed),
+        *_wigner_kernel_strides(grad_wigner, packed),
         L=int(lmax),
         CF=c_wide // int(n_focus),
         CW=c_wide,
@@ -3012,11 +3113,13 @@ def _mixing_stack_impl(
     if _has_no_edges(n_edge):
         return x_local, z_all, u0.clone()
 
-    m0_config, m1_config, _ = stack_fp32_configs(focus_dim, lmax)
+    parity = w1_all.shape[-1] != 2 * lmax * focus_dim
+    m0_config, m1_config, _ = stack_fp32_configs(focus_dim, lmax, parity)
     m0_bm, m0_bn, m0_bk, m0_warps, m0_stages = m0_config
     m1_bm, m1_bn, m1_bk, m1_warps, m1_stages = m1_config
     m0 = (lmax + 1) * focus_dim
-    m1 = 2 * lmax * focus_dim
+    m1 = int(w1_all.shape[-1])
+    m1_tiles = (2 if parity else 1) * triton.cdiv(m1, m1_bn)
     gate_bm, gate_w, gate_s = gate_config(focus_dim, lmax)
     sig_by_bmm = focus_dim >= GATE_BMM_MIN_FOCUS_DIM
     m0_gate_config = stack_m0_gate_config(focus_dim, lmax)
@@ -3091,7 +3194,7 @@ def _mixing_stack_impl(
                 num_stages=gate_s,
             )
         wrap_triton(_stack_gemm_m1_kernel)[
-            (triton.cdiv(n_edge, m1_bm) * triton.cdiv(m1, m1_bn), n_focus)
+            (triton.cdiv(n_edge, m1_bm) * m1_tiles, n_focus)
         ](
             u,
             w1_all,
@@ -3103,6 +3206,7 @@ def _mixing_stack_impl(
             layer,
             L=lmax,
             CF=focus_dim,
+            PARITY=parity,
             HAS_GATE=True,
             V_EDGE_MAJOR=False,
             APPLY_ALPHA=False,
@@ -3144,7 +3248,7 @@ def _mixing_stack_impl(
         num_stages=m0_stages,
     )
     wrap_triton(_stack_gemm_m1_kernel)[
-        (triton.cdiv(n_edge, m1_bm) * triton.cdiv(m1, m1_bn), n_focus)
+        (triton.cdiv(n_edge, m1_bm) * m1_tiles, n_focus)
     ](
         u,
         w1_all,
@@ -3156,6 +3260,7 @@ def _mixing_stack_impl(
         n_gated,
         L=lmax,
         CF=focus_dim,
+        PARITY=parity,
         HAS_GATE=False,
         V_EDGE_MAJOR=True,
         APPLY_ALPHA=apply_alpha,
@@ -3231,11 +3336,12 @@ def _stack_backward_traversal(
     focus_dim = int(focus_dim)
     device, dtype = grad_out.device, grad_out.dtype
 
-    _, _, bwd_config = stack_fp32_configs(focus_dim, lmax)
+    parity = w1t_all.shape[-1] != 2 * lmax * focus_dim
+    _, _, bwd_config = stack_fp32_configs(focus_dim, lmax, parity)
     block_m, block_n, block_k, warps, stages = bwd_config
     m0 = (lmax + 1) * focus_dim
-    m1 = 2 * lmax * focus_dim
-    n_tiles = triton.cdiv(m0, block_n) + triton.cdiv(m1, block_n)
+    m1 = int(w1t_all.shape[-1])
+    n_tiles = triton.cdiv(m0, block_n) + (2 if parity else 1) * triton.cdiv(m1, block_n)
     point_schedule = _point_backward_schedule(
         focus_dim, lmax, train=with_weights or keep
     )
@@ -3252,14 +3358,18 @@ def _stack_backward_traversal(
         if keep and n_gated > 0
         else torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
     )
-    # Inference retains no per-layer upstream state. Two buffers carry the
-    # reverse recurrence without exposing an unrolled layer stack for
-    # functionalization into select-scatter copies.
-    g_spare = (
-        torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
-        if not keep and n_gated > 0
-        else None
-    )
+    # Without weight gradients or saved per-layer state, the owned residual
+    # buffer can also hold the next layer's gradient. The GEMM reads its matrix
+    # input from the separate gz buffer; each output tile reads only its own
+    # residual elements before overwriting them. Never alias gz or caller inputs.
+    # Weight-gradient and second-order traversals retain their original buffers.
+    g_spare = None
+    if not keep and n_gated > 0:
+        g_spare = (
+            torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
+            if with_weights
+            else g_cur
+        )
     wrap_triton(_stack_gemm_bwd_kernel)[
         (triton.cdiv(n_edge, block_m) * n_tiles, n_focus)
     ](
@@ -3273,6 +3383,7 @@ def _stack_backward_traversal(
         n_gated,
         L=lmax,
         CF=focus_dim,
+        PARITY=parity,
         G_EDGE_MAJOR=True,
         FOLD_ALPHA=apply_alpha,
         RES_IS_GZ=True,
@@ -3313,7 +3424,9 @@ def _stack_backward_traversal(
             (n_gated + 1, n_focus, m0, m0), device=device, dtype=dtype
         )
         grad_w1_all = torch.empty(
-            (n_gated + 1, n_focus, m1, m1), device=device, dtype=dtype
+            (n_gated + 1, n_focus, w1t_all.shape[-1], w1t_all.shape[-1]),
+            device=device,
+            dtype=dtype,
         )
         grad_gw_all = torch.empty(
             (n_gated, n_focus, focus_dim, lmax * focus_dim),
@@ -3325,7 +3438,7 @@ def _stack_backward_traversal(
             grad_final[:, :, :m0],
             out=grad_w0_all[n_gated],
         )
-        torch.bmm(
+        _order_weight_grad(
             u_final[:, :, m0:].transpose(1, 2),
             grad_final[:, :, m0:],
             out=grad_w1_all[n_gated],
@@ -3425,7 +3538,7 @@ def _stack_backward_traversal(
                 gz[:, :, :m0],
                 out=grad_w0_all[layer],
             )
-            torch.bmm(
+            _order_weight_grad(
                 u_in[:, :, m0:].transpose(1, 2),
                 gz[:, :, m0:],
                 out=grad_w1_all[layer],
@@ -3457,6 +3570,7 @@ def _stack_backward_traversal(
             layer,
             L=lmax,
             CF=focus_dim,
+            PARITY=parity,
             G_EDGE_MAJOR=False,
             FOLD_ALPHA=False,
             RES_IS_GZ=False,
@@ -3604,7 +3718,7 @@ def _mixing_stack_train_bwd_impl(
     device, dtype = grad_out.device, grad_out.dtype
     if _has_no_edges(n_edge):
         m0 = (lmax + 1) * focus_dim
-        m1 = 2 * lmax * focus_dim
+        m1 = w1t_all.shape[-1]
         return (
             torch.empty((n_focus, n_edge, row), device=device, dtype=dtype),
             torch.empty((n_edge, n_focus), device=device, dtype=dtype),
@@ -3616,7 +3730,11 @@ def _mixing_stack_train_bwd_impl(
                 dtype=dtype,
             ),
         )
-    if focus_dim < GATE_BMM_MIN_FOCUS_DIM and _single_launch_traversal(z_all):
+    if (
+        focus_dim < GATE_BMM_MIN_FOCUS_DIM
+        and _single_launch_traversal(z_all)
+        and w1t_all.shape[-1] == 2 * lmax * focus_dim
+    ):
         grad_u0, grad_alpha, state = _stack_train_traversal(
             grad_out,
             z_all,
@@ -3770,7 +3888,7 @@ def _(
 ):
     n_gated, n_focus, n_edge, row = z_all.shape
     m0 = (lmax + 1) * focus_dim
-    m1 = 2 * lmax * focus_dim
+    m1 = w1t_all.shape[-1]
     return (
         z_all.new_empty((n_focus, n_edge, row)),
         z_all.new_empty((n_edge, n_focus)),
@@ -4513,7 +4631,11 @@ def _mixing_stack_train_second_order(
     w1_all = w1t_all.transpose(2, 3)
 
     # === Replay the first-order traversal for its linearization points ===
-    if use_bmm or not _single_launch_traversal(z_all):
+    if (
+        use_bmm
+        or not _single_launch_traversal(z_all)
+        or w1t_all.shape[-1] != 2 * lmax * focus_dim
+    ):
         _, _, _, state = _stack_backward_traversal(
             grad_out,
             x_local,
@@ -4532,7 +4654,7 @@ def _mixing_stack_train_second_order(
             with_weights=False,
             keep=True,
             need_alpha=False,
-            need_logit=h_gw is not None,
+            need_logit=use_bmm or h_gw is not None,
         )
     else:
         _, _, state = _stack_train_traversal(
@@ -4579,7 +4701,6 @@ def _mixing_stack_train_second_order(
     grad_u0_in: Tensor | None = None
     for layer in range(n_gated):
         gz = state.grad_z[layer]
-        gq = state.grad_logit[layer]
         # The bottom layer linearizes around the exact stack input when it is
         # available; every other layer input exists only as a recovered value.
         exact_bottom = layer == 0 and u0 is not None
@@ -4592,11 +4713,11 @@ def _mixing_stack_train_second_order(
         # Cotangent of the pre-activation gradient: the residual contraction
         # plus the weight-gradient route through the recovered input.
         hgz0 = torch.bmm(h[:, :, :m0], w0_all[layer])
-        hgz1 = torch.bmm(h[:, :, m0:], w1_all[layer])
+        hgz1 = _order_bmm(h[:, :, m0:], w1_all[layer])
         if h_w0 is not None:
             hgz0 = hgz0 + torch.bmm(u_layer[:, :, :m0], h_w0[layer])
         if h_w1 is not None:
-            hgz1 = hgz1 + torch.bmm(u_layer[:, :, m0:], h_w1[layer])
+            hgz1 = hgz1 + _order_bmm(u_layer[:, :, m0:], h_w1[layer])
         hgz = torch.cat([hgz0, hgz1], dim=-1)
         if grad_z_upstream is not None:
             # The upstream pre-activation gradient joined ``gz`` additively,
@@ -4612,12 +4733,14 @@ def _mixing_stack_train_second_order(
             # kernel.
             hgq = accumulate(hgq, torch.bmm(hgz[:, :, :focus_dim], gw))
             grad_gw_out[layer] += torch.bmm(
-                hgz[:, :, :focus_dim].transpose(1, 2), gq.to(dtype)
+                hgz[:, :, :focus_dim].transpose(1, 2), state.grad_logit[layer].to(dtype)
             )
 
         # The residual contraction's weight route, against the pre-update h.
         torch.bmm(gz[:, :, :m0].transpose(1, 2), h[:, :, :m0], out=grad_w0t_out[layer])
-        torch.bmm(gz[:, :, m0:].transpose(1, 2), h[:, :, m0:], out=grad_w1t_out[layer])
+        _order_weight_grad(
+            gz[:, :, m0:].transpose(1, 2), h[:, :, m0:], out=grad_w1t_out[layer]
+        )
 
         h_next, _, dgw = gated_activation_second_order(
             hgz,
@@ -4636,7 +4759,7 @@ def _mixing_stack_train_second_order(
         if h_gw is not None:
             # The gate-projection gradient also reads the scalar rows directly.
             grad_z_out[layer, :, :, :focus_dim] += torch.bmm(
-                gq.to(dtype), h_gw[layer].transpose(1, 2)
+                state.grad_logit[layer].to(dtype), h_gw[layer].transpose(1, 2)
             )
 
         # Cotangent of the layer input, and its route through the recovery
@@ -4650,7 +4773,7 @@ def _mixing_stack_train_second_order(
                 else torch.zeros_like(gz[:, :, :m0])
             )
             src1 = (
-                torch.bmm(gz[:, :, m0:], h_w1[layer].transpose(1, 2))
+                _order_bmm(gz[:, :, m0:], h_w1[layer].transpose(1, 2))
                 if h_w1 is not None
                 else torch.zeros_like(gz[:, :, m0:])
             )
@@ -4677,7 +4800,7 @@ def _mixing_stack_train_second_order(
     h_gbar = h + torch.cat(
         [
             torch.bmm(h[:, :, :m0], w0_all[n_gated]),
-            torch.bmm(h[:, :, m0:], w1_all[n_gated]),
+            _order_bmm(h[:, :, m0:], w1_all[n_gated]),
         ],
         dim=-1,
     )
@@ -4686,7 +4809,7 @@ def _mixing_stack_train_second_order(
         h[:, :, :m0],
         out=grad_w0t_out[n_gated],
     )
-    torch.bmm(
+    _order_weight_grad(
         grad_final[:, :, m0:].transpose(1, 2),
         h[:, :, m0:],
         out=grad_w1t_out[n_gated],
@@ -4695,14 +4818,14 @@ def _mixing_stack_train_second_order(
         if h_w0 is not None:
             h_gbar[:, :, :m0] += torch.bmm(u_final[:, :, :m0], h_w0[n_gated])
         if h_w1 is not None:
-            h_gbar[:, :, m0:] += torch.bmm(u_final[:, :, m0:], h_w1[n_gated])
+            h_gbar[:, :, m0:] += _order_bmm(u_final[:, :, m0:], h_w1[n_gated])
         src0 = (
             torch.bmm(grad_final[:, :, :m0], h_w0[n_gated].transpose(1, 2))
             if h_w0 is not None
             else torch.zeros_like(grad_final[:, :, :m0])
         )
         src1 = (
-            torch.bmm(grad_final[:, :, m0:], h_w1[n_gated].transpose(1, 2))
+            _order_bmm(grad_final[:, :, m0:], h_w1[n_gated].transpose(1, 2))
             if h_w1 is not None
             else torch.zeros_like(grad_final[:, :, m0:])
         )
@@ -4715,7 +4838,7 @@ def _mixing_stack_train_second_order(
         y_fm = u_final + torch.cat(
             [
                 torch.bmm(u_final[:, :, :m0], w0_all[n_gated]),
-                torch.bmm(u_final[:, :, m0:], w1_all[n_gated]),
+                _order_bmm(u_final[:, :, m0:], w1_all[n_gated]),
             ],
             dim=-1,
         )
@@ -4727,7 +4850,7 @@ def _mixing_stack_train_second_order(
             + torch.cat(
                 [
                     torch.bmm(v[:, :, :m0], w0t_all[n_gated]),
-                    torch.bmm(v[:, :, m0:], w1t_all[n_gated]),
+                    _order_bmm(v[:, :, m0:], w1t_all[n_gated]),
                 ],
                 dim=-1,
             ),
@@ -4735,8 +4858,8 @@ def _mixing_stack_train_second_order(
         grad_w0t_out[n_gated] += torch.bmm(
             v[:, :, :m0].transpose(1, 2), u_final[:, :, :m0]
         )
-        grad_w1t_out[n_gated] += torch.bmm(
-            v[:, :, m0:].transpose(1, 2), u_final[:, :, m0:]
+        grad_w1t_out[n_gated] += _order_weight_grad(
+            v[:, :, m0:].transpose(1, 2), u_final[:, :, m0:], width=w1t_all.shape[-1]
         )
 
     grad_u_final = (
@@ -5257,8 +5380,9 @@ class _TritonSO2ValuePath:
     ``make_fx`` and stale values from a checkpoint loaded after construction.
 
     At ``DP_TRITON_INFER >= 3`` the mixing stack runs through the fp16x3
-    tensor-core operator when the ``(focus_dim, lmax)`` key carries a
-    validated configuration (see :mod:`.so2_stack_fp16x3`); the selection is
+    tensor-core operator when the ``(focus_dim, lmax)`` key of the weight
+    layout (plain or parity) carries a validated configuration (see
+    :mod:`.so2_stack_fp16x3`); the selection is
     fixed at construction, so exactly one stack operator reaches the traced
     graph.
     """
@@ -5268,7 +5392,8 @@ class _TritonSO2ValuePath:
         self._stack_op = _mixing_stack_op
         if (
             conv.triton_infer_level >= 3
-            and stack_fp16x3_configs(conv.so2_focus_dim, conv.lmax) is not None
+            and stack_fp16x3_configs(conv.so2_focus_dim, conv.lmax, conv.parity)
+            is not None
         ):
             from .so2_stack_fp16x3 import (
                 mixing_stack_fp16x3,
@@ -5288,13 +5413,16 @@ class _TritonSO2ValuePath:
         conv = self._conv
         m0 = (conv.lmax + 1) * conv.so2_focus_dim
         w0_list, w1_list, gw_list = [], [], []
+        # A parity map has no W_v block, so its |m| = 1 block is
+        # [[W_u, 0], [0, W_u]] and the kernels read the shared W_u of one sign.
+        m1 = (1 if conv.parity else 2) * conv.lmax * conv.so2_focus_dim
         for layer, linear in enumerate(conv.so2_linears):
             weight = linear._build_so2_weight()
             if not differentiable:
                 weight = weight.detach()
-            weight = weight.permute(1, 0, 2).contiguous()  # (F, D_m*Cf, D_m*Cf)
+            weight = weight.permute(1, 0, 2)  # (F, D_m*Cf, D_m*Cf)
             w0_list.append(weight[:, :m0, :m0])
-            w1_list.append(weight[:, m0:, m0:])
+            w1_list.append(weight[:, m0 : m0 + m1, m0 : m0 + m1])
             non_linear = conv.non_linearities[layer]
             if type(non_linear).__name__ == "GatedActivation":
                 gate = non_linear.gate_linear.weight

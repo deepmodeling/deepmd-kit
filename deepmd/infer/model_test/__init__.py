@@ -14,6 +14,9 @@ from typing import (
     Any,
 )
 
+from deepmd.infer.deep_density import (
+    DeepDensity,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -36,6 +39,9 @@ from deepmd.infer.model_test.base import (
     save_txt_file,
     test_chunk_atoms,
 )
+from deepmd.infer.model_test.density import (
+    DensityTester,
+)
 from deepmd.infer.model_test.dos import (
     DosTester,
 )
@@ -56,6 +62,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "ChunkContext",
+    "DensityTester",
     "DipoleTester",
     "DosTester",
     "EnerTester",
@@ -70,7 +77,7 @@ __all__ = [
 ]
 
 
-def build_tester(dp: Any, *, atomic: bool) -> ModelTester:
+def build_tester(dp: Any, *, atomic: bool, symm_virial: bool = False) -> ModelTester:
     """Return the tester of the model class under test.
 
     Parameters
@@ -79,6 +86,8 @@ def build_tester(dp: Any, *, atomic: bool) -> ModelTester:
         The evaluator of the model under test.
     atomic : bool
         Whether per-atom quantities are computed.
+    symm_virial : bool
+        Compare symmetric virials and stresses for energy-type models.
 
     Returns
     -------
@@ -93,9 +102,13 @@ def build_tester(dp: Any, *, atomic: bool) -> ModelTester:
     if isinstance(dp, DeepPot):
         has_spin = dp.has_spin or dp.get_ntypes_spin() != 0
         tester = SpinEnerTester if has_spin else EnerTester
-        return tester(dp, atomic=atomic)
+        return tester(dp, atomic=atomic, symm_virial=symm_virial)
+    if symm_virial:
+        raise ValueError("--symm-virial requires an energy or spin-energy model")
     if isinstance(dp, DeepDOS):
         return DosTester(dp, atomic=atomic)
+    if isinstance(dp, DeepDensity):
+        return DensityTester(dp, atomic=atomic)
     if isinstance(dp, DeepProperty):
         return PropertyTester(dp, atomic=atomic)
     if isinstance(dp, DeepGlobalPolar):

@@ -361,13 +361,12 @@ def test_graph_with_comm_n_local_is_separate_device_input(
 
 
 # --- native spin: multi-rank on the graph lower --------------------------
-# pt's ``SeZMModel.supports_edge_parallel`` is NOT overridden by
-# ``SeZMNativeSpinModel``, so native spin participates in the with-comm
-# artifact there; pt_expt used to exclude every ``NativeSpinModelKind``
-# unconditionally, which silently made native spin single-rank only.  The
-# spin input is per-node and its ghost rows arrive via the LAMMPS ``sp``
-# forward-comm, so spin itself needs no cross-rank exchange -- the per-block
-# ghost FEATURE refresh is the same ``border_op`` the energy model drives.
+# The graph lower of native spin carries the halo exchange of its further
+# blocks in its main program, as the compact canonical lower does: the
+# communicator and the border plan of a decomposed frame follow the spin ABI,
+# so one program serves a frame held whole and a domain of a decomposed one,
+# and no with-comm artifact is built. The moment needs no exchange of its own:
+# its ghost rows arrive through the LAMMPS ``sp`` forward communication.
 _NATIVE_SPIN_CONFIG = {
     **copy.deepcopy(_DPA4_CONFIG),
     "spin": {"use_spin": [True, False], "scheme": "native"},
@@ -379,75 +378,80 @@ def _native_spin_model():
     return model.to("cpu").eval()
 
 
-def test_native_spin_needs_with_comm_on_the_graph_lower_only() -> None:
-    """The gate admits native spin on graph, still refuses it on nlist.
-
-    Native spin has no dense with-comm wrapper at all, so the nlist branch
-    must stay ``False`` -- otherwise the freeze would try to trace a lower
-    that does not exist.
-    """
+def test_native_spin_needs_no_with_comm_artifact() -> None:
+    """Neither lower of native spin builds a with-comm artifact."""
     from deepmd.pt_expt.utils.serialization import (
         _needs_with_comm_artifact,
     )
 
     model = _native_spin_model()
-    assert _needs_with_comm_artifact(model, "graph") is True
+    assert model.atomic_model.has_message_passing_across_ranks()
+    assert _needs_with_comm_artifact(model, "graph") is False
     assert _needs_with_comm_artifact(model, "nlist") is False
 
 
-def test_native_spin_graph_with_comm_abi() -> None:
-    """The with-comm graph-spin ABI is the non-comm one plus the comm block.
+def _dpa4c_native_spin_config(n_blocks: int) -> dict:
+    return {
+        "type_map": ["Ni", "O"],
+        "descriptor": {
+            "type": "dpa4c",
+            "rcut": 4.0,
+            "channels": 8,
+            "lmax": 2,
+            "n_radial": 4,
+            "n_blocks": n_blocks,
+            "precision": "float64",
+            "seed": 7,
+        },
+        "fitting_net": {"neuron": [8, 8], "precision": "float64", "seed": 7},
+        "spin": {"use_spin": [True, False], "scheme": "native"},
+    }
 
-    22 positional inputs: the 14-slot spin graph base (10 CSR + ``spin`` at
-    slot 10 + the None-valued fparam/aparam/charge_spin tail) followed by
-    the 8 comm tensors -- i.e. ``spin`` keeps slot 10 and the comm block
-    starts at 14.  Pinning the count is what keeps the C++ feeder and this
-    trace from drifting apart.
+
+@pytest.mark.parametrize(
+    ("config", "reads_border"),
+    [
+        (_NATIVE_SPIN_CONFIG, True),
+        (_dpa4c_native_spin_config(1), False),
+        (_dpa4c_native_spin_config(2), True),
+    ],
+    ids=["dpa4", "dpa4c_one_block", "dpa4c_two_blocks"],
+)
+def test_native_spin_graph_lower_takes_border_plan(
+    config: dict, reads_border: bool
+) -> None:
+    """The graph-spin ABI ends with the border plan when further blocks exchange.
+
+    The 14-slot spin graph base (10 CSR + ``spin`` at slot 10 + the
+    None-valued fparam/aparam/charge_spin tail) is followed, for a model with
+    further message-passing blocks, by the communicator, the send list and the
+    swap table: 17 positional inputs. A single-block DPA4C reads no ghost
+    feature and takes the base alone. The C++ feeder appends the plan on the
+    ``has_message_passing`` metadata, so the count is pinned against it.
     """
     from deepmd.dpmodel.model.model import get_model as _get_dp_model
     from deepmd.pt_expt.utils.serialization import (
         _trace_and_export,
     )
 
-    dp_cfg = copy.deepcopy(_NATIVE_SPIN_CONFIG)
+    dp_cfg = copy.deepcopy(config)
     dp_cfg.pop("type", None)  # generic builder; the dpa4 alias routes alike
     data = {
         "model": _get_dp_model(dp_cfg).serialize(),
-        "model_def_script": copy.deepcopy(_NATIVE_SPIN_CONFIG),
+        "model_def_script": copy.deepcopy(config),
     }
-    exported, _meta, _dj, keys = _trace_and_export(
+    exported, metadata, _dj, keys = _trace_and_export(
         data,
         model_json_override=None,
-        with_comm_dict=True,
         lower_kind="graph",
     )
+    assert metadata["has_comm_artifact"] is False
+    assert metadata["has_message_passing"] is reads_border
     placeholders = exported.module().graph.find_nodes(op="placeholder")
-    assert len(placeholders) == 22, (
-        f"graph-spin with-comm program must accept 22 positional inputs "
-        f"(14 spin-graph base incl. spin at slot 10 + 8 comm); got "
+    expected = 17 if reads_border else 14
+    assert len(placeholders) == expected, (
+        f"graph-spin program must accept {expected} positional inputs; got "
         f"{len(placeholders)}"
     )
-    # the spin-specific outputs must survive the with-comm trace
     for key in ("energy", "force", "force_mag", "mask_mag"):
-        assert key in keys, f"{key} missing from the with-comm graph outputs"
-
-
-def test_graph_eligibility_guard_is_stated_exactly_once() -> None:
-    """The innermost ``lower_kind="graph"`` guard must not be duplicated.
-
-    It was once present as two verbatim copies from separate commits; the
-    second could never fire yet invited the two to drift. Asserted on the
-    source text -- behavior cannot distinguish one guard from two. Read from
-    the file, not ``inspect.getsource``: conftest wraps ``_trace_and_export``.
-    """
-    from pathlib import (
-        Path,
-    )
-
-    from deepmd.pt_expt.utils import (
-        serialization,
-    )
-
-    source = Path(serialization.__file__).read_text()
-    assert source.count("graph-lower eligible (model_uses_graph_lower() is False") == 1
-    assert source.count("if not model_uses_graph_lower(model):") == 1
+        assert key in keys, f"{key} missing from the graph-spin outputs"

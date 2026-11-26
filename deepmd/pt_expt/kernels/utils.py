@@ -28,6 +28,10 @@ import os
 
 import torch
 
+from deepmd.dpmodel.train.inference import (
+    infer_amp_enabled,
+)
+
 _INFER_TRUE = ("1", "true", "yes", "on")
 
 TRITON_INFER_LEVELS = (0, 1, 2, 3)
@@ -180,7 +184,7 @@ def cuda_infer_level() -> int:
         - DPA1 (``se_atten``): the descriptor mega kernels
           (:mod:`.cuda.dpa1.graph_descriptor`) serve the concat,
           attention-free graph lower, and the energy fitting runs through the
-          fused cuBLAS network (:mod:`.cuda.graph_fitting`).
+          fused fitting network (:mod:`.graph_fitting`).
         - DPA4 (``sezm``): the operators whose profit is memory traffic and
           therefore holds on every part measured -- the fused SO(3) grid pair
           product (:mod:`.cuda.dpa4.grid_pair`), which keeps the grid field in
@@ -190,7 +194,7 @@ def cuda_infer_level() -> int:
           (:mod:`.cuda.dpa4.edge_radial`), which evaluates that chain once
           instead of once per consumer.
         - All graph-lowered models: the force / virial assembly scatters
-          through :mod:`.cuda.edge_force_virial`.
+          through :mod:`.edge_force_virial`.
 
     - ``2`` -- adds the end-to-end energy-force operator: a graph-lowered energy
       model whose descriptor and fitting are both fused-eligible collapses its
@@ -379,4 +383,4 @@ def use_amp_infer() -> bool:
     bool
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
-    return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+    return infer_amp_enabled()

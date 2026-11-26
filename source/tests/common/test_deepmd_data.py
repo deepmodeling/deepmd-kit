@@ -8,7 +8,9 @@ from pathlib import (
     Path,
 )
 
+import h5py
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.utils.dist_check import (
     compute_min_pair_margin_single,
@@ -20,6 +22,57 @@ from deepmd.utils.data import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+
+
+def test_cached_numpy_set_applies_copy_weights_once(tmp_path: Path) -> None:
+    np.savetxt(tmp_path / "type.raw", [0], fmt="%d")
+    set_path = tmp_path / "set.000"
+    set_path.mkdir()
+    np.save(set_path / "coord.npy", [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    np.save(set_path / "box.npy", np.tile(np.eye(3).reshape(1, 9), (2, 1)))
+    np.save(set_path / "numb_copy.npy", [2, 1])
+    data = DeepmdData(str(tmp_path))
+
+    assert data.get_mean_batch_nframes(8) == 3
+    for _ in range(3):
+        batch = data.get_batch(8)
+        np.testing.assert_array_equal(np.sort(batch["coord"][:, 0]), [0, 0, 1])
+
+
+@pytest.mark.parametrize("hdf5", [False, True])
+def test_uniform_numpy_counts_undersized_sets(tmp_path: Path, hdf5: bool) -> None:
+    paths = []
+    container = tmp_path / "systems.h5"
+    for index, sizes in enumerate(((1, 5), (2, 8))):
+        root = tmp_path / f"system_{index}"
+        root.mkdir()
+        np.savetxt(root / "type.raw", [0], fmt="%d")
+        for set_index, size in enumerate(sizes):
+            set_path = root / f"set.{set_index:03d}"
+            set_path.mkdir()
+            np.save(set_path / "coord.npy", np.full((size, 3), index, dtype=np.float64))
+            np.save(set_path / "box.npy", np.tile(np.eye(3).reshape(1, 9), (size, 1)))
+        paths.append(str(root))
+        if hdf5:
+            with h5py.File(container, "a") as handle:
+                group = handle.create_group(root.name)
+                group.create_dataset("type.raw", data=[0])
+                for file in root.rglob("*.npy"):
+                    group.create_dataset(
+                        str(file.relative_to(root)), data=np.load(file)
+                    )
+            paths[-1] = f"{container}#/{root.name}"
+    data = DeepmdDataSystem(paths, [3, 5], 1, auto_prob_style="prob_uniform")
+    means = [
+        np.mean([data.get_batch(sys_idx=index)["coord"].shape[0] for _ in range(4)])
+        for index in range(2)
+    ]
+    np.testing.assert_allclose(means, [2, 3.5])
+    np.testing.assert_allclose(data.sys_probs * means, [14 / 11, 14 / 11])
+    data = DeepmdDataSystem(paths, "mixed:4", 1, auto_prob_style="prob_uniform")
+    np.testing.assert_allclose(data.sys_probs, [0.5, 0.5])
+    assert data.uniform_sampling_mass == 0.5
+    assert data.get_batch()["coord"].shape[0] == 4
 
 
 class TestDeepmdDataTypeMap(unittest.TestCase):
@@ -57,8 +110,8 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         expected_sorted = expected_atom_types[data.idx_map]
         np.testing.assert_array_equal(loaded["type"], np.tile(expected_sorted, (1, 1)))
 
-    def test_covalent_margin_without_dataset_type_map(self) -> None:
-        """Model type indices retain their element names without a dataset map."""
+    def test_pair_margin_without_dataset_type_map(self) -> None:
+        """A model map sizes the margin table without naming the dataset types."""
         (self.root / "type_map.raw").unlink()
         coord = np.array(
             [[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [2.0, 0.0, 0.0], [4.0, 0.0, 0.0]]
@@ -66,22 +119,81 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         box = 6.0 * np.eye(3)
         np.save(self.set_dir / "coord.npy", coord.reshape(1, -1))
         np.save(self.set_dir / "box.npy", box.reshape(1, 9))
-        type_map = ["O", "H", "Si"]
-        data = DeepmdData(str(self.root), type_map=type_map)
-        data.add("pair_margin", 1, default=0.5, length_scale="covalent")
+        data = DeepmdData(str(self.root), type_map=["O", "H", "Si"])
+        data.add("pair_margin", 1, default=0.5)
         expected = compute_min_pair_margin_single(
             coord,
             box,
             np.array([0, 1, 0, 1]),
-            pair_half_thresholds(0.5, "covalent", type_map),
+            pair_half_thresholds(0.5, 3),
             screened=True,
         )
         for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
             self.assertEqual(float(loaded["find_pair_margin"]), 1.0)
             np.testing.assert_allclose(loaded["pair_margin"], expected)
+        np.testing.assert_allclose(expected, 0.4 / 0.5)
         self.assertIsNone(data.get_type_map())
         self.assertEqual(data.get_ntypes(), 2)
         np.testing.assert_array_equal(data.atom_type, [0, 1, 0, 1])
+
+    def test_pair_margin_covers_model_types_of_mixed_data(self) -> None:
+        """Mixed-type data without names keeps its margin table at the model size.
+
+        The stored ``type.raw`` of mixed-type data holds one placeholder type,
+        while both frame and batch reads use the real per-frame type indices.
+        """
+        (self.root / "type_map.raw").unlink()
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        coord = np.array(
+            [[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [2.0, 0.0, 0.0], [4.0, 0.0, 0.0]]
+        )
+        np.save(self.set_dir / "coord.npy", coord.reshape(1, -1))
+        np.save(self.set_dir / "box.npy", (6.0 * np.eye(3)).reshape(1, 9))
+        np.save(self.set_dir / "real_atom_types.npy", [[0, -1, 2, 1]])
+        np.save(self.set_dir / "real_atom_numbs.npy", [[1, 1, 1]])
+        data = DeepmdData(str(self.root), type_map=["O", "H", "Si"])
+        data.add("pair_margin", 1, default=0.5)
+        self.assertEqual(data.get_ntypes(), 3)
+        for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
+            np.testing.assert_allclose(loaded["pair_margin"], 2.0 / 0.5)
+            np.testing.assert_array_equal(
+                loaded["real_natoms_vec"].reshape(-1), [4, 4, 1, 1, 1]
+            )
+
+    def test_mixed_types_validate_indices_before_narrowing(self) -> None:
+        (self.root / "type_map.raw").unlink()
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        np.save(
+            self.set_dir / "real_atom_types.npy",
+            np.array([[0, 1, 2**32, -1]], dtype=np.int64),
+        )
+        data = DeepmdData(str(self.root), type_map=["O", "H", "Si"])
+        with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+            data.get_single_frame(0, num_worker=1)
+        with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+            data.get_batch(1)
+
+    def test_mixed_types_remap_integral_float_indices(self) -> None:
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        np.save(self.set_dir / "real_atom_types.npy", [[2.0, -1.0, 0.0, 1.0]])
+        data = DeepmdData(str(self.root), type_map=["H", "O", "Si"])
+        for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
+            self.assertEqual(loaded["type"].dtype, np.int32)
+            np.testing.assert_array_equal(loaded["type"].reshape(-1), [2, -1, 1, 0])
+            np.testing.assert_array_equal(
+                loaded["real_natoms_vec"].reshape(-1), [4, 4, 1, 1, 1]
+            )
+
+    def test_mixed_types_reject_non_integer_values(self) -> None:
+        np.savetxt(self.root / "type.raw", np.zeros(4, dtype=np.int32), fmt="%d")
+        for value in (0.5, np.nan):
+            with self.subTest(value=value):
+                np.save(self.set_dir / "real_atom_types.npy", [[value, -1.0, 0.0, 1.0]])
+                data = DeepmdData(str(self.root), type_map=["H", "O", "Si"])
+                with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+                    data.get_single_frame(0, num_worker=1)
+                with self.assertRaisesRegex(ValueError, "Mixed atom types"):
+                    data.get_batch(1)
 
     def test_required_dataset_type_map_cannot_be_replaced(self) -> None:
         """A supplied model map does not make a required dataset map optional."""

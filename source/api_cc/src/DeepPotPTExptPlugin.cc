@@ -20,19 +20,13 @@ namespace {
  *
  * The two spin schemes are served by different classes, and only the archive
  * itself says which one it holds: every spin artifact declares its scheme in
- * ``spin_scheme``. Anything else -- the virtual-atom scheme, an archive
- * frozen before the field existed, and an archive whose metadata cannot be
- * read -- stays with ``DeepSpinPTExpt``, so the diagnostic for a malformed
- * file comes from the loader that owns the format rather than from this
- * dispatch.
- *
- * A native-spin archive that declares ``has_comm_artifact`` also stays with
- * ``DeepSpinPTExpt``. That flag marks the nested with-comm artifact carrying
- * the per-layer ghost-feature exchange that domain decomposition needs, and
- * ``DeepSpinPTExpt`` is the only class that drives it. The conjunct states a
- * capability of the serving class rather than a property of any descriptor
- * family, so it drops out once ``NativeSpinPTExpt`` gains a with-comm route
- * of its own.
+ * ``spin_scheme``. Anything else -- the virtual-atom scheme, a spin archive
+ * of the pt backend, which declares no scheme, and an archive whose
+ * metadata cannot be read -- stays with ``DeepSpinPTExpt``, so the
+ * diagnostic for a malformed file comes from the loader that owns the format
+ * rather than from this dispatch. Both lowers of a native-spin model carry the
+ * ghost-feature exchange of domain decomposition in their main program, so
+ * one class serves every native-spin archive on one rank or several.
  *
  * The lower-forward schema takes no part here: it is an internal branch of
  * whichever class the scheme selects.
@@ -44,11 +38,8 @@ bool native_spin_backend_serves(const char* model) {
   try {
     const auto metadata = deepmd::ptexpt::parse_json(
         deepmd::ptexpt::read_zip_entry(model, "extra/metadata.json"));
-    const bool native_scheme = metadata.obj_val.count("spin_scheme") &&
-                               metadata["spin_scheme"].as_string() == "native";
-    const bool needs_with_comm = metadata.obj_val.count("has_comm_artifact") &&
-                                 metadata["has_comm_artifact"].as_bool();
-    return native_scheme && !needs_with_comm;
+    return metadata.obj_val.count("spin_scheme") &&
+           metadata["spin_scheme"].as_string() == "native";
   } catch (const std::exception&) {
     return false;
   }
@@ -57,7 +48,7 @@ bool native_spin_backend_serves(const char* model) {
 }  // namespace
 #endif
 
-extern "C" void* deepmd_create_deeppot_backend_v1(const char* model,
+extern "C" void* deepmd_create_deeppot_backend_v3(const char* model,
                                                   int gpu_rank,
                                                   const char* file_content,
                                                   std::size_t file_content_size,
@@ -74,11 +65,11 @@ extern "C" void* deepmd_create_deeppot_backend_v1(const char* model,
 #endif
 }
 
-extern "C" void deepmd_delete_deeppot_backend_v1(void* backend) {
+extern "C" void deepmd_delete_deeppot_backend_v3(void* backend) {
   deepmd::plugin::delete_deeppot_backend(backend);
 }
 
-extern "C" void* deepmd_create_deepspin_backend_v1(
+extern "C" void* deepmd_create_deepspin_backend_v3(
     const char* model,
     int gpu_rank,
     const char* file_content,
@@ -102,7 +93,7 @@ extern "C" void* deepmd_create_deepspin_backend_v1(
 #endif
 }
 
-extern "C" void deepmd_delete_deepspin_backend_v1(void* backend) {
+extern "C" void deepmd_delete_deepspin_backend_v3(void* backend) {
   deepmd::plugin::delete_deepspin_backend(backend);
 }
 

@@ -62,6 +62,9 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
 )
+from deepmd.utils.element_radii import (
+    covalent_radii_from_type_map,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -476,7 +479,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         # The compiled eval path must trace, lower and run without tripping
         # ``assert_size_stride`` on the edge tensors.
         out_cmp = model_cmp(coord, atype, box=box)
-        self.assertIn((False, False), model_cmp.compiled_core_compute_cache)
+        self.assertIn(False, model_cmp.compiled_core_compute_cache)
         _assert_close_with_strict_warning(
             out_dyn["energy"],
             out_cmp["energy"],
@@ -493,6 +496,53 @@ class TestSeZMModelCompile(unittest.TestCase):
         )
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_eval_compile_pins_is_inference_on_the_inference_slot(self) -> None:
+        """The eval slot must lower through ``compile_fx_inner(is_inference=True)``.
+
+        The existing suite (cache-slot presence, eager parity) holds with the
+        flag set, cleared, or absent; only this call-shape pin notices a
+        refactor that drops the argument and quietly reinstates the
+        peak-memory cost.  ``sezm_model`` imports ``compile_fx_inner`` from
+        its home module at call time, so the spy patches the source module.
+        """
+        coord, atype, box = self._make_frame_with_natoms(7)
+
+        model_dyn = get_sezm_model(self._build_model_params(use_compile=False))
+        self._randomize_params(model_dyn)
+        model_dyn.eval()
+        with mock.patch.dict(
+            os.environ,
+            {
+                "DP_COMPILE_INFER": "1",
+                # A cache hit would skip the lowering this test observes.
+                "TORCHINDUCTOR_FX_GRAPH_CACHE": "0",
+                "TORCHINDUCTOR_AUTOGRAD_CACHE": "0",
+            },
+            clear=False,
+        ):
+            model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
+            model_cmp.load_state_dict(model_dyn.state_dict())
+            model_cmp.eval()
+
+            import torch._inductor.compile_fx as _compile_fx_mod
+
+            calls: list[dict] = []
+            real = _compile_fx_mod.compile_fx_inner
+
+            def _spy(*args, **kwargs):
+                calls.append(kwargs)
+                return real(*args, **kwargs)
+
+            with mock.patch.object(_compile_fx_mod, "compile_fx_inner", _spy):
+                model_cmp(coord, atype, box=box)
+
+        self.assertTrue(
+            any(kwargs.get("is_inference") is True for kwargs in calls),
+            "the eval slot must lower through compile_fx_inner(is_inference=True); "
+            f"observed call kwargs: {calls}",
+        )
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_cache_slots_and_eval_shape_change(self) -> None:
         """Compile cache slots should coexist while eval handles batch-size growth."""
         coord_1, atype_1, box_1, _, _, _ = self._make_tiny_frame()
@@ -505,9 +555,9 @@ class TestSeZMModelCompile(unittest.TestCase):
             model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
         model_cmp.load_state_dict(model_dyn.state_dict())
 
-        # Compile cache key is (training, has_coord_corr).
-        train_key = (True, False)
-        eval_key = (False, False)
+        # Compile cache key is the training mode.
+        train_key = True
+        eval_key = False
 
         # === Step 2. Train-mode forward fills the training slot. ===
         model_cmp.train()
@@ -708,11 +758,9 @@ class TestSeZMModelCompile(unittest.TestCase):
             compute_dtype=descriptor.compute_dtype,
             eps=descriptor.eps,
             deg_norm_floor=descriptor.deg_norm_floor,
-            bridging_clamp=descriptor.bridging_clamp,
-            bridging_switch=descriptor.bridging_switch,
-            # The standard path this compares against is bridging-free, so the
-            # fixture configures no window and no pair length scale is needed.
-            edge_contact=None,
+            # The standard path this compares against reads every separation
+            # unchanged, so the comparison runs without a contact clamp.
+            read_distance=None,
             edge_envelope=descriptor.edge_envelope,
             radial_basis=descriptor.radial_basis,
             has_exclude_types=False,
@@ -953,6 +1001,65 @@ class TestSeZMModelCompile(unittest.TestCase):
                 msg=f"cartesian energy-grad mismatch at {name}",
             )
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_block_attn_res_matches_compile_across_batch_sizes(self) -> None:
+        """Block attention residuals serve every node count of the traced graph."""
+        self._assert_options_match_compile_across_batch_sizes(
+            {"block_attn_res": "independent"}
+        )
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_full_attn_res_matches_compile_across_batch_sizes(self) -> None:
+        """Full attention residuals serve every node count of the traced graph."""
+        self._assert_options_match_compile_across_batch_sizes(
+            {"full_attn_res": "dependent"}
+        )
+
+    def _assert_options_match_compile_across_batch_sizes(self, options: dict) -> None:
+        """Eager and compiled training agree at three batch sizes for ``options``."""
+        params = []
+        for use_compile in (False, True):
+            param = self._build_model_params(use_compile=use_compile)
+            param["descriptor"].update(options)
+            params.append(param)
+        model_dyn = get_sezm_model(params[0])
+        self._randomize_params(model_dyn)
+        model_cmp = get_sezm_model(params[1])
+        model_cmp.load_state_dict(model_dyn.state_dict())
+        model_dyn.train()
+        model_cmp.train()
+        grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
+        for nframe in (1, 2, 3):
+            coord, atype, box, _, _, _ = self._make_tiny_frame(nframe=nframe)
+            losses = []
+            for model in (model_dyn, model_cmp):
+                model.zero_grad(set_to_none=True)
+                out = model(coord, atype, box=box)
+                loss = out["energy"].sum() + torch.sum(out["force"] * out["force"])
+                loss.backward()
+                losses.append(loss.detach())
+            _assert_close_with_strict_warning(
+                losses[0],
+                losses[1],
+                atol=1.0e-6,
+                rtol=1.0e-6,
+                msg=f"loss mismatch at nframe={nframe}",
+            )
+            for (name, p_dyn), p_cmp in zip(
+                model_dyn.named_parameters(), model_cmp.parameters(), strict=True
+            ):
+                if p_dyn.grad is None:
+                    self.assertIsNone(p_cmp.grad, msg=name)
+                    continue
+                _assert_close_with_strict_warning(
+                    p_dyn.grad,
+                    p_cmp.grad,
+                    atol=grad_atol,
+                    rtol=grad_rtol,
+                    msg=f"grad mismatch at {name}, nframe={nframe}",
+                )
+
     def _assert_multitask_compile_matches_eager(
         self,
         *,
@@ -1081,13 +1188,13 @@ class TestSeZMModelCompile(unittest.TestCase):
         # the module-level ``_SEZM_COMPILE_CACHE``.  This avoids the
         # N x compile-cache OOM / N DDP graph boundary cost on multitask
         # runs.  Step 2 ran every branch in training mode with the default
-        # ``do_atomic_virial=False`` and no coordinate correction, so each
+        # ``do_atomic_virial=False``, so each
         # per-branch cache should hold exactly that one slot, and the
         # compiled callable at that slot must be the *same* object. ===
         cache1 = wrapper_cmp.model["water_1"].compiled_core_compute_cache
         cache2 = wrapper_cmp.model["water_2"].compiled_core_compute_cache
         self.assertIsNot(cache1, cache2)
-        train_key = (True, False)
+        train_key = True
         self.assertIn(train_key, cache1)
         self.assertIn(train_key, cache2)
         c1 = cache1[train_key]
@@ -1304,7 +1411,7 @@ class TestSeZMModelProperty(unittest.TestCase):
                 rtol=forward_tol,
                 msg=f"compiled property mismatch at {key}",
             )
-        self.assertIn((True, False), compiled.compiled_core_compute_cache)
+        self.assertIn(True, compiled.compiled_core_compute_cache)
 
         # === Step 3. Compare parameter gradients ===
         probe = torch.tensor(
@@ -1395,7 +1502,7 @@ class TestInnerPotential(unittest.TestCase):
 
     def test_nlh_differs_from_zbl(self) -> None:
         """The mode reaches the energy rather than falling back to ZBL."""
-        edge_vec, edge_index, atype_flat, edge_mask = self._pair_edges(0.8, [0, 0])
+        edge_vec, edge_index, atype_flat, edge_mask = self._pair_edges(0.4, [0, 0])
         values = [
             float(
                 InnerPotential(type_map=["O"], mode=mode)
@@ -1407,55 +1514,65 @@ class TestInnerPotential(unittest.TestCase):
         self.assertGreater(values[1], 0.0)
         self.assertGreater(abs(values[1] / values[0] - 1.0), 0.05)
 
-    def test_nlh_series_table_stays_out_of_the_checkpoint(self) -> None:
+    def test_nlh_pair_table_is_derived_from_configuration(self) -> None:
         """Every array follows type_map and mode, so none of them is stored."""
         pot = InnerPotential(type_map=["O", "H"], mode="nlh").to(self.device)
         self.assertEqual(list(pot.state_dict()), [])
 
-    def test_zbl_known_value_OO(self) -> None:
-        """ZBL energy for an O-O pair matches the analytic reference."""
-        pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+    @staticmethod
+    def _truncated_zbl(z_a: float, z_b: float, r: float, end: float) -> float:
+        """Taylor-truncated ZBL pair energy, written out independently.
 
-        import math
-
-        z_o = 8.0
+        Every term ``A exp(-c r) / r`` of the screened Coulomb series has the
+        closed-form derivatives ``(-1)^n n! A exp(-c r) / r^(n+1) *
+        sum_{j<=n} (c r)^j / j!``, from which the cubic Taylor polynomial at
+        the end radius is subtracted below it.
+        """
         a_bohr = 0.5291772109
         ke = 14.3996
-        a_screen = 0.88534 * a_bohr / (z_o**0.23 + z_o**0.23)
-        r = 1.0
-        x = r / a_screen
-        phi = (
-            0.18175 * math.exp(-3.1998 * x)
-            + 0.50986 * math.exp(-0.94229 * x)
-            + 0.28022 * math.exp(-0.4029 * x)
-            + 0.028171 * math.exp(-0.20162 * x)
-        )
-        expected = ke * z_o * z_o / r * phi
+        a_screen = 0.88534 * a_bohr / (z_a**0.23 + z_b**0.23)
+        amplitudes = (0.18175, 0.50986, 0.28022, 0.028171)
+        rates = (3.1998, 0.94229, 0.4029, 0.20162)
 
-        total_e = pot(*self._pair_edges(r, [0, 0]), n_node=2).sum().item()
-        self.assertAlmostEqual(total_e, expected, places=5)
+        def derivative(x: float, order: int) -> float:
+            total = 0.0
+            for amplitude, rate in zip(amplitudes, rates, strict=True):
+                c = rate / a_screen
+                series = sum((c * x) ** j / math.factorial(j) for j in range(order + 1))
+                total += (
+                    (-1) ** order
+                    * math.factorial(order)
+                    * amplitude
+                    * math.exp(-c * x)
+                    / x ** (order + 1)
+                    * series
+                )
+            return ke * z_a * z_b * total
+
+        if r >= end:
+            return 0.0
+        taylor = sum(
+            derivative(end, k) * (r - end) ** k / math.factorial(k) for k in range(4)
+        )
+        return derivative(r, 0) - taylor
+
+    def test_zbl_known_value_OO(self) -> None:
+        """The O-O pair energy matches the truncated analytic reference."""
+        pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+        radius = covalent_radii_from_type_map(["O"])[0]
+        expected = self._truncated_zbl(8.0, 8.0, 1.0, 1.1 * 2.0 * radius)
+        self.assertGreater(expected, 0.0)
+        total_e = pot(*self._pair_edges(1.0, [0, 0]), n_node=2).sum().item()
+        self.assertAlmostEqual(total_e, expected, places=8)
 
     def test_zbl_known_value_OH(self) -> None:
-        """ZBL energy for an O-H pair matches the analytic reference."""
+        """The O-H pair energy matches the truncated analytic reference."""
         pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
-        import math
-
-        z_o, z_h = 8.0, 1.0
-        a_bohr = 0.5291772109
-        ke = 14.3996
-        a_screen = 0.88534 * a_bohr / (z_o**0.23 + z_h**0.23)
-        r = 0.8
-        x = r / a_screen
-        phi = (
-            0.18175 * math.exp(-3.1998 * x)
-            + 0.50986 * math.exp(-0.94229 * x)
-            + 0.28022 * math.exp(-0.4029 * x)
-            + 0.028171 * math.exp(-0.20162 * x)
-        )
-        expected = ke * z_o * z_h / r * phi
-
-        total_e = pot(*self._pair_edges(r, [0, 1]), n_node=2).sum().item()
-        self.assertAlmostEqual(total_e, expected, places=5)
+        radius = covalent_radii_from_type_map(["O", "H"])
+        expected = self._truncated_zbl(8.0, 1.0, 0.8, 1.1 * float(radius.sum()))
+        self.assertGreater(expected, 0.0)
+        total_e = pot(*self._pair_edges(0.8, [0, 1]), n_node=2).sum().item()
+        self.assertAlmostEqual(total_e, expected, places=8)
 
     def test_zbl_gradient_exists(self) -> None:
         """ZBL produces finite gradients w.r.t. the edge vectors."""
@@ -1569,8 +1686,6 @@ class TestSeZMEdgeForceScatter(unittest.TestCase):
             },
             "use_compile": False,
             "bridging_method": bridging_method,
-            "bridging_r_inner": 0.8,
-            "bridging_r_outer": 1.2,
         }
         model = get_sezm_model(params)
         torch.manual_seed(1234)
@@ -1696,7 +1811,7 @@ class TestSeZMEdgeForceScatter(unittest.TestCase):
 
 
 class TestSeZMNativeSpinModel(unittest.TestCase):
-    """Validate the native (virtual-atom-free) spin SeZM model.
+    """Validate the native spin SeZM model.
 
     The spin vector enters the descriptor as an equivariant feature, so the
     magnetic force is the negative spin gradient of the energy. float64
@@ -1751,8 +1866,6 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
             },
             "use_compile": use_compile,
             "bridging_method": bridging_method,
-            "bridging_r_inner": 0.8,
-            "bridging_r_outer": 1.2,
         }
         model = get_model(params)
         if randomize:
@@ -1811,7 +1924,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         return coord, atype, spin, box
 
     def test_spin_routes_initialize_to_zero(self) -> None:
-        """Fresh native-spin models start from the spin-free function."""
+        """Fresh native-spin models initialize their spin corrections to zero."""
         model = self._build_model(randomize=False)
         descriptor = model.atomic_model.descriptor
         spin_embedding = descriptor.spin_embedding
@@ -1820,28 +1933,19 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         self.assertIsNotNone(spin_embedding)
         self.assertIsNotNone(env_seed_embedding)
         self.assertTrue(torch.all(spin_embedding.mag_layer2.matrix == 0.0))
-        self.assertTrue(torch.all(spin_embedding.adam_spin_vec_weight == 0.0))
-        self.assertTrue(torch.all(spin_embedding.adam_spin_nbr_weight == 0.0))
-        self.assertTrue(torch.all(env_seed_embedding.spin_scale == 0.0))
+        self.assertTrue(torch.all(spin_embedding.pair_layer.matrix == 0.0))
+        self.assertTrue(torch.all(env_seed_embedding.spin_output_proj.matrix == 0.0))
 
-    def test_migrated_spin_routes_are_trainable_after_activation(self) -> None:
-        """Mirror the production two-stage native-spin fine-tune load.
-
-        The trainer first rebuilds the pretrained all-false model and loads the
-        legacy checkpoint into it, allowing version migration to canonicalize
-        dormant spin routes. It then transfers that migrated state into the
-        magnetic target. Loading directly into the target would lose the source
-        configuration needed to distinguish dormant routes from trained ones.
-        """
-        legacy = self._build_model(use_spin=[False, False], randomize=True)
-        legacy_state = legacy.state_dict()
-        version_key = "atomic_model.descriptor.version_tensor"
-        legacy_state[version_key] = torch.full_like(legacy_state[version_key], 1.1)
-        migrated = self._build_model(use_spin=[False, False], randomize=False)
-        migrated.load_state_dict(legacy_state)
-
+    def test_spin_routes_are_trainable_after_activation(self) -> None:
+        """A native pretrain with closed spin routes can learn after activation."""
+        pretrained = self._build_model(use_spin=[False, False], randomize=True)
+        descriptor = pretrained.atomic_model.descriptor
+        with torch.no_grad():
+            descriptor.spin_embedding.mag_layer2.matrix.zero_()
+            descriptor.spin_embedding.pair_layer.matrix.zero_()
+            descriptor.env_seed_embedding.spin_output_proj.matrix.zero_()
         model = self._build_model(use_spin=[True, False], randomize=False)
-        model.load_state_dict(migrated.state_dict())
+        model.load_state_dict(pretrained.state_dict())
         coord, atype, spin, box = self._frame()
 
         model.train()
@@ -1852,9 +1956,8 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         env_seed_embedding = descriptor.env_seed_embedding
         gradients = {
             "magnitude": spin_embedding.mag_layer2.matrix.grad,
-            "onsite_l1": spin_embedding.adam_spin_vec_weight.grad,
-            "neighbor_l1": spin_embedding.adam_spin_nbr_weight.grad,
-            "env_seed": env_seed_embedding.spin_scale.grad,
+            "pair": spin_embedding.pair_layer.matrix.grad,
+            "env_seed": env_seed_embedding.spin_output_proj.matrix.grad,
         }
         for name, gradient in gradients.items():
             self.assertIsNotNone(gradient, f"{name} has no gradient")
@@ -2112,7 +2215,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
 
         out_e = model_eager(coord, atype, spin, box=box)
         out_c = model_cmp(coord, atype, spin, box=box)
-        self.assertIn((True, False), model_cmp.compiled_core_compute_cache)
+        self.assertIn(True, model_cmp.compiled_core_compute_cache)
         for key in ["energy", "force", "force_mag"]:
             _assert_close_with_strict_warning(
                 out_c[key],
@@ -2183,7 +2286,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
                     "n_radial": 3,
                     "l_schedule": [1, 0],
                     "mmax": 1,
-                    "use_env_seed": False,
+                    "use_env_seed": True,
                     "random_gamma": False,
                     "precision": "float64",
                 },
@@ -2255,8 +2358,6 @@ class TestSeZMModelBridging(unittest.TestCase):
             },
             "use_compile": False,
             "bridging_method": bridging_method,
-            "bridging_r_inner": 0.8,
-            "bridging_r_outer": 1.2,
         }
 
     def test_bridging_none_unchanged(self) -> None:
@@ -2266,38 +2367,22 @@ class TestSeZMModelBridging(unittest.TestCase):
         self.assertEqual(model.bridging_method, "NONE")
 
     def test_bridging_zbl_creates_potential(self) -> None:
-        """Test that bridging_method='ZBL' creates InnerPotential and InnerClamp."""
+        """``bridging_method='ZBL'`` adds the analytical term and the contact clamp."""
         model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
         self.assertIsNotNone(model.inter_potential)
         self.assertEqual(model.bridging_method, "ZBL")
-        self.assertIsNotNone(model.atomic_model.descriptor.bridging_clamp)
+        self.assertIsNotNone(model.atomic_model.descriptor.contact_clamp)
 
-    def test_legacy_bridged_state_is_rejected(self) -> None:
-        """Tagged and untagged checkpoints obey the descriptor version contract."""
-        model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
-        for version in (None, 1.0, 1.1, 1.2):
-            with self.subTest(version=version):
-                state = model.state_dict()
-                version_key = "atomic_model.descriptor.version_tensor"
-                if version is None:
-                    del state[version_key]
-                else:
-                    state[version_key] = torch.full_like(state[version_key], version)
-                with self.assertRaisesRegex(ValueError, "Retrain the bridged model"):
-                    model.load_state_dict(state)
-
-    def test_legacy_plain_state_into_bridged_model_requires_finetune(self) -> None:
-        """Direct loading rejects legacy plain weights without misidentifying them."""
+    def test_legacy_plain_state_loads_into_a_bridged_model(self) -> None:
+        """An unbridged state of an earlier version loads into a bridged model."""
         plain = get_sezm_model(self._build_model_params(bridging_method="none"))
         bridged = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
         state = plain.state_dict()
         version_key = "atomic_model.descriptor.version_tensor"
         state[version_key] = torch.full_like(state[version_key], 1.2)
-        with self.assertRaisesRegex(
-            ValueError,
-            r"format version 1\.2 into a bridged descriptor.*--finetune",
-        ):
-            bridged.load_state_dict(state, strict=False)
+        bridged.load_state_dict(state, strict=False)
+        descriptor = bridged.atomic_model.descriptor
+        self.assertEqual(descriptor.version, descriptor.LATEST_VERSION)
 
     def test_current_bridged_state_round_trips(self) -> None:
         """The state-dict and portable representations retain the same tensors."""
@@ -2515,14 +2600,14 @@ class TestSeZMModelBridging(unittest.TestCase):
 
         The two exclusions differ in what they hide. A pair exclusion takes the
         pair out of the descriptor and out of the analytical term together, so
-        a bridged model reproduces a plain one even with the two atoms at the
-        inner radius of the window. An atom exclusion acts on atomic outputs
-        alone: the excluded atom loses its half of the pair energy with the
-        rest of its output, its geometry still shapes the environment of its
-        partner, and the partner keeps its own half. Beyond the outer radius
-        the bridged model is therefore the plain one plus that half; at the
-        inner radius the partner is a frozen atom and is left with the per-type
-        bias of the fitting plus the same half.
+        a bridged model reproduces a plain one even inside the range of the
+        analytical term. An atom exclusion acts on atomic outputs alone: the
+        excluded atom loses its half of the pair energy with the rest of its
+        output, its geometry still shapes the environment of its partner, and
+        the partner keeps its own half. At a separation the contact clamp reads
+        unchanged and inside the range of the analytical term (the O-H pair
+        starts its data edge at 0.95 Å and its term ends at 1.045 Å), the
+        bridged model is therefore the plain one plus that half.
         """
         atype = torch.tensor([[0, 1]], dtype=torch.long, device=self.device)
         box = torch.tensor(
@@ -2566,25 +2651,12 @@ class TestSeZMModelBridging(unittest.TestCase):
 
         with self.subTest(exclusion_key="atom_exclude_types"):
             plain, bridged = self._excluded_pair_models("atom_exclude_types", [1])
-            coord = _pair(1.5)  # beyond the outer radius: the window is shut
+            coord = _pair(1.0)
+            half = _half_pair_energy(bridged, 1.0)
+            self.assertGreater(float(half), 0.0)
             torch.testing.assert_close(
                 bridged(coord, atype, box=box)["energy"],
-                plain(coord, atype, box=box)["energy"]
-                + _half_pair_energy(bridged, 1.5),
-                atol=1.0e-12,
-                rtol=1.0e-12,
-            )
-
-            coord = _pair(0.8)  # at the inner radius: the pair is frozen
-            bias = bridged.atomic_model.fitting_net.bias_atom_e.reshape(-1)
-            torch.testing.assert_close(
-                bridged(coord, atype, box=box)["atom_energy"].reshape(-1),
-                torch.stack(
-                    [
-                        bias[0] + _half_pair_energy(bridged, 0.8),
-                        torch.zeros_like(bias[0]),
-                    ]
-                ),
+                plain(coord, atype, box=box)["energy"] + half,
                 atol=1.0e-12,
                 rtol=1.0e-12,
             )

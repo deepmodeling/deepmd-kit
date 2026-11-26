@@ -24,9 +24,9 @@ dp --pt-expt train ../input.json
 dp --pt-expt freeze -c model.ckpt.pt -o frozen_model --lower-kind graph
 ```
 
-The pair style accepts either a graph-lower archive, as frozen above, or the
-compact canonical graph archive that `dp --pt-expt compress` produces, which
-runs the fused CUDA kernels. See
+`dpa4spin` accepts either a graph-lower archive, as frozen above, or the
+compressed archive that `dp --pt-expt compress` produces and that runs the
+fused CUDA kernels. See
 [model compression](../../../../doc/model/dpa4c.md#model-compression) for that
 workflow, and point `pair_style` at the compressed archive if you follow it.
 
@@ -36,8 +36,9 @@ Run on the host:
 lmp -in in.lammps
 ```
 
-Run device-resident under Kokkos, where the graph and the moment stay in device
-memory for the whole step:
+Under Kokkos the graph and the moments stay in device memory for the whole
+step, and `dpa4spin/kk` reads only the compressed archive, so `pair_style` has
+to point at that archive. Run device-resident with:
 
 ```bash
 lmp -k on g 1 -sf kk -in in.lammps
@@ -64,6 +65,13 @@ configuration, which exercises the conservative force, the neighbor rebuilds
 and the domain decomposition; the thermostat does not touch the moments, so
 they stay fixed through that stage.
 
-Spin dynamics through `fix nve/spin` requires a LAMMPS build whose fix
-recognizes this pair style, because the stock fix accumulates the magnetic
-force only from pair styles matching its own name pattern.
+The pair style stores the magnetic force in the convention of the LAMMPS SPIN
+package: the negative energy gradient `-dE/dS` with respect to the moment, all
+three components of it, scaled by the moment magnitude over `hbar`. The TSPIN
+fixes of the SPIN package, `fix nve/tspin` and its thermostats, which LAMMPS
+provides in its releases after 30 Sep 2026, integrate the direction and the
+magnitude of every moment from it. The `fix nve/spin` of the SPIN package does
+not use this force: the fix evaluates the magnetic force itself, through the
+pair styles whose names begin with `spin`, and `dpa4spin` and `dpa4spin/kk` are
+not among them. With no such pair style, the fix runs silently on a single MPI
+rank and stops with a sectoring error on several.

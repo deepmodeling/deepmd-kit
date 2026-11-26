@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""JSON Schema for model inputs before preset expansion."""
+"""JSON Schema for model presets and grouped data input forms."""
 
 import json
 import re
@@ -7,11 +7,36 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.utils.multi_task import (
+    SHARED_ENTRIES,
+)
 from deepmd.utils.model_preset_data import (
     MODEL_PRESETS,
 )
 
-_REGIONS = ("type_map", "descriptor", "fitting_net")
+
+def with_data_groups(schema: dict[str, Any], multi_task: bool) -> dict[str, Any]:
+    """Describe the same training-data fields for dictionaries and list items."""
+    training = schema["properties"]["training"]
+    if multi_task:
+        data_dict = training["properties"]["data_dict"]
+        # dargs describes the values of a repeated argument under ``items``,
+        # which JSON Schema applies to arrays only. The values of a repeated
+        # dictionary are constrained by ``additionalProperties``.
+        if "items" in data_dict:
+            data_dict["additionalProperties"] = data_dict.pop("items")
+        training = data_dict["additionalProperties"]
+    data = training["properties"]["training_data"]
+    data["items"] = {
+        "type": "object",
+        "properties": data["properties"],
+        "required": data["required"],
+    }
+    if "allOf" in data:
+        data["items"]["allOf"] = data["allOf"]
+    data["minItems"] = 1
+    data["properties"]["prob"].update(minimum=0, maximum=1)
+    return schema
 
 
 def _preset_pattern(names: list[str]) -> str:
@@ -60,7 +85,7 @@ def _with_defaults(
             properties[name] = {**field, "default": defaults[name]}
         else:
             properties[name] = {"$ref": pointer}
-        if multi_task and merge_regions and name in _REGIONS:
+        if multi_task and merge_regions and name in SHARED_ENTRIES:
             properties[name] = {"anyOf": [properties[name], {"type": "string"}]}
     result["properties"] = properties
     result["required"] = [

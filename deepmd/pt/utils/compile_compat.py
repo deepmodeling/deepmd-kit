@@ -42,6 +42,7 @@ __all__ = [
     "SUPPORTED_COMPILE_TORCH",
     "apply_global_compile_patches",
     "build_inductor_compile_options",
+    "build_make_fx_decompositions",
     "check_compile_torch_version",
     "get_task_buffer_names",
     "get_task_buffer_values",
@@ -49,9 +50,11 @@ __all__ = [
     "next_safe_prime",
     "patch_inductor_autotune_benchmark_tolerance",
     "patch_inductor_force_int64_indexing",
+    "patch_inductor_stable_sort_fallback",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
     "relax_views_to_reshapes",
+    "replace_sym_numel_with_method",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
     "traced_output_keys",
@@ -148,10 +151,13 @@ def apply_global_compile_patches() -> None:
     import torch._dynamo.config as dynamo_config
 
     dynamo_config.optimize_ddp = False
+    # Cutoff-specific edge compaction carries data-dependent leading sizes.
+    dynamo_config.capture_dynamic_output_shape_ops = True
 
     # Force int64 tensor indexing in every compiled kernel.  Applies on all
     # supported PyTorch versions and is independent of runtime shapes.
     patch_inductor_force_int64_indexing()
+    patch_inductor_stable_sort_fallback()
 
     # Let GEMM autotuning survive a candidate whose benchmark harness is
     # broken; only the opt-in ``max_autotune_gemm`` (``DP_TUNE_TRAIN=2``)
@@ -194,6 +200,27 @@ def patch_inductor_force_int64_indexing() -> None:
     # forces int64 indexing in every generated kernel.
     SIMDScheduling.can_use_32bit_indexing = staticmethod(lambda numel, buffers: False)
     SIMDScheduling._dp_force_int64_patched = True
+
+
+def patch_inductor_stable_sort_fallback() -> None:
+    """Lower every stable sort to the native ATen implementation.
+
+    Persistent Triton reductions are disabled by the compiler contract, so a
+    Triton sort never runs; its lowering nevertheless checks an int16
+    eligibility bound first, and a data-dependent size that passes through it
+    (the compact edge count of a per-block cutoff) inherits the bound of
+    32766 elements, which a later ``nonzero`` then enforces. Routing stable
+    sorts to the native fallback keeps those sizes unbounded. A PyTorch release
+    without ``lowering.sort_fallback`` keeps its own lowering.
+    """
+    from torch._inductor import (
+        lowering,
+    )
+
+    sort_fallback = getattr(lowering, "sort_fallback", None)
+    if sort_fallback is None:
+        return
+    lowering.lowerings[torch.ops.aten.sort.stable] = sort_fallback
 
 
 def patch_inductor_autotune_benchmark_tolerance() -> None:
@@ -537,6 +564,72 @@ def relax_views_to_reshapes(gm: torch.fx.GraphModule) -> None:
         gm.recompile()
 
 
+def replace_sym_numel_with_method(gm: torch.fx.GraphModule) -> None:
+    """Rewrite every ``aten.sym_numel`` in a ``make_fx`` graph to ``Tensor.numel``.
+
+    ``make_fx`` emits ``aten.sym_numel`` for a symbolic size that the trace
+    first meets as the element count of a tensor; the length of an
+    ``index_select`` output, which is the element count of its index, is such
+    a size. ``torch.compile`` retraces the graph with Dynamo for every shape
+    specialization, and Dynamo specializes an axis of length one. The element
+    count of a tensor whose axes are all specialized is a Python integer,
+    which Dynamo does not accept as the result of an ATen operator: it breaks
+    the graph at the node and resumes in a separate frame. ``Tensor.numel``
+    returns the same value; Dynamo folds it to a constant for a specialized
+    shape and keeps it symbolic otherwise, so the rewritten graph is traced as
+    one frame for every specialization.
+
+    Parameters
+    ----------
+    gm : torch.fx.GraphModule
+        The ``make_fx`` graph to rewrite in place.
+    """
+    sym_numel = torch.ops.aten.sym_numel.default
+    replaced = False
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target is sym_numel:
+            node.op = "call_method"
+            node.target = "numel"
+            replaced = True
+    if replaced:
+        gm.graph.lint()
+        gm.recompile()
+
+
+def build_make_fx_decompositions() -> dict[Any, Any]:
+    """Return the operator decompositions required when tracing force graphs.
+
+    ``make_fx`` materializes the first-order force ``autograd.grad`` into the
+    forward FX graph before ``torch.compile`` differentiates that graph a
+    second time for parameter gradients. Two ATen operators require explicit
+    decomposition at trace time:
+
+    * ``aten.silu_backward.default`` has no registered higher-order autograd
+      formula; decomposing it into ``sigmoid`` and pointwise products makes the
+      traced first derivative twice differentiable.
+    * ``aten.sgn.default`` (emitted by ``aten.abs`` backward) queries concrete
+      ``aten.size.default`` in its C++ backward formula, which forces symbolic
+      node and edge dimensions to specialize to constants during AOTAutograd
+      joint tracing. Decomposing it lowers real inputs to ``aten.sign.default``,
+      whose backward preserves symbolic shapes.
+
+    Returns
+    -------
+    dict[Any, Any]
+        Mapping suitable for ``make_fx(..., decomposition_table=...)``.
+    """
+    from torch._decomp import (
+        get_decompositions,
+    )
+
+    return get_decompositions(
+        [
+            torch.ops.aten.silu_backward.default,
+            torch.ops.aten.sgn.default,
+        ]
+    )
+
+
 def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]:
     """Return the conservative Inductor options used to lower the dynamic graph.
 
@@ -544,9 +637,11 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
     misbehaved on the combination of data-dependent edge counts and a
     second-order autograd graph -- most visibly the oversized fused Triton
     reduction kernels that fail ``make_ttgir`` (``PassManager::run failed``) on
-    some GPU/Triton combinations. Options absent from the running PyTorch's
-    configuration registry are dropped so the returned dictionary stays valid
-    across releases.
+    some GPU/Triton combinations. It also gives every generated kernel output
+    buffers separate from its inputs, without which Triton 3.7.1 can compute a
+    reduction wrongly. Options absent from the running PyTorch's configuration
+    registry are dropped so the returned dictionary stays valid across
+    releases.
 
     Parameters
     ----------
@@ -595,6 +690,18 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # access. A 1D grid keeps that axis on the x dimension (limit 2**31-1).
         # The option is shared by the training and evaluation graphs.
         "triton.max_tiles": 1,
+        # Inductor can generate a reduction kernel that loads an input inside
+        # its reduction loop and stores a result over that input in the same
+        # iteration. Where the tuned configuration launches more threads than
+        # the block has elements, Triton 3.7.1 replicates the block across
+        # warps: every copy loads, only the first copy stores, and no barrier
+        # separates the loads of an iteration from that store, so a lagging
+        # copy can load the stored value and the reduction comes out wrong
+        # intermittently. The Inductor cache keeps the tuned configuration, so
+        # every later process that loads the kernel from the cache can compute
+        # the reduction wrongly as well. Separate output buffers leave no
+        # kernel that stores over its own inputs.
+        "inplace_buffers": False,
     }
     # ``DP_TUNE_TRAIN`` grades the compile-time investment of the training
     # graphs (cumulative levels; inference graphs ignore it, the AOTI export
@@ -634,6 +741,16 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
     if tune_train >= 2:
         compile_options["max_autotune_gemm"] = True
     if inference:
+        release = _torch_release()
+        # A masked SIMD tail in a dynamic CPU scatter can accumulate forces
+        # into the wrong rows or outside the output. Scalar tails preserve
+        # full-width SIMD blocks and parallel loops.
+        compile_options["cpp.enable_loop_tail_vec"] = False
+        # PyTorch 2.11 CPU SIMD codegen can reuse a scatter's index array
+        # in an earlier gather before its declaration, even without
+        # horizontal fusion. Scalar codegen preserves the dynamic graph.
+        if release == (2, 11):
+            compile_options["cpp.simdlen"] = 1
         # The peak-memory reordering pass sizes buffers through
         # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
         # lowered from ``make_fx`` fake placeholders whose edge-count symbols
@@ -665,7 +782,7 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
             # reductions, so its memory-safety fixtures use serial codegen.
             compile_options["cpp.dynamic_threads"] = False
             compile_options["cpp.threads"] = 1
-        elif _torch_release() != (2, 11):
+        elif release != (2, 11):
             compile_options["cpp.min_chunk_size"] = 1
             # Resolve the thread count at run time instead of baking the
             # freezing host's into the generated code. A deployed artifact is

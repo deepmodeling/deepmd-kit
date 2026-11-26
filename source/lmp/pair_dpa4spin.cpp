@@ -107,9 +107,7 @@ static const char cite_user_deepmd_package[] =
     "}\n\n";
 
 namespace {
-// Reduced Planck constant in eV.ps. The model reports the magnetic force as
-// the energy gradient with respect to the magnetic moment, while LAMMPS stores
-// the precession force; the two differ by the factor hbar / |m|.
+// Reduced Planck constant in eV.ps, which scales the stored magnetic force.
 constexpr double kHBar = 6.5821191e-04;
 // Positions of the LAMMPS global virial components (xx, yy, zz, xy, xz, yz)
 // within the nine-component tensor the model reports.
@@ -120,7 +118,12 @@ constexpr int kCentroidVirialMap[9] = {0, 4, 8, 3, 6, 7, 1, 2, 5};
 }  // namespace
 
 PairDPA4Spin::PairDPA4Spin(LAMMPS* lmp)
-    : Pair(lmp), scale(nullptr), cutoff(0.0), commdata_(nullptr) {
+    : Pair(lmp),
+      model_deviation(lmp),
+      scale(nullptr),
+      cutoff(0.0),
+      is_restart(false),
+      commdata_(nullptr) {
   if (lmp->citeme) {
     lmp->citeme->add(cite_user_deepmd_package);
   }
@@ -133,9 +136,11 @@ PairDPA4Spin::PairDPA4Spin(LAMMPS* lmp)
   dist_unit_cvt_factor = force->angstrom;
   force_unit_cvt_factor = ener_unit_cvt_factor / dist_unit_cvt_factor;
 
-  // The artifact is identified by a path that a restart cannot carry, so the
-  // input has to re-issue pair_style and pair_coeff after read_restart.
-  restartinfo = 0;
+  // The artifact is identified by a path that a restart does not carry, so
+  // the input re-issues pair_style and pair_coeff after read_restart; the
+  // restart records only the style, whose model deviation then continues its
+  // output file.
+  restartinfo = 1;
   // The model reports a nine-component atomic virial, which feeds compute
   // centroid/stress/atom.
   centroidstressflag = CENTROID_AVAIL;
@@ -224,59 +229,79 @@ void PairDPA4Spin::settings(int narg, char** arg) {
   // Name whichever style the input selected, so the Kokkos variant reports
   // itself rather than its host base.
   const std::string style = force->pair_style;
-  if (narg < 1) {
+  // The models precede the first keyword.
+  const auto is_keyword = [](const std::string& word) {
+    return word == "charge_spin" || ModelDeviation::is_option(word);
+  };
+  std::vector<std::string> models;
+  while (static_cast<int>(models.size()) < narg &&
+         !is_keyword(arg[models.size()])) {
+    models.emplace_back(arg[models.size()]);
+  }
+  if (models.empty()) {
     error->all(FLERR, "Illegal pair_style command: pair style " + style +
-                          " evaluates a single native-spin artifact and takes "
-                          "its path as the first argument.");
+                          " takes the paths of its native-spin artifacts "
+                          "before its keywords.");
   }
+  const double ensemble_cutoff = load_ensemble(
+      models, deep_spin, ensemble,
+      [&](deepmd_compat::DeepSpin& model, const std::string& path) {
+        try {
+          model.init(path, get_node_rank());
+        } catch (deepmd_compat::deepmd_exception& e) {
+          error->one(FLERR, e.what());
+        }
+      },
+      style, error);
+  cutoff = ensemble_cutoff * dist_unit_cvt_factor;
 
-  try {
-    deep_spin.init(arg[0], get_node_rank());
-  } catch (deepmd_compat::deepmd_exception& e) {
-    error->one(FLERR, e.what());
-  }
-  cutoff = deep_spin.cutoff() * dist_unit_cvt_factor;
-
-  // How many values name a charge state is a property of the artifact, so the
-  // keyword can only be read once the model is loaded.
+  // The artifact determines how many values follow charge_spin.
   const int dim_chg_spin = deep_spin.dim_chg_spin();
   std::vector<double> charge_spin;
-  int iarg = 1;
+  model_deviation.reset();
+  int iarg = static_cast<int>(models.size());
   while (iarg < narg) {
-    if (std::string(arg[iarg]) != "charge_spin") {
+    const std::string key(arg[iarg]);
+    if (const int used = model_deviation.parse(
+            narg, arg, iarg, ener_unit_cvt_factor, is_keyword)) {
+      iarg += used;
+    } else if (key == "charge_spin") {
+      // One charge state holds for the whole run, so a second occurrence names
+      // no state the style could serve. Values already read mark the keyword
+      // as seen: a successful read always contributes at least one value.
+      if (!charge_spin.empty()) {
+        error->all(FLERR,
+                   "Illegal pair_style command: keyword charge_spin names the "
+                   "single charge state of the whole run, so it may appear "
+                   "only once.");
+      }
+      if (dim_chg_spin == 0) {
+        error->all(FLERR,
+                   "Illegal pair_style command: the artifact served by pair "
+                   "style " +
+                       style +
+                       " carries no charge/spin condition, so keyword "
+                       "charge_spin names nothing it can serve.");
+      }
+      if (iarg + dim_chg_spin >= narg) {
+        error->all(FLERR,
+                   "Illegal pair_style command: keyword charge_spin names a "
+                   "charge state with " +
+                       std::to_string(dim_chg_spin) + " value(s).");
+      }
+      for (int ii = 0; ii < dim_chg_spin; ++ii) {
+        charge_spin.push_back(
+            utils::numeric(FLERR, arg[iarg + 1 + ii], false, lmp));
+      }
+      iarg += 1 + dim_chg_spin;
+    } else {
       error->all(FLERR, "Illegal pair_style command: pair style " + style +
-                            " takes the artifact path followed by the optional "
-                            "keyword charge_spin, not '" +
-                            std::string(arg[iarg]) + "'.");
+                            " takes the artifact paths followed by the "
+                            "optional keywords charge_spin, "
+                            "out_freq, out_file, atomic, relative and "
+                            "relative_v, not '" +
+                            key + "'.");
     }
-    // One charge state holds for the whole run, so a second occurrence names
-    // no state the style could serve.  Values already read mark the keyword
-    // as seen: a successful read always contributes at least one value.
-    if (!charge_spin.empty()) {
-      error->all(FLERR,
-                 "Illegal pair_style command: keyword charge_spin names the "
-                 "single charge state of the whole run, so it may appear "
-                 "only once.");
-    }
-    if (dim_chg_spin == 0) {
-      error->all(FLERR,
-                 "Illegal pair_style command: the artifact served by pair "
-                 "style " +
-                     style +
-                     " carries no charge/spin condition, so keyword "
-                     "charge_spin names nothing it can serve.");
-    }
-    if (iarg + dim_chg_spin >= narg) {
-      error->all(FLERR,
-                 "Illegal pair_style command: keyword charge_spin names a "
-                 "charge state with " +
-                     std::to_string(dim_chg_spin) + " value(s).");
-    }
-    for (int ii = 0; ii < dim_chg_spin; ++ii) {
-      charge_spin.push_back(
-          utils::numeric(FLERR, arg[iarg + 1 + ii], false, lmp));
-    }
-    iarg += 1 + dim_chg_spin;
   }
 
   // A charge/spin condition named on the pair_style line holds for the whole
@@ -287,17 +312,31 @@ void PairDPA4Spin::settings(int narg, char** arg) {
   if (!charge_spin.empty()) {
     try {
       deep_spin.set_charge_spin(charge_spin);
+      for (auto& model : ensemble) {
+        model.set_charge_spin(charge_spin);
+      }
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
   }
 
+  // The deviation compares the magnetic forces of the models as they return
+  // them, in their own convention.
+  model_deviation.setup(static_cast<int>(models.size()), true, is_restart,
+                        ener_unit_cvt_factor, force_unit_cvt_factor);
+  // Each atom of the reverse communication carries the rows of the ensemble.
+  comm_reverse = model_deviation.width();
+
+  std::string paths;
+  for (const std::string& path : models) {
+    paths += path + " ";
+  }
   utils::logmesg(lmp,
                  "  >>> Info of model(s):\n"
-                 "  using 1 model(s): {}\n"
+                 "  using {} model(s): {}\n"
                  "  rcut in model:      {}\n"
                  "  ntypes in model:    {}\n",
-                 arg[0], cutoff, deep_spin.numb_types());
+                 models.size(), paths, cutoff, deep_spin.numb_types());
   if (!charge_spin.empty()) {
     std::string values;
     for (const double value : charge_spin) {
@@ -390,6 +429,7 @@ void PairDPA4Spin::coeff(int narg, char** arg) {
     }
   }
 
+  check_ensemble_types(type_idx_map, deep_spin, ensemble, error);
   std::string excluded;
   for (int ii = 0; ii < ntypes; ++ii) {
     if (type_idx_map[ii] < 0) {
@@ -411,6 +451,7 @@ void PairDPA4Spin::coeff(int narg, char** arg) {
 
 void PairDPA4Spin::init_style() {
   neighbor->add_request(this, NeighConst::REQ_FULL);
+  model_deviation.start_run();
 
   const std::string style = force->pair_style;
   if (!atom->sp_flag) {
@@ -421,13 +462,15 @@ void PairDPA4Spin::init_style() {
   // The scheme, not the lower schema, decides which style serves an artifact:
   // this one marshals one node per atom and reads the magnetic force straight
   // off the model, neither of which a virtual-atom model provides.
-  if (!deep_spin.uses_native_spin_scheme()) {
+  const auto native = [](deepmd_compat::DeepSpin& model) {
+    return model.uses_native_spin_scheme();
+  };
+  if (!native(deep_spin) ||
+      !std::all_of(ensemble.begin(), ensemble.end(), native)) {
     error->all(FLERR,
                "pair style " + style +
-                   " serves the native-spin scheme without cross-rank message "
-                   "passing; a virtual-atom spin model, and a native-spin "
-                   "model whose descriptor exchanges intermediate features "
-                   "between ranks, are served by pair style deepspin.");
+                   " serves native-spin models; a virtual-atom spin model "
+                   "is served by pair style deepspin.");
   }
   // A single rank folds ghost neighbours onto the local atom that owns them,
   // which is resolved through the atom map. Domain decomposition gives every
@@ -460,7 +503,15 @@ void PairDPA4Spin::compute(int eflag, int vflag) {
   const int nghost = atom->nghost;
   const int nall = nlocal + nghost;
   if (nall == 0) {
-    // A rank holding no atom at all contributes nothing to any output.
+    // A rank holding no atom at all contributes nothing to any output; at a
+    // step that writes the model deviation it takes part in its reductions
+    // with no rows.
+    if (model_deviation.due()) {
+      for (int kk = 0; kk < model_deviation.models(); ++kk) {
+        model_deviation.store(kk, {}, std::vector<double>(9, 0.0));
+      }
+      write_model_deviation();
+    }
     return;
   }
 
@@ -533,19 +584,38 @@ void PairDPA4Spin::compute(int eflag, int vflag) {
     error->one(FLERR, e.what());
   }
 
+  // The further models of the ensemble are evaluated on the same neighbor
+  // list at the steps that write the model deviation.
+  if (model_deviation.due()) {
+    model_deviation.store(0, dforce, dvirial, dforce_mag);
+    const int ensemble_ago = model_deviation.ensemble_ago();
+    for (std::size_t kk = 0; kk < ensemble.size(); ++kk) {
+      double energy = 0.0;
+      std::vector<double> model_force, model_force_mag, model_virial;
+      try {
+        ensemble[kk].compute(energy, model_force, model_force_mag, model_virial,
+                             dcoord, dspin, dtype, dbox, nghost, lmp_list,
+                             ensemble_ago);
+      } catch (deepmd_compat::deepmd_exception& e) {
+        error->one(FLERR, e.what());
+      }
+      model_deviation.store(kk + 1, model_force, model_virial, model_force_mag);
+    }
+    write_model_deviation();
+  }
+
   // === Step 3. Accumulate the model outputs ===
-  // The model reports a force and a magnetic force for every atom the neighbor
-  // list covers, ghosts included; the spin atom style folds the ghost rows
-  // onto their owners in its reverse communication. Dividing the magnetic
-  // force by hbar / |m| turns the energy gradient with respect to the moment
-  // into the precession force LAMMPS stores. Multiplication by |m| preserves
-  // that relation while making a zero moment well-defined.
+  // Ghost contributions are folded onto their owners by the spin atom style.
+  // The magnetic force is stored in the precession convention of the SPIN
+  // package, -dE/dS scaled by |m|/hbar, all three components kept.
   const double force_scale = scale[1][1] * force_unit_cvt_factor;
   const double magnetic_force_scale = force_scale / kHBar;
   for (int ii = 0; ii < nall; ++ii) {
+    const double moment_factor = sp[ii][3];
     for (int dd = 0; dd < 3; ++dd) {
       f[ii][dd] += dforce[3 * ii + dd] * force_scale;
-      fm[ii][dd] += dforce_mag[3 * ii + dd] * sp[ii][3] * magnetic_force_scale;
+      fm[ii][dd] +=
+          dforce_mag[3 * ii + dd] * moment_factor * magnetic_force_scale;
     }
   }
 
@@ -572,6 +642,23 @@ void PairDPA4Spin::compute(int eflag, int vflag) {
       }
     }
   }
+}
+
+void PairDPA4Spin::write_model_deviation() {
+  // With newton on, the rows of the ghost atoms hold contributions to their
+  // owners.
+  if (force->newton_pair) {
+    comm->reverse_comm(this);
+  }
+  model_deviation.write();
+}
+
+int PairDPA4Spin::pack_reverse_comm(int n, int first, double* buf) {
+  return model_deviation.pack_reverse(n, first, buf);
+}
+
+void PairDPA4Spin::unpack_reverse_comm(int n, int* list, double* buf) {
+  model_deviation.unpack_reverse(n, list, buf);
 }
 
 void* PairDPA4Spin::extract(const char* str, int& dim) {

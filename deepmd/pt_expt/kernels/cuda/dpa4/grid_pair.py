@@ -2,7 +2,7 @@
 """Bindings for the fused DPA4 / SeZM grid pair product.
 
 The CUDA operator ``deepmd::dpa4_grid_pair`` (see
-``source/op/pt/dpa4_grid_pair.cu``) evaluates
+``source/op/pt/dpa4/grid_pair.cu``) evaluates
 ``from_grid(to_grid(left) * to_grid(right))`` without materializing the grid
 field. That expression is the core of every grid operator of the model: the
 parameter-free node product, the polynomial grid MLP, and the branch mixer at a
@@ -28,6 +28,7 @@ from typing import (
 import torch
 
 __all__ = [
+    "SUPPORTED_PARITY_SLOTS",
     "SUPPORTED_SLOTS",
     "ensure_registered",
     "grid_pair",
@@ -39,6 +40,18 @@ __all__ = [
 # coefficient dimension times the frame count, so the SO(3) grids of degrees one
 # to six give ``3 * (l + 1)^2`` and 9 is the matching S2 grid.
 SUPPORTED_SLOTS = frozenset({9, 12, 27, 48, 75, 108, 147})
+
+SUPPORTED_PARITY_SLOTS = frozenset(
+    {
+        (9, 6),
+        (12, 3),
+        (27, 18),
+        (48, 18),
+        (75, 45),
+        (108, 45),
+        (147, 84),
+    }
+)
 
 
 def op_available() -> bool:
@@ -52,8 +65,10 @@ def _forward_fake(
     right: torch.Tensor,
     to_grid: torch.Tensor,
     from_grid: torch.Tensor,
+    parity_order: torch.Tensor | None = None,
+    even_count: int = 0,
 ) -> torch.Tensor:
-    del right, to_grid, from_grid
+    del right, to_grid, from_grid, parity_order, even_count
     # The CUDA implementation allocates outputs from contiguous operands.
     return left.new_empty(left.shape)
 
@@ -64,22 +79,32 @@ def _backward_fake(
     right: torch.Tensor,
     to_grid: torch.Tensor,
     from_grid: torch.Tensor,
+    parity_order: torch.Tensor | None = None,
+    even_count: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    del grad_out, to_grid, from_grid
+    del grad_out, to_grid, from_grid, parity_order, even_count
     return left.new_empty(left.shape), right.new_empty(right.shape)
 
 
 def _setup_context(ctx: Any, inputs: tuple[Any, ...], output: torch.Tensor) -> None:
     del output
-    ctx.save_for_backward(*inputs)
+    left, right, to_grid, from_grid, parity_order, even_count = inputs
+    ctx.save_for_backward(left, right, to_grid, from_grid, parity_order)
+    ctx.even_count = even_count
 
 
 def _backward(ctx: Any, grad_out: torch.Tensor) -> tuple:
-    left, right, to_grid, from_grid = ctx.saved_tensors
+    left, right, to_grid, from_grid, parity_order = ctx.saved_tensors
     g_left, g_right = torch.ops.deepmd.dpa4_grid_pair_backward(
-        grad_out.contiguous(), left, right, to_grid, from_grid
+        grad_out.contiguous(),
+        left,
+        right,
+        to_grid,
+        from_grid,
+        parity_order,
+        ctx.even_count,
     )
-    return g_left, g_right, None, None
+    return g_left, g_right, None, None, None, None
 
 
 @cache
@@ -103,6 +128,8 @@ def grid_pair(
     right: torch.Tensor,
     to_grid: torch.Tensor,
     from_grid: torch.Tensor,
+    parity_order: torch.Tensor | None = None,
+    even_count: int = 0,
 ) -> torch.Tensor:
     """
     Evaluate ``from_grid(to_grid(left) * to_grid(right))`` on coefficients.
@@ -116,6 +143,12 @@ def grid_pair(
         Coefficient-to-grid projector with shape (G, P).
     from_grid : torch.Tensor
         Grid-to-coefficient projector, transposed to shape (G, P).
+    parity_order : torch.Tensor, optional
+        Coefficient-slot permutation with even-degree slots first, with shape
+        (P,). Selects inversion projection on the original quadrature.
+    even_count : int, default=0
+        Number of even-degree slots in ``parity_order``. Supported partitions
+        are listed in ``SUPPORTED_PARITY_SLOTS``.
 
     Returns
     -------
@@ -123,4 +156,6 @@ def grid_pair(
         Coefficient result with shape (N, P, C).
     """
     ensure_registered()
-    return torch.ops.deepmd.dpa4_grid_pair(left, right, to_grid, from_grid)
+    return torch.ops.deepmd.dpa4_grid_pair(
+        left, right, to_grid, from_grid, parity_order, even_count
+    )

@@ -12,6 +12,15 @@ from unittest import (
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
+from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+    mean_envelope_mass,
+)
+from deepmd.dpmodel.descriptor.dpa4_nn.mlp import (
+    SwiGLUMLP,
+)
 from deepmd.dpmodel.descriptor.dpa4c import (
     DescrptDPA4C,
 )
@@ -32,6 +41,9 @@ from deepmd.dpmodel.utils.lebedev import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     graph_from_dense_quartet,
+)
+from deepmd.dpmodel.utils.network import (
+    NativeLayer,
 )
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -148,6 +160,37 @@ def projected_blocks(
             strict=True,
         )
     ]
+
+
+def randomize_attentions(descriptor: DescrptDPA4C) -> DescrptDPA4C:
+    """Draw every zero-initialized map of every further block.
+
+    The output maps start at zero, which makes every block the identity, so a
+    contract tested at initialization would not reach the blocks.
+    """
+    rng = np.random.default_rng(97)
+    for block in descriptor.attentions:
+        modules = [
+            module
+            for value in vars(block).values()
+            for module in (value if isinstance(value, list) else [value])
+        ]
+        for module in modules:
+            layers = module.layers if isinstance(module, SwiGLUMLP) else [module]
+            for layer in layers:
+                if isinstance(layer, NativeLayer) and not np.any(layer.w):
+                    layer.w = rng.normal(size=layer.w.shape)
+        block.adam_field_gain = rng.normal(size=block.adam_field_gain.shape)
+    return descriptor
+
+
+BLOCK_CONFIG = {
+    "ntypes": 2,
+    "channels": 32,
+    "lmax": 3,
+    "precision": "float64",
+    "seed": 61,
+}
 
 
 class TestDPA4C:
@@ -541,6 +584,269 @@ class TestDPA4C:
             rtol=2e-13,
         )
 
+    # === Further message-passing blocks ===
+
+    def test_further_block_is_the_identity_at_initialization(self) -> None:
+        single = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG)
+        multi_block = DescrptDPA4C(rcut=[3.0, 2.5], n_blocks=2, **BLOCK_CONFIG)
+        assert multi_block.get_dim_out() == single.get_dim_out()
+        # Every output map starts at zero, so every block reproduces the
+        # moments of the first.
+        np.testing.assert_allclose(
+            evaluate(multi_block), evaluate(single), atol=1e-14, rtol=0.0
+        )
+
+    def test_further_blocks_are_o3_invariant_and_alter_the_descriptor(self) -> None:
+        single = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG)
+        multi_block = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.5, 2.5], n_blocks=3, **BLOCK_CONFIG)
+        )
+        reference = evaluate(multi_block)
+        assert np.max(np.abs(reference - evaluate(single))) > 1e-3
+        rng = np.random.default_rng(61)
+        for determinant in (1.0, -1.0):
+            rotation, upper = np.linalg.qr(rng.normal(size=(3, 3)))
+            rotation = rotation * np.sign(np.diag(upper))
+            if np.linalg.det(rotation) * determinant < 0.0:
+                rotation[:, 0] *= -1.0
+            np.testing.assert_allclose(
+                evaluate(multi_block, COORD @ rotation.T),
+                reference,
+                atol=1e-11,
+                rtol=1e-11,
+            )
+
+    def test_block_attention_matches_the_explicit_terms(self) -> None:
+        descriptor = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.0], n_blocks=2, **BLOCK_CONFIG)
+        )
+        block = descriptor.attentions[0]
+        rng = np.random.default_rng(67)
+        n_node, n_edge, channels = 3, 7, 32
+        heads = block.HEADS
+        moments = rng.normal(size=(n_node, descriptor.degree_offsets[-1]))
+        invariants = rng.normal(size=(n_node, block.descriptor_dim))
+        direction = rng.normal(size=(n_edge, 3))
+        direction /= np.linalg.norm(direction, axis=1, keepdims=True)
+        basis = build_angular_basis(direction, 3)
+        src = rng.integers(0, n_node, size=n_edge)
+        dst = rng.integers(0, n_node, size=n_edge)
+        amplitude = rng.normal(size=(n_edge, channels))
+        envelope = rng.uniform(0.0, 1.0, size=n_edge)
+        block_envelope = rng.uniform(0.0, 1.0, size=n_edge)
+        rescaled, transport = block.call(
+            block.source_features(moments, invariants),
+            block.center_features(invariants),
+            amplitude,
+            basis,
+            envelope,
+            block_envelope,
+            src,
+            dst,
+        )
+
+        def saturate(value: np.ndarray, knee: float) -> np.ndarray:
+            return value / np.sqrt(1.0 + (value / knee) ** 2)
+
+        # Every head of every degree of the source is saturated by its norm,
+        # and the fields read it along the reversed bond, which flips the
+        # sign of every odd degree.
+        keys, fields = [], []
+        for degree, projection in enumerate(block.key_projections, start=1):
+            start, end = descriptor.degree_offsets[degree : degree + 2]
+            moment = moments[src, start:end].reshape(
+                n_edge, 2 * degree + 1, descriptor.degree_channels[degree]
+            )
+            key = np.einsum("emc,ch->emh", moment, projection.w)
+            key /= np.sqrt(
+                1.0 + np.sum(key**2, axis=1, keepdims=True) / block.KEY_KNEE**2
+            )
+            keys.append(key)
+            fields.append(
+                (-1.0) ** degree
+                * np.einsum("em,emh->eh", basis[:, degree**2 : (degree + 1) ** 2], key)
+            )
+        keys = np.concatenate(keys, axis=1)
+        fields = np.stack(fields, axis=1)
+        state_input = saturate(invariants, block.STATE_KNEE)[src]
+        amplitude_input = saturate(amplitude, block.AMPLITUDE_KNEE)
+        field = np.einsum("elh,lh->eh", fields, block.adam_field_gain)
+        hidden = (
+            block.hidden_state.call(state_input)
+            + block.hidden_field.call(fields.reshape(n_edge, -1))
+            + block.hidden_amplitude.call(amplitude_input)
+        )
+        logit = (
+            field[:, np.arange(channels) % heads]
+            + block.state_encoder.call(state_input)
+            + block.hidden_output.call(hidden / (1.0 + np.exp(-hidden)))
+        )
+        np.testing.assert_allclose(
+            rescaled,
+            amplitude * (1.0 + block_envelope[:, None] * np.tanh(logit)),
+            atol=1e-12,
+            rtol=1e-12,
+        )
+
+        # The keys reach the centers through an envelope-weighted softmax of
+        # the capped logits of the leading channels, with a null mass.
+        cap = block.LOGIT_CAP
+        mass = (envelope * block_envelope)[:, None] ** 2 * np.exp(
+            cap * np.tanh(logit[:, :heads] / cap)
+        )
+        null = np.log1p(
+            np.exp(block.null_mass.call(saturate(invariants, block.STATE_KNEE)))
+        )
+        denominator = null + block.NULL_FLOOR
+        numerator = np.zeros((n_node, keys.shape[1], heads))
+        weight = mass * block.transport_radial.call(amplitude_input)
+        for edge in range(n_edge):
+            denominator[dst[edge]] += mass[edge]
+            numerator[dst[edge]] += weight[edge] * keys[edge]
+        reduced = numerator / denominator[:, None, :]
+        expected, start = [], 0
+        for degree, output in enumerate(block.transport_outputs, start=1):
+            size = 2 * degree + 1
+            expected.append(
+                np.einsum(
+                    "nmh,hc->nmc", reduced[:, start : start + size], output.w
+                ).reshape(n_node, -1)
+            )
+            start += size
+        np.testing.assert_allclose(
+            transport, np.concatenate(expected, axis=1), atol=1e-12, rtol=1e-12
+        )
+
+    def test_block_factor_is_bounded_and_saturates_far_from_the_data(
+        self,
+    ) -> None:
+        descriptor = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.0], n_blocks=2, **BLOCK_CONFIG)
+        )
+        block = descriptor.attentions[0]
+        rng = np.random.default_rng(71)
+        moments = 1.0e6 * rng.normal(size=(4, descriptor.degree_offsets[-1]))
+        direction = rng.normal(size=(9, 3))
+        direction /= np.linalg.norm(direction, axis=1, keepdims=True)
+        basis = build_angular_basis(direction, 3)
+        distance = np.linspace(0.5, 2.8, 9)
+        src = rng.integers(0, 4, size=9)
+
+        def factor(invariants: np.ndarray) -> np.ndarray:
+            # The SiLU of the state encoder overflows its exponential at the
+            # largest inputs and saturates exactly, which is the limit tested.
+            with np.errstate(over="ignore"):
+                return block.call(
+                    block.source_features(moments, invariants),
+                    block.center_features(invariants),
+                    np.ones((9, 32)),
+                    basis,
+                    np.ones(9),
+                    descriptor.block_envelopes[0].call(distance),
+                    src,
+                    np.zeros(9, dtype=np.int64),
+                )[0]
+
+        far = 1.0e6 * rng.normal(size=(4, block.descriptor_dim))
+        value = factor(far)
+        # The factor lies in [0, 2] whatever its inputs, and equals one on
+        # every edge beyond the cutoff of the block.
+        assert value.shape == (9, 32)
+        assert np.all((value >= 0.0) & (value <= 2.0))
+        np.testing.assert_array_equal(value[distance >= 2.0], 1.0)
+
+        # The saturation acts per component: a component far beyond the knee
+        # loses its slope, while one near the data keeps it.
+        moments = np.zeros_like(moments)
+        near = 0.3 * rng.normal(size=(4, block.descriptor_dim))
+        far = 100.0 * rng.normal(size=(4, block.descriptor_dim))
+
+        def slopes(invariants: np.ndarray) -> np.ndarray:
+            base = factor(invariants)
+            step = 1.0e-6
+            result = []
+            for component in range(block.descriptor_dim):
+                shifted = invariants.copy()
+                shifted[:, component] += step
+                result.append(np.max(np.abs(factor(shifted) - base)) / step)
+            return np.asarray(result)
+
+        outside = np.all(np.abs(far) > 50.0, axis=0)
+        assert outside.sum() > 0
+        assert slopes(far)[outside].max() < 1e-3 * slopes(near).mean()
+
+    def test_further_block_reads_the_second_shell(self) -> None:
+        # Atom 2 lies within the cutoff of atom 1 only, so the descriptor of
+        # atom 0 sees it through the second block alone.
+        coord = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.9, 0.3, 0.0]]])
+        moved = coord.copy()
+        moved[0, 2] += [0.0, 0.2, 0.1]
+        atype = np.zeros((1, 3), dtype=np.int64)
+        config = {**BLOCK_CONFIG, "ntypes": 1, "channels": 16, "lmax": 2}
+        single = DescrptDPA4C(rcut=2.5, **config)
+        multi_block = randomize_attentions(
+            DescrptDPA4C(rcut=[2.5, 2.5], n_blocks=2, **config)
+        )
+        assert not single.has_message_passing()
+        assert multi_block.has_message_passing()
+        assert multi_block.has_message_passing_across_ranks()
+
+        def change(descriptor: DescrptDPA4C) -> float:
+            return np.max(
+                np.abs(
+                    evaluate(descriptor, moved, atype)[0, 0]
+                    - evaluate(descriptor, coord, atype)[0, 0]
+                )
+            )
+
+        assert change(single) == 0.0
+        assert change(multi_block) > 1e-6
+
+    def test_multi_block_descriptor_roundtrips_and_rejects_invalid_cutoffs(
+        self,
+    ) -> None:
+        descriptor = randomize_attentions(
+            DescrptDPA4C(rcut=[3.0, 2.5, 2.0], n_blocks=3, **BLOCK_CONFIG)
+        )
+        data = descriptor.serialize()
+        assert data["rcut"] == [3.0, 2.5, 2.0]
+        assert data["n_blocks"] == 3
+        restored = DescrptDPA4C.deserialize(data)
+        assert restored.block_rcut == [3.0, 2.5, 2.0]
+        # One cutoff applies to every block and serializes as one value.
+        uniform = DescrptDPA4C(rcut=3.0, n_blocks=2, **BLOCK_CONFIG)
+        assert uniform.block_rcut == [3.0, 3.0]
+        assert uniform.serialize()["rcut"] == 3.0
+        assert DescrptDPA4C.deserialize(uniform.serialize()).block_rcut == [3.0, 3.0]
+        # A record of format 2 carries one cutoff and one block.
+        legacy = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG).serialize()
+        legacy["@version"] = 2
+        del legacy["attentions"], legacy["n_blocks"]
+        assert not DescrptDPA4C.deserialize(legacy).attentions
+        assert restored.get_rcut() == 3.0
+        np.testing.assert_array_equal(evaluate(restored), evaluate(descriptor))
+        single = DescrptDPA4C(rcut=3.0, **BLOCK_CONFIG).serialize()
+        assert single["rcut"] == 3.0
+        assert not DescrptDPA4C.deserialize(single).attentions
+        with pytest.raises(ValueError, match="must not increase"):
+            DescrptDPA4C(rcut=[2.5, 3.0], n_blocks=2, **BLOCK_CONFIG)
+        for radius in (0.0, float("nan")):
+            with pytest.raises(ValueError, match="positive"):
+                DescrptDPA4C(rcut=[3.0, radius], n_blocks=2, **BLOCK_CONFIG)
+        with pytest.raises(ValueError, match=r"lists 2 cutoff\(s\)"):
+            DescrptDPA4C(rcut=[3.0, 2.5], n_blocks=3, **BLOCK_CONFIG)
+        with pytest.raises(ValueError, match=r"lists 2 cutoff\(s\)"):
+            DescrptDPA4C(rcut=[3.0, 2.5], **BLOCK_CONFIG)
+        for invalid in (0, 1.5, True):
+            with pytest.raises(ValueError, match="positive integer"):
+                DescrptDPA4C(rcut=3.0, n_blocks=invalid, **BLOCK_CONFIG)
+        # A record whose blocks disagree with its block count is rejected.
+        mismatched = descriptor.serialize()
+        mismatched["n_blocks"] = 2
+        mismatched["rcut"] = [3.0, 2.5]
+        with pytest.raises(ValueError, match="further blocks"):
+            DescrptDPA4C.deserialize(mismatched)
+
     def test_jax_lmax4_matches_numpy(self) -> None:
         pytest.importorskip("jax")
         from deepmd.jax.env import (
@@ -655,16 +961,19 @@ class TestDPA4C:
             np.testing.assert_allclose(np.linalg.norm(coupling), 1.0, atol=1e-15)
 
 
-class TestDPA4CBridgingWindow:
-    """The bridging window removes a close pair from the descriptor."""
+class TestDPA4CContactClamp:
+    """The contact clamp freezes the separation a bridged descriptor reads."""
 
-    R_INNER = 0.5
-    R_OUTER = 0.8
+    #: Data edge of the type-0/type-2 pair, in Å; every other pair keeps an
+    #: edge below each separation of the test cluster.
+    EDGE = 0.8
+    INNER = 0.75
 
     def setup_method(self) -> None:
         self.config = {
             "rcut": 3.0,
             "ntypes": 3,
+            "type_map": ["O", "H", "C"],
             "channels": 8,
             "lmax": 3,
             "n_radial": 4,
@@ -672,20 +981,26 @@ class TestDPA4CBridgingWindow:
             "precision": "float64",
             "seed": 17,
         }
-        self.windowed = DescrptDPA4C(
-            **self.config,
-            inner_clamp_f_inner=self.R_INNER,
-            inner_clamp_f_outer=self.R_OUTER,
-            inner_clamp_scale="absolute",
-        )
+        self.clamped = self.build()
         self.plain = DescrptDPA4C(**self.config)
+
+    def build(self, **overrides: Any) -> DescrptDPA4C:
+        """Build a clamped descriptor whose only acting edge is the 0-2 pair."""
+        descriptor = DescrptDPA4C(
+            **{**self.config, **overrides}, contact_clamp=self.INNER
+        )
+        edges = descriptor.contact_clamp.edges.copy()
+        edges[:-1, :-1] = 0.2
+        edges[0, 2] = edges[2, 0] = self.EDGE
+        descriptor.contact_clamp.edges = edges
+        return descriptor
 
     @staticmethod
     def cluster(distance: float) -> tuple[np.ndarray, np.ndarray]:
         """Place a type-2 atom `distance` from the type-0 origin atom.
 
         The direction keeps it more than 1.3 Å from every other atom, so the
-        origin pair is the only one the window acts on.
+        origin pair is the only one the clamp acts on.
         """
         direction = np.array([0.8, 0.36, -0.48])
         coord = COORD.copy()
@@ -693,75 +1008,32 @@ class TestDPA4CBridgingWindow:
         atype = np.array([[0, 2, 1, 1, 1]], dtype=np.int64)
         return coord, atype
 
-    @pytest.mark.parametrize("distance", [0.05, 0.3, 0.5])
-    def test_frozen_pair_equals_removed_edge(self, distance: float) -> None:
-        coord, atype = self.cluster(distance)
-        removed = DescrptDPA4C(**self.config, exclude_types=[(0, 2), (2, 0)])
-        windowed = evaluate(self.windowed, coord, atype)
-        # The plain descriptor must see the pair, or the comparison is vacuous.
-        assert np.abs(evaluate(self.plain, coord, atype) - windowed).max() > 1e-3
-        np.testing.assert_array_equal(windowed, evaluate(removed, coord, atype))
+    def read(self, distance: float) -> float:
+        """Separation the clamped descriptor reads for the 0-2 pair."""
+        return float(
+            self.clamped.contact_clamp.call(
+                np.array([distance]), np.array([0]), np.array([2])
+            )[0]
+        )
 
-    def test_pairs_beyond_the_window_are_unchanged(self) -> None:
-        coord, atype = self.cluster(self.R_OUTER)
+    @pytest.mark.parametrize("offset", [0.0, 0.3])
+    def test_contacts_at_or_beyond_the_edge_read_unchanged(self, offset: float) -> None:
+        coord, atype = self.cluster(self.EDGE + offset)
         np.testing.assert_array_equal(
-            evaluate(self.windowed, coord, atype),
+            evaluate(self.clamped, coord, atype),
             evaluate(self.plain, coord, atype),
         )
 
-    def test_switch_rises_monotonically_across_the_window(self) -> None:
-        distances = np.linspace(self.R_INNER - 0.01, self.R_OUTER + 0.01, 65)
-        switch = []
-        for distance in distances:
-            coord, atype = self.cluster(float(distance))
-            graph, atype_local = build_graph(self.windowed, coord, atype)
-            edge = np.argmin(np.abs(np.linalg.norm(graph.edge_vec, axis=-1) - distance))
-            switch.append(
-                edge_features(self.windowed, graph, atype_local)[2][edge]
-                / edge_features(self.plain, graph, atype_local)[2][edge]
-            )
-        switch = np.asarray(switch)
-        inside = (distances > self.R_INNER) & (distances < self.R_OUTER)
-        assert np.all(switch[distances < self.R_INNER] == 0.0)
-        assert np.all(switch[distances > self.R_OUTER] == 1.0)
-        assert np.all(np.diff(switch[inside]) > 0.0)
-        # A C3 switch keeps its first three differences continuous across both
-        # radii, which bounds the fourth one by the fourth power of the spacing.
-        assert np.abs(np.diff(switch, n=4)).max() < 5.0e-4
-
-    def test_clamp_freezes_at_the_midpoint_and_opens_with_the_switch(self) -> None:
-        clamp = self.windowed.bridging_clamp
-        switch = self.windowed.bridging_switch
-        midpoint = 0.5 * (self.R_INNER + self.R_OUTER)
-        distances = np.linspace(0.05, self.R_OUTER + 0.2, 4001)
-        contact = np.ones_like(distances)
-        seen = clamp.call(distances, contact)
-        np.testing.assert_array_equal(seen[distances <= self.R_INNER], midpoint)
-        beyond = distances >= self.R_OUTER
-        np.testing.assert_array_equal(seen[beyond], distances[beyond])
-        # The clamp is the integral of the switch, so its slope is the switch.
-        np.testing.assert_allclose(
-            np.gradient(seen, distances)[2:-2],
-            switch.call(distances, contact)[2:-2],
-            atol=1.0e-6,
-        )
-
-    @pytest.mark.parametrize("distance", [0.55, 0.65, 0.75])
-    def test_edge_inside_the_window_reads_the_clamped_length(
+    @pytest.mark.parametrize("distance", [0.3, 0.6, 0.7])
+    def test_edge_below_the_data_edge_reads_the_clamped_length(
         self, distance: float
     ) -> None:
         """The radial features see the clamped length, the harmonics the true one."""
-        contact = np.ones(1)
-        seen = float(
-            self.windowed.bridging_clamp.call(np.array([distance]), contact)[0]
-        )
-        opening = float(
-            self.windowed.bridging_switch.call(np.array([distance]), contact)[0]
-        )
+        seen = self.read(distance)
         assert seen > distance
         features = {}
         for name, descriptor, length in (
-            ("windowed", self.windowed, distance),
+            ("clamped", self.clamped, distance),
             ("plain", self.plain, seen),
         ):
             coord, atype = self.cluster(length)
@@ -770,45 +1042,85 @@ class TestDPA4CBridgingWindow:
             features[name] = [
                 block[edge] for block in edge_features(descriptor, graph, atype_local)
             ]
-        amplitude, harmonics, envelope = features["windowed"]
-        plain_amplitude, plain_harmonics, plain_envelope = features["plain"]
-        np.testing.assert_allclose(amplitude, opening * plain_amplitude, rtol=1.0e-12)
-        np.testing.assert_allclose(envelope, opening * plain_envelope, rtol=1.0e-12)
-        np.testing.assert_allclose(harmonics, plain_harmonics, rtol=1.0e-12)
+        for clamped, plain in zip(features["clamped"], features["plain"], strict=True):
+            np.testing.assert_allclose(clamped, plain, rtol=1.0e-12, atol=1.0e-14)
 
-    def test_serialization_roundtrip_keeps_the_window(self) -> None:
-        coord, atype = self.cluster(0.65)
-        data = self.windowed.serialize()
-        assert data["@version"] == 2
-        assert data["inner_clamp_f_inner"] == self.R_INNER
-        assert data["inner_clamp_f_outer"] == self.R_OUTER
-        assert data["inner_clamp_scale"] == "absolute"
+    @pytest.mark.parametrize("n_blocks", [1, 2])
+    def test_a_frozen_dimer_reads_one_separation(self, n_blocks: int) -> None:
+        """Below the frozen radius a dimer descriptor no longer depends on r."""
+        descriptor = randomize_attentions(self.build(n_blocks=n_blocks))
+        plain = randomize_attentions(
+            DescrptDPA4C(**{**self.config, "n_blocks": n_blocks})
+        )
+        direction = np.array([0.8, 0.36, -0.48])
+        atype = np.array([[0, 2]], dtype=np.int64)
+
+        def dimer(model: DescrptDPA4C, distance: float) -> np.ndarray:
+            coord = np.stack([np.zeros(3), distance * direction])[None]
+            return evaluate(model, coord, atype)
+
+        frozen = self.INNER * self.EDGE
+        reference = dimer(descriptor, frozen)
+        for distance in (0.15, 0.3, 0.45):
+            np.testing.assert_allclose(
+                dimer(descriptor, distance), reference, atol=1.0e-11, rtol=0.0
+            )
+        # Without the clamp the dimer reads the separation, so the contract is
+        # not vacuous.
+        assert np.abs(dimer(plain, 0.3) - dimer(plain, frozen)).max() > 1.0e-6
+
+    def test_clamp_keeps_the_multi_block_descriptor_smooth(self) -> None:
+        descriptor = randomize_attentions(self.build(n_blocks=2))
+        distances = np.linspace(self.INNER * self.EDGE - 0.02, self.EDGE + 0.02, 97)
+        probe = np.asarray(
+            [evaluate(descriptor, *self.cluster(float(d))).sum() for d in distances]
+        )
+        third = np.diff(probe, n=3)
+        assert np.abs(third).max() < 1e-2 * np.abs(probe).max()
+
+    def test_serialization_roundtrip_keeps_the_recorded_edges(self) -> None:
+        coord, atype = self.cluster(0.7)
+        data = self.clamped.serialize()
+        assert data["@version"] == 5
+        restored = DescrptDPA4C.deserialize(data)
         np.testing.assert_array_equal(
-            evaluate(DescrptDPA4C.deserialize(data), coord, atype),
-            evaluate(self.windowed, coord, atype),
+            restored.contact_clamp.edges, self.clamped.contact_clamp.edges
+        )
+        np.testing.assert_array_equal(
+            evaluate(restored, coord, atype),
+            evaluate(self.clamped, coord, atype),
         )
 
     def test_a_record_without_a_window_restores_the_plain_descriptor(self) -> None:
-        """A record of the first format carries no window and reads as unbridged."""
+        """A record of an earlier format with an empty window reads as unbridged."""
         data = self.plain.serialize()
-        data["@version"] = 1
-        for key in ("inner_clamp_f_inner", "inner_clamp_f_outer", "inner_clamp_scale"):
-            del data[key]
+        data["@version"] = 3
+        data.pop("contact_clamp")
+        data.update(
+            inner_clamp_f_inner=None,
+            inner_clamp_f_outer=None,
+            inner_clamp_scale="covalent",
+        )
         restored = DescrptDPA4C.deserialize(data)
-        assert restored.bridging_switch is None
+        assert restored.contact_clamp is None
         coord, atype = self.cluster(0.3)
         np.testing.assert_array_equal(
             evaluate(restored, coord, atype),
             evaluate(self.plain, coord, atype),
         )
 
-    def test_window_is_branch_local_under_parameter_sharing(self) -> None:
-        self.windowed.share_params(self.plain, shared_level=0)
+    def test_a_cutoff_inside_the_largest_contact_edge_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="largest contact edge"):
+            self.build(rcut=1.0)
+
+    def test_clamp_is_branch_local_under_parameter_sharing(self) -> None:
+        self.clamped.share_params(self.plain, shared_level=0)
         coord, atype = self.cluster(0.3)
-        assert self.windowed.radial_embedding is self.plain.radial_embedding
+        assert self.clamped.radial_embedding is self.plain.radial_embedding
+        assert self.clamped.contact_clamp is not None
         assert (
             np.abs(
-                evaluate(self.windowed, coord, atype)
+                evaluate(self.clamped, coord, atype)
                 - evaluate(self.plain, coord, atype)
             ).max()
             > 1e-3
@@ -832,9 +1144,9 @@ class TestDPA4CBridgingWindow:
         ({"radial_modes": True}, ValueError),
         ({"radial_modes": -1}, ValueError),
         ({"spin": {}}, NotImplementedError),
-        ({"inner_clamp_f_inner": 0.5}, ValueError),
-        ({"inner_clamp_f_inner": 0.8, "inner_clamp_f_outer": 0.5}, ValueError),
-        ({"inner_clamp_scale": "bohr"}, ValueError),
+        ({"contact_clamp": 0.75}, ValueError),
+        ({"contact_clamp": 1.0, "type_map": ["H"]}, ValueError),
+        ({"contact_clamp": 0.0, "type_map": ["H"]}, ValueError),
     ],
 )
 def test_configuration_boundaries(
@@ -843,6 +1155,12 @@ def test_configuration_boundaries(
 ) -> None:
     with pytest.raises(error):
         DescrptDPA4C(**{"rcut": 3.0, "ntypes": 1, **config})
+
+
+def test_legacy_positional_use_amp_keeps_its_parameter_slot() -> None:
+    descriptor = DescrptDPA4C(3.0, 2, 8, 2, "bessel", 4, 0, False)
+    assert descriptor.n_blocks == 1
+    assert descriptor.use_amp is False
 
 
 @pytest.mark.parametrize("neighbors", [8, 4096])
@@ -970,11 +1288,14 @@ def make_spin_descriptor(**overrides: Any) -> DescrptDPA4C:
 @pytest.mark.parametrize("precision", ["float32", "float64"])
 @pytest.mark.parametrize("channels", [8, 32])
 @pytest.mark.parametrize("node_count", [0, 2])
+@pytest.mark.parametrize("n_blocks", [1, 2])
 def test_native_spin_graph_without_edges(
-    precision: str, channels: int, node_count: int
+    precision: str, channels: int, node_count: int, n_blocks: int
 ) -> None:
     """Both zero-node graphs and isolated atoms retain the feature width."""
-    descriptor = make_spin_descriptor(precision=precision, channels=channels)
+    descriptor = make_spin_descriptor(
+        precision=precision, channels=channels, n_blocks=n_blocks
+    )
     graph = neighbor_graph.NeighborGraph(
         n_node=np.array([node_count], dtype=np.int64),
         n_local=np.array([node_count], dtype=np.int64),
@@ -1216,6 +1537,40 @@ class TestDPA4CSpin:
         np.testing.assert_array_equal(
             self.evaluate(self.spin),
             self.evaluate(-self.spin),
+        )
+
+    def test_further_block_carries_the_spin_moments(self) -> None:
+        multi_block = make_spin_descriptor(rcut=[3.0, 2.5], n_blocks=2)
+        np.testing.assert_allclose(
+            multi_block.call_graph(self.graph, self.atype, spin=self.spin)[0],
+            self.evaluate(self.spin),
+            atol=1e-14,
+            rtol=0.0,
+        )
+        randomize_attentions(multi_block)
+        reference = multi_block.call_graph(self.graph, self.atype, spin=self.spin)[0]
+        assert np.abs(reference - self.evaluate(self.spin)).max() > 1e-3
+        # The state reads the spin invariants, which have even spin order, so
+        # the multi-block descriptor keeps time reversal and axial O(3) symmetry.
+        assert multi_block.attentions[0].descriptor_dim == multi_block.get_dim_out()
+        np.testing.assert_array_equal(
+            multi_block.call_graph(self.graph, self.atype, spin=-self.spin)[0],
+            reference,
+        )
+        rng = np.random.default_rng(13)
+        orthogonal, triangular = np.linalg.qr(rng.normal(size=(3, 3)))
+        orthogonal = -orthogonal * np.sign(np.diag(triangular))
+        rotated = neighbor_graph.build_neighbor_graph(
+            SPIN_COORD @ orthogonal.T, SPIN_ATYPE, None, multi_block.get_rcut()
+        )
+        np.testing.assert_allclose(
+            multi_block.call_graph(
+                rotated,
+                self.atype,
+                spin=(self.spin @ orthogonal.T) * np.linalg.det(orthogonal),
+            )[0],
+            reference,
+            atol=1e-12,
         )
 
     def test_non_magnetic_types_are_ignored_bitwise(self) -> None:
@@ -2034,3 +2389,189 @@ def test_virtual_atom_spin_scheme_is_refused() -> None:
                 "fitting_net": {"neuron": [8, 8], "seed": 1},
             }
         )
+
+
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+def test_native_spin_modes_preserve_signed_exchange(spin_mode: str) -> None:
+    descriptor = make_spin_descriptor(spin_mode=spin_mode)
+    coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.2, 0.3]]])
+    atype = np.zeros((1, 2), dtype=np.int64)
+    graph = neighbor_graph.build_neighbor_graph(
+        coord, atype, None, descriptor.get_rcut()
+    )
+    spin = np.array([[0.3, 0.4, 0.5], [0.3, 0.4, 0.5]])
+    parallel = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    spin[1] *= -1.0
+    antiparallel = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    # The first off-diagonal vector Gram is linear in the signed pair exchange.
+    exchange_index = descriptor.readout.get_dim_out() + 1
+    assert np.max(np.abs(parallel[:, exchange_index])) > 1e-8
+    np.testing.assert_allclose(
+        antiparallel[:, exchange_index], -parallel[:, exchange_index], atol=1e-12
+    )
+    restored = DescrptDPA4C.deserialize(descriptor.serialize())
+    assert restored.spin_mode == spin_mode
+    np.testing.assert_array_equal(
+        restored.call_graph(graph, atype.reshape(-1), spin=spin)[0], antiparallel
+    )
+
+
+def test_exchange_mode_has_independent_spin_rotations() -> None:
+    descriptor = make_spin_descriptor(spin_mode="exchange", rcut=[3.0, 2.5], n_blocks=2)
+    randomize_attentions(descriptor)
+    rng = np.random.default_rng(71)
+    spin = rng.normal(size=(SPIN_ATYPE.size, 3))
+    graph = neighbor_graph.build_neighbor_graph(
+        SPIN_COORD, SPIN_ATYPE, None, descriptor.get_rcut()
+    )
+    rotation, _ = np.linalg.qr(rng.normal(size=(3, 3)))
+    reference = descriptor.call_graph(graph, SPIN_ATYPE.reshape(-1), spin=spin)[0]
+    rotated = descriptor.call_graph(
+        graph, SPIN_ATYPE.reshape(-1), spin=spin @ rotation.T
+    )[0]
+    np.testing.assert_allclose(rotated, reference, atol=1e-12)
+    np.testing.assert_array_equal(
+        descriptor.call_graph(graph, SPIN_ATYPE.reshape(-1), spin=-spin)[0], reference
+    )
+    orbit = make_spin_descriptor(spin_mode="orbit")
+    assert descriptor.spin.edge_width < orbit.spin.edge_width
+    assert descriptor.spin.get_dim_out() < orbit.spin.get_dim_out()
+
+
+def test_projected_spin_gram_contains_collective_antisymmetric_exchange() -> None:
+    channels = SpinChannels(1, [1, 1, 1], [True], spin_mode="orbit", seed=7)
+    spin = np.array([[0.2, 0.7, -0.1], [-0.3, 0.1, 0.8]])
+    direction = np.array([[1.0, 0.0, 0.0], [0.6, 0.8, 0.0]])
+    atype = np.zeros(2, dtype=np.int64)
+    source = np.arange(2, dtype=np.int64)
+
+    def cross_neighbor_gram(moment: np.ndarray) -> float:
+        payload = channels.edge_payload(
+            moment,
+            atype,
+            source,
+            direction,
+            np.ones((2, 1)),
+            np.ones(2),
+            np.ones((2, 1)),
+            np.zeros((2, 1)),
+        )
+        # The projected family follows M0, Mw and the vector family.
+        projected = payload[:, 5:8]
+        return float(np.sum(np.sum(projected, axis=0) ** 2) - np.sum(projected**2))
+
+    antisymmetric = cross_neighbor_gram(spin) - cross_neighbor_gram(spin[::-1])
+    expected = (
+        2.0
+        * np.dot(direction[0], direction[1])
+        * np.dot(np.cross(direction[0], direction[1]), np.cross(spin[0], spin[1]))
+    )
+    assert abs(expected) > 1e-3
+    np.testing.assert_allclose(antisymmetric, expected, atol=1e-14)
+
+
+def periodic_corpus(seed: int = 31) -> list[dict]:
+    """Return a two-type periodic sample of the statistics interface."""
+    rng = np.random.default_rng(seed)
+    nframes, natoms, cell = 4, 12, 8.0
+    return [
+        {
+            "coord": rng.uniform(0.0, cell, size=(nframes, natoms, 3)),
+            "atype": np.tile(np.array([0, 1, 0, 1, 0, 1] * 2), (nframes, 1)),
+            "box": np.tile(np.diag([cell, cell, cell]).reshape(1, 9), (nframes, 1)),
+        }
+    ]
+
+
+def floor_descriptor(density_floor: float) -> DescrptDPA4C:
+    """Return a small uncalibrated descriptor carrying one floor setting."""
+    return DescrptDPA4C(
+        rcut=4.0,
+        ntypes=2,
+        channels=8,
+        lmax=2,
+        n_radial=4,
+        precision="float64",
+        seed=5,
+        density_floor=density_floor,
+    )
+
+
+def test_the_absolute_floor_has_no_measured_state() -> None:
+    """An unset floor keeps the default and stores no envelope mass."""
+    descriptor = floor_descriptor(0.0)
+    assert descriptor._degree_floor() == pytest.approx(descriptor._DEGREE_NORM_FLOOR)
+    assert "envelope_mass" not in descriptor.serialize()["@variables"]
+    descriptor.compute_input_stats(periodic_corpus())
+    assert "envelope_mass" not in descriptor.serialize()["@variables"]
+    restored = DescrptDPA4C.deserialize(descriptor.serialize())
+    assert restored.density_floor == 0.0
+    assert not hasattr(restored, "envelope_mass")
+
+
+def test_the_floor_reads_the_measured_envelope_mass() -> None:
+    """The calibrate step measures the mean mass the floor multiplies."""
+    corpus = periodic_corpus()
+    descriptor = floor_descriptor(8.0)
+    mean_mass, _ = mean_envelope_mass(
+        corpus,
+        [descriptor.rcut],
+        exponent=descriptor._ENVELOPE_EXPONENT,
+        ntypes=descriptor.ntypes,
+        exclude_types=[],
+    )
+    descriptor.compute_input_stats(corpus)
+    np.testing.assert_allclose(
+        to_numpy_array(descriptor.envelope_mass), mean_mass, rtol=1e-12
+    )
+    assert descriptor._degree_floor() == pytest.approx(8.0 * mean_mass[0])
+
+
+def test_the_floor_survives_a_round_trip() -> None:
+    """The mass and the option travel together through the record."""
+    descriptor = floor_descriptor(8.0)
+    descriptor.compute_input_stats(periodic_corpus())
+    data = descriptor.serialize()
+    restored = DescrptDPA4C.deserialize(data)
+    assert restored.density_floor == 8.0
+    np.testing.assert_array_equal(
+        to_numpy_array(restored.envelope_mass),
+        to_numpy_array(descriptor.envelope_mass),
+    )
+    assert restored._degree_floor() == pytest.approx(descriptor._degree_floor())
+
+
+def test_the_floor_raises_a_negative_value() -> None:
+    with pytest.raises(ValueError, match="density_floor"):
+        floor_descriptor(-1.0)
+
+
+def test_a_floor_record_without_its_mass_keeps_the_default() -> None:
+    """A record written by an earlier release restores without a stored mass."""
+    data = floor_descriptor(0.0).serialize()
+    data.pop("density_floor", None)
+    data["@variables"].pop("envelope_mass", None)
+    data["@version"] = 4
+    restored = DescrptDPA4C.deserialize(data)
+    assert restored.density_floor == 0.0
+    assert restored._degree_floor() == pytest.approx(restored._DEGREE_NORM_FLOOR)
+
+
+def test_shared_replicas_merge_their_measured_masses() -> None:
+    """Two branches entering training average their masses by atom count."""
+    base = floor_descriptor(8.0)
+    replica = floor_descriptor(8.0)
+    base.envelope_mass[...] = 2.0
+    base.envelope_count = 3.0
+    replica.envelope_mass[...] = 6.0
+    replica.envelope_count = 1.0
+    replica.share_params(base, 0, model_prob=1.0)
+    assert base.envelope_mass[0] == pytest.approx(3.0)
+    assert replica.envelope_mass is base.envelope_mass
+    # A restored checkpoint already carries the merged mass, so a resume
+    # shares the value without folding it in a second time.
+    survivor = floor_descriptor(8.0)
+    survivor.envelope_mass[...] = 4.0
+    survivor.envelope_count = 2.0
+    survivor.share_params(base, 0, resume=True)
+    assert base.envelope_mass[0] == pytest.approx(3.0)

@@ -48,6 +48,7 @@ from deepmd.utils.preset_out_bias import (
     check_preset_out_bias,
     normalize_preset_out_bias,
     preset_out_bias_rows,
+    recover_nonfinite_preset_bias,
     remap_preset_out_bias,
 )
 
@@ -501,6 +502,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
         observed_type: list[str] | None = None,
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -524,6 +526,14 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             ('set-by-statistic') or their stored bias ('change-by-statistic'); no
             statistics are computed, read or written for such an output, whose
             output std keeps its stored value.
+        preset_out_bias : dict, optional
+            An explicit downstream preset. Assigned outputs use this bias and
+            skip fitting; other outputs fit residuals against the stored bias.
+            The model preset is used when omitted, preserving training and
+            fine-tuning behavior. Pass an empty dict to fit from the data
+            without reapplying the model's stored preset.
+            Before residual fitting, non-finite stored cells covered by the
+            checkpoint preset are recovered; finite adjusted cells are retained.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         observed_type : list[str], optional
@@ -533,17 +543,34 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         if bias_adjust_mode not in ("change-by-statistic", "set-by-statistic"):
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
         change = bias_adjust_mode == "change-by-statistic"
+        preset = (
+            normalize_preset_out_bias(preset_out_bias, self.type_map)
+            if preset_out_bias is not None
+            else self.preset_out_bias
+        )
         distinguish_types = self.get_compute_stats_distinguish_types()
-        check_preset_out_bias(self.preset_out_bias, self.bias_keys, distinguish_types)
+        check_preset_out_bias(preset, self.bias_keys, distinguish_types)
         sampled = sample_merged
+        # A per-call override must not propagate a corrupt checkpoint baseline.
+        if change and preset_out_bias is not None and self.preset_out_bias:
+            recovered = recover_nonfinite_preset_bias(
+                self.preset_out_bias,
+                self.type_map,
+                to_numpy_array(self.out_bias),
+                self.bias_keys,
+                [self.atomic_output_def()[kk].size for kk in self.bias_keys],
+            )
+            self._store_out_stat(
+                {kk: to_paddle_tensor(vv) for kk, vv in recovered.items()}
+            )
         # === Step 1. Outputs fixed by the preset ===
         fitted_keys = self.bias_keys
-        if self.preset_out_bias:
+        if preset:
             if observed_type is None:
                 sampled = sample_merged() if callable(sample_merged) else sample_merged
                 observed_type = collect_observed_types(sampled, self.type_map)
             rows = preset_out_bias_rows(
-                self.preset_out_bias,
+                preset,
                 self.type_map,
                 observed_type,
                 to_numpy_array(self.out_bias),

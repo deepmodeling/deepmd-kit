@@ -44,7 +44,11 @@ from __future__ import (
     annotations,
 )
 
+from functools import (
+    cache,
+)
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -60,6 +64,13 @@ from torch.library import (
 )
 
 _Shape = tuple[int | torch.SymInt, ...]
+_ShapeKey = tuple[str, int, int, int, int, bool, int, torch.dtype]
+_LaunchConfig = tuple[int, int, int]
+
+if TYPE_CHECKING:
+    from triton.runtime.jit import (
+        JITFunction,
+    )
 
 __all__ = [
     "GRID_PAIR_TRITON_AVAILABLE",
@@ -116,6 +127,7 @@ if GRID_PAIR_TRITON_AVAILABLE:
         right_ptr,
         tg_ptr,
         fg_ptr,
+        order_ptr,
         out_ptr,
         left_s0,
         left_s1,
@@ -141,6 +153,7 @@ if GRID_PAIR_TRITON_AVAILABLE:
         C_BLK: tl.constexpr,
         ALLOW_TF32: tl.constexpr,
         BLOCK_G: tl.constexpr,
+        EVEN_COUNT: tl.constexpr = 0,
     ):
         """Evaluate ``out = F^T[(T l) (T r)]``, one output tile per program.
 
@@ -155,7 +168,9 @@ if GRID_PAIR_TRITON_AVAILABLE:
         c_mask = c_idx < C_ALL
 
         p_hi = tl.arange(0, P_HI)
-        hi_mask = p_hi < P_DIM
+        hi_mask = p_hi < (EVEN_COUNT if EVEN_COUNT else P_DIM)
+        if EVEN_COUNT:
+            p_hi = tl.load(order_ptr + p_hi, mask=hi_mask, other=0)
         left_hi = _coeff_offsets(
             pair,
             p_hi,
@@ -200,8 +215,10 @@ if GRID_PAIR_TRITON_AVAILABLE:
         rv_hi = tl.load(right_ptr + right_hi, mask=m_hi, other=0.0)
         acc_hi = tl.zeros((P_HI, C_BLK), dtype=tl.float32)
         if P_LO > 0:
-            p_lo = P_HI + tl.arange(0, P_LO)
+            p_lo = (EVEN_COUNT if EVEN_COUNT else P_HI) + tl.arange(0, P_LO)
             lo_mask = p_lo < P_DIM
+            if EVEN_COUNT:
+                p_lo = tl.load(order_ptr + p_lo, mask=lo_mask, other=0)
             left_lo = _coeff_offsets(
                 pair,
                 p_lo,
@@ -258,14 +275,28 @@ if GRID_PAIR_TRITON_AVAILABLE:
                 prj_lo = g_idx[:, None] * P_DIM + p_lo[None, :]
                 pm_lo = g_mask[:, None] & lo_mask[None, :]
                 tg_lo = tl.load(tg_ptr + prj_lo, mask=pm_lo, other=0.0)
-                lg += tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
-                rg += tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    lg_odd = tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    lg += tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    rg_odd = tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    rg += tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
             fg_hi = tl.load(fg_ptr + prj_hi, mask=pm_hi, other=0.0)
-            prod = (lg * rg).to(fg_hi.dtype)
+            if EVEN_COUNT:
+                prod = (lg * rg + lg_odd * rg_odd).to(fg_hi.dtype)
+                prod_odd = (lg * rg_odd + lg_odd * rg).to(fg_hi.dtype)
+            else:
+                prod = (lg * rg).to(fg_hi.dtype)
             acc_hi += tl.dot(tl.trans(fg_hi), prod, allow_tf32=ALLOW_TF32)
             if P_LO > 0:
                 fg_lo = tl.load(fg_ptr + prj_lo, mask=pm_lo, other=0.0)
-                acc_lo += tl.dot(tl.trans(fg_lo), prod, allow_tf32=ALLOW_TF32)
+                acc_lo += tl.dot(
+                    tl.trans(fg_lo),
+                    prod_odd if EVEN_COUNT else prod,
+                    allow_tf32=ALLOW_TF32,
+                )
 
         tl.store(out_ptr + out_hi, acc_hi.to(out_ptr.dtype.element_ty), mask=m_hi)
         if P_LO > 0:
@@ -278,6 +309,7 @@ if GRID_PAIR_TRITON_AVAILABLE:
         right_ptr,
         tg_ptr,
         fg_ptr,
+        order_ptr,
         gl_ptr,
         gr_ptr,
         go_s0,
@@ -312,6 +344,7 @@ if GRID_PAIR_TRITON_AVAILABLE:
         C_BLK: tl.constexpr,
         ALLOW_TF32: tl.constexpr,
         BLOCK_G: tl.constexpr,
+        EVEN_COUNT: tl.constexpr = 0,
     ):
         """g_l = T^T[(F go)(T r)], g_r = T^T[(F go)(T l)], one shared walk."""
         pair = tl.program_id(0).to(tl.int64)
@@ -320,7 +353,9 @@ if GRID_PAIR_TRITON_AVAILABLE:
         c_mask = c_idx < C_ALL
 
         p_hi = tl.arange(0, P_HI)
-        hi_mask = p_hi < P_DIM
+        hi_mask = p_hi < (EVEN_COUNT if EVEN_COUNT else P_DIM)
+        if EVEN_COUNT:
+            p_hi = tl.load(order_ptr + p_hi, mask=hi_mask, other=0)
         go_hi_offset = _coeff_offsets(
             pair,
             p_hi,
@@ -393,8 +428,10 @@ if GRID_PAIR_TRITON_AVAILABLE:
         gl_hi = tl.zeros((P_HI, C_BLK), dtype=tl.float32)
         gr_hi = tl.zeros((P_HI, C_BLK), dtype=tl.float32)
         if P_LO > 0:
-            p_lo = P_HI + tl.arange(0, P_LO)
+            p_lo = (EVEN_COUNT if EVEN_COUNT else P_HI) + tl.arange(0, P_LO)
             lo_mask = p_lo < P_DIM
+            if EVEN_COUNT:
+                p_lo = tl.load(order_ptr + p_lo, mask=lo_mask, other=0)
             go_lo_offset = _coeff_offsets(
                 pair,
                 p_lo,
@@ -482,18 +519,37 @@ if GRID_PAIR_TRITON_AVAILABLE:
                 pm_lo = g_mask[:, None] & lo_mask[None, :]
                 tg_lo = tl.load(tg_ptr + prj_lo, mask=pm_lo, other=0.0)
                 fg_lo = tl.load(fg_ptr + prj_lo, mask=pm_lo, other=0.0)
-                lg += tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
-                rg += tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
-                gv += tl.dot(fg_lo, go_lo, allow_tf32=ALLOW_TF32)
-            wl = (gv * rg).to(tg_hi.dtype)
-            wr = (gv * lg).to(tg_hi.dtype)
+                if EVEN_COUNT:
+                    lg_odd = tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    lg += tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    rg_odd = tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    rg += tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    gv_odd = tl.dot(fg_lo, go_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    gv += tl.dot(fg_lo, go_lo, allow_tf32=ALLOW_TF32)
+            if EVEN_COUNT:
+                wl = (gv * rg + gv_odd * rg_odd).to(tg_hi.dtype)
+                wr = (gv * lg + gv_odd * lg_odd).to(tg_hi.dtype)
+                wl_odd = (gv * rg_odd + gv_odd * rg).to(tg_hi.dtype)
+                wr_odd = (gv * lg_odd + gv_odd * lg).to(tg_hi.dtype)
+            else:
+                wl = (gv * rg).to(tg_hi.dtype)
+                wr = (gv * lg).to(tg_hi.dtype)
             tgt_hi = tl.trans(tg_hi)
             gl_hi += tl.dot(tgt_hi, wl, allow_tf32=ALLOW_TF32)
             gr_hi += tl.dot(tgt_hi, wr, allow_tf32=ALLOW_TF32)
             if P_LO > 0:
                 tgt_lo = tl.trans(tg_lo)
-                gl_lo += tl.dot(tgt_lo, wl, allow_tf32=ALLOW_TF32)
-                gr_lo += tl.dot(tgt_lo, wr, allow_tf32=ALLOW_TF32)
+                gl_lo += tl.dot(
+                    tgt_lo, wl_odd if EVEN_COUNT else wl, allow_tf32=ALLOW_TF32
+                )
+                gr_lo += tl.dot(
+                    tgt_lo, wr_odd if EVEN_COUNT else wr, allow_tf32=ALLOW_TF32
+                )
 
         tl.store(gl_ptr + gl_hi_offset, gl_hi.to(gl_ptr.dtype.element_ty), mask=m_hi)
         tl.store(gr_ptr + gr_hi_offset, gr_hi.to(gr_ptr.dtype.element_ty), mask=m_hi)
@@ -514,6 +570,7 @@ if GRID_PAIR_TRITON_AVAILABLE:
         right_ptr,
         tg_ptr,
         fg_ptr,
+        order_ptr,
         ggo_ptr,
         g2l_ptr,
         g2r_ptr,
@@ -561,6 +618,7 @@ if GRID_PAIR_TRITON_AVAILABLE:
         C_BLK: tl.constexpr,
         ALLOW_TF32: tl.constexpr,
         BLOCK_G: tl.constexpr,
+        EVEN_COUNT: tl.constexpr = 0,
     ):
         """Force-regime curvature: three outputs off one grid walk."""
         pair = tl.program_id(0).to(tl.int64)
@@ -569,7 +627,9 @@ if GRID_PAIR_TRITON_AVAILABLE:
         c_mask = c_idx < C_ALL
 
         p_hi = tl.arange(0, P_HI)
-        hi_mask = p_hi < P_DIM
+        hi_mask = p_hi < (EVEN_COUNT if EVEN_COUNT else P_DIM)
+        if EVEN_COUNT:
+            p_hi = tl.load(order_ptr + p_hi, mask=hi_mask, other=0)
         hgl_hi = _coeff_offsets(
             pair,
             p_hi,
@@ -684,8 +744,10 @@ if GRID_PAIR_TRITON_AVAILABLE:
         al_hi = tl.zeros((P_HI, C_BLK), dtype=tl.float32)
         ar_hi = tl.zeros((P_HI, C_BLK), dtype=tl.float32)
         if P_LO > 0:
-            p_lo = P_HI + tl.arange(0, P_LO)
+            p_lo = (EVEN_COUNT if EVEN_COUNT else P_HI) + tl.arange(0, P_LO)
             lo_mask = p_lo < P_DIM
+            if EVEN_COUNT:
+                p_lo = tl.load(order_ptr + p_lo, mask=lo_mask, other=0)
             hgl_lo = _coeff_offsets(
                 pair,
                 p_lo,
@@ -817,23 +879,56 @@ if GRID_PAIR_TRITON_AVAILABLE:
                 pm_lo = g_mask[:, None] & lo_mask[None, :]
                 tg_lo = tl.load(tg_ptr + prj_lo, mask=pm_lo, other=0.0)
                 fg_lo = tl.load(fg_ptr + prj_lo, mask=pm_lo, other=0.0)
-                lg += tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
-                rg += tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
-                gv += tl.dot(fg_lo, go_lo, allow_tf32=ALLOW_TF32)
-                hlg += tl.dot(tg_lo, hl_lo, allow_tf32=ALLOW_TF32)
-                hrg += tl.dot(tg_lo, hr_lo, allow_tf32=ALLOW_TF32)
-            wo = (hlg * rg + lg * hrg).to(fg_hi.dtype)
-            wl = (gv * hrg).to(tg_hi.dtype)
-            wr = (gv * hlg).to(tg_hi.dtype)
+                if EVEN_COUNT:
+                    lg_odd = tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    lg += tl.dot(tg_lo, lv_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    rg_odd = tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    rg += tl.dot(tg_lo, rv_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    gv_odd = tl.dot(fg_lo, go_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    gv += tl.dot(fg_lo, go_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    hlg_odd = tl.dot(tg_lo, hl_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    hlg += tl.dot(tg_lo, hl_lo, allow_tf32=ALLOW_TF32)
+                if EVEN_COUNT:
+                    hrg_odd = tl.dot(tg_lo, hr_lo, allow_tf32=ALLOW_TF32)
+                else:
+                    hrg += tl.dot(tg_lo, hr_lo, allow_tf32=ALLOW_TF32)
+            if EVEN_COUNT:
+                wo = (hlg * rg + hlg_odd * rg_odd + lg * hrg + lg_odd * hrg_odd).to(
+                    fg_hi.dtype
+                )
+                wl = (gv * hrg + gv_odd * hrg_odd).to(tg_hi.dtype)
+                wr = (gv * hlg + gv_odd * hlg_odd).to(tg_hi.dtype)
+                wo_odd = (hlg * rg_odd + hlg_odd * rg + lg * hrg_odd + lg_odd * hrg).to(
+                    fg_hi.dtype
+                )
+                wl_odd = (gv * hrg_odd + gv_odd * hrg).to(tg_hi.dtype)
+                wr_odd = (gv * hlg_odd + gv_odd * hlg).to(tg_hi.dtype)
+            else:
+                wo = (hlg * rg + lg * hrg).to(fg_hi.dtype)
+                wl = (gv * hrg).to(tg_hi.dtype)
+                wr = (gv * hlg).to(tg_hi.dtype)
             tgt_hi = tl.trans(tg_hi)
             ao_hi += tl.dot(tl.trans(fg_hi), wo, allow_tf32=ALLOW_TF32)
             al_hi += tl.dot(tgt_hi, wl, allow_tf32=ALLOW_TF32)
             ar_hi += tl.dot(tgt_hi, wr, allow_tf32=ALLOW_TF32)
             if P_LO > 0:
                 tgt_lo = tl.trans(tg_lo)
-                ao_lo += tl.dot(tl.trans(fg_lo), wo, allow_tf32=ALLOW_TF32)
-                al_lo += tl.dot(tgt_lo, wl, allow_tf32=ALLOW_TF32)
-                ar_lo += tl.dot(tgt_lo, wr, allow_tf32=ALLOW_TF32)
+                ao_lo += tl.dot(
+                    tl.trans(fg_lo), wo_odd if EVEN_COUNT else wo, allow_tf32=ALLOW_TF32
+                )
+                al_lo += tl.dot(
+                    tgt_lo, wl_odd if EVEN_COUNT else wl, allow_tf32=ALLOW_TF32
+                )
+                ar_lo += tl.dot(
+                    tgt_lo, wr_odd if EVEN_COUNT else wr, allow_tf32=ALLOW_TF32
+                )
 
         tl.store(ggo_ptr + ggo_hi, ao_hi.to(ggo_ptr.dtype.element_ty), mask=m_hi)
         tl.store(g2l_ptr + g2l_hi, al_hi.to(g2l_ptr.dtype.element_ty), mask=m_hi)
@@ -878,8 +973,6 @@ def _unpack(value: Tensor, shape: _Shape, n_frames: int) -> Tensor:
         .contiguous()
     )
 
-
-_LAUNCH_CACHE: dict[tuple, tuple[int, int, int]] = {}
 
 # Exact production-shape winners on RTX PRO 6000 Blackwell.  The grid-pair
 # kernels hold one, two or three ``(P_PAD, C_BLK)`` accumulator tiles, so the
@@ -1002,54 +1095,134 @@ _BLACKWELL_LAUNCH_CONFIGS = {
 
 
 def _built_in_launch_config(
-    device_name: str, shape_key: tuple
-) -> tuple[int, int, int] | None:
+    device_name: str, shape_key: _ShapeKey
+) -> _LaunchConfig | None:
     """Return the built-in launch for one exact grid-pair shape."""
     if device_name.startswith("NVIDIA RTX PRO 6000 Blackwell"):
         return _BLACKWELL_LAUNCH_CONFIGS.get(shape_key)
     return None
 
 
-def _launch(
-    kernel,
-    value: Tensor,
-    n_grid: int,
-    n_frames: int,
-    packed: bool,
-    args: tuple,
-    n_acc: int,
-) -> None:
-    """Launch with the largest tile the register and shared budgets admit.
-
-    The channel block is capped so the ``n_acc`` fp32 accumulator tiles
-    ``(P_PAD, C_BLK)`` stay register-resident (a spilled accumulator is
-    read-modify-written through local memory once per grid block, which
-    dominated the three-accumulator second-order kernel before the cap).
-    The exact shared footprint additionally depends on Triton's internal
-    staging (dot operand buffers, transpose scratch), so candidates are
-    tried from the most to the least aggressive and the first that compiles
-    is cached per device and exact operator shape.  Swept built-in launches
-    take precedence where available and fall back to the same compile search
-    if a later Triton version rejects one.
-    """
-    n_batch = value.shape[0]
-    # The leading pair count follows the workload. The trailing coefficient
-    # layout and projector size define the Triton tile geometry and remain
-    # kernel-specialized.
-    n_grid = guard_int(n_grid)
-    n_frames = guard_int(n_frames)
-    coeff_dim, n_focus, packed_channels = (guard_int(size) for size in value.shape[1:])
-    n_pair = n_batch * n_focus
-    p_dim = coeff_dim * n_frames
-    c_per = packed_channels // n_frames
+def _slot_partition(p_dim: int) -> tuple[int, int]:
+    """Split the coefficient axis into power-of-two contraction tiles."""
     # The slot axis is covered by the largest power of two below the count
     # plus an optional low segment for the remainder, so 147 (degree six)
     # pads to 128 + 32 and 75 (degree four) to 64 + 16 instead of the next
     # power of two. The high segment keeps the tensor-core minimum of 16.
     p_hi = max(16, 1 << (p_dim.bit_length() - 1))
     p_lo = max(16, _next_pow2(p_dim - p_hi)) if p_dim > p_hi else 0
+    return p_hi, p_lo
+
+
+def _launch_kwargs(
+    shape_key: _ShapeKey, config: _LaunchConfig, even_count: int = 0
+) -> dict[str, int | bool]:
+    """Share static geometry and tile parameters between validation and execution."""
+    _, p_dim, c_per, n_focus, n_frames, packed, n_grid, _ = shape_key
+    p_hi, p_lo = (
+        (max(16, _next_pow2(even_count)), max(16, _next_pow2(p_dim - even_count)))
+        if even_count
+        else _slot_partition(p_dim)
+    )
+    c_blk, block_g, stages = config
+    return {
+        "n_grid": n_grid,
+        "PACKED": packed,
+        "N_FOCUS": n_focus,
+        "N_FRAMES": n_frames,
+        "EVEN_COUNT": even_count,
+        "P_DIM": p_dim,
+        "P_HI": p_hi,
+        "P_LO": p_lo,
+        "C_ALL": c_per,
+        "C_BLK": c_blk,
+        "ALLOW_TF32": False,
+        "BLOCK_G": block_g,
+        "num_warps": 8 if c_blk >= 64 else 4,
+        "num_stages": stages,
+    }
+
+
+@cache
+def _select_launch_config(
+    kernel: JITFunction,
+    device: torch.device,
+    shape_key: _ShapeKey,
+    signature: tuple[torch.dtype | int, ...],
+    n_acc: int,
+    even_count: int = 0,
+) -> _LaunchConfig | None:
+    """Compile and load candidates without allocating or executing their inputs.
+
+    Tile resources depend on the static coefficient geometry and operand
+    dtypes. The leading pair count and physical strides only address rows;
+    their non-unit placeholders avoid specializing a dynamic batch size.
+    Triton's ``warmup`` accepts dtypes in place of tensor operands and
+    compiles the real device binary without dereferencing a pointer. Loading
+    its handles checks the device's resource limits before a configuration
+    enters the cache or a traced graph. Fake-tensor tracing therefore makes
+    the same choice as eager execution.
+
+    The probe admits a tile configuration, not a byte-identical runtime binary.
+    Scalar and pointer-alignment specialization of the actual launch can still
+    produce a separate compiled artifact.
+
+    The channel cap keeps the ``n_acc`` fp32 accumulator tiles register
+    resident. Exact shared-memory requirements are checked by Triton, whose
+    staging and transpose storage depend on the compiler and target device.
+    A swept configuration has priority but must pass the same validation.
+    ``None`` records that the reference composition must serve this layout.
+    """
+    _, p_dim, c_per, *_ = shape_key
+    p_hi, p_lo = (
+        (max(16, _next_pow2(even_count)), max(16, _next_pow2(p_dim - even_count)))
+        if even_count
+        else _slot_partition(p_dim)
+    )
     p_eff = p_hi + p_lo
     c_top = min(64, _next_pow2(c_per), max(16, _next_pow2(4096 // (n_acc * p_eff))))
+    preferred = _built_in_launch_config(torch.cuda.get_device_name(device), shape_key)
+    candidates = [
+        (c_blk, block_g, stages)
+        for c_blk in (c_top, 32, 16)
+        if c_blk <= c_top
+        for block_g, stages in ((64, 2), (32, 2), (32, 1), (16, 1))
+    ]
+    if preferred is not None:
+        candidates.insert(0, preferred)
+    with torch.cuda.device(device):
+        for config in dict.fromkeys(candidates):
+            try:
+                compiled = kernel.warmup(
+                    *signature,
+                    2,
+                    grid=(1, 1),
+                    **_launch_kwargs(shape_key, config, even_count),
+                )
+                compiled._init_handles()
+            except triton.runtime.errors.OutOfResources:
+                continue
+            return config
+    return None
+
+
+def _launch(
+    kernel: JITFunction,
+    value: Tensor,
+    n_grid: int,
+    n_frames: int,
+    packed: bool,
+    args: tuple[Tensor | int | torch.SymInt, ...],
+    n_acc: int,
+    even_count: int = 0,
+) -> None:
+    """Record or execute a launch whose tile has passed device validation."""
+    n_grid = guard_int(n_grid)
+    n_frames = guard_int(n_frames)
+    coeff_dim, n_focus, packed_channels = (guard_int(size) for size in value.shape[1:])
+    n_pair = value.shape[0] * n_focus
+    p_dim = coeff_dim * n_frames
+    c_per = packed_channels // n_frames
     shape_key = (
         kernel.fn.__name__,
         p_dim,
@@ -1060,48 +1233,17 @@ def _launch(
         n_grid,
         value.dtype,
     )
-    device_name = torch.cuda.get_device_name(value.device)
-    key = (device_name, *shape_key)
-    generic_candidates = [
-        (c_blk, block_g, stages)
-        for c_blk in (c_top, 32, 16)
-        if c_blk <= c_top
-        for block_g, stages in ((64, 2), (32, 2), (32, 1), (16, 1))
-    ]
-    if key in _LAUNCH_CACHE:
-        candidates = [_LAUNCH_CACHE[key]]
-    else:
-        built_in = _built_in_launch_config(device_name, shape_key)
-        candidates = (
-            generic_candidates
-            if built_in is None
-            else [built_in, *(cfg for cfg in generic_candidates if cfg != built_in)]
-        )
-    for c_blk, block_g, stages in candidates:
-        grid = (n_pair, (c_per + c_blk - 1) // c_blk)
-        try:
-            wrap_triton(kernel)[grid](
-                *args,
-                n_pair,
-                n_grid=n_grid,
-                PACKED=packed,
-                N_FOCUS=n_focus,
-                N_FRAMES=n_frames,
-                P_DIM=p_dim,
-                P_HI=p_hi,
-                P_LO=p_lo,
-                C_ALL=c_per,
-                C_BLK=c_blk,
-                ALLOW_TF32=False,
-                BLOCK_G=block_g,
-                num_warps=8 if c_blk >= 64 else 4,
-                num_stages=stages,
-            )
-        except triton.runtime.errors.OutOfResources:
-            continue
-        _LAUNCH_CACHE[key] = (c_blk, block_g, stages)
-        return
-    raise _NoViableConfig(p_dim, c_per)
+    signature = tuple(arg.dtype if isinstance(arg, Tensor) else 2 for arg in args)
+    config = _select_launch_config(
+        kernel, value.device, shape_key, signature, n_acc, even_count
+    )
+    if config is None:
+        raise _NoViableConfig(p_dim, c_per)
+    c_blk = config[0]
+    grid = (n_pair, (c_per + c_blk - 1) // c_blk)
+    wrap_triton(kernel)[grid](
+        *args, n_pair, **_launch_kwargs(shape_key, config, even_count)
+    )
 
 
 def _strides(*values: Tensor) -> _Shape:
@@ -1156,9 +1298,9 @@ def _eager_packed(
 ) -> tuple[Tensor, ...]:
     """Eager einsum fallback on the packed layout.
 
-    Serves the shapes whose padded tiles exceed the shared-memory budget --
-    the wide-slot fp32 regime of the exact-precision harnesses; the
-    production bf16 shapes never reach it.
+    Serves layouts for which no candidate tile fits the target device's
+    resources. The composition remains visible to the compiler when resource
+    validation rejects every fused configuration during tracing.
     """
     tg = to_grid
     fg = from_grid
@@ -1194,12 +1336,71 @@ def _eager_packed(
     )
 
 
+def _eager_projected(
+    op: str,
+    to_grid: Tensor,
+    from_grid: Tensor,
+    order: Tensor | None,
+    even_count: int,
+    *tensors: Tensor,
+) -> tuple[Tensor, ...]:
+    """Evaluate the parity-split identities when no fused tile fits."""
+    if order is None:
+        return _eager_packed(op, to_grid, from_grid, *tensors)
+    even, odd = order[:even_count], order[even_count:]
+    restore = torch.argsort(order)
+
+    def read(matrix: Tensor, value: Tensor) -> tuple[Tensor, Tensor]:
+        return tuple(
+            torch.einsum(
+                "gp,npc->ngc",
+                matrix.index_select(1, index),
+                value.index_select(1, index),
+            )
+            for index in (even, odd)
+        )
+
+    def analyze(matrix: Tensor, a: Tensor, b: Tensor) -> Tensor:
+        result = [
+            torch.einsum("gp,ngc->npc", matrix.index_select(1, index), field)
+            for index, field in ((even, a), (odd, b))
+        ]
+        return torch.cat(result, dim=1).index_select(1, restore)
+
+    if op == "fwd":
+        le, lo = read(to_grid, tensors[0])
+        re, ro = read(to_grid, tensors[1])
+        return (analyze(from_grid, le * re + lo * ro, le * ro + lo * re),)
+    go, left, right = tensors[-3:]
+    ge, go_field = read(from_grid, go)
+    le, lo = read(to_grid, left)
+    re, ro = read(to_grid, right)
+    if op == "bwd":
+        return (
+            analyze(to_grid, ge * re + go_field * ro, ge * ro + go_field * re),
+            analyze(to_grid, ge * le + go_field * lo, ge * lo + go_field * le),
+        )
+    hle, hlo = read(to_grid, tensors[0])
+    hre, hro = read(to_grid, tensors[1])
+    return (
+        analyze(
+            from_grid,
+            hle * re + hlo * ro + le * hre + lo * hro,
+            hle * ro + hlo * re + le * hro + lo * hre,
+        ),
+        analyze(to_grid, ge * hre + go_field * hro, ge * hro + go_field * hre),
+        analyze(to_grid, ge * hle + go_field * hlo, ge * hlo + go_field * hle),
+    )
+
+
 def _train_impl(
     left: Tensor,
     right: Tensor,
     to_grid: Tensor,
     from_grid: Tensor,
     n_frames: int,
+    parity_order: Tensor | None = None,
+    even_count: int = 0,
 ) -> Tensor:
     tg = to_grid.contiguous()
     fg = from_grid.contiguous()
@@ -1218,15 +1419,17 @@ def _train_impl(
                 kernel_right,
                 tg,
                 fg,
+                parity_order if parity_order is not None else tg,
                 out,
                 *_strides(kernel_left, kernel_right, out),
             ),
             1,
+            even_count,
         )
     except _NoViableConfig:
         lp, kernel_shape = _pack(kernel_left, kernel_frames)
         rp, _ = _pack(kernel_right, kernel_frames)
-        (out,) = _eager_packed("fwd", tg, fg, lp, rp)
+        (out,) = _eager_projected("fwd", tg, fg, parity_order, even_count, lp, rp)
         out = _unpack(out, kernel_shape, kernel_frames)
     return _restore_layout(out, shape, n_frames)
 
@@ -1239,8 +1442,8 @@ _train_op = torch.library.triton_op(
 
 
 @_train_op.register_fake
-def _(left, right, to_grid, from_grid, n_frames):
-    del right, to_grid, from_grid, n_frames
+def _(left, right, to_grid, from_grid, n_frames, parity_order=None, even_count=0):
+    del right, to_grid, from_grid, n_frames, parity_order, even_count
     return left.new_empty(left.shape)
 
 
@@ -1251,6 +1454,8 @@ def _train_bwd_impl(
     to_grid: Tensor,
     from_grid: Tensor,
     n_frames: int,
+    parity_order: Tensor | None = None,
+    even_count: int = 0,
 ) -> tuple[Tensor, Tensor]:
     tg = to_grid.contiguous()
     fg = from_grid.contiguous()
@@ -1273,17 +1478,19 @@ def _train_bwd_impl(
                 kernel_right,
                 tg,
                 fg,
+                parity_order if parity_order is not None else tg,
                 gl,
                 gr,
                 *_strides(kernel_grad_out, kernel_left, kernel_right, gl, gr),
             ),
             2,
+            even_count,
         )
     except _NoViableConfig:
         gp, kernel_shape = _pack(kernel_grad_out, kernel_frames)
         lp, _ = _pack(kernel_left, kernel_frames)
         rp, _ = _pack(kernel_right, kernel_frames)
-        gl, gr = _eager_packed("bwd", tg, fg, gp, lp, rp)
+        gl, gr = _eager_projected("bwd", tg, fg, parity_order, even_count, gp, lp, rp)
         gl = _unpack(gl, kernel_shape, kernel_frames)
         gr = _unpack(gr, kernel_shape, kernel_frames)
     return _restore_layout(gl, shape, n_frames), _restore_layout(gr, shape, n_frames)
@@ -1297,8 +1504,10 @@ _train_bwd_op = torch.library.triton_op(
 
 
 @_train_bwd_op.register_fake
-def _(grad_out, left, right, to_grid, from_grid, n_frames):
-    del grad_out, to_grid, from_grid, n_frames
+def _(
+    grad_out, left, right, to_grid, from_grid, n_frames, parity_order=None, even_count=0
+):
+    del grad_out, to_grid, from_grid, n_frames, parity_order, even_count
     return left.new_empty(left.shape), right.new_empty(right.shape)
 
 
@@ -1311,6 +1520,8 @@ def _train_bwd2_impl(
     to_grid: Tensor,
     from_grid: Tensor,
     n_frames: int,
+    parity_order: Tensor | None = None,
+    even_count: int = 0,
 ) -> tuple[Tensor, Tensor, Tensor]:
     tg = to_grid.contiguous()
     fg = from_grid.contiguous()
@@ -1329,6 +1540,7 @@ def _train_bwd2_impl(
         kernel_right,
         tg,
         fg,
+        parity_order if parity_order is not None else tg,
         ggo,
         g2l,
         g2r,
@@ -1352,6 +1564,7 @@ def _train_bwd2_impl(
             shape is not None,
             kernel_args,
             3,
+            even_count,
         )
     except _NoViableConfig:
         hlp, kernel_shape = _pack(kernel_h_gl, kernel_frames)
@@ -1359,7 +1572,9 @@ def _train_bwd2_impl(
         gp, _ = _pack(kernel_grad_out, kernel_frames)
         lp, _ = _pack(kernel_left, kernel_frames)
         rp, _ = _pack(kernel_right, kernel_frames)
-        ggo, g2l, g2r = _eager_packed("bwd2", tg, fg, hlp, hrp, gp, lp, rp)
+        ggo, g2l, g2r = _eager_projected(
+            "bwd2", tg, fg, parity_order, even_count, hlp, hrp, gp, lp, rp
+        )
         ggo = _unpack(ggo, kernel_shape, kernel_frames)
         g2l = _unpack(g2l, kernel_shape, kernel_frames)
         g2r = _unpack(g2r, kernel_shape, kernel_frames)
@@ -1378,8 +1593,19 @@ _train_bwd2_op = torch.library.triton_op(
 
 
 @_train_bwd2_op.register_fake
-def _(h_gl, h_gr, grad_out, left, right, to_grid, from_grid, n_frames):
-    del h_gl, h_gr, grad_out, to_grid, from_grid, n_frames
+def _(
+    h_gl,
+    h_gr,
+    grad_out,
+    left,
+    right,
+    to_grid,
+    from_grid,
+    n_frames,
+    parity_order=None,
+    even_count=0,
+):
+    del h_gl, h_gr, grad_out, to_grid, from_grid, n_frames, parity_order, even_count
     return (
         left.new_empty(left.shape),
         left.new_empty(left.shape),
@@ -1389,10 +1615,13 @@ def _(h_gl, h_gr, grad_out, left, right, to_grid, from_grid, n_frames):
 
 def _train_bwd_setup_context(ctx: Any, inputs: tuple[Any, ...], output: Any) -> None:
     del output
-    grad_out, left, right, to_grid, from_grid, n_frames = inputs
-    ctx.save_for_backward(grad_out, left, right, to_grid, from_grid)
+    grad_out, left, right, to_grid, from_grid, n_frames, parity_order, even_count = (
+        inputs
+    )
+    ctx.save_for_backward(grad_out, left, right, to_grid, from_grid, parity_order)
     ctx.set_materialize_grads(False)
     ctx.n_frames = n_frames
+    ctx.even_count = even_count
 
 
 def _train_bwd_backward(ctx: Any, h_gl: Tensor | None, h_gr: Tensor | None) -> tuple:
@@ -1403,8 +1632,8 @@ def _train_bwd_backward(ctx: Any, h_gl: Tensor | None, h_gr: Tensor | None) -> t
     the projectors are constants and carry none.
     """
     if h_gl is None and h_gr is None:
-        return (None,) * 6
-    grad_out, left, right, to_grid, from_grid = ctx.saved_tensors
+        return (None,) * 8
+    grad_out, left, right, to_grid, from_grid, parity_order = ctx.saved_tensors
     ggo, g2_left, g2_right = _train_bwd2_op(
         h_gl if h_gl is not None else torch.zeros_like(left),
         h_gr if h_gr is not None else torch.zeros_like(right),
@@ -1414,8 +1643,10 @@ def _train_bwd_backward(ctx: Any, h_gl: Tensor | None, h_gr: Tensor | None) -> t
         to_grid,
         from_grid,
         int(ctx.n_frames),
+        parity_order,
+        int(ctx.even_count),
     )
-    return ggo, g2_left, g2_right, None, None, None
+    return ggo, g2_left, g2_right, None, None, None, None, None
 
 
 _train_bwd_op.register_autograd(
@@ -1425,20 +1656,28 @@ _train_bwd_op.register_autograd(
 
 def _train_setup_context(ctx: Any, inputs: tuple[Any, ...], output: Any) -> None:
     del output
-    left, right, to_grid, from_grid, n_frames = inputs
-    ctx.save_for_backward(left, right, to_grid, from_grid)
+    left, right, to_grid, from_grid, n_frames, parity_order, even_count = inputs
+    ctx.save_for_backward(left, right, to_grid, from_grid, parity_order)
     ctx.set_materialize_grads(False)
     ctx.n_frames = n_frames
+    ctx.even_count = even_count
 
 
 def _train_backward(ctx: Any, grad_out: Tensor | None) -> tuple:
-    left, right, to_grid, from_grid = ctx.saved_tensors
+    left, right, to_grid, from_grid, parity_order = ctx.saved_tensors
     if grad_out is None:
-        return None, None, None, None, None
+        return (None,) * 7
     g_left, g_right = _train_bwd_op(
-        grad_out, left, right, to_grid, from_grid, int(ctx.n_frames)
+        grad_out,
+        left,
+        right,
+        to_grid,
+        from_grid,
+        int(ctx.n_frames),
+        parity_order,
+        int(ctx.even_count),
     )
-    return g_left, g_right, None, None, None
+    return g_left, g_right, None, None, None, None, None
 
 
 _train_op.register_autograd(_train_backward, setup_context=_train_setup_context)
@@ -1458,6 +1697,8 @@ def grid_pair_train(
     to_grid: torch.Tensor,
     from_grid: torch.Tensor,
     n_frames: int,
+    parity_order: Tensor | None = None,
+    even_count: int = 0,
 ) -> torch.Tensor:
     """
     Evaluate the pair product on frame-packed operands, differentiably.
@@ -1473,10 +1714,17 @@ def grid_pair_train(
         Grid-to-coefficient projector, transposed to shape (G, D * K).
     n_frames : int
         Frame count ``K`` packed along the trailing operand axis.
+    parity_order : torch.Tensor, optional
+        Permutation of coefficient slots with the even-degree slots first.
+        Selects inversion projection on the original quadrature.
+    even_count : int, default=0
+        Number of even-degree slots in ``parity_order``.
 
     Returns
     -------
     torch.Tensor
         Coefficient result with shape (N, D, F, K * C).
     """
-    return _train_op(left, right, to_grid, from_grid, int(n_frames))
+    return _train_op(
+        left, right, to_grid, from_grid, int(n_frames), parity_order, int(even_count)
+    )

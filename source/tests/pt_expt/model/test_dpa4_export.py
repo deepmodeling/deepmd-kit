@@ -11,11 +11,11 @@ sidecar for the ``"graph"`` kind only; the ``"nlist"`` kind stays a SINGLE
 compiled artifact and multi-rank inference on it must fail fast at the C++
 dispatch instead of silently skipping the exchange.
 
-Task 8 parametrizes the freeze over ``lower_kind``: ``"auto"`` now resolves
-to ``"graph"`` (``_resolve_lower_kind`` sees ``model_uses_graph_lower() is
-True``; ``canonical_model_eligible`` is dpa1-specific so DPA4 never takes the
-``"dpa1_canonical"`` branch), while ``"nlist"`` stays reachable for
-back-compat. This test verifies, per ``lower_kind``:
+Task 8 parametrizes the freeze over ``lower_kind``: ``"auto"`` resolves to
+``"graph"`` (``_resolve_lower_kind`` sees ``model_uses_graph_lower() is
+True``, and the compact canonical lower serves single-precision descriptors
+alone, not this double-precision model), while ``"nlist"`` stays reachable
+for back-compat. This test verifies, per ``lower_kind``:
   1. The .pt2 archive is produced and the with-comm artifact is PRESENT for
      the ``"graph"`` kind (cross-rank exchange) and ABSENT for the
      ``"nlist"`` kind (dense lower is comm-less).
@@ -38,6 +38,9 @@ import copy
 import json
 import os
 import zipfile
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 import pytest
@@ -57,6 +60,7 @@ from deepmd.pt_expt.model.model import (
 )
 from deepmd.pt_expt.utils import env as _env
 from deepmd.pt_expt.utils.serialization import (
+    _dpa4_kernel_level_defaults,
     _make_sample_inputs,
     _trace_and_export,
     build_synthetic_graph_inputs,
@@ -64,12 +68,18 @@ from deepmd.pt_expt.utils.serialization import (
 )
 
 from ...dpa4_fixtures import (
+    four_atom_spin_inputs,
     jitter_zero_arrays,
 )
 from .test_dpa4_native_spin import (
     NATIVE_SPIN_CONFIG,
     _build_native_spin_model_cpu,
 )
+
+if TYPE_CHECKING:
+    from pathlib import (
+        Path,
+    )
 
 
 def _to_artifact_device(*tensors: torch.Tensor | None) -> tuple:
@@ -125,6 +135,221 @@ CUDA_ONLY_OPS = (
     "dpa4_grid_pair",
     "dpa4_zonal_scatter",
 )
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compilation is exercised locally.",
+)
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("bridging", ["none", "zbl"])
+def test_o3_freeze_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    native: bool,
+    bridging: str,
+) -> None:
+    """The graph freeze route preserves inversion through the public inference API."""
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt_expt.entrypoints.main import (
+        freeze,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cpu"))
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    if not native:
+        config.pop("spin")
+    config["bridging_method"] = bridging
+    config["descriptor"].update(
+        parity=True,
+        channels=8,
+        l_schedule=[1, 2],
+        ffn_so3_grid=True,
+        so3_readout="mlp",
+        readout_layers=2,
+    )
+    model = get_model(config).to("cpu").eval()
+    generator = torch.Generator().manual_seed(547)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape,
+                    generator=generator,
+                    dtype=parameter.dtype,
+                    device="cpu",
+                )
+            )
+    wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
+    checkpoint = tmp_path / "o3.pt"
+    output = tmp_path / "o3.pt2"
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+    freeze(str(checkpoint), str(output), lower_kind="graph", with_comm=False)
+    potential = DeepPot(str(output))
+    coord, atype, spin, _ = four_atom_spin_inputs()
+    args = (
+        (torch.from_numpy(atype), torch.from_numpy(spin))
+        if native
+        else (torch.from_numpy(atype),)
+    )
+    reference = model(torch.from_numpy(coord), *args)
+    assert reference["force"].abs().max() > 1e-8
+    kwargs = {"spin": spin} if native else {}
+    original = potential.eval(coord, None, atype[0], **kwargs)
+    inverted = potential.eval(-coord, None, atype[0], **kwargs)
+    for index, key, sign in (
+        (0, "energy", 1),
+        (1, "force", -1),
+        (2, "virial", 1),
+    ):
+        np.testing.assert_allclose(
+            original[index].reshape(-1),
+            reference[key].detach().numpy().reshape(-1),
+            atol=2e-9,
+            rtol=2e-9,
+        )
+        np.testing.assert_allclose(
+            inverted[index], sign * original[index], atol=2e-9, rtol=2e-9
+        )
+    if native:
+        assert reference["force_mag"].abs().max() > 1e-8
+        np.testing.assert_allclose(
+            original[3].reshape(-1),
+            reference["force_mag"].detach().numpy().reshape(-1),
+            atol=2e-9,
+            rtol=2e-9,
+        )
+        np.testing.assert_allclose(inverted[3], original[3], atol=2e-9, rtol=2e-9)
+
+
+@pytest.mark.parametrize(
+    "cutoffs,l_schedule",
+    [
+        ([2.5, 4.0], [1, 2]),
+        ([4.0, 2.5], [1, 2]),
+        # three distinct compact edge axes: 6, 8 and 10 edges at the first scale
+        ([2.5, 3.5, 4.0], [1, 1, 2]),
+    ],
+)
+def test_block_cutoff_freeze_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    cutoffs: list[float],
+    l_schedule: list[int],
+) -> None:
+    """Graph archives preserve cutoff schedules and energy-force-virial values."""
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt_expt.entrypoints.main import (
+        freeze,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cpu"))
+    config = copy.deepcopy(_DPA4_CONFIG)
+    config["descriptor"].update(
+        rcut=cutoffs,
+        l_schedule=l_schedule,
+        n_blocks=len(cutoffs),
+        channels=8,
+        n_radial=4,
+        mixing_layers=1,
+        density_floor=8.0,
+        edge_norm=False,
+    )
+    model = get_model(config).to("cpu").eval()
+    generator = torch.Generator().manual_seed(131)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.03
+                * torch.randn(
+                    parameter.shape, generator=generator, dtype=parameter.dtype
+                )
+            )
+    wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
+    checkpoint, archive = tmp_path / "cutoffs.pt", tmp_path / "cutoffs.pt2"
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+    freeze(str(checkpoint), str(archive), lower_kind="graph", with_comm=False)
+    with zipfile.ZipFile(archive) as package:
+        metadata = json.loads(package.read("model/extra/metadata.json"))
+        assert metadata["rcut"] == max(cutoffs)
+        assert metadata["lower_input_kind"] == "graph"
+        definition = json.loads(package.read("model/extra/model_def_script.json"))
+        assert definition["descriptor"]["rcut"] == cutoffs
+    potential = DeepPot(str(archive))
+    coord = np.array(
+        [[[0, 0, 0], [1.2, 0.3, 0.2], [3.2, 0.2, 0.4], [5.1, 0.3, 0.5]]],
+        dtype=np.float64,
+    )
+    atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+    for scale in (1.0, 1.3, 4.0):
+        positions = coord * scale
+        reference = model(torch.from_numpy(positions), torch.from_numpy(atype))
+        result = potential.eval(positions, None, atype[0])
+        for index, key in enumerate(("energy", "force", "virial")):
+            np.testing.assert_allclose(
+                result[index].reshape(-1),
+                reference[key].detach().numpy().reshape(-1),
+                rtol=2e-9,
+                atol=2e-9,
+            )
+
+
+@pytest.mark.parametrize("explicit", [None, "0", "1"])  # unset or user-selected
+def test_freeze_kernel_levels_default_to_the_fused_convolution(
+    monkeypatch: pytest.MonkeyPatch, explicit: str | None
+) -> None:
+    """A freeze binds the fused convolution unless the user selects a level."""
+    for name in ("DP_TRITON_INFER", "DP_CUDA_INFER"):
+        monkeypatch.delenv(name, raising=False)
+    if explicit is not None:
+        monkeypatch.setenv("DP_CUDA_INFER", explicit)
+    with _dpa4_kernel_level_defaults():
+        assert os.environ["DP_CUDA_INFER"] == (explicit or "2")
+        assert os.environ["DP_TRITON_INFER"] == "2"
+    assert os.environ.get("DP_CUDA_INFER") == explicit
+    assert "DP_TRITON_INFER" not in os.environ
+
+
+def test_graph_export_sort_compaction_large_axis(tmp_path: Path) -> None:
+    """Sort profitability cannot cap a subsequent compact graph axis at int16."""
+    from deepmd.pt.utils.compile_compat import (
+        patch_inductor_stable_sort_fallback,
+    )
+
+    class SortedCompact(torch.nn.Module):
+        def forward(self, values: torch.Tensor) -> tuple[torch.Tensor]:
+            order = torch.argsort(values[:, 0], stable=True)
+            ordered = values.index_select(0, order)
+            indices = torch.nonzero(ordered[:, 1] > 0).flatten()
+            compact = ordered.index_select(0, indices)
+            return (compact.square().sum().reshape(1),)
+
+    module = SortedCompact()
+    sample = torch.ones((31, 2))
+    patch_inductor_stable_sort_fallback()
+    exported = torch.export.export(
+        module, (sample,), dynamic_shapes=({0: torch.export.Dim("edges", min=2)},)
+    )
+    package = torch._inductor.aoti_compile_and_package(
+        exported,
+        package_path=str(tmp_path / "compact.pt2"),
+        inductor_configs={"triton.persistent_reductions": False},
+    )
+    loaded = torch._inductor.aoti_load_package(package)
+    for size in (17, 40_000):
+        values = torch.ones((size, 2))
+        torch.testing.assert_close(loaded(values)[0], module(values)[0])
 
 
 def test_dpa4_fp32_cpu_export_runs_without_cuda_only_ops(monkeypatch) -> None:
@@ -732,7 +957,7 @@ def _freeze_native_spin(model_file) -> None:
     reason="AOTInductor compile is slow (minutes); run locally only by default.",
 )
 def test_native_spin_graph_freeze(tmp_path) -> None:
-    """Native-spin DPA4 freezes to a graph-kind .pt2 with its comm sidecar."""
+    """Native-spin DPA4 freezes to a single graph-kind .pt2 artifact."""
     model_file = tmp_path / "dpa4_spin_graph.pt2"
     _freeze_native_spin(model_file)
 
@@ -750,19 +975,19 @@ def test_native_spin_graph_freeze(tmp_path) -> None:
     assert md["type_map"] == NATIVE_SPIN_CONFIG["type_map"]
     assert md["lower_input_kind"] == "graph"
     assert md["is_spin"] is True
-    # Native spin participates in the with-comm artifact on the GRAPH lower
-    # (pt's SeZMNativeSpinModel does not override supports_edge_parallel):
-    # the spin input is per-node with ghost rows delivered by the LAMMPS
-    # ``sp`` forward-comm, so only the per-block ghost FEATURE refresh needs
-    # border_op -- the same one the energy model drives.
-    assert md["has_comm_artifact"] is True
+    # The spin input is per-node with ghost rows delivered by the LAMMPS
+    # ``sp`` forward-comm, so only the per-block ghost FEATURE refresh crosses
+    # ranks. The graph lower of a native-spin model takes the border plan as
+    # inputs and runs that exchange in its main program, so no with-comm
+    # artifact is embedded.
+    assert md["has_comm_artifact"] is False
     assert md["has_message_passing"] is True
     assert md["ntypes_spin"] == 1  # use_spin=[True, False]
     assert md["use_spin"] == [True, False]
     assert "force_mag" in md["output_keys"]
     for key in ("atom_energy", "energy", "force", "virial"):
         assert key in md["output_keys"]
-    assert any(n.endswith("forward_lower_with_comm.pt2") for n in names)
+    assert not any(n.endswith("forward_lower_with_comm.pt2") for n in names)
 
 
 def test_native_spin_nlist_deserialize_rejected(tmp_path) -> None:
@@ -819,17 +1044,21 @@ def test_native_spin_default_freeze_routes_to_graph(tmp_path) -> None:
     assert md["is_spin"] is True
 
 
-def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
+@pytest.mark.parametrize("requested", ["nlist", None])
+def test_lower_kind_override_warns_only_when_requested(
+    tmp_path, caplog, requested
+) -> None:
     """Overriding the caller's lower_kind must be WARNED, not silent.
 
     The dense lower is deprecated here, so a graph-capable model is forced
     onto the graph lower even when the caller asked for "nlist". The two
     lowers are not numerically identical, so the override has to be visible
-    in the log rather than inferred from the output suffix.
+    in the log rather than inferred from the output suffix. The default
+    (``requested=None``) resolves to the graph lower without a warning, since
+    the caller asked for nothing to override.
 
-    The export itself is stubbed: this pins the resolution and its log, and
-    a real compile would only add minutes (and this workstation's inductor
-    bug) without testing anything extra.
+    The export itself is stubbed: this pins the resolution and its log, which
+    a real compile would not test further.
     """
     import copy
     import logging
@@ -864,14 +1093,20 @@ def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
         mock.patch("deepmd.pt_expt.utils.serialization.deserialize_to_file", _stub),
         caplog.at_level(logging.WARNING, logger="deepmd.pt_expt.entrypoints.main"),
     ):
-        freeze(model=str(ckpt), output=str(tmp_path / "frozen"), lower_kind="nlist")
+        freeze(
+            model=str(ckpt),
+            output=str(tmp_path / "frozen"),
+            **({} if requested is None else {"lower_kind": requested}),
+        )
 
     warned = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("OVERRIDDEN" in m for m in warned), (
-        f"the lower_kind override was not warned about; got {warned}"
+    overridden = any("OVERRIDDEN" in m for m in warned)
+    assert overridden == (requested is not None), (
+        f"requested lower_kind={requested!r}: override warnings {warned}"
     )
-    # ... and it really did override, both in the export call and the suffix
-    assert seen["lower_kind"] == "graph"
+    # ... and it really did override, both in the export call, which selects
+    # the schema of the graph lower, and the suffix
+    assert seen["lower_kind"] == "auto"
     assert seen["model_file"].endswith(".pt2")
 
 
@@ -880,13 +1115,14 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
 
     The dense lower is deprecated in this backend, and for a bridged model
     it does not exist at all: the analytical term's ``forward_atomic``
-    raises on the dense route, so the public default
-    ``lower_kind="nlist"`` used to fail deep inside the dense trace. The
-    resolution was previously an ``isinstance(NativeSpinModelKind)``
-    special case, which a bridged model is not an instance of; it now asks
-    the graph-lower capability, which covers both.
+    raises on the dense route. The default ``lower_kind="auto"`` therefore
+    resolves through the graph-lower capability of the model, which a
+    bridged composition answers like a native-spin model does.
     """
     import copy
+    from unittest import (
+        mock,
+    )
 
     from deepmd.pt_expt.entrypoints.main import (
         freeze,
@@ -900,21 +1136,24 @@ def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
 
     config = copy.deepcopy(_DPA4_CONFIG)
     config["bridging_method"] = "ZBL"
-    config["bridging_r_inner"] = 0.8
-    config["bridging_r_outer"] = 1.2
     model = get_model(copy.deepcopy(config)).to(torch.device("cpu")).eval()
     wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
     ckpt = tmp_path / "model.pt"
     torch.save({"model": wrapper.state_dict()}, ckpt)
 
     output = tmp_path / "frozen_bridged"  # suffixless: default CLI form
-    freeze(model=str(ckpt), output=str(output))
+    # This test pins the public entry point's route and default suffix. The
+    # bridged with-comm export test exercises real tracing and AOTI packaging.
+    with mock.patch("deepmd.pt_expt.utils.serialization.deserialize_to_file") as export:
+        freeze(model=str(ckpt), output=str(output))
 
-    pt2 = output.with_suffix(".pt2")
-    assert pt2.exists(), "default suffix must follow the resolved graph kind"
-    with zipfile.ZipFile(pt2) as z:
-        md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
-    assert md["lower_input_kind"] == "graph"
+    export.assert_called_once()
+    args, kwargs = export.call_args
+    assert args[0] == str(output.with_suffix(".pt2")), (
+        "default suffix must follow the resolved graph kind"
+    )
+    # The export selects the schema of the graph lower.
+    assert kwargs["lower_kind"] == "auto"
 
 
 def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:

@@ -14,10 +14,14 @@ from deepmd.main import (
     main,
 )
 from deepmd.pt_expt.entrypoints.main import (
+    _update_changed_model_tensors,
     get_trainer,
 )
 from deepmd.pt_expt.model.get_model import (
     get_model,
+)
+from deepmd.pt_expt.train.training import (
+    model_change_out_bias,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
@@ -25,11 +29,20 @@ from deepmd.pt_expt.train.wrapper import (
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
+from deepmd.pt_expt.utils.multi_task import (
+    preprocess_shared_params,
+)
+from deepmd.pt_expt.utils.stat import (
+    make_stat_input,
+)
 from deepmd.utils.argcheck import (
     normalize,
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 
@@ -118,6 +131,35 @@ def _make_config(data_dir: str) -> dict:
     }
 
 
+def _make_multitask_config(data_dir: str) -> dict:
+    """Split the single-task config into two branches that share its descriptor."""
+    config = _make_config(data_dir)
+    model = config.pop("model")
+    loss = config.pop("loss")
+    training = config["training"]
+    data = {key: training.pop(key) for key in ("training_data", "validation_data")}
+    branches = ("model_1", "model_2")
+    config["model"] = {
+        "shared_dict": {
+            "type_map": model["type_map"],
+            "descriptor": model["descriptor"],
+        },
+        "model_dict": {
+            branch: {
+                "type_map": "type_map",
+                "descriptor": "descriptor",
+                "fitting_net": deepcopy(model["fitting_net"]),
+                "data_stat_nbatch": 1,
+            }
+            for branch in branches
+        },
+    }
+    config["loss_dict"] = {branch: deepcopy(loss) for branch in branches}
+    training["model_prob"] = dict.fromkeys(branches, 1.0)
+    training["data_dict"] = {branch: deepcopy(data) for branch in branches}
+    return config
+
+
 def _make_subset_dataset(src_system: str, dst_system: str, n_frames: int) -> None:
     """Copy ``type{,_map}.raw`` and the first ``n_frames`` of every ``.npy``
     in ``set.000`` from ``src_system`` to ``dst_system``.
@@ -184,6 +226,7 @@ class TestChangeBias(unittest.TestCase):
 
         # Build & train 1-step model
         config = _make_config(data_dir)
+        config["model"]["preset_out_bias"] = {"energy": [-10.0, -13.6]}
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
         config["training"]["save_ckpt"] = "model.ckpt"
@@ -193,8 +236,18 @@ class TestChangeBias(unittest.TestCase):
 
         cls.model_path = os.path.join(cls.tmpdir, "model.ckpt.pt")
 
-        # Record original bias
-        cls.original_bias = to_numpy(trainer.wrapper.model["Default"].get_out_bias())
+        # A checkpoint may already carry a downstream-adjusted finite bias.
+        model = trainer.wrapper.model["Default"]
+        old_bias = model.get_out_bias()
+        model.set_out_bias(
+            torch.as_tensor(
+                [7.0, 8.0], dtype=old_bias.dtype, device=old_bias.device
+            ).reshape(old_bias.shape)
+        )
+        checkpoint = torch.load(cls.model_path, map_location=DEVICE, weights_only=True)
+        checkpoint["model"] = trainer.wrapper.state_dict()
+        torch.save(checkpoint, cls.model_path)
+        cls.original_bias = to_numpy(model.get_out_bias()).copy()
 
         # Pre-freeze shared .pte and .pt2 files so individual tests don't
         # each pay the AOTInductor compilation cost (~82s per .pt2).
@@ -231,6 +284,44 @@ class TestChangeBias(unittest.TestCase):
         wrapper.load_state_dict(model_state)
         return model
 
+    def _expected_fitted_bias(self):
+        model = self._load_model_from_ckpt(self.model_path)
+        # Compare against the established no-preset statistics path with the
+        # same network and adjusted bias, rather than starting from the preset.
+        model.atomic_model.preset_out_bias = None
+        data = DeepmdDataSystem(
+            systems=self.data_file,
+            batch_size=1,
+            test_size=1,
+            rcut=model.get_rcut(),
+            type_map=model.get_type_map(),
+        )
+        from deepmd.pt_expt.train.training import (
+            get_loss,
+        )
+
+        loss = get_loss({"inference": True}, 1.0, len(model.get_type_map()), model)
+        data.add_data_requirements(loss.label_requirement)
+        sampled = make_stat_input(data, min(data.get_nbatches()))
+        return to_numpy(model_change_out_bias(model, sampled).get_out_bias())
+
+    def _assert_preset_bias_update(self, model) -> None:
+        np.testing.assert_allclose(
+            to_numpy(model.get_out_bias()), self._expected_fitted_bias(), atol=1e-10
+        )
+        self.assertEqual(
+            model.atomic_model.preset_out_bias, {"energy": [[-10.0], [-13.6]]}
+        )
+
+    def test_default_bias_helper_preserves_preset_behavior(self) -> None:
+        model = self._load_model_from_ckpt(self.model_path)
+        np.testing.assert_allclose(to_numpy(model.get_out_bias()), self.original_bias)
+        sampled = [{"atype": np.array([[0, 1]], dtype=np.int32)}]
+        model_change_out_bias(model, sampled)
+        np.testing.assert_allclose(
+            to_numpy(model.get_out_bias()).reshape(-1), [-10.0, -13.6]
+        )
+
     def test_change_bias_with_data(self) -> None:
         output_path = os.path.join(self.tmpdir, "model_data_bias.pt")
         run_dp(
@@ -239,6 +330,7 @@ class TestChangeBias(unittest.TestCase):
         )
         updated_model = self._load_model_from_ckpt(output_path)
         updated_bias = to_numpy(updated_model.get_out_bias())
+        self._assert_preset_bias_update(updated_model)
         original_bias = np.array(self.original_bias)
         # Bias should have changed from the original
         self.assertFalse(
@@ -333,6 +425,11 @@ class TestChangeBias(unittest.TestCase):
         updated_data = serialize_from_file(output_pte)
         updated_model = BaseModel.deserialize(updated_data["model"])
         updated_bias = to_numpy(updated_model.get_out_bias())
+        self._assert_preset_bias_update(updated_model)
+        self.assertEqual(
+            updated_data["model_def_script"]["preset_out_bias"],
+            self.config["model"]["preset_out_bias"],
+        )
 
         # Bias should have changed
         self.assertFalse(
@@ -362,6 +459,11 @@ class TestChangeBias(unittest.TestCase):
         updated_data = serialize_from_file(output_pt2)
         updated_model = BaseModel.deserialize(updated_data["model"])
         updated_bias = to_numpy(updated_model.get_out_bias())
+        self._assert_preset_bias_update(updated_model)
+        self.assertEqual(
+            updated_data["model_def_script"]["preset_out_bias"],
+            self.config["model"]["preset_out_bias"],
+        )
 
         self.assertFalse(
             np.allclose(original_bias, updated_bias),
@@ -435,6 +537,29 @@ class TestChangeBias(unittest.TestCase):
         self.assertIn("model_def_script", updated_data)
         self.assertEqual(updated_data["model_def_script"], original_mds)
 
+    def test_change_bias_keeps_the_per_atom_virial(self) -> None:
+        """change_bias keeps the per-atom virial of a dense-lower archive."""
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(self.shared_pte)
+        self.assertEqual(data["lower_input_kind"], "nlist")
+        self.assertFalse(data["do_atomic_virial"])
+        with_virial = os.path.join(self.tmpdir, "frozen_atomic_virial.pte")
+        deserialize_to_file(
+            with_virial,
+            {"model": data["model"], "model_def_script": data["model_def_script"]},
+            do_atomic_virial=True,
+            lower_kind="nlist",
+        )
+        output_pte = os.path.join(self.tmpdir, "frozen_atomic_virial_updated.pte")
+        run_dp(f"dp --pt-expt change-bias {with_virial} -b 0.1 3.2 -o {output_pte}")
+        updated = serialize_from_file(output_pte)
+        self.assertEqual(updated["lower_input_kind"], "nlist")
+        self.assertTrue(updated["do_atomic_virial"])
+
     def test_change_bias_pt2_preserves_model_def_script(self) -> None:
         """change_bias on .pt2 should preserve model_def_script (training config)."""
         from deepmd.pt_expt.utils.serialization import (
@@ -472,6 +597,8 @@ class TestChangeBiasFittingStats(unittest.TestCase):
         fitting_net = MagicMock()
 
         class FakeModel(DPModelCommon):
+            atomic_model = MagicMock(**{"has_long_range.return_value": False})
+
             def get_out_bias(self):
                 return np.array([[0.0, 0.0]])
 
@@ -511,6 +638,121 @@ class TestChangeBiasFittingStats(unittest.TestCase):
         )
 
         fitting_net.compute_input_stats.assert_not_called()
+
+
+class TestChangeBiasMultiTask(unittest.TestCase):
+    """Test dp change-bias on one branch of a multi-task checkpoint."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        full_data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(full_data_dir):
+            raise unittest.SkipTest(f"Example data not found: {full_data_dir}")
+        cls.tmpdir = tempfile.mkdtemp()
+        cls.old_cwd = os.getcwd()
+        data_dir = os.path.join(cls.tmpdir, "data")
+        _make_subset_dataset(
+            src_system=os.path.join(full_data_dir, "data_0"),
+            dst_system=os.path.join(data_dir, "data_0"),
+            n_frames=5,
+        )
+        cls.data_file = os.path.join(data_dir, "data_0")
+        os.chdir(cls.tmpdir)
+
+        config = _make_multitask_config(data_dir)
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+        config["training"]["save_ckpt"] = "model.ckpt"
+        get_trainer(deepcopy(config), shared_links=shared_links).run()
+        cls.model_path = os.path.join(cls.tmpdir, "model.ckpt.pt")
+        cls.state = cls._load_state(cls.model_path)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.chdir(cls.old_cwd)
+        shutil.rmtree(cls.tmpdir)
+
+    @staticmethod
+    def _load_state(path: str) -> dict:
+        return torch.load(path, map_location=DEVICE, weights_only=True)["model"]
+
+    @staticmethod
+    def _shared_storage(state: dict) -> list[list[str]]:
+        """The groups of tensors of a state that share their storage."""
+        groups: dict[int, list[str]] = {}
+        for key, value in state.items():
+            if torch.is_tensor(value):
+                groups.setdefault(value.untyped_storage().data_ptr(), []).append(key)
+        return sorted(sorted(keys) for keys in groups.values() if len(keys) > 1)
+
+    def _changed(self, output_path: str) -> dict[str, torch.Tensor]:
+        """The tensors that a changed checkpoint does not share with the input."""
+        updated = self._load_state(output_path)
+        self.assertEqual(set(updated), set(self.state))
+        self.assertEqual(updated["_extra_state"], self.state["_extra_state"])
+        # The branches keep the tensors they share.
+        shared = self._shared_storage(self.state)
+        self.assertTrue(shared)
+        self.assertEqual(self._shared_storage(updated), shared)
+        return {
+            key: value
+            for key, value in updated.items()
+            if key != "_extra_state" and not torch.equal(value, self.state[key])
+        }
+
+    def test_user_defined_bias_changes_one_branch(self) -> None:
+        output_path = os.path.join(self.tmpdir, "model_user_bias.pt")
+        user_bias = [0.1, 3.2]
+        run_dp(
+            f"dp --pt-expt change-bias {self.model_path} --task model_1 "
+            f"-b {' '.join(str(v) for v in user_bias)} -o {output_path}"
+        )
+        changed = self._changed(output_path)
+        self.assertEqual(list(changed), ["model.model_1.atomic_model.out_bias"])
+        np.testing.assert_allclose(
+            to_numpy(changed["model.model_1.atomic_model.out_bias"]).reshape(-1),
+            user_bias,
+        )
+
+    def test_data_changes_one_branch(self) -> None:
+        output_path = os.path.join(self.tmpdir, "model_data_bias.pt")
+        # ``--model-branch`` and ``--head`` are aliases of ``--task``.
+        run_dp(
+            f"dp --pt-expt change-bias {self.model_path} --model-branch model_2 "
+            f"-s {self.data_file} -o {output_path}"
+        )
+        changed = self._changed(output_path)
+        self.assertIn("model.model_2.atomic_model.out_bias", changed)
+        for key in changed:
+            self.assertTrue(key.startswith("model.model_2.atomic_model.out_"), key)
+
+    def test_branch_is_required(self) -> None:
+        output_path = os.path.join(self.tmpdir, "model_refused.pt")
+        for branch in ("", "--head model_3 "):
+            with self.assertRaisesRegex(ValueError, "--task"):
+                run_dp(
+                    f"dp --pt-expt change-bias {self.model_path} {branch}"
+                    f"-b 0.1 3.2 -o {output_path}"
+                )
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "a second device is needed")
+class TestChangeBiasAcrossDevices(unittest.TestCase):
+    def test_changed_tensors_reach_a_checkpoint_on_another_device(self) -> None:
+        """A model may hold tensors on another device than its checkpoint."""
+        checkpoint = {
+            "bias": torch.zeros(2, device="cuda"),
+            "flag": torch.ones(1, device="cuda"),
+        }
+        bias = checkpoint["bias"]
+        _update_changed_model_tensors(
+            checkpoint, {"bias": torch.tensor([1.0, 2.0]), "flag": torch.ones(1)}
+        )
+        # The changed tensor is updated in place, on the device of the checkpoint.
+        self.assertIs(checkpoint["bias"], bias)
+        torch.testing.assert_close(bias.cpu(), torch.tensor([1.0, 2.0]))
+        self.assertEqual(checkpoint["flag"].device.type, "cuda")
 
 
 if __name__ == "__main__":

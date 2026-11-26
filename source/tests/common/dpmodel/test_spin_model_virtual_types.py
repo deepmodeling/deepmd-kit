@@ -80,6 +80,18 @@ def test_dense_spin_expansion_preserves_virtual_types(model) -> None:
     )
 
 
+def test_real_type_sequence_bias_override(model) -> None:
+    sample = {
+        "coord": np.arange(9, dtype=np.float64).reshape(1, 3, 3),
+        "atype": np.array([[0, 1, 2]], dtype=np.int32),
+        "spin": np.ones((1, 3, 3), dtype=np.float64),
+    }
+    model.change_out_bias([sample], preset_out_bias={"energy": [1.0, 2.0, 3.0]})
+    np.testing.assert_allclose(
+        to_numpy_array(model.get_out_bias()).reshape(-1), [1.0, 2.0, 3.0, 0.0, 0.0, 0.0]
+    )
+
+
 def test_lower_spin_expansion_preserves_virtual_types(model) -> None:
     """Local and ghost placeholders remain negative in the switched layout."""
     extended_coord = np.arange(12, dtype=np.float64).reshape(1, 4, 3)

@@ -18,6 +18,12 @@ from deepmd.dpmodel.train import (
     make_task_maps,
     print_data_summaries,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    validate_task_sampling_backend,
+)
+from deepmd.dpmodel.utils.lmdb_data_system import (
+    LmdbDataSystem,
+)
 from deepmd.jax.env import (
     jax,
     jax_export,
@@ -35,14 +41,46 @@ from deepmd.jax.utils.update_sel import (
     use_jax_update_sel,
 )
 from deepmd.utils import random as dp_random
+from deepmd.utils.data_config import (
+    DataConfig,
+)
 from deepmd.utils.data_system import (
     get_data,
+    get_neighbor_stat_data,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 __all__ = ["train"]
 
 log = logging.getLogger(__name__)
+
+
+def _build_data_system(
+    params: DataConfig,
+    rcut: float,
+    type_map: list[str] | None,
+    seed: int | None = None,
+    batch_multiple: int = 1,
+) -> Any:
+    """Build grouped NumPy readers with the common recursive data configuration."""
+
+    def make_lmdb(
+        path: str, batch_size: int | str, auto_prob: str | None
+    ) -> LmdbDataSystem:
+        if type_map is None:
+            raise ValueError("LMDB training requires a model type_map.")
+        return LmdbDataSystem(
+            path,
+            type_map=type_map,
+            batch_size=batch_size,
+            auto_prob_style=auto_prob,
+            seed=seed,
+            rank=jax.process_index(),
+            world_size=jax.process_count(),
+            batch_multiple=batch_multiple,
+        )
+
+    return get_data(params, rcut, type_map, None, lmdb_factory=make_lmdb, seed=seed)
 
 
 class SummaryPrinter(BaseSummaryPrinter):
@@ -87,12 +125,26 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
         self.finetune_links: dict[str, Any] | None = None
         self.shared_links: dict[str, Any] | None = None
 
+    def normalize_config(
+        self,
+        config: dict[str, Any],
+        *,
+        multi_task: bool,
+    ) -> dict[str, Any]:
+        """Validate model options with the JAX training capability set."""
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+
+        return normalize(config, multi_task=multi_task, backend="jax")
+
     def validate_options(
         self,
         config: dict[str, Any],
         options: TrainEntrypointOptions,
     ) -> None:
         """Validate currently unsupported JAX train features."""
+        validate_task_sampling_backend(config.get("training", {}), "jax")
         if options.init_frz_model:
             raise NotImplementedError(
                 "JAX training does not support init_frz_model yet"
@@ -106,7 +158,6 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
         """Apply JAX fine-tuning and pretrained-script preprocessing."""
         self.finetune_links = None
         self.shared_links = None
-
         if options.finetune is not None:
             from deepmd.jax.utils.finetune import (
                 get_finetune_rules,
@@ -119,7 +170,7 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
                 change_model_params=options.use_pretrain_script,
             )
         elif options.init_model is not None and options.use_pretrain_script:
-            model_data = serialize_from_file(options.init_model)
+            model_data = serialize_from_file(options.init_model, training=False)
             config["model"] = model_data["model_def_script"]
         if self.is_multi_task(config):
             if config["model"].get("shared_dict"):
@@ -182,27 +233,39 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
             task_model = model.models[task_config.key]
             type_map = task_model.get_type_map()
             ipt_type_map = type_map if len(type_map) > 0 else None
-            train_data = get_data(
-                dict(task_config.training_data_params),
+            train_data = _build_data_system(
+                task_config.training_data_params,
                 task_model.get_rcut(),
                 ipt_type_map,
-                None,
+                seed,
+                batch_multiple=jax.local_device_count(),
             )
             valid_data = None
             if task_config.validation_data_params is not None:
-                valid_data = get_data(
-                    dict(task_config.validation_data_params),
+                valid_data = _build_data_system(
+                    task_config.validation_data_params,
                     task_model.get_rcut(),
                     train_data.type_map,
-                    None,
+                    seed,
+                    batch_multiple=jax.local_device_count(),
                 )
+            for data in (train_data, valid_data):
+                configure = getattr(data, "use_ragged_batches", None)
+                if configure is not None:
+                    configure(task_model.uses_full_neighbor_list())
             return train_data, valid_data, None
 
         train_data_map, valid_data_map, _ = make_task_maps(config, factory)
         print_data_summaries(train_data_map, valid_data_map)
 
         start_time = time.time()
-        model.train(train_data_map, valid_data_map)
+        try:
+            model.train(train_data_map, valid_data_map)
+        finally:
+            for data in (*train_data_map.values(), *valid_data_map.values()):
+                close = getattr(data, "close", None)
+                if close is not None:
+                    close()
         end_time = time.time()
         log.info("finished training")
         log.info(f"wall time: {(end_time - start_time):.3f} s")
@@ -290,11 +353,8 @@ def update_sel(
     with use_jax_update_sel():
         for task_config in iter_training_task_configs(jdata):
             type_map = task_config.model_params.get("type_map")
-            train_data = get_data(
-                dict(task_config.training_data_params),
-                0,  # not used
-                type_map,
-                None,  # not used
+            train_data = get_neighbor_stat_data(
+                task_config.training_data_params, type_map
             )
             updated_model, task_min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, dict(task_config.model_params)

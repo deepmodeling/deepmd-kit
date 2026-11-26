@@ -10,6 +10,9 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
 )
+from deepmd.dpmodel.utils.multi_task import (
+    get_atomic_model_attr,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
@@ -56,11 +59,17 @@ class DPModelCommon:
 
     def get_fitting_net(self) -> BaseFitting:
         """Get the fitting network."""
-        return self.atomic_model.fitting_net
+        fitting = get_atomic_model_attr(self, "fitting_net")
+        if fitting is None:
+            raise ValueError("The model has no learned fitting network.")
+        return fitting
 
     def get_descriptor(self) -> BaseDescriptor:
         """Get the descriptor."""
-        return self.atomic_model.descriptor
+        descriptor = get_atomic_model_attr(self, "descriptor")
+        if descriptor is None:
+            raise ValueError("The model has no learned descriptor.")
+        return descriptor
 
     def compute_fitting_input_stats(
         self, sampled_func: Callable[[], list[dict]]
@@ -73,3 +82,5 @@ class DPModelCommon:
             The lazy sampled function to get data frames from different data systems.
         """
         self.get_fitting_net().compute_input_stats(sampled_func)
+        if self.atomic_model.has_long_range():
+            self.atomic_model.long_range.compute_input_stats(sampled_func)

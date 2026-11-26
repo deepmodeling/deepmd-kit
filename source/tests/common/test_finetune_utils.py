@@ -4,6 +4,8 @@ from copy import (
     deepcopy,
 )
 
+import pytest
+
 from deepmd.utils import (
     finetune,
 )
@@ -41,6 +43,26 @@ def _native_spin_model_config(
 def test_descriptor_normalization_uses_descriptor_type_count():
     assert finetune._infer_synthetic_type_count({"sel": [16, 24, 32]}) == 3
     assert finetune._infer_synthetic_type_count({"exclude_types": [[0, 3]]}) == 4
+
+
+def test_descriptor_normalization_keeps_the_elements_a_descriptor_names(caplog):
+    assert finetune._infer_synthetic_type_map({"sel": [16, 24, 32]}) == [
+        "Type0",
+        "Type1",
+        "Type2",
+    ]
+    merged = {"type": "dpa4", "moe": {"n_experts": 0, "element": ["O", "H", "C"]}}
+    assert finetune._infer_synthetic_type_map(merged) == ["O", "H", "C"]
+    # The implicit defaults of the plain descriptor are no difference.
+    with caplog.at_level(logging.WARNING):
+        finetune.warn_configuration_mismatch_during_finetune(
+            {"type": "dpa4", "moe": {"n_experts": 0, "element": ["O", "H", "C"]}},
+            merged,
+        )
+    assert not caplog.text
+    normalized = finetune._normalize_descriptor_for_compare(merged)
+    assert normalized["moe"]["element"] == ["O", "H", "C"]
+    assert "n_blocks" in normalized
 
 
 def test_descriptor_config_warning_reports_nested_difference(monkeypatch, caplog):
@@ -156,6 +178,28 @@ def test_finetune_rule_builder_updates_single_task_config_preserving_trainable()
     assert rule.get_has_new_type()
 
 
+def test_finetune_rule_builder_carries_long_range_preserving_trainable():
+    long_range = {"type": "latent_charge", "kernel": {"type": "les", "alpha": 0.7}}
+    pretrained = _model_config(["O", "H"])
+    pretrained["long_range"] = deepcopy(long_range)
+    target = _model_config(["O", "H"], trainable=False)
+    target["long_range"] = {
+        "type": "latent_charge",
+        "charge_net": {"trainable": False},
+        "kernel": {"type": "les", "alpha": 2.0, "trainable": False},
+    }
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["long_range"]["kernel"]["alpha"] == 0.7
+    assert updated["long_range"]["kernel"]["trainable"] is False
+    assert updated["long_range"]["charge_net"]["trainable"] is False
+
+
 def test_finetune_rule_builder_random_fitting_keeps_target_fitting_net():
     pretrained = _model_config(["O", "H"], descriptor_sel=[8, 16], fitting_neuron=[32])
     target = _model_config(["O", "H"], descriptor_sel=[1, 1], fitting_neuron=[2])
@@ -170,6 +214,77 @@ def test_finetune_rule_builder_random_fitting_keeps_target_fitting_net():
     assert updated["descriptor"]["sel"] == [8, 16]
     assert updated["fitting_net"]["neuron"] == [2]
     assert links["Default"].get_random_fitting()
+
+
+@pytest.mark.parametrize("change_model_params", [False, True])
+@pytest.mark.parametrize(
+    ("target_default", "expected"), [(None, [1.0, 2.0]), ([0.0, 1.0], [0.0, 1.0])]
+)
+def test_finetune_rule_builder_inherits_unset_default_chg_spin(
+    target_default: list[float] | None,
+    expected: list[float],
+    change_model_params: bool,
+) -> None:
+    pretrained = _model_config(["O", "H"])
+    pretrained["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[1.0, 2.0])
+    target = _model_config(["O", "H"])
+    target["descriptor"]["add_chg_spin_ebd"] = True
+    if target_default is not None:
+        target["descriptor"]["default_chg_spin"] = target_default
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained, target, change_model_params=change_model_params
+    ).build()
+
+    assert updated["descriptor"]["default_chg_spin"] == expected
+
+
+def test_finetune_rule_builder_keeps_default_chg_spin_off_unconditioned_targets() -> (
+    None
+):
+    pretrained = _model_config(["O", "H"])
+    pretrained["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[1.0, 2.0])
+    target = _model_config(["O", "H"])
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained, target, change_model_params=False
+    ).build()
+
+    assert "default_chg_spin" not in updated["descriptor"]
+
+
+def test_finetune_rule_builder_names_single_task_pretrained_by_task() -> None:
+    pretrained = _model_config(["O", "H"])
+    pretrained["task"] = "omat24"
+    target = {
+        "model_dict": {
+            "omat24": _model_config(["O", "H"]),
+            "omol25": {**_model_config(["O", "H"]), "finetune_head": "omat24"},
+            "matpes": _model_config(["O", "H"]),
+        }
+    }
+
+    _, links = finetune.FinetuneRuleBuilder(
+        pretrained, target, change_model_params=False
+    ).build()
+
+    assert links["omat24"].get_resuming()
+    assert not links["omol25"].get_resuming()
+    assert not links["omol25"].get_random_fitting()
+    assert links["matpes"].get_random_fitting()
+    assert {link.get_model_branch() for link in links.values()} == {"Default"}
+
+
+def test_finetune_rule_builder_rejects_unknown_pretrained_task() -> None:
+    pretrained = _model_config(["O", "H"])
+    pretrained["task"] = "omat24"
+    branch = {**_model_config(["O", "H"]), "finetune_head": "matpes"}
+    target = {"model_dict": {"omol25": branch}}
+
+    with pytest.raises(ValueError, match="matpes"):
+        finetune.FinetuneRuleBuilder(
+            pretrained, target, change_model_params=False
+        ).build()
 
 
 def test_finetune_rule_builder_rejects_unknown_branch_from_single_task():
@@ -298,22 +413,62 @@ def test_finetune_rule_builder_accepts_compatible_native_spin_transfers():
         ),
     )
     for pretrained, target in compatible_pairs:
-        finetune.FinetuneRuleBuilder(
+        _, rules = finetune.FinetuneRuleBuilder(
             pretrained,
             target,
             change_model_params=False,
         ).build()
+        assert not rules["Default"].convert_to_native_spin
 
 
-def test_finetune_rule_builder_rejects_non_native_spin_pretraining():
-    try:
+def test_finetune_rule_builder_accepts_spin_free_pretraining() -> None:
+    pretrained = _model_config(["Fe", "C"])
+    target = _native_spin_model_config(["Fe", "C"], ["Fe"])
+    target["preset_out_bias"] = {"energy": {"Fe": -1.0, "C": -2.0}}
+    target["bridging_method"] = "zbl"
+    original = deepcopy(target)
+    for change_model_params in (False, True):
+        config, rules = finetune.FinetuneRuleBuilder(
+            pretrained, target, change_model_params=change_model_params
+        ).build()
+        assert rules["Default"].convert_to_native_spin
+        assert config["spin"] == original["spin"]
+        assert config["preset_out_bias"] == original["preset_out_bias"]
+        assert config["bridging_method"] == "zbl"
+        assert target == original
+
+
+def test_spin_free_multitask_branch_requires_finetune_statistics() -> None:
+    pretrained = {"model_dict": {"magnetic": _model_config(["Fe", "C"])}}
+    target = {
+        "model_dict": {"magnetic": _native_spin_model_config(["Fe", "C"], ["Fe"])}
+    }
+    _, rules = finetune.FinetuneRuleBuilder(pretrained, target).build()
+    assert rules["magnetic"].convert_to_native_spin
+    assert not rules["magnetic"].get_resuming()
+
+
+@pytest.mark.parametrize("type_map", [["Fe", "C", "Ni"], ["Fe"], ["C", "Fe"]])
+def test_spin_free_conversion_rejects_changed_type_map(type_map: list[str]) -> None:
+    with pytest.raises(ValueError, match="identical ordered type maps"):
         finetune.FinetuneRuleBuilder(
             _model_config(["Fe", "C"]),
+            _native_spin_model_config(type_map, ["Fe"]),
+            change_model_params=False,
+        ).build()
+
+
+def test_finetune_rule_builder_rejects_virtual_spin_pretraining():
+    pretrained = _model_config(["Fe", "C"])
+    pretrained["spin"] = {"use_spin": [True, False], "scheme": "deepspin"}
+    try:
+        finetune.FinetuneRuleBuilder(
+            pretrained,
             _native_spin_model_config(["Fe", "C"], [True, False]),
             change_model_params=False,
         ).build()
     except ValueError as exc:
-        assert "requires a native-spin pretrained model" in str(exc)
+        assert "requires a spin-free or native-spin pretrained model" in str(exc)
     else:
         raise AssertionError("expected ValueError")
 
@@ -329,3 +484,51 @@ def test_finetune_rule_builder_rejects_changed_magnetic_element_set():
         assert "active magnetic element set" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def _moe_config(moe: dict | None, region: str = "descriptor") -> dict:
+    """Return a model config that states ``moe`` in one region."""
+    config = _model_config(["O", "H"])
+    config[region]["moe"] = deepcopy(moe)
+    return config
+
+
+def test_finetune_rule_adds_the_target_moe_to_a_plain_pretrained_model():
+    """An input may add MoE to a pretrained model that has none."""
+    pretrained = _model_config(["O", "H"])
+    target = _moe_config({"n_experts": 3})
+    target["fitting_net"]["moe"] = {"n_experts": 3}
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["descriptor"]["moe"] == {"n_experts": 3}
+    assert updated["fitting_net"]["moe"] == {"n_experts": 3}
+
+
+def test_finetune_rule_keeps_the_pretrained_moe():
+    """A pretrained model that has MoE keeps the increments it trained."""
+    pretrained = _moe_config({"n_experts": 4})
+    target = _moe_config({"n_experts": 3})
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["descriptor"]["moe"] == {"n_experts": 4}
+
+
+def test_finetune_rule_leaves_moe_out_of_the_configuration_warnings(caplog):
+    """Adding MoE is not a descriptor mismatch, since its terms start at zero."""
+    plain = _model_config(["O", "H"])
+    target = _moe_config({"n_experts": 3})
+    with caplog.at_level(logging.WARNING, logger="deepmd.utils.finetune"):
+        finetune.warn_configuration_mismatch_during_finetune(
+            target["descriptor"], plain["descriptor"]
+        )
+    assert "moe" not in caplog.text

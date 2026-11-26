@@ -2,7 +2,7 @@
 """Expansion of the ``bridging_method`` sugar into its canonical config form.
 
 A bridged model IS a linear composition: the learned model plus an
-analytical inner potential, summed by ``linear_ener``. The canonical
+analytical close-contact potential, summed by ``linear_ener``. The canonical
 config spelling is therefore::
 
     "model": {
@@ -10,9 +10,18 @@ config spelling is therefore::
         "models": [
             {"type": "dpa4", "descriptor": {...}, "fitting_net": {...}},
             {"type": "inner_potential", "mode": "zbl",
-             "fraction_inner": 0.26, "fraction_outer": 0.80}
+             "truncation": 1.1, "clamp": 0.75, "support": 3}
         ]
     }
+
+The analytical potential ends at ``truncation`` times each pair's covalent
+bond length and is added to the learned energy without any switching
+function. ``clamp`` and ``support`` configure the learned sibling: its
+descriptor reads no pair separation below the data edge of that pair, the
+``support``-th smallest of the distinct per-frame shortest separations of
+that pair (see
+:mod:`deepmd.dpmodel.utils.contact_clamp`), with the read separation frozen
+below ``clamp`` times that data edge.
 
 The concise spelling -- a ``bridging_method`` flag on the ``dpa4`` (or
 ``standard``) model type -- is the recommended user interface; it is pure
@@ -23,55 +32,36 @@ handling can drift.
 """
 
 import copy
-
-import numpy as np
+from typing import (
+    Any,
+)
 
 __all__ = [
-    "check_bridging_record_version",
-    "check_window_inside_cutoff",
-    "concise_bridging_window",
+    "DEFAULT_CLAMP",
+    "DEFAULT_SUPPORT",
+    "DEFAULT_TRUNCATION",
+    "concise_bridging_options",
+    "drop_retired_descriptor_options",
+    "drop_retired_window_options",
     "expand_bridging_method",
     "is_bridged_sezm_config",
-    "migrate_inner_clamp_keys",
-    "resolve_bridging_window",
-    "window_midpoint",
+    "resolve_bridging_options",
+    "route_canonical_learned_options",
 ]
 
-BRIDGING_RECORD_VERSION = 1.3
-"""Descriptor format version that introduced the current window mechanics."""
+DEFAULT_TRUNCATION = 1.1
+"""Radius at which the analytical potential ends, as a fraction of the pair's
+covalent bond length."""
 
-DEFAULT_FRACTION_INNER = 0.26
-"""Inner window radius as a fraction of the pair's covalent bond length."""
+DEFAULT_CLAMP = 0.75
+"""Fraction of a pair's data edge at and below which the learned part reads a
+frozen separation."""
 
-DEFAULT_FRACTION_OUTER = 0.80
-"""Outer window radius as a fraction of the pair's covalent bond length."""
+DEFAULT_SUPPORT = 3
+"""Rank, counted from the smallest, of the distinct per-frame shortest
+separation of a pair that becomes its data edge."""
 
 _DPA4_FAMILY_TYPES = ("dpa4", "sezm")
-
-
-def window_midpoint(f_inner: float, f_outer: float) -> float:
-    """
-    Midpoint of a bridging window, in the units of its two radii.
-
-    The switch of the window is exactly half open there, the training-frame
-    filter of a bridged model keeps pairs down to it, and the DPA4C clamp holds
-    that same value below the inner radius. Reading the point from one place
-    keeps the descriptors and the data filter agreeing on where the training
-    data end.
-
-    Parameters
-    ----------
-    f_inner : float
-        Inner radius of the window.
-    f_outer : float
-        Outer radius of the window.
-
-    Returns
-    -------
-    float
-        The midpoint ``(f_inner + f_outer) / 2``.
-    """
-    return 0.5 * (f_inner + f_outer)
 
 
 def is_bridged_sezm_config(data: dict) -> bool:
@@ -126,10 +116,18 @@ _COMPOSITION_KEYS = (
 # composition nor the learned child.
 _CONSUMED_KEYS = (
     "bridging_method",
-    "bridging_fraction_inner",
-    "bridging_fraction_outer",
+    "bridging_truncation",
+    "bridging_clamp",
+    "bridging_support",
+)
+# Model-level options of the bridging window that the contact clamp replaced.
+# A bridged model section that sets one was fitted under another composition
+# and is rejected by the argument check, which no longer declares them.
+_RETIRED_WINDOW_KEYS = (
     "bridging_r_inner",
     "bridging_r_outer",
+    "bridging_fraction_inner",
+    "bridging_fraction_outer",
 )
 # Training-owned keys: the trainer reads them from the top level of the
 # model section, so they stay at the composition level and must never be
@@ -142,6 +140,9 @@ _TRAINER_KEYS = ("lora",)
 _LEARNED_CHILD_KEYS = (
     "descriptor",
     "fitting_net",
+    # A long-range module belongs to the learned energy; the composition then
+    # rejects it beside the bridging term.
+    "long_range",
     "model_branch_alias",
     "info",
     "use_compile",
@@ -160,6 +161,7 @@ _LEARNED_CHILD_KEYS = (
     "modifier",
     "compress",
     "finetune_head",
+    "task",
 )
 _NON_CHILD_KEYS = _COMPOSITION_KEYS + _CONSUMED_KEYS + _TRAINER_KEYS
 # The routing tables are pairwise disjoint: a key has exactly one owner.
@@ -282,8 +284,8 @@ def route_canonical_learned_options(composition: dict, learned: dict) -> None:
             learned[key] = copy.deepcopy(composition[key])
 
 
-def concise_bridging_window(data: dict) -> dict:
-    """Read the window the concise ``bridging_*`` keys of a model section spell.
+def concise_bridging_options(data: dict) -> dict:
+    """Read the options the concise ``bridging_*`` keys of a model section spell.
 
     Parameters
     ----------
@@ -293,19 +295,16 @@ def concise_bridging_window(data: dict) -> dict:
     Returns
     -------
     dict
-        The window fields of an ``inner_potential`` child: the two fractions,
-        defaulted, and the two explicit radii, ``None`` when unset.
+        The ``truncation``, ``clamp`` and ``support`` fields of an
+        ``inner_potential`` child, defaulted.
     """
-    return {
-        "fraction_inner": float(
-            data.get("bridging_fraction_inner", DEFAULT_FRACTION_INNER)
-        ),
-        "fraction_outer": float(
-            data.get("bridging_fraction_outer", DEFAULT_FRACTION_OUTER)
-        ),
-        "r_inner": data.get("bridging_r_inner"),
-        "r_outer": data.get("bridging_r_outer"),
-    }
+    return resolve_bridging_options(
+        {
+            "truncation": data.get("bridging_truncation", DEFAULT_TRUNCATION),
+            "clamp": data.get("bridging_clamp", DEFAULT_CLAMP),
+            "support": data.get("bridging_support", DEFAULT_SUPPORT),
+        }
+    )
 
 
 def expand_bridging_method(data: dict) -> dict:
@@ -354,7 +353,7 @@ def expand_bridging_method(data: dict) -> dict:
             "and an `inner_potential` sub-model instead."
         )
     data = copy.deepcopy(data)
-    window = concise_bridging_window(data)
+    options = concise_bridging_options(data)
 
     # Legacy promotion (pt `type: "dpa4"` semantics): a descriptor-scoped
     # exclusion also governs the analytical term of a bridged model.
@@ -383,7 +382,7 @@ def expand_bridging_method(data: dict) -> dict:
             {
                 "type": "inner_potential",
                 "mode": method,
-                **window,
+                **options,
             },
         ],
         "atom_exclude_types": data.get("atom_exclude_types", []),
@@ -397,15 +396,9 @@ def expand_bridging_method(data: dict) -> dict:
     return canonical
 
 
-def resolve_bridging_window(inner_cfg: dict) -> dict:
+def resolve_bridging_options(inner_cfg: dict) -> dict:
     """
-    Resolve an ``inner_potential`` child's window into descriptor options.
-
-    The window is a pair of fractions of each atom pair's own covalent bond
-    length, so one setting describes every element combination. Explicit radii
-    in Å replace it with a window that is the same for every pair; both forms
-    reach the descriptor as the same three options, the absolute one through a
-    unit length scale that leaves the fractions carrying the radii themselves.
+    Read the truncation, the clamp and its support of an ``inner_potential`` child.
 
     Parameters
     ----------
@@ -415,133 +408,100 @@ def resolve_bridging_window(inner_cfg: dict) -> dict:
     Returns
     -------
     dict
-        The ``inner_clamp_f_inner``, ``inner_clamp_f_outer`` and
-        ``inner_clamp_scale`` options of the learned sibling's descriptor.
-
-    Raises
-    ------
-    ValueError
-        If only one of ``r_inner`` and ``r_outer`` is given.
+        ``truncation``, the radius at which the analytical potential ends as
+        a fraction of each pair's covalent bond length, and ``clamp``, the
+        fraction of a pair's data edge at and below which the learned part
+        reads a frozen separation, or ``None`` for a learned part that reads
+        every separation unchanged, and ``support``, the rank, counted from the
+        smallest, of the distinct per-frame shortest separation of a pair that
+        becomes its data edge.
     """
-    r_inner = inner_cfg.get("r_inner")
-    r_outer = inner_cfg.get("r_outer")
-    if (r_inner is None) != (r_outer is None):
-        raise ValueError(
-            "An explicit bridging window needs both `r_inner` and `r_outer`; "
-            "leave both unset to size the window by the covalent bond length "
-            "of each atom pair."
-        )
-    if r_inner is None:
-        return {
-            "inner_clamp_f_inner": float(
-                inner_cfg.get("fraction_inner", DEFAULT_FRACTION_INNER)
-            ),
-            "inner_clamp_f_outer": float(
-                inner_cfg.get("fraction_outer", DEFAULT_FRACTION_OUTER)
-            ),
-            "inner_clamp_scale": "covalent",
-        }
+    clamp = inner_cfg.get("clamp", DEFAULT_CLAMP)
     return {
-        "inner_clamp_f_inner": float(r_inner),
-        "inner_clamp_f_outer": float(r_outer),
-        "inner_clamp_scale": "absolute",
+        "truncation": float(inner_cfg.get("truncation", DEFAULT_TRUNCATION)),
+        "clamp": None if clamp is None else float(clamp),
+        "support": int(inner_cfg.get("support", DEFAULT_SUPPORT)),
     }
 
 
-def migrate_inner_clamp_keys(config: dict) -> None:
-    """Bring a descriptor configuration's window options up to date in place.
-
-    Records predating the pair-relative window spell it as ``inner_clamp_r_inner``
-    and ``inner_clamp_r_outer``, two radii in Å. The absolute scale is that same
-    window measured against a unit pair length, so the radii carry over as the
-    fractions themselves and the record needs no other adjustment.
-
-    Parameters
-    ----------
-    config : dict
-        The constructor arguments read back from a serialized descriptor.
-    """
-    r_inner = config.pop("inner_clamp_r_inner", None)
-    r_outer = config.pop("inner_clamp_r_outer", None)
-    if r_inner is None and r_outer is None:
-        return
-    # A record that states only one radius is carried through as it stands, so
-    # the constructor reports the half-given window rather than this function.
-    config["inner_clamp_f_inner"] = None if r_inner is None else float(r_inner)
-    config["inner_clamp_f_outer"] = None if r_outer is None else float(r_outer)
-    config["inner_clamp_scale"] = "absolute"
+#: Descriptor options of the bridging window that the contact clamp replaced,
+#: in the spellings records carry: radii in Å, pair-relative fractions and the
+#: scale they are read on.
+_RETIRED_CLAMP_RADII = (
+    "inner_clamp_r_inner",
+    "inner_clamp_r_outer",
+    "inner_clamp_f_inner",
+    "inner_clamp_f_outer",
+)
 
 
-def check_window_inside_cutoff(
-    contact_radius: np.ndarray, f_outer: float, rcut: float
-) -> None:
-    """Refuse a bridging window that reaches the cutoff for some pair.
+def drop_retired_window_options(model: Any) -> Any:
+    """Drop the retired window options from the unbridged models of a section.
 
-    The switch and the clamp of a pair return to the identity at the outer
-    radius. A pair whose outer radius lies at or beyond the cutoff leaves the
-    neighbor list before that happens, so its gate never reopens and the
-    displayed distance of its edges is read past the cutoff.
+    The bridging window was replaced by the contact clamp and the truncated
+    analytical potential, so the argument check no longer declares its
+    options. An unbridged model never read them, but the stored configuration
+    of an unbridged model from an earlier release still holds them with their
+    defaults, and such a model stays usable. A bridged model that sets one was
+    fitted under another composition and is left for the argument check to
+    reject. The children of a composition without an ``inner_potential`` child
+    are filtered in the same way.
 
     Parameters
     ----------
-    contact_radius : np.ndarray
-        Per-type length scales in Å with shape ``(ntypes + 1,)``, the trailing
-        entry belonging to the padding type.
-    f_outer : float
-        Outer radius of the window as a fraction of the pair length scale.
-    rcut : float
-        Cutoff radius in Å.
+    model : Any
+        The ``model`` section of an input file, single-task or multi-task; a
+        value that is not a mapping is returned unchanged.
 
-    Raises
-    ------
-    ValueError
-        If the outer radius of the largest pair reaches ``rcut``.
+    Returns
+    -------
+    Any
+        The section without the options; ``model`` is not modified.
     """
-    outer = f_outer * 2.0 * float(np.max(contact_radius[:-1]))
-    if outer >= rcut:
-        raise ValueError(
-            f"The bridging window of the largest pair ends at {outer:.3f} Å, at or "
-            f"beyond the cutoff {rcut} Å; enlarge `rcut` or shrink the window."
-        )
-
-
-def check_bridging_record_version(config: dict, version: float) -> None:
-    """Refuse legacy state when the receiving descriptor enables bridging.
-
-    Bridged records before :data:`BRIDGING_RECORD_VERSION` froze the clamp at the
-    inner radius, muted a closing pair through a full product of switch amplitudes
-    on the messages and carried no readout gate, so their weights were trained
-    under a different function of the geometry than the one this code builds.
-    State dictionaries do not encode whether the source used bridging, so the
-    guard uses the receiving descriptor's configuration. It also rejects a
-    legacy plain state loaded directly into a bridged descriptor. An unbridged
-    receiving descriptor passes this guard; its version migrations still apply.
-
-    Parameters
-    ----------
-    config : dict
-        The receiving descriptor's constructor arguments, with the window keys
-        in their current spelling. These come from the record for portable
-        deserialization, or from the target model for state-dict loading.
-    version : float
-        The stored descriptor version, from ``@version`` or ``version_tensor``.
-
-    Raises
-    ------
-    ValueError
-        If the receiving descriptor is bridged and the state predates the
-        current window mechanics.
-    """
-    if (
-        version < BRIDGING_RECORD_VERSION
-        and config.get("inner_clamp_f_inner") is not None
+    if not isinstance(model, dict):
+        return model
+    if str(model.get("bridging_method", "none")).lower() in ("none", ""):
+        model = {
+            key: value
+            for key, value in model.items()
+            if key not in _RETIRED_WINDOW_KEYS
+        }
+    if isinstance(model.get("model_dict"), dict):
+        model = {
+            **model,
+            "model_dict": {
+                key: drop_retired_window_options(branch)
+                for key, branch in model["model_dict"].items()
+            },
+        }
+    children = model.get("models")
+    if isinstance(children, list) and not any(
+        isinstance(child, dict) and child.get("type") == "inner_potential"
+        for child in children
     ):
+        model = {
+            **model,
+            "models": [drop_retired_window_options(child) for child in children],
+        }
+    return model
+
+
+def drop_retired_descriptor_options(config: dict) -> None:
+    """Drop the retired bridging window options from a descriptor record.
+
+    A descriptor record of an earlier release spells the window in its
+    constructor options, empty for an unbridged descriptor, which never read
+    them. The options are removed in place so that the record loads through
+    the current constructor.
+
+    Parameters
+    ----------
+    config : dict
+        Constructor arguments read back from a serialized descriptor.
+    """
+    if any(config.get(key) is not None for key in _RETIRED_CLAMP_RADII):
         raise ValueError(
-            f"Cannot load DPA4/SeZM state at format version {version} into a bridged "
-            f"descriptor; bridging requires version {BRIDGING_RECORD_VERSION} or "
-            "later. State dictionaries do not identify whether the source used "
-            "bridging. For a plain version-1.1 or version-1.2 checkpoint, use "
-            "--finetune to migrate the source in its original unbridged model "
-            "before enabling bridging. If the source was already bridged, its "
-            "window mechanics are incompatible. Retrain the bridged model."
+            "A descriptor trained with a bridging window requires retraining."
         )
+    for key in (*_RETIRED_CLAMP_RADII, "inner_clamp_scale"):
+        config.pop(key, None)

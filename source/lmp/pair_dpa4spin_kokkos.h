@@ -19,6 +19,7 @@ PairStyle(dpa4spin/kk/host,PairDPA4SpinKokkos<LMPHostType>);
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "compact_canonical_graph_kokkos.h"
 #include "kokkos_base.h"
@@ -38,7 +39,8 @@ using DPA4SpinKokkosCommBuffer = DAT::tdual_double_1d;
 
 // GPU-resident inference for exported native-spin ``.pt2`` models whose forward
 // consumes the compact canonical graph: a dual-CSR neighbor topology with
-// uint32 indices and float32 edge vectors, plus the per-node magnetic moment.
+// 32-bit source indices, int64 row pointers and positions, and float32 edge
+// vectors, plus the per-node magnetic moment.
 // It is dispatched through ``DeepSpin::compute_canonical_graph_gpu``.
 //
 // The neighbor list, the compact graph, the moment and the model outputs all
@@ -53,23 +55,28 @@ using DPA4SpinKokkosCommBuffer = DAT::tdual_double_1d;
 // > 2 * cutoff along every periodic direction); domain decomposition uses the
 // extended local-plus-ghost node set and folds ghost force and magnetic force
 // onto their owners through reverse communication.
+//
+// The further models of an ensemble evaluate the graph and the moment of the
+// first one, at the steps that write the model deviation, so they share its
+// cutoff.
 template <class DeviceType>
 class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
  public:
   typedef DeviceType device_type;
-  typedef ArrayTypes<DeviceType> AT;
 
   PairDPA4SpinKokkos(class LAMMPS*);
-  ~PairDPA4SpinKokkos() override;
 
   void compute(int, int) override;
   void init_style() override;
   // Fold extended (ghost) node outputs onto their owners. The KOKKOS package
   // forces 'newton off' with a full neighbor list, disabling the integrator's
   // automatic reverse communication, so the extended multi-domain path drives
-  // it explicitly for force, magnetic force and centroid per-atom virial. The
-  // Kokkos overrides run device-resident with GPU-aware MPI; the plain
-  // overrides serve the host-staged path.
+  // it explicitly for the force, the magnetic force, the centroid per-atom
+  // virial and the outputs of the models of an ensemble. The Kokkos overrides
+  // pack and unpack on the device, in the device path of the KOKKOS package
+  // and in the fold that replaces its host path (CompactCanonicalGhostFold);
+  // the plain overrides serve communication styles other than the Kokkos
+  // brick communication.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   int pack_reverse_comm_kokkos(int, int, DPA4SpinKokkosCommBuffer&) override;
@@ -86,6 +93,11 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   // Model node set and the compact canonical graph over it.
   CompactCanonicalGraphKokkos<DeviceType> compact_graph;
   bool multi_rank;  // domain-decomposed run -> extended (local+ghost) node set
+  // A model of the ensemble reads the source CSR on every evaluation.
+  bool canonical_source_csr;
+  // A model of the ensemble reads features of the ghost nodes of an extended
+  // node set from their owners through its halo exchange.
+  bool canonical_halo;
   // (3 * nall) per-node magnetic moment in the ABI's float32 layout, the
   // LAMMPS unit direction scaled by its magnitude.
   Kokkos::View<float*, DeviceType> d_moment;
@@ -94,25 +106,24 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   // force and virial span the model node set (up to ``nall`` under domain
   // decomposition).
   Kokkos::View<double*, DeviceType> d_atom_energy;    // (nlocal)
-  Kokkos::View<double*, DeviceType> d_out_force;      // (3 * nall)
-  Kokkos::View<double*, DeviceType> d_out_force_mag;  // (3 * nall)
-  Kokkos::View<double*, DeviceType> d_atom_virial;    // (9 * nall)
-  DAT::tdual_double_1d
-      k_reverse_virial;  // (9 * nall), atom-order ghost contributions
+  Kokkos::View<double*, DeviceType> d_out_force;      // (3 * nnode_model)
+  Kokkos::View<double*, DeviceType> d_out_force_mag;  // (3 * nnode_model)
+  Kokkos::View<double*, DeviceType> d_atom_virial;    // (9 * nnode_model)
+  // Virial of the whole compact canonical graph.
+  Kokkos::View<double[9], DeviceType> d_graph_virial;
 
-  // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
-  // downstream per-atom computes/dumps see it after the device-to-host sync).
-  // The transformed accumulator view was added in the 10Sep2025 release.
-#if LAMMPS_VERSION_NUMBER < 20250910
-  DAT::tdual_double_1d k_eatom;
-  typename AT::t_double_1d d_eatom;
-#else
-  DAT::ttransform_kkacc_1d k_eatom;
-  typename AT::t_kkacc_1d d_eatom;
-#endif
+  bool reverse_used_host;  // the host pack/unpack overrides ran
+  // Device-packed fold that replaces the host reverse communication.
+  CompactCanonicalGhostFold<DeviceType, DPA4SpinKokkosCommBuffer> ghost_fold;
+  // Halo exchange of the extended node set for ``canonical_halo``.
+  CompactCanonicalHalo<DeviceType> halo_exchange;
 
-  bool reverse_virial;     // reverse communication operates on centroid virial
-  bool reverse_used_host;  // force reverse communication selected host staging
+  // Virial of the graph of the model evaluated last, in its units, with
+  // shape (9).
+  std::vector<double> output_virial() const;
+  // Store the outputs of the model evaluated last as those of model
+  // ``model`` of the ensemble.
+  void store_outputs(int model);
 };
 
 }  // namespace LAMMPS_NS

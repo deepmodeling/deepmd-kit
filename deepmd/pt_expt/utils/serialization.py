@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import contextlib
 import ctypes
+import dataclasses
 import json
 import logging
 import os
@@ -14,6 +15,10 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
+    flatten_topologies,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -24,13 +29,20 @@ from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
 from deepmd.dpmodel.utils.serialization import (
+    array_to_record,
+    record_to_array,
     traverse_model_dict,
 )
 from deepmd.pt.utils.compile_compat import (
+    _torch_release,
     traced_output_keys,
 )
 from deepmd.pt_expt.model.graph_lower import (
+    canonical_lower_evaluator,
     graph_edge_dtype,
+)
+from deepmd.pt_expt.utils.canonical_graph import (
+    CANONICAL_LOWER_KIND,
 )
 from deepmd.utils.charge_state import (
     CHARGE_STATE_TABLE_RANGES,
@@ -60,15 +72,7 @@ PT2_EXTRA_PREFIX = "model/extra/"
 # source contract rather than a pt_expt schema; the target model capabilities
 # determine whether that contract is materialized as NeighborGraph or dense
 # nlist input.
-_LOWER_INPUT_KINDS = frozenset(
-    {
-        "nlist",
-        "graph",
-        "dpa1_canonical",
-        "dpa4c_canonical",
-        "edge_vec",
-    }
-)
+_LOWER_INPUT_KINDS = frozenset({"nlist", "graph", "edge_vec", CANONICAL_LOWER_KIND})
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
@@ -110,6 +114,51 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
 _SOURCE_CSR_INPUTS = ("source_order", "source_row_ptr")
 
 
+def _move_graph_program(
+    exported: torch.export.ExportedProgram,
+    device: torch.device,
+    *,
+    canonical: bool,
+) -> torch.export.ExportedProgram:
+    """Move a CPU-traced graph, preserving the compact ABI's host inputs.
+
+    The border operators read the MPI communicator and swap table on the
+    host. The compact long-range operator also reads its cell on the host.
+    These are opaque operator inputs: their example tensors and FX input
+    metadata must agree with the Python and C++ callers of the archive.
+    """
+    from torch.export.passes import (
+        move_to_device_pass,
+    )
+
+    if not canonical:
+        return move_to_device_pass(exported, device)
+    host_names = {"communicator", "halo_swaps", "box"}
+    host_meta = {
+        node.name: node.meta["val"]
+        for node in exported.graph.nodes
+        if node.op == "placeholder" and node.name in host_names
+    }
+    examples = exported.example_inputs
+    moved = move_to_device_pass(exported, device)
+    if host_meta:
+        args, kwargs = moved.example_inputs
+        moved.example_inputs = (
+            tuple(
+                old if name in host_meta else new
+                for name, old, new in zip(
+                    moved.graph_signature.user_inputs, examples[0], args, strict=True
+                )
+            ),
+            kwargs,
+        )
+        for node in moved.graph.nodes:
+            if node.name in host_meta:
+                node.meta["val"] = host_meta[node.name]
+        moved.validate()
+    return moved
+
+
 def _graph_reads_source_csr(exported: Any) -> bool:
     """Return whether an exported graph lower consumes the source CSR.
 
@@ -145,33 +194,51 @@ def _graph_reads_source_csr(exported: Any) -> bool:
     return not found
 
 
-def _numpy_to_json_serializable(model_obj: dict) -> dict:
-    """Convert numpy arrays in a model dict to JSON-serializable lists."""
-    return traverse_model_dict(
-        model_obj,
-        lambda x: (
-            {
-                "@class": "np.ndarray",
-                "@is_variable": True,
-                "dtype": x.dtype.name,
-                "value": x.tolist(),
-            }
-            if isinstance(x, np.ndarray)
-            else x
-        ),
+def _canonical_requires_source_csr(model: Any, evaluator: str | None) -> bool:
+    """Return whether a compact canonical lower reads the source CSR on every call.
+
+    The force assembly of compressed DPA1 walks the source CSR, as do the
+    graph forward of a model and its force assembly, and the composition of
+    operators that evaluates a long-range module whose charge network the
+    fused long-range operator does not reproduce. The fused DPA4C operators
+    assemble the forces in fixed point and read the source CSR only for the
+    per-atom virial, so a caller that declines it may pass two-entry
+    placeholders in its place.
+
+    The requirement also selects the edge storage of the Kokkos builder: a
+    reader of the source CSR receives storage that follows the edge count,
+    which the graph forward, computing every storage row, relies on, while
+    the fused DPA4C operators, skipping the rows past the edges, accept
+    storage sized by the candidates of the neighbor list.
+
+    Parameters
+    ----------
+    model
+        Model to deploy.
+    evaluator
+        Evaluator of the model on the compact canonical lower (see
+        :func:`~deepmd.pt_expt.model.graph_lower.canonical_lower_evaluator`).
+    """
+    if evaluator != "dpa4c":
+        return True
+    learned = model.atomic_model.fused_decomposition()[0]
+    if not learned.has_long_range():
+        return False
+    from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+        fused_long_range_eligible,
     )
+
+    return not fused_long_range_eligible(learned.long_range)
+
+
+def _numpy_to_json_serializable(model_obj: dict) -> dict:
+    """Convert numpy arrays in a model dict to JSON-serializable records."""
+    return traverse_model_dict(model_obj, array_to_record)
 
 
 def _json_to_numpy(model_obj: dict) -> dict:
     """Convert JSON-serialized numpy arrays back to np.ndarray."""
-    return traverse_model_dict(
-        model_obj,
-        lambda x: (
-            np.asarray(x["value"], dtype=np.dtype(x["dtype"]))
-            if isinstance(x, dict) and x.get("@class") == "np.ndarray"
-            else x
-        ),
-    )
+    return traverse_model_dict(model_obj, record_to_array)
 
 
 def _metadata_value_to_json(value: Any) -> Any:
@@ -207,25 +274,22 @@ def _needs_with_comm_artifact(
     graph lower carries a real per-layer ``border_op`` exchange, but its
     dense (nlist) lower's adapter raises on ``comm_dict``. ``lower_kind``
     selects which lower is being traced so the gate can consult the
-    per-lower capability instead of assuming both lowers agree. Non-graph
-    kinds additionally check ``dense_lower_supports_comm()`` (``True`` for
+    per-lower capability instead of assuming both lowers agree. The dense
+    lower checks ``dense_lower_supports_comm()`` (``True`` for
     dpa2/dpa3, whose dense lower is the production multi-rank path).
-
-    Native spin participates on the GRAPH lower, matching pt's
-    ``SeZMModel.supports_edge_parallel`` (which ``SeZMNativeSpinModel`` does
-    not override): the spin input is per-node and its ghost rows arrive via
-    the LAMMPS ``sp`` forward-comm, so nothing about spin needs its own
-    cross-rank exchange -- the per-block ghost FEATURE refresh is the same
-    ``border_op`` the energy model uses. It is excluded only on the dense
-    (nlist) lower, which has no spin with-comm wrapper.
+    Compact canonical lowers never use a separate with-comm artifact; the
+    lower of a model with further message-passing blocks carries the halo
+    exchange in its main ABI. The graph lower of a native-spin model does
+    the same, so every native-spin archive is served by one program on one
+    rank or several; its dense (nlist) lower has no multi-rank form at all.
 
     Parameters
     ----------
     model : torch.nn.Module
         The wrapped pt_expt model.
     lower_kind : str
-        Which lower is being traced/frozen: ``"graph"`` or ``"nlist"``
-        (dense). Defaults to ``"nlist"``.
+        Which lower is being traced/frozen: ``"graph"``, ``"nlist"`` (dense),
+        or ``"dpa_canonical"``. Defaults to ``"nlist"``.
 
     Returns
     -------
@@ -236,12 +300,13 @@ def _needs_with_comm_artifact(
         NativeSpinModelKind,
     )
 
+    if lower_kind not in ("graph", "nlist"):
+        return False
+
     # Cross-backend family test: the dpmodel and pt_expt concrete classes
     # are parallel factory products with no subclass relation, so the shared
     # marker base -- not a concrete class -- is the membership check.
-    # Native spin rides the GRAPH lower only; its dense lower has no
-    # with-comm wrapper at all.
-    if isinstance(model, NativeSpinModelKind) and lower_kind != "graph":
+    if isinstance(model, NativeSpinModelKind):
         return False
 
     atomic_model = model.atomic_model
@@ -252,8 +317,7 @@ def _needs_with_comm_artifact(
         return False
     if lower_kind == "graph":
         return True
-    # Non-graph kinds trace the DENSE with-comm wrapper; a model whose dense
-    # lower has no comm implementation (DPA4) must not emit a dead artifact.
+    # The dense wrapper requires its own cross-rank communication contract.
     return bool(atomic_model.dense_lower_supports_comm())
 
 
@@ -304,6 +368,91 @@ def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
             "Upgrade torch; or disable the compact-pair consumers "
             "(dpa1: set 'attn_layer: 0'; dpa2: set 'update_g2_has_attn: "
             "false' and 'update_h2: false'); or use the dense (nlist) path."
+        )
+
+
+def mesh_freeze_supported() -> bool:
+    """Whether AOTInductor runs the mesh evaluation of a periodic graph lower.
+
+    The graph lower of a periodic long-range model evaluates its reciprocal
+    sum by FFTs over the mesh of every cell, and the derivatives of the real
+    transforms allocate complex buffers through the proxy executor of
+    AOTInductor. Its runtime allocates them with their declared dtype from
+    PyTorch 2.12 on; older runtimes allocate booleans, which the
+    complex-to-complex transform of the derivative rejects when the packaged
+    model runs.
+    """
+    return _torch_release() >= (2, 12)
+
+
+def mesh_compile_supported(device: torch.device) -> bool:
+    """Whether ``torch.compile`` forms the virial of the mesh evaluation on ``device``.
+
+    The CPU code generation of Inductor forms the strain derivative of the
+    mesh energy in a compiled training graph correctly from PyTorch 2.13 on,
+    the CUDA code generation in every release that compiles the model.
+    """
+    return device.type != "cpu" or _torch_release() >= (2, 13)
+
+
+def check_mesh_freeze_torch_version(metadata: dict) -> None:
+    """Fail fast before AOTInductor packages a mesh evaluation it cannot run.
+
+    Parameters
+    ----------
+    metadata : dict
+        The metadata of the traced lower, with its ``lower_input_kind`` and
+        its ``topologies``.
+
+    Raises
+    ------
+    RuntimeError
+        If the graph lower reads the PME mesh and :func:`mesh_freeze_supported`
+        does not hold.
+    """
+    if (
+        metadata.get("lower_input_kind") == "graph"
+        and PME_MESH in metadata.get("topologies", ())
+        and not mesh_freeze_supported()
+    ):
+        raise RuntimeError(
+            "freezing a periodic long-range model into a .pt2 graph lower "
+            f"requires torch >= 2.12; found torch {torch.__version__}, whose "
+            "AOTInductor runtime allocates the complex buffers of the mesh "
+            "derivatives as booleans. Upgrade torch, freeze to a .pte file, "
+            "or compress the model for the long-range operator on a CUDA "
+            "device."
+        )
+
+
+def check_mesh_compile_torch_version(
+    model: torch.nn.Module, device: torch.device
+) -> None:
+    """Fail fast before compiling a model whose virial Inductor forms wrongly.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model about to be traced for compiled training.
+    device : torch.device
+        The device of the trace.
+
+    Raises
+    ------
+    RuntimeError
+        If the model reads the PME mesh and :func:`mesh_compile_supported`
+        does not hold on ``device``.
+    """
+    if (
+        PME_MESH in model.atomic_model.required_topologies()
+        and not mesh_compile_supported(device)
+    ):
+        raise RuntimeError(
+            "compiled training of a periodic long-range model on the PME mesh "
+            f"requires torch >= 2.13 on the CPU; found torch {torch.__version__}, "
+            "whose Inductor CPU code generation forms a wrong virial for it. "
+            "Upgrade torch, train on a CUDA device, or set "
+            "`training.enable_compile` to false."
         )
 
 
@@ -501,7 +650,7 @@ def build_synthetic_graph_inputs(
     Single source of the trace-time graph inputs, shared by ``.pt2`` export
     (:func:`_trace_and_export`) and compiled training
     (:func:`deepmd.pt_expt.train.training._trace_and_compile_graph`). Builds a
-    small random system and runs the carry-all
+    small deterministic system and runs the carry-all
     :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
     padded ``GraphLayout(edge_capacity=e_max)`` trace sample. Export uses the
     destination-major graph with CSR metadata; compiled training selects the
@@ -519,8 +668,10 @@ def build_synthetic_graph_inputs(
     (before ``fparam``/``aparam``); there is no ``charge_spin`` slot at all
     (native spin rejects ``add_chg_spin_ebd`` at build).
 
-    The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
-    i % ntypes``) is identical for both callers.
+    The system is identical for both callers and independent of dense neighbor
+    capacities. For at least four atoms it includes an isolated center and a
+    connected three-atom cluster. The highest atom type occurs in the cluster
+    even when the type map is larger than the sample.
 
     Parameters
     ----------
@@ -587,9 +738,21 @@ def build_synthetic_graph_inputs(
     box_np = (np.eye(3, dtype=np.float64) * box_size).reshape(1, 9)
     rng = np.random.default_rng(42)
     coord_np = rng.random((nframes, nloc, 3)) * box_size * 0.5 + box_size * 0.25
+    if nloc >= 4:
+        # Exercise multi-edge aggregation and empty neighborhoods in the same
+        # trace. Every other atom lies in [.75*rcut, 2.25*rcut]^3, so the
+        # origin is isolated even under periodic minimum-image distances.
+        coord_np[:, [0, 2, 3]] = rcut * np.array(
+            [[1.5, 1.5, 1.5], [1.6, 1.5, 1.5], [1.5, 1.65, 1.5]]
+        )
+        # Keep the isolated center inside n_local (the final atom is a
+        # synthetic ghost), including the minimal four-atom fixture.
+        coord_np[:, 1] = 0.0
     atype_np = np.zeros((nframes, nloc), dtype=np.int64)
     for i in range(nloc):
         atype_np[:, i] = i % ntypes
+    # Include the upper type-index boundary without growing the node axis.
+    atype_np[:, 0] = ntypes - 1
 
     coord_t = torch.tensor(coord_np, dtype=dtype, device=device)
     atype_t = torch.tensor(atype_np, dtype=torch.int64, device=device)
@@ -674,29 +837,146 @@ def build_synthetic_graph_inputs(
     )
 
 
+def build_synthetic_topologies(
+    model: torch.nn.Module,
+    n_node_total: int,
+    n_entry: int,
+    *,
+    dtype: torch.dtype,
+    device: torch.device,
+    nframes: int,
+    forbidden: set[int] | frozenset[int] = frozenset(),
+) -> dict[str, Any]:
+    """Build trace-time samples of the topologies a model declares.
+
+    Single source of the trace-time topology inputs, shared by graph export
+    and compiled training. Tracing reads only their shapes. The pair
+    topology lists ``n_entry`` pairs, a length the caller keeps distinct from
+    the other dynamic axes; a mesh takes the three smallest even dimensions,
+    and a k grid the three smallest lengths for its slots, its blocks and the
+    points of a block, of at least four that no other axis and no entry of
+    ``forbidden`` has. Every length thus differs from the two rows of a pair
+    index and the three components of a vector, and from every other dynamic
+    axis, which a compiled graph would otherwise identify with it.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model; its atomic model declares the topologies.
+    n_node_total : int
+        Length of the node axis.
+    n_entry : int
+        Length of the pair axis.
+    dtype : torch.dtype
+        Precision of the geometry.
+    device : torch.device
+        Target device.
+    nframes : int
+        Length of the frame axis.
+    forbidden : set[int]
+        Sizes of the static dimensions of the model, which the mesh and k-grid
+        axes avoid.
+
+    Returns
+    -------
+    dict[str, PairGraph | KGrid | MeshGrid]
+        A sample of every declared topology; empty when none is declared.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        K_GRID,
+        KGrid,
+        PairGraph,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph.reciprocal_graph import (
+        mesh_grid_of_dims,
+    )
+
+    taken = set(forbidden) | {nframes, n_node_total, n_node_total + 1, n_entry}
+    mesh_dims = []
+    for size in range(4, 4 + 2 * len(taken) + 6, 2):
+        if size not in taken and len(mesh_dims) < 3:
+            mesh_dims.append(size)
+    free = sorted(set(range(4, len(taken) + 10)) - taken - set(mesh_dims))
+    n_slot, n_block, n_point = free[:3]
+    coord = torch.ones(n_node_total, 3, dtype=dtype, device=device)
+    # Contiguous like the inputs at run time: a compiled graph reads the
+    # strides of its samples.
+    box = torch.eye(3, dtype=dtype, device=device).repeat(nframes, 1, 1)
+    topologies = {}
+    for name in model.atomic_model.required_topologies():
+        if name == K_GRID:
+            slot = torch.arange(nframes * n_slot, dtype=torch.int64, device=device)
+            blocks = (nframes, n_block, n_point)
+            topologies[name] = KGrid(
+                # Nonzero wave numbers: the kernel transform carries 1/k^2.
+                vec=torch.ones(*blocks, 3, dtype=dtype, device=device),
+                mask=torch.ones(*blocks, dtype=torch.bool, device=device),
+                slot=(slot % n_node_total).reshape(nframes, n_slot),
+                volume=torch.ones(nframes, dtype=dtype, device=device),
+                coord=coord,
+                strain=torch.zeros(nframes, 3, 3, dtype=dtype, device=device),
+            )
+        elif name == PME_MESH:
+            topologies[name] = mesh_grid_of_dims(
+                box,
+                coord,
+                tuple(mesh_dims),
+                torch.ones(nframes, dtype=torch.bool, device=device),
+            )
+        else:
+            index = torch.arange(2 * n_entry, dtype=torch.int64, device=device)
+            topologies[name] = PairGraph(
+                index=index.reshape(2, n_entry) % n_node_total,
+                vec=torch.ones(n_entry, 3, dtype=dtype, device=device),
+                mask=torch.ones(n_entry, dtype=torch.bool, device=device),
+            )
+    return topologies
+
+
 def build_synthetic_canonical_graph_inputs(
     model: torch.nn.Module,
     e_max: int,
+    nframes: int = 2,
+    nloc: int = 7,
     *,
     device: torch.device,
     want_spin: bool = False,
+    want_charge_spin: bool = False,
+    want_long_range: bool = False,
+    want_border: bool = False,
+    border_sizes: tuple[int, int] = (3, 2),
 ) -> tuple[torch.Tensor, ...]:
-    """Build compact canonical trace inputs for compressed CUDA descriptors.
+    """Build compact canonical trace inputs.
 
-    ``want_spin`` appends the per-node moment at slot 8, the last slot of the
-    compact ABI, matching
-    :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`.
+    The graph is that of :func:`build_synthetic_graph_inputs` for ``nframes``
+    frames of ``nloc`` atoms. The inputs that follow the eight graph tensors
+    are those that the compact lower of the model reads, in this order: the
+    per-node moment of a native-spin model (``want_spin``), matching
+    :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`;
+    the float64 charge/spin condition of every frame of a model that reads it
+    as an input (``want_charge_spin``); the float64 node positions of a model
+    with a long-range module (``want_long_range``); the int64 communicator, a
+    CPU tensor of one element, of a model with a long-range module or with
+    further message-passing blocks (``want_border``); the float64 cells of the
+    frames, a CPU tensor of shape ``(nf, 9)``, of a model with a long-range
+    module; and the border plan of a model with further message-passing
+    blocks, a send list of ``border_sizes[0]`` int32 entries and a swap table
+    of ``border_sizes[1]`` int32 rows on the CPU, which serve a node set
+    without halo nodes.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
     from deepmd.pt_expt.utils.canonical_graph import (
         canonical_graph_from_neighbor_graph,
+        canonical_index_bytes,
     )
 
     sample = build_synthetic_graph_inputs(
         model,
         e_max,
+        nframes,
+        nloc,
         dtype=torch.float32,
         edge_dtype=torch.float32,
         device=device,
@@ -736,45 +1016,147 @@ def build_synthetic_canonical_graph_inputs(
         atype,
         compact.n_node,
         compact.n_local,
-        compact.source,
+        canonical_index_bytes(compact.source),
         compact.edge_vec,
         compact.destination_row_ptr,
         compact.source_row_ptr,
         compact.source_order,
     )
-    return compact_sample if spin is None else (*compact_sample, spin)
+    trailing = [] if spin is None else [spin]
+    if want_charge_spin:
+        trailing.append(
+            torch.zeros(
+                n_node.shape[0],
+                model.get_dim_chg_spin(),
+                dtype=torch.float64,
+                device=device,
+            )
+        )
+    if want_long_range:
+        # Tracing reads the shape of the positions alone; distinct values keep
+        # the sample nodes apart.
+        trailing.append(
+            0.7
+            * torch.arange(
+                3 * atype.shape[0], dtype=torch.float64, device=device
+            ).reshape(-1, 3)
+        )
+    border = (
+        synthetic_border_plan(atype.shape[0], border_sizes, device)
+        if want_border
+        else None
+    )
+    if want_long_range or want_border:
+        # The communicator of a single domain is zero.
+        trailing.append(torch.zeros(1, dtype=torch.int64, device="cpu"))
+    if want_long_range:
+        trailing.append(
+            torch.zeros(n_node.shape[0], 9, dtype=torch.float64, device="cpu")
+        )
+    if border is not None:
+        trailing.extend(border[1:])
+    return (*compact_sample, *trailing)
+
+
+def synthetic_border_plan(
+    n_node_total: int,
+    border_sizes: tuple[int, int],
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build the sample communicator and border plan of a lower trace.
+
+    The plan serves a node set without halo nodes: swaps of no rows that
+    receive past the last node leave every node owned. Its send list and
+    swap table take the sizes ``border_sizes``, which the caller keeps
+    distinct from every other axis of the trace.
+
+    Parameters
+    ----------
+    n_node_total
+        Number of nodes of the sample graph.
+    border_sizes
+        Entries of the send list and rows of the swap table.
+    device
+        Device of the send list; the communicator and the swap table stay on
+        the CPU.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        The communicator of a single domain, int64 with shape ``(1,)``, the
+        int32 send list and the int32 swap table with shape ``(nswap, 5)``.
+    """
+    send_count, swap_count = border_sizes
+    swaps = torch.zeros(swap_count, 5, dtype=torch.int32, device="cpu")
+    swaps[:, 4] = n_node_total
+    return (
+        torch.zeros(1, dtype=torch.int64, device="cpu"),
+        torch.zeros(send_count, dtype=torch.int32, device=device),
+        swaps,
+    )
+
+
+def _graph_dim(name: str, minimum: int, components: int) -> torch.export.Dim:
+    # Cells have nine components, forces and displacements three. The tensor's
+    # signed-int64 element count bounds its row axis, including open-ended slices.
+    return torch.export.Dim(
+        name, min=minimum, max=torch.iinfo(torch.int64).max // components
+    )
 
 
 def _build_canonical_graph_dynamic_shapes(
-    *sample_inputs: torch.Tensor,
+    *,
+    is_native_spin: bool = False,
+    charge_spin: bool = False,
+    long_range: bool = False,
+    border: bool = False,
 ) -> tuple:
-    """Build dynamic shapes for the compact deployment ABI.
+    """Build dynamic node, edge and index-word axes for the compact ABI.
 
-    The trailing spin slot is present only for a native-spin model, so the
-    sample length selects the shape tuple.
+    The trailing slots follow the order of
+    :func:`build_synthetic_canonical_graph_inputs`: the moments of a
+    native-spin model, the charge/spin condition of a model that reads it,
+    the positions of a model with a long-range module, the communicator of
+    such a model or of one with further message-passing blocks, the cells of
+    the former, and the border plan of the latter. The communicator holds one
+    address and is static; the positions and the moments follow the node
+    axis, the condition and the cells the frame axis, and the send list and
+    the swap table of the border plan have extents of their own, which may
+    be zero.
     """
-    from deepmd.pt_expt.utils.canonical_graph import (
-        UINT32_MAX,
-    )
-
-    nframes_dim = torch.export.Dim("nframes", min=1)
-    node_dim = torch.export.Dim("n_node_total", min=1)
-    edge_storage_dim = torch.export.Dim(
-        "nedge_storage",
-        min=2,
-        max=UINT32_MAX,
-    )
+    nframes_dim = _graph_dim("nframes", 1, 9)
+    node_dim = _graph_dim("n_node_total", 1, 3)
+    edge_storage_dim = _graph_dim("nedge_storage", 2, 3)
+    # The source CSR keeps extents of its own: a caller that declines the
+    # per-atom virial passes two-entry placeholders in its place.
+    source_row_dim = torch.export.Dim("n_source_row", min=2)
+    source_order_dim = torch.export.Dim("n_source_order", min=2)
+    word_bytes_dim = torch.export.Dim("index_word_bytes", min=4, max=8)
     shapes = (
         {0: node_dim},
         {0: nframes_dim},
         {0: nframes_dim},
-        {0: edge_storage_dim},
+        {0: edge_storage_dim, 1: word_bytes_dim},
         {0: edge_storage_dim},
         {0: node_dim + 1},
-        {0: node_dim + 1},
-        {0: edge_storage_dim},
+        {0: source_row_dim},
+        {0: source_order_dim},
     )
-    return shapes if len(sample_inputs) == len(shapes) else (*shapes, {0: node_dim})
+    trailing = []
+    if is_native_spin:
+        trailing.append({0: node_dim})
+    if charge_spin:
+        trailing.append({0: nframes_dim})
+    if long_range:
+        trailing.append({0: node_dim})
+    if long_range or border:
+        trailing.append(None)
+    if long_range:
+        trailing.append({0: nframes_dim})
+    if border:
+        trailing.append({0: torch.export.Dim("n_halo_send", min=0)})
+        trailing.append({0: torch.export.Dim("n_halo_swap", min=0)})
+    return (*shapes, *trailing)
 
 
 def count_synthetic_graph_edges(
@@ -827,19 +1209,60 @@ def count_synthetic_graph_edges(
     return int(edge_mask.sum())
 
 
+def _topology_dynamic_shapes(
+    topology_names: tuple[str, ...], shared: dict[str, Any]
+) -> list[dict[int, Any]]:
+    """Dynamic-shape specifications of the fields of the topologies of a graph lower.
+
+    Every field follows the ``AXES`` its dataclass declares. The frame and
+    node axes are those of the other inputs in ``shared``; the entry axis of
+    every topology is a dimension of its own, of at least the two guard
+    entries, and so are the slot axis and the point axis of a k grid; a mesh
+    axis is twice a dimension, since the mesh dimensions are even.
+
+    Parameters
+    ----------
+    topology_names : tuple[str, ...]
+        The topologies, in the order of their inputs.
+    shared : dict[str, Any]
+        The dimensions of the ``"frame"`` and ``"node"`` axes.
+
+    Returns
+    -------
+    list[dict[int, Any]]
+        One specification per field, in the layout of flatten_topologies.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        TOPOLOGY_TYPES,
+    )
+
+    specs = []
+    for name in topology_names:
+        cls = TOPOLOGY_TYPES[name]
+        dims = dict(shared)
+        dims["entry"] = torch.export.Dim(f"{name}_entries", min=2)
+        dims["slot"] = torch.export.Dim(f"{name}_slots", min=2)
+        dims["k_point"] = torch.export.Dim(f"{name}_block_points", min=2)
+        for axis in ("mesh_1", "mesh_2", "mesh_3"):
+            dims[axis] = 2 * _graph_dim(f"{name}_{axis}_half", 1, 2)
+        specs += [
+            {dim: dims[axis] for dim, axis in cls.AXES[field.name].items()}
+            for field in dataclasses.fields(cls)
+        ]
+    return specs
+
+
 def _build_graph_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
     is_native_spin: bool = False,
+    border: bool = False,
+    topology_names: tuple[str, ...] = (),
 ) -> tuple:
     """Build dynamic-shape specifications for the graph-form forward_lower export.
 
     ``nframes`` (the ``n_node`` axis), ``N`` (the flat node axis), and the edge
-    axis ``E`` are all dynamic dimensions. ``E`` is marked
-    ``Dim("nedge", min=2)`` so
-    the AOTI artifact accepts any system size with no capacity ceiling. The
-    ``min=2`` lower bound mirrors the dense path's ``Dim("nnei", min=...)`` and
-    matches the carry-all builder's
-    ``min_edges=2`` guard (every dynamic graph carries >=2 edges).
+    axis ``E`` are all dynamic dimensions. Every graph carries at least two
+    edge storage slots, including guards, with no model-specific capacity limit.
 
     Parameters
     ----------
@@ -857,10 +1280,18 @@ def _build_graph_dynamic_shapes(
         Whether ``sample_inputs`` follows the native-spin positional ABI
         (spin at slot 10) instead of the regular energy ABI (charge_spin at
         slot 12).
+    border : bool
+        Whether a native-spin lower takes the communicator and the border
+        plan of further message-passing blocks after ``charge_spin``; the
+        communicator is static, and the send list and the swap table have
+        extents of their own, which may be zero.
+    topology_names : tuple[str, ...]
+        Topologies whose fields follow the inputs above (see
+        :func:`_topology_dynamic_shapes`).
     """
-    nframes_dim = torch.export.Dim("nframes", min=1)
-    n_node_total_dim = torch.export.Dim("n_node_total", min=1)
-    nedge_dim = torch.export.Dim("nedge", min=2)
+    nframes_dim = _graph_dim("nframes", 1, 9)
+    n_node_total_dim = _graph_dim("n_node_total", 1, 3)
+    nedge_dim = _graph_dim("nedge", 2, 3)
     base = (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_dim},  # n_node: (nf,)
@@ -872,6 +1303,9 @@ def _build_graph_dynamic_shapes(
         {0: n_node_total_dim + 1},  # destination_row_ptr: (N + 1,)
         {0: nedge_dim},  # source_order: (E,)
         {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
+    )
+    topologies = _topology_dynamic_shapes(
+        topology_names, {"frame": nframes_dim, "node": n_node_total_dim}
     )
     if is_native_spin:
         spin = sample_inputs[10]
@@ -886,6 +1320,16 @@ def _build_graph_dynamic_shapes(
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: n_node_total_dim} if aparam is not None else None,  # aparam
             {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
+            *(
+                (
+                    None,
+                    {0: torch.export.Dim("n_halo_send", min=0)},
+                    {0: torch.export.Dim("n_halo_swap", min=0)},
+                )
+                if border
+                else ()
+            ),
+            *topologies,
         )
     fparam = sample_inputs[10]
     aparam = sample_inputs[11]
@@ -898,12 +1342,12 @@ def _build_graph_dynamic_shapes(
         # dim would make torch.export prove/reject the equality).
         {0: n_node_total_dim} if aparam is not None else None,  # aparam
         {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
+        *topologies,
     )
 
 
 def _build_graph_dynamic_shapes_with_comm(
     *sample_inputs: torch.Tensor | None,
-    is_native_spin: bool = False,
 ) -> tuple:
     """Build dynamic-shape specs for the with-comm graph-form export.
 
@@ -924,11 +1368,6 @@ def _build_graph_dynamic_shapes_with_comm(
         source_row_ptr, fparam, aparam, charge_spin, send_list, send_proc,
         recv_proc, send_num, recv_num, communicator, nlocal, nghost)`` --
         21 entries matching ``forward_lower_graph_exportable_with_comm``.
-        Native-spin ABI (``is_native_spin=True``): 22 entries, with ``spin``
-        inserted at slot 10 and the conditional tail shifted to 11-13, so
-        the comm block starts at 14.
-    is_native_spin : bool
-        Whether ``sample_inputs`` follows the native-spin positional ABI.
 
     Returns
     -------
@@ -936,14 +1375,12 @@ def _build_graph_dynamic_shapes_with_comm(
         Per-input dynamic-shape specs (dicts of ``torch.export.Dim`` or
         ``None``) in the same order as ``sample_inputs``.
     """
-    tail_start = 11 if is_native_spin else 10
-    spin = sample_inputs[10] if is_native_spin else None
-    fparam = sample_inputs[tail_start]
-    aparam = sample_inputs[tail_start + 1]
-    charge_spin = sample_inputs[tail_start + 2]
+    fparam = sample_inputs[10]
+    aparam = sample_inputs[11]
+    charge_spin = sample_inputs[12]
     nframes_val = 1
-    n_node_total_dim = torch.export.Dim("n_node_total", min=1)
-    nedge_dim = torch.export.Dim("nedge", min=2)
+    n_node_total_dim = _graph_dim("n_node_total", 1, 3)
+    nedge_dim = _graph_dim("nedge", 2, 3)
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_val},  # n_node: (nf,) — nf STATIC at 1
@@ -955,13 +1392,6 @@ def _build_graph_dynamic_shapes_with_comm(
         {0: n_node_total_dim + 1},  # destination_row_ptr: (N + 1,)
         {0: nedge_dim},  # source_order: (E,)
         {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
-        # spin: (N, 3) — EXTENDED node axis, shares atype's symbol; present
-        # only in the native-spin ABI, where it occupies slot 10.
-        *(
-            ({0: n_node_total_dim} if spin is not None else None,)
-            if is_native_spin
-            else ()
-        ),
         {0: nframes_val} if fparam is not None else None,  # fparam
         # aparam: (N, nda) — flat on the SAME extended node axis as atype
         # (owned prefix + ghost rows).
@@ -1198,7 +1628,7 @@ def _collect_metadata(
     }
     if is_spin:
         # The scheme is what selects the serving backend class in C++
-        # (``deepmd_create_deepspin_backend_v1``): "native" is served by
+        # (``deepmd_create_deepspin_backend_v3``): "native" is served by
         # NativeSpinPTExpt, "deepspin" by DeepSpinPTExpt. It is a property of
         # the model alone, orthogonal to ``lower_input_kind`` below.
         meta["spin_scheme"] = spin_scheme
@@ -1256,8 +1686,21 @@ def _collect_metadata(
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = lower_kind
     meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
-    if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
-        meta["canonical_index_dtype"] = "uint32"
+    if lower_kind == CANONICAL_LOWER_KIND:
+        # What the readers of the program provide beyond the destination-major
+        # graph: the source CSR on every call, and the reverse of every edge,
+        # which the fused operators of a compressed DPA4C model of several
+        # blocks read.
+        evaluator = canonical_lower_evaluator(model)
+        meta["canonical_evaluator"] = evaluator
+        meta["canonical_index_dtype"] = "auto"
+        meta["canonical_index_storage"] = "byte_words"
+        meta["canonical_requires_source_csr"] = _canonical_requires_source_csr(
+            model, evaluator
+        )
+        meta["canonical_requires_reciprocal"] = (
+            evaluator == "dpa4c" and meta["has_message_passing"]
+        )
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
@@ -1286,6 +1729,16 @@ def _collect_metadata(
             pair_exclude_types = [[int(ti), int(tj)] for (ti, tj) in pet]
             break
     meta["pair_exclude_types"] = pair_exclude_types
+    # Topologies the lower reads beside the neighbor graph, and the parameters
+    # they are built with; absent when the model reads none. The graph lower
+    # takes the fields of each after its other inputs (see
+    # ``flatten_topologies``), built by the caller from the coordinates and
+    # the cell of each frame. The compact canonical lower takes the node
+    # positions instead, from which its operators evaluate the long range.
+    topologies = model.atomic_model.required_topologies()
+    if topologies:
+        meta["topologies"] = list(topologies)
+        meta["topology_params"] = model.atomic_model.topology_params()
     return meta
 
 
@@ -1305,7 +1758,8 @@ def serialize_from_file(model_file: str) -> dict:
         The serialized model data.  If the archive contains
         ``model_def_script.json`` (training config), it is included
         under the ``"model_def_script"`` key. ``lower_input_kind`` records
-        the concrete lower ABI from the artifact metadata.
+        the concrete lower ABI and ``do_atomic_virial`` whether the archive
+        exports the per-atom virial, both from the artifact metadata.
     """
     if model_file.endswith(".pt2"):
         return _serialize_from_file_pt2(model_file)
@@ -1320,7 +1774,10 @@ def _serialize_from_file_pte(model_file: str) -> dict:
         "model_def_script.json": "",
         "metadata.json": "",
     }
-    torch.export.load(model_file, extra_files=extra_files)
+    # Storage reconstruction requires CPU staging independently of the caller's
+    # default device; tensor placement is restored from the archive metadata.
+    with torch.device("cpu"):
+        torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
     metadata = (
@@ -1329,6 +1786,7 @@ def _serialize_from_file_pte(model_file: str) -> dict:
     model_dict["lower_input_kind"] = metadata.get(
         "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
     )
+    model_dict["do_atomic_virial"] = bool(metadata.get("do_atomic_virial", False))
     if extra_files["model_def_script.json"]:
         model_dict["model_def_script"] = json.loads(
             extra_files["model_def_script.json"]
@@ -1366,6 +1824,7 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
     model_dict["lower_input_kind"] = metadata.get(
         "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
     )
+    model_dict["do_atomic_virial"] = bool(metadata.get("do_atomic_virial", False))
     if model_def_script_json:
         model_dict["model_def_script"] = json.loads(model_def_script_json)
     return model_dict
@@ -1410,22 +1869,21 @@ def _fused_operators_for_export() -> Iterator[None]:
 # preference. Both are baked into the exported graph, so the default is the
 # combination that is fastest without trading accuracy for it.
 #
-# ``DP_CUDA_INFER=1`` rather than 2: level 1 holds the operators whose profit is
-# memory traffic and is faster on every part and every checkpoint measured,
-# while level 2 also replaces the mixing stack with float32 SIMT arithmetic.
-# That substitution wins on narrow checkpoints and on parts with a large
-# float32 peak, and loses as the arithmetic per edge grows -- measured from
-# 1.8x down to 0.7x across the model zoo on one part -- so it is left to an
-# explicit choice.
+# ``DP_CUDA_INFER=2``: level 1 holds the operators whose profit is memory
+# traffic, and level 2 adds the fused SO(2) convolution, which replaces the
+# rotations, the mixing stack and the attention aggregation of a block with
+# float32 SIMT arithmetic. That substitution wins while the arithmetic per
+# edge is small and loses as it grows, so the convolution takes over only the
+# blocks whose mixing layer stays within the budget of the executing device
+# (``deepmd.pt_expt.kernels.cuda.dpa4.so2_conv``) and leaves the others on the
+# Triton path. Narrow checkpoints therefore gain, wide ones keep the level-1
+# speed, and a device with a small float32 peak declines every block.
 #
 # ``DP_TRITON_INFER=2`` rather than 3: level 3 adds fp16x3 split-compensated
-# GEMMs to the mixing stack. For DPA4 that is their only site, so they matter
-# exactly while the mixing stack is still Triton's -- that is, below
-# ``DP_CUDA_INFER=2``, which the default above is. Where they do run they
-# perturb the forces by up to 4e-1 eV/Å on the wider checkpoints against the
-# float32 reference, and a frozen archive is what runs molecular dynamics, so
-# it defaults to exact float32.
-_DPA4_FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "1"}
+# GEMMs to the Triton mixing stack, which perturb the forces of the wider
+# checkpoints against the float32 reference, and a frozen archive is what
+# runs molecular dynamics, so it defaults to exact float32.
+_DPA4_FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "2"}
 _DPA4_FREEZE_DISABLED_LEVELS = {
     "DP_CUTILE_INFER": "0",
     "DP_CUTE_INFER": "0",
@@ -1437,12 +1895,11 @@ def _dpa4_kernel_level_defaults() -> Iterator[None]:
     """Pin the default DPA4 inference kernel levels for the duration of a trace.
 
     The levels are read once at model construction time and baked into the
-    exported graph. An explicit setting in the environment always wins. The
-    defaults match the PT DPA4 freeze path: Triton level 2 keeps the exact
-    float32 mixing stack, while CUDA level 1 enables the uniformly profitable
-    memory-traffic operators without selecting the checkpoint-dependent fused
-    SO(2) convolution. cuTile and CuTe are Python-only eager backends and are
-    disabled because their operators cannot be captured in a frozen archive.
+    exported graph. An explicit setting in the environment always wins. Triton
+    level 2 keeps the exact float32 mixing stack, and CUDA level 2 adds the
+    fused SO(2) convolution to every block whose arithmetic it serves faster.
+    cuTile and CuTe are Python-only eager backends and are disabled because
+    their operators cannot be captured in a frozen archive.
     """
     levels = _DPA4_FREEZE_KERNEL_LEVELS | _DPA4_FREEZE_DISABLED_LEVELS
     saved = {name: os.environ.get(name) for name in levels}
@@ -1545,6 +2002,49 @@ def _dpa4_kernel_levels_for_target(
                 os.environ[name] = value
 
 
+def _reject_unmerged_experts(model: torch.nn.Module) -> None:
+    """Refuse a model whose experts are still mixed by a router.
+
+    A deployed model has its experts merged for one scenario by
+    ``dp --pt-expt moe-merge``; the weights of elements may remain.
+    """
+    from deepmd.dpmodel.model.expert_merge import (
+        has_expert_router,
+    )
+
+    if has_expert_router(model):
+        raise ValueError(
+            "the model mixes experts by a router; merge them for a scenario "
+            "with `dp --pt-expt moe-merge` and export the merged model"
+        )
+
+
+def _fold_case_embeddings(model: torch.nn.Module) -> None:
+    """Fold the fixed case embedding of every fitting into its first layer.
+
+    A deployed model evaluates a single case, so the schema selection, the
+    launch tuners and the fused fitting operators see a plain fitting network
+    (see :meth:`~deepmd.dpmodel.fitting.general_fitting.GeneralFitting.fold_case_embedding`).
+    """
+    from deepmd.dpmodel.fitting.general_fitting import (
+        GeneralFitting,
+    )
+
+    # The fold replaces submodules, so the fittings are collected before it.
+    fittings = [
+        module for module in model.modules() if isinstance(module, GeneralFitting)
+    ]
+    for fitting in fittings:
+        fitting.fold_case_embedding()
+        if fitting.dim_case_embd:
+            log.warning(
+                "The case embedding of a fitting network is kept, since the "
+                "residual of its first layer adds the input to the output; "
+                "the export evaluates that network without the fused fitting "
+                "operators."
+            )
+
+
 def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None:
     """Select the graph schema supported by the target model.
 
@@ -1569,21 +2069,54 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
     )
 
     model = BaseModel.deserialize(data["model"])
+    _fold_case_embeddings(model)
     if not (model_uses_graph_lower(model) and _supports_graph_export(model)):
         return None
     if allow_canonical:
-        from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
-            canonical_model_eligible as dpa1_canonical_eligible,
-        )
         from deepmd.pt_expt.kernels.dpa4c.canonical import (
-            canonical_model_eligible as dpa4c_canonical_eligible,
+            canonical_model_unsupported_reason,
         )
 
-        if dpa4c_canonical_eligible(model):
-            return "dpa4c_canonical"
-        if dpa1_canonical_eligible(model):
-            return "dpa1_canonical"
+        reason = canonical_model_unsupported_reason(model)
+        if reason is not None:
+            raise ValueError(reason)
+        if canonical_lower_evaluator(model) is not None:
+            return CANONICAL_LOWER_KIND
     return "graph"
+
+
+def compressed_export_unsupported_reason(model: torch.nn.Module) -> str | None:
+    """Return why the compressed export of a model would be refused on the target.
+
+    The export folds the case embeddings of a compressed model and refuses
+    a DPA4C model of several blocks that the compact canonical operators of
+    the target do not serve (see
+    :func:`~deepmd.pt_expt.kernels.dpa4c.canonical.canonical_model_unsupported_reason`).
+    A freeze that compresses a model on its own initiative applies the same
+    judgment to the uncompressed model, on a copy with its case embeddings
+    folded, and keeps the uncompressed form where the judgment is a refusal.
+
+    Parameters
+    ----------
+    model
+        Uncompressed model to freeze.
+
+    Returns
+    -------
+    str or None
+        Diagnostic of the refusal, or ``None`` when the compressed archive
+        deploys on the target.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        canonical_model_unsupported_reason,
+    )
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(model.serialize())
+    _fold_case_embeddings(model)
+    return canonical_model_unsupported_reason(model, as_compressed=True)
 
 
 def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
@@ -1591,9 +2124,10 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
 
     ``"auto"`` selects the graph lower for a graph-lower model whose graph
     implementation is exportable to ``.pt2`` and the dense nlist lower for
-    everything else. Eligible compressed DPA1 and DPA4C energy models select
-    their compact canonical graph schemas. Any explicit lower kind is returned
-    unchanged.
+    everything else. A model that the compact canonical lower serves (see
+    :func:`~deepmd.pt_expt.model.graph_lower.canonical_lower_evaluator`), such
+    as a compressed DPA1 or DPA4C or a single-precision DPA4 energy model,
+    selects it instead. Any explicit lower kind is returned unchanged.
     """
     if lower_kind != "auto":
         return lower_kind
@@ -1618,7 +2152,7 @@ def _resolve_target_lower_kind(model_file: str, data: dict, lower_kind: str) -> 
 
     if data["model"].get("type") == "native_spin" and target_lower_kind not in (
         "graph",
-        "dpa4c_canonical",
+        CANONICAL_LOWER_KIND,
     ):
         if lower_kind == "auto":
             if not model_file.endswith(".pt2"):
@@ -1635,8 +2169,8 @@ def _resolve_target_lower_kind(model_file: str, data: dict, lower_kind: str) -> 
         raise ValueError(
             "native-spin models implement only the NeighborGraph and compact "
             f"canonical lowers (got lower_kind={target_lower_kind!r}); use "
-            "lower_kind='graph', or lower_kind='dpa4c_canonical' for an "
-            "eligible compressed DPA4C model, with a .pt2 output."
+            "lower_kind='graph', or the compact canonical lower of an eligible "
+            "DPA4 or compressed DPA4C model, with a .pt2 output."
         )
     return target_lower_kind
 
@@ -1647,6 +2181,8 @@ def deserialize_to_file(
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
 
@@ -1677,28 +2213,34 @@ def deserialize_to_file(
         (``extended_coord``/``extended_atype``/``nlist``/``mapping``);
         ``"graph"`` traces the NeighborGraph schema
         (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask`` and
-        the destination/source CSR views) with a DYNAMIC edge axis ``E``
-        (``Dim("nedge", min=2)``), so the artifact accepts any system size.
-        ``"auto"`` resolves to ``"graph"`` for an exportable graph-lower
-        ``.pt2`` and ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`).
+        the destination/source CSR views) with a dynamic edge axis ``E`` that
+        holds at least two storage slots, including guards.
+        ``"auto"`` resolves to ``"graph"``, or to the compact canonical schema
+        of an eligible model, for an exportable graph-lower ``.pt2`` and to
+        ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`).
         Backend conversion passes the source artifact's concrete lower kind;
         compatible source ABIs are mapped to the target's native schema while
         preserving their execution semantics. A graph lower preserves the
         selected inference operators and always includes the per-atom virial.
-        DPA1 and DPA4C graph pipelines use ``DP_CUDA_INFER >= 2``; DPA4
-        ``.pt2`` follows its PT freeze defaults unless the environment
-        explicitly selects other levels.
+        DPA1, DPA4 and DPA4C graph pipelines use ``DP_CUDA_INFER >= 2``
+        unless the environment explicitly selects other levels.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
+    with_comm : bool, optional
+        Include a communication artifact in ``.pt2`` exports for models with
+        cross-rank message passing, by default True. Disable for
+        single-process inference.
     """
     lower_kind = _resolve_target_lower_kind(model_file, data, lower_kind)
+    log.info("Exporting %s with the %s lower", model_file, lower_kind)
     uses_dpa4_defaults = model_file.endswith(".pt2") and _uses_dpa4_kernel_defaults(
         data["model"]
     )
     # A graph lower deploys the selected inference pipeline, while the per-atom
     # virial is mandatory for the LAMMPS Kokkos consumer. DPA1 and DPA4C retain
-    # their level-two opaque pipeline; DPA4 .pt2 uses the same defaults as PT.
-    if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
+    # their level-two opaque pipeline; DPA4 .pt2 uses its freeze defaults
+    # (``_DPA4_FREEZE_KERNEL_LEVELS``).
+    if lower_kind in ("graph", CANONICAL_LOWER_KIND):
         do_atomic_virial = True
         ctx: contextlib.AbstractContextManager = (
             _dpa4_kernel_level_defaults()
@@ -1717,6 +2259,7 @@ def deserialize_to_file(
                 model_json_override,
                 do_atomic_virial,
                 lower_kind,
+                with_comm=with_comm,
             )
         else:
             _deserialize_to_file_pte(
@@ -1726,6 +2269,20 @@ def deserialize_to_file(
                 do_atomic_virial,
                 lower_kind,
             )
+
+
+def _graph_symbolic_shapes(lower_kind: str) -> contextlib.AbstractContextManager:
+    """Trace and lower variable-size graphs without specializing to sample sizes.
+
+    A single frame and small node sets are valid deployment inputs. In
+    particular, a matrix-multiply heuristic on the example's node count must
+    not become a lower bound on the number of atoms accepted by the archive.
+    """
+    if lower_kind not in ("graph", CANONICAL_LOWER_KIND):
+        return contextlib.nullcontext()
+    from torch.fx.experimental import _config as symbolic_config
+
+    return symbolic_config.patch(backed_size_oblivious=True)
 
 
 def _trace_and_export(
@@ -1739,7 +2296,10 @@ def _trace_and_export(
     import deepmd.pt_expt.utils.env as _env
 
     target_device = _env.DEVICE
-    with _dpa4_kernel_levels_for_target(data["model"], target_device):
+    with (
+        _dpa4_kernel_levels_for_target(data["model"], target_device),
+        _graph_symbolic_shapes(lower_kind),
+    ):
         return _trace_and_export_impl(
             data,
             model_json_override,
@@ -1748,6 +2308,70 @@ def _trace_and_export(
             lower_kind,
             target_device=target_device,
         )
+
+
+@contextlib.contextmanager
+def _cpu_reference_descriptors(model: torch.nn.Module) -> Iterator[None]:
+    """Temporarily use CPU reference descriptors for the eager vacuum fold.
+
+    Deployment descriptors bind accelerator operators at construction, before
+    they move to CPU for fake tracing. Changing their device or the kernel
+    environment cannot unbind those operators. Rebuild only descriptors whose
+    fittings still need a reference, leaving the folded bias and non-persistent
+    vacuum table on the original fitting. Restore the deployment descriptors
+    before tracing so their optimized bindings remain intact.
+    """
+    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+        DPAtomicModel,
+    )
+    from deepmd.pt_expt.utils import (
+        env,
+    )
+
+    atomic_models = [
+        module
+        for module in model.modules()
+        if isinstance(module, DPAtomicModel)
+        and module.fitting_net.needs_vacuum_descriptor()
+    ]
+    if not atomic_models:
+        yield
+        return
+
+    levels = (
+        "DP_CUDA_INFER",
+        "DP_TRITON_INFER",
+        "DP_CUTILE_INFER",
+        "DP_CUTE_INFER",
+        "DP_CUDA_TRAIN",
+        "DP_TRITON_TRAIN",
+        "DP_AMP_INFER",
+    )
+    saved_levels = {name: os.environ.get(name) for name in levels}
+    saved_device = env.DEVICE
+    descriptors = []
+    try:
+        env.DEVICE = torch.device("cpu")
+        os.environ.update(dict.fromkeys(levels, "0"))
+        for atomic_model in atomic_models:
+            descriptor = atomic_model.descriptor
+            reference = type(descriptor).deserialize(descriptor.serialize()).eval()
+            # Virtual-spin backbones can disable this route at runtime; that
+            # choice is deliberately absent from the portable descriptor.
+            if not descriptor.uses_graph_lower() and reference.uses_graph_lower():
+                reference.disable_graph_lower()
+            descriptors.append((atomic_model, descriptor))
+            atomic_model.descriptor = reference
+        yield
+    finally:
+        for atomic_model, descriptor in descriptors:
+            atomic_model.descriptor = descriptor
+        env.DEVICE = saved_device
+        for name, value in saved_levels.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def _trace_and_export_impl(
@@ -1832,13 +2456,34 @@ def _trace_and_export_impl(
         # Registry-dispatched (incl. native spin, type "native_spin"): the
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
+    if with_comm_dict and not _needs_with_comm_artifact(model, lower_kind):
+        raise ValueError(
+            f"with_comm_dict=True is unsupported for lower_kind={lower_kind!r}: "
+            "this model and lower do not use a separate with-comm artifact."
+        )
+    _reject_unmerged_experts(model)
+    # The fold rebuilds the first fitting layers on the default device, where
+    # the deserialized model resides, so it precedes the move below.
+    _fold_case_embeddings(model)
     model.eval()
-    # The vacuum reference is resolved on the export object, folded into the
-    # fitting bias or stored as a per-type table, so the exported graph
-    # carries no reference atoms; the move to the tracing device follows, so
-    # the table lands there with the rest of the model.
-    model.fold_vacuum_reference()
+    # A frozen model evaluates the reciprocal sum of a periodic frame on the
+    # mesh of its cell, whatever the mode it was trained in.
+    from deepmd.dpmodel.long_range.latent_charge import (
+        LatentChargeLongRange,
+    )
+
+    for module in model.modules():
+        if isinstance(module, LatentChargeLongRange):
+            module.use_mesh_evaluation()
+    # Fold the vacuum reference on the CPU tracing device. vacuum_descriptor
+    # evaluates an isolated atom of every type through the descriptor; on CUDA
+    # that path can allocate several GiB even when export already holds most of
+    # the GPU. Move first so the fold runs where tracing will, and so the
+    # folded bias or vacuum table stays on that device with the rest of the
+    # model.
     model.to("cpu")
+    with torch.no_grad(), _cpu_reference_descriptors(model):
+        model.fold_vacuum_reference()
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
@@ -1870,7 +2515,7 @@ def _trace_and_export_impl(
         run_autotune,
     )
 
-    run_autotune(model, target_device)
+    run_autotune(model, target_device, lower_kind)
 
     # Pack after checkpoint deserialization. The non-persistent buffers become
     # constants in the CPU trace and move with the exported graph to the
@@ -1886,19 +2531,18 @@ def _trace_and_export_impl(
     )
 
     # Graph-form exports use a dynamic edge axis and an energy-model contract.
-    if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
+    canonical = lower_kind == CANONICAL_LOWER_KIND
+    if lower_kind == "graph" or canonical:
         import math
 
         check_graph_trace_torch_version(model)
         if is_spin:
             # Only the native spin scheme (NativeSpinEnergyModel: per-local-atom
             # spin, no virtual atoms) has a graph-lower export
-            # (forward_lower_graph_exportable, Task 5) -- and only for the
-            # regular "graph" kind: "dpa1_canonical" is the compressed-DPA1
-            # compact ABI, which native spin never targets. The virtual-atom
+            # (forward_lower_graph_exportable, Task 5). The virtual-atom
             # scheme (SpinModel / "spin_ener") has no graph-lower
             # implementation at all and stays on the dense (nlist) lower.
-            if not is_native_spin or lower_kind == "dpa1_canonical":
+            if not is_native_spin:
                 raise NotImplementedError(
                     "graph-form .pt2 export supports only the native spin "
                     "scheme (native_spin); virtual-atom spin models "
@@ -1932,7 +2576,6 @@ def _trace_and_export_impl(
                 "forward_lower_graph_exportable_with_comm; graph-form "
                 "with-comm .pt2 export requires an energy model"
             )
-        canonical = lower_kind in ("dpa1_canonical", "dpa4c_canonical")
         required_method = (
             "forward_lower_canonical_graph_exportable"
             if canonical
@@ -1942,21 +2585,13 @@ def _trace_and_export_impl(
             raise NotImplementedError(
                 f"model {type(model).__name__} has no {required_method}"
             )
-        if canonical:
-            if lower_kind == "dpa4c_canonical":
-                from deepmd.pt_expt.kernels.dpa4c.canonical import (
-                    canonical_model_eligible,
-                )
-            else:
-                from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
-                    canonical_model_eligible,
-                )
-
-            if not canonical_model_eligible(model):
-                raise NotImplementedError(
-                    "compact canonical export requires an eligible compressed "
-                    "DPA1 or DPA4C energy model"
-                )
+        if canonical and metadata["canonical_evaluator"] is None:
+            raise NotImplementedError(
+                "compact canonical export requires an eligible compressed DPA1 "
+                "or DPA4C energy model, or a graph-lower energy model whose "
+                "descriptor evaluates the compact canonical graph, frozen for "
+                "a CUDA device without frame or atomic parameters"
+            )
 
         # Trace-time sizes must be pairwise-distinct AND avoid every static
         # model dim (dim_fparam / dim_aparam / parameter dims): make_fx's
@@ -1998,20 +2633,62 @@ def _trace_and_export_impl(
         e_sample = max(math.ceil(1.25 * e_real), e_real + 2)
         while e_sample in (_forbidden | {nframes_sample, n_sample}):
             e_sample += 1
+        # The send list and the swap table of a border plan take sample
+        # extents distinct from the other axes.
+        border_sizes = (
+            next_safe_prime(
+                e_sample + 3,
+                _forbidden | {nframes_sample, n_sample, n_sample + 1, e_sample},
+            ),
+            next_safe_prime(3, _forbidden | {nframes_sample, nloc_sample}),
+        )
         if canonical:
+            # The compact lower of a model with a long-range module reads the
+            # node positions and the cells, from which its operator evaluates
+            # the long range, and the communicator of the domains of a
+            # decomposed frame.
+            want_long_range = bool(model.atomic_model.required_topologies())
+            # The compact lower of a model with further message-passing blocks
+            # reads the border plan of a decomposed frame.
+            want_border = bool(model.atomic_model.has_message_passing_across_ranks())
+            # The compact lower of a model that reads its charge/spin
+            # condition as an input takes it after the graph and the moment.
+            want_charge_spin = model.get_dim_chg_spin() > 0
             sample_inputs = build_synthetic_canonical_graph_inputs(
                 model,
                 e_sample,
+                nframes_sample,
+                nloc_sample,
                 device=torch.device("cpu"),
                 want_spin=is_native_spin,
+                want_charge_spin=want_charge_spin,
+                want_long_range=want_long_range,
+                want_border=want_border,
+                border_sizes=border_sizes,
+            )
+            # The inputs after the graph, and the moment of a native-spin
+            # model, reach the lower by name, in the order of the samples.
+            graph_count = 9 if is_native_spin else 8
+            names = (
+                *(("charge_spin",) if want_charge_spin else ()),
+                *(("coord",) if want_long_range else ()),
+                *(("communicator",) if want_long_range or want_border else ()),
+                *(("box",) if want_long_range else ()),
+                *(("halo_send", "halo_swaps") if want_border else ()),
             )
             traced = model.forward_lower_canonical_graph_exportable(
-                *sample_inputs,
+                *sample_inputs[:graph_count],
+                **dict(zip(names, sample_inputs[graph_count:], strict=True)),
                 do_atomic_virial=do_atomic_virial,
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
-            dynamic_shapes = _build_canonical_graph_dynamic_shapes(*sample_inputs)
+            dynamic_shapes = _build_canonical_graph_dynamic_shapes(
+                is_native_spin=is_native_spin,
+                charge_spin=want_charge_spin,
+                long_range=want_long_range,
+                border=want_border,
+            )
         elif with_comm_dict:
             # Load libdeepmd_op_pt.so and register border_op fake/autograd
             # metadata now, mirroring the dense with-comm precedent below.
@@ -2020,13 +2697,6 @@ def _trace_and_export_impl(
             )
 
             ensure_comm_registered()
-            if not _needs_with_comm_artifact(model, lower_kind):
-                raise ValueError(
-                    "with_comm_dict=True requested but the model's "
-                    "descriptor does not need cross-rank message passing "
-                    "(has_message_passing_across_ranks() is False) — "
-                    "there's nothing to compile."
-                )
             # The pt_expt Repformer with-comm override only supports nf=1
             # (LAMMPS always drives multi-rank inference with one frame).
             # ``nloc_sample`` is the TOTAL flat node count carried by the
@@ -2050,7 +2720,6 @@ def _trace_and_export_impl(
                 dtype=torch.float64,
                 edge_dtype=edge_dtype,
                 device=torch.device("cpu"),
-                want_spin=is_native_spin,
             )
             comm_inputs = _make_comm_sample_inputs(
                 nloc=nlocal_sample,
@@ -2066,9 +2735,7 @@ def _trace_and_export_impl(
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
-            dynamic_shapes = _build_graph_dynamic_shapes_with_comm(
-                *sample_inputs, is_native_spin=is_native_spin
-            )
+            dynamic_shapes = _build_graph_dynamic_shapes_with_comm(*sample_inputs)
         else:
             edge_dtype = (
                 torch.float32
@@ -2085,18 +2752,53 @@ def _trace_and_export_impl(
                 device=torch.device("cpu"),
                 want_spin=is_native_spin,
             )
+            # The pair axis is dynamic; its sample length is kept distinct
+            # from the other axes and from the CSR offsets.
+            topologies = build_synthetic_topologies(
+                model,
+                n_sample,
+                next_safe_prime(
+                    e_sample + 2,
+                    _forbidden | {nframes_sample, n_sample, n_sample + 1, e_sample},
+                ),
+                dtype=edge_dtype,
+                device=torch.device("cpu"),
+                nframes=nframes_sample,
+                forbidden=_forbidden | {e_sample},
+            )
+            # The graph lower of a native-spin model with further
+            # message-passing blocks reads the border plan of a decomposed
+            # frame.
+            want_border = is_native_spin and bool(
+                model.atomic_model.has_message_passing_across_ranks()
+            )
             if is_native_spin:
                 # Native-spin ABI (NativeSpinEnergyModel.forward_lower_graph_exportable):
                 # slot 10 is ``spin`` (mandatory), slots 11/12 are
                 # fparam/aparam, slot 13 the conditional ``charge_spin`` tail
                 # (combined native-spin + charge-spin FiLM models; None
-                # otherwise).
+                # otherwise), then the communicator and the border plan.
+                border = (
+                    dict(
+                        zip(
+                            ("communicator", "halo_send", "halo_swaps"),
+                            synthetic_border_plan(
+                                n_sample, border_sizes, torch.device("cpu")
+                            ),
+                            strict=True,
+                        )
+                    )
+                    if want_border
+                    else {}
+                )
+                sample_inputs = (*sample_inputs, *border.values())
                 traced = model.forward_lower_graph_exportable(
                     *sample_inputs[:10],
                     spin=sample_inputs[10],
                     fparam=sample_inputs[11],
                     aparam=sample_inputs[12],
                     charge_spin=sample_inputs[13],
+                    **border,
                     do_atomic_virial=do_atomic_virial,
                     destination_sorted=True,
                     tracing_mode="symbolic",
@@ -2110,12 +2812,17 @@ def _trace_and_export_impl(
                     do_atomic_virial=do_atomic_virial,
                     charge_spin=sample_inputs[12],
                     destination_sorted=True,
+                    topologies=topologies,
                     tracing_mode="symbolic",
                     _allow_non_fake_inputs=True,
                 )
             dynamic_shapes = _build_graph_dynamic_shapes(
-                *sample_inputs, is_native_spin=is_native_spin
+                *sample_inputs,
+                is_native_spin=is_native_spin,
+                border=want_border,
+                topology_names=tuple(topologies),
             )
+            sample_inputs = (*sample_inputs, *flatten_topologies(topologies))
         output_keys = traced_output_keys(traced)
         exported = torch.export.export(
             traced,
@@ -2142,11 +2849,7 @@ def _trace_and_export_impl(
         metadata["graph_source_csr"] = _graph_reads_source_csr(exported)
 
         if target_device.type != "cpu":
-            from torch.export.passes import (
-                move_to_device_pass,
-            )
-
-            exported = move_to_device_pass(exported, target_device)
+            exported = _move_graph_program(exported, target_device, canonical=canonical)
 
         metadata["do_atomic_virial"] = do_atomic_virial
         # The AOTI forward accepts any edge
@@ -2237,13 +2940,6 @@ def _trace_and_export_impl(
         )
 
         ensure_comm_registered()
-        if not _needs_with_comm_artifact(model, lower_kind):
-            raise ValueError(
-                "with_comm_dict=True requested but the model's descriptor "
-                "does not need cross-rank message passing "
-                "(has_message_passing_across_ranks() is False) — "
-                "there's nothing to compile."
-            )
         nloc_sample = nlist_t.shape[1]
         nall_sample = ext_atype.shape[1]
         nghost_sample = nall_sample - nloc_sample
@@ -2446,7 +3142,81 @@ def _charge_state_descriptor(data: dict, metadata: dict) -> Any | None:
     return descriptor
 
 
-def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
+def _charge_state_long_range(data: dict, metadata: dict) -> Any | None:
+    """Return the long-range module folded to the charge state, if any.
+
+    Compressing the atomic model folds a long-range charge constraint that
+    reads its total charge from the charge state to the condition of the
+    descriptor, so the fold rebuilds the state of the module with the
+    artifacts of the descriptor. Only a model with a long-range module, which
+    the collected metadata names by its topologies, pays for rebuilding the
+    model.
+
+    Parameters
+    ----------
+    data
+        Serialized model dictionary, as passed to the export entry point.
+    metadata
+        Archive metadata collected from that same model.
+
+    Returns
+    -------
+    Any or None
+        The evaluated long-range module, or ``None`` when the model folds no
+        long-range state.
+    """
+    if not metadata.get("topologies"):
+        return None
+
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(data["model"])
+    parts = model.atomic_model.fused_decomposition()
+    long_range = None if parts is None else parts[0].long_range
+    if long_range is None or not long_range.charge_state_constants():
+        return None
+    model.to("cpu")
+    model.eval()
+    return long_range
+
+
+class _ChargeStateRebuild(torch.nn.Module):
+    """Rebuild the charge state of a descriptor and of a long-range module.
+
+    The outputs are those of the descriptor fold followed by the folded state
+    of the long-range module.
+
+    Parameters
+    ----------
+    descriptor
+        Compressed charge-conditioned descriptor, as returned by
+        :func:`_charge_state_descriptor`.
+    long_range
+        Long-range module folded to the same state, as returned by
+        :func:`_charge_state_long_range`.
+    """
+
+    def __init__(self, descriptor: Any, long_range: Any) -> None:
+        super().__init__()
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+            ChargeStateFold,
+        )
+
+        self.descriptor = ChargeStateFold(descriptor)
+        self.long_range = long_range
+
+    def forward(self, charge_spin: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return (
+            *self.descriptor(charge_spin),
+            *self.long_range.rebuild_charge_state(charge_spin),
+        )
+
+
+def _match_charge_state_constants(
+    descriptor: Any, exported: Any, long_range: Any | None = None
+) -> list[str]:
     """Name, per fold output, the constant of ``exported`` it replaces.
 
     A compressed charge-conditioned descriptor carries its frame condition in
@@ -2479,6 +3249,10 @@ def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
         :func:`_charge_state_descriptor`.
     exported
         Exported lower whose constants are to be named.
+    long_range
+        Long-range module folded to the same state, as returned by
+        :func:`_charge_state_long_range`, whose state is matched after the
+        artifacts of the descriptor; ``None`` when there is none.
 
     Returns
     -------
@@ -2499,9 +3273,18 @@ def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
         for name, tensor in exported.state_dict.items()
         if isinstance(tensor, torch.Tensor)
     }
+    artifacts = [
+        (name, getattr(descriptor, f"compress_{name}"))
+        for name in CHARGE_STATE_ARTIFACTS
+    ]
+    if long_range is not None:
+        artifacts += [
+            ("long-range charge state", state)
+            for state in long_range.charge_state_constants()
+        ]
     constants: list[str] = []
-    for name in CHARGE_STATE_ARTIFACTS:
-        artifact = getattr(descriptor, f"compress_{name}").detach().cpu()
+    for name, tensor in artifacts:
+        artifact = tensor.detach().cpu()
         if artifact.numel() == 0:
             constants.append("")
             continue
@@ -2526,6 +3309,7 @@ def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
 def _compile_charge_state_fold(
     descriptor: Any,
     aoti_configs: dict,
+    long_range: Any | None = None,
 ) -> bytes:
     """Compile the rebuild of the charge-state artifacts as its own archive.
 
@@ -2541,6 +3325,10 @@ def _compile_charge_state_fold(
         :func:`_charge_state_descriptor`.
     aoti_configs
         Inductor options the inference lower was compiled with.
+    long_range
+        Long-range module folded to the same state, as returned by
+        :func:`_charge_state_long_range`, whose state the fold rebuilds after
+        the artifacts of the descriptor; ``None`` when there is none.
 
     Returns
     -------
@@ -2567,7 +3355,12 @@ def _compile_charge_state_fold(
         dtype=torch.float32,
         device="cpu",
     )
-    fold = torch.export.export(ChargeStateFold(descriptor), (sample,))
+    module = (
+        ChargeStateFold(descriptor)
+        if long_range is None
+        else _ChargeStateRebuild(descriptor, long_range)
+    )
+    fold = torch.export.export(module, (sample,))
     if _env.DEVICE.type != "cpu":
         from torch.export.passes import (
             move_to_device_pass,
@@ -2587,6 +3380,8 @@ def _deserialize_to_file_pt2(
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -2597,11 +3392,12 @@ def _deserialize_to_file_pt2(
     For models whose descriptor reports
     ``has_message_passing_across_ranks() == True`` (DPA2, DPA3 with
     ``use_loc_mapping=False``, or hybrids wrapping such children),
-    compiles a SECOND ``with-comm`` artifact and packs it alongside the
-    regular one. The ``with-comm`` variant accepts comm-dict tensors as
-    additional positional inputs and drives MPI ghost-atom exchange via
-    ``deepmd_export::border_op``. The C++ ``DeepPotPTExpt`` loader picks
-    the artifact based on the LAMMPS rank count at runtime.
+    compiles a SECOND ``with-comm`` artifact when ``with_comm`` is True and
+    packs it alongside the regular one. The ``with-comm`` variant accepts
+    comm-dict tensors as additional positional inputs and drives MPI
+    ghost-atom exchange via ``deepmd_export::border_op``. The C++
+    ``DeepPotPTExpt`` loader picks the artifact based on the LAMMPS rank
+    count at runtime.
 
     Layout inside the .pt2 ZIP (PyTorch 2.11 strict layout):
         regular   →  artifact at ``model/`` (AOTInductor's own layout)
@@ -2630,6 +3426,10 @@ def _deserialize_to_file_pt2(
         lower_kind=lower_kind,
     )
     metadata["output_keys"] = output_keys
+    metadata["has_comm_artifact"] = with_comm and bool(
+        metadata.get("has_comm_artifact")
+    )
+    check_mesh_freeze_torch_version(metadata)
 
     # A charge-state update swaps constants in one compiled artifact. A model
     # that also needs the with-comm lower would own two independent constant
@@ -2668,12 +3468,15 @@ def _deserialize_to_file_pt2(
     from deepmd.pt.utils.compile_compat import (
         build_inductor_compile_options,
         patch_inductor_force_int64_indexing,
+        patch_inductor_stable_sort_fallback,
     )
 
     is_cuda = _env.DEVICE.type == "cuda"
     # Force int64 tensor indexing so the flattened index of a large
-    # data-dependent tensor never wraps past 2**31 into an illegal address.
+    # data-dependent tensor never wraps past 2**31 into an illegal address,
+    # and keep the compact edge counts of per-block cutoffs unbounded.
     patch_inductor_force_int64_indexing()
+    patch_inductor_stable_sort_fallback()
     # The AOTInductor freeze must use the same Inductor lockdown as the
     # pt-backend compile -- most importantly ``triton.max_tiles = 1``, which
     # keeps the data-dependent edge / node axis on the x launch dimension
@@ -2686,25 +3489,40 @@ def _deserialize_to_file_pt2(
     aoti_configs["assert_indirect_indexing"] = False
     if is_cuda:
         aoti_configs["realize_opcount_threshold"] = 0
+    # In the compact canonical lower of a compressed descriptor, expressions of
+    # the weights alone, such as the per-type energy bias that the program sums
+    # from two parameters ahead of the fused operator, are evaluated once, by
+    # the first call after the constants are loaded, instead of at every call.
+    # An update of the constants marks them for evaluation again at the next
+    # call, so a charge state applied at run time stays consistent. The setting
+    # applies to the compact canonical lower alone, the program whose constant
+    # updates the tests check; the other packages of the archive keep the
+    # shared options.
+    lower_configs = dict(aoti_configs)
+    fused = metadata.get("canonical_evaluator") in ("dpa1", "dpa4c")
+    if fused:
+        lower_configs["aot_inductor.use_runtime_constant_folding"] = True
     log.info(
         "Compiling the AOTInductor package for %s (the slowest freeze stage; "
         "typically several minutes)...",
         _env.DEVICE,
     )
-    aoti_compile_and_package(
-        exported, package_path=model_file, inductor_configs=aoti_configs
-    )
+    with _graph_symbolic_shapes(lower_kind):
+        aoti_compile_and_package(
+            exported, package_path=model_file, inductor_configs=lower_configs
+        )
 
     # Charge-state fold. Present only for a compressed charge-conditioned
     # descriptor, whose frozen tables the deployment rebuilds once when the
     # state becomes known.
     charge_state_bytes: bytes | None = None
     if charge_state_descriptor is not None:
+        long_range = _charge_state_long_range(data, metadata)
         metadata["charge_state_constants"] = _match_charge_state_constants(
-            charge_state_descriptor, exported
+            charge_state_descriptor, exported, long_range
         )
         charge_state_bytes = _compile_charge_state_fold(
-            charge_state_descriptor, aoti_configs
+            charge_state_descriptor, aoti_configs, long_range
         )
 
     # Second artifact: with-comm. Only for descriptors whose message
@@ -2723,7 +3541,7 @@ def _deserialize_to_file_pt2(
             # regular one (graph freeze -> graph with-comm trace).
             lower_kind=lower_kind,
         )
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, _graph_symbolic_shapes(lower_kind):
             wc_path = os.path.join(td, "forward_lower_with_comm.pt2")
             aoti_compile_and_package(
                 exported_wc, package_path=wc_path, inductor_configs=aoti_configs

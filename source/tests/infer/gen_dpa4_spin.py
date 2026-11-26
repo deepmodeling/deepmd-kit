@@ -11,7 +11,7 @@ Two archives, IDENTICAL weights, differing only in model-level exclusion:
 The second one is deliberately anti-vacuous for the C++ ingestion seam. Model-
 level exclusion is a BUILD-time transform (decision #18/A4) owned by the
 neighbor-graph construction, so the .pt2 lower consumes a pre-excluded
-``edge_mask`` and never re-applies it; ``DeepSpinPTExpt`` must fold it in at
+``edge_mask`` and never re-applies it; ``NativeSpinPTExpt`` must fold it in at
 its build seam (``applyPairExclusion``). Keeping the descriptor exclusion
 empty is what makes the fixture load-bearing: the ``type="dpa4"`` model alias
 copies ``pair_exclude_types`` into ``descriptor.exclude_types``, which bakes an
@@ -75,8 +75,7 @@ from gen_common import (
 # attention + spin-embedding paths, small enough to keep the AOTInductor
 # compile bounded. ``use_spin=[True, False]``: type 0 ("Ni") carries a
 # magnetic moment, type 1 ("O") does not. ``scheme="native"`` selects the
-# NeighborGraph-only spin route (no virtual atoms, unlike the deepspin
-# ``spin_ener`` scheme used by ``gen_spin.py``).
+# NeighborGraph spin route.
 NATIVE_SPIN_CONFIG = {
     "type_map": ["Ni", "O"],
     "descriptor": {
@@ -165,6 +164,7 @@ def _check_metadata(pt2_path: str, expected_exclude: list) -> None:
     """Assert the frozen archive's metadata, including the exclusion field."""
     with zipfile.ZipFile(pt2_path) as zf:
         md = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
+        names = zf.namelist()
     print("\n// metadata:")  # noqa: T201
     print(  # noqa: T201
         json.dumps(
@@ -192,11 +192,11 @@ def _check_metadata(pt2_path: str, expected_exclude: list) -> None:
         f"{md.get('lower_input_kind')!r}"
     )
     assert md["is_spin"] is True
-    # Native spin rides the with-comm artifact on the graph lower, so the
-    # archive carries the nested forward_lower_with_comm.pt2 for the C++
-    # multi-rank path (a SECOND inductor compile -- this generator is the
-    # slowest of the set for that reason).
-    assert md["has_comm_artifact"] is True
+    # The graph lower of native spin carries the halo exchange of its
+    # further blocks in its main program, so the archive holds no with-comm
+    # artifact for multi-rank runs.
+    assert md["has_comm_artifact"] is False
+    assert "model/extra/forward_lower_with_comm.pt2" not in names
     assert md["has_message_passing"] is True
     assert md["use_spin"] == [True, False]
     # The exclusion travels as METADATA -- work still owed by the feeder, NOT

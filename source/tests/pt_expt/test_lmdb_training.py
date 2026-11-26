@@ -14,6 +14,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from typing import (
+    Any,
+)
 from unittest.mock import (
     patch,
 )
@@ -22,6 +25,7 @@ import lmdb
 import msgpack
 import numpy as np
 
+import deepmd.utils.random as dp_random
 from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -35,6 +39,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     collate_lmdb_frames,
 )
 from deepmd.pt_expt.entrypoints.main import (
+    _build_data_system,
     get_trainer,
 )
 from deepmd.pt_expt.loss import (
@@ -42,6 +47,9 @@ from deepmd.pt_expt.loss import (
 )
 from deepmd.pt_expt.train.training import (
     Trainer,
+)
+from deepmd.pt_expt.train.validation import (
+    FullValidator,
 )
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
@@ -57,6 +65,12 @@ from deepmd.utils.compat import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.data_group import (
+    GroupedDataSystem,
+)
+from deepmd.utils.data_system import (
+    get_neighbor_stat_data,
 )
 
 from .compile_utils import (
@@ -452,7 +466,7 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
                 trainer.multi_task = False
                 trainer.world_size = 1
                 trainer.training_data_by_task = {"Default": data}
-                trainer.min_pair_dist_by_task = {"Default": 0.5}
+                trainer.pair_filter_enabled_by_task = {"Default": True}
                 try:
                     # This shuffle packs five batches and leaves frame 3 last;
                     # the following shuffle packs four batches.
@@ -700,6 +714,115 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             )
 
 
+class TestLmdbDatasetGroups(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = directory.name
+        self.first = os.path.join(self.directory, "first.lmdb")
+        self.parent = os.path.join(self.directory, "nested")
+        os.mkdir(self.parent)
+        self.second = os.path.join(self.parent, "second.lmdb")
+        _create_test_lmdb(self.first, nframes=2, natoms=6)
+        _create_test_lmdb(self.second, nframes=8, natoms=8)
+        workers = patch.dict(os.environ, {"DP_LMDB_NUM_WORKERS": "0"})
+        workers.start()
+        self.addCleanup(workers.stop)
+
+    def test_unseeded_distributed_groups_share_source_choices(self) -> None:
+        sequences = []
+        for rank in range(2):
+            dp_random.seed(17 + rank)
+            data = _build_data_system(
+                {
+                    "systems": [self.first, self.second],
+                    "batch_size": 1,
+                    "auto_prob": "prob_uniform",
+                },
+                ["O", "H"],
+                rank=rank,
+                world_size=2,
+            )
+            self.addCleanup(data.close)
+            sequences.append([data.get_batch()["coord"].shape[1] for _ in range(24)])
+        self.assertEqual(sequences[0], sequences[1])
+
+    def test_multiple_paths_and_recursive_parent_use_flat_sampling(self) -> None:
+        for systems in ([self.first, self.parent], self.directory):
+            with self.subTest(systems=systems):
+                data = _build_data_system(
+                    {"systems": systems, "batch_size": 1, "auto_prob": "prob_sys_size"},
+                    ["O", "H"],
+                    seed=0,
+                )
+                self.addCleanup(data.close)
+                self.assertIsInstance(data, GroupedDataSystem)
+                np.testing.assert_allclose(data.sys_probs, [0.2, 0.8])
+                shapes = {data.get_batch()["coord"].shape[1] for _ in range(20)}
+                self.assertEqual(shapes, {6, 8})
+
+    def test_group_probability_and_statistics_keep_sources_separate(self) -> None:
+        data = _build_data_system(
+            [
+                {"systems": self.first, "batch_size": 1, "prob": 0.6},
+                {"systems": self.parent, "batch_size": 2, "prob": 0.4},
+            ],
+            ["O", "H"],
+            seed=0,
+        )
+        self.addCleanup(data.close)
+        np.testing.assert_allclose(data.sys_probs, [0.6, 0.4])
+        samples = make_stat_input(data, 1)
+        self.assertEqual(len(samples), 2)
+        self.assertEqual([sample["coord"].shape[1] for sample in samples], [6, 8])
+        self.assertEqual([sample["coord"].shape[0] for sample in samples], [1, 2])
+
+    def test_full_validation_caches_each_lmdb_separately(self) -> None:
+        data = _build_data_system(
+            {"systems": [self.first, self.second], "batch_size": 1}, ["O", "H"]
+        )
+        self.addCleanup(data.close)
+        validator = FullValidator.__new__(FullValidator)
+        validator.validation_data = data
+        validator._lmdb_snapshots = {}
+        first = list(validator._iter_validation_data_systems())
+        snapshots = dict(validator._lmdb_snapshots)
+        second = list(validator._iter_validation_data_systems())
+        self.assertEqual(len(first), 2)
+        self.assertEqual(len(snapshots), 2)
+        self.assertEqual(validator._lmdb_snapshots, snapshots)
+        self.assertEqual(
+            [system.get_test()["coord"].shape[0] for system in second], [2, 8]
+        )
+
+    def test_distributed_epoch_accounts_for_each_leaf_padding(self) -> None:
+        paths = [
+            os.path.join(self.directory, f"tiny_{index}.lmdb") for index in range(2)
+        ]
+        for path in paths:
+            _create_test_lmdb(path, nframes=1, natoms=6)
+        for rank in (0, 1):
+            data = _build_data_system(
+                {"systems": paths, "batch_size": 1},
+                ["O", "H"],
+                seed=0,
+                rank=rank,
+                world_size=2,
+            )
+            self.addCleanup(data.close)
+            trainer = Trainer.__new__(Trainer)
+            trainer.training_data_by_task = {"Default": data}
+            trainer.world_size = 2
+            self.assertEqual(trainer._epoch_length("Default"), 2)
+
+    def test_neighbor_statistics_visit_both_lmdbs(self) -> None:
+        data = get_neighbor_stat_data(
+            {"systems": [self.first, self.parent], "batch_size": 1}, ["O", "H"]
+        )
+        self.assertEqual(data.get_ntypes(), 2)
+        self.assertEqual([system.get_natoms() for system in data.data_systems], [6, 8])
+
+
 class TestLmdbTrainingLoop(unittest.TestCase):
     """End-to-end: get_trainer routes an LMDB path and runs training steps."""
 
@@ -782,6 +905,31 @@ class TestLmdbTrainingLoop(unittest.TestCase):
         try:
             trainer = get_trainer(config)
             self.assertIsInstance(trainer.training_data, LmdbDataSystem)
+            trainer.run()
+        finally:
+            os.chdir(cwd)
+
+    def test_get_trainer_runs_weighted_lmdb_groups(self) -> None:
+        config = self._make_lmdb_config(numb_steps=2)
+        config["training"]["training_data"] = [
+            {
+                "systems": self.lmdb_path,
+                "batch_size": 1,
+                "prob": 0.6,
+                "min_pair_dist": 0.1,
+            },
+            {"systems": self.val_lmdb_path, "batch_size": 2, "prob": 0.4},
+        ]
+        config["training"]["validation_data"]["systems"] = [
+            self.lmdb_path,
+            self.val_lmdb_path,
+        ]
+        config = normalize(update_deepmd_input(config, warning=False))
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+            np.testing.assert_allclose(trainer.training_data.sys_probs, [0.6, 0.4])
             trainer.run()
         finally:
             os.chdir(cwd)
@@ -914,13 +1062,11 @@ class TestRaggedTrainingBatches(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmpdir)
         self.lmdb_path = os.path.join(self.tmpdir, "mixed.lmdb")
         self.spin_lmdb_path = os.path.join(self.tmpdir, "mixed-spin.lmdb")
         _create_mixed_nloc_test_lmdb(self.lmdb_path)
         _create_mixed_nloc_test_lmdb(self.spin_lmdb_path, include_spin=True)
-
-    def tearDown(self) -> None:
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _config_for_model(
         self,
@@ -952,7 +1098,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         }
         return normalize(update_deepmd_input(config, warning=False))
 
-    def _config(self, descriptor: dict) -> dict:
+    def _config(self, descriptor: dict, **model_options: Any) -> dict:
         return self._config_for_model(
             {
                 "type_map": ["O", "H"],
@@ -963,6 +1109,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
                     "seed": 1,
                 },
                 "data_stat_nbatch": 1,
+                **model_options,
             },
             {
                 "type": "ener",
@@ -985,6 +1132,18 @@ class TestRaggedTrainingBatches(unittest.TestCase):
             "neuron": [8, 16],
             "axis_neuron": 4,
             "attn_layer": 0,
+            "precision": "float64",
+            "seed": 1,
+        }
+
+    @staticmethod
+    def _dpa4c() -> dict:
+        return {
+            "type": "dpa4c",
+            "rcut": 3.0,
+            "channels": 16,
+            "lmax": 2,
+            "n_radial": 4,
             "precision": "float64",
             "seed": 1,
         }
@@ -1064,6 +1223,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         os.chdir(self.tmpdir)
         try:
             trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
             batch = trainer.training_data.get_batch()
             trainer.run()
             return trainer, batch
@@ -1081,6 +1241,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         os.chdir(self.tmpdir)
         try:
             trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
             batch = trainer.training_data.get_batch()
             trainer.run()
             return trainer, batch
@@ -1098,12 +1259,14 @@ class TestRaggedTrainingBatches(unittest.TestCase):
             # rather than its minimum, so the distances that set a splitting
             # threshold are measured on the geometry itself. A unit pair
             # threshold makes each margin the minimum pair distance in Å.
-            batch = get_trainer(copy.deepcopy(config)).training_data.get_batch()
+            probe = get_trainer(copy.deepcopy(config))
+            self.addCleanup(probe._close_data_systems)
+            batch = probe.training_data.get_batch()
             distances = compute_min_pair_margin_batch(
                 np.asarray(batch["coord"]),
                 np.asarray(batch["box"]),
                 np.asarray(batch["atype"]),
-                pair_half_thresholds(1.0, "absolute", ntypes=2),
+                pair_half_thresholds(1.0, 2),
                 n_node=np.asarray(batch["n_node"]),
             )
             threshold = float(np.median(distances))
@@ -1111,6 +1274,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
 
             config["training"]["training_data"]["min_pair_dist"] = threshold
             trainer = get_trainer(copy.deepcopy(config))
+            self.addCleanup(trainer._close_data_systems)
             self.assertTrue(trainer.training_data._reader.ragged_batches)
             dropped = False
             for _ in range(6):
@@ -1142,6 +1306,31 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         # Frame-level fields keep their frame axis.
         self.assertEqual(batch["energy"].shape[0], batch["n_node"].shape[0])
 
+    def test_bridged_graph_model_trains_on_a_flat_node_axis(self) -> None:
+        """A composition of graph-capable children takes the flat axis as well.
+
+        On the padded axis the sampler sorts the frames of a group by atom
+        count, so a bridged model would train on batches of one system size
+        each while the same learned model unbridged trains on shuffled ones.
+        """
+        config = self._config(self._dpa4c(), bridging_method="ZBL")
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
+            batch = trainer.training_data.get_batch()
+            trainer.run()
+        finally:
+            os.chdir(cwd)
+
+        self.assertEqual(
+            type(trainer.wrapper.model["Default"]).__name__, "LinearEnergyModel"
+        )
+        self.assertTrue(trainer.training_data._reader.ragged_batches)
+        self.assertEqual(batch["coord"].ndim, 2)
+        self.assertEqual(batch["coord"].shape[0], int(batch["n_node"].sum()))
+
     def test_loss_contract_can_require_rectangular_batches(self) -> None:
         """Generalized-force and Hessian labels keep their rectangular axes."""
         cases = {
@@ -1163,6 +1352,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
                     config = self._config(self._dpa1())
                     config["loss"].update(loss_params)
                     trainer = get_trainer(config)
+                    self.addCleanup(trainer._close_data_systems)
                     self.assertFalse(trainer.training_data._reader.ragged_batches)
         finally:
             os.chdir(cwd)
@@ -1175,6 +1365,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         os.chdir(self.tmpdir)
         try:
             trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
             batch = trainer.training_data.get_batch()
         finally:
             os.chdir(cwd)
@@ -1259,6 +1450,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         try:
             with patch.object(Trainer, "_epoch_length", record_layout):
                 trainer = get_trainer(config)
+                self.addCleanup(trainer._close_data_systems)
         finally:
             os.chdir(cwd)
 

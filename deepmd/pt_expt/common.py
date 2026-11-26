@@ -273,6 +273,28 @@ def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
     return None
 
 
+def _module_buffer_device(obj: torch.nn.Module, name: str) -> torch.device:
+    """Device for a numpy array assigned as a buffer on ``obj``.
+
+    Prefer the existing buffer of the same name when it already holds a
+    tensor, then any parameter or non-None buffer on the module, then
+    ``env.DEVICE``. Assignments after ``Module.to`` therefore keep residency
+    with the module rather than jumping back to the process default device.
+    """
+    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
+
+    if "_buffers" in obj.__dict__:
+        existing = obj._buffers.get(name)
+        if existing is not None:
+            return existing.device
+    for tensor in obj.parameters():
+        return tensor.device
+    for tensor in obj.buffers():
+        if tensor is not None:
+            return tensor.device
+    return env.DEVICE
+
+
 def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, Any]:
     """Common __setattr__ logic for pt_expt wrappers around dpmodel classes.
 
@@ -319,6 +341,10 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     - In dpmodel, all persistent arrays use `self.xxx = np.array(...)`. Scalars
       use `.item()`, lists use `.tolist()`. So `isinstance(value, np.ndarray)`
       reliably identifies buffer-worthy attributes.
+    - A numpy array becomes a buffer on the module's current device (see
+      :func:`_module_buffer_device`), not unconditionally on ``env.DEVICE``, so
+      a later assignment after ``Module.to`` does not pull tensors back to the
+      process default device.
     - torch.Tensor values assigned to existing buffers fall through to
       torch.nn.Module.__setattr__, which correctly updates them.
     - dpmodel objects are identified by registry lookup (exact type match), so
@@ -328,10 +354,10 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
 
     **Circular import resolution:**
 
-    The function uses a deferred import `from deepmd.pt_expt.utils import env`
-    inside the function body. This breaks the circular dependency chain:
-    common.py → utils/__init__.py → exclude_mask.py → common.py. The import is
-    cached by Python after the first call, so there's no performance penalty.
+    Device resolution and related helpers defer
+    ``from deepmd.pt_expt.utils import env`` so this module does not import
+    ``utils`` at load time (common.py → utils/__init__.py → exclude_mask.py →
+    common.py). The import is cached after the first call.
 
     **Usage pattern:**
 
@@ -354,11 +380,9 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     >>> # Case 3: dpmodel object → pt_expt module
     >>> obj.emask = AtomExcludeMaskDP(...)  # becomes AtomExcludeMask module
     """
-    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
-
     # numpy array → torch buffer
     if isinstance(value, np.ndarray) and "_buffers" in obj.__dict__:
-        tensor = torch.as_tensor(value, device=env.DEVICE)
+        tensor = torch.as_tensor(value, device=_module_buffer_device(obj, name))
         if name in obj._buffers:
             obj._buffers[name] = tensor
             return True, tensor
@@ -423,6 +447,32 @@ def register_buffer_replacing_slot(
     if hasattr(obj, name) and name not in obj._buffers:
         delattr(obj, name)
     torch.nn.Module.register_buffer(obj, name, tensor)
+
+
+def promote_buffers(
+    module: torch.nn.Module, names: Iterable[str], trainable: bool
+) -> None:
+    """Re-register float buffers of a module as parameters.
+
+    ``dpmodel_setattr`` registers every numpy attribute as a buffer; the
+    learned ones among them are promoted here once the module is built or
+    loaded.
+
+    Parameters
+    ----------
+    module : torch.nn.Module
+        The module that owns the buffers.
+    names : Iterable[str]
+        Names of the buffers; a name without a float buffer is skipped.
+    trainable : bool
+        Whether the parameters require gradients.
+    """
+    for name in names:
+        buf = module._buffers.get(name)
+        if buf is None or not buf.is_floating_point():
+            continue
+        del module._buffers[name]
+        setattr(module, name, torch.nn.Parameter(buf, requires_grad=trainable))
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +606,20 @@ def torch_module(
             for name in self._non_persistent_buffers_set:
                 state_dict.pop(prefix + name, None)
             super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+    # A statistics prediction covers every frame of a sampled system, and the
+    # reference rows of a vacuum reference beside them; evaluate it in bounded,
+    # gradient-free inference batches.
+    if hasattr(module, "_get_forward_wrapper_func"):
+
+        def _get_forward_wrapper_func(self: Any) -> Callable:
+            from deepmd.pt_expt.utils.stat import (
+                batch_stat_forward,
+            )
+
+            return batch_stat_forward(module._get_forward_wrapper_func(self))
+
+        TorchModule._get_forward_wrapper_func = _get_forward_wrapper_func
 
     # Auto-generate forward -> call redirect if not explicitly defined
     if hasattr(module, "call") and "forward" not in module.__dict__:

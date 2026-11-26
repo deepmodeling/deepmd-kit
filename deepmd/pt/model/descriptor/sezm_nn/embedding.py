@@ -19,6 +19,11 @@ from typing import (
 import torch
 import torch.nn as nn
 
+from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+    spin_environment_coordinates,
+    spin_environment_invariants,
+    spin_pair_invariants,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -42,9 +47,6 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
-from .cartesian import (
-    build_cartesian_basis,
-)
 from .indexing import (
     build_gie_zonal_index,
     get_so3_dim_of_lmax,
@@ -199,15 +201,6 @@ class GeometricInitialEmbedding(nn.Module):
             node_radial_l_index,
             persistent=True,
         )
-        # The l=1 coefficients (packed rows 1..3) are the first three entries of
-        # the non-scalar sequence ``node_row_index = [1, 2, ..., D-1]``, so the
-        # native neighbor-spin l=1 message folds in at these local positions.
-        self.register_buffer(
-            "l1_local_index",
-            torch.arange(3, device=self.device, dtype=torch.long),
-            persistent=False,
-        )
-
         # === Fused message-and-scatter operator ===
         # The reference composition materializes the per-edge message, an
         # (E, D-1, C) tensor that dominates the cost of this module. The fused
@@ -233,7 +226,6 @@ class GeometricInitialEmbedding(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         zonal_coupling: torch.Tensor | None = None,
-        spin_l1_message: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Parameters
@@ -247,12 +239,6 @@ class GeometricInitialEmbedding(nn.Module):
         zonal_coupling
             Optional precomputed zonal coupling with shape (E, D-1). If None,
             it is gathered from ``edge_cache.Dt_full``.
-        spin_l1_message
-            Optional per-edge neighbor-spin l=1 message with shape (E, 3, C) for
-            the native spin scheme (built by ``SpinEmbedding.edge_l1``). It is
-            added to the l=1 rows of the per-edge message, so it shares this
-            module's scatter and degree normalization with the geometric
-            message.
 
         Returns
         -------
@@ -287,11 +273,7 @@ class GeometricInitialEmbedding(nn.Module):
         # Each non-scalar packed row reuses the radial feature of its degree l.
         # The fused operator spans this broadcast and the scatter of Step 4, so
         # it takes over whenever nothing else joins the message in between.
-        if (
-            self._can_fuse_scatter(zonal_coupling)
-            and spin_l1_message is None
-            and edge_cache.csr_cache is not None
-        ):
+        if self._can_fuse_scatter(zonal_coupling) and edge_cache.csr_cache is not None:
             return self.forward_fused_scatter(
                 n_nodes, edge_cache, radial_feat, zonal_coupling
             )
@@ -302,15 +284,6 @@ class GeometricInitialEmbedding(nn.Module):
         non_scalar_message = (
             zonal_coupling.unsqueeze(-1) * radial_value_for_row
         )  # (E, D-1, C)
-
-        # === Step 3b. Fold in the neighbor-spin l=1 message (native spin) ===
-        # The l=1 coefficients occupy the first three packed non-scalar rows, so
-        # the neighbor-spin message joins the geometric message there and then
-        # shares the scatter and degree normalization below.
-        if spin_l1_message is not None:
-            non_scalar_message = non_scalar_message.index_add(
-                1, self.l1_local_index, spin_l1_message
-            )
 
         # === Step 4. Scatter to nodes and normalize ===
         # Avoid advanced-index writeback (out[:, non_scalar_row_index, :]) which produces a copy.
@@ -428,6 +401,11 @@ class EnvironmentInitialEmbedding(nn.Module):
         4. D matrix: `D = env_agg^T @ env_agg[:, :, :axis_dim]`
         5. Output: projection of flattened D matrix into FiLM logits
 
+    Native spin adds masked vector, squared-magnitude and homogeneous
+    quadrupole densities to the same reduction. Their magnitude density and
+    separate vector/quadrupole Grams feed an independent output projection;
+    the geometric projection retains its own weights and contraction.
+
     Parameters
     ----------
     ntypes : int
@@ -452,11 +430,10 @@ class EnvironmentInitialEmbedding(nn.Module):
     eps : float
         Small epsilon for numerical stability.
     use_spin : list[bool] | None
-        Per-type spin flags (native spin scheme). When provided, the neighbor
-        spin is appended as extra coordinate channels of the environment matrix,
-        so the inner product ``D = M^T M`` additionally yields the neighbor
-        spin-spin invariants. A per-type mask gates the channel, so a
-        non-magnetic neighbor contributes zero and carries zero magnetic force.
+        Per-type spin flags. Masked neighbor vector, magnitude and quadrupole
+        densities share the geometric radial/type weights and have independent
+        invariant output weights. Non-magnetic moments contribute zero at every
+        derivative order.
     dtype : torch.dtype
         Parameter dtype.
     trainable : bool
@@ -507,18 +484,12 @@ class EnvironmentInitialEmbedding(nn.Module):
         self.dtype = dtype
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
-        # The environment matrix carries the 4 geometric channels ``[s, s*r_hat]``
-        # plus, for the native spin scheme, the 3 envelope-gated neighbor-spin
-        # components, so the inner product ``D = M^T M`` yields the neighbor
-        # spin-spin invariants alongside the geometric ones.
+        # Geometry and spin families share the radial/type weights and the
+        # destination reduction. Independent contractions retain their distinct
+        # spatial and time-reversal transformation laws.
         self.geometry_coord_dim = 4
         self.coord_dim = self.geometry_coord_dim + (
-            3 if self.spin_flags is not None else 0
-        )
-        self.register_buffer(
-            "eps_sq_tensor",
-            torch.tensor(self.eps * self.eps, dtype=self.dtype, device=self.device),
-            persistent=False,
+            9 if self.spin_flags is not None else 0
         )
 
         # === RBF projection: n_radial -> rbf_out_dim (two-layer MLP) ===
@@ -588,13 +559,7 @@ class EnvironmentInitialEmbedding(nn.Module):
             seed=seed_out,
         )
 
-        # === Native spin: per-type mask and post-quadratic activation gate ===
-        # The mask gates the neighbor-spin channel by source type, so a
-        # non-magnetic neighbor contributes zero and (critically) carries zero
-        # magnetic force ``-dE/ds``. ``spin_scale`` multiplies the spin-only
-        # contribution after the environment quadratic form. This preserves
-        # SO(3) invariance and provides a linear, learnable gate that can start
-        # from exactly zero during spin-free fine-tuning.
+        # === Native spin: masked densities and independent invariant readout ===
         if self.spin_flags is not None:
             spin_mask = torch.tensor(
                 [1.0 if flag else 0.0 for flag in self.spin_flags],
@@ -602,9 +567,15 @@ class EnvironmentInitialEmbedding(nn.Module):
                 device=self.device,
             )
             self.register_buffer("spin_mask", spin_mask, persistent=False)
-            self.spin_scale = nn.Parameter(
-                torch.zeros(1, dtype=self.dtype, device=self.device),
-                requires_grad=trainable,
+            self.spin_output_proj = MLPLayer(
+                self.embed_dim * (1 + 2 * self.axis_dim),
+                2 * self.channels,
+                bias=False,
+                activation_function=None,
+                init="final",
+                precision=self.precision,
+                seed=child_seed(seed, 4),
+                trainable=trainable,
             )
 
         for p in self.parameters():
@@ -631,10 +602,9 @@ class EnvironmentInitialEmbedding(nn.Module):
             Number of nodes (N = nf * nloc).
         spin : torch.Tensor | None
             Per-node spin vectors with shape (N, 3) for the native spin scheme.
-            Used only when ``use_spin`` is set; the source (neighbor) spin is
-            appended to the environment matrix as an envelope-gated coordinate
-            channel. When ``None`` the spin channels are zero-padded so the
-            coordinate dimension stays fixed.
+            Used only when ``use_spin`` is set. The masked source moment forms
+            vector, magnitude and quadrupole coordinates before envelope gating.
+            When ``None`` these coordinates are zero-padded.
 
         Returns
         -------
@@ -648,17 +618,15 @@ class EnvironmentInitialEmbedding(nn.Module):
 
         # === Step 1. Construct r_tilde = [s, s*r_hat] ===
         # s = edge_env * (1/r), r_hat = edge_vec / r
-        r_sq = (edge_vec * edge_vec).sum(dim=-1, keepdim=True)  # (E, 1)
-        inv_r = torch.rsqrt(r_sq + self.eps_sq_tensor)  # (E, 1)
+        inv_r = torch.reciprocal(edge_cache.edge_len)
         s = edge_env * inv_r  # (E, 1)
         r_hat = edge_vec * inv_r  # (E, 3)
         r_tilde = torch.cat([s, s * r_hat], dim=-1)  # (E, 4)
 
-        # === Step 1b. Append neighbor spin as extra coordinate channels ===
-        # The source (neighbor) spin enters the environment matrix gated by the
-        # same C^3 envelope as the geometry, so it decays smoothly at rcut and a
-        # non-magnetic neighbor (s_j = 0) contributes exactly zero. The linear
-        # form keeps the magnetic force continuous at s = 0.
+        # === Step 1b. Form the masked spin families before envelope gating ===
+        # Vector, magnitude and quadrupole coordinates are homogeneous in the
+        # moment. The common C3 envelope multiplies each family once, retaining
+        # smooth coordinate and spin derivatives at zero and at the cutoff.
         if self.spin_flags is not None:
             if spin is not None:
                 spin_src = spin.index_select(0, src).to(dtype=r_tilde.dtype)  # (E, 3)
@@ -667,9 +635,9 @@ class EnvironmentInitialEmbedding(nn.Module):
                 mask = self.spin_mask.index_select(
                     0, atype_flat.index_select(0, src)
                 ).unsqueeze(-1)  # (E, 1)
-                spin_chan = edge_env * spin_src * mask  # (E, 3)
+                spin_chan = edge_env * spin_environment_coordinates(spin_src * mask)
             else:
-                spin_chan = r_tilde.new_zeros(r_tilde.shape[0], 3)
+                spin_chan = r_tilde.new_zeros(r_tilde.shape[0], 9)
             r_tilde = torch.cat([r_tilde, spin_chan], dim=-1)  # (E, coord_dim)
 
         # === Step 2. Compute G network input and output ===
@@ -702,31 +670,31 @@ class EnvironmentInitialEmbedding(nn.Module):
         env_agg = env_agg * edge_cache.inv_sqrt_deg
 
         # === Step 5. D matrix construction: D = env_agg^T @ env_agg[:,:,:axis_dim] ===
-        # Summing over the coordinate axis makes D invariant to a joint rotation
-        # of the geometry and the spin channels; with the spin channels present,
-        # D additionally carries the neighbor spin-spin invariants.
+        # Each family contracts independently: geometric invariants retain
+        # their projection, while spin invariants receive separate output
+        # weights without spin/geometry or odd-time-reversal cross terms.
         if self.spin_flags is None:
             env_agg_t = env_agg.permute(0, 2, 1)  # (N, embed_dim, coord_dim)
             env_agg_axis = env_agg[:, :, : self.axis_dim]
             D = torch.bmm(env_agg_t, env_agg_axis)
         else:
             geometry_agg = env_agg[:, : self.geometry_coord_dim, :]
-            spin_agg = env_agg[:, self.geometry_coord_dim :, :]
-            D_geometry = torch.bmm(
+            D = torch.bmm(
                 geometry_agg.permute(0, 2, 1),
                 geometry_agg[:, :, : self.axis_dim],
             )
-            D_spin = torch.bmm(
-                spin_agg.permute(0, 2, 1),
-                spin_agg[:, :, : self.axis_dim],
-            )
-            D = D_geometry + self.spin_scale * D_spin
 
         # === Step 6. Output projection for FiLM logits ===
         D_flat = D.reshape(
             n_nodes, self.embed_dim * self.axis_dim
         )  # (N, embed_dim*axis_dim)
-        return self.output_proj(D_flat)
+        logits = self.output_proj(D_flat)
+        if self.spin_flags is not None:
+            spin_features = spin_environment_invariants(
+                env_agg[:, self.geometry_coord_dim :, :], self.axis_dim
+            )
+            logits = logits + self.spin_output_proj(spin_features)
+        return logits
 
     def serialize(self) -> dict[str, Any]:
         trainable = all(p.requires_grad for p in self.parameters())
@@ -863,51 +831,15 @@ class ChargeSpinEmbedding(nn.Module):
 
 
 class SpinEmbedding(nn.Module):
-    """
-    Per-atom spin embedding for the native spin scheme.
-
-    The per-atom spin vector ``s`` is injected as an equivariant extension of
-    the type embedding, producing two additive contributions to the descriptor
-    node features:
-
-    - **l = 0 (invariant):** a small network of the squared magnitude ``|s|^2``
-      yields a per-channel scalar added to the scalar type embedding. The
-      squared magnitude is used (rather than ``|s|``) so the feature is smooth
-      at ``s = 0`` and its gradient there vanishes, keeping the magnetic force
-      continuous as a spin crosses zero.
-    - **l = 1 (equivariant):** the Cartesian spin vector is mapped to the packed
-      ``l = 1`` coefficients through the SeZM Wigner-D convention (derived from
-      :func:`build_cartesian_basis`), then scaled by a per-type per-channel
-      weight. The map is linear in ``s``, so the contribution vanishes at
-      ``s = 0`` and rotates as an ``l = 1`` object under SO(3), i.e.
-      ``cart_to_l1(R s) = D^1(R) cart_to_l1(s)``.
-
-    Both contributions are gated by a per-type spin mask, so atom types without
-    spin contribute exactly zero regardless of their (nominally zero) input.
-
-    Parameters
-    ----------
-    ntypes
-        Number of (real) atom types.
-    channels
-        Number of channels per (l, m) coefficient.
-    use_spin
-        Per-type boolean flags marking which atom types carry spin.
-    activation_function
-        Activation used by the magnitude network.
-    dtype
-        Parameter dtype.
-    seed
-        Random seed for initialization.
-    trainable
-        Whether parameters are trainable.
-    """
+    """Embed time-even on-site and pair spin invariants for the SeZM backbone."""
 
     def __init__(
         self,
         *,
         ntypes: int,
         channels: int,
+        n_radial: int,
+        spin_mode: str = "orbit",
         use_spin: list[bool],
         activation_function: str = "silu",
         dtype: torch.dtype,
@@ -917,6 +849,10 @@ class SpinEmbedding(nn.Module):
         super().__init__()
         self.ntypes = int(ntypes)
         self.channels = int(channels)
+        self.n_radial = int(n_radial)
+        self.spin_mode = spin_mode
+        if spin_mode not in {"exchange", "orbit"}:
+            raise ValueError("`spin_mode` must be exchange or orbit")
         self.activation_function = str(activation_function)
         self.dtype = dtype
         self.device = env.DEVICE
@@ -937,15 +873,6 @@ class SpinEmbedding(nn.Module):
             device=self.device,
         )
         self.register_buffer("spin_mask", spin_mask, persistent=False)
-
-        # === Cartesian -> packed l=1 projection ===
-        # Derived from the SeZM packed basis so a spin vector rotates with the
-        # same Wigner-D block as the geometry. Non-persistent constant.
-        self.register_buffer(
-            "cart_to_l1",
-            self._build_cart_to_l1_matrix(),
-            persistent=False,
-        )
 
         # === l=0 magnitude network: |s|^2 -> channels ===
         # The leading ``1 -> channels`` layer carries a singleton input
@@ -971,124 +898,41 @@ class SpinEmbedding(nn.Module):
             trainable=trainable,
         )
 
-        # === l=1 per-type per-channel weight ===
-        # ``adam_`` prefix routes the table to Adam in HybridMuon, matching the
-        # type-embedding treatment for per-type lookup parameters.
-        self.adam_spin_vec_weight = nn.Parameter(
-            torch.zeros(
-                self.ntypes, self.channels, device=self.device, dtype=self.dtype
-            )
+        self.pair_layer = MLPLayer(
+            3 if spin_mode == "exchange" else 6,
+            self.n_radial,
+            bias=False,
+            activation_function=None,
+            init="final",
+            precision=self.precision,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
         )
-
-        # === l=1 per-source-type per-channel weight for neighbor aggregation ===
-        # Separate from the on-site weight: this scales the neighbor's spin
-        # direction before it is aggregated into the center node's l=1 seed.
-        self.adam_spin_nbr_weight = nn.Parameter(
-            torch.zeros(
-                self.ntypes, self.channels, device=self.device, dtype=self.dtype
-            )
-        )
-
         for p in self.parameters():
             p.requires_grad = trainable
 
-    def forward(
-        self, spin: torch.Tensor, atype: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Compute the l=0 and l=1 spin contributions.
+    def conditioned_spin(self, spin: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
+        """Mask non-magnetic moments before forming any contraction."""
+        return (
+            spin.to(dtype=self.dtype) * self.spin_mask.index_select(0, atype)[:, None]
+        )
 
-        Parameters
-        ----------
-        spin
-            Per-atom spin vectors with shape (N, 3).
-        atype
-            Per-atom types with shape (N,).
+    def forward(self, spin: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
+        """Return scalar type conditioning with shape (N, channels)."""
+        moment = self.conditioned_spin(spin, atype)
+        magnitude = (moment * moment).sum(dim=-1, keepdim=True)
+        hidden = self.mag_layer1(magnitude) - self.mag_layer1(moment.new_zeros(1, 1))
+        return self.mag_layer2(hidden)
 
-        Returns
-        -------
-        tuple[torch.Tensor, torch.Tensor]
-            ``(scalar, vector)`` where ``scalar`` has shape (N, channels) for
-            the l=0 contribution and ``vector`` has shape (N, 3, channels) for
-            the packed l=1 contribution (orders m = -1, 0, +1). Both are exactly
-            zero for atom types without spin.
-        """
-        spin = spin.to(dtype=self.dtype)
-        mask = self.spin_mask.index_select(0, atype).unsqueeze(-1)  # (N, 1)
-
-        # === l=0: smooth invariant magnitude embedding ===
-        mag2 = (spin * spin).sum(dim=-1, keepdim=True)  # (N, 1)
-        scalar: torch.Tensor = self.mag_layer2(self.mag_layer1(mag2)) * mask  # (N, C)
-
-        # === l=1: equivariant direction embedding (linear in spin) ===
-        l1 = torch.einsum("dk,nk->nd", self.cart_to_l1, spin)  # (N, 3)
-        weight = self.adam_spin_vec_weight.index_select(0, atype)  # (N, C)
-        vector = (
-            l1.unsqueeze(-1) * weight.unsqueeze(1) * mask.unsqueeze(-1)
-        )  # (N, 3, C)
-
-        return scalar, vector
-
-    def edge_l1(
-        self,
-        spin: torch.Tensor,
-        atype: torch.Tensor,
-        edge_cache: EdgeFeatureCache,
+    def edge_features(
+        self, spin: torch.Tensor, atype: torch.Tensor, edge_cache: EdgeFeatureCache
     ) -> torch.Tensor:
-        """
-        Build the per-edge neighbor-spin l=1 message for the GIE aggregation.
-
-        Each edge carries the packed ``l = 1`` coefficients of the source
-        (neighbor) spin, scaled by a per-source-type per-channel weight and
-        gated by the C^3 envelope. The message is returned per edge; the
-        geometric initial embedding folds it into the l=1 rows and applies the
-        shared scatter and degree normalization, so a neighbor's spin direction
-        enters an atom's l=1 backbone before any interaction block (the spin
-        analogue of the geometric initial embedding).
-
-        Parameters
-        ----------
-        spin
-            Per-node spin vectors with shape (N, 3).
-        atype
-            Per-node types with shape (N,).
-        edge_cache
-            Edge cache providing ``src`` and ``edge_env``.
-
-        Returns
-        -------
-        torch.Tensor
-            Per-edge packed l=1 message with shape (E, 3, channels), exactly
-            zero for non-magnetic neighbors.
-        """
-        spin = spin.to(dtype=self.dtype)
-        spin_src = spin.index_select(0, edge_cache.src)  # (E, 3)
-        atype_src = atype.index_select(0, edge_cache.src)  # (E,)
-
-        # Packed l=1 of the neighbor spin; the global-frame vector needs no
-        # Wigner-D rotation (it rotates with the geometry by construction).
-        l1 = torch.einsum("dk,ek->ed", self.cart_to_l1, spin_src)  # (E, 3)
-        weight = self.adam_spin_nbr_weight.index_select(0, atype_src)  # (E, C)
-        mask = self.spin_mask.index_select(0, atype_src)  # (E,)
-        gate = edge_cache.edge_env * mask.unsqueeze(-1)  # (E, 1)
-        return gate.unsqueeze(-1) * l1.unsqueeze(-1) * weight.unsqueeze(1)  # (E, 3, C)
-
-    def _build_cart_to_l1_matrix(self) -> torch.Tensor:
-        """
-        Build the ``(3, 3)`` Cartesian-to-packed-``l=1`` projection.
-
-        The packed ``l = 1`` coefficient of a vector ``v`` is obtained by
-        projecting the skew-symmetric matrix ``[v]_x`` onto the antisymmetric
-        ``l = 1`` block of :func:`build_cartesian_basis`. With packed order
-        ``m = -1, 0, +1``, row ``d`` and Cartesian component ``k`` give
-        ``M[d, k] = <[e_k]_x, B[1 + d]>_F``, so ``coeff = M @ v`` and
-        ``M @ (R v) = D^1(R) (M @ v)``.
-        """
-        basis_l1 = build_cartesian_basis(1, dtype=self.dtype, device=self.device)[1:4]
-        # Skew (cross-product) matrices of the Cartesian unit vectors, following
-        # ``[v]_x w = v x w`` (matching ``build_edge_cartesian_tensors``).
-        skew_basis = torch.zeros(3, 3, 3, dtype=self.dtype, device=self.device)
-        skew_basis[0, 1, 2], skew_basis[0, 2, 1] = -1.0, 1.0
-        skew_basis[1, 0, 2], skew_basis[1, 2, 0] = 1.0, -1.0
-        skew_basis[2, 0, 1], skew_basis[2, 1, 0] = -1.0, 1.0
-        return torch.einsum("kij,dij->dk", skew_basis, basis_l1)
+        """Return enveloped pair conditioning with shape (E, n_radial)."""
+        features = spin_pair_invariants(
+            self.conditioned_spin(spin, atype),
+            edge_cache.src,
+            edge_cache.dst,
+            edge_cache.edge_vec,
+            self.spin_mode,
+        )
+        return self.pair_layer(features) * edge_cache.edge_env

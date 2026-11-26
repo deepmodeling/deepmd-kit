@@ -100,6 +100,29 @@ def test_finalize_compiled_lower_relaxes_views(monkeypatch) -> None:
     assert torch.ops.aten.reshape.default in targets
 
 
+@REQUIRES_SUPPORTED_COMPILE
+def test_finalize_compiled_lower_traces_element_counts_in_one_frame(
+    monkeypatch,
+) -> None:
+    """Dynamo traces the element count of a one-element tensor without a break."""
+    graph = torch.fx.Graph()
+    index = graph.placeholder("index")
+    count = graph.call_function(torch.ops.aten.sym_numel.default, (index,))
+    graph.output(graph.call_function(torch.ops.aten.add.Tensor, (index, count)))
+    traced = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    monkeypatch.setattr(training_module, "apply_global_compile_patches", lambda: None)
+    with monkeypatch.context() as patch:
+        patch.setattr(torch, "compile", lambda module, **_kwargs: module)
+        lowered = training_module._finalize_compiled_lower(traced, compile_opts=None)
+
+    # Dynamo specializes an axis of length one, so the count is an integer;
+    # ``fullgraph`` turns a graph break into an error.
+    compiled = torch.compile(lowered, backend="eager", dynamic=True, fullgraph=True)
+    index = torch.arange(1, device="cpu")
+    torch.testing.assert_close(compiled(index), index + 1)
+
+
 # Descriptor configs used to extend compile-correctness tests to non-trivial
 # architectures.  ``precision: float64`` is set so the strict ``atol=rtol=1e-10``
 # comparison holds at machine epsilon.
@@ -418,14 +441,23 @@ class TestTraining(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported optimizer type: LKF"):
             get_trainer(config)
 
-    def _run_training(self, config: dict) -> None:
-        """Run training and verify lcurve + checkpoint creation."""
+    def _run_training(
+        self,
+        config: dict,
+        prepare: Callable[["training_module.Trainer"], None] | None = None,
+    ) -> "training_module.Trainer":
+        """Run training, verify lcurve + checkpoint creation, return the trainer.
+
+        ``prepare`` may adjust the trainer before the first step.
+        """
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_train_")
         try:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
                 trainer = get_trainer(config)
+                if prepare is not None:
+                    prepare(trainer)
                 trainer.run()
 
                 # Read lcurve to verify training ran
@@ -443,6 +475,7 @@ class TestTraining(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+        return trainer
 
     def test_training_loop(self) -> None:
         """Run a few training steps and verify outputs."""
@@ -543,6 +576,7 @@ class TestTraining(unittest.TestCase):
         config = _make_config(self.data_dir, numb_steps=2)
         config["training"]["save_freq"] = 100
         config["training"]["enable_ema"] = True
+        config["loss"]["symm_virial"] = True
         config["validating"] = {
             "full_validation": True,
             "ema_full_validation": True,
@@ -560,6 +594,10 @@ class TestTraining(unittest.TestCase):
             trainer = get_trainer(config)
             self.assertIsNotNone(trainer.full_validator)
             self.assertIsNotNone(trainer.ema_full_validator)
+            for validator in (trainer.full_validator, trainer.ema_full_validator):
+                self.assertIs(
+                    validator.state_store["full_validation_symm_virial"], True
+                )
             trainer.run()
 
             # The live flow improves at step 1, the EMA flow at step 2.
@@ -633,7 +671,9 @@ class TestTraining(unittest.TestCase):
         """Run compiled training of a ZBL-bridged DPA4C composition.
 
         The composition has no single fitting net, so the buffers the compiled
-        graph reads per call belong to its atomic model alone.
+        graph reads per call belong to its atomic model alone. The contact
+        clamp records the contacts of every batch outside the compiled graph:
+        edges started above every contact end at the shortest ones.
         """
         config = _make_config(self.data_dir, numb_steps=5)
         config["model"] = {
@@ -648,14 +688,27 @@ class TestTraining(unittest.TestCase):
             },
             "fitting_net": {"neuron": [16, 16], "seed": 1},
             "bridging_method": "zbl",
-            "bridging_r_inner": 0.5,
-            "bridging_r_outer": 0.8,
             "data_stat_nbatch": 1,
         }
         config["training"]["enable_compile"] = True
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
-        self._run_training(config)
+
+        def start_above_every_contact(trainer: "training_module.Trainer") -> None:
+            clamp = trainer.model.atomic_model.models[0].descriptor.contact_clamp
+            with torch.no_grad():
+                clamp.edges[:2, :2] = 10.0
+
+        trainer = self._run_training(config, prepare=start_above_every_contact)
+        clamp = trainer.model.atomic_model.models[0].descriptor.contact_clamp
+        edges = clamp.edges
+        # Only a contact below the covalent start of its pair enters the record:
+        # the O-H bond of the water frames does, the O-O and H-H separations do
+        # not and keep the covalent start as their edge.
+        self.assertTrue(torch.isfinite(clamp.contacts[0, 1]).all())
+        self.assertTrue((edges[:2, :2] < 10.0).all())
+        self.assertAlmostEqual(edges[0, 1].item(), clamp.contacts[0, 1, -1].item())
+        self.assertLess(edges[0, 1].item(), 1.2)
 
     @REQUIRES_SUPPORTED_COMPILE
     def test_training_loop_compiled_zbl(self) -> None:
@@ -766,69 +819,6 @@ class TestCompiledModelGetattr(unittest.TestCase):
 
 
 @REQUIRES_SUPPORTED_COMPILE
-class TestCompiledDynamicShapes(unittest.TestCase):
-    """Test that _CompiledModel handles varying nall via dynamic shapes."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        data_dir = os.path.join(EXAMPLE_DIR, "data")
-        if not os.path.isdir(data_dir):
-            raise unittest.SkipTest(f"Example data not found: {data_dir}")
-        cls.data_dir = data_dir
-
-    def test_compiled_handles_varying_nall(self) -> None:
-        """Run several training steps, assert finite loss each step.
-
-        With ``tracing_mode="symbolic"`` + ``dynamic=True``, nall is a
-        symbolic dim so nall growth across batches is handled without
-        any recompile or padding.
-        """
-        from deepmd.pt_expt.train.training import (
-            _CompiledModel,
-        )
-
-        config = _make_config(self.data_dir, numb_steps=5)
-        config["training"]["enable_compile"] = True
-        config = update_deepmd_input(config, warning=False)
-        config = normalize(config)
-
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_dynamic_")
-        try:
-            old_cwd = os.getcwd()
-            os.chdir(tmpdir)
-            try:
-                trainer = get_trainer(config)
-
-                # The wrapper.model should be a _CompiledModel
-                compiled_model = trainer.wrapper.model["Default"]
-                self.assertIsInstance(compiled_model, _CompiledModel)
-                # Lazy compile: no graph exists before any forward.
-                self.assertEqual(compiled_model._compiled_lower_by_mode, {})
-
-                trainer.wrapper.train()
-                for step in range(3):
-                    trainer.optimizer.zero_grad(set_to_none=True)
-                    inp, lab = trainer.get_data(is_train=True)
-                    lr = trainer.scheduler.get_last_lr()[0]
-                    _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
-                    loss.backward()
-                    trainer.optimizer.step()
-
-                    # After the first forward the training graph must exist,
-                    # keyed by the mode it was traced in.
-                    if step == 0:
-                        self.assertIn(True, compiled_model._compiled_lower_by_mode)
-
-                    # Loss should be a finite scalar at every step
-                    self.assertFalse(torch.isnan(loss))
-                    self.assertFalse(torch.isinf(loss))
-            finally:
-                os.chdir(old_cwd)
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-@REQUIRES_SUPPORTED_COMPILE
 class TestCompiledConsistency(unittest.TestCase):
     """Verify compiled model produces the same energy/force/virial as uncompiled."""
 
@@ -929,6 +919,30 @@ class TestCompiledConsistency(unittest.TestCase):
         model["descriptor"].update(
             {
                 "l_schedule": [1, 1],
+                "so3_readout": "mlp",
+                "precision": "float64",
+                "use_amp": False,
+            }
+        )
+        model["fitting_net"]["precision"] = "float64"
+        self._check_gradient_consistency(model)
+
+    def test_compiled_dpa45_gradients_match_uncompiled(self) -> None:
+        """The DPA4.5 descriptor options keep compiled force-loss gradients exact.
+
+        The measured density floor, per-block cutoffs and mixing depths, a
+        rising degree schedule, the read-out norm and natural parity all enter
+        the traced training graph.
+        """
+        model = copy.deepcopy(_MODEL_DPA4)
+        model["descriptor"].update(
+            {
+                "rcut": [3.0, 4.0],
+                "l_schedule": [1, 2],
+                "mixing_layers": [1, 2],
+                "density_floor": 8.0,
+                "readout_norm": True,
+                "parity": True,
                 "so3_readout": "mlp",
                 "precision": "float64",
                 "use_amp": False,
@@ -1062,9 +1076,10 @@ class TestGetData(unittest.TestCase):
                 trainer = get_trainer(config)
                 input_dict, label_dict = trainer.get_data(is_train=True)
 
-                # coord should be a tensor with requires_grad
+                # A batch is plain data: the wrapper marks the coordinates
+                # for the force computation inside its forward.
                 self.assertIsInstance(input_dict["coord"], torch.Tensor)
-                self.assertTrue(input_dict["coord"].requires_grad)
+                self.assertFalse(input_dict["coord"].requires_grad)
 
                 # atype should be an integer tensor
                 self.assertIsInstance(input_dict["atype"], torch.Tensor)
@@ -1112,7 +1127,7 @@ def test_replicated_numpy_filter_reads_a_complete_local_pass(
     trainer.multi_task = False
     trainer.world_size = world_size
     trainer.training_data_by_task = {"Default": data}
-    trainer.min_pair_dist_by_task = {"Default": 0.5}
+    trainer.pair_filter_enabled_by_task = {"Default": True}
     with (
         patch("deepmd.utils.data.dp_random.shuffle"),
         patch.object(data, "get_batch", wraps=data.get_batch) as get_batch,
@@ -1136,8 +1151,12 @@ class TestMinPairDistFilter(unittest.TestCase):
             raise unittest.SkipTest(f"Example data not found: {data_dir}")
         cls.data_dir = data_dir
 
-    def _trainer(self, min_pair_dist: float) -> "training_module.Trainer":
+    def _trainer(
+        self, min_pair_dist: float, model: dict | None = None
+    ) -> "training_module.Trainer":
         config = _make_config(self.data_dir, numb_steps=5)
+        if model is not None:
+            config["model"] = copy.deepcopy(model)
         config["training"]["training_data"]["batch_size"] = 8
         config["training"]["training_data"]["min_pair_dist"] = min_pair_dist
         config = normalize(update_deepmd_input(config, warning=False))
@@ -1155,9 +1174,9 @@ class TestMinPairDistFilter(unittest.TestCase):
 
     def test_frames_below_the_threshold_are_dropped(self) -> None:
         def body() -> None:
-            # A frame that clears its window carries a margin it reaches
-            # rather than its minimum, so the distances that set a splitting
-            # threshold are measured on the geometry itself.
+            # A frame that clears the filter radius carries a margin it
+            # reaches rather than its minimum, so the distances that set a
+            # splitting threshold are measured on the geometry itself.
             probe = self._trainer(1.0e-3)
             input_dict, label_dict = probe.get_data(is_train=True)
             self.assertEqual(label_dict["pair_margin"].numel(), 8)
@@ -1165,7 +1184,7 @@ class TestMinPairDistFilter(unittest.TestCase):
                 input_dict["coord"].detach().cpu().numpy(),
                 input_dict["box"].detach().cpu().numpy(),
                 input_dict["atype"].detach().cpu().numpy(),
-                pair_half_thresholds(1.0, "absolute", ntypes=8),
+                pair_half_thresholds(1.0, 8),
             )
             threshold = float(np.median(distances))
             self.assertTrue((distances < threshold).any())
@@ -1192,8 +1211,9 @@ class TestMinPairDistFilter(unittest.TestCase):
             # The statistics see the filtered frames, so they fail first.
             with self.assertRaisesRegex(RuntimeError, "beyond the filter radius"):
                 self._trainer(100.0)
-            # Widening the registered window past every pair empties every
-            # batch, which the training loop reports after one epoch of retries.
+            # Raising the registered filter radius past every pair empties
+            # every batch, which the training loop reports after one epoch of
+            # retries.
             trainer = self._trainer(1.0e-3)
             trainer.training_data_by_task[
                 training_module.DEFAULT_TASK_KEY
@@ -1217,6 +1237,38 @@ class TestMinPairDistFilter(unittest.TestCase):
             trainer = self._trainer(0.9)
             trainer.run()
             self.assertTrue(os.path.exists("lcurve.out"))
+
+        self._run(body)
+
+    def test_a_bridged_model_is_filtered_only_when_asked(self) -> None:
+        """A bridged model implies no frame filter; the dataset section owns it.
+
+        The contact clamp records the shortest contacts of the training data
+        and the analytical term repels the closer pairs, so no radius is
+        taken from the model: a bridged model without ``min_pair_dist``
+        trains on every frame, and with it filters at that distance like any
+        other model.
+        """
+        bridged = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 8,
+                "seed": 1,
+            },
+            "fitting_net": {"neuron": [16, 16], "seed": 1},
+            "bridging_method": "zbl",
+            "data_stat_nbatch": 1,
+        }
+
+        def body() -> None:
+            _, unfiltered = self._trainer(0.0, bridged).get_data(is_train=True)
+            self.assertNotIn("pair_margin", unfiltered)
+            _, filtered = self._trainer(0.9, bridged).get_data(is_train=True)
+            self.assertIn("pair_margin", filtered)
 
         self._run(body)
 
@@ -2018,6 +2070,7 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
                 trainer_c = get_trainer(self._make_varying_config(True, descriptor))
                 compiled_model = trainer_c.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
+                self.assertEqual(compiled_model._compiled_lower_by_mode, {})
 
                 # Sync weights so predictions can be compared exactly
                 compiled_model.original_model.load_state_dict(
@@ -2044,6 +2097,8 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
                         out_c, loss_c, _ = trainer_c.wrapper(
                             **inp, cur_lr=lr, label=lab
                         )
+                        self.assertIn(True, compiled_model._compiled_lower_by_mode)
+                        self.assertTrue(torch.isfinite(loss_c))
 
                         ctx = f"step={step} "
                         _assert_compile_predictions_match(self, out_c, out_uc, ctx=ctx)

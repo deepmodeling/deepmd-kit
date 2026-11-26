@@ -31,6 +31,9 @@ from deepmd.pt_expt.descriptor import (
 from deepmd.pt_expt.fitting import (
     BaseFitting,
 )
+from deepmd.pt_expt.long_range import (
+    BaseLongRange,
+)
 from deepmd.pt_expt.model.dp_zbl_model import (
     DPZBLModel,
 )
@@ -51,7 +54,9 @@ from deepmd.utils.bridging import (
 )
 from deepmd.utils.spin import (
     Spin,
+    is_native_spin_scheme,
     normalize_spin_use_spin,
+    parse_spin_scheme,
 )
 
 log = logging.getLogger(__name__)
@@ -75,6 +80,7 @@ _model_factory = BackendModelFactory(
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
     linear_atomic_model=LinearEnergyAtomicModel,
+    long_range_base=BaseLongRange,
 )
 get_zbl_model = _model_factory.get_zbl_model
 
@@ -92,8 +98,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     ``bridging_method`` sugar expands to that form in :func:`get_model`);
     this builder rejects the flag.
 
-    Still unsupported here, each raising ``NotImplementedError``: the
-    virtual-atom (``deepspin``) spin scheme and ``lora``.
+    ``lora`` raises ``NotImplementedError``.
 
     Notes
     -----
@@ -107,11 +112,10 @@ def get_sezm_model(data: dict) -> BaseModel:
     """
     data = copy.deepcopy(data)
     if "spin" in data:
-        if str(data["spin"].get("scheme", "deepspin")) != "native":
+        if not is_native_spin_scheme(data["spin"].get("scheme", "deepspin")):
             raise NotImplementedError(
-                "Spin DPA4/SeZM models with the virtual-atom (deepspin) "
-                "scheme are not supported in the pt_expt backend; use spin "
-                "scheme 'native' instead."
+                "DPA4/SeZM spin models require model.spin.scheme='native' "
+                "('native:orbit' or 'native:exchange' select the mode)."
             )
         return get_native_spin_model(data)
     bridging_method = str(data.get("bridging_method", "none"))
@@ -168,6 +172,7 @@ def get_sezm_model(data: dict) -> BaseModel:
     data["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
 
     descriptor, fitting, _ = _model_factory.get_model_components(data)
+    long_range = _model_factory.get_long_range(data, descriptor, fitting)
     return DPA4EnergyModel(
         descriptor=descriptor,
         fitting=fitting,
@@ -175,6 +180,7 @@ def get_sezm_model(data: dict) -> BaseModel:
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=pair_exclude_types,
         preset_out_bias=data.get("preset_out_bias"),
+        **({} if long_range is None else {"long_range": long_range}),
     )
 
 
@@ -242,7 +248,7 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     ----------
     data : dict
         The data to construct the model. Must carry a top-level ``"spin"``
-        key with ``scheme == "native"``.
+        key with a native scheme (``native``, ``native:orbit`` or ``native:exchange``).
     """
     data = copy.deepcopy(data)
     spin_cfg = data.pop("spin")
@@ -255,6 +261,9 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
         allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
     data["descriptor"]["use_spin"] = use_spin
+    data["descriptor"]["spin_mode"] = parse_spin_scheme(
+        spin_cfg.get("scheme", "deepspin")
+    )
     model_type = str(data.get("type", "standard")).lower()
     backbone_builder = (
         get_sezm_model if model_type in ("dpa4", "sezm") else get_standard_model
@@ -319,9 +328,9 @@ def get_linear_model(model_params: dict) -> BaseModel:
 
     Children with a ``descriptor`` build as learned atomic models;
     ``pairtab`` children build as pair-tabulation atomic models; an
-    ``inner_potential`` child builds the analytical bridging term, with the
-    learned sibling descriptor's window derived from the child's (issue
-    #5948). A top-level ``spin`` section (scheme ``native``) wraps the
+    ``inner_potential`` child builds the analytical close-contact term, with
+    the learned sibling descriptor's ``contact_clamp`` derived from the
+    child's ``clamp`` (issue #5948). A top-level ``spin`` section (scheme ``native``) wraps the
     composition as a :class:`NativeSpinEnergyModel`.
 
     Parameters
@@ -337,7 +346,8 @@ def get_linear_model(model_params: dict) -> BaseModel:
     spin = None
     if "spin" in model_params:
         spin_cfg = model_params.pop("spin")
-        if str(spin_cfg.get("scheme", "deepspin")) != "native":
+        spin_mode = parse_spin_scheme(spin_cfg.get("scheme", "deepspin"))
+        if spin_mode is None:
             raise NotImplementedError(
                 "Spin linear_ener models support only spin scheme 'native' "
                 "in the pt_expt backend."
@@ -353,6 +363,7 @@ def get_linear_model(model_params: dict) -> BaseModel:
         for sub in model_params["models"]:
             if "descriptor" in sub:
                 sub["descriptor"]["use_spin"] = use_spin
+                sub["descriptor"]["spin_mode"] = spin_mode
     composed = _model_factory.get_linear_atomic_model(
         model_params,
         descriptor_child_builder=_dpa4_family_child_builder,

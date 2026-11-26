@@ -3,12 +3,34 @@ import unittest
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     NeighborGraph,
     build_edge_csr,
     canonicalize_neighbor_graph,
 )
+
+
+def assert_csr_consistent(graph: NeighborGraph) -> None:
+    """Check both CSR views against masked endpoints, independently of edge order."""
+    n_nodes = int(to_numpy_array(graph.n_node).sum())
+    mask = to_numpy_array(graph.edge_mask)
+    indices = to_numpy_array(graph.edge_index)
+    for axis, order, row_ptr in (
+        (0, graph.source_order, graph.source_row_ptr),
+        (1, graph.destination_order, graph.destination_row_ptr),
+    ):
+        keys = np.where(mask, indices[axis], n_nodes)
+        np.testing.assert_array_equal(
+            to_numpy_array(order), np.argsort(keys, kind="stable")
+        )
+        counts = np.bincount(indices[axis, mask], minlength=n_nodes)
+        np.testing.assert_array_equal(
+            to_numpy_array(row_ptr), np.concatenate(([0], np.cumsum(counts)))
+        )
 
 
 class TestNeighborGraphDataclass(unittest.TestCase):

@@ -14,6 +14,7 @@ from contextlib import (
 )
 from dataclasses import (
     dataclass,
+    replace,
 )
 from pathlib import (
     Path,
@@ -30,6 +31,9 @@ import torch.distributed as dist
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 from deepmd.dpmodel.train import (
     ShardingPolicy,
+)
+from deepmd.dpmodel.train.validation import (
+    record_virial_convention,
 )
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
@@ -56,10 +60,14 @@ from deepmd.utils.argcheck import (
     normalize_full_validation_metric,
     resolve_full_validation_start_step,
 )
+from deepmd.utils.data_group import (
+    iter_data_sources,
+)
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     SPIN_FULL_VALIDATION_PROFILE,
     FullValidationMetricProfile,
+    metric_family_label,
 )
 from deepmd.utils.weight_avg import (
     weighted_average,
@@ -152,12 +160,17 @@ def parse_validation_metric(
 
 
 def format_metric_for_log(
-    metric_name: str, metric_value: float, profile: FullValidationMetricProfile
+    metric_name: str,
+    metric_value: float,
+    profile: FullValidationMetricProfile,
+    *,
+    symm_virial: bool = False,
 ) -> tuple[str, float, str]:
     """Format a full validation metric for user-facing logging."""
     metric_family, metric_kind = metric_name.split(":")
     metric_unit, metric_scale = profile.unit_by_family[metric_family]
-    metric_label = f"{metric_family.upper()}:{metric_kind.upper()}"
+    family_label = metric_family_label(metric_family, symm_virial=symm_virial)
+    metric_label = f"{family_label}:{metric_kind.upper()}"
     return metric_label, metric_value * metric_scale, metric_unit
 
 
@@ -209,6 +222,7 @@ class FullValidator:
         num_steps: int,
         rank: int,
         restart_training: bool,
+        symm_virial: bool = False,
         sharding: ShardingPolicy = ShardingPolicy(),
         checkpoint_dir: Path | None = None,
         full_val_file: str | Path | None = None,
@@ -229,6 +243,13 @@ class FullValidator:
             else MatmulPrecisionPolicy(enable_tf32=False)
         )
         self.profile = select_metric_profile(model)
+        self.symm_virial = symm_virial
+        record_virial_convention(
+            state_store,
+            symm_virial,
+            restart_training,
+            (metric_name_info_key, topk_records_info_key, *stale_state_keys),
+        )
         self.state_store = state_store
         self.rank = rank
         self.sharding = sharding
@@ -279,7 +300,9 @@ class FullValidator:
         )
         self.auto_batch_size = AutoBatchSize(silent=True)
         self.table_column_specs = []
-        for column_name, metric_key in self.profile.columns(self.metric_name):
+        for column_name, metric_key in self.profile.columns(
+            self.metric_name, symm_virial=self.symm_virial
+        ):
             _, metric_unit = format_metric_value_for_table(
                 metric_key, 1.0, self.profile
             )
@@ -294,11 +317,11 @@ class FullValidator:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
             self._initialize_best_checkpoints(restart_training=restart_training)
 
-        # Lazily-populated full test snapshot for LMDB validation. Frames are
+        # Lazily-populated full test snapshots for LMDB validation. Frames are
         # evaluated in atom-count and label-availability groups so each stack
         # has consistent shapes and scalar find_* flags. Reuse the decoded
-        # snapshot on subsequent validation calls.
-        self._lmdb_test_data: LmdbTestData | None = None
+        # snapshots on subsequent validation calls, independently for each source.
+        self._lmdb_snapshots: dict[int, LmdbTestData] = {}
 
     def should_run(self, display_step: int) -> bool:
         """Check whether the current step should trigger full validation."""
@@ -315,8 +338,14 @@ class FullValidator:
         display_step: int,
         lr: float,
         save_checkpoint: Any,
+        prepare_checkpoint: Callable[[], None] | None = None,
     ) -> FullValidationResult | None:
-        """Run full validation if the current step is due."""
+        """Run full validation if the current step is due.
+
+        ``prepare_checkpoint`` runs on every rank only for a selected checkpoint.
+        It must agree on distributed failures before returning or raising, so
+        no peer enters checkpoint collectives after another rejects the save.
+        """
         if not self.should_run(display_step):
             return None
 
@@ -327,10 +356,15 @@ class FullValidator:
         caught_exception: Exception | None = None
         error_message = None
         save_path = [None]
+        proposed_records = self.topk_records
         if self.rank == 0:
             try:
                 result = self._evaluate(display_step)
-                save_path[0] = result.saved_best_path
+                proposed_records, save_path[0] = self._propose_best_state(
+                    display_step=display_step,
+                    selected_metric_value=result.selected_metric_value,
+                )
+                result = replace(result, saved_best_path=save_path[0])
             except Exception as exc:
                 caught_exception = exc
                 error_message = (
@@ -342,6 +376,15 @@ class FullValidator:
 
         if self.is_distributed:
             dist.broadcast_object_list(save_path, src=0)
+
+        if save_path[0] is not None and prepare_checkpoint is not None:
+            # All ranks agree before mutating top-K metadata or entering a
+            # serializer that may gather sharded model/optimizer state.
+            prepare_checkpoint()
+
+        if self.rank == 0:
+            self.topk_records = proposed_records
+            self._sync_state_store()
 
         if save_path[0] is not None:
             try:
@@ -384,7 +427,7 @@ class FullValidator:
         return result if self.rank == 0 else None
 
     def _evaluate(self, display_step: int) -> FullValidationResult:
-        """Evaluate all validation systems and update best state."""
+        """Evaluate all validation systems without publishing checkpoint state."""
         # === Step 1. Switch to Evaluation Mode ===
         was_training = bool(getattr(self.model, "training", True))
         self.model.eval()
@@ -408,18 +451,13 @@ class FullValidator:
                 f"validation dataset: {self.metric_name.upper()}."
             )
 
-        # === Step 3. Update Best Tracking ===
         selected_metric_value = float(metrics[self.metric_key])
-        saved_best_path = self._update_best_state(
-            display_step=display_step,
-            selected_metric_value=selected_metric_value,
-        )
         return FullValidationResult(
             display_step=display_step,
             metrics=metrics,
             selected_metric_key=self.metric_key,
             selected_metric_value=selected_metric_value,
-            saved_best_path=saved_best_path,
+            saved_best_path=None,
         )
 
     def evaluate_all_systems(self) -> dict[str, float]:
@@ -457,28 +495,27 @@ class FullValidator:
         - A loader set owns ``systems``, each wrapping a ``DeepmdData`` in
           ``data_system``.
         """
-        validation_data = self.validation_data
-        if hasattr(validation_data, "_reader"):
-            lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
-            for nloc in sorted(lmdb_test_data.nloc_groups):
-                for indices in lmdb_test_data.availability_groups(
-                    lmdb_test_data.nloc_groups[nloc]
-                ):
-                    yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
-            return
-
-        if hasattr(validation_data, "data_systems"):
-            yield from validation_data.data_systems
-            return
-
-        for dataset in validation_data.systems:
-            data_system = getattr(dataset, "data_system", None)
-            if data_system is None:
-                raise TypeError(
-                    "Full validation expects each dataset in validation_data.systems "
-                    f"to expose a `data_system`, got {type(dataset)!r}."
+        for source in iter_data_sources(self.validation_data):
+            if hasattr(source, "_reader"):
+                snapshot = self._get_lmdb_test_data_snapshot(source)
+                yield from (
+                    LmdbTestDataNlocView(snapshot, nloc, indices)
+                    for nloc in sorted(snapshot.nloc_groups)
+                    for indices in snapshot.availability_groups(
+                        snapshot.nloc_groups[nloc]
+                    )
                 )
-            yield data_system
+            elif hasattr(source, "data_systems"):
+                yield from source.data_systems
+            else:
+                for dataset in source.systems:
+                    data_system = getattr(dataset, "data_system", None)
+                    if data_system is None:
+                        raise TypeError(
+                            "Full validation expects each dataset in validation_data.systems "
+                            f"to expose a `data_system`, got {type(dataset)!r}."
+                        )
+                    yield data_system
 
     def _get_lmdb_test_data_snapshot(self, lmdb_dataset: Any) -> LmdbTestData:
         """Build (once) and return the cached LMDB test snapshot.
@@ -488,8 +525,9 @@ class FullValidator:
         the full-validation snapshot sees exactly the same fields and
         dtypes as training batches.
         """
-        if self._lmdb_test_data is not None:
-            return self._lmdb_test_data
+        key = id(lmdb_dataset)
+        if key in self._lmdb_snapshots:
+            return self._lmdb_snapshots[key]
 
         reader = getattr(lmdb_dataset, "_reader", None)
         lmdb_path = getattr(lmdb_dataset, "lmdb_path", None)
@@ -512,14 +550,15 @@ class FullValidator:
                 f"{type(lmdb_dataset)!r}."
             )
 
-        self._lmdb_test_data = LmdbTestData(
+        snapshot = LmdbTestData(
             lmdb_path,
             type_map=list(type_map),
             shuffle_test=False,
         )
         if data_requirements:
-            self._lmdb_test_data.add_data_requirement(data_requirements)
-        return self._lmdb_test_data
+            snapshot.add_data_requirement(data_requirements)
+        self._lmdb_snapshots[key] = snapshot
+        return snapshot
 
     def _evaluate_system(
         self, data_system: DeepmdData
@@ -541,13 +580,21 @@ class FullValidator:
             and bool(test_data.get("find_fparam", 0.0))
             else None,
             aparam=test_data["aparam"] if self.model.get_dim_aparam() > 0 else None,
+            charge_spin=test_data["charge_spin"].reshape(nframes, -1)
+            if self.model.has_chg_spin_ebd()
+            and bool(test_data.get("find_charge_spin", 0.0))
+            else None,
             spin=spin,
             include_virial=include_virial,
             natoms=natoms,
             nframes=nframes,
         )
         return self.profile.compute_system_metrics(
-            prediction, test_data, natoms, data_system.pbc
+            prediction,
+            test_data,
+            natoms,
+            data_system.pbc,
+            symm_virial=self.symm_virial,
         )
 
     def _predict_outputs(
@@ -558,6 +605,7 @@ class FullValidator:
         box: np.ndarray | None,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
         spin: np.ndarray | None,
         include_virial: bool,
         natoms: int,
@@ -567,7 +615,9 @@ class FullValidator:
 
         Energy and real-atom force are always produced. The virial is added
         for periodic energy-type systems, while magnetic force and its atom
-        mask are added for spin systems.
+        mask are added for spin systems. ``charge_spin`` holds the frame-level
+        charge and spin condition of each frame; without it a conditioned
+        model evaluates every frame at its default condition.
         """
 
         def predict_batch(
@@ -576,6 +626,7 @@ class FullValidator:
             box_batch: np.ndarray | None,
             fparam_batch: np.ndarray | None,
             aparam_batch: np.ndarray | None,
+            charge_spin_batch: np.ndarray | None,
             spin_batch: np.ndarray | None,
         ) -> dict[str, np.ndarray]:
             coord_input = torch.tensor(
@@ -616,6 +667,11 @@ class FullValidator:
                 )
             else:
                 aparam_input = None
+            charge_spin_kwargs = (
+                {}
+                if charge_spin_batch is None
+                else {"charge_spin": to_torch_tensor(charge_spin_batch.reshape(-1, 2))}
+            )
             if spin_batch is not None:
                 spin_kwargs = {
                     "spin": torch.tensor(
@@ -639,6 +695,7 @@ class FullValidator:
                 box=box_input,
                 fparam=fparam_input,
                 aparam=aparam_input,
+                **charge_spin_kwargs,
                 **spin_kwargs,
             )
             if isinstance(batch_output, tuple):
@@ -683,6 +740,7 @@ class FullValidator:
             box,
             fparam,
             aparam,
+            charge_spin,
             spin,
         )
         prediction = {
@@ -696,13 +754,13 @@ class FullValidator:
             prediction["virial"] = batch_prediction["virial"]
         return prediction
 
-    def _update_best_state(
+    def _propose_best_state(
         self,
         *,
         display_step: int,
         selected_metric_value: float,
-    ) -> str | None:
-        """Update the top-K records and return the checkpoint path to save."""
+    ) -> tuple[list[BestCheckpointRecord], str | None]:
+        """Propose top-K records and a save path without changing published state."""
         candidate = BestCheckpointRecord(
             metric=selected_metric_value,
             step=display_step,
@@ -714,14 +772,17 @@ class FullValidator:
         updated_records.sort()
         updated_records = updated_records[: self.max_best_ckpt]
         if candidate not in updated_records:
-            return None
-
-        self.topk_records = updated_records
-        self._sync_state_store()
-        if not self.save_best:
-            return None
-        candidate_rank = self.topk_records.index(candidate) + 1
-        return str(self._best_checkpoint_path(display_step, candidate_rank))
+            return self.topk_records, None
+        save_path = (
+            str(
+                self._best_checkpoint_path(
+                    display_step, updated_records.index(candidate) + 1
+                )
+            )
+            if self.save_best
+            else None
+        )
+        return updated_records, save_path
 
     def _sync_state_store(self) -> None:
         """Synchronize top-K validation state into the configured state store."""
@@ -865,7 +926,10 @@ class FullValidator:
         self._write_log_file(result)
         if self.emit_best_save_log and result.saved_best_path is not None:
             metric_label, metric_value, metric_unit = format_metric_for_log(
-                self.metric_name, result.selected_metric_value, self.profile
+                self.metric_name,
+                result.selected_metric_value,
+                self.profile,
+                symm_virial=self.symm_virial,
             )
             log.info(
                 f"Saved best model to {result.saved_best_path} "
@@ -902,7 +966,10 @@ class FullValidator:
             fout.write(line)
             if result.saved_best_path is not None:
                 metric_label, metric_value, metric_unit = format_metric_for_log(
-                    self.metric_name, result.selected_metric_value, self.profile
+                    self.metric_name,
+                    result.selected_metric_value,
+                    self.profile,
+                    symm_virial=self.symm_virial,
                 )
                 fout.write(
                     "# saved best checkpoint: "
@@ -937,6 +1004,7 @@ def build_full_validators(
     restart_training: bool,
     checkpoint_dir: Path,
     ensure_supported: Callable[[], None],
+    symm_virial: bool = False,
     model_ema: Any | None = None,
     ema_weight_model: torch.nn.Module | dict[str, torch.nn.Module] | None = None,
     sharding: ShardingPolicy | None = None,
@@ -1016,6 +1084,7 @@ def build_full_validators(
         return FullValidator(
             validation_data=validation_data,
             model=model,
+            symm_virial=symm_virial,
             num_steps=num_steps,
             rank=rank,
             sharding=ShardingPolicy() if sharding is None else sharding,

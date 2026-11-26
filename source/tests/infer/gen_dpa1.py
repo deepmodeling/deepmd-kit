@@ -366,10 +366,13 @@ def main():
     aparam_vals = (np.arange(1, 13, dtype=np.float64) * 0.1).reshape(1, 6, 2)
 
     # ---- C.1  Independent nlist reference (same weights, dense path) ----
+    # This oracle is consumed only here, never by a C++/LAMMPS loader. Keep
+    # the full exported dense forward/derivatives without compiling an AOTI
+    # package; the graph aparam artifact below still exercises native AOTI.
     aparam_nlist_ref_pt2 = os.path.join(
-        base_dir, "deeppot_dpa1_graph_aparam_nlist_ref.pt2"
+        base_dir, "deeppot_dpa1_graph_aparam_nlist_ref.pte"
     )
-    print(f"Exporting reference nlist .pt2 to {aparam_nlist_ref_pt2} ...")  # noqa: T201
+    print(f"Exporting reference nlist .pte to {aparam_nlist_ref_pt2} ...")  # noqa: T201
     pt_expt_deserialize_to_file(
         aparam_nlist_ref_pt2,
         copy.deepcopy(data_a),
