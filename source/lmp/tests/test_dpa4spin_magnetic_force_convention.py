@@ -15,6 +15,8 @@ from __future__ import (
 import ctypes
 import importlib
 import os
+import shutil
+import subprocess
 from contextlib import (
     contextmanager,
 )
@@ -245,3 +247,50 @@ def test_invalid_magnetic_force_settings(
         _system(adapter, data_file, pair_args, units),
     ):
         pytest.fail("Invalid magnetic_force setting was accepted")
+
+
+@pytest.mark.parametrize("kokkos", [False, True], ids=["host", "kokkos"])
+def test_change_units_after_pair_style(tmp_path, kokkos):
+    required = "DPA4SPIN_KOKKOS_REQUIRED" if kokkos else "DPA4SPIN_LMP_REQUIRED"
+    if os.environ.get(required) != "1":
+        pytest.skip(f"requires the matching LAMMPS build ({required}=1)")
+    model = _MODEL.with_name("deeppot_dpa4c_spin_lmp_kokkos.pt2") if kokkos else _MODEL
+    lmp = shutil.which("lmp")
+    assert lmp and model.is_file()
+    args = [lmp]
+    if kokkos:
+        args.extend(
+            [
+                "-k",
+                "on",
+                "g",
+                "1",
+                "-sf",
+                "kk",
+                "-pk",
+                "kokkos",
+                "newton",
+                "on",
+                "neigh",
+                "half",
+                "gpu/aware",
+                "off",
+            ]
+        )
+    script = tmp_path / "units.in"
+    style = "dpa4spin/kk" if kokkos else "dpa4spin"
+    script.write_text(
+        "units metal\natom_style spin\natom_modify map yes\n"
+        f"pair_style {style} {model}\nunits real\n"
+        "region box block 0 10 0 10 0 10\ncreate_box 2 box\n"
+        "create_atoms 1 single 3 3 3\nmass * 12\npair_coeff * * Ni O\nrun 0\n"
+    )
+    run = subprocess.run(
+        [*args, "-in", str(script), "-log", "none"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert run.returncode != 0
+    assert "requires units metal" in run.stdout + run.stderr

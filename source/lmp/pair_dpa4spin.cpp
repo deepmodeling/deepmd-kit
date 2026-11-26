@@ -440,6 +440,9 @@ void PairDPA4Spin::coeff(int narg, char** arg) {
 }
 
 void PairDPA4Spin::init_style() {
+  if (strcmp(update->unit_style, "metal") != 0) {
+    error->all(FLERR, "Pair style dpa4spin requires units metal");
+  }
   neighbor->add_request(this, NeighConst::REQ_FULL);
 
   const std::string style = force->pair_style;

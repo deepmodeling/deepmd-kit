@@ -125,6 +125,7 @@ mkdir -p "${BUILD_ROOT}/test-reports"
 TEST_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")
 DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
 	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py" \
+	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_magnetic_force_convention.py::test_change_units_after_pair_style[kokkos]" \
 	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_multiblock_kokkos.py" \
 	--junitxml="${TEST_REPORT_DIR}/spin.xml"
 # The compressed long-range fixtures come from gen_dpa4c_long_range.py of
