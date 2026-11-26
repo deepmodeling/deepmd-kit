@@ -85,8 +85,12 @@ The `update` and `build` methods will be called by {class}`DeepPot <deepmd.infer
 For a frozen `.pt2` or `.pte` model that takes a neighbor list, both
 `DeepPot` and the ASE calculator accept `nlist_backend`. The default,
 `"auto"`, selects an available search for the input batch. For a single
-frame it prefers Vesin when installed. For a batch of frames it prefers NV
-when available. Without an optional search library,
+frame it tries Vesin, then NV, then the native search. For multiple frames it
+tries NV, then Vesin, then the native search. Virtual-atom spin models with
+the neighbor-list lower accept `"auto"` and `"native"` and use the native
+search for both. Native-spin edge-vector models can also use Vesin or NV.
+
+Without an optional search library,
 the native extended-coordinate search has quadratic cost in the number of
 atoms (including periodic images).
 
