@@ -126,6 +126,42 @@ if TYPE_CHECKING:
     )
 
 
+def _reject_exportable_options(options: dict[str, Any]) -> None:
+    """
+    Refuse the descriptor options that only the exportable backend implements.
+
+    Parameters
+    ----------
+    options : dict[str, Any]
+        Descriptor options, as constructor keywords or as the input section.
+
+    Raises
+    ------
+    NotImplementedError
+        If a per-block ``rcut`` or ``mixing_layers`` list, a ``density_floor``,
+        ``readout_norm``, a ``readout_kmax``, ``parity`` without native spin,
+        or a mixture of experts (``moe``) is requested.
+    """
+    layers = options.get("so2_layers")
+    if layers is None:
+        layers = options.get("mixing_layers")
+    requested = {
+        "rcut": isinstance(options.get("rcut"), (list, tuple)),
+        "mixing_layers": isinstance(layers, (list, tuple)),
+        "density_floor": options.get("density_floor") is not None,
+        "readout_norm": bool(options.get("readout_norm")),
+        "parity": bool(options.get("parity")) and options.get("use_spin") is None,
+        "readout_kmax": options.get("readout_kmax") is not None,
+        "moe": options.get("moe") is not None,
+    }
+    refused = [name for name, value in requested.items() if value]
+    if refused:
+        raise NotImplementedError(
+            f"The DPA4 options {refused} are implemented by the pt_expt backend "
+            "only; train with `dp --pt-expt`"
+        )
+
+
 @BaseDescriptor.register("SeZM")
 @BaseDescriptor.register("sezm")
 @BaseDescriptor.register("DPA4")
@@ -445,6 +481,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Default frame-level charge/spin condition `[charge, spin]`. This value is
         used when `add_chg_spin_ebd=True` and no explicit `charge_spin` tensor is
         provided at the descriptor or SeZM model boundary.
+    density_floor, readout_norm, readout_kmax, parity, moe
+        Options of the exportable backend, accepted here at their defaults so
+        that every normalized input and serialized record of a model without
+        them loads. ``parity`` follows native spin, which always preserves
+        inversion.
 
     Notes
     -----
@@ -524,8 +565,26 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         default_chg_spin: list[float] | None = None,
         use_spin: list[bool] | None = None,
         spin_mode: str = "orbit",
+        density_floor: float | None = None,
+        readout_norm: bool = False,
+        readout_kmax: int | None = None,
+        parity: bool = False,
+        moe: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
+        _reject_exportable_options(
+            {
+                "rcut": rcut,
+                "mixing_layers": mixing_layers,
+                "so2_layers": so2_layers,
+                "density_floor": density_floor,
+                "readout_norm": readout_norm,
+                "readout_kmax": readout_kmax,
+                "parity": parity,
+                "use_spin": use_spin,
+                "moe": moe,
+            }
+        )
 
         self.register_buffer(
             "version_tensor",
@@ -1521,8 +1580,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             Number of owned (local) atoms per frame. Required when ``comm_dict``
             is provided; the final scalar read-out is restricted to these atoms.
         vacuum_conditions
-            Conditioning inputs of one isolated atom per type, the neutral
-            ground-state atom, under ``charge_spin`` with shape (ntypes, 2)
+            Conditioning inputs of one isolated atom per type, the reference
+            atom of the type, under ``charge_spin`` with shape (ntypes, 2)
             and ``spin`` with shape (ntypes, 3) as the descriptor takes them.
             When given, the reference atoms are carried through the same
             forward as additional nodes and their vacuum descriptor is
@@ -1563,7 +1622,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 1b. Vacuum reference nodes ===
         # One isolated atom of every type follows the real nodes, conditioned
-        # as the neutral ground-state atom. Every node-wise operation leaves
+        # as the reference atom of the type. Every node-wise operation leaves
         # the real nodes unaffected, so the read-out rows of the reference
         # nodes are the vacuum descriptor of every type.
         vacuum_ref = vacuum_conditions is not None
@@ -2390,11 +2449,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         AdamW path under HybridMuon: the first layer of the radial embedding and
         the radial projection of the environment seed, which read the radial
         basis and whose rows for rarely visited separations receive almost no
-        gradient.
+        gradient, and the task increments of the expert maps.
         """
         return [
             "radial_embedding.net.0.",
             "env_seed_embedding.rbf_proj_layer1.",
+            *super().adam_route_patterns(),
         ]
 
     def get_rcut(self) -> float:
@@ -2659,8 +2719,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     self.film_norm,
                     self.focus_norm,
                 ],
+                "density_floor": None,
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
+                "use_amp": self.use_amp,
                 "edge_cartesian": self.edge_cartesian,
                 "node_cartesian": self.node_cartesian,
                 "so2_norm": self.so2_norm,
@@ -2689,7 +2751,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "message_node_s2": self.message_node_s2,
                 "message_node_so3": self.message_node_so3,
                 "so3_readout": self.so3_readout,
+                "readout_kmax": None,
                 "readout_layers": self.readout_layers,
+                "readout_norm": False,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,
@@ -2710,7 +2774,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
                 "use_spin": self.use_spin,
+                "parity": self.use_spin is not None,
                 "spin_mode": self.spin_mode,
+                "moe": None,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
             "env_mat": DPEnvMat(self.rcut, self.rcut, self.eps).serialize(),
@@ -2733,6 +2799,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         config.pop("s2_grid_resolution", None)
         drop_retired_descriptor_options(config)
         obj = cls(**config)
+        from deepmd.pt.model.descriptor.sezm_nn.lora import (
+            restore_lora_from_variables,
+        )
+
+        restore_lora_from_variables(obj, variables)
         template = obj.state_dict()
         state = {
             key: safe_numpy_to_tensor(
@@ -2770,6 +2841,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         float | None
             The minimum distance between two atoms.
         """
+        _reject_exportable_options(local_jdata)
         local_jdata_cpy = local_jdata.copy()
         min_nbor_dist, sel = UpdateSel().update_one_sel(
             train_data,

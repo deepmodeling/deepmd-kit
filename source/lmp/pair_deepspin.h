@@ -28,7 +28,7 @@ namespace deepmd_compat = deepmd;
 namespace deepmd_compat = deepmd::hpp;
 #endif
 
-#include <fstream>
+#include <deque>
 #include <iostream>
 #include <map>
 
@@ -51,9 +51,10 @@ class PairDeepSpin : public PairDeepBaseModel {
   void unpack_reverse_comm(int, int*, double*) override;
 
  protected:
+  // The first model of the ensemble, which drives the dynamics, and the
+  // others, evaluated at the steps that write the model deviation.
   deepmd_compat::DeepSpin deep_spin;
-  deepmd_compat::DeepSpinModelDevi deep_spin_model_devi;
-  std::vector<std::vector<double> > all_force_mag;
+  std::deque<deepmd_compat::DeepSpin> ensemble;
 
  private:
   CommBrickDeepSpin* commdata_;

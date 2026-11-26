@@ -101,6 +101,9 @@ from .so2 import (
 )
 from .so3 import (
     ChannelLinear,
+    ExpertChannelLinear,
+    ExpertFocusLinear,
+    ExpertSO3Linear,
     FocusLinear,
     SO3Linear,
 )
@@ -134,6 +137,9 @@ __all__ = [
     "EnvironmentInitialEmbedding",
     "EquivariantFFN",
     "EquivariantRMSNorm",
+    "ExpertChannelLinear",
+    "ExpertFocusLinear",
+    "ExpertSO3Linear",
     "FocusLinear",
     "GatedActivation",
     "GeometricInitialEmbedding",

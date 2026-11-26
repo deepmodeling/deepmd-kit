@@ -149,7 +149,7 @@ class Counter:
 
 
 def save_dp_model(filename: str, model_dict: dict) -> None:
-    """Save a DP model to a file in the native format.
+    """Save an inference model in the native HDF5 or YAML format.
 
     Parameters
     ----------
@@ -157,11 +157,14 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
         The filename to save to.
     model_dict : dict
         The model dict to save. The caller retains ownership, and this function does
-        not modify it.
+        not modify it. Portable ``training`` records are omitted: optimizer and
+        EMA state belong to backend training checkpoints, not inference models.
     """
     # Give traversal an independent container tree while retaining references to
     # potentially large or non-copyable variable objects.
-    model_dict = _copy_model_containers(model_dict)
+    model_dict = _copy_model_containers(
+        {key: value for key, value in model_dict.items() if key != "training"}
+    )
     filename_extension = Path(filename).suffix
     extra_dict = {
         "software": "deepmd-kit",

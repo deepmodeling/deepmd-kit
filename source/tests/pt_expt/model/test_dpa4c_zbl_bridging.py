@@ -743,7 +743,7 @@ class TestCompressedDPA4CZBLBridging:
 
     def test_compressed_model_exports_like_its_learned_part(self) -> None:
         data = {"model": self.model.to("cpu").serialize()}
-        expected = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
+        expected = "dpa_canonical" if env.DEVICE.type == "cuda" else "graph"
         assert _resolve_lower_kind("model.pt2", data, "auto") == expected
         exported, metadata, _model_json, _output_keys = _trace_and_export(
             data,

@@ -158,17 +158,16 @@ with fixed model dimensions.  ``nlist`` and ``mapping`` are clamped after
 the shape coercion so their index values stay valid for the trace-only
 sample.
 
-NOTE 2 -- Decomposing ``silu_backward``
----------------------------------------
+NOTE 2 -- Decomposing ``silu_backward`` and ``sgn``
+---------------------------------------------------
 
 PyTorch ships forward and first-order backward for SiLU but *no*
-symbolic higher-order derivative.  make_fx therefore emits
-``aten.silu_backward.default`` opaquely inside the first-derivative
-graph.  When Inductor later has to differentiate that op again for the
-optimizer step, it refuses because silu_backward is not differentiable
-in its registered form.  We pass an explicit decomposition
-``silu_backward -> sigmoid + pointwise mul`` to ``make_fx``; every
-pointwise piece then has a well-defined higher derivative of its own.
+symbolic higher-order derivative, while ``aten.sgn.default`` (emitted by
+``abs`` backward) queries concrete ``aten.size`` in its C++ second-order
+backward and specializes dynamic dimensions.  :func:`build_make_fx_decompositions`
+decomposes ``silu_backward`` into ``sigmoid`` and pointwise products and
+``sgn`` into ``sign``, keeping every traced first-derivative op twice
+differentiable under symbolic shapes.
 
 NOTE 3 -- Stripping autograd-inserted detach chains
 ---------------------------------------------------
@@ -505,6 +504,7 @@ from deepmd.pt.utils.compile_compat import (
     FIT_PREFIX,
     apply_global_compile_patches,
     build_inductor_compile_options,
+    build_make_fx_decompositions,
     check_compile_torch_version,
     get_task_buffer_names,
     get_task_buffer_values,
@@ -623,7 +623,16 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         _int_tuple(fitting.exclude_types),
         bool(fitting.needs_vacuum_descriptor()),
     )
-    atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
+    atomic_state = (
+        _int_tuple(atomic_model.atom_exclude_types),
+        # The reference conditions follow the task, the spin moments and the
+        # charge/spin conditions its preset names, and the trace bakes them
+        # in.
+        tuple(
+            (name, tuple(condition.flatten().tolist()))
+            for name, condition in atomic_model.vacuum_conditions().items()
+        ),
+    )
     model_state = (
         str(model.bridging_method),
         None if model.inter_potential is None else model.inter_potential.truncation,
@@ -1892,9 +1901,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         FSDP/DDP cannot see or shard its duplicated parameters.
         """
         check_compile_torch_version()
-        from torch._decomp import (
-            get_decompositions,
-        )
 
         mode = "train" if self.training else "eval"
         _compile_t0 = time.perf_counter()
@@ -2143,16 +2149,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # will create one placeholder per element.
         trace_args.extend(task_buf_vals_trace)
 
-        # NOTE: Decompose ``silu_backward`` into primitive ops.
-        # PyTorch ships forward and first-order backward for SiLU but no
-        # symbolic higher-order derivative.  Without this decomposition
-        # make_fx would emit ``aten.silu_backward.default`` opaquely
-        # inside the first-derivative graph; when Inductor later has to
-        # differentiate that op again for the optimiser step, it refuses
-        # because silu_backward is not differentiable in its registered
-        # form.  Lowering to ``sigmoid + pointwise mul + ...`` gives
-        # every pointwise piece a well-defined higher derivative.
-        decomp_table = get_decompositions([torch.ops.aten.silu_backward.default])
+        # NOTE: Decompose ``silu_backward`` and ``sgn`` into primitive ops so
+        # the first-derivative graph stays twice differentiable without
+        # specializing symbolic shapes (see ``build_make_fx_decompositions``).
+        decomp_table = build_make_fx_decompositions()
 
         # NOTE: ``tracing_mode="symbolic"`` makes every shape a sympy
         # symbol so the compiled graph can later accept any
@@ -2406,17 +2406,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     ) -> torch.nn.Module:
         """Trace a lower-interface closure into an exportable FX graph."""
         check_compile_torch_version()
-        from torch._decomp import (
-            get_decompositions,
-        )
 
         traced = make_fx(
             fn,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
-            decomposition_table=get_decompositions(
-                [torch.ops.aten.silu_backward.default]
-            ),
+            decomposition_table=build_make_fx_decompositions(),
         )(*sample_inputs)
         # make_fx can lower a reshape to an unsound aten.view when the fake
         # stride diverges from the eager stride; relax views back to reshapes.
@@ -3348,7 +3343,22 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         data.pop("@class", None)
         data.pop("type", None)
         atomic_model = SeZMAtomicModel.deserialize(data.pop("atomic_model"))
-        return cls(atomic_model_=atomic_model, **data)
+        model = cls(atomic_model_=atomic_model, **data)
+        model._restore_lora_trainability()
+        return model
+
+    def _restore_lora_trainability(self) -> None:
+        """Restore the adapter training policy after portable deserialization."""
+        if self.lora_config is not None:
+            from deepmd.pt.model.descriptor.sezm_nn.lora import (
+                apply_lora_to_sezm,
+            )
+
+            apply_lora_to_sezm(
+                self,
+                rank=int(self.lora_config["rank"]),
+                alpha=self.lora_config.get("alpha"),
+            )
 
     # =========================================================================
     # Context Managers

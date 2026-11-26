@@ -220,6 +220,13 @@ def test_pair_deepmd(lammps) -> None:
     lammps.run(1)
 
 
+@pytest.mark.parametrize("option", ["virtual_len", "spin_norm"])
+def test_pair_deepspin_rejects_spin_vector_option(lammps, option: str) -> None:
+    """A model of the pt backend declares no spin types for these options."""
+    with pytest.raises(Exception, match=f"takes no {option} option"):
+        lammps.pair_style(f"deepspin {pb_file.resolve()} {option} 0.4")
+
+
 def test_pair_deepmd_virial(lammps) -> None:
     lammps.pair_style(f"deepspin {pb_file.resolve()}")
     lammps.pair_coeff("* *")
@@ -259,6 +266,17 @@ def test_pair_deepmd_virial(lammps) -> None:
         assert np.array(
             lammps.variables[f"virial{jj}"].value
         ) / constants.nktv2p == pytest.approx(expected_v[idx_map, jj])
+
+
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
+def test_model_deviation_requires_the_selected_elements(lammps) -> None:
+    # Both models define Ni and O, but only the first defines H.
+    lammps.pair_style(f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_freq 0")
+    with pytest.raises(Exception, match="must designate the same element"):
+        lammps.pair_coeff("* * H O")
 
 
 @pytest.mark.skipif(

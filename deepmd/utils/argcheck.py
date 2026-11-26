@@ -624,9 +624,25 @@ def descrpt_dpa4c_args() -> list[Argument]:
             doc=(
                 "Fallback `[charge, multiplicity]` used when `charge_spin` is "
                 "absent from the input data. Only read when "
-                "`add_chg_spin_ebd` is enabled. Compression folds this value "
-                "into the frozen tables, so a compressed model evaluates "
+                "`add_chg_spin_ebd` is enabled. Data without `charge_spin` "
+                "take this condition in every frame, and with `vacuum_ref` it "
+                "is the reference condition of every element whose "
+                "`preset_out_bias` entry names none, so an atom without "
+                "neighbors in this condition has exactly its preset energy; "
+                "keep it at `[0, 1]` for such data. Compression folds this "
+                "value into the frozen tables, so a compressed model evaluates "
                 "exactly this charge state and requires the option to be set."
+            ),
+        ),
+        Argument(
+            "density_floor",
+            float,
+            optional=True,
+            default=0.0,
+            doc=(
+                "Floor of the neighborhood normalization in units of the mean "
+                "envelope mass of the training data, which training measures "
+                "and stores with the model. `0` keeps the fixed default floor."
             ),
         ),
         Argument(
@@ -639,6 +655,98 @@ def descrpt_dpa4c_args() -> list[Argument]:
     ]
 
 
+def moe_argument(doc: str) -> Argument:
+    """
+    The ``moe`` section of a descriptor or of a fitting network.
+
+    Parameters
+    ----------
+    doc : str
+        Description of the section in the component that takes it.
+
+    Returns
+    -------
+    Argument
+        The section with its options, which both components share.
+    """
+    doc_n_experts = (
+        "Number of experts that a router mixes for every atom. The router reads "
+        "the task of the model and, when `element` gives elements weights of "
+        "their own, the element of the atom. `0` uses no router."
+    )
+    doc_element = (
+        "Elements with weights of their own. `true` gives them to every element "
+        "of the type map and `false` to none; a list of element symbols gives "
+        "them to the listed elements, and the other elements use the weights "
+        "shared by all elements."
+    )
+    doc_mat_prob = (
+        "Probability of merge-aware training (MAT): the fraction of the "
+        "training frames that are computed as the model merged without "
+        "`--elements` computes them, with the weights shared by all elements. "
+        "MAT makes that merged model accurate for every element. With `0`, "
+        "`dp --pt-expt moe-merge` cannot merge the model without the weights of "
+        "its elements."
+    )
+    doc_router = "Shape of the router."
+    doc_router_dim = "Width of the router."
+    doc_router_layers = "Depth of the router: the number of its activation layers."
+    return Argument(
+        "moe",
+        dict,
+        [
+            Argument("n_experts", int, optional=True, default=8, doc=doc_n_experts),
+            Argument(
+                "element",
+                [bool, list[str]],
+                optional=True,
+                default=True,
+                doc=doc_element,
+            ),
+            Argument(
+                "mat_prob",
+                float,
+                optional=True,
+                default=0.37,
+                doc=doc_mat_prob,
+            ),
+            Argument(
+                "router",
+                dict,
+                [
+                    Argument("dim", int, optional=True, default=64, doc=doc_router_dim),
+                    Argument(
+                        "layers",
+                        int,
+                        optional=True,
+                        default=1,
+                        doc=doc_router_layers,
+                    ),
+                ],
+                optional=True,
+                default=None,
+                doc=doc_router,
+            ),
+        ],
+        optional=True,
+        default=None,
+        doc=supported_backends("pt_expt") + doc,
+    )
+
+
+doc_fitting_moe = (
+    "Mixture of experts (MoE) of the fitting network: every atom is fitted "
+    "with weights that depend on the task of the model and on its element. "
+    "Every branch of a multi-task model is a task, and a single-task model is "
+    "one task. A router mixes experts by the task and the element of the atom, "
+    "so a positive `n_experts` requires `element`. Requires a mixed-type "
+    "descriptor, with which all elements share one fitting network, and "
+    "excludes `dim_case_embd`. Before freezing, `dp --pt-expt moe-merge` merges "
+    "the experts into a fitting network without MoE, or into one that keeps "
+    "the weights of chosen elements."
+)
+
+
 @descrpt_args_plugin.register(
     "dpa4",
     alias=["DPA4", "SeZM", "sezm"],
@@ -646,11 +754,18 @@ def descrpt_dpa4c_args() -> list[Argument]:
 )
 def descrpt_se_zm_args() -> list[Argument]:
     # Follows exact order of docstring in sezm.py DescrptSeZM class
-    doc_sel = 'The neighbor-search capacity, with a default of 256. The conservative energy path keeps every neighbor within `rcut` regardless of this value, so `sel` only sets the initial search capacity of the O(N) `nvalchemiops` builder (which grows on demand) and never truncates the energy-path neighbor list. The denoising (`dens`) and spin paths still cap the neighbor list at `sum(sel)`, so for those modes `sel` must cover the true maximum neighbor count. It can be:\n\n\
+    doc_sel = 'The neighbor-search capacity, with a default of 256. The conservative energy path keeps every neighbor within `rcut` regardless of this value, so `sel` only sets the initial search capacity of the O(N) `nvalchemiops` builder (which grows on demand) and never truncates the energy-path neighbor list. The denoising (`dens`) path still caps the neighbor list at `sum(sel)`, so for that mode `sel` must cover the true maximum neighbor count. It can be:\n\n\
     - `int`: the total capacity across all atom types.\n\n\
     - `list[int]`: `sel[i]` is the type-i capacity; only `sum(sel)` is used.\n\n\
     - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
-    doc_rcut = "The cut-off radius."
+    doc_rcut = (
+        "A cutoff radius in angstrom, or a list with one radius per interaction "
+        "block (JAX and PyTorch Exportable backends)."
+    )
+    doc_parity = (
+        "Make the model O(3)-equivariant. The default is false. Native-spin "
+        "models are always O(3)-equivariant."
+    )
     doc_env_exp = (
         "C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]` "
         "specifies the radial-basis and message-passing envelopes separately. "
@@ -666,13 +781,18 @@ def descrpt_se_zm_args() -> list[Argument]:
         "so that separations no training frame constrains cannot move them."
     )
     doc_n_radial = "Number of radial basis functions."
-    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
+    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (max(l_schedule)+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
     doc_edge_norm = "Channel RMSNorm on the cutoff-vanishing feature branches. A bool switches every site together: `false` removes the RMSNorm from the radial-network hidden layers, the environment-seed FiLM scale/shift logits and the cross-focus competition scalars, and uses unit-floor residual scaling for post-SO(2) messages. A list of three bools `[radial, film, focus]` switches the sites individually; the post-SO(2) treatment follows the first (radial) entry. Recommended: `[false, true, false]` — the radial-site norms amplify noise where the radial features vanish at the cutoff and produce a spurious long-range force step, while the FiLM and focus norms are safe to keep."
+    doc_density_floor = (
+        "Floor of the neighborhood normalization in units of the mean "
+        "neighborhood density of the training data, which training measures "
+        "and stores with the model. `null` keeps the fixed default floor."
+    )
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
         "[s, s*r_hat] representation, and enable the non-scalar geometric initial "
-        "embedding when l_schedule[0] + extra_node_l > 0. If False, the initial state contains "
+        "embedding when max(l_schedule) + extra_node_l > 0. If False, the initial state contains "
         "only atom-local scalar features before message passing. Native spin requires "
         "use_env_seed=True to retain neighbor spin correlations. Internal dimensions "
         "are derived from channels: embed_dim=min(channels, 128), "
@@ -706,7 +826,12 @@ def descrpt_se_zm_args() -> list[Argument]:
         "of nodes rather than edges, leaving the per-edge message path unchanged."
     )
     doc_lmax = "Maximum degree, only used when `l_schedule` is None."
-    doc_l_schedule = "Pyramid schedule of lmax per block, e.g. [3, 3, 2]. Must be non-increasing. If set, lmax and n_blocks will be ignored."
+    doc_l_schedule = (
+        "Degree of each block, e.g. [3, 3, 2] or [1, 2]. If set, lmax and n_blocks "
+        "will be ignored. A schedule whose degree rises after a block requires "
+        "the JAX or PyTorch Exportable backend, with full_attn_res and "
+        "block_attn_res set to 'none'."
+    )
     doc_mmax = "Maximum SO(2) order (|m|), only used when `m_schedule` is None. If None, defaults to the per-block lmax."
     doc_m_schedule = (
         "Schedule of mmax per block. Must have the same length as "
@@ -744,7 +869,9 @@ def descrpt_se_zm_args() -> list[Argument]:
     )
     doc_mixing_layers = (
         "Number of learnable mixing layers in the per-edge message core of each "
-        "block (legacy alias: so2_layers). `0` applies only the edge-condition "
+        "block (legacy alias: so2_layers). An integer applies to every block; a "
+        "list (JAX and PyTorch Exportable backends) gives one value per block, "
+        "e.g. `[1, 3]`. `0` applies only the edge-condition "
         "modulation: the rotation-free per-degree radial scaling on the SO(2) "
         "path, or a single `x @ T_e` when edge_cartesian applies. The per-node "
         "node_cartesian stack carries its own independent depth."
@@ -883,13 +1010,20 @@ def descrpt_se_zm_args() -> list[Argument]:
         "before the scalar is extracted; the value selects the quadratic grid "
         "product (`glu`) or the polynomial point-wise grid MLP (`mlp`). The "
         "read-out degree equals the node degree of the last interaction block; "
-        "the Wigner-D frame order follows `kmax`."
+        "the Wigner-D frame order is `readout_kmax`."
+    )
+    doc_readout_kmax = (
+        "Wigner-D frame order of the SO(3) read-out grid, or `null` to use `kmax`."
     )
     doc_readout_layers = (
         "Number of stacked equivariant residual read-out FFNs (default 1). Each "
         "layer is an `x + FFN(x)` residual block sharing the read-out degree; "
         "intermediate layers keep the full SO(3) tensor so high-degree geometry "
         "keeps folding into l=0, and only the final layer slices the l=0 channel."
+    )
+    doc_readout_norm = (
+        "Whether to apply an equivariant RMS normalization to the node features "
+        "before the read-out."
     )
     doc_lebedev_quadrature = (
         "Either one boolean applied to both S2 branches, or two booleans "
@@ -951,7 +1085,19 @@ def descrpt_se_zm_args() -> list[Argument]:
         "Default frame-level charge and spin conditions `[charge, spin]`. "
         "This option is used only when `add_chg_spin_ebd` is enabled. "
         "If set, the value is used when explicit `charge_spin` data are "
-        "not provided, including during `.pt2` inference."
+        "not provided, including during `.pt2` inference. Fine-tuning takes "
+        "the value of the pretrained model unless it is set here."
+    )
+    doc_moe = (
+        "Mixture of experts (MoE) of the feed-forward networks of the "
+        "interaction blocks and of the read-out: every atom is computed with "
+        "weights that depend on the task of the model, on its element and, "
+        "through a router, on the charge and spin multiplicity of its frame "
+        "(with `add_chg_spin_ebd`). Every branch of a multi-task model is a "
+        "task, and a single-task model is one task. An empty section `{}` uses "
+        "all of them with the defaults. Before freezing, `dp --pt-expt "
+        "moe-merge` merges the experts into a model without MoE, or into one "
+        "that keeps the weights of chosen elements."
     )
 
     doc_exclude_types = (
@@ -967,7 +1113,16 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_seed = "Random seed for parameter initialization."
     return [
         Argument("sel", [int, list[int], str], optional=True, default=256, doc=doc_sel),
-        Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
+        Argument(
+            "rcut", [float, list[float]], optional=True, default=6.0, doc=doc_rcut
+        ),
+        Argument(
+            "parity",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("jax", "pt_expt") + doc_parity,
+        ),
         Argument(
             "env_exp",
             [int, list[int]],
@@ -995,6 +1150,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             doc=doc_edge_norm,
         ),
         Argument(
+            "density_floor",
+            [float, None],
+            optional=True,
+            default=None,
+            doc=supported_backends("jax", "pt_expt") + doc_density_floor,
+        ),
+        Argument(
             "use_env_seed",
             bool,
             optional=True,
@@ -1006,7 +1168,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt", "pt_expt") + doc_random_gamma,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_random_gamma,
         ),
         Argument(
             "edge_cartesian",
@@ -1058,7 +1220,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         Argument("so2_norm", bool, optional=True, default=False, doc=doc_so2_norm),
         Argument(
             "mixing_layers",
-            int,
+            [int, list[int]],
             optional=True,
             default=4,
             alias=["so2_layers"],
@@ -1257,6 +1419,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             doc=supported_backends("pt", "jax", "pt_expt") + doc_so3_readout,
         ),
         Argument(
+            "readout_kmax",
+            [int, None],
+            optional=True,
+            default=None,
+            doc=supported_backends("jax", "pt_expt") + doc_readout_kmax,
+        ),
+        Argument(
             "readout_layers",
             int,
             optional=True,
@@ -1264,6 +1433,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             extra_check=lambda x: x >= 1,
             extra_check_errmsg="must be >= 1",
             doc=supported_backends("pt", "jax", "pt_expt") + doc_readout_layers,
+        ),
+        Argument(
+            "readout_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("jax", "pt_expt") + doc_readout_norm,
         ),
         Argument(
             "lebedev_quadrature",
@@ -1293,7 +1469,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt", "pt_expt") + doc_use_amp,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_use_amp,
         ),
         Argument(
             "add_chg_spin_ebd",
@@ -1326,6 +1502,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         ),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
+        moe_argument(doc_moe),
     ]
 
 
@@ -3120,6 +3297,7 @@ def fitting_ener() -> list[Argument]:
             default=False,
             doc=doc_use_aparam_as_mask,
         ),
+        moe_argument(doc_fitting_moe),
     ]
 
 
@@ -3223,6 +3401,7 @@ def fitting_sezm_ener() -> list[Argument]:
             default=False,
             doc=doc_use_aparam_as_mask,
         ),
+        moe_argument(doc_fitting_moe),
         Argument(
             "case_film_embd",
             bool,
@@ -4042,12 +4221,28 @@ def model_args(
         "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
         "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
         "for tensor outputs, e.g. `{'dipole': [null, [0., 1., 2.]]}`. "
+        "An entry may also name the isolated atom the value belongs to. `spin` gives the magnitude of its spin "
+        "moment, e.g. `{'energy': {'Fe': {'value': -3.4, 'spin': 3.0}}}`, in the units of the spin input; a "
+        "native-spin model with `vacuum_ref` then gives exactly this energy to an atom without neighbors that "
+        "carries this moment, and an element without it takes the number of unpaired electrons of its neutral "
+        "ground-state atom. `charge` and `multiplicity` give the charge and spin condition of the atom, e.g. "
+        "`{'energy': {'H': {'value': -13.4, 'charge': 0, 'multiplicity': 2}}}`; a model with `add_chg_spin_ebd` "
+        "and `vacuum_ref` then references the element to this condition, so an atom without neighbors in it has "
+        "exactly this energy. An element whose entry names no condition is referenced to `default_chg_spin`. "
         "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
         "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
         "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
         "changed by fine-tuning. `dp change-bias` fits from its input data without reapplying the model's stored "
         "preset; explicit `--bias-value` values override the bias directly. "
         "Dipole models apply no output bias and take no preset."
+    )
+    doc_task = (
+        "The name of the task of a single-task model. Fine-tuning identifies a "
+        "task by its name: in a multi-task model the branch key names the "
+        "task. A multi-task fine-tuning from a single-task model continues it "
+        "in the branch of the same name, and starts other branches from it "
+        "when their `finetune_head` is that name. Without a name the task is "
+        "`Default`."
     )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
@@ -4122,7 +4317,12 @@ def model_args(
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[float | list | None] | dict[str, float | list] | str],
+                dict[
+                    str,
+                    list[float | list | dict | None]
+                    | dict[str, float | list | dict]
+                    | str,
+                ],
                 optional=True,
                 default=None,
                 doc=supported_backends("pt", "pd", "pt_expt", "jax")
@@ -4174,6 +4374,13 @@ def model_args(
                 optional=True,
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
                 + doc_finetune_head,
+            ),
+            Argument(
+                "task",
+                str,
+                optional=True,
+                default=None,
+                doc=supported_backends("pt_expt") + doc_task,
             ),
         ],
         [
@@ -4385,14 +4592,14 @@ def sezm_model_args() -> Argument:
     )
     doc_model = (
         "DPA4/SeZM model scaffold with the SeZM descriptor. It supports energy "
-        "fitting in PyTorch and PyTorch Exportable, plus invariant-property "
-        "fitting in PyTorch."
+        "fitting in PyTorch, PyTorch Exportable and JAX, plus invariant-property "
+        "fitting in PyTorch and JAX."
     )
 
     # ``get_argument`` constructs a fresh Argument, so narrowing this label does
     # not change the generic property fitting used by standard models.
     dpa4_property_fitting = fitting_args_plugin.get_argument("property")
-    dpa4_property_fitting.doc = supported_backends("pt")
+    dpa4_property_fitting.doc = supported_backends("pt", "jax")
 
     ca = Argument(
         "dpa4",
@@ -4411,7 +4618,7 @@ def sezm_model_args() -> Argument:
                         doc="The type of the descriptor.",
                     )
                 ],
-                doc=supported_backends("pt", "pt_expt") + doc_descrpt,
+                doc=supported_backends("pt", "jax", "pt_expt") + doc_descrpt,
             ),
             Argument(
                 "fitting_net",
@@ -4429,7 +4636,7 @@ def sezm_model_args() -> Argument:
                         doc="The type of the fitting.",
                     )
                 ],
-                doc=supported_backends("pt", "pt_expt") + doc_fitting,
+                doc=supported_backends("pt", "jax", "pt_expt") + doc_fitting,
             ),
             Argument(
                 "use_compile",
@@ -4467,23 +4674,23 @@ def sezm_model_args() -> Argument:
                     Argument(
                         "rank",
                         int,
-                        doc=supported_backends("pt") + doc_lora_rank,
+                        doc=supported_backends("jax", "pt") + doc_lora_rank,
                     ),
                     Argument(
                         "alpha",
                         float,
                         optional=True,
                         default=None,
-                        doc=supported_backends("pt") + doc_lora_alpha,
+                        doc=supported_backends("jax", "pt") + doc_lora_alpha,
                     ),
                 ],
                 optional=True,
                 default=None,
-                doc=supported_backends("pt") + doc_lora,
+                doc=supported_backends("jax", "pt") + doc_lora,
             ),
         ],
         alias=["DPA4", "SeZM", "sezm"],
-        doc=supported_backends("pt", "pt_expt") + doc_model,
+        doc=supported_backends("jax", "pt", "pt_expt") + doc_model,
     )
     return ca
 
@@ -5030,33 +5237,35 @@ def optimizer_adam() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta1,
+            doc=supported_backends("jax", "tf", "pt", "pd", "tf2") + doc_adam_beta1,
         ),
         Argument(
             "adam_beta2",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta2,
+            doc=supported_backends("jax", "tf", "pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
             "adam_eps",
             float,
             optional=True,
             default=1e-8,
-            doc=supported_backends("pt_expt") + doc_adam_eps,
+            doc=supported_backends("jax", "pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
             float,
             optional=True,
             default=0.0,
-            doc=supported_backends("pt", "pd") + doc_weight_decay,
+            doc=supported_backends("jax", "pt", "pd") + doc_weight_decay,
         ),
     ]
 
 
-@opt_args_plugin.register("AdamW", doc=supported_backends("pt", "pd", "pt_expt", "tf2"))
+@opt_args_plugin.register(
+    "AdamW", doc=supported_backends("jax", "pt", "pd", "pt_expt", "tf2")
+)
 def optimizer_adamw() -> list[Argument]:
     doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
     doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
@@ -5071,28 +5280,29 @@ def optimizer_adamw() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta1,
+            doc=supported_backends("jax", "pt", "pd", "tf2") + doc_adam_beta1,
         ),
         Argument(
             "adam_beta2",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta2,
+            doc=supported_backends("jax", "pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
             "adam_eps",
             float,
             optional=True,
             default=1e-8,
-            doc=supported_backends("pt_expt") + doc_adam_eps,
+            doc=supported_backends("jax", "pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
             float,
             optional=True,
             default=0.001,
-            doc=supported_backends("pt", "pd", "pt_expt", "tf2") + doc_weight_decay,
+            doc=supported_backends("jax", "pt", "pd", "pt_expt", "tf2")
+            + doc_weight_decay,
         ),
     ]
 
@@ -5210,7 +5420,7 @@ def optimizer_adamuon() -> list[Argument]:
 
 @opt_args_plugin.register(
     "HybridMuon",
-    doc=supported_backends("pt")
+    doc=supported_backends("jax", "pt", "pt_expt")
     + "HybridMuon optimizer (DeePMD-kit custom implementation). "
     + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
     + "For matrix params: Muon update with Newton-Schulz based on selected muon_mode. "
@@ -5229,7 +5439,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             optional=True,
             default=0.95,
             alias=["muon_momentum"],
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
             "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
         ),
@@ -5238,7 +5448,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Adam beta1 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -5246,7 +5456,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.95,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Adam beta2 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -5254,7 +5464,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.001,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Weight decay coefficient. Applied to Muon-routed parameters and "
             + "the AdamW-style decay path for matrix parameters.",
         ),
@@ -5263,7 +5473,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
             "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
@@ -5274,7 +5484,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.18,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
             + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
             + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
@@ -5284,7 +5494,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             str,
             optional=True,
             default="slice",
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Muon routing mode. "
             + "'2d': only effective-rank-2 params are eligible for Muon; effective rank >2 goes to AdamW-style decoupled decay path. "
             + "'flat': effective-rank >=2 params are flattened to matrix-view (prod(shape[:-1]), shape[-1]) for Muon. "
@@ -5296,7 +5506,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
             + "Square matrices keep using the current standard Newton-Schulz path.",
         ),
@@ -5305,7 +5515,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt")
+            doc=supported_backends("pt", "pt_expt")
             + "Enable triton-accelerated Newton-Schulz orthogonalization. "
             "Requires triton and CUDA. Falls back to PyTorch implementation "
             "when triton is unavailable or running on CPU. Ignored when enable_gram is true.",
@@ -5315,7 +5525,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=supported_backends("pt")
+            doc=supported_backends("jax", "pt", "pt_expt")
             + "Enable Magma-lite damping on the Muon route only. "
             "When enabled, HybridMuon computes momentum-gradient alignment "
             "per Muon block, applies EMA smoothing, and rescales Muon updates "
@@ -6631,7 +6841,9 @@ def training_args(
         "50% more communication (3x model size) due to parameter all-gather in "
         "both forward and backward passes. "
         "Default is 0. Requires distributed launch via torchrun. "
-        "Currently supports single-task training; does not support LKF or change_bias_after_training. "
+        "Does not support LKF or change_bias_after_training. "
+        "The PyTorch backend supports single-task training only; the PyTorch "
+        "Exportable backend also supports multi-task training at stage 1. "
         "In the PyTorch Exportable backend, stages 2 and 3 additionally exclude "
         "`enable_compile`, whose traced graph cannot carry sharded parameters."
     )
@@ -6735,7 +6947,7 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt_expt") + doc_reset_data_progress,
+            doc=supported_backends("jax", "pt_expt") + doc_reset_data_progress,
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
         Argument(
@@ -6752,14 +6964,14 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt", "pt_expt") + doc_enable_ema,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_enable_ema,
         ),
         Argument(
             "ema_decay",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt", "pt_expt") + doc_ema_decay,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_ema_decay,
             extra_check=lambda x: 0.0 <= x < 1.0,
             extra_check_errmsg="must be greater than or equal to 0 and less than 1",
         ),
@@ -6838,7 +7050,7 @@ def training_args(
             "gradient_max_norm",
             float,
             optional=True,
-            doc=supported_backends("pt", "pd", "pt_expt", "tf2")
+            doc=supported_backends("jax", "pt", "pd", "pt_expt", "tf2")
             + doc_gradient_max_norm,
         ),
         Argument(
@@ -6853,7 +7065,7 @@ def training_args(
             int,
             optional=True,
             default=0,
-            doc=supported_backends("pt", "pt_expt") + doc_zero_stage,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_zero_stage,
         ),
         Argument(
             "neighbor_graph_method",
@@ -6882,7 +7094,7 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt_expt")
+            doc=supported_backends("jax", "pt_expt")
             + "Enable TF32 matmul precision for CUDA training forwards. "
             "Independent of `enable_compile`; eval-time TF32 is controlled "
             "separately by `validating.tf32_infer` or `DP_TF32_INFER`. The "
@@ -7194,14 +7406,14 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt", "pt_expt") + doc_tf32_infer,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_tf32_infer,
         ),
         Argument(
             "amp_infer",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt", "pt_expt") + doc_amp_infer,
+            doc=supported_backends("jax", "pt", "pt_expt") + doc_amp_infer,
         ),
     ]
     return Argument(
@@ -7455,15 +7667,71 @@ def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
             )
 
 
-def validate_no_multitask_lora(data: dict[str, Any], multi_task: bool = False) -> None:
-    """Reject ``lora`` in multi-task configs.
+def validate_moe_configuration(data: dict[str, Any]) -> None:
+    """Validate the ``moe`` sections of every descriptor and fitting network.
 
-    In multi-task training `share_params` aliases descriptor modules across
-    branches to the same Python object, so a per-branch LoRA injection would
-    silently collapse into one global adapter. Catch this at config time
-    rather than letting a confusing shared-adapter model slip through.
+    The shape of a section is checked by the normalizer the components
+    themselves use, so an unusable configuration is refused before any model
+    is built: unknown options, values out of range, a router with nothing to
+    read, elements outside the type map, and MoE of a fitting network next
+    to a case embedding.
+
+    Raises
+    ------
+    ValueError
+        If a ``moe`` section is unusable.
     """
-    if not multi_task:
+    from deepmd.dpmodel.utils.expert_route import (
+        normalize_moe,
+    )
+
+    model = data.get("model", {}) if isinstance(data, dict) else {}
+    if not isinstance(model, dict):
+        return
+    branches = (
+        {"": model} if "descriptor" in model else dict(model.get("model_dict", {}))
+    )
+    for key, branch in branches.items():
+        if not isinstance(branch, dict):
+            continue
+        where = f" of branch '{key}'" if key else ""
+        type_map = branch.get("type_map")
+        for name in ("descriptor", "fitting_net"):
+            component = branch.get(name)
+            if not isinstance(component, dict) or component.get("moe") is None:
+                continue
+            # The router of a descriptor reads the charge/spin of a frame.
+            charge_spin = name == "descriptor" and bool(
+                component.get("add_chg_spin_ebd")
+            )
+            try:
+                moe = normalize_moe(component["moe"], charge_spin=charge_spin)
+            except ValueError as err:
+                raise ValueError(f"`moe` of the {name}{where}: {err}") from err
+            if isinstance(moe["element"], list) and isinstance(type_map, list):
+                unknown = sorted(set(moe["element"]) - set(type_map))
+                if unknown:
+                    raise ValueError(
+                        f"`moe.element` of the {name}{where} names {unknown}, "
+                        "which the type map does not hold"
+                    )
+            if name == "fitting_net" and component.get("dim_case_embd"):
+                raise ValueError(
+                    f"the fitting network{where} configures `moe`, whose task is "
+                    "the branch itself; leave `dim_case_embd` at 0"
+                )
+
+
+def validate_no_multitask_lora(
+    data: dict[str, Any], multi_task: bool = False, *, backend: str | None = None
+) -> None:
+    """Reject multi-task LoRA where shared adapters are not supported.
+
+    JAX supports shared adapters and validates their rank, scaling, and freezing
+    policy while resolving shared descriptors. Other backends keep the
+    single-task constraint because their trainers do not manage shared adapters.
+    """
+    if not multi_task or backend == "jax":
         return
     model_dict = (data.get("model") or {}).get("model_dict") or {}
     for branch_key, branch in model_dict.items():
@@ -7528,7 +7796,11 @@ def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
 
 
 def normalize(
-    data: dict[str, Any], multi_task: bool = False, *, check: bool = True
+    data: dict[str, Any],
+    multi_task: bool = False,
+    *,
+    check: bool = True,
+    backend: str | None = None,
 ) -> dict[str, Any]:
     """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
@@ -7554,7 +7826,8 @@ def normalize(
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)
     _check_dpa3_chg_spin_migration(data)
-    validate_no_multitask_lora(data, multi_task=multi_task)
+    validate_moe_configuration(data)
+    validate_no_multitask_lora(data, multi_task=multi_task, backend=backend)
     _apply_density_env_protection_default(data)
 
     return data

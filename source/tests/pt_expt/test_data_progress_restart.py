@@ -31,6 +31,9 @@ import torch.multiprocessing as mp
 from deepmd.dpmodel.train import (
     RankContext,
 )
+from deepmd.dpmodel.train.data import (
+    next_training_batch,
+)
 from deepmd.dpmodel.train.data_progress import (
     DATA_PROGRESS_CHECKPOINT_KEY,
     collect_training_data_progress,
@@ -834,12 +837,14 @@ def test_filtered_rank_progress_restores_its_own_cursor(tmp_path, monkeypatch) -
         trainer._configured_data_seed = 7
         trainer._task_rng = np.random.default_rng(7)
         trainer.training_data_by_task = {"Default": data}
-        trainer.pair_filter_enabled_by_task = {"Default": True}
         return trainer, data
 
+    def read(data):
+        return next_training_batch(data, filter_enabled=True, task_key="Default")
+
     originals = [make_rank(rank) for rank in range(2)]
-    for trainer, data in originals:
-        trainer._next_training_batch(data, "Default")
+    for _, data in originals:
+        read(data)
     progress = [
         collect_training_data_progress(trainer.training_data_by_task)
         for trainer, _ in originals
@@ -853,16 +858,11 @@ def test_filtered_rank_progress_restores_its_own_cursor(tmp_path, monkeypatch) -
     checkpoint = tmp_path / "progress.pt"
     torch.save(originals[0][0]._collect_data_progress(), checkpoint)
     envelope = torch.load(checkpoint, weights_only=True)
-    for rank, (trainer, data) in enumerate(originals):
-        expected = [
-            trainer._next_training_batch(data, "Default")["coord"] for _ in range(4)
-        ]
+    for rank, (_, data) in enumerate(originals):
+        expected = [read(data)["coord"] for _ in range(4)]
         restored, restored_data = make_rank(rank)
         restored._restore_data_progress(envelope)
-        actual = [
-            restored._next_training_batch(restored_data, "Default")["coord"]
-            for _ in range(4)
-        ]
+        actual = [read(restored_data)["coord"] for _ in range(4)]
         for want, got in zip(expected, actual, strict=True):
             np.testing.assert_array_equal(want, got)
         data.close()

@@ -655,6 +655,10 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
         """No atomic parameters."""
         return False
 
+    def requires_full_neighbor_list(self) -> bool:
+        """The graph-only pair potential retains every neighbor in range."""
+        return True
+
     def uses_graph_lower(self) -> bool:
         """Graph-only term: the NeighborGraph lower is its sole evaluation
         route, so it supports the graph route like any graph-capable atomic
@@ -671,6 +675,10 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
     def fused_decomposition(self) -> tuple[None, InnerPotential]:
         """The term is a pair potential with no learned part."""
         return None, self.potential
+
+    def supports_canonical_graph(self) -> bool:
+        """The term sums over the edges of any graph, without pair exclusion."""
+        return self.pair_excl is None
 
     def enable_compression(
         self,

@@ -12,6 +12,12 @@ from unittest import (
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
+from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+    mean_envelope_mass,
+)
 from deepmd.dpmodel.descriptor.dpa4_nn.mlp import (
     SwiGLUMLP,
 )
@@ -1075,7 +1081,7 @@ class TestDPA4CContactClamp:
     def test_serialization_roundtrip_keeps_the_recorded_edges(self) -> None:
         coord, atype = self.cluster(0.7)
         data = self.clamped.serialize()
-        assert data["@version"] == 4
+        assert data["@version"] == 5
         restored = DescrptDPA4C.deserialize(data)
         np.testing.assert_array_equal(
             restored.contact_clamp.edges, self.clamped.contact_clamp.edges
@@ -2462,3 +2468,110 @@ def test_projected_spin_gram_contains_collective_antisymmetric_exchange() -> Non
     )
     assert abs(expected) > 1e-3
     np.testing.assert_allclose(antisymmetric, expected, atol=1e-14)
+
+
+def periodic_corpus(seed: int = 31) -> list[dict]:
+    """Return a two-type periodic sample of the statistics interface."""
+    rng = np.random.default_rng(seed)
+    nframes, natoms, cell = 4, 12, 8.0
+    return [
+        {
+            "coord": rng.uniform(0.0, cell, size=(nframes, natoms, 3)),
+            "atype": np.tile(np.array([0, 1, 0, 1, 0, 1] * 2), (nframes, 1)),
+            "box": np.tile(np.diag([cell, cell, cell]).reshape(1, 9), (nframes, 1)),
+        }
+    ]
+
+
+def floor_descriptor(density_floor: float) -> DescrptDPA4C:
+    """Return a small uncalibrated descriptor carrying one floor setting."""
+    return DescrptDPA4C(
+        rcut=4.0,
+        ntypes=2,
+        channels=8,
+        lmax=2,
+        n_radial=4,
+        precision="float64",
+        seed=5,
+        density_floor=density_floor,
+    )
+
+
+def test_the_absolute_floor_has_no_measured_state() -> None:
+    """An unset floor keeps the default and stores no envelope mass."""
+    descriptor = floor_descriptor(0.0)
+    assert descriptor._degree_floor() == pytest.approx(descriptor._DEGREE_NORM_FLOOR)
+    assert "envelope_mass" not in descriptor.serialize()["@variables"]
+    descriptor.compute_input_stats(periodic_corpus())
+    assert "envelope_mass" not in descriptor.serialize()["@variables"]
+    restored = DescrptDPA4C.deserialize(descriptor.serialize())
+    assert restored.density_floor == 0.0
+    assert not hasattr(restored, "envelope_mass")
+
+
+def test_the_floor_reads_the_measured_envelope_mass() -> None:
+    """The calibrate step measures the mean mass the floor multiplies."""
+    corpus = periodic_corpus()
+    descriptor = floor_descriptor(8.0)
+    mean_mass, _ = mean_envelope_mass(
+        corpus,
+        [descriptor.rcut],
+        exponent=descriptor._ENVELOPE_EXPONENT,
+        ntypes=descriptor.ntypes,
+        exclude_types=[],
+    )
+    descriptor.compute_input_stats(corpus)
+    np.testing.assert_allclose(
+        to_numpy_array(descriptor.envelope_mass), mean_mass, rtol=1e-12
+    )
+    assert descriptor._degree_floor() == pytest.approx(8.0 * mean_mass[0])
+
+
+def test_the_floor_survives_a_round_trip() -> None:
+    """The mass and the option travel together through the record."""
+    descriptor = floor_descriptor(8.0)
+    descriptor.compute_input_stats(periodic_corpus())
+    data = descriptor.serialize()
+    restored = DescrptDPA4C.deserialize(data)
+    assert restored.density_floor == 8.0
+    np.testing.assert_array_equal(
+        to_numpy_array(restored.envelope_mass),
+        to_numpy_array(descriptor.envelope_mass),
+    )
+    assert restored._degree_floor() == pytest.approx(descriptor._degree_floor())
+
+
+def test_the_floor_raises_a_negative_value() -> None:
+    with pytest.raises(ValueError, match="density_floor"):
+        floor_descriptor(-1.0)
+
+
+def test_a_floor_record_without_its_mass_keeps_the_default() -> None:
+    """A record written by an earlier release restores without a stored mass."""
+    data = floor_descriptor(0.0).serialize()
+    data.pop("density_floor", None)
+    data["@variables"].pop("envelope_mass", None)
+    data["@version"] = 4
+    restored = DescrptDPA4C.deserialize(data)
+    assert restored.density_floor == 0.0
+    assert restored._degree_floor() == pytest.approx(restored._DEGREE_NORM_FLOOR)
+
+
+def test_shared_replicas_merge_their_measured_masses() -> None:
+    """Two branches entering training average their masses by atom count."""
+    base = floor_descriptor(8.0)
+    replica = floor_descriptor(8.0)
+    base.envelope_mass[...] = 2.0
+    base.envelope_count = 3.0
+    replica.envelope_mass[...] = 6.0
+    replica.envelope_count = 1.0
+    replica.share_params(base, 0, model_prob=1.0)
+    assert base.envelope_mass[0] == pytest.approx(3.0)
+    assert replica.envelope_mass is base.envelope_mass
+    # A restored checkpoint already carries the merged mass, so a resume
+    # shares the value without folding it in a second time.
+    survivor = floor_descriptor(8.0)
+    survivor.envelope_mass[...] = 4.0
+    survivor.envelope_count = 2.0
+    survivor.share_params(base, 0, resume=True)
+    assert base.envelope_mass[0] == pytest.approx(3.0)

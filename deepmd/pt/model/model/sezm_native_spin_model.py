@@ -504,4 +504,6 @@ class SeZMNativeSpinModel(SeZMModel):
         data.pop("type", None)
         spin = Spin.deserialize(data.pop("spin"))
         atomic_model = SeZMAtomicModel.deserialize(data.pop("atomic_model"))
-        return cls(atomic_model_=atomic_model, spin=spin, **data)
+        model = cls(atomic_model_=atomic_model, spin=spin, **data)
+        model._restore_lora_trainability()
+        return model

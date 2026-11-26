@@ -469,7 +469,13 @@ def get_linear_atomic_model(
             type_map=copy.deepcopy(type_map),
             mode=children[i].get("mode", "zbl"),
             precision=learned_descriptor_obj.precision,
-            rcut=learned_descriptor_obj.get_rcut(),
+            rcut=min(
+                getattr(
+                    learned_descriptor_obj,
+                    "block_rcut",
+                    [learned_descriptor_obj.get_rcut()],
+                )
+            ),
             sel=learned_descriptor_obj.get_sel(),
             truncation=resolve_bridging_options(children[i])["truncation"],
         )

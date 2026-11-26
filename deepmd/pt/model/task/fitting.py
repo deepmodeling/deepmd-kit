@@ -17,6 +17,9 @@ from typing_extensions import (
     Self,
 )
 
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -443,6 +446,7 @@ class GeneralFitting(Fitting):
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        reject_moe(kwargs, "fitting network")
         self.var_name = var_name
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt

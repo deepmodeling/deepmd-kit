@@ -21,18 +21,15 @@ from deepmd.pt_expt.kernels.utils import (
 from .base_fitting import (
     BaseFitting,
 )
+from .invar_fitting import (
+    ExpertFittingParameters,
+    SharesInvarParams,
+)
 
 
 @BaseFitting.register("ener")
 @torch_module
-class EnergyFittingNet(EnergyFittingNetDP):
-    def share_params(self, *args: Any, **kwargs: Any) -> None:
-        from deepmd.pt_expt.fitting.invar_fitting import (
-            InvarFitting,
-        )
-
-        return InvarFitting.share_params(self, *args, **kwargs)
-
+class EnergyFittingNet(SharesInvarParams, ExpertFittingParameters, EnergyFittingNetDP):
     def call_graph(
         self,
         descriptor: torch.Tensor,
@@ -44,6 +41,7 @@ class EnergyFittingNet(EnergyFittingNetDP):
         aparam: torch.Tensor | None = None,
         vacuum_descriptor: torch.Tensor | None = None,
         return_middle_output: bool = False,
+        condition: Any = None,
     ) -> dict[str, torch.Tensor]:
         """Graph-native fitting forward, fused when the backend supports it.
 
@@ -52,16 +50,19 @@ class EnergyFittingNet(EnergyFittingNetDP):
         routes through the fused operator of the backend device; anything else
         keeps the dpmodel reference. Routing resolves against the backend
         device rather than a traced tensor, because every export traces on CPU
-        and moves the program afterwards. A vacuum reference is a per-type
-        constant on the eligible configuration and enters the operator through
-        the bias. The fused operator returns the output alone, so a call that
-        also asks for the middle output keeps the reference.
+        and moves the program afterwards. A vacuum reference per type is a
+        constant that enters the operator through the bias; references that
+        follow the atoms (an MoE descriptor) keep the reference path, as does
+        an MoE network. The fused operator returns the output alone, so a call
+        that also asks for the middle output keeps the reference.
         """
         if (
             not self.training
+            and self.moe is None
             and not return_middle_output
             and fparam is None
             and aparam is None
+            and (vacuum_descriptor is None or vacuum_descriptor.ndim == 2)
             and fused_operators_enabled()
             and fused_fitting_available()
             and fitting_eligible(self)
@@ -83,4 +84,5 @@ class EnergyFittingNet(EnergyFittingNetDP):
             aparam=aparam,
             vacuum_descriptor=vacuum_descriptor,
             return_middle_output=return_middle_output,
+            condition=condition,
         )

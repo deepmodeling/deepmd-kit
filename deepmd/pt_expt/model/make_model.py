@@ -2,6 +2,7 @@
 import math
 import types
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -21,6 +22,7 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
     compact_nodes,
     expand_node_values,
     flatten_topologies,
@@ -50,6 +52,11 @@ from .edge_transform_output import (
 from .transform_output import (
     fit_output_to_model_output,
 )
+
+if TYPE_CHECKING:
+    from deepmd.pt_expt.utils.canonical_graph import (
+        BorderPlan,
+    )
 
 
 def _translate_energy_keys(
@@ -657,6 +664,21 @@ def make_model(
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
 
+        def change_out_bias(self, *args: Any, **kwargs: Any) -> None:
+            """Change the output bias from the statistics of the evaluated model.
+
+            A training forward may differ from the model it trains: merge-aware
+            training evaluates a share of the frames without the element
+            weights of an MoE model. The statistics are those of the model in
+            evaluation mode, whatever the mode it is called in.
+            """
+            training = self.training
+            self.eval()
+            try:
+                super().change_out_bias(*args, **kwargs)
+            finally:
+                self.train(training)
+
         def observe_contacts(self, graph: Any, atype: torch.Tensor) -> None:
             """Record the contacts of a training graph before it is evaluated.
 
@@ -709,7 +731,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
             spin: torch.Tensor | None = None,
-            comm_dict: dict | None = None,
+            comm_dict: "dict[str, torch.Tensor] | BorderPlan | None" = None,
             topologies: dict[str, Any] | None = None,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
@@ -789,12 +811,15 @@ def make_model(
                 (default) is the existing, unconditioned graph lower with no
                 mag output.
             comm_dict
-                MPI communication metadata for parallel inference. ``None``
-                (default) for non-parallel inference/training. Forwarded to
-                the atomic model's ``forward_common_atomic_graph``, which
-                drives the descriptor's per-layer cross-rank ghost-feature
-                exchange (``deepmd_export::border_op``, e.g. dpa2's
-                repformer block via
+                MPI communication metadata for parallel inference: the
+                border-exchange tensors of the with-comm graph lower, or the
+                border plan of a lower that carries the exchange in its main
+                program. ``None`` (default)
+                for non-parallel inference/training. Forwarded to the atomic
+                model's ``forward_common_atomic_graph``, which drives the
+                descriptor's per-layer cross-rank ghost-feature exchange
+                (``deepmd_export::border_op`` or ``deepmd::border_exchange``,
+                e.g. dpa2's repformer block via
                 :meth:`~deepmd.pt_expt.descriptor.repformers.
                 DescrptBlockRepformers._exchange_ghosts_graph`). Only
                 meaningful for descriptors whose
@@ -834,12 +859,8 @@ def make_model(
                 # Every topology carries geometry leaves of its own.
                 topologies = releaf_topologies(topologies)
             if spin is not None:
-                # second autograd leaf: force_mag = -dE/dspin (native spin).
-                # Deliberately a SEPARATE leaf/backward from edge_vec rather
-                # than a joint grad([edge_vec, spin]) call (as pt does in
-                # deepmd/pt/model/model/transform_output.py:288) -- this keeps
-                # edge_energy_deriv's signature untouched; see the second
-                # torch.autograd.grad call in fit_output_to_model_output_graph.
+                # Second autograd leaf: force_mag = -dE/dspin (native spin),
+                # differentiated by the backward of the force.
                 spin = spin.detach().requires_grad_(True)
             graph = NeighborGraph(
                 n_node=n_node,
@@ -1389,7 +1410,6 @@ def make_model(
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             charge_spin: torch.Tensor | None = None,
-            spin: torch.Tensor | None = None,
             destination_sorted: bool = False,
             topologies: dict[str, Any] | None = None,
             **make_fx_kwargs: Any,
@@ -1423,15 +1443,6 @@ def make_model(
                 destination-major and ``destination_order`` is identity.
             fparam, aparam, do_atomic_virial, charge_spin
                 As in ``forward_common_lower_graph``.
-            spin
-                Per-node native spin, flat ``(N, 3)``, or ``None``. Threaded
-                through to ``forward_common_lower_graph`` the same way as
-                ``charge_spin``; when given, the trace additionally carries a
-                SECOND autograd leaf so the returned dict carries
-                ``<var>_derv_r_mag`` for every ``r_differentiable`` reducible
-                output. ``None`` (default) is the existing, unconditioned
-                trace with no mag output -- used by every non-spin caller of
-                this generic (descriptor-agnostic) exportable.
             topologies
                 Sample topologies the atomic model declares by
                 ``required_topologies()``, or ``None``. When given, they are
@@ -1449,9 +1460,9 @@ def make_model(
                 A traced module whose ``forward`` accepts
                 ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
                 destination_order, destination_row_ptr, source_order,
-                source_row_ptr, fparam, aparam, charge_spin, spin)`` -- or,
-                with topologies, ``spin`` replaced by the topology inputs --
-                and returns a dict with the same internal keys as
+                source_row_ptr, fparam, aparam, charge_spin)``, followed by
+                the topology inputs when topologies are given, and returns a
+                dict with the same internal keys as
                 ``forward_common_lower_graph``.
             """
             validate_graph_csr_for_export(
@@ -1485,6 +1496,19 @@ def make_model(
                     charge_spin: torch.Tensor | None,
                     *topology_vals: torch.Tensor,
                 ) -> dict[str, torch.Tensor]:
+                    topologies = unflatten_topologies(topology_names, topology_vals)
+                    if PME_MESH in topologies:
+                        # A real FFT on an even grid has one more frequency
+                        # than half the grid width. Expose the positive pair
+                        # count so that tracing its adjoint preserves this
+                        # relation through the half- and full-spectrum slices.
+                        mesh = topologies[PME_MESH]
+                        pairs = mesh.mode_3.reshape(-1, 2)
+                        torch.ops.aten._assert_scalar.default(
+                            pairs.shape[0] >= 1,
+                            "The PME grid must contain at least two modes.",
+                        )
+                        mesh.mode_3 = pairs.flatten()
                     return model.forward_common_lower_graph(
                         atype,
                         n_node,
@@ -1501,7 +1525,7 @@ def make_model(
                         fparam=fparam,
                         aparam=aparam,
                         charge_spin=charge_spin,
-                        topologies=unflatten_topologies(topology_names, topology_vals),
+                        topologies=topologies,
                     )
 
                 return make_fx(fn_topologies, **make_fx_kwargs)(
@@ -1521,70 +1545,7 @@ def make_model(
                     *flatten_topologies(topologies),
                 )
 
-            # ``spin`` is a traced INPUT only when a real spin tensor is
-            # given (native-spin models). For every non-spin caller
-            # (``spin is None``) the traced ``fn`` must have the SAME arity as
-            # before native spin existed -- otherwise the outer energy trace,
-            # which threads ``charge_spin`` but no ``spin``, would call this
-            # traced module missing a ``spin`` argument. So the ``spin=None``
-            # branch traces the original 13-input closure (spin captured as a
-            # ``None`` constant), and the spin branch traces a 14-input
-            # closure with ``spin`` at the tail.
-            if spin is None:
-
-                def fn(
-                    atype: torch.Tensor,
-                    n_node: torch.Tensor,
-                    n_local: torch.Tensor,
-                    edge_index: torch.Tensor,
-                    edge_vec: torch.Tensor,
-                    edge_mask: torch.Tensor,
-                    destination_order: torch.Tensor,
-                    destination_row_ptr: torch.Tensor,
-                    source_order: torch.Tensor,
-                    source_row_ptr: torch.Tensor,
-                    fparam: torch.Tensor | None,
-                    aparam: torch.Tensor | None,
-                    charge_spin: torch.Tensor | None,
-                ) -> dict[str, torch.Tensor]:
-                    # forward_common_lower_graph creates the autograd leaf from
-                    # edge_vec internally, so no outer detach/requires_grad_
-                    # here (it would only add spurious ops to the traced graph).
-                    return model.forward_common_lower_graph(
-                        atype,
-                        n_node,
-                        n_local,
-                        edge_index,
-                        edge_vec,
-                        edge_mask,
-                        destination_order,
-                        destination_row_ptr,
-                        source_order,
-                        source_row_ptr,
-                        destination_sorted=destination_sorted,
-                        do_atomic_virial=do_atomic_virial,
-                        fparam=fparam,
-                        aparam=aparam,
-                        charge_spin=charge_spin,
-                    )
-
-                return make_fx(fn, **make_fx_kwargs)(
-                    atype,
-                    n_node,
-                    n_local,
-                    edge_index,
-                    edge_vec,
-                    edge_mask,
-                    destination_order,
-                    destination_row_ptr,
-                    source_order,
-                    source_row_ptr,
-                    fparam,
-                    aparam,
-                    charge_spin,
-                )
-
-            def fn_spin(
+            def fn(
                 atype: torch.Tensor,
                 n_node: torch.Tensor,
                 n_local: torch.Tensor,
@@ -1598,12 +1559,10 @@ def make_model(
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
                 charge_spin: torch.Tensor | None,
-                spin: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
-                # forward_common_lower_graph creates the autograd leaf(s) from
-                # edge_vec AND spin internally, so no outer
-                # detach/requires_grad_ here (it would only add spurious ops
-                # to the traced graph).
+                # forward_common_lower_graph creates the autograd leaf from
+                # edge_vec internally, so no outer detach/requires_grad_
+                # here (it would only add spurious ops to the traced graph).
                 return model.forward_common_lower_graph(
                     atype,
                     n_node,
@@ -1620,10 +1579,9 @@ def make_model(
                     fparam=fparam,
                     aparam=aparam,
                     charge_spin=charge_spin,
-                    spin=spin,
                 )
 
-            return make_fx(fn_spin, **make_fx_kwargs)(
+            return make_fx(fn, **make_fx_kwargs)(
                 atype,
                 n_node,
                 n_local,
@@ -1637,7 +1595,6 @@ def make_model(
                 fparam,
                 aparam,
                 charge_spin,
-                spin,
             )
 
         def forward_common_lower_exportable_with_comm(

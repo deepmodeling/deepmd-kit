@@ -561,6 +561,20 @@ void lt_block_bmm(const at::Tensor& A,
                   at::Tensor& D,
                   const at::Tensor& workspace,
                   cudaStream_t stream) {
+  // Reflection-preserving order blocks share one weight between two
+  // independent component stripes. Views retain the producer's row stride.
+  if (A.size(2) == 2 * B.size(1)) {
+    TORCH_INTERNAL_ASSERT(D.size(2) == 2 * B.size(2));
+    for (int sign = 0; sign < 2; ++sign) {
+      auto input = A.slice(2, sign * B.size(1), (sign + 1) * B.size(1));
+      auto output = D.slice(2, sign * B.size(2), (sign + 1) * B.size(2));
+      auto residual = C.defined()
+                          ? C.slice(2, sign * B.size(2), (sign + 1) * B.size(2))
+                          : at::Tensor();
+      lt_block_bmm(input, B, residual, output, workspace, stream);
+    }
+    return;
+  }
   static std::mutex mu;
   static std::unordered_map<LtBmmKey, cublasLtMatmulHeuristicResult_t,
                             LtBmmKeyHash>
@@ -764,6 +778,16 @@ void lt_weight_grad(const at::Tensor& A,
                     const at::Tensor& workspace,
                     cudaStream_t stream,
                     bool accumulate = false) {
+  // Both order signs differentiate the same weight; their contractions add.
+  if (A.size(2) == 2 * C.size(1)) {
+    TORCH_INTERNAL_ASSERT(B.size(2) == 2 * C.size(2));
+    lt_weight_grad(A.slice(2, 0, C.size(1)), B.slice(2, 0, C.size(2)), C,
+                   workspace, stream, accumulate);
+    lt_weight_grad(A.slice(2, C.size(1), A.size(2)),
+                   B.slice(2, C.size(2), B.size(2)), C, workspace, stream,
+                   true);
+    return;
+  }
   static std::mutex mu;
   static std::unordered_map<LtShapeKey, cublasLtMatmulHeuristicResult_t,
                             LtShapeKeyHash>
@@ -1612,8 +1636,9 @@ mixing_bwd2(const at::Tensor& grad_out_in,
       auto y1 = y_fm.slice(2, m0, row_w);
       at::bmm_out(y0, u_final.slice(2, 0, m0),
                   w0t_all[n_gated].transpose(1, 2));
-      at::bmm_out(y1, u_final.slice(2, m0, row_w),
-                  w1t_all[n_gated].transpose(1, 2));
+      lt_block_bmm(u_final.slice(2, m0, row_w),
+                   w1t_all[n_gated].transpose(1, 2), at::Tensor(), y1,
+                   lt_workspace, stream);
       y_fm.add_(u_final);
     }
     auto ha = h_alpha.value().to(u_final.scalar_type()).unsqueeze(-1);
@@ -1626,7 +1651,8 @@ mixing_bwd2(const at::Tensor& grad_out_in,
       auto hu0 = hu.slice(2, 0, m0);
       auto hu1 = hu.slice(2, m0, row_w);
       at::bmm_out(hu0, v.slice(2, 0, m0), w0t_all[n_gated]);
-      at::bmm_out(hu1, v.slice(2, m0, row_w), w1t_all[n_gated]);
+      lt_block_bmm(v.slice(2, m0, row_w), w1t_all[n_gated], at::Tensor(), hu1,
+                   lt_workspace, stream);
       hu.add_(v);
     }
     grad_u_final = hu;

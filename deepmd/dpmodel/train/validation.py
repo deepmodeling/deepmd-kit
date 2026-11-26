@@ -34,14 +34,13 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
+    FullValidationMetricProfile,
     metric_family_label,
 )
 
 log = logging.getLogger(__name__)
 
-# The backend-independent validator drives only energy-type models: the JAX
-# backend has no spin model, so it is bound to the energy full-validation
-# profile. Spin support is decided by the per-backend profile selection.
+# Energy is the default profile; backends may supply a spin-aware profile.
 FULL_VALIDATION_PROFILE = ENERGY_FULL_VALIDATION_PROFILE
 
 TOPK_RECORDS_INFO_KEY = "full_validation_topk_records"
@@ -108,10 +107,13 @@ def resolve_best_checkpoint_dir(
     return Path(save_ckpt).parent
 
 
-def parse_validation_metric(metric: str) -> tuple[str, str]:
+def parse_validation_metric(
+    metric: str,
+    profile: FullValidationMetricProfile = FULL_VALIDATION_PROFILE,
+) -> tuple[str, str]:
     """Parse the configured full validation metric."""
     normalized_metric = normalize_full_validation_metric(metric)
-    metric_key_map = FULL_VALIDATION_PROFILE.metric_key_map
+    metric_key_map = profile.metric_key_map
     if normalized_metric not in metric_key_map:
         supported_metrics = ", ".join(item.upper() for item in metric_key_map)
         raise ValueError(
@@ -124,25 +126,28 @@ def parse_validation_metric(metric: str) -> tuple[str, str]:
 def format_metric_for_log(
     metric_name: str,
     metric_value: float,
+    profile: FullValidationMetricProfile = FULL_VALIDATION_PROFILE,
     *,
     symm_virial: bool = False,
 ) -> tuple[str, float, str]:
     """Format a full validation metric for user-facing logging."""
     metric_family, metric_kind = metric_name.split(":")
-    metric_unit, metric_scale = FULL_VALIDATION_PROFILE.unit_by_family[metric_family]
+    metric_unit, metric_scale = profile.unit_by_family[metric_family]
     family_label = metric_family_label(metric_family, symm_virial=symm_virial)
     metric_label = f"{family_label}:{metric_kind.upper()}"
     return metric_label, metric_value * metric_scale, metric_unit
 
 
 def format_metric_value_for_table(
-    metric_key: str, metric_value: float
+    metric_key: str,
+    metric_value: float,
+    profile: FullValidationMetricProfile = FULL_VALIDATION_PROFILE,
 ) -> tuple[float, str]:
     """Format one table metric value and its unit for `val.log`."""
-    metric_family = FULL_VALIDATION_PROFILE.metric_family_by_key.get(metric_key)
+    metric_family = profile.metric_family_by_key.get(metric_key)
     if metric_family is None:
         raise ValueError(f"Unknown full validation metric key: {metric_key}")
-    metric_unit, metric_scale = FULL_VALIDATION_PROFILE.unit_by_family[metric_family]
+    metric_unit, metric_scale = profile.unit_by_family[metric_family]
     return metric_value * metric_scale, metric_unit
 
 
@@ -213,8 +218,9 @@ class FullValidatorBase(ABC):
         topk_records_info_key: str = TOPK_RECORDS_INFO_KEY,
         stale_state_keys: tuple[str, ...] = STALE_FULL_VALIDATION_INFO_KEYS,
         emit_best_save_log: bool = True,
+        profile: FullValidationMetricProfile = FULL_VALIDATION_PROFILE,
     ) -> None:
-        self.profile = FULL_VALIDATION_PROFILE
+        self.profile = profile
         self.symm_virial = symm_virial
         record_virial_convention(
             state_store,
@@ -245,7 +251,7 @@ class FullValidatorBase(ABC):
         self.save_best = bool(validating_params.get("save_best", True))
         self.max_best_ckpt = int(validating_params.get("max_best_ckpt", 1))
         self.metric_name, self.metric_key = parse_validation_metric(
-            str(validating_params.get("validation_metric", "E:MAE"))
+            str(validating_params.get("validation_metric", "E:MAE")), self.profile
         )
         resolved_log_file = (
             full_val_file
@@ -271,7 +277,9 @@ class FullValidatorBase(ABC):
         for column_name, metric_key in self.profile.columns(
             self.metric_name, symm_virial=self.symm_virial
         ):
-            _, metric_unit = format_metric_value_for_table(metric_key, 1.0)
+            _, metric_unit = format_metric_value_for_table(
+                metric_key, 1.0, self.profile
+            )
             header_label = f"{column_name}({metric_unit})"
             self.table_column_specs.append(
                 (metric_key, header_label, max(len(header_label), 18))
@@ -554,6 +562,7 @@ class FullValidatorBase(ABC):
             metric_label, metric_value, metric_unit = format_metric_for_log(
                 self.metric_name,
                 result.selected_metric_value,
+                self.profile,
                 symm_virial=self.symm_virial,
             )
             log.info(
@@ -583,7 +592,7 @@ class FullValidatorBase(ABC):
                 metric_value = result.metrics.get(metric_key, float("nan"))
                 if not np.isnan(metric_value):
                     metric_value, _ = format_metric_value_for_table(
-                        metric_key, metric_value
+                        metric_key, metric_value, self.profile
                     )
                 metric_text = format_metric_number_for_log(metric_value)
                 line += VAL_LOG_COLUMN_GAP + f"{metric_text:^{column_width}s}"
@@ -593,6 +602,7 @@ class FullValidatorBase(ABC):
                 metric_label, metric_value, metric_unit = format_metric_for_log(
                     self.metric_name,
                     result.selected_metric_value,
+                    self.profile,
                     symm_virial=self.symm_virial,
                 )
                 fout.write(

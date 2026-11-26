@@ -200,6 +200,8 @@ def test_multi_task_branch_preset_and_shared_references(
         "shared_dict": {
             "type_map": ["O", "H"],
             "descriptor": {"type": "dpa4", "use_amp": True},
+            "spin": {"scheme": "native", "use_spin": ["O"]},
+            "bias": {"energy": {"O": -430.1, "H": -13.6}},
         },
         "model_dict": {
             "a": {
@@ -207,6 +209,8 @@ def test_multi_task_branch_preset_and_shared_references(
                 "type_map": "type_map",
                 "descriptor": "descriptor:1",
                 "fitting_net": {"seed": 42},
+                "spin": "spin",
+                "preset_out_bias": "bias",
             }
         },
     }

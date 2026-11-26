@@ -49,6 +49,7 @@
 #include <torch/library.h>
 #include <torch/types.h>
 
+#include <optional>
 #include <tuple>
 
 namespace {
@@ -328,6 +329,273 @@ __global__ __launch_bounds__(kThreads) void grid_pair_bwd_kernel(
   }
 }
 
+/// Fixed even/odd register and shared-memory geometry of a parity product.
+template <int P, int EVEN, int ARRAYS>
+struct ParityPlan {
+  static constexpr int GROUP = group_for(P, ARRAYS);
+  static constexpr int CPW = kWarp / GROUP;
+  static constexpr int NE = (EVEN + GROUP - 1) / GROUP;
+  static constexpr int NO = (P - EVEN + GROUP - 1) / GROUP;
+  static constexpr int SE = (NE + 3) & ~3;
+  static constexpr int SO = (NO + 3) & ~3;
+  static constexpr int SPAN_E = GROUP * SE;
+  static constexpr int SPAN = SPAN_E + GROUP * SO;
+  static constexpr int grid_rows() {
+    int rows = 64;
+    while (rows > 1 && rows * 2 * SPAN * sizeof(float) > kSharedBudget) {
+      rows >>= 1;
+    }
+    return rows;
+  }
+  static constexpr int GB = grid_rows();
+  static constexpr int BYTES = 2 * GB * SPAN * sizeof(float);
+};
+
+/// Stage both projectors with even and odd slots in separate aligned stripes.
+template <int P, int EVEN, typename Plan>
+__device__ __forceinline__ void stage_parity_block(const float* to_grid,
+                                                   const float* from_grid,
+                                                   const int64_t* order,
+                                                   float* sm_t,
+                                                   float* sm_f,
+                                                   int g0,
+                                                   int rows) {
+  for (int i = threadIdx.x; i < rows * Plan::SPAN; i += kThreads) {
+    const int g = i / Plan::SPAN;
+    const int rest = i - g * Plan::SPAN;
+    const bool even = rest < Plan::SPAN_E;
+    const int stripe = even ? rest : rest - Plan::SPAN_E;
+    const int stride = even ? Plan::SE : Plan::SO;
+    const int pg = stripe / stride;
+    const int k = stripe - pg * stride;
+    const int index = pg + k * Plan::GROUP;
+    const bool valid = index < (even ? EVEN : P - EVEN);
+    const int slot =
+        valid ? static_cast<int>(order[(even ? 0 : EVEN) + index]) : 0;
+    const long src = static_cast<long>(g0 + g) * P + slot;
+    sm_t[i] = valid ? to_grid[src] : 0.f;
+    sm_f[i] = valid ? from_grid[src] : 0.f;
+  }
+}
+
+/// Contract an exact register extent with vector loads and a scalar tail.
+template <int COUNT>
+__device__ __forceinline__ float extent_dot(const float* row,
+                                            const float (&value)[COUNT]) {
+  float acc = 0.f;
+#pragma unroll
+  for (int q = 0; q < COUNT / 4; ++q) {
+    const float4 t = reinterpret_cast<const float4*>(row)[q];
+    acc += t.x * value[q * 4] + t.y * value[q * 4 + 1] +
+           t.z * value[q * 4 + 2] + t.w * value[q * 4 + 3];
+  }
+#pragma unroll
+  for (int k = COUNT / 4 * 4; k < COUNT; ++k) {
+    acc += row[k] * value[k];
+  }
+  return acc;
+}
+
+/// Analyze one parity field onto its matching register extent.
+template <int COUNT>
+__device__ __forceinline__ void extent_axpy(const float* row,
+                                            float field,
+                                            float (&value)[COUNT]) {
+#pragma unroll
+  for (int q = 0; q < COUNT / 4; ++q) {
+    const float4 t = reinterpret_cast<const float4*>(row)[q];
+    value[q * 4] += t.x * field;
+    value[q * 4 + 1] += t.y * field;
+    value[q * 4 + 2] += t.z * field;
+    value[q * 4 + 3] += t.w * field;
+  }
+#pragma unroll
+  for (int k = COUNT / 4 * 4; k < COUNT; ++k) {
+    value[k] += row[k] * field;
+  }
+}
+
+/// One quadrature walk with disjoint even and odd synthesis contractions.
+template <int P, int EVEN>
+__global__ __launch_bounds__(kThreads) void grid_pair_parity_fwd_kernel(
+    const float* left,
+    const float* right,
+    const float* to_grid,
+    const float* from_grid,
+    const int64_t* order,
+    float* out,
+    int n_node,
+    int c_wide,
+    int n_grid) {
+  using Plan = ParityPlan<P, EVEN, 3>;
+  extern __shared__ float sm[];
+  float* sm_t = sm;
+  float* sm_f = sm + Plan::GB * Plan::SPAN;
+  const int warp = blockIdx.x * kWarps + (threadIdx.x >> 5);
+  const int lane = threadIdx.x & (kWarp - 1);
+  const int pg = lane / Plan::CPW;
+  const int chunks = c_wide / Plan::CPW;
+  const bool live = warp < n_node * chunks;
+  const int node = live ? warp / chunks : 0;
+  const int channel = live ? (warp % chunks) * Plan::CPW + lane % Plan::CPW : 0;
+  const long base = static_cast<long>(node) * P * c_wide + channel;
+  float le[Plan::NE], re[Plan::NE], ae[Plan::NE];
+  float lo[Plan::NO], ro[Plan::NO], ao[Plan::NO];
+#pragma unroll
+  for (int k = 0; k < Plan::NE; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    const bool has = live && index < EVEN;
+    const int slot = has ? static_cast<int>(order[index]) : 0;
+    le[k] = has ? left[base + static_cast<long>(slot) * c_wide] : 0.f;
+    re[k] = has ? right[base + static_cast<long>(slot) * c_wide] : 0.f;
+    ae[k] = 0.f;
+  }
+#pragma unroll
+  for (int k = 0; k < Plan::NO; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    const bool has = live && index < P - EVEN;
+    const int slot = has ? static_cast<int>(order[EVEN + index]) : 0;
+    lo[k] = has ? left[base + static_cast<long>(slot) * c_wide] : 0.f;
+    ro[k] = has ? right[base + static_cast<long>(slot) * c_wide] : 0.f;
+    ao[k] = 0.f;
+  }
+  for (int g0 = 0; g0 < n_grid; g0 += Plan::GB) {
+    const int rows = min(Plan::GB, n_grid - g0);
+    __syncthreads();
+    stage_parity_block<P, EVEN, Plan>(to_grid, from_grid, order, sm_t, sm_f, g0,
+                                      rows);
+    __syncthreads();
+#pragma unroll 2
+    for (int g = 0; g < rows; ++g) {
+      const int offset = g * Plan::SPAN;
+      const float* te = sm_t + offset + pg * Plan::SE;
+      const float* to = sm_t + offset + Plan::SPAN_E + pg * Plan::SO;
+      const float a = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(te, le));
+      const float b = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(to, lo));
+      const float ap = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(te, re));
+      const float bp = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(to, ro));
+      extent_axpy(sm_f + offset + pg * Plan::SE, a * ap + b * bp, ae);
+      extent_axpy(sm_f + offset + Plan::SPAN_E + pg * Plan::SO, a * bp + b * ap,
+                  ao);
+    }
+  }
+  if (!live) {
+    return;
+  }
+#pragma unroll
+  for (int k = 0; k < Plan::NE; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    if (index < EVEN) {
+      out[base + static_cast<long>(order[index]) * c_wide] = ae[k];
+    }
+  }
+#pragma unroll
+  for (int k = 0; k < Plan::NO; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    if (index < P - EVEN) {
+      out[base + static_cast<long>(order[EVEN + index]) * c_wide] = ao[k];
+    }
+  }
+}
+
+/// The two input cotangents share the same parity-split quadrature walk.
+template <int P, int EVEN>
+__global__ __launch_bounds__(kThreads) void grid_pair_parity_bwd_kernel(
+    const float* grad_out,
+    const float* left,
+    const float* right,
+    const float* to_grid,
+    const float* from_grid,
+    const int64_t* order,
+    float* g_left,
+    float* g_right,
+    int n_node,
+    int c_wide,
+    int n_grid) {
+  using Plan = ParityPlan<P, EVEN, 5>;
+  extern __shared__ float sm[];
+  float* sm_t = sm;
+  float* sm_f = sm + Plan::GB * Plan::SPAN;
+  const int warp = blockIdx.x * kWarps + (threadIdx.x >> 5);
+  const int lane = threadIdx.x & (kWarp - 1);
+  const int pg = lane / Plan::CPW;
+  const int chunks = c_wide / Plan::CPW;
+  const bool live = warp < n_node * chunks;
+  const int node = live ? warp / chunks : 0;
+  const int channel = live ? (warp % chunks) * Plan::CPW + lane % Plan::CPW : 0;
+  const long base = static_cast<long>(node) * P * c_wide + channel;
+  float le[Plan::NE], re[Plan::NE], ge[Plan::NE], dle[Plan::NE], dre[Plan::NE];
+  float lo[Plan::NO], ro[Plan::NO], go[Plan::NO], dlo[Plan::NO], dro[Plan::NO];
+#pragma unroll
+  for (int k = 0; k < Plan::NE; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    const bool has = live && index < EVEN;
+    const int slot = has ? static_cast<int>(order[index]) : 0;
+    const long at = base + static_cast<long>(slot) * c_wide;
+    le[k] = has ? left[at] : 0.f;
+    re[k] = has ? right[at] : 0.f;
+    ge[k] = has ? grad_out[at] : 0.f;
+    dle[k] = dre[k] = 0.f;
+  }
+#pragma unroll
+  for (int k = 0; k < Plan::NO; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    const bool has = live && index < P - EVEN;
+    const int slot = has ? static_cast<int>(order[EVEN + index]) : 0;
+    const long at = base + static_cast<long>(slot) * c_wide;
+    lo[k] = has ? left[at] : 0.f;
+    ro[k] = has ? right[at] : 0.f;
+    go[k] = has ? grad_out[at] : 0.f;
+    dlo[k] = dro[k] = 0.f;
+  }
+  for (int g0 = 0; g0 < n_grid; g0 += Plan::GB) {
+    const int rows = min(Plan::GB, n_grid - g0);
+    __syncthreads();
+    stage_parity_block<P, EVEN, Plan>(to_grid, from_grid, order, sm_t, sm_f, g0,
+                                      rows);
+    __syncthreads();
+#pragma unroll 2
+    for (int g = 0; g < rows; ++g) {
+      const int offset = g * Plan::SPAN;
+      const float* te = sm_t + offset + pg * Plan::SE;
+      const float* to = sm_t + offset + Plan::SPAN_E + pg * Plan::SO;
+      const float a = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(te, le));
+      const float b = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(to, lo));
+      const float ap = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(te, re));
+      const float bp = slice_sum<Plan::GROUP, Plan::CPW>(extent_dot(to, ro));
+      const float h = slice_sum<Plan::GROUP, Plan::CPW>(
+          extent_dot(sm_f + offset + pg * Plan::SE, ge));
+      const float k = slice_sum<Plan::GROUP, Plan::CPW>(
+          extent_dot(sm_f + offset + Plan::SPAN_E + pg * Plan::SO, go));
+      extent_axpy(te, h * ap + k * bp, dle);
+      extent_axpy(to, h * bp + k * ap, dlo);
+      extent_axpy(te, h * a + k * b, dre);
+      extent_axpy(to, h * b + k * a, dro);
+    }
+  }
+  if (!live) {
+    return;
+  }
+#pragma unroll
+  for (int k = 0; k < Plan::NE; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    if (index < EVEN) {
+      const long at = base + static_cast<long>(order[index]) * c_wide;
+      g_left[at] = dle[k];
+      g_right[at] = dre[k];
+    }
+  }
+#pragma unroll
+  for (int k = 0; k < Plan::NO; ++k) {
+    const int index = pg + k * Plan::GROUP;
+    if (index < P - EVEN) {
+      const long at = base + static_cast<long>(order[EVEN + index]) * c_wide;
+      g_left[at] = dlo[k];
+      g_right[at] = dro[k];
+    }
+  }
+}
+
 /// Channels one warp covers.
 template <int P, int ARRAYS>
 constexpr int channels_per_warp() {
@@ -348,6 +616,20 @@ constexpr int shared_bytes() {
 /// ``3 * (l + 1)^2`` for degrees one to six, and 9 is the matching S2 grid.
 #define DPA4_GRID_FOR_EACH_P(macro) \
   macro(9) macro(12) macro(27) macro(48) macro(75) macro(108) macro(147)
+
+#define DPA4_GRID_FOR_EACH_PARITY(macro)                             \
+  macro(9, 6) macro(12, 3) macro(27, 18) macro(48, 18) macro(75, 45) \
+      macro(108, 45) macro(147, 84)
+
+bool grid_parity_supported(int slots, int even_count) {
+#define DPA4_PARITY_CASE(P, E)         \
+  if (slots == P && even_count == E) { \
+    return true;                       \
+  }
+  DPA4_GRID_FOR_EACH_PARITY(DPA4_PARITY_CASE)
+#undef DPA4_PARITY_CASE
+  return false;
+}
 
 bool grid_p_supported(int p) {
 #define DPA4_CASE(PV) \
@@ -377,7 +659,9 @@ dim3 warp_grid(int n_node, int c_wide, int channels) {
 void check_grid_inputs(const torch::Tensor& left,
                        const torch::Tensor& right,
                        const torch::Tensor& to_grid,
-                       const torch::Tensor& from_grid) {
+                       const torch::Tensor& from_grid,
+                       const std::optional<torch::Tensor>& order,
+                       int64_t even_count) {
   TORCH_CHECK(left.is_cuda() && left.scalar_type() == torch::kFloat,
               "dpa4_grid_pair: operands must be cuda fp32");
   TORCH_CHECK(left.dim() == 3 && right.sizes() == left.sizes(),
@@ -390,6 +674,19 @@ void check_grid_inputs(const torch::Tensor& left,
                   to_grid.size(1) == left.size(1) &&
                   from_grid.sizes() == to_grid.sizes(),
               "dpa4_grid_pair: projectors must both be (G, P)");
+  if (order.has_value()) {
+    TORCH_CHECK(order->device() == left.device() &&
+                    order->scalar_type() == torch::kLong && order->dim() == 1 &&
+                    order->size(0) == left.size(1) && order->is_contiguous(),
+                "dpa4_grid_pair: parity order must be a contiguous cuda int64 "
+                "slot permutation");
+    TORCH_CHECK(grid_parity_supported(left.size(1), even_count),
+                "dpa4_grid_pair: unsupported parity partition: slots=",
+                left.size(1), " even_count=", even_count);
+  } else {
+    TORCH_CHECK(even_count == 0,
+                "dpa4_grid_pair: even_count requires a parity order");
+  }
 }
 
 }  // namespace
@@ -397,9 +694,11 @@ void check_grid_inputs(const torch::Tensor& left,
 torch::Tensor dpa4_grid_pair(torch::Tensor left,
                              torch::Tensor right,
                              torch::Tensor to_grid,
-                             torch::Tensor from_grid) {
+                             torch::Tensor from_grid,
+                             const std::optional<torch::Tensor>& parity_order,
+                             int64_t even_count) {
   const at::cuda::OptionalCUDAGuard device_guard(left.device());
-  check_grid_inputs(left, right, to_grid, from_grid);
+  check_grid_inputs(left, right, to_grid, from_grid, parity_order, even_count);
   left = left.contiguous();
   right = right.contiguous();
   to_grid = to_grid.contiguous();
@@ -423,7 +722,22 @@ torch::Tensor dpa4_grid_pair(torch::Tensor left,
             to_grid.data_ptr<float>(), from_grid.data_ptr<float>(), \
             out.data_ptr<float>(), n_node, c_wide, n_grid);         \
     break;
-  DPA4_GRID_DISPATCH(p_dim, DPA4_LAUNCH_GRID_FWD);
+  if (parity_order.has_value()) {
+#define DPA4_LAUNCH_PARITY_FWD(PV, EV)                                        \
+  case PV:                                                                    \
+    grid_pair_parity_fwd_kernel<PV, EV>                                       \
+        <<<warp_grid(n_node, c_wide, ParityPlan<PV, EV, 3>::CPW),             \
+           dim3(kThreads), ParityPlan<PV, EV, 3>::BYTES, stream>>>(           \
+            left.data_ptr<float>(), right.data_ptr<float>(),                  \
+            to_grid.data_ptr<float>(), from_grid.data_ptr<float>(),           \
+            parity_order->data_ptr<int64_t>(), out.data_ptr<float>(), n_node, \
+            c_wide, n_grid);                                                  \
+    break;
+    switch (p_dim) { DPA4_GRID_FOR_EACH_PARITY(DPA4_LAUNCH_PARITY_FWD) }
+#undef DPA4_LAUNCH_PARITY_FWD
+  } else {
+    DPA4_GRID_DISPATCH(p_dim, DPA4_LAUNCH_GRID_FWD);
+  }
 #undef DPA4_LAUNCH_GRID_FWD
   DPA4_CHECK_LAUNCH("dpa4_grid_pair");
   return out;
@@ -434,9 +748,11 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4_grid_pair_backward(
     torch::Tensor left,
     torch::Tensor right,
     torch::Tensor to_grid,
-    torch::Tensor from_grid) {
+    torch::Tensor from_grid,
+    const std::optional<torch::Tensor>& parity_order,
+    int64_t even_count) {
   const at::cuda::OptionalCUDAGuard device_guard(left.device());
-  check_grid_inputs(left, right, to_grid, from_grid);
+  check_grid_inputs(left, right, to_grid, from_grid, parity_order, even_count);
   grad_out = grad_out.contiguous();
   left = left.contiguous();
   right = right.contiguous();
@@ -463,7 +779,23 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4_grid_pair_backward(
             from_grid.data_ptr<float>(), g_left.data_ptr<float>(), \
             g_right.data_ptr<float>(), n_node, c_wide, n_grid);    \
     break;
-  DPA4_GRID_DISPATCH(p_dim, DPA4_LAUNCH_GRID_BWD);
+  if (parity_order.has_value()) {
+#define DPA4_LAUNCH_PARITY_BWD(PV, EV)                                      \
+  case PV:                                                                  \
+    grid_pair_parity_bwd_kernel<PV, EV>                                     \
+        <<<warp_grid(n_node, c_wide, ParityPlan<PV, EV, 5>::CPW),           \
+           dim3(kThreads), ParityPlan<PV, EV, 5>::BYTES, stream>>>(         \
+            grad_out.data_ptr<float>(), left.data_ptr<float>(),             \
+            right.data_ptr<float>(), to_grid.data_ptr<float>(),             \
+            from_grid.data_ptr<float>(), parity_order->data_ptr<int64_t>(), \
+            g_left.data_ptr<float>(), g_right.data_ptr<float>(), n_node,    \
+            c_wide, n_grid);                                                \
+    break;
+    switch (p_dim) { DPA4_GRID_FOR_EACH_PARITY(DPA4_LAUNCH_PARITY_BWD) }
+#undef DPA4_LAUNCH_PARITY_BWD
+  } else {
+    DPA4_GRID_DISPATCH(p_dim, DPA4_LAUNCH_GRID_BWD);
+  }
 #undef DPA4_LAUNCH_GRID_BWD
   DPA4_CHECK_LAUNCH("dpa4_grid_pair_backward");
   return {g_left, g_right};
@@ -472,10 +804,12 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4_grid_pair_backward(
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
   m.def(
       "dpa4_grid_pair(Tensor left, Tensor right, Tensor to_grid, "
-      "Tensor from_grid) -> Tensor");
+      "Tensor from_grid, Tensor? parity_order=None, int even_count=0) -> "
+      "Tensor");
   m.impl("dpa4_grid_pair", torch::kCUDA, &dpa4_grid_pair);
   m.def(
       "dpa4_grid_pair_backward(Tensor grad_out, Tensor left, Tensor right, "
-      "Tensor to_grid, Tensor from_grid) -> (Tensor g_left, Tensor g_right)");
+      "Tensor to_grid, Tensor from_grid, Tensor? parity_order=None, int "
+      "even_count=0) -> (Tensor g_left, Tensor g_right)");
   m.impl("dpa4_grid_pair_backward", torch::kCUDA, &dpa4_grid_pair_backward);
 }

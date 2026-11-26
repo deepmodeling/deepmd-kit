@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """End-to-end parity of the pt_expt DPA4 accelerated inference paths."""
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 import pytest
 import torch
@@ -62,29 +66,31 @@ def _make_descriptor(
     *,
     bridged: bool = False,
     env_exp: int | list[int] | None = None,
+    **overrides: Any,
 ) -> DescrptDPA4:
-    return DescrptDPA4(
-        ntypes=ntypes,
-        sel=sel,
-        rcut=rcut,
-        env_exp=env_exp,
-        channels=32,
-        n_radial=8,
-        lmax=2,
-        mmax=1,
-        n_blocks=2,
-        mixing_layers=3,
-        radial_so2_mode="degree_channel",
-        radial_so2_rank=1,
-        n_atten_head=1,
-        grid_branch=[1, 1, 1],
-        s2_activation=[False, True],
-        random_gamma=False,
-        precision=precision,
-        seed=7,
-        type_map=["O", "H"][:ntypes] if bridged else None,
-        contact_clamp=0.75 if bridged else None,
-    )
+    options = {
+        "ntypes": ntypes,
+        "sel": sel,
+        "rcut": rcut,
+        "env_exp": env_exp,
+        "channels": 32,
+        "n_radial": 8,
+        "lmax": 2,
+        "mmax": 1,
+        "n_blocks": 2,
+        "mixing_layers": 3,
+        "radial_so2_mode": "degree_channel",
+        "radial_so2_rank": 1,
+        "n_atten_head": 1,
+        "grid_branch": [1, 1, 1],
+        "s2_activation": [False, True],
+        "random_gamma": False,
+        "precision": precision,
+        "seed": 7,
+        "type_map": ["O", "H"][:ntypes] if bridged else None,
+        "contact_clamp": 0.75 if bridged else None,
+    }
+    return DescrptDPA4(**{**options, **overrides})
 
 
 @pytest.mark.parametrize(
@@ -144,6 +150,26 @@ def test_fp32_only_cuda_bindings(
     )
 
 
+@pytest.mark.usefixtures("calibrated_so2_device")
+def test_profitability_counts_the_shared_parity_block() -> None:
+    """The fused convolution is judged on the arithmetic it executes.
+
+    A parity map multiplies both signs of an order by one shared ``W_u``
+    block, half the order arithmetic of the plain layer of the same shape, so
+    a shape whose plain layer exceeds the budget can stay within it.
+    """
+
+    def conv(parity: bool) -> object:
+        # lmax 1, focus width 64, two focus streams: 73728 multiply-adds per
+        # plain layer and 57344 with the shared parity block.
+        return type(
+            "Conv", (), {"so2_focus_dim": 64, "lmax": 1, "n_focus": 2, "parity": parity}
+        )()
+
+    assert not so2_conv._profitable(conv(False))
+    assert so2_conv._profitable(conv(True))
+
+
 def test_cuda_edge_csr_preserves_symbolic_node_count() -> None:
     """Keep the CSR row-pointer length tied to the dynamic node axis."""
 
@@ -178,6 +204,7 @@ def test_cuda_edge_csr_preserves_symbolic_node_count() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.usefixtures("calibrated_so2_device")
 class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
     def setup_method(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
@@ -234,6 +261,46 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         monkeypatch.setattr(edge_radial.EdgeRadialCuda, "__call__", spy)
         output, gradient = self._step(restored)
         assert calls, "the fused radial operator was not used"
+        np.testing.assert_allclose(output, output_ref, rtol=2e-4, atol=2e-5)
+        np.testing.assert_allclose(gradient, gradient_ref, rtol=2e-4, atol=2e-5)
+
+    @pytest.mark.parametrize("l_schedule", [[1, 2], [2, 1]])  # rising and falling
+    def test_fused_convolution_of_a_lower_degree_block_with_two_focus_streams(
+        self, monkeypatch: pytest.MonkeyPatch, l_schedule: list[int]
+    ) -> None:
+        """A block below the largest degree competes its focus streams exactly.
+
+        The cross-focus competition reads the edge Wigner blocks of the largest
+        degree of the descriptor against the node features of the block, which
+        span only the block's own degree.
+        """
+        if not so2_conv.op_available():
+            pytest.skip("DPA4 CUDA convolution operators are unavailable")
+        for name in (
+            "DP_TRITON_INFER",
+            "DP_CUDA_INFER",
+            "DP_CUTILE_INFER",
+            "DP_CUTE_INFER",
+        ):
+            monkeypatch.setenv(name, "0")
+        data = _make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            l_schedule=l_schedule,
+            n_focus=2,
+            channels=64,
+            focus_dim=32,
+        ).serialize()
+        data = jitter_zero_arrays(data, np.random.default_rng(79))
+        reference = DescrptDPA4.deserialize(data).to(self.device).eval()
+        output_ref, gradient_ref = self._step(reference)
+
+        monkeypatch.setenv("DP_CUDA_INFER", "2")
+        fused = DescrptDPA4.deserialize(data).to(self.device).eval()
+        assert all(block.so2_conv._cuda_conv_fn is not None for block in fused.blocks)
+        assert all(block.so2_conv._cuda_conv_fn._compete for block in fused.blocks)
+        output, gradient = self._step(fused)
         np.testing.assert_allclose(output, output_ref, rtol=2e-4, atol=2e-5)
         np.testing.assert_allclose(gradient, gradient_ref, rtol=2e-4, atol=2e-5)
 
@@ -429,6 +496,7 @@ def test_wigner_kernels_are_device_buffers_outside_the_state_dict(lmax: int) -> 
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.usefixtures("calibrated_so2_device")
 @pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_native_spin_cuda_matches_reference_and_symmetry(
     monkeypatch: pytest.MonkeyPatch, spin_mode: str
@@ -451,9 +519,6 @@ def test_native_spin_cuda_matches_reference_and_symmetry(
     data = jitter_zero_arrays(native.serialize(), np.random.default_rng(319))
     reference = DescrptDPA4.deserialize(data).cuda().eval()
     monkeypatch.setenv("DP_CUDA_INFER", "2")
-    # Test fused numerics with the calibrated device ridge, independently of
-    # the runtime profitability heuristic that can decline this shape.
-    monkeypatch.setattr(so2_conv, "_device_ridge_scale", lambda: 1.0)
     fused = DescrptDPA4.deserialize(data).cuda().eval()
     conv = fused.blocks[0].so2_conv
     assert conv._cuda_conv_fn is not None
@@ -537,9 +602,11 @@ def test_grid_pair_eval_checks_actual_operand_dtype(
         right: torch.Tensor,
         to_grid: torch.Tensor,
         from_grid: torch.Tensor,
+        parity_order: torch.Tensor | None = None,
+        even_count: int = 0,
     ) -> torch.Tensor:
         calls.append(left.dtype)
-        return original(left, right, to_grid, from_grid)
+        return original(left, right, to_grid, from_grid, parity_order, even_count)
 
     model._grid_pair_fn = fused
     generator = torch.Generator(device="cuda").manual_seed(731)

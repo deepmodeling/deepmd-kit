@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from deepmd.dpmodel.fitting.dipole_fitting import DipoleFitting as DipoleFittingNetDP
 from deepmd.dpmodel.fitting.dos_fitting import DOSFittingNet as DOSFittingNetDP
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
@@ -7,6 +11,9 @@ from deepmd.dpmodel.fitting.polarizability_fitting import (
 )
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet as PropertyFittingNetDP,
+)
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
 )
 
 from ..common import (
@@ -22,7 +29,9 @@ from .base_fitting import (
 @BaseFitting.register("ener")
 @tf2_module
 class EnergyFittingNet(EnergyFittingNetDP):
-    pass
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        reject_moe(kwargs, "fitting network")
+        super().__init__(*args, **kwargs)
 
 
 @BaseFitting.register("property")

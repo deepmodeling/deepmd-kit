@@ -18,15 +18,23 @@ from deepmd.dpmodel.train.validation import (
 from deepmd.jax.env import (
     jax,
     jnp,
+    nnx,
 )
 from deepmd.jax.utils.auto_batch_size import (
     AutoBatchSize,
 )
+from deepmd.jax.utils.graph_batch import (
+    prepare_graph_batch,
+)
+from deepmd.jax.utils.precision import (
+    MatmulPrecisionPolicy,
+)
 from deepmd.utils.eval_metrics import (
-    FULL_VALIDATION_WEIGHTED_METRIC_KEYS,
-    compute_energy_type_metrics,
+    ENERGY_FULL_VALIDATION_PROFILE,
+    SPIN_FULL_VALIDATION_PROFILE,
 )
 from deepmd.utils.weight_avg import (
+    merge_weighted_errors,
     weighted_average,
 )
 
@@ -51,10 +59,14 @@ class JAXFullValidator(FullValidatorBase):
         restart_training: bool,
         symm_virial: bool = False,
         checkpoint_dir: Any = None,
+        full_val_file: Any = None,
+        best_checkpoint_prefix: str = "best.ckpt",
+        precision_policy: MatmulPrecisionPolicy | None = None,
     ) -> None:
         self.validation_data = validation_data
         self.model = model
-        self.auto_batch_size = AutoBatchSize(silent=True)
+        self.auto_batch_size = AutoBatchSize(maximum_batch_size=1024, silent=True)
+        self.matmul_precision = precision_policy or MatmulPrecisionPolicy()
         super().__init__(
             validating_params=validating_params,
             state_store=state_store,
@@ -63,11 +75,45 @@ class JAXFullValidator(FullValidatorBase):
             restart_training=restart_training,
             symm_virial=symm_virial,
             checkpoint_dir=checkpoint_dir,
+            full_val_file=full_val_file,
+            best_checkpoint_prefix=best_checkpoint_prefix,
             best_checkpoint_suffix=".jax",
+            profile=(
+                SPIN_FULL_VALIDATION_PROFILE
+                if model.has_spin()
+                else ENERGY_FULL_VALIDATION_PROFILE
+            ),
         )
+        self._evaluate_batch = self._make_batch_evaluator()
+
+    def _make_batch_evaluator(self) -> Any:
+        """Compile the lower-interface evaluator for each static batch shape."""
+        from deepmd.jax.train.trainer import (
+            _evaluate_inputs,
+        )
+
+        precision = self.matmul_precision
+        evaluation_model = nnx.clone(self.model)
+        evaluation_model.eval()
+        graph, _ = nnx.split(evaluation_model)
+
+        def evaluate(state: Any, inputs: dict[str, Any]) -> dict[str, Any]:
+            model = nnx.merge(graph, state)
+            with precision.applied(training=False):
+                return _evaluate_inputs(model, inputs)
+
+        compiled = jax.jit(evaluate)
+
+        def evaluate_model(model: BaseModel, inputs: dict[str, Any]) -> dict[str, Any]:
+            # Failed asynchronous executions must not replace live parameters
+            # with error-bearing output buffers before automatic batch retries.
+            return compiled(nnx.state(model), inputs)
+
+        return evaluate_model
 
     def evaluate_all_systems(self) -> dict[str, float]:
         """Evaluate every validation system and aggregate metrics."""
+        self.model.eval()
         system_metrics = [
             self._evaluate_system(data_system)
             for data_system in self._iter_validation_data_systems()
@@ -114,11 +160,25 @@ class JAXFullValidator(FullValidatorBase):
         )
 
     def _evaluate_system(self, data_system: Any) -> dict[str, tuple[float, float]]:
-        """Evaluate one validation system."""
-        test_data = data_system.get_test()
+        """Evaluate one system while bounding the memory held by lazy readers."""
+        has_pbc = bool(getattr(data_system, "pbc", False))
+        batches = (
+            data_system.iter_test(chunk_atoms=self.auto_batch_size.current_batch_size)
+            if hasattr(data_system, "iter_test")
+            else (data_system.get_test(),)
+        )
+        combined: dict[str, tuple[float, float]] = {}
+        for test_data in batches:
+            current = self._evaluate_test_data(test_data, has_pbc=has_pbc)
+            combined = merge_weighted_errors([combined, current])
+        return combined
+
+    def _evaluate_test_data(
+        self, test_data: dict[str, Any], *, has_pbc: bool
+    ) -> dict[str, tuple[float, float]]:
+        """Evaluate aligned labels from one homogeneous validation chunk."""
         natoms = int(test_data["type"].shape[1])
         nframes = int(test_data["coord"].shape[0])
-        has_pbc = bool(getattr(data_system, "pbc", False))
         include_virial = has_pbc and bool(test_data.get("find_virial", 0.0))
         prediction = self._predict_outputs(
             coord=test_data["coord"].reshape(nframes, -1),
@@ -129,19 +189,18 @@ class JAXFullValidator(FullValidatorBase):
             and bool(test_data.get("find_fparam", 0.0))
             else None,
             aparam=test_data["aparam"] if self.model.get_dim_aparam() > 0 else None,
+            spin=test_data.get("spin"),
+            charge_spin=test_data.get("charge_spin"),
             include_virial=include_virial,
             natoms=natoms,
             nframes=nframes,
         )
-        shared_metrics = compute_energy_type_metrics(
+        return self.profile.compute_system_metrics(
             prediction=prediction,
             test_data=test_data,
             natoms=natoms,
             has_pbc=has_pbc,
             symm_virial=self.symm_virial,
-        )
-        return shared_metrics.as_weighted_average_errors(
-            FULL_VALIDATION_WEIGHTED_METRIC_KEYS
         )
 
     def _predict_outputs(
@@ -152,6 +211,8 @@ class JAXFullValidator(FullValidatorBase):
         box: np.ndarray | None,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        spin: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         include_virial: bool,
         natoms: int,
         nframes: int,
@@ -164,61 +225,68 @@ class JAXFullValidator(FullValidatorBase):
             box_batch: np.ndarray | None,
             fparam_batch: np.ndarray | None,
             aparam_batch: np.ndarray | None,
+            spin_batch: np.ndarray | None,
+            charge_spin_batch: np.ndarray | None,
         ) -> dict[str, np.ndarray]:
             from deepmd.jax.train.trainer import (
-                _evaluate_model_dict,
-                prepare_input,
+                convert_numpy_data_to_jax_data,
             )
 
-            coord_input = jnp.asarray(coord_batch.reshape(-1, natoms * 3))
-            type_input = jnp.asarray(atom_types_batch)
-            box_input = (
-                jnp.asarray(box_batch.reshape(-1, 9)) if box_batch is not None else None
-            )
-            fparam_input = (
-                jnp.asarray(fparam_batch.reshape(-1, self.model.get_dim_fparam()))
-                if fparam_batch is not None
-                else None
-            )
-            aparam_input = (
-                jnp.asarray(
-                    aparam_batch.reshape(-1, natoms, self.model.get_dim_aparam())
+            if self.model.uses_full_neighbor_list():
+                _, inputs = prepare_graph_batch(
+                    {
+                        "atype": atom_types_batch,
+                        "coord": coord_batch,
+                        "box": box_batch,
+                        "fparam": fparam_batch,
+                        "aparam": aparam_batch,
+                        "spin": spin_batch,
+                        "charge_spin": charge_spin_batch,
+                    },
+                    rcut=self.model.get_rcut(),
+                    ntypes=self.model.get_ntypes(),
+                    pair_exclude_types=self.model.atomic_model.pair_exclude_types,
+                    bucket_subdivisions=1,
                 )
-                if aparam_batch is not None
-                else None
-            )
-            extended_coord, extended_atype, nlist, mapping, fp, ap = prepare_input(
-                rcut=self.model.get_rcut(),
-                sel=self.model.get_sel(),
-                coord=coord_input,
-                atype=type_input,
-                box=box_input,
-                fparam=fparam_input,
-                aparam=aparam_input,
-            )
-            batch_output = _evaluate_model_dict(
-                self.model,
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
-                fp,
-                ap,
-            )
+                batch_output = self._evaluate_batch(
+                    self.model, convert_numpy_data_to_jax_data(inputs)
+                )
+                batch_frames = atom_types_batch.shape[0]
+                physical = atom_types_batch.reshape(-1) >= 0
+                for key in ("force", "force_mag", "mask_mag"):
+                    if key not in batch_output:
+                        continue
+                    compact = np.asarray(batch_output[key])
+                    restored = np.zeros(
+                        (physical.size, *compact.shape[1:]), dtype=compact.dtype
+                    )
+                    restored[physical] = compact[: np.count_nonzero(physical)]
+                    batch_output[key] = restored.reshape(batch_frames, natoms, -1)
+                batch_output["energy"] = batch_output["energy"][:batch_frames]
+                batch_output["virial"] = batch_output["virial"][:batch_frames]
+            else:
+                batch_output = self._predict_dense_batch(
+                    coord_batch,
+                    atom_types_batch,
+                    box_batch,
+                    fparam_batch,
+                    aparam_batch,
+                    spin_batch,
+                    charge_spin_batch,
+                    natoms,
+                )
             prediction = {
                 "energy": np.asarray(batch_output["energy"]).reshape(-1, 1),
                 "force": np.asarray(batch_output["force"]).reshape(-1, natoms * 3),
             }
             if include_virial:
-                if "virial" not in batch_output:
-                    raise KeyError(
-                        "Full validation requested virial metrics, but model "
-                        "output does not contain `virial`."
-                    )
                 prediction["virial"] = np.asarray(batch_output["virial"]).reshape(-1, 9)
+            if self.profile.needs_spin:
+                prediction["force_mag"] = np.asarray(batch_output["force_mag"])
+                prediction["mask_mag"] = np.asarray(batch_output["mask_mag"])
             return prediction
 
-        batch_prediction = self.auto_batch_size.execute_all(
+        return self.auto_batch_size.execute_all(
             predict_batch,
             nframes,
             natoms,
@@ -227,11 +295,60 @@ class JAXFullValidator(FullValidatorBase):
             box,
             fparam,
             aparam,
+            spin,
+            charge_spin,
         )
-        prediction = {
-            "energy": np.asarray(batch_prediction["energy"]),
-            "force": np.asarray(batch_prediction["force"]),
-        }
-        if include_virial:
-            prediction["virial"] = np.asarray(batch_prediction["virial"])
-        return prediction
+
+    def _predict_dense_batch(
+        self,
+        coord_batch: np.ndarray,
+        atom_types_batch: np.ndarray,
+        box_batch: np.ndarray | None,
+        fparam_batch: np.ndarray | None,
+        aparam_batch: np.ndarray | None,
+        spin_batch: np.ndarray | None,
+        charge_spin_batch: np.ndarray | None,
+        natoms: int,
+    ) -> dict[str, Any]:
+        """Evaluate models using the extended-coordinate neighbor-list contract."""
+        from deepmd.jax.train.trainer import (
+            prepare_input,
+        )
+
+        extended_coord, extended_atype, nlist, mapping, fp, ap = prepare_input(
+            rcut=self.model.get_rcut(),
+            sel=self.model.get_sel(),
+            coord=jnp.asarray(coord_batch.reshape(-1, natoms * 3)),
+            atype=jnp.asarray(atom_types_batch),
+            box=jnp.asarray(box_batch.reshape(-1, 9))
+            if box_batch is not None
+            else None,
+            fparam=(
+                jnp.asarray(fparam_batch.reshape(-1, self.model.get_dim_fparam()))
+                if fparam_batch is not None
+                else None
+            ),
+            aparam=(
+                jnp.asarray(
+                    aparam_batch.reshape(-1, natoms, self.model.get_dim_aparam())
+                )
+                if aparam_batch is not None
+                else None
+            ),
+            pair_excl=self.model.atomic_model.pair_excl,
+        )
+        return self._evaluate_batch(
+            self.model,
+            {
+                "extended_coord": extended_coord,
+                "extended_atype": extended_atype,
+                "nlist": nlist,
+                "mapping": mapping,
+                "fp": fp,
+                "ap": ap,
+                "spin": jnp.asarray(spin_batch) if spin_batch is not None else None,
+                "charge_spin": jnp.asarray(charge_spin_batch)
+                if charge_spin_batch is not None
+                else None,
+            },
+        )

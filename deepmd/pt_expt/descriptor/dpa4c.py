@@ -27,6 +27,9 @@ from deepmd.pt_expt.kernels.utils import (
     fused_operators_enabled,
     use_amp_infer,
 )
+from deepmd.pt_expt.utils.canonical_graph import (
+    BorderPlan,
+)
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
 )
@@ -361,14 +364,16 @@ class DescrptDPA4C(DescrptDPA4CDP):
     # === Backend primitives ===
 
     def exchange_ghost_rows(
-        self, values: torch.Tensor, comm_dict: dict[str, torch.Tensor]
+        self,
+        values: torch.Tensor,
+        comm_dict: dict[str, torch.Tensor] | BorderPlan,
     ) -> torch.Tensor:
-        """Refresh the ghost rows of a node feature through ``border_op``.
+        """Refresh the ghost rows of a node feature from their owner ranks.
 
         The copy from owner to ghost is exact: a ghost is a translated image of
         its owner, every rank describes the equivariant features in the same
-        Cartesian frame, and a translation leaves them unchanged.
-        ``border_op`` has a registered backward, which reverse-communicates the
+        Cartesian frame, and a translation leaves them unchanged. Both
+        exchanges have a registered backward, which reverse-communicates the
         cotangent of the ghost rows to their owners.
 
         Parameters
@@ -376,22 +381,26 @@ class DescrptDPA4C(DescrptDPA4CDP):
         values
             Node features with shape ``(N, W)``, the owned rows leading.
         comm_dict
-            Border-exchange tensors of the domain decomposition.
+            Border plan that a lower carrying the exchange in its main program
+            takes, or the ``border_op`` tensors of the domain decomposition.
 
         Returns
         -------
         torch.Tensor
             ``values`` with every ghost row replaced by its owner's row.
         """
-        # border_op exchanges whole rows by raw pointer arithmetic, so the
+        # Both exchanges move whole rows by raw pointer arithmetic, so the
         # buffer must be contiguous.
+        values = values.contiguous()
+        if isinstance(comm_dict, BorderPlan):
+            return comm_dict.exchange(values)
         return torch.ops.deepmd_export.border_op(
             comm_dict["send_list"],
             comm_dict["send_proc"],
             comm_dict["recv_proc"],
             comm_dict["send_num"],
             comm_dict["recv_num"],
-            values.contiguous(),
+            values,
             comm_dict["communicator"],
             comm_dict["nlocal"],
             comm_dict["nghost"],
@@ -479,9 +488,11 @@ class DescrptDPA4C(DescrptDPA4CDP):
         shared_level
             Sharing level. Only level zero is supported.
         model_prob
-            Model sampling probability accepted by the common ABI; unused.
+            Model sampling probability accepted by the common ABI; it weights
+            the envelope mass this replica measured in the merged floor.
         resume
-            Checkpoint-restoration flag accepted by the common ABI; unused.
+            Checkpoint-restoration flag accepted by the common ABI; a resumed
+            model already carries the merged mass.
 
         Raises
         ------

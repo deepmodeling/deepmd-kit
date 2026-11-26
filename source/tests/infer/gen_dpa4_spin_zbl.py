@@ -26,10 +26,9 @@ Multi-rank capable, and this fixture PINS that contract
 The learned child exchanges its ghost features between blocks like any
 message-passing DPA4, and the analytical child and the contact clamp read only
 the types of the two ends of every edge, so a bridged model runs multi-rank
-through the with-comm artifact.  ``_check_metadata`` asserts BOTH
-``has_comm_artifact is True`` AND that the nested
-``model/extra/forward_lower_with_comm.pt2`` entry is present (mirroring
-``gen_dpa4_zbl.py``) -- the same contract as the UNbridged native-spin
+through the halo exchange its graph lower carries in its main program.
+``_check_metadata`` asserts that the archive declares message passing and
+holds no with-comm artifact -- the same contract as the UNbridged native-spin
 fixture (``gen_dpa4_spin.py``).
 
 Generation mirrors ``gen_dpa4_spin_chgspin.py`` (the closest precedent): the
@@ -336,7 +335,7 @@ def _assert_zbl_term_is_active(model_dict: dict) -> float:
 
 
 def _check_metadata(pt2_path: str) -> None:
-    """Assert the frozen archive's metadata and the with-comm PRESENCE.
+    """Assert the frozen archive's metadata and the absence of a with-comm artifact.
 
     Parameters
     ----------
@@ -377,18 +376,14 @@ def _check_metadata(pt2_path: str) -> None:
         f"the composition dropped the spin flag on the way to the freeze."
     )
     assert md["use_spin"] == [True, False]
-    # Multi-rank capable, so the with-comm artifact is embedded.  BOTH halves
-    # matter: the flag is what the C++ dispatch reads, the archive entry is
-    # what it loads.
-    assert md["has_comm_artifact"] is True, (
+    # Multi-rank capable through the halo exchange of the main program, so
+    # the archive holds a single artifact.
+    assert md["has_comm_artifact"] is False, (
         f"{pt2_path}: metadata has_comm_artifact = "
-        f"{md.get('has_comm_artifact')!r}, expected True; bridged native-spin "
-        f"models are multi-rank capable."
+        f"{md.get('has_comm_artifact')!r}, expected False; the graph lower of "
+        f"native spin carries its halo exchange."
     )
-    assert "model/extra/forward_lower_with_comm.pt2" in names, (
-        f"{pt2_path}: the nested forward_lower_with_comm.pt2 is missing from "
-        f"a bridged native-spin archive; multi-rank dispatch would fail."
-    )
+    assert "model/extra/forward_lower_with_comm.pt2" not in names
     assert md["has_message_passing"] is True
     for key in ("atom_energy", "energy", "force", "force_mag", "virial"):
         assert key in md["output_keys"]

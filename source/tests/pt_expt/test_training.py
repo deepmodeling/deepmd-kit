@@ -100,6 +100,29 @@ def test_finalize_compiled_lower_relaxes_views(monkeypatch) -> None:
     assert torch.ops.aten.reshape.default in targets
 
 
+@REQUIRES_SUPPORTED_COMPILE
+def test_finalize_compiled_lower_traces_element_counts_in_one_frame(
+    monkeypatch,
+) -> None:
+    """Dynamo traces the element count of a one-element tensor without a break."""
+    graph = torch.fx.Graph()
+    index = graph.placeholder("index")
+    count = graph.call_function(torch.ops.aten.sym_numel.default, (index,))
+    graph.output(graph.call_function(torch.ops.aten.add.Tensor, (index, count)))
+    traced = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    monkeypatch.setattr(training_module, "apply_global_compile_patches", lambda: None)
+    with monkeypatch.context() as patch:
+        patch.setattr(torch, "compile", lambda module, **_kwargs: module)
+        lowered = training_module._finalize_compiled_lower(traced, compile_opts=None)
+
+    # Dynamo specializes an axis of length one, so the count is an integer;
+    # ``fullgraph`` turns a graph break into an error.
+    compiled = torch.compile(lowered, backend="eager", dynamic=True, fullgraph=True)
+    index = torch.arange(1, device="cpu")
+    torch.testing.assert_close(compiled(index), index + 1)
+
+
 # Descriptor configs used to extend compile-correctness tests to non-trivial
 # architectures.  ``precision: float64`` is set so the strict ``atol=rtol=1e-10``
 # comparison holds at machine epsilon.
@@ -904,6 +927,30 @@ class TestCompiledConsistency(unittest.TestCase):
         model["fitting_net"]["precision"] = "float64"
         self._check_gradient_consistency(model)
 
+    def test_compiled_dpa45_gradients_match_uncompiled(self) -> None:
+        """The DPA4.5 descriptor options keep compiled force-loss gradients exact.
+
+        The measured density floor, per-block cutoffs and mixing depths, a
+        rising degree schedule, the read-out norm and natural parity all enter
+        the traced training graph.
+        """
+        model = copy.deepcopy(_MODEL_DPA4)
+        model["descriptor"].update(
+            {
+                "rcut": [3.0, 4.0],
+                "l_schedule": [1, 2],
+                "mixing_layers": [1, 2],
+                "density_floor": 8.0,
+                "readout_norm": True,
+                "parity": True,
+                "so3_readout": "mlp",
+                "precision": "float64",
+                "use_amp": False,
+            }
+        )
+        model["fitting_net"]["precision"] = "float64"
+        self._check_gradient_consistency(model)
+
     def _check_gradient_consistency(self, model: dict | None = None) -> None:
         """Compare compiled and eager loss graphs from identical parameters."""
         from deepmd.pt_expt.train.training import (
@@ -1029,9 +1076,10 @@ class TestGetData(unittest.TestCase):
                 trainer = get_trainer(config)
                 input_dict, label_dict = trainer.get_data(is_train=True)
 
-                # coord should be a tensor with requires_grad
+                # A batch is plain data: the wrapper marks the coordinates
+                # for the force computation inside its forward.
                 self.assertIsInstance(input_dict["coord"], torch.Tensor)
-                self.assertTrue(input_dict["coord"].requires_grad)
+                self.assertFalse(input_dict["coord"].requires_grad)
 
                 # atype should be an integer tensor
                 self.assertIsInstance(input_dict["atype"], torch.Tensor)

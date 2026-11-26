@@ -252,11 +252,12 @@ class C3CutoffEnvelope(NativeOP):
             float(math.comb(k + 3, 3)) for k in range(self.p)
         )
 
-    def call(self, dst: Any) -> Any:
+    def call(self, dst: Any, rcut: float | None = None) -> Any:
         """Compute the envelope value for given distances."""
         xp = array_api_compat.array_namespace(dst)
         device = array_api_compat.device(dst)
-        u = xp.clip((self.rcut - dst) / self.rcut, min=0.0, max=1.0)
+        radius = self.rcut if rcut is None else rcut
+        u = xp.clip((radius - dst) / radius, min=0.0, max=1.0)
         x = 1.0 - u
         series = xp.full(
             x.shape,
@@ -389,7 +390,7 @@ class RadialBasis(NativeOP):
             else None
         )
 
-    def call(self, r: Any) -> Any:
+    def call(self, r: Any, rcut: float | None = None) -> Any:
         """
         Compute radial basis functions.
 
@@ -397,6 +398,9 @@ class RadialBasis(NativeOP):
         ----------
         r : Array
             Pair distances with shape (N, 1) in Å, where N is the number of pairs.
+        rcut : float or None
+            Envelope cutoff in Å. None uses the configured cutoff. Basis
+            frequencies and Gaussian widths remain shared across cutoffs.
 
         Returns
         -------
@@ -429,7 +433,7 @@ class RadialBasis(NativeOP):
 
         # === Step 2. Apply the optional C³ envelope ===
         if self.envelope is not None:
-            return raw * self.envelope(r)
+            return raw * self.envelope(r, rcut=rcut)
         return raw
 
     def serialize(self) -> dict[str, Any]:

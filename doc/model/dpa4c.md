@@ -157,6 +157,7 @@ is the general-purpose starting point:
 
 | Version     | Available sizes                                                                    |
 | ----------- | ---------------------------------------------------------------------------------- |
+| `v20261111` | `nano`, `mini`, `neo`, `air`, `plus`, `mini-duo`, `neo-duo`, `air-duo`, `plus-duo` |
 | `v20260911` | `nano`, `mini`, `neo`, `air`, `plus`, `mini-duo`, `neo-duo`, `air-duo`, `plus-duo` |
 | `v20260901` | `nano`, `mini`, `neo`, `air`, `plus`                                               |
 
@@ -167,6 +168,11 @@ as its single-block size; compressed, roughly five to ten times as much on
 large systems, because compression speeds up the second block far less than
 the first. There is no `nano-duo`, because the single-block `mini` is more
 accurate at the same cost.
+
+`v20261111` adds a measured neighborhood floor and the reference of every atom
+to the isolated atom of its type, which takes effect on a model whose input
+gives the isolated-atom energies (`preset_out_bias`), for example
+`dpa4c-neo-v20261111`.
 
 Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
 and `fitting_net`. Run-specific settings are written alongside the preset:
@@ -330,10 +336,10 @@ dp --pt-expt freeze -c model.ckpt.pt -o compressed_model --compress
 This writes `compressed_model.pt2` with the default compression settings. Set
 the [inference settings](#inference-settings) before running it.
 
-A branch of a multi-task model is frozen by naming it with `--head`:
+A branch of a multi-task model is frozen by naming it with `--task` (aliases: `--head`, `--model-branch`):
 
 ```bash
-dp --pt-expt freeze -c model.ckpt.pt -o compressed_branch --head CHOSEN_BRANCH --compress
+dp --pt-expt freeze -c model.ckpt.pt -o compressed_branch --task CHOSEN_BRANCH --compress
 ```
 
 A branch whose fitting network is shared with the other branches compresses
@@ -644,23 +650,23 @@ communication and host/device synchronization. Build the DeePMD-kit plugin
 against the same LAMMPS and Kokkos build used to run it; see the
 [Kokkos build instructions](../install/install-lammps.md#install-lammps-plugin-mode).
 
-By default the pair styles store the precession magnetic force that the LAMMPS
-SPIN package expects, the negative energy gradient `-dE/dS` scaled by the
-moment magnitude over `hbar`. `min_style spin` reads this force and relaxes the
-moment directions. The `fix nve/spin` of a stock LAMMPS build does not use this
-force: the fix evaluates the magnetic force itself, through the pair styles
-whose names begin with `spin`, and `dpa4spin` and `dpa4spin/kk` are not among
-them. With no such pair style, the fix runs silently on a single MPI rank and
-stops with a sectoring error on several. Spin dynamics therefore needs a LAMMPS
-build whose integrator reads the magnetic force of these pair styles.
-
-A Newtonian integrator of the Cartesian spin vector needs `-dE/dS` itself
-rather than the precession force. The keyword `magnetic_force cartesian`
-selects `-dE/dS` and requires `units metal`:
+The pair styles store the magnetic force in the convention of the LAMMPS SPIN
+package: the negative energy gradient `-dE/dS` with respect to the moment, all
+three components of it, scaled by the moment magnitude over `hbar`.
+`min_style spin` reads this force and relaxes the moment directions. The TSPIN
+fixes of the SPIN package, `fix nve/tspin` and its thermostats, which LAMMPS
+provides in its releases after 30 Sep 2026, integrate the direction and the
+magnitude of every moment from it:
 
 ```lammps
-pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
+fix               integrate all nve/tspin spinmass 0.0075
 ```
+
+The `fix nve/spin` of the SPIN package does not use this force: the fix
+evaluates the magnetic force itself, through the pair styles whose names begin
+with `spin`, and `dpa4spin` and `dpa4spin/kk` are not among them. With no such
+pair style, the fix runs silently on a single MPI rank and stops with a
+sectoring error on several.
 
 A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
 is provided in `examples/spin/dpa4c/lmp/`.

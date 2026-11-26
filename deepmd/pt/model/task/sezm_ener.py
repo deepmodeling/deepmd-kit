@@ -13,6 +13,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.fitting.dpa4_ener import (
+    _with_default_trainable,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -215,7 +218,8 @@ class GLUFittingNet(torch.nn.Module):
     seed
         Random seed.
     trainable
-        Whether parameters are trainable.
+        Whether the complete network is trainable. A list is combined with
+        ``all`` to match the SeZM fitting contract.
     descriptor_dim
         Descriptor feature width. Used by case FiLM to avoid modulating
         frame/atomic parameters.
@@ -245,6 +249,7 @@ class GLUFittingNet(torch.nn.Module):
             neuron = []
         if isinstance(trainable, list):
             trainable = all(trainable)
+        self.trainable = bool(trainable)
         self.in_dim = int(in_dim)
         self.out_dim = int(out_dim)
         self.neuron = [int(nn_dim) for nn_dim in neuron]
@@ -392,6 +397,7 @@ class GLUFittingNet(torch.nn.Module):
             "resnet_dt": self.resnet_dt,
             "precision": self.precision,
             "bias_out": self.bias_out,
+            "trainable": self.trainable,
             "descriptor_dim": self.descriptor_dim,
             "dim_case_embd": self.dim_case_embd,
             "case_film_embd": self.case_film_embd,
@@ -543,7 +549,8 @@ class SeZMEnergyFittingNet(InvarFitting):
     SeZM energy fitting with GLU hidden layers.
 
     This uses the same configuration keys as the standard energy fitting
-    but replaces hidden MLP layers with GLU blocks.
+    but replaces hidden MLP layers with GLU blocks. A ``trainable`` list is
+    combined with ``all``, selecting the whole-network freeze contract.
     """
 
     def __init__(
@@ -770,7 +777,9 @@ class SeZMEnergyFittingNet(InvarFitting):
         obj = cls(**data)
         for kk in variables.keys():
             obj[kk] = to_torch_tensor(variables[kk])
-        obj.filter_layers = SeZMNetworkCollection.deserialize(nets)
+        obj.filter_layers = SeZMNetworkCollection.deserialize(
+            _with_default_trainable(nets, obj.trainable)
+        )
         return obj
 
     def serialize(self) -> dict:

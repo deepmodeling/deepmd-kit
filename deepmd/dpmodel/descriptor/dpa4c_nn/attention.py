@@ -66,14 +66,23 @@ def soft_saturate(value: Any, knee: float) -> Any:
     :math:`x_0`; its slope decays as :math:`|x|^{-3}` far beyond it.
     """
     xp = array_api_compat.array_namespace(value)
-    scale = xp.maximum(
-        xp.abs(value),
-        xp.asarray(knee, dtype=value.dtype, device=array_api_compat.device(value)),
+    knee_scalar = xp.full(
+        (), knee, dtype=value.dtype, device=array_api_compat.device(value)
+    )
+    # Rescale by max(|x|, x_0) so squaring stays finite in half precision.
+    # Selecting the sign branches directly with ``where`` avoids ``abs`` and
+    # ``maximum``, whose symbolic first derivative in PyTorch (``aten.sgn``)
+    # queries concrete tensor sizes during second-order backward and
+    # specializes dynamic node and edge axes.
+    scale = xp.where(
+        value >= knee_scalar,
+        value,
+        xp.where(value <= -knee_scalar, -value, knee_scalar),
     )
     scaled_value = value / scale
-    scaled_knee = knee / scale
+    scaled_knee = knee_scalar / scale
     return (
-        knee
+        knee_scalar
         * scaled_value
         / xp.sqrt(scaled_value * scaled_value + scaled_knee * scaled_knee)
     )

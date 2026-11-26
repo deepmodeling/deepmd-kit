@@ -1401,6 +1401,39 @@ class TestMixedNloc(unittest.TestCase):
         sampler = LmdbBatchSampler(reader, shuffle=False)
         self.assertEqual(len(sampler), len(list(sampler)))
 
+    def test_sampler_cache_retains_no_per_frame_python_lists(self) -> None:
+        """A cached pass exposes list batches without an epoch-sized GC traversal."""
+        nframes = 10_000
+        indices = np.arange(nframes, dtype=np.int64)
+        reader = SimpleNamespace(
+            data_requirements_revision=0,
+            mixed_nloc=False,
+            nloc_groups={2: indices},
+            frame_nlocs=np.full(nframes, 2, dtype=np.int32),
+            frame_system_ids=None,
+            availability_groups=lambda group: [group],
+            get_batch_size_for_nloc=lambda _nloc: 100,
+        )
+        batches = LmdbBatchSampler(reader, shuffle=True, seed=42).batches()
+
+        def retained_sequence_slots(value: object) -> int:
+            if isinstance(value, (list, tuple)):
+                return len(value) + sum(retained_sequence_slots(item) for item in value)
+            if isinstance(value, dict):
+                return sum(retained_sequence_slots(item) for item in value.values())
+            if not isinstance(value, np.ndarray) and hasattr(value, "__dict__"):
+                return retained_sequence_slots(vars(value))
+            return 0
+
+        self.assertLessEqual(retained_sequence_slots(batches), 2 * len(batches))
+        yielded = list(batches)
+        self.assertTrue(all(isinstance(batch, list) for batch in yielded))
+        self.assertTrue(all(type(index) is int for batch in yielded for index in batch))
+        self.assertEqual(
+            sorted(index for batch in yielded for index in batch), list(range(nframes))
+        )
+        self.assertEqual(list(batches[::3]), yielded[::3])
+
     def test_mix_batches_span_several_nlocs(self):
         """``mix:N`` puts frames of different atom counts in one batch.
 

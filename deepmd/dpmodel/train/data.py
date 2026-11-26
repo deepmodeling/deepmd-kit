@@ -14,6 +14,13 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.utils.batch import (
+    normalize_batch,
+)
+from deepmd.dpmodel.utils.dist_check import (
+    pair_margin_frame_mask,
+    select_frames,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
     min_pair_dist_requirement,
@@ -163,6 +170,60 @@ def _valid_numb_batch(validation_data_params: Mapping[str, Any] | None) -> int:
     if validation_data_params is None:
         return 1
     return max(int(validation_data_params.get("numb_btch", 1)), 1)
+
+
+def next_training_batch(
+    data: Any, *, filter_enabled: bool = False, task_key: str = DEFAULT_TASK_KEY
+) -> dict[str, Any]:
+    """Read the next nonempty batch after the configured pair-clearance filter.
+
+    Frames holding an atom pair closer than the filter allows are dropped,
+    partial batches retain every aligned frame and node field, and a batch
+    left empty is replaced by the next one. The retry is local to the reader
+    and involves no collective. Validation callers read their data directly
+    and do not apply this filter.
+
+    Parameters
+    ----------
+    data : Any
+        Reader exposing ``get_batch`` and ``get_batch_pass_length``.
+    filter_enabled : bool
+        Whether the reader carries the derived pair-margin requirement of a
+        ``training_data.min_pair_dist`` filter. A grouped reader overrides it
+        per batch through ``pair_filter_enabled``.
+    task_key : str
+        Task identifier used in failure diagnostics.
+
+    Returns
+    -------
+    dict[str, Any]
+        Normalized batch containing at least one accepted frame.
+
+    Raises
+    ------
+    RuntimeError
+        If an enabled filter has no derived margins, or one reader pass yields
+        no accepted frame.
+    """
+    discarded = 0
+    while True:
+        raw_batch = data.get_batch()
+        batch = normalize_batch(raw_batch)
+        frame_mask = pair_margin_frame_mask(
+            batch, getattr(raw_batch, "pair_filter_enabled", filter_enabled)
+        )
+        if frame_mask is None or frame_mask.all():
+            return batch
+        if frame_mask.any():
+            return select_frames(batch, frame_mask)
+        discarded += 1
+        if discarded >= data.get_batch_pass_length():
+            raise RuntimeError(
+                f"No training frame of task {task_key!r} keeps every atom "
+                "pair beyond the frame-filter radius within "
+                f"{discarded} consecutive batches; lower "
+                "`training_data.min_pair_dist` or clean the dataset."
+            )
 
 
 def _task_probability(

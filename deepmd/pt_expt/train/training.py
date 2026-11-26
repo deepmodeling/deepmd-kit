@@ -46,6 +46,13 @@ try:
 except ImportError:
     fully_shard = None  # type: ignore[assignment]
 
+from deepmd.dpmodel.model.expert_merge import (
+    branch_local_parameters,
+    check_expert_state,
+    check_slot_elements,
+    element_banks,
+    fitting_has_experts,
+)
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
@@ -63,6 +70,7 @@ from deepmd.dpmodel.train import (
 )
 from deepmd.dpmodel.train.data import (
     add_training_data_requirements,
+    next_training_batch,
 )
 from deepmd.dpmodel.train.data_progress import (
     DATA_PROGRESS_CHECKPOINT_KEY,
@@ -82,12 +90,12 @@ from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
 )
-from deepmd.dpmodel.utils.dist_check import (
-    pair_margin_frame_mask,
-    select_frames,
-)
+from deepmd.dpmodel.utils.contact_clamp import ContactClamp as ContactClampDP
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
+)
+from deepmd.dpmodel.utils.multi_task import (
+    get_case_embd_config as _get_case_embd_config,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     flatten_topologies,
@@ -111,12 +119,14 @@ from deepmd.pt.optimizer.hybrid_muon import (
 from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
     build_inductor_compile_options,
+    build_make_fx_decompositions,
     check_compile_torch_version,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
     relax_views_to_reshapes,
+    replace_sym_numel_with_method,
 )
 from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
@@ -147,6 +157,9 @@ from deepmd.pt_expt.model.edge_transform_output import (
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
 )
+from deepmd.pt_expt.train.element_rows import (
+    ElementRowReduction,
+)
 from deepmd.pt_expt.train.ema import (
     EMA_CHECKPOINT_KEY,
     ModelEMA,
@@ -155,6 +168,7 @@ from deepmd.pt_expt.train.ema import (
 from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+    separate_gradient_storage,
 )
 from deepmd.pt_expt.train.utils import (
     MatmulPrecisionPolicy,
@@ -306,7 +320,15 @@ def _warn_compiled_attention(model: torch.nn.Module, task_key: str) -> None:
             )
 
 
-def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
+def _branch_local_names(model: torch.nn.Module) -> list[str]:
+    """Names, relative to the model, of the parameters that a branch owns."""
+    owned = {id(parameter) for parameter in branch_local_parameters(model)}
+    return [
+        name for name, parameter in model.named_parameters() if id(parameter) in owned
+    ]
+
+
+def _get_model_structure_key(model: torch.nn.Module) -> tuple[Any, ...]:
     """Return a key that is identical iff two tasks can safely share a compiled graph.
 
     The key captures both the descriptor identity and the fitting-net
@@ -333,24 +355,49 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     ``has_spin()`` leads the key because native-spin models trace an extra
     per-node moment input and return additional magnetic outputs. A spin task
     must therefore never reuse a spin-free task's compiled graph even when the
-    descriptor and fitting parameters are shared.
+    descriptor and fitting parameters are shared. Native-spin replicas may
+    differ in their magnetic types, whose masks the trace bakes in, so the
+    per-type spin flags of the descriptor are part of the key as well.
 
     The fitting's vacuum-reference state selects static branches in the
     atomic model and fitting. Shared weights do not make those branches
     interchangeable: tasks without a preset bias disable the reference,
     while a folded reference no longer appends isolated atoms to the graph.
+    The spin moments of the reference atoms follow the preset of the branch
+    and the trace bakes them in, so they are part of the key as well.
+
+    Block cutoffs are baked into edge filtering and normalization, so shared
+    parameter identities do not make different schedules interchangeable.
+
+    The task increments and the task embedding of an MoE model are
+    branch-local and the trace bakes them in, so their identities are part of
+    the key.
 
     A long-range module is part of the traced computation and of its input
-    schema, so its identity (that of its first parameter) closes the key;
+    schema, so its identity (that of its first parameter) is part of the key;
     tasks share a graph only when they share the module as well.
     """
     descriptor_id: int = 0
-    clamp_id = 0
+    block_cutoffs: tuple = ()
+    contact_clamps: tuple = ()
+    spin_flags: tuple = ()
+    branch_local: tuple = ()
     try:
         desc = model.get_descriptor()
-        clamp = getattr(desc, "contact_clamp", None)
-        if clamp is not None:
-            clamp_id = id(clamp)
+        spin_flags = tuple(getattr(desc, "use_spin", None) or ())
+        block_cutoffs = tuple(
+            (name, tuple(module.block_rcut))
+            for name, module in desc.named_modules()
+            if hasattr(module, "block_rcut")
+        )
+        contact_clamps = tuple(
+            id(module)
+            for module in desc.modules()
+            if isinstance(module, ContactClampDP)
+        )
+        # Parameters a branch of a multi-task model owns (the task of its MoE)
+        # make the traced graph specific to the branch.
+        branch_local = tuple(id(p) for p in branch_local_parameters(model))
         for _, p in desc.named_parameters():
             descriptor_id = id(p)
             break
@@ -376,13 +423,25 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     long_range = getattr(getattr(model, "atomic_model", None), "long_range", None)
     if long_range is not None:
         long_range_id = next((id(p) for p in long_range.parameters()), id(long_range))
+    # The reference conditions follow the task: the spin moments and the
+    # charge/spin conditions its preset names, and the default condition of
+    # the descriptor for every element it leaves unnamed.
+    reference_conditions = tuple(
+        (name, tuple(condition.flatten().tolist()))
+        for module in model.modules()
+        for name, condition in getattr(module, "vacuum_conditions", dict)().items()
+    )
     return (
         int(model.has_spin()),
+        spin_flags,
         descriptor_id,
-        clamp_id,
         fitting_id,
         *vacuum_state,
+        reference_conditions,
         long_range_id,
+        block_cutoffs,
+        contact_clamps,
+        branch_local,
     )
 
 
@@ -722,15 +781,7 @@ def _trace_and_compile(
     if charge_spin is not None:
         charge_spin = _trace_pad_dim(charge_spin[:1], 0, trace_nf)
 
-    # Decompose silu_backward into primitive ops (sigmoid + mul + ...)
-    # so that inductor can compile the graph without requiring a
-    # higher-order derivative that PyTorch does not register for
-    # the fused silu backward kernel.
-    from torch._decomp import (
-        get_decompositions,
-    )
-
-    decomp_table = get_decompositions([torch.ops.aten.silu_backward.default])
+    decomp_table = build_make_fx_decompositions()
 
     traced_lower = make_fx(
         fn,
@@ -776,6 +827,10 @@ def _finalize_compiled_lower(
     # is invalid for a runtime transpose. Keep view-compatible cases free and
     # permit a materializing reshape only when the runtime layout requires it.
     relax_views_to_reshapes(traced_lower)
+    # Dynamo breaks the graph at an aten.sym_numel of a tensor whose shape it
+    # has specialized, which happens in a batch of one frame. Tensor.numel is
+    # traced within the frame for every shape.
+    replace_sym_numel_with_method(traced_lower)
     # Rebuild into a fresh graph to eliminate stale C-level node pointers
     # left by erase_node(), which can cause segfaults during dynamo re-trace.
     traced_lower = _rebuild_graph_module(traced_lower)
@@ -846,9 +901,6 @@ def _trace_and_compile_graph(
         Per-task buffers promoted to FX placeholders (see
         :func:`_detect_task_buffers`).
     """
-    from torch._decomp import (
-        get_decompositions,
-    )
     from torch.fx.experimental.proxy_tensor import (
         make_fx,
     )
@@ -1063,7 +1115,7 @@ def _trace_and_compile_graph(
                     if _fitting is not None:
                         _fitting._buffers[name] = orig
 
-    decomp_table = get_decompositions([torch.ops.aten.silu_backward.default])
+    decomp_table = build_make_fx_decompositions()
 
     traced_lower = make_fx(
         fn,
@@ -1127,7 +1179,7 @@ class _CompiledModel(torch.nn.Module):
     def __init__(
         self,
         original_model: torch.nn.Module,
-        structure_key: tuple[int, ...],
+        structure_key: tuple[Any, ...],
         task_buf_order: tuple[str, ...] = (),
         task_buffers: dict[str, torch.Tensor] | None = None,
         compile_opts: dict[str, Any] | None = None,
@@ -1865,7 +1917,7 @@ class Trainer(AbstractTrainer):
 
     Uses ``DeepmdDataSystem`` for data loading (numpy batches converted
     to torch tensors at the boundary).  Supports single-task and multi-task
-    training.  Single-GPU only.
+    training with data parallelism and optional optimizer or parameter sharding.
 
     Parameters
     ----------
@@ -1989,6 +2041,7 @@ class Trainer(AbstractTrainer):
 
         # Model ---------------------------------------------------------------
         self.models: dict[str, torch.nn.Module] = {}
+        self._element_rows: ElementRowReduction | None = None
         do_case_embd, case_embd_index = (
             _get_case_embd_config(model_params) if self.multi_task else (False, {})
         )
@@ -2380,7 +2433,20 @@ class Trainer(AbstractTrainer):
                     source_key = finetune_rule.get_model_branch()
                     model = self._unwrapped.model[model_key]
                     source_model = pretrained_wrapper.model[source_key]
+                    check_slot_elements(model, source_model)
                     prefix = f"model.{model_key}."
+                    # A branch that names no pretrained task is a new task.
+                    # The parameters of its own task keep their initial
+                    # state. An MoE fitting network holds the task in these
+                    # parameters, so the new task takes the pretrained
+                    # network; any other fitting network is initialized anew.
+                    new_task = finetune_rule.get_random_fitting()
+                    task_keys = (
+                        {prefix + name for name in _branch_local_names(model)}
+                        if new_task
+                        else set()
+                    )
+                    fresh_fitting = new_task and not fitting_has_experts(model)
                     if finetune_rule.convert_to_native_spin:
                         log.info(
                             "Initialize native-spin branch '%s' from spin-free branch '%s'.",
@@ -2390,10 +2456,14 @@ class Trainer(AbstractTrainer):
                         converted = get_native_spin_finetune_state(
                             model,
                             source_model,
-                            random_fitting=finetune_rule.get_random_fitting(),
+                            random_fitting=fresh_fitting,
                         )
                         new_state.update(
-                            {prefix + key: value for key, value in converted.items()}
+                            {
+                                prefix + key: value
+                                for key, value in converted.items()
+                                if prefix + key not in task_keys
+                            }
                         )
                         continue
 
@@ -2413,16 +2483,26 @@ class Trainer(AbstractTrainer):
                             pretrained_key = _move_learned_key(
                                 pretrained_key, path, source_path
                             )
-                        use_random = (
-                            finetune_rule.get_random_fitting()
-                            and ".descriptor." not in key
+                        use_random = key in task_keys or (
+                            fresh_fitting and ".descriptor." not in key
                         )
                         if use_random or pretrained_key not in pretrained_state:
                             if ".long_range." in key:
                                 owner = key[: key.index(".long_range.")]
                                 fresh_long_range[owner] = model_key
                         else:
-                            new_state[key] = pretrained_state[pretrained_key]
+                            source_value = pretrained_state[pretrained_key]
+                            if source_value.shape != target_state[key].shape:
+                                raise ValueError(
+                                    f"the pretrained parameter {pretrained_key!r} "
+                                    f"has shape {tuple(source_value.shape)}, but "
+                                    f"{key!r} has shape "
+                                    f"{tuple(target_state[key].shape)}; MoE adds "
+                                    "weights to a model, so its expert count and "
+                                    "its elements have to match the pretrained "
+                                    "model"
+                                )
+                            new_state[key] = source_value
                 self._unwrapped.load_state_dict(new_state)
 
                 # A long-range module added to the pretrained model takes the
@@ -2486,7 +2566,15 @@ class Trainer(AbstractTrainer):
                 )
             else:
                 # --- Normal resume (init_model / restart) --------------------
-                self._unwrapped.load_state_dict(state_dict)
+                # MoE starts at zero, so the state of a model without it to
+                # the same architecture initializes the plain part of an MoE
+                # model; the terms of MoE keep their initial zero.
+                target_state = self._unwrapped.state_dict()
+                check_expert_state(
+                    [name for name in target_state if name not in state_dict],
+                    [name for name in state_dict if name not in target_state],
+                )
+                self._unwrapped.load_state_dict(state_dict, strict=False)
 
             if shared_links is not None:
                 # Re-apply sharing after loading checkpoint
@@ -2497,6 +2585,21 @@ class Trainer(AbstractTrainer):
                         zip(self.model_keys, self.model_prob, strict=True)
                     ),
                 )
+
+        # Task parameters -----------------------------------------------------
+        # A model trained alone is the only task of its weights: the task
+        # increments of its MoE would repeat the gradient of the shared
+        # weights, so they keep their values.
+        if not self.multi_task:
+            for parameter in branch_local_parameters(self.models[DEFAULT_TASK_KEY]):
+                parameter.requires_grad_(False)
+        # An MoE map sums its shared weight and its task increment in one
+        # table, whose backward hands slices of one buffer to both.
+        separate_gradient_storage(
+            parameter
+            for model in self.models.values()
+            for parameter in branch_local_parameters(model)
+        )
 
         # Distribution --------------------------------------------------------
         # The weights are in place, so a sharding strategy may cut them up.
@@ -2797,8 +2900,8 @@ class Trainer(AbstractTrainer):
         # Pre-pass: group tasks by structure key and auto-detect per-task buffers.
         # Grouping is needed so _detect_task_buffers can diff buffer identities
         # across all tasks that share the same compiled graph.
-        _key_for: dict[str, tuple[int, ...]] = {}
-        _groups: defaultdict[tuple[int, ...], list[str]] = defaultdict(list)
+        _key_for: dict[str, tuple[Any, ...]] = {}
+        _groups: defaultdict[tuple[Any, ...], list[str]] = defaultdict(list)
         for task_key in self.model_keys:
             sk = _get_model_structure_key(wrapper_mod.model[task_key])
             _key_for[task_key] = sk
@@ -2837,7 +2940,7 @@ class Trainer(AbstractTrainer):
         # Tasks with the same structure key reuse the same compiled graph.
         # The dict is passed to every _CompiledModel instance so the lazy
         # compile on the first forward can populate and share it.
-        _compiled_by_structure: dict[tuple[int, ...], tuple] = {}
+        _compiled_by_structure: dict[tuple[Any, ...], tuple] = {}
 
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
@@ -2895,7 +2998,11 @@ class Trainer(AbstractTrainer):
             return {}, {}
 
         batch = (
-            self._next_training_batch(data_sys, task_key)
+            next_training_batch(
+                data_sys,
+                filter_enabled=self.pair_filter_enabled_by_task[task_key],
+                task_key=task_key,
+            )
             if is_train
             else normalize_batch(data_sys.get_batch())
         )
@@ -2927,59 +3034,7 @@ class Trainer(AbstractTrainer):
                     dd[key] = torch.tensor(
                         float(val), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
                     )
-        # requires_grad on coord for force computation via autograd
-        if "coord" in input_dict and input_dict["coord"] is not None:
-            input_dict["coord"] = input_dict["coord"].requires_grad_(True)
-
         return input_dict, label_dict
-
-    def _next_training_batch(self, data_sys: Any, task_key: str) -> dict[str, Any]:
-        """Fetch the next training batch of a task, without its too-close frames.
-
-        Frames holding an atom pair closer than the task's frame filter allows
-        are dropped, and a batch left empty is replaced by the next one.
-        The retry is local to the rank and involves no collective, so
-        distributed ranks stay in lockstep: every rank still contributes
-        exactly one batch per optimizer step.
-
-        Parameters
-        ----------
-        data_sys : Any
-            Training data system of the task.
-        task_key : str
-            Resolved task key.
-
-        Returns
-        -------
-        dict[str, Any]
-            Normalized NumPy batch with at least one frame.
-
-        Raises
-        ------
-        RuntimeError
-            If one local reader pass of consecutive batches holds no valid frame.
-        """
-        filter_enabled = self.pair_filter_enabled_by_task[task_key]
-        discarded = 0
-        while True:
-            raw_batch = data_sys.get_batch()
-            batch = normalize_batch(raw_batch)
-            batch_filter_enabled = getattr(
-                raw_batch, "pair_filter_enabled", filter_enabled
-            )
-            frame_mask = pair_margin_frame_mask(batch, batch_filter_enabled)
-            if frame_mask is None or frame_mask.all():
-                return batch
-            if frame_mask.any():
-                return select_frames(batch, frame_mask)
-            discarded += 1
-            if discarded >= data_sys.get_batch_pass_length():
-                raise RuntimeError(
-                    f"No training frame of task {task_key!r} keeps every atom "
-                    "pair beyond the frame-filter radius within "
-                    f"{discarded} consecutive batches; lower "
-                    "`training_data.min_pair_dist` or clean the dataset."
-                )
 
     def _epoch_length(self, model_key: str) -> int:
         """Return the steps this rank takes during one epoch of a task.
@@ -3024,10 +3079,10 @@ class Trainer(AbstractTrainer):
         """
         if not self.sharding.enabled:
             return
-        if self.multi_task:
+        if self.multi_task and self.sharding.shards_parameters:
             raise ValueError(
-                "training.zero_stage is currently only supported in single-task "
-                "training."
+                "training.zero_stage >= 2 is currently only supported in "
+                "single-task training."
             )
         if self.change_bias_after_training:
             raise ValueError(
@@ -3072,6 +3127,16 @@ class Trainer(AbstractTrainer):
             self.wrapper = torch.nn.parallel.DistributedDataParallel(
                 self.wrapper, **kwargs
             )
+            # The element banks of an MoE hold most of the parameters, and a
+            # step trains the rows of the elements in its batches alone.
+            components = [
+                component
+                for model in self.models.values()
+                for component in element_banks(model)
+            ]
+            if components:
+                self._element_rows = ElementRowReduction(components, DEVICE)
+                self.wrapper.register_comm_hook(None, self._element_rows.hook)
             return
 
         if fully_shard is None:
@@ -3676,6 +3741,8 @@ class Trainer(AbstractTrainer):
         task_key = task.key
         self.optimizer.zero_grad(set_to_none=True)
         input_dict, label_dict = self.get_data(is_train=True, task_key=task_key)
+        if self._element_rows is not None:
+            self._element_rows.observe(input_dict["atype"])
 
         cur_lr_sched = self.scheduler.get_last_lr()[0]
         _model_pred, loss, more_loss = self.wrapper(
@@ -3844,40 +3911,3 @@ def model_change_out_bias(
         recompute_input_stats=isinstance(_model, DPModelCommon),
         preset_out_bias=preset_out_bias,
     )
-
-
-def _get_case_embd_config(
-    model_params: dict[str, Any],
-) -> tuple[bool, dict[str, int]]:
-    """Check whether case embedding is enabled and build the index map.
-
-    Parameters
-    ----------
-    model_params : dict
-        Model parameters containing ``model_dict``.
-
-    Returns
-    -------
-    do_case_embd : bool
-        Whether case embedding is enabled.
-    case_embd_index : dict
-        Mapping from model key to case index (sorted alphabetically).
-    """
-    assert "model_dict" in model_params, (
-        "Only support setting case embedding for multi-task model!"
-    )
-    model_keys = list(model_params["model_dict"])
-    sorted_model_keys = sorted(model_keys)
-    numb_case_embd_list = [
-        model_params["model_dict"][mk].get("fitting_net", {}).get("dim_case_embd", 0)
-        for mk in sorted_model_keys
-    ]
-    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
-        raise ValueError(
-            "All models must have the same dimension of case embedding, "
-            f"while the settings are: {numb_case_embd_list}"
-        )
-    if numb_case_embd_list[0] == 0:
-        return False, {}
-    case_embd_index = {mk: idx for idx, mk in enumerate(sorted_model_keys)}
-    return True, case_embd_index

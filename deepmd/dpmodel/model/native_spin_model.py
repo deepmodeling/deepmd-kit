@@ -36,9 +36,9 @@ class NativeSpinModelKind:
     relation between them -- an ``isinstance`` against one backend's
     concrete class is silently dead in the other. Backend seams that need a
     cross-backend family test check against this shared marker instead. The
-    motivating consumer is the with-comm freeze gate, where native spin
-    excludes only the DENSE lower; native-spin GRAPH lowers do participate
-    in the with-comm path and carry the nested artifact (issue #5906).
+    with-comm freeze gate is one such seam: the graph lower of a native-spin
+    model runs its cross-rank exchange in the main program, so a native-spin
+    archive never carries the nested with-comm artifact.
     """
 
 
@@ -76,6 +76,7 @@ def make_native_spin_model(T_Model: type) -> type:
         """Native-spin variant of ``T_Model`` (see ``make_native_spin_model``)."""
 
         CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+        _backbone_model_registry = T_Model
 
         def __init__(self, *args: Any, spin: Spin, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
@@ -280,7 +281,7 @@ def make_native_spin_model(T_Model: type) -> type:
             backbone_cls = (
                 T_Model
                 if backbone_type == "standard"
-                else T_Model.get_class_by_type(backbone_type)
+                else cls._backbone_model_registry.get_class_by_type(backbone_type)
             )
             backbone = backbone_cls.deserialize(data)
             return cls(atomic_model_=backbone.atomic_model, spin=spin)

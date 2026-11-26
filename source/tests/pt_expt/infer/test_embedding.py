@@ -700,7 +700,7 @@ def test_multiblock_canonical_metadata_keeps_the_embedding_graph_generic(
     # Canonical archive metadata is sufficient to exercise the CPU embedding
     # path: no compiled energy/force entry point is called by this API.
     dp.deep_eval.metadata.update(
-        lower_input_kind="dpa4c_canonical", has_message_passing=True
+        lower_input_kind="dpa_canonical", has_message_passing=True
     )
     actual = dp.eval_embedding(_COORDS[:1], _CELLS[:1], _ATYPES[0])
     # The fp32 graph reductions need not be bitwise repeatable on CUDA.

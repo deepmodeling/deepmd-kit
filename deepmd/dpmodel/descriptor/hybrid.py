@@ -126,6 +126,12 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             nlist_cut_idx.append(cut_idx)
         self.nlist_cut_idx = nlist_cut_idx
 
+    def requires_full_neighbor_list(self) -> bool:
+        """Retain every neighbor required by any component descriptor."""
+        return any(
+            descriptor.requires_full_neighbor_list() for descriptor in self.descrpt_list
+        )
+
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return np.max([descrpt.get_rcut() for descrpt in self.descrpt_list]).item()

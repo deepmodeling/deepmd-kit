@@ -4,18 +4,20 @@ option(
   "Embed a lowest-supported PTX fallback in the PyTorch CUDA operator library"
   ON)
 
-# Graph-lower operators of the CPU backend. The schemas are declared in their
-# own translation units so that an operator stays visible when the CUDA half is
-# absent, and each instruction-set instantiation is compiled with only that
-# level's flags: the library ships in a wheel and in the LAMMPS deployment tree,
-# so it must load on a host older than the one that built it and select its
-# kernels through CPUID at run time.
+# Graph-lower operators of the CPU backend, and the border exchange of a
+# decomposed node set, which serves host and CUDA rows alike. The schemas are
+# declared in their own translation units so that an operator stays visible when
+# the CUDA half is absent, and each instruction-set instantiation is compiled
+# with only that level's flags: the library ships in a wheel and in the LAMMPS
+# deployment tree, so it must load on a host older than the one that built it
+# and select its kernels through CPUID at run time.
 set(DPA4C_CPU_ISA_SRC
     dpa4c/graph_compress_cpu_scalar.cc dpa4c/graph_compress_cpu_avx2.cc
     dpa4c/graph_compress_cpu_avx512.cc)
 list(
   APPEND
   OP_SRC
+  border_exchange.cc
   graph_ops_schema.cc
   cpu/allocator_policy.cc
   cpu/edge_force_virial_cpu.cc
@@ -301,7 +303,6 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     edge_force_virial.cu
     long_range/direct_sum.cu
     long_range/domain_exchange.cc
-    border_exchange.cc
     long_range/latent_charge_sum.cu
     long_range/mesh_sum.cu
     dpa1_graph_energy_force.cu
@@ -339,6 +340,9 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
                                               ${DEEPMD_PT_CUDA_ARCHITECTURES})
   endif()
   target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublasLt CUDA::cufft)
+  # Operators that serve host and device rows order the device ones through the
+  # c10 CUDA stream API of a CUDA-enabled PyTorch.
+  target_compile_definitions(deepmd_op_pt PRIVATE DEEPMD_TORCH_HAS_CUDA)
   # libtorch headers require at least C++17, and PyTorch 2.14+ requires C++20.
   # Preserve an explicitly higher CUDA standard requested by the user.
   set(DEEPMD_PT_CUDA_STANDARD 17)

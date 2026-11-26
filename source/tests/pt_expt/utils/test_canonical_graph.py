@@ -11,15 +11,19 @@ import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
+    attach_edge_csr,
     build_neighbor_graph,
 )
 from deepmd.pt_expt.utils.canonical_graph import (
     INT32_MAX,
+    BorderPlan,
     CanonicalGraph,
     canonical_graph_from_neighbor_graph,
     canonical_graph_from_pairs,
     canonical_index_bytes,
+    canonical_index_values,
     canonical_index_words,
+    neighbor_graph_from_canonical,
     validate_canonical_graph_shapes,
     validate_reciprocal_canonical_graph,
 )
@@ -213,6 +217,10 @@ def test_index_byte_carrier_preserves_words_without_copy(dtype: torch.dtype) -> 
     torch.testing.assert_close(
         restored.to(torch.int64), index.to(torch.int64), atol=0, rtol=0
     )
+    for carrier in (storage, index):
+        torch.testing.assert_close(
+            canonical_index_values(carrier), index.to(torch.int64), atol=0, rtol=0
+        )
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -269,3 +277,120 @@ def test_pairs_preserve_geometry_and_both_csr_views(
             torch.arange(4, device=device), graph.source_row_ptr.diff()
         ),
     )
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("edge_count", [0, 1, 7])
+def test_neighbor_graph_view_spreads_guards_over_the_nodes(
+    device: str, edge_count: int
+) -> None:
+    """The view of a compact graph keeps every edge and its CSR views.
+
+    The physical edges keep their endpoints and geometry. The guard slots,
+    here the storage that a Kokkos build reserves past the physical edges,
+    join the nodes to themselves in turn and are masked. Both CSR views are
+    those that the graph builder derives from the edges and their mask.
+    """
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    generator = torch.Generator(device="cpu").manual_seed(3)
+    center = torch.randint(0, 4, (edge_count,), generator=generator).to(device)
+    source = torch.randint(0, 4, (edge_count,), generator=generator).to(device)
+    vectors = torch.randn(edge_count, 3, generator=generator, dtype=torch.float64)
+    compact = canonical_graph_from_pairs(
+        center,
+        source,
+        vectors.to(device),
+        torch.tensor([4], dtype=torch.int64, device=device),
+        4,
+    )
+    reserved = compact.source.shape[0]
+    storage = reserved + 5
+    compact = replace(
+        compact,
+        source=torch.cat((compact.source, compact.source.new_zeros(5))),
+        edge_vec=torch.cat((compact.edge_vec, compact.edge_vec.new_zeros(5, 3))),
+        source_order=torch.cat(
+            (compact.source_order, torch.arange(reserved, storage, device=device))
+        ),
+    )
+    view = neighbor_graph_from_canonical(compact, 4)
+    assert view.edge_index.shape == (2, storage)
+    assert view.destination_sorted
+    physical = int(compact.destination_row_ptr[-1])
+    slot = torch.arange(storage, device=device)
+    torch.testing.assert_close(view.edge_mask, slot < physical)
+    torch.testing.assert_close(
+        view.edge_index[0, :physical], compact.source[:physical].to(torch.int64)
+    )
+    torch.testing.assert_close(
+        view.edge_index[1, :physical],
+        torch.repeat_interleave(
+            torch.arange(4, device=device), compact.destination_row_ptr.diff()
+        ),
+    )
+    torch.testing.assert_close(
+        view.edge_index[:, physical:], (slot[physical:] % 4).expand(2, -1)
+    )
+    rebuilt = attach_edge_csr(view, 4, destination_sorted=True)
+    for name in (
+        "destination_order",
+        "destination_row_ptr",
+        "source_order",
+        "source_row_ptr",
+    ):
+        torch.testing.assert_close(getattr(view, name), getattr(rebuilt, name))
+
+
+def _border_exchange_available() -> bool:
+    """Whether the loaded operator library carries the border exchange."""
+    import deepmd.pt.cxx_op  # noqa: F401
+
+    return hasattr(torch.ops.deepmd, "border_exchange")
+
+
+def _border_plan(device: str) -> tuple[BorderPlan, torch.Tensor]:
+    """A plan of three self swaps whose last forwards a row the first received.
+
+    Returns the plan of a node set of four owned rows and four halo rows, and
+    the row every row of that set holds after the exchange.
+    """
+    plan = BorderPlan(
+        send_nodes=torch.tensor([1, 3, 0, 4], dtype=torch.int32, device=device),
+        swaps=torch.tensor(
+            [[0, 0, 2, 2, 4], [0, 0, 1, 1, 6], [0, 0, 1, 1, 7]], dtype=torch.int32
+        ),
+        communicator=torch.zeros(1, dtype=torch.int64),
+    )
+    return plan, torch.tensor([0, 1, 2, 3, 1, 3, 0, 1], device=device)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_border_exchange_refreshes_halo_rows_and_returns_their_gradient(
+    device: str, dtype: torch.dtype
+) -> None:
+    """The exchange copies owners into halo rows; its gradient folds back.
+
+    The halo rows take the rows of the atoms they image, an image of an image
+    included, and the gradient of every halo row is added onto that atom,
+    while the halo rows, whose input values the exchange overwrites, receive
+    none: the exchange matches the gather by the owner of every row.
+    """
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    if not _border_exchange_available():
+        pytest.skip("the operator library lacks the border exchange")
+    plan, owner = _border_plan(device)
+    generator = torch.Generator(device="cpu").manual_seed(5)
+    rows = torch.randn(8, 6, generator=generator, dtype=dtype).to(device)
+    cotangent = torch.randn(8, 6, generator=generator, dtype=dtype).to(device)
+    rows.requires_grad_(True)
+    refreshed = plan.exchange(rows)
+    (gradient,) = torch.autograd.grad(refreshed, rows, cotangent)
+    reference_rows = rows.detach().clone().requires_grad_(True)
+    reference = reference_rows[owner]
+    (reference_gradient,) = torch.autograd.grad(reference, reference_rows, cotangent)
+    torch.testing.assert_close(refreshed, reference, rtol=0, atol=0)
+    torch.testing.assert_close(gradient, reference_gradient)
+    assert bool((gradient[4:] == 0).all())

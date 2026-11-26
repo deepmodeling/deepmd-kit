@@ -4241,7 +4241,7 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
         fitting_routes._ROUTE_TABLES[(fingerprint, key)] = tuple(table)
         exported, _metadata, _model_json, _output_keys = _trace_and_export(
             {"model": model.serialize()},
-            lower_kind="dpa4c_canonical",
+            lower_kind="dpa_canonical",
             do_atomic_virial=True,
         )
         # The table is the ``fitting_routes`` argument of the schema; a call
@@ -4262,7 +4262,7 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
             archive,
             {"model": model.serialize()},
             do_atomic_virial=True,
-            lower_kind="dpa4c_canonical",
+            lower_kind="dpa_canonical",
             with_comm=False,
         )
         runner = aoti_load_package(archive)
@@ -5748,3 +5748,32 @@ def test_native_basis_rejects_independent_radial_channels(spin_mode: str) -> Non
         descriptor, stride, knots=(values, first, second)
     )
     assert table.numel() == matrix.numel() == 0
+
+
+@_GPU
+def test_compressed_operator_reads_the_measured_density_floor() -> None:
+    """The frozen floor is the option times the mass the descriptor measured."""
+    descriptor = _build_descriptor(8, density_floor=8.0)
+    with torch.no_grad():
+        descriptor.envelope_mass.fill_(3.0)
+    graph, atype = _build_graph(descriptor, canonical=False)
+    arguments = _arguments(descriptor, graph, atype)
+    # The operator scalars close with the floor, the inner clamp fraction
+    # following it, so the mass reaches the kernel through the artifacts.
+    assert arguments[-2] == 24.0
+    compressed, _state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec,
+        *arguments,
+    )
+    reference, _ = descriptor.call_graph(
+        graph,
+        atype,
+        type_embedding=descriptor.type_embedding.call(),
+    )
+    torch.testing.assert_close(compressed, reference, atol=3e-5, rtol=3e-5)
+    # A descriptor that silently kept the default floor would disagree.
+    plain, _state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec,
+        *(*arguments[:-2], float(descriptor._DEGREE_NORM_FLOOR), arguments[-1]),
+    )
+    assert (compressed - plain).abs().max() > 1.0e-3

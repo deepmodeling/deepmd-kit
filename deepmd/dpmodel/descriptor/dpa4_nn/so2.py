@@ -31,6 +31,7 @@ from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
     xp_einsum,
+    xp_matmul,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -51,6 +52,7 @@ from .activation import (
     GatedActivation,
 )
 from .attention import (
+    inverse_softplus,
     segment_envelope_gated_softmax,
 )
 from .attn_res import (
@@ -68,6 +70,7 @@ from .indexing import (
     build_m_major_index,
     build_m_major_l_index,
     build_rotate_inv_rescale,
+    expand_degree_axis,
     get_so3_dim_of_lmax,
     map_degree_idx,
     project_D_to_m,
@@ -331,6 +334,9 @@ class SO2Linear(NativeOP):
         """
         xp = array_api_compat.array_namespace(x)
         device = array_api_compat.device(x)
+        if self.parity:
+            return self._parity_linear(x)
+
         # === Step 1. Flatten coefficient + channel axes for the matmul ===
         # (F, E, D_m, Cin) -> (F, E, D_m*Cin); the focus stream stays the batch axis.
         n_focus, n_edge = x.shape[0], x.shape[1]
@@ -353,7 +359,92 @@ class SO2Linear(NativeOP):
                 (self.n_focus, self.out_channels),
             )
             out = xp.concat(
-                [out[:, :, :1, :] + bias0[:, None, None, :], out[:, :, 1:, :]], axis=2
+                [
+                    xp.astype(out[:, :, :1, :] + bias0[:, None, None, :], out.dtype),
+                    out[:, :, 1:, :],
+                ],
+                axis=2,
+            )
+        return out
+
+    def _order_weights(
+        self, xp: Any = None, device: Any = None
+    ) -> tuple[Array, list[Array]]:
+        """Return the weights of the order ``m = 0`` and of every order ``m > 0``.
+
+        Every reader of the map, the dense assembly, the parity path and the
+        fused kernels, takes the weights from here, so an adapter that changes
+        them (LoRA) reaches all of them.
+
+        Parameters
+        ----------
+        xp : Any, optional
+            The array namespace. When ``None``, both the namespace and device
+            are derived from ``self.weight_m0``.
+        device : Any, optional
+            The target device. ``None`` uses the backend default, including
+            the device assigned by a functional backend during tracing.
+
+        Returns
+        -------
+        tuple[Array, list[Array]]
+            ``weight_m0`` with shape ``(num_in_m0, F*num_out_m0)`` and one
+            weight per order ``m > 0`` with the shape of ``weight_m[i]``.
+        """
+        if xp is None:
+            xp = array_api_compat.array_namespace(self.weight_m0[...])
+            device = array_api_compat.device(self.weight_m0[...])
+        return xp_asarray_nodetach(xp, self.weight_m0[...], device=device), [
+            xp_asarray_nodetach(xp, weight[...], device=device)
+            for weight in self.weight_m
+        ]
+
+    def _parity_linear(self, x: Array) -> Array:
+        """Apply shared reflection-preserving weights to stacked +/-m rows."""
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        n_focus, n_edge = x.shape[:2]
+        m0 = self.lmax + 1
+        weight, weights_m = self._order_weights(xp, device)
+        weight = xp.permute_dims(
+            xp.reshape(
+                weight, (m0 * self.in_channels, n_focus, m0 * self.out_channels)
+            ),
+            (1, 0, 2),
+        )
+        scalar = xp.reshape(x[:, :, :m0, ...], (n_focus, n_edge, m0 * self.in_channels))
+        blocks = [
+            xp.reshape(
+                xp_matmul(scalar, weight),
+                (n_focus, n_edge, m0, self.out_channels),
+            )
+        ]
+        for (negative, _, count), weight in zip(self._m_ranges, weights_m, strict=True):
+            weight = xp.permute_dims(
+                xp.reshape(
+                    weight,
+                    (count * self.in_channels, n_focus, count * self.out_channels),
+                ),
+                (1, 0, 2),
+            )
+            pair = xp.reshape(
+                x[:, :, negative : negative + 2 * count, ...],
+                (n_focus, n_edge * 2, count * self.in_channels),
+            )
+            blocks.append(
+                xp.reshape(
+                    xp_matmul(pair, weight),
+                    (n_focus, n_edge, 2 * count, self.out_channels),
+                )
+            )
+        out = xp.concat(blocks, axis=2)
+        if self.mlp_bias:
+            bias = xp.reshape(
+                xp_asarray_nodetach(xp, self.bias0[...], device=device),
+                (n_focus, 1, 1, self.out_channels),
+            )
+            out = xp.concat(
+                [xp.astype(out[:, :, :1] + bias, out.dtype), out[:, :, 1:]], axis=2
             )
         return out
 
@@ -388,11 +479,11 @@ class SO2Linear(NativeOP):
         Parameters
         ----------
         xp : Any, optional
-            The array namespace. Derived from ``self.weight_m0`` when either
-            ``xp`` or ``device`` is ``None``.
+            The array namespace. When ``None``, both the namespace and device
+            are derived from ``self.weight_m0``.
         device : Any, optional
-            The target device. Derived from ``self.weight_m0`` when either
-            ``xp`` or ``device`` is ``None``.
+            The target device. ``None`` uses the backend default, including
+            the device assigned by a functional backend during tracing.
 
         Returns
         -------
@@ -402,17 +493,15 @@ class SO2Linear(NativeOP):
         # The ``call`` hot path passes both explicitly; the kernel value-path
         # factories invoke ``_build_so2_weight()`` with no args, so fall back to
         # the stored weight for the namespace/device (numpy or torch buffer).
-        if xp is None or device is None:
-            xp = array_api_compat.array_namespace(self.weight_m0)
-            device = array_api_compat.device(self.weight_m0)
+        if xp is None:
+            xp = array_api_compat.array_namespace(self.weight_m0[...])
+            device = array_api_compat.device(self.weight_m0[...])
         in_total = self.reduced_dim * self.in_channels
         out_total = self.reduced_dim * self.out_channels
         num_in_m0 = (self.lmax + 1) * self.in_channels
         num_out_m0 = (self.lmax + 1) * self.out_channels
-        weight_m0 = xp.reshape(
-            xp_asarray_nodetach(xp, self.weight_m0[...], device=device),
-            (num_in_m0, self.n_focus, num_out_m0),
-        )
+        weight_m0, weights_m = self._order_weights(xp, device)
+        weight_m0 = xp.reshape(weight_m0, (num_in_m0, self.n_focus, num_out_m0))
 
         # m=0 block: (Cin_blk, F, Cout_blk) — (in, out) convention. The m=0 input
         # rows carry the m=0 output block followed by zero pads spanning the
@@ -434,14 +523,11 @@ class SO2Linear(NativeOP):
         # |m|>0 blocks: fill the 2x2 SO(2) coupling structure.
         # For each |m|, the learnable param w has shape (in_blk, F, 2*out_blk)
         # which is split into W_u and W_v along the output axis.
-        for m_idx, w in enumerate(self.weight_m):
+        for m_idx, w in enumerate(weights_m):
             ni0, ni1, pi0, pi1, no0, no1, po0, po1 = self._block_slices[m_idx]
             ib = ni1 - ni0  # in_block size
             ob = no1 - no0  # out_block size
-            w = xp.reshape(
-                xp_asarray_nodetach(xp, w[...], device=device),
-                (ib, self.n_focus, (1 if self.parity else 2) * ob),
-            )
+            w = xp.reshape(w, (ib, self.n_focus, (1 if self.parity else 2) * ob))
             w_u = w[:, :, :ob]  # (in_blk, F, out_blk)
             w_v = xp.zeros_like(w_u) if self.parity else w[:, :, ob:]
             # Fill the 2x2 coupling:
@@ -494,7 +580,7 @@ class SO2Linear(NativeOP):
             # torch.bmm(x_flat[:, :, in0:in1], weight[:, in0:in1, out0:out1]): a
             # per-focus matmul batched over the focus axis (the leading batch axis
             # of xp.matmul), contracting the input coefficient/channel index i.
-            xp.matmul(
+            xp_matmul(
                 x_flat[:, :, in0:in1],
                 weight[:, in0:in1, out0:out1],
             )
@@ -679,7 +765,7 @@ class DynamicRadialDegreeMixer(NativeOP):
             (-1, self.input_dim),
         )
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
-        return xp.matmul(radial_m0, weight)
+        return xp_matmul(radial_m0, weight)
 
     def _scatter_degree_kernel(self, compact: Array) -> Array:
         xp = array_api_compat.array_namespace(compact)
@@ -799,7 +885,7 @@ class DynamicRadialDegreeMixer(NativeOP):
         kernel_flat = self._project_radial(radial_feat)
         if self.mode == "degree":
             kernel = self._scatter_degree_kernel(kernel_flat)
-            return xp.matmul(kernel, x_local)
+            return xp_matmul(kernel, x_local)
 
         if self.rank > 0:
             compact = xp.reshape(kernel_flat, (-1, self.degree_kernel_size, self.rank))
@@ -836,7 +922,7 @@ class DynamicRadialDegreeMixer(NativeOP):
             xp.permute_dims(kernel, (0, 1, 3, 2)),
             (-1, self.reduced_dim * self.rank, self.reduced_dim),
         )
-        mixed = xp.matmul(kernel_or, x_local)
+        mixed = xp_matmul(kernel_or, x_local)
         mixed = xp.reshape(
             mixed,
             (-1, self.reduced_dim, self.rank, self.channels),
@@ -1015,6 +1101,12 @@ class SO2Convolution(NativeOP):
         - >0: envelope-gated grouped softmax attention with output-side head
           gates. Attention uses ``w**2 * exp(logit)`` in the numerator and
           ``zeta + sum(w**2 * exp(logit))`` in the denominator.
+    atten_null_mass
+        Initial null mass ``zeta`` of the attention denominator, or ``None``
+        for a null mass of about one. The null mass is the share of a
+        neighborhood that no neighbor claims, so a value near the envelope mass
+        of the training neighborhoods keeps the message of a sparse
+        neighborhood small.
     atten_f_mix
         If True, merge the internal focus streams into one attention stream
         after rotate-back. Attention heads then split the full hidden width
@@ -1114,6 +1206,7 @@ class SO2Convolution(NativeOP):
         so2_attn_res: str = "none",
         layer_scale: bool = False,
         n_atten_head: int = 1,
+        atten_null_mass: float | None = None,
         atten_f_mix: bool = False,
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
@@ -1396,10 +1489,13 @@ class SO2Convolution(NativeOP):
                 )
                 .astype(PRECISION_DICT[self.compute_precision])
             )
-            # softplus(0.5413) ~= 1.0 provides balanced initial competition.
+            # The raw bias is the inverse softplus of the null mass;
+            # softplus(0.5413) ~= 1.0 gives balanced initial competition.
             self.adamw_attn_z_bias_raw = np.full(
                 (self.attn_n_focus, self.n_atten_head),
-                0.5413,
+                0.5413
+                if atten_null_mass is None
+                else inverse_softplus(atten_null_mass),
                 dtype=PRECISION_DICT[self.compute_precision],
             )
             self.attn_output_gate_norm = ScalarRMSNorm(
@@ -2431,7 +2527,10 @@ class SO2Convolution(NativeOP):
                 )
                 x_local = xp.concat(
                     [
-                        x_local[:, :, :1, :] + bias_correction[:, :, None, :],
+                        xp.astype(
+                            x_local[:, :, :1, :] + bias_correction[:, :, None, :],
+                            x_local.dtype,
+                        ),
                         x_local[:, :, 1:, :],
                     ],
                     axis=2,
@@ -2583,11 +2682,11 @@ class SO2Convolution(NativeOP):
             key_mmax=self.mmax,
         )
         x_src = xp.take(x, edge_cache.src, axis=0)  # (E, D, C_wide)
-        x_local = xp.matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
+        x_local = xp_matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
         x_dst_local: Array | None = None
         if self.node_wise_grid_product is not None:
             x_dst = xp.take(x, edge_cache.dst, axis=0)  # (E, D, C_wide)
-            x_dst_local = xp.matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
+            x_dst_local = xp_matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
         return x_local, x_dst_local
 
     def _rotate_mix(
@@ -2630,22 +2729,19 @@ class SO2Convolution(NativeOP):
             projected radial features with shape (E, D_m, C_wide).
         """
         xp = array_api_compat.array_namespace(x)
-        device = array_api_compat.device(x)
         n_edge = edge_cache.src.shape[0]
 
         # === Step 1. Rotate to edge-aligned local frame ===
         x_local, x_dst_local = self._rotate_to_local(x, edge_cache)
 
         # === Step 2. Select radial/type features for reduced layout ===
-        rad_feat = xp.take(
-            radial_feat,
-            xp_asarray_nodetach(xp, self.degree_index_m[...], device=device),
-            axis=1,
+        rad_feat = expand_degree_axis(
+            radial_feat, self.lmax, self.mmax, axis=1
         )  # (E, D_m, C)
         if self.radial_hidden_proj is not None:
             rad_feat = self.radial_hidden_proj(rad_feat)
         if self.radial_degree_mixer is None:
-            x_local = x_local * rad_feat
+            x_local = xp.astype(x_local * rad_feat, x_local.dtype)
         else:
             x_local = self.radial_degree_mixer(x_local, rad_feat)
         if self.node_wise_grid_product is not None:
@@ -2696,7 +2792,7 @@ class SO2Convolution(NativeOP):
             key_lmax=self.lmax,
             key_mmax=self.mmax,
         )
-        return xp.matmul(Dt_from_m, x_local)  # (E, D, C_wide)
+        return xp_matmul(Dt_from_m, x_local)  # (E, D, C_wide)
 
     def cartesian_message(
         self,

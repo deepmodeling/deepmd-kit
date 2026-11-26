@@ -83,7 +83,7 @@ def _check_metadata(path: str) -> None:
         "dim_fparam": 0,
         "dim_aparam": 0,
         "dim_chg_spin": 0,
-        "lower_input_kind": "dpa4c_canonical",
+        "lower_input_kind": "dpa_canonical",
         "canonical_index_dtype": "auto",
         "canonical_index_storage": "byte_words",
         "graph_edge_dtype": "float32",
@@ -124,7 +124,7 @@ def main() -> None:
     data = _build_model_data()
     assert canonical_model_eligible(BaseModel.deserialize(data["model"]))
     print(f"Exporting {OUT}")  # noqa: T201
-    deserialize_to_file(OUT, data, do_atomic_virial=True, lower_kind="dpa4c_canonical")
+    deserialize_to_file(OUT, data, do_atomic_virial=True, lower_kind="dpa_canonical")
     _check_metadata(OUT)
 
 

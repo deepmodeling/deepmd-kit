@@ -696,7 +696,13 @@ class TestSeZMTritonValuePath(unittest.TestCase):
             .eval()
         )
 
-    def _edge_inputs(self, conv, lmax, channels):
+    def _edge_inputs(self, conv, lmax, channels, cache_lmax=None):
+        """Random node, edge and radial inputs with a Wigner cache.
+
+        ``cache_lmax`` builds the cached Wigner matrices at a higher degree
+        than the convolution's, as for a block below the working degree of
+        its descriptor.
+        """
         from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
             WignerDCalculator,
         )
@@ -717,7 +723,9 @@ class TestSeZMTritonValuePath(unittest.TestCase):
             )
             * 0.3
         )
-        calculator = WignerDCalculator(lmax, dtype=torch.float32).to("cuda")
+        calculator = WignerDCalculator(
+            lmax if cache_lmax is None else cache_lmax, dtype=torch.float32
+        ).to("cuda")
         quaternion = torch.randn(self.N_EDGE, 4, device="cuda", generator=generator)
         quaternion = quaternion / quaternion.norm(dim=-1, keepdim=True)
         wigner = calculator(quaternion)[0]
@@ -736,61 +744,72 @@ class TestSeZMTritonValuePath(unittest.TestCase):
 
     @_GPU_KERNELS
     def test_forward_backward_matches_reference_across_family(self):
+        for case in self.CASES:
+            with self.subTest(case=case):
+                self._assert_fused_matches_reference(case)
+
+    @_GPU_KERNELS
+    def test_forward_backward_matches_reference_on_a_wider_wigner_cache(self):
+        # A block below the working degree of its descriptor reads the leading
+        # rows and columns of Wigner matrices built at the working degree.
+        for case in self.CASES[:2]:
+            with self.subTest(case=case):
+                self._assert_fused_matches_reference(case, cache_lmax=case[0] + 1)
+
+    def _assert_fused_matches_reference(self, case, cache_lmax=None) -> None:
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
         )
 
-        for case in self.CASES:
-            lmax, channels, n_focus, focus_dim, layers, mode, rank = case
-            with self.subTest(case=case):
-                conv = self._build_conv(*case)
-                fused = make_triton_value_path(conv)
-                self.assertIsNotNone(fused)
-                x, cache, radial = self._edge_inputs(conv, lmax, channels)
+        lmax, channels, n_focus, focus_dim, layers, mode, rank = case
+        conv = self._build_conv(*case)
+        fused = make_triton_value_path(conv)
+        self.assertIsNotNone(fused)
+        x, cache, radial = self._edge_inputs(
+            conv, lmax, channels, cache_lmax=cache_lmax
+        )
 
-                x_ref = x.clone().requires_grad_(True)
-                rad_ref = radial.clone().requires_grad_(True)
-                wigner_ref = cache.D_full.clone().requires_grad_(True)
-                cache.D_full = wigner_ref
-                ref_local, _ = conv.so2_message(
-                    x_ref, cache, rad_ref, return_local=True
-                )
+        x_ref = x.clone().requires_grad_(True)
+        rad_ref = radial.clone().requires_grad_(True)
+        wigner_ref = cache.D_full.clone().requires_grad_(True)
+        cache.D_full = wigner_ref
+        ref_local, _ = conv.so2_message(x_ref, cache, rad_ref, return_local=True)
 
-                x_fused = x.clone().requires_grad_(True)
-                rad_fused = radial.clone().requires_grad_(True)
-                wigner_fused = wigner_ref.detach().clone().requires_grad_(True)
-                cache.D_full = wigner_fused
-                out_local, _ = fused(x_fused, cache, rad_fused)
+        x_fused = x.clone().requires_grad_(True)
+        rad_fused = radial.clone().requires_grad_(True)
+        wigner_fused = wigner_ref.detach().clone().requires_grad_(True)
+        cache.D_full = wigner_fused
+        out_local, _ = fused(x_fused, cache, rad_fused)
 
-                scale = ref_local.abs().max().item()
-                torch.testing.assert_close(
-                    out_local, ref_local, atol=5e-5 * max(scale, 1.0), rtol=1e-4
-                )
+        scale = ref_local.abs().max().item()
+        torch.testing.assert_close(
+            out_local, ref_local, atol=5e-5 * max(scale, 1.0), rtol=1e-4
+        )
 
-                grad_seed = torch.randn_like(ref_local)
-                ref_grads = torch.autograd.grad(
-                    ref_local, [x_ref, rad_ref, wigner_ref], grad_seed
-                )
-                fused_grads = torch.autograd.grad(
-                    out_local, [x_fused, rad_fused, wigner_fused], grad_seed
-                )
-                # The Wigner gradient is compared on the structural block
-                # diagonal only: off-block entries multiply exactly-zero
-                # Wigner values, so the model discards them.
-                mask = _block_mask(lmax, "cuda")
-                comparisons = [
-                    (ref_grads[0], fused_grads[0]),
-                    (ref_grads[1], fused_grads[1]),
-                    (ref_grads[2] * mask, fused_grads[2] * mask),
-                ]
-                for ref_grad, fused_grad in comparisons:
-                    grad_scale = ref_grad.abs().max().item()
-                    torch.testing.assert_close(
-                        fused_grad,
-                        ref_grad,
-                        atol=1e-4 * max(grad_scale, 1.0),
-                        rtol=1e-4,
-                    )
+        grad_seed = torch.randn_like(ref_local)
+        ref_grads = torch.autograd.grad(
+            ref_local, [x_ref, rad_ref, wigner_ref], grad_seed
+        )
+        fused_grads = torch.autograd.grad(
+            out_local, [x_fused, rad_fused, wigner_fused], grad_seed
+        )
+        # The Wigner gradient is compared on the structural block
+        # diagonal only: off-block entries multiply exactly-zero
+        # Wigner values, so the model discards them.
+        mask = _block_mask(lmax if cache_lmax is None else cache_lmax, "cuda")
+        comparisons = [
+            (ref_grads[0], fused_grads[0]),
+            (ref_grads[1], fused_grads[1]),
+            (ref_grads[2] * mask, fused_grads[2] * mask),
+        ]
+        for ref_grad, fused_grad in comparisons:
+            grad_scale = ref_grad.abs().max().item()
+            torch.testing.assert_close(
+                fused_grad,
+                ref_grad,
+                atol=1e-4 * max(grad_scale, 1.0),
+                rtol=1e-4,
+            )
 
     def test_float64_fallback_channel_basis_gradient_preserves_precision(self) -> None:
         """The non-Triton fallback accumulates the basis gradient in float64."""
@@ -1442,6 +1461,34 @@ class TestTritonInferLevel(unittest.TestCase):
                 triton_infer_level()
 
 
+def _build_so2_conv(lmax: int = 3, channels: int = 32, **overrides) -> torch.nn.Module:
+    """Build a small gated SO(2) convolution of the fused value-path layout.
+
+    The convolution reads the Triton inference level when it is built, so a
+    caller that needs a level sets ``DP_TRITON_INFER`` around the call.
+    """
+    from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+        SO2Convolution,
+    )
+
+    kwargs = {
+        "lmax": lmax,
+        "mmax": 1,
+        "channels": channels,
+        "n_focus": 2,
+        "focus_dim": 0,
+        "mixing_layers": 3,
+        "radial_so2_mode": "degree_channel",
+        "radial_so2_rank": 1,
+        "n_atten_head": 1,
+        "dtype": torch.float32,
+        "seed": 7,
+        "trainable": False,
+    }
+    kwargs.update(overrides)
+    return SO2Convolution(**kwargs)
+
+
 @_GPU_KERNELS
 class TestSeZMStackFP16x3(unittest.TestCase):
     """Correctness of the level-3 fp16x3 mixing-stack operator.
@@ -1475,14 +1522,18 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             tile_configs,
         )
 
-        for key in ((self.FOCUS_DIM, self.LMAX), (32, 2)):
-            if tile_configs.stack_fp16x3_configs(*key) is None:
-                tile_configs.register_tile_configs(
-                    "stack_fp16x3", {key: ((64, 64, 32, 4, 1),) * 4}
-                )
-                self.addCleanup(
-                    lambda key=key: tile_configs._RUNTIME["stack_fp16x3"].pop(key, None)
-                )
+        for parity in (False, True):
+            family = "stack_fp16x3_parity" if parity else "stack_fp16x3"
+            for key in ((self.FOCUS_DIM, self.LMAX), (32, 2)):
+                if tile_configs.stack_fp16x3_configs(*key, parity) is None:
+                    tile_configs.register_tile_configs(
+                        family, {key: ((64, 64, 32, 4, 1),) * 4}
+                    )
+                    self.addCleanup(
+                        lambda family=family, key=key: tile_configs._RUNTIME[
+                            family
+                        ].pop(key, None)
+                    )
 
     def _stack_inputs(self, generator):
         lmax, focus_dim, n_focus = self.LMAX, self.FOCUS_DIM, self.N_FOCUS
@@ -1512,19 +1563,39 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         gw_all = randn(self.N_LAYERS - 1, n_focus, focus_dim, half) * 0.3
         return u0, alpha, w0_all, w1_all, gw_all
 
-    def _fp64_reference(self, u0, alpha, w0_all, w1_all, gw_all, grad_seed):
+    def _parity_blocks(self, w1_all):
+        """Return the shared parity block of ``w1_all`` and its dense equivalent.
+
+        The reference stack reads the dense ``[[W, 0], [0, W]]`` layout, while the
+        operators read the single block ``W`` that both order components share.
+        """
+        half = self.LMAX * self.FOCUS_DIM
+        shared = w1_all[..., :half, :half].contiguous()
+        zero = torch.zeros_like(shared)
+        dense = torch.cat(
+            [torch.cat([shared, zero], dim=-1), torch.cat([zero, shared], dim=-1)],
+            dim=-2,
+        )
+        return shared, dense
+
+    def _fp64_reference(
+        self, u0, alpha, w0_all, w1_all, gw_all, grad_seed, w1_dense=None
+    ):
         """Evaluate one oracle for both fp32 and fp16x3 on identical operands."""
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_reference,
         )
 
+        # The reference reads the dense layout; ``w1_dense`` stands in for a
+        # shared parity block that only the operators read in its compact form.
+        w1_ref = w1_all if w1_dense is None else w1_dense
         u0_ref = u0.double().requires_grad_(True)
         alpha_ref = alpha.double().requires_grad_(True)
         x_ref, _, _ = _mixing_stack_reference(
             u0_ref,
             alpha_ref,
             w0_all.double(),
-            w1_all.double(),
+            w1_ref.double(),
             gw_all.double(),
             self.LMAX,
             self.FOCUS_DIM,
@@ -1552,6 +1623,99 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             return float((a - b.float()).abs().max() / b.abs().max().clamp_min(1e-30))
 
         return relerr(x_run, x_ref), relerr(gu_run, gu_ref)
+
+    def test_parity_shared_weight_matches_zero_blocks(self) -> None:
+        """The level-3 stack shares W_u across the two order components."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
+            mixing_stack_fp16x3,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_reference,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(22)
+        u, alpha, w0, w1, gate = self._stack_inputs(generator)
+        u, alpha = u[:, :128].contiguous(), alpha[:128].contiguous()
+        shared, dense = self._parity_blocks(w1)
+        x = u.clone().requires_grad_(True)
+        reference, *_ = _mixing_stack_reference(
+            x, alpha, w0, dense, gate, self.LMAX, self.FOCUS_DIM, True
+        )
+        value, *_ = mixing_stack_fp16x3(
+            x, alpha, w0, shared, gate, self.LMAX, self.FOCUS_DIM, True
+        )
+        probe = torch.randn_like(reference)
+        (expected,) = torch.autograd.grad(reference, x, probe)
+        (observed,) = torch.autograd.grad(value, x, probe)
+        for actual, want in ((value, reference), (observed, expected)):
+            scale = max(float(want.abs().max()), 1.0)
+            torch.testing.assert_close(actual, want, atol=8e-6 * scale, rtol=1e-4)
+
+    def test_parity_matches_fp64_within_fp32_error_budget(self) -> None:
+        """The compact parity layout keeps the fp32 error budget through the stack."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
+            mixing_stack_fp16x3,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_op,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(23)
+        u0, alpha, w0_all, w1_all, gw_all = self._stack_inputs(generator)
+        shared, dense = self._parity_blocks(w1_all)
+        row = (3 * self.LMAX + 1) * self.FOCUS_DIM
+        grad_seed = torch.randn(
+            self.N_EDGE, self.N_FOCUS, row, device="cuda", generator=generator
+        )
+        inputs = (u0, alpha, w0_all, shared, gw_all)
+        reference = self._fp64_reference(*inputs, grad_seed, w1_dense=dense)
+        fp32_fwd, fp32_bwd = self._errors_against_fp64(
+            _mixing_stack_op, *inputs, grad_seed, reference=reference
+        )
+        x3_fwd, x3_bwd = self._errors_against_fp64(
+            mixing_stack_fp16x3, *inputs, grad_seed, reference=reference
+        )
+        self.assertLess(x3_fwd, max(3.0 * fp32_fwd, 2e-6))
+        self.assertLess(x3_bwd, max(3.0 * fp32_bwd, 8e-6))
+
+    def test_m0_block_that_is_not_a_multiple_of_block_k_stays_exact(self) -> None:
+        """A reduction tile past the ``m = 0`` block reads none of its neighbors.
+
+        The ``m = 0`` block of ``(Cf, lmax) = (32, 2)`` is 96 wide, so a reduction
+        tile of 64 overruns it in the second step.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            tile_configs,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
+            mixing_stack_fp16x3,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_op,
+        )
+
+        key = (32, 2)
+        self.FOCUS_DIM, self.LMAX, self.N_EDGE = key[0], key[1], 4096
+        tile_configs.register_tile_configs(
+            "stack_fp16x3", {key: ((64, 64, 64, 4, 1),) * 4}
+        )
+        self.addCleanup(lambda: tile_configs._RUNTIME["stack_fp16x3"].pop(key, None))
+
+        generator = torch.Generator(device="cuda").manual_seed(24)
+        inputs = self._stack_inputs(generator)
+        row = (3 * self.LMAX + 1) * self.FOCUS_DIM
+        grad_seed = torch.randn(
+            self.N_EDGE, self.N_FOCUS, row, device="cuda", generator=generator
+        )
+        reference = self._fp64_reference(*inputs, grad_seed)
+        fp32_fwd, fp32_bwd = self._errors_against_fp64(
+            _mixing_stack_op, *inputs, grad_seed, reference=reference
+        )
+        x3_fwd, x3_bwd = self._errors_against_fp64(
+            mixing_stack_fp16x3, *inputs, grad_seed, reference=reference
+        )
+        self.assertLess(x3_fwd, max(3.0 * fp32_fwd, 2e-6))
+        self.assertLess(x3_bwd, max(3.0 * fp32_bwd, 8e-6))
 
     def test_matches_fp64_within_fp32_error_budget(self):
         from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
@@ -1748,9 +1912,6 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             mock,
         )
 
-        from deepmd.pt.model.descriptor.sezm_nn.so2 import (
-            SO2Convolution,
-        )
         from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
@@ -1760,20 +1921,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         )
 
         def build_conv():
-            return SO2Convolution(
-                lmax=self.LMAX,
-                mmax=1,
-                channels=self.FOCUS_DIM,
-                n_focus=self.N_FOCUS,
-                focus_dim=0,
-                mixing_layers=3,
-                radial_so2_mode="degree_channel",
-                radial_so2_rank=1,
-                n_atten_head=1,
-                dtype=torch.float32,
-                seed=7,
-                trainable=False,
-            )
+            return _build_so2_conv(self.LMAX, self.FOCUS_DIM, n_focus=self.N_FOCUS)
 
         with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "3"}):
             entry = make_triton_value_path(build_conv())
@@ -1880,40 +2028,47 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             )
             self.assertIsNotNone(tc.stack_fp16x3_configs(32, 3))
 
-    def test_collect_model_shape_keys_reports_supported_convolutions(self):
-        from deepmd.pt.model.descriptor.sezm_nn.so2 import (
-            SO2Convolution,
+    def test_parity_stack_configs_resolve_before_the_plain_table(self):
+        from unittest import (
+            mock,
         )
+
+        tc = self.tile_configs
+        default = ((64, 64, 32, 4, 2),) * 3
+        plain = ((64, 64, 32, 4, 3),) * 3
+        parity = ((32, 32, 32, 4, 2),) * 3
+        with mock.patch.object(tc, "_builtin_tables", return_value={}):
+            self.assertEqual(tc.stack_fp32_configs(32, 1, True), default)
+            tc.register_tile_configs("stack_fp32", {(32, 1): plain, (32, 3): plain})
+            self.assertEqual(tc.stack_fp32_configs(32, 1, True), plain)
+            tc.register_tile_configs(
+                "stack_fp32_parity", {(32, 1): parity, (32, 3): None}
+            )
+            self.assertEqual(tc.stack_fp32_configs(32, 1, True), parity)
+            self.assertEqual(tc.stack_fp32_configs(32, 1, False), plain)
+            # A recorded default win of the parity weights hides the plain entry.
+            self.assertEqual(tc.stack_fp32_configs(32, 3, True), default)
+            self.assertEqual(tc.stack_fp32_configs(32, 3, False), plain)
+            # A key without a parity record resolves through the plain table.
+            self.assertEqual(tc.stack_fp32_configs(32, 2, True), default)
+
+    def test_collect_model_shape_keys_reports_supported_convolutions(self):
         from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
             collect_model_shape_keys,
         )
 
-        def build_conv(**overrides):
-            kwargs = {
-                "lmax": 3,
-                "mmax": 1,
-                "channels": 32,
-                "n_focus": 2,
-                "focus_dim": 0,
-                "mixing_layers": 3,
-                "radial_so2_mode": "degree_channel",
-                "radial_so2_rank": 1,
-                "n_atten_head": 1,
-                "dtype": torch.float32,
-                "seed": 7,
-                "trainable": False,
-            }
-            kwargs.update(overrides)
-            return SO2Convolution(**kwargs)
-
         model = torch.nn.ModuleList(
             [
-                build_conv(),
-                build_conv(),  # duplicate shape, deduplicated
-                build_conv(mmax=3),  # unsupported layout, contributes no key
+                _build_so2_conv(),
+                _build_so2_conv(),  # duplicate shape, deduplicated
+                _build_so2_conv(mmax=3),  # unsupported layout, contributes no key
+                _build_so2_conv(parity=True),  # reflection-preserving weights, own key
             ]
         )
-        self.assertEqual(collect_model_shape_keys(model), [(32, 3, 2, 1)])
+        self.assertEqual(
+            collect_model_shape_keys(model),
+            [(32, 3, 2, 1, False), (32, 3, 2, 1, True)],
+        )
 
     def test_tune_missing_configs_sweeps_only_uncovered_groups(self):
         from dataclasses import (
@@ -1957,8 +2112,12 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             "rotate_bwd": fake_sweep("rotate_bwd", "rotate_mix_bwd_block", (96, 2)),
             "flash_bwd": fake_flash_sweep,
             "fp32": fake_sweep("fp32", "stack_fp32", (48, 2)),
+            "fp32_parity": fake_sweep("fp32_parity", "stack_fp32_parity", (48, 2)),
             "m0_gate": fake_sweep("m0_gate", "stack_m0_gate", (48, 2)),
             "fp16x3": fake_sweep("fp16x3", "stack_fp16x3", (48, 2)),
+            "fp16x3_parity": fake_sweep(
+                "fp16x3_parity", "stack_fp16x3_parity", (48, 2)
+            ),
         }
         fake_specs = {
             name: replace(spec, sweep=fake_sweeps[name])
@@ -1967,7 +2126,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             # are outside the freeze auto-tuner under test.
             if not spec.train_only
         }
-        shape_keys = [(48, 2, 2, 1)]
+        shape_keys = [(48, 2, 2, 1, False)]
         with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             registered = sweep_tile_configs.tune_missing_configs(
                 shape_keys, level=2, device="cuda"
@@ -2010,7 +2169,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             self.assertEqual(
                 sweep_tile_configs.tune_missing_configs(
-                    [(64, 5, 2, 1)], level=1, device="cuda"
+                    [(64, 5, 2, 1, False)], level=1, device="cuda"
                 ),
                 {},
             )
@@ -2044,7 +2203,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, specs, clear=True),
         ):
             registered = sweep_tile_configs.tune_missing_configs(
-                [(32, 2, 1, 1)], level=2, device="cuda", n_edge=4096
+                [(32, 2, 1, 1, False)], level=2, device="cuda", n_edge=4096
             )
         key = (32, 2)
         self.assertEqual(sorted(registered), ["flash_bwd_block", "flash_bwd_edge"])
@@ -2088,13 +2247,194 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             contextlib.redirect_stdout(io.StringIO()) as report,
         ):
             registered = sweep_tile_configs.tune_missing_configs(
-                [(32, 2, 1, 1)], level=3, device="cuda", n_edge=16384
+                [(32, 2, 1, 1, False)], level=3, device="cuda", n_edge=16384
             )
         self.assertIn("[stack whole force path:", report.getvalue())
         key = (32, 2)
         self.assertEqual(sorted(registered), ["stack_fp16x3"])
         self.assertIn(registered["stack_fp16x3"][key], (None, (config,) * 4))
         self.assertTrue(tc.has_tile_config("stack_fp16x3", key))
+
+
+class TestParityTileConfigs(_TileConfigRuntimeIsolation):
+    """Launch tables of the parity weights, resolved without a GPU."""
+
+    def test_blackwell_table_covers_the_preset_parity_shapes(self):
+        from deepmd.utils.model_preset_data import (
+            _DPA45_GRADES,
+        )
+
+        expected = set()
+        for grade in _DPA45_GRADES.values():
+            descriptor = grade["descriptor"]
+            focus_dim = descriptor.get("focus_dim") or descriptor["channels"]
+            expected.update((focus_dim, lmax) for lmax in descriptor["l_schedule"])
+        table = self.tile_configs._match_builtin_tables(
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+        )
+        self.assertLessEqual(expected, set(table["stack_fp32_parity"]))
+
+    @unittest.skipUnless(TRITON_AVAILABLE, "the sweep module requires Triton")
+    def test_tune_missing_configs_routes_by_parity(self):
+        from dataclasses import (
+            replace,
+        )
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            sweep_tile_configs,
+        )
+
+        calls: list[str] = []
+
+        def fake_sweep(group, family):
+            def run(cf, lmax, **kwargs):
+                calls.append(group)
+                return {family: {(cf, lmax): (4, 2, 1)}}
+
+            return run
+
+        specs = sweep_tile_configs._SWEEP_SPECS
+        fake_specs = {
+            "fp32": replace(specs["fp32"], sweep=fake_sweep("fp32", "stack_fp32")),
+            "fp32_parity": replace(
+                specs["fp32_parity"],
+                sweep=fake_sweep("fp32_parity", "stack_fp32_parity"),
+            ),
+        }
+
+        def tune(shape_keys):
+            with (
+                mock.patch.object(
+                    self.tile_configs, "_builtin_tables", return_value={}
+                ),
+                mock.patch.dict(specs, fake_specs, clear=True),
+                mock.patch.object(torch.cuda, "get_device_name", return_value="test"),
+            ):
+                return sweep_tile_configs.tune_missing_configs(
+                    shape_keys, level=2, device="cuda"
+                )
+
+        self.assertEqual(sorted(tune([(48, 2, 2, 1, False)])), ["stack_fp32"])
+        self.assertEqual(calls, ["fp32"])
+        # The plain record of a key does not cover the parity weights of it.
+        calls.clear()
+        self.assertEqual(sorted(tune([(48, 2, 2, 1, True)])), ["stack_fp32_parity"])
+        self.assertEqual(calls, ["fp32_parity"])
+        calls.clear()
+        self.assertEqual(tune([(48, 2, 2, 1, True), (48, 2, 2, 1, False)]), {})
+        self.assertEqual(calls, [])
+
+    def test_fp16x3_parity_resolves_only_through_its_own_family(self):
+        from unittest import (
+            mock,
+        )
+
+        key = (48, 2)
+        plain = ((64, 64, 32, 4, 1),) * 4
+        parity = ((64, 128, 32, 4, 3),) * 4
+        configs = self.tile_configs.stack_fp16x3_configs
+        with mock.patch.object(self.tile_configs, "_builtin_tables", return_value={}):
+            self.tile_configs.register_tile_configs("stack_fp16x3", {key: plain})
+            # The validation of the plain layout does not cover the parity launch.
+            self.assertEqual(configs(*key), plain)
+            self.assertIsNone(configs(*key, True))
+            self.tile_configs.register_tile_configs(
+                "stack_fp16x3_parity", {key: parity}
+            )
+            self.assertEqual(configs(*key, True), parity)
+            self.assertEqual(configs(*key), plain)
+
+    @unittest.skipUnless(TRITON_AVAILABLE, "the sweep module requires Triton")
+    def test_tune_missing_configs_routes_fp16x3_by_parity(self):
+        from dataclasses import (
+            replace,
+        )
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            sweep_tile_configs,
+        )
+
+        calls: list[str] = []
+
+        def fake_sweep(group, family):
+            def run(cf, lmax, **kwargs):
+                calls.append(group)
+                return {family: {(cf, lmax): (4, 2, 1)}}
+
+            return run
+
+        specs = sweep_tile_configs._SWEEP_SPECS
+        fake_specs = {
+            group: replace(
+                specs[group], sweep=fake_sweep(group, specs[group].sentinel_family)
+            )
+            for group in ("fp16x3", "fp16x3_parity")
+        }
+
+        def tune(shape_keys, level):
+            with (
+                mock.patch.object(
+                    self.tile_configs, "_builtin_tables", return_value={}
+                ),
+                mock.patch.dict(specs, fake_specs, clear=True),
+                mock.patch.object(torch.cuda, "get_device_name", return_value="test"),
+            ):
+                return sweep_tile_configs.tune_missing_configs(
+                    shape_keys, level=level, device="cuda"
+                )
+
+        # The fp16x3 stack is a level-3 feature, and each layout is swept apart.
+        self.assertEqual(tune([(48, 2, 2, 1, True)], 2), {})
+        self.assertEqual(sorted(tune([(48, 2, 2, 1, False)], 3)), ["stack_fp16x3"])
+        self.assertEqual(calls, ["fp16x3"])
+        calls.clear()
+        self.assertEqual(
+            sorted(tune([(48, 2, 2, 1, True)], 3)), ["stack_fp16x3_parity"]
+        )
+        self.assertEqual(calls, ["fp16x3_parity"])
+
+    def test_value_path_selects_fp16x3_by_weight_layout(self):
+        import os
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
+            mixing_stack_fp16x3,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        key = (32, 2)
+        config = ((64, 64, 32, 4, 1),) * 4
+
+        def selects_fp16x3(parity):
+            # The convolution reads the inference level when it is built.
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "3"}):
+                conv = _build_so2_conv(key[1], key[0], parity=parity)
+                entry = make_triton_value_path(conv)
+            if entry is None:
+                self.skipTest("the fused value path is unavailable")
+            return entry._stack_op is mixing_stack_fp16x3
+
+        with mock.patch.object(self.tile_configs, "_builtin_tables", return_value={}):
+            self.assertFalse(selects_fp16x3(False))
+            self.assertFalse(selects_fp16x3(True))
+            # A validated plain entry does not cover the parity launch.
+            self.tile_configs.register_tile_configs("stack_fp16x3", {key: config})
+            self.assertTrue(selects_fp16x3(False))
+            self.assertFalse(selects_fp16x3(True))
+            self.tile_configs.register_tile_configs(
+                "stack_fp16x3_parity", {key: config}
+            )
+            self.assertTrue(selects_fp16x3(True))
 
 
 if __name__ == "__main__":

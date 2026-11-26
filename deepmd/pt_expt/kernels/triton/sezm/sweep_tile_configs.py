@@ -67,6 +67,10 @@ Usage
     ``stack_fp32``.  The ``m = 0`` forward, ``|m| = 1`` forward and combined
     backward kernels are timed independently because their matrix widths and
     epilogues place different pressure on a launch tile.
+``fp32_parity``
+    The same three GEMMs for the reflection-preserving (parity) weights,
+    whose ``|m| = 1`` blocks are half as wide, keyed ``(focus_dim, lmax)`` ->
+    ``stack_fp32_parity``.  Only convolutions with parity weights request it.
 ``m0_gate``
     The fp32 ``m = 0`` GEMM with its sigmoid projection and residual gate
     epilogue fused, keyed ``(focus_dim, lmax)`` -> ``stack_m0_gate``.  This
@@ -79,6 +83,10 @@ Usage
     compared with the tuned fp32 stack over the full forward-plus-force-
     backward path.  ``None`` records that no candidate validated or that
     fp16x3 failed the 1% win margin.
+``fp16x3_parity``
+    The same sweep for the reflection-preserving (parity) weights, keyed
+    ``(focus_dim, lmax)`` -> ``stack_fp16x3_parity``.  Only convolutions with
+    parity weights request it, and it runs at ``DP_TRITON_INFER`` level 3.
 
 Interpretation guidance
 -----------------------
@@ -897,6 +905,7 @@ def sweep_rotate_fwd(
             n_edge,
             x.stride(0),
             x.stride(1),
+            *wigner.stride(),
             L=lmax,
             CF=cf,
             CW=c_wide,
@@ -996,6 +1005,8 @@ def sweep_rotate_bwd(
             n_edge,
             x.stride(0),
             x.stride(1),
+            *wigner.stride(),
+            *gw.stride(),
             L=lmax,
             CF=cf,
             CW=c_wide,
@@ -1289,8 +1300,13 @@ def sweep_fp32(
     n_focus: int = 2,
     n_edge: int | None = None,
     device: torch.device | str = "cuda",
+    parity: bool = False,
 ) -> SweepResult:
     """Sweep the three IEEE-fp32 mixing-stack GEMM configurations.
+
+    With ``parity`` the sweep covers the reflection-preserving weights, whose
+    ``|m| = 1`` blocks are half as wide, and registers the result under
+    ``stack_fp32_parity``.
 
     The benchmark reproduces the three-layer production launch mix for each
     slot: two gated-layer launches plus one identity-layer launch in forward,
@@ -1304,7 +1320,7 @@ def sweep_fp32(
     n_layers = 3
     n_gated = n_layers - 1
     m0 = (lmax + 1) * cf
-    m1 = 2 * lmax * cf
+    m1 = (1 if parity else 2) * lmax * cf
     row = (3 * lmax + 1) * cf
     gate_width = lmax * cf
 
@@ -1370,7 +1386,8 @@ def sweep_fp32(
 
     def launch_m1(config: GemmConfig) -> None:
         bm, bn, bk, warps, stages = config
-        grid = (triton.cdiv(n_edge, bm) * triton.cdiv(m1, bn), n_focus)
+        tiles = (2 if parity else 1) * triton.cdiv(m1, bn)
+        grid = (triton.cdiv(n_edge, bm) * tiles, n_focus)
         for layer in range(n_gated):
             wrap_triton(_stack_gemm_m1_kernel)[grid](
                 u0,
@@ -1383,6 +1400,7 @@ def sweep_fp32(
                 layer,
                 L=lmax,
                 CF=cf,
+                PARITY=parity,
                 HAS_GATE=True,
                 V_EDGE_MAJOR=False,
                 APPLY_ALPHA=False,
@@ -1404,6 +1422,7 @@ def sweep_fp32(
             n_gated,
             L=lmax,
             CF=cf,
+            PARITY=parity,
             HAS_GATE=False,
             V_EDGE_MAJOR=True,
             APPLY_ALPHA=True,
@@ -1417,7 +1436,7 @@ def sweep_fp32(
 
     def launch_bwd(config: GemmConfig) -> None:
         bm, bn, bk, warps, stages = config
-        n_tiles = triton.cdiv(m0, bn) + triton.cdiv(m1, bn)
+        n_tiles = triton.cdiv(m0, bn) + (2 if parity else 1) * triton.cdiv(m1, bn)
         grid = (triton.cdiv(n_edge, bm) * n_tiles, n_focus)
         wrap_triton(_stack_gemm_bwd_kernel)[grid](
             grad_edge,
@@ -1433,6 +1452,7 @@ def sweep_fp32(
             G_EDGE_MAJOR=True,
             FOLD_ALPHA=True,
             RES_IS_GZ=True,
+            PARITY=parity,
             BLOCK_M=bm,
             BLOCK_N=bn,
             BLOCK_K=bk,
@@ -1454,6 +1474,7 @@ def sweep_fp32(
                 G_EDGE_MAJOR=False,
                 FOLD_ALPHA=False,
                 RES_IS_GZ=False,
+                PARITY=parity,
                 BLOCK_M=bm,
                 BLOCK_N=bn,
                 BLOCK_K=bk,
@@ -1480,7 +1501,8 @@ def sweep_fp32(
 
     key = (cf, lmax)
 
-    with _runtime_config_scope("stack_fp32", key) as install:
+    family = "stack_fp32_parity" if parity else "stack_fp32"
+    with _runtime_config_scope(family, key) as install:
         n_check = min(n_edge, 4096)
         u_check = u0[:, :n_check].contiguous()
         alpha_check = alpha[:n_check].contiguous()
@@ -1534,9 +1556,9 @@ def sweep_fp32(
                 f"IEEE-fp32 stack config validation failed for key {key}: "
                 f"relative errors {errors}"
             )
-        print(f"BEST stack_fp32[{key}] = {configs}  # errors {errors}")
+        print(f"BEST {family}[{key}] = {configs}  # errors {errors}")
         install(configs)
-    return {"stack_fp32": {key: configs}}
+    return {family: {key: configs}}
 
 
 def sweep_m0_gate(
@@ -1691,8 +1713,13 @@ def sweep_fp16x3(
     n_focus: int = 2,
     n_edge: int | None = None,
     device: torch.device | str = "cuda",
+    parity: bool = False,
 ) -> SweepResult:
     """Sweep and validate the four fp16x3 stack GEMM configurations.
+
+    With ``parity`` the sweep covers the reflection-preserving weights, whose
+    ``|m| = 1`` blocks are half as wide and launch over two sign tiles, and
+    concludes into the ``stack_fp16x3_parity`` family.
 
     Returns the ``stack_fp16x3`` entry under the key ``(cf, lmax)``:
     the fastest fp64-validated combination, or ``None`` when no candidate
@@ -1706,7 +1733,7 @@ def sweep_fp16x3(
         n_edge = _saturating_edges(cf)
     n_layers = 3
     m0 = (lmax + 1) * cf
-    m1 = 2 * lmax * cf
+    m1 = (1 if parity else 2) * lmax * cf
     half = lmax * cf
     row = (3 * lmax + 1) * cf
 
@@ -1714,16 +1741,21 @@ def sweep_fp16x3(
     alpha = torch.rand(n_edge, n_focus, device=device, dtype=torch.float32) + 0.1
     w0_all = torch.randn(n_layers, n_focus, m0, m0, device=device) * 0.2
     block_u = torch.randn(n_layers, n_focus, half, half, device=device) * 0.2
-    block_v = torch.randn(n_layers, n_focus, half, half, device=device) * 0.2
-    # The |m| = 1 weight carries the [[U, V], [-V, U]] complex structure of
-    # SO2Linear so the synthetic stack matches the production operator.
-    w1_all = torch.cat(
-        [
-            torch.cat([block_u, block_v], dim=3),
-            torch.cat([-block_v, block_u], dim=3),
-        ],
-        dim=2,
-    ).contiguous()
+    if parity:
+        # Reflection-preserving weights keep a single W_u block that both signs
+        # of the |m| = 1 pair share.
+        w1_all = block_u.contiguous()
+    else:
+        block_v = torch.randn(n_layers, n_focus, half, half, device=device) * 0.2
+        # The |m| = 1 weight carries the [[U, V], [-V, U]] complex structure of
+        # SO2Linear so the synthetic stack matches the production operator.
+        w1_all = torch.cat(
+            [
+                torch.cat([block_u, block_v], dim=3),
+                torch.cat([-block_v, block_u], dim=3),
+            ],
+            dim=2,
+        ).contiguous()
     gw_all = torch.randn(n_layers - 1, n_focus, cf, half, device=device) * 0.3
     w0h, w0l = _split_fp16(w0_all)
     w1h, w1l = _split_fp16(w1_all)
@@ -1766,7 +1798,10 @@ def sweep_fp16x3(
 
     def launch_m1(bm: int, bn: int, bk: int, warps: int, stages: int) -> None:
         wrap_triton(_stack_fp16x3_m1_kernel)[
-            (triton.cdiv(n_edge, bm) * triton.cdiv(m1, bn), n_focus)
+            (
+                triton.cdiv(n_edge, bm) * ((2 if parity else 1) * triton.cdiv(m1, bn)),
+                n_focus,
+            )
         ](
             u0,
             w1h,
@@ -1783,6 +1818,7 @@ def sweep_fp16x3(
             V_EDGE_MAJOR=False,
             APPLY_ALPHA=False,
             SAVE_Z=True,
+            PARITY=parity,
             BLOCK_M=bm,
             BLOCK_N=bn,
             BLOCK_K=bk,
@@ -1794,9 +1830,10 @@ def sweep_fp16x3(
         is_m1: bool, bm: int, bn: int, bk: int, warps: int, stages: int
     ) -> None:
         width = m1 if is_m1 else m0
+        tiles = (2 if parity and is_m1 else 1) * triton.cdiv(width, bn)
         wh, wl = (w1th, w1tl) if is_m1 else (w0th, w0tl)
         wrap_triton(_stack_fp16x3_bwd_kernel)[
-            (triton.cdiv(n_edge, bm) * triton.cdiv(width, bn), n_focus)
+            (triton.cdiv(n_edge, bm) * tiles, n_focus)
         ](
             gz,
             g_res,
@@ -1812,6 +1849,7 @@ def sweep_fp16x3(
             G_EDGE_MAJOR=False,
             FOLD_ALPHA=False,
             RES_IS_GZ=False,
+            PARITY=parity,
             BLOCK_M=bm,
             BLOCK_N=bn,
             BLOCK_K=bk,
@@ -1941,6 +1979,7 @@ def sweep_fp16x3(
         return finite_across_edges()
 
     key = (cf, lmax)
+    family = "stack_fp16x3_parity" if parity else "stack_fp16x3"
 
     def conclude() -> tuple | None:
         """Validate candidates through the live table; return the winner."""
@@ -1953,7 +1992,7 @@ def sweep_fp16x3(
                 break
         if pin is None:
             print(
-                f"BEST stack_fp16x3[{key}]: no pin combination validates; "
+                f"BEST {family}[{key}]: no pin combination validates; "
                 "the fp32 stack stays in charge"
             )
             return None
@@ -1973,7 +2012,7 @@ def sweep_fp16x3(
                     break
             if picked is None:
                 print(
-                    f"BEST stack_fp16x3[{key}]: {names[slot]} has no "
+                    f"BEST {family}[{key}]: {names[slot]} has no "
                     "validating candidate; the fp32 stack stays in charge"
                 )
                 return None
@@ -1989,13 +2028,13 @@ def sweep_fp16x3(
             install((pin,) * 4)
             if not validate():
                 print(
-                    f"BEST stack_fp16x3[{key}]: pin combination regressed; "
+                    f"BEST {family}[{key}]: pin combination regressed; "
                     "the fp32 stack stays in charge"
                 )
                 return None
             chosen = [(float("nan"), pin, -1)] * 4
         conclusion = tuple(cfg for _ms, cfg, _rank in chosen)
-        print(f"BEST stack_fp16x3[{key}] = {conclusion}")
+        print(f"BEST {family}[{key}] = {conclusion}")
         return conclusion
 
     def wins_against_fp32() -> bool:
@@ -2066,17 +2105,23 @@ def sweep_fp16x3(
         )
         return speedup >= _STACK_WIN_SPEEDUP
 
-    with _runtime_config_scope("stack_fp16x3", key) as install:
+    with _runtime_config_scope(family, key) as install:
         conclusion = conclude()
         if conclusion is not None and not wins_against_fp32():
             conclusion = None
         install(conclusion)
-    return {"stack_fp16x3": {key: conclusion}}
+    return {family: {key: conclusion}}
 
 
 @dataclass(frozen=True)
 class _SweepSpec:
-    """Describe one independently covered launch-configuration sweep."""
+    """Describe one independently covered launch-configuration sweep.
+
+    ``parity`` restricts the sweep to convolutions with reflection-preserving
+    weights (``True``) or with plain weights (``False``) and is passed on to the
+    sweep, which has a variant for each weight layout; ``None`` covers both and
+    passes nothing.
+    """
 
     sweep: Callable[..., SweepResult]
     sentinel_family: str
@@ -2084,6 +2129,7 @@ class _SweepSpec:
     min_level: int = 2
     accepts_heads: bool = False
     train_only: bool = False
+    parity: bool | None = None
 
 
 _SWEEP_SPECS = {
@@ -2100,9 +2146,15 @@ _SWEEP_SPECS = {
     "flash_bwd": _SweepSpec(
         sweep_flash_bwd, "flash_bwd_edge", "wide", accepts_heads=True
     ),
-    "fp32": _SweepSpec(sweep_fp32, "stack_fp32", "focus"),
+    "fp32": _SweepSpec(sweep_fp32, "stack_fp32", "focus", parity=False),
+    "fp32_parity": _SweepSpec(sweep_fp32, "stack_fp32_parity", "focus", parity=True),
     "m0_gate": _SweepSpec(sweep_m0_gate, "stack_m0_gate", "focus"),
-    "fp16x3": _SweepSpec(sweep_fp16x3, "stack_fp16x3", "focus", min_level=3),
+    "fp16x3": _SweepSpec(
+        sweep_fp16x3, "stack_fp16x3", "focus", min_level=3, parity=False
+    ),
+    "fp16x3_parity": _SweepSpec(
+        sweep_fp16x3, "stack_fp16x3_parity", "focus", min_level=3, parity=True
+    ),
 }
 
 
@@ -2124,6 +2176,8 @@ def _run_sweep(
     }
     if spec.accepts_heads:
         kwargs["n_head"] = n_head
+    if spec.parity is not None:
+        kwargs["parity"] = spec.parity
     return spec.sweep(cf, lmax, **kwargs)
 
 
@@ -2152,7 +2206,9 @@ def _has_so2_value_path_interface(module: torch.nn.Module) -> bool:
     return all(hasattr(module, name) for name in _SO2_VALUE_PATH_ATTRIBUTES)
 
 
-def collect_model_shape_keys(model: torch.nn.Module) -> list[tuple[int, int, int, int]]:
+def collect_model_shape_keys(
+    model: torch.nn.Module,
+) -> list[tuple[int, int, int, int, bool]]:
     """Collect the shape keys of every fused-value-path convolution in ``model``.
 
     Parameters
@@ -2163,9 +2219,9 @@ def collect_model_shape_keys(model: torch.nn.Module) -> list[tuple[int, int, int
 
     Returns
     -------
-    list[tuple[int, int, int, int]]
-        Deduplicated ``(focus_dim, lmax, n_focus, n_head)`` tuples, one per
-        distinct convolution shape whose layout is supported by the fused
+    list[tuple[int, int, int, int, bool]]
+        Deduplicated ``(focus_dim, lmax, n_focus, n_head, parity)`` tuples, one
+        per distinct convolution shape whose layout is supported by the fused
         value path.  Convolutions outside the supported layout never query
         the tables and contribute no keys.
     """
@@ -2173,7 +2229,7 @@ def collect_model_shape_keys(model: torch.nn.Module) -> list[tuple[int, int, int
         _is_supported,
     )
 
-    keys: list[tuple[int, int, int, int]] = []
+    keys: list[tuple[int, int, int, int, bool]] = []
     for module in model.modules():
         if not _has_so2_value_path_interface(module):
             continue
@@ -2181,7 +2237,13 @@ def collect_model_shape_keys(model: torch.nn.Module) -> list[tuple[int, int, int
         if not _is_supported(conv):
             continue
         n_head = conv.n_atten_head if conv.n_atten_head > 0 else 1
-        key = (conv.so2_focus_dim, conv.lmax, conv.n_focus, n_head)
+        key = (
+            conv.so2_focus_dim,
+            conv.lmax,
+            conv.n_focus,
+            n_head,
+            bool(conv.parity),
+        )
         if key not in keys:
             keys.append(key)
     return keys
@@ -2210,7 +2272,7 @@ def _load_model_params(model_path: str) -> dict[str, Any]:
 
 
 def tune_missing_configs(
-    shape_keys: list[tuple[int, int, int, int]],
+    shape_keys: list[tuple[int, int, int, int, bool]],
     *,
     level: int,
     device: torch.device | str = "cuda",
@@ -2218,7 +2280,7 @@ def tune_missing_configs(
 ) -> SweepResult:
     """Sweep and register every table key the given shapes need but lack.
 
-    For each ``(focus_dim, lmax, n_focus, n_head)`` shape, every sweep group
+    For each ``(focus_dim, lmax, n_focus, n_head, parity)`` shape, every sweep group
     relevant at the given ``DP_TRITON_INFER`` level (the table-configured
     kernels at level 2, plus the fp16x3 stack at level 3) is checked against
     :func:`~.tile_configs.has_tile_config` and run only when its sentinel
@@ -2229,7 +2291,7 @@ def tune_missing_configs(
 
     Parameters
     ----------
-    shape_keys : list[tuple[int, int, int, int]]
+    shape_keys : list[tuple[int, int, int, int, bool]]
         Shapes as returned by :func:`collect_model_shape_keys`.
     level : int
         The active Triton inference level; levels below 2 tune nothing.
@@ -2247,7 +2309,7 @@ def tune_missing_configs(
     registered: SweepResult = {}
     if level < 2:
         return registered
-    for cf, lmax, n_focus, n_head in shape_keys:
+    for cf, lmax, n_focus, n_head, parity in shape_keys:
         c_wide = n_focus * cf
         pending: list[tuple[str, _SweepSpec]] = []
         for group, spec in _SWEEP_SPECS.items():
@@ -2256,6 +2318,8 @@ def tune_missing_configs(
             if spec.train_only:
                 continue
             if level < spec.min_level:
+                continue
+            if spec.parity is not None and spec.parity != parity:
                 continue
             key = (cf, lmax) if spec.key_kind == "focus" else (c_wide, lmax)
             if has_tile_config(spec.sentinel_family, key):
@@ -2364,7 +2428,7 @@ def main() -> None:
             for key in collect_model_shape_keys(get_model(branch)):
                 if key not in shape_keys:
                     shape_keys.append(key)
-        print(f"model shape keys (cf, lmax, F, H): {shape_keys}")
+        print(f"model shape keys (cf, lmax, F, H, parity): {shape_keys}")
         registered = tune_missing_configs(
             shape_keys, level=args.level, device=device, n_edge=args.edges
         )
