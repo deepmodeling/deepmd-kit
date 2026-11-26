@@ -979,10 +979,15 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         CPU inputs for its target device, so the seam pins the decision to
         the target: a CUDA-target trace carries the band operator, a
         CPU-target trace keeps the dense Wigner surfaces.
+
+        The freeze policy defaults ``DP_CUDA_INFER`` to 1 for a CUDA target,
+        which binds the dense-only CUDA Wigner pair; an admitted band must
+        still win over that pair.
         """
         import importlib.util
 
         import deepmd.pt.model.descriptor.sezm_nn.edge_cache as edge_cache_mod
+        import deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense as wigner_dense_mod
 
         if importlib.util.find_spec("triton") is None:
             self.skipTest("Triton is required to bind the band consumers")
@@ -1034,21 +1039,41 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
             }
             params["fitting_net"]["precision"] = "float32"
             ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
-            levels = {
-                "DP_TRITON_INFER": "2",
-                "DP_CUDA_INFER": "0",
-                "DP_CUTILE_INFER": "0",
-                "DP_CUTE_INFER": "0",
-            }
-            for target, expect_band in (
-                (torch.device("cuda"), True),
-                (torch.device("cpu"), False),
+
+            # Every dense-only CUDA Wigner pair the freeze binds.
+            dense_pairs: list = []
+            real_factory = wigner_dense_mod.make_cuda_wigner_dense
+
+            def record_pair(lmax, dtype):
+                pair = real_factory(lmax, dtype)
+                dense_pairs.append(pair)
+                return pair
+
+            for target, cuda_level, expect_band in (
+                (torch.device("cuda"), "0", True),
+                (torch.device("cpu"), "0", False),
+                # An unset level lets the freeze policy apply its default.
+                (torch.device("cuda"), None, True),
             ):
-                with self.subTest(target=target.type):
+                with self.subTest(target=target.type, dp_cuda_infer=cuda_level):
                     captured_targets.clear()
                     layouts.clear()
+                    dense_pairs.clear()
+                    levels = {
+                        "DP_TRITON_INFER": "2",
+                        "DP_CUTILE_INFER": "0",
+                        "DP_CUTE_INFER": "0",
+                    }
+                    if cuda_level is not None:
+                        levels["DP_CUDA_INFER"] = cuda_level
+                    environment = dict(os.environ)
+                    environment.pop("DP_CUDA_INFER", None)
+                    environment.update(levels)
                     with (
-                        mock.patch.dict(os.environ, levels),
+                        mock.patch.dict(os.environ, environment, clear=True),
+                        mock.patch.object(
+                            wigner_dense_mod, "make_cuda_wigner_dense", record_pair
+                        ),
                         mock.patch(
                             "torch._inductor.aoti_compile_and_package",
                             side_effect=fake_compile,
@@ -1068,6 +1093,12 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                             str(ckpt_path),
                             str(tmp_path / f"{target.type}_trace.pt2"),
                             device=target,
+                        )
+                    if cuda_level is None and not any(
+                        pair is not None for pair in dense_pairs
+                    ):
+                        self.skipTest(
+                            "The DPA4 Wigner dense CUDA operator is unavailable"
                         )
                     self.assertTrue(layouts, "the trace must reach the Wigner build")
                     self.assertEqual(
