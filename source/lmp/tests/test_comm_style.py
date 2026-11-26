@@ -14,6 +14,7 @@ import pytest
     [
         ("deepmd", "deeppot_dpa4_graph.pt2"),
         ("deepspin", "deeppot_dpa4_spin_graph.pt2"),
+        ("dpa4spin", "deeppot_dpa4c_spin_lmp.pt2"),
     ],
 )
 @pytest.mark.parametrize("comm", ["brick", "tiled"])
@@ -22,8 +23,10 @@ def test_two_rank_graph_communication(tmp_path, style, model_name, comm):
     lmp = shutil.which("lmp")
     mpi = shutil.which("mpirun")
     if not (model.is_file() and lmp and mpi):
+        if os.environ.get("DPA4SPIN_LMP_REQUIRED") == "1":
+            pytest.fail(f"Missing fixture {model}, mpirun or LAMMPS")
         pytest.skip("requires the DPA4 graph fixtures, mpirun and LAMMPS")
-    is_spin = style == "deepspin"
+    is_spin = style in ("deepspin", "dpa4spin")
     commands = [
         "units metal",
         f"comm_style {comm}",
@@ -33,12 +36,18 @@ def test_two_rank_graph_communication(tmp_path, style, model_name, comm):
         "region cell block 0 13 0 13 0 13 units box",
         "create_box 2 cell",
         "create_atoms 1 single 6 6 6 units box",
-        "create_atoms 1 single 7 6 6 units box",
+        f"create_atoms {2 if style == 'dpa4spin' else 1} single 7 6 6 units box",
         "mass * 12",
     ]
     if is_spin:
         commands.append("set atom * spin/atom 1.2 0 0 1")
-    commands.extend([f'pair_style {style} "{model}"', "pair_coeff * *", "run 0"])
+    commands.extend(
+        [
+            f'pair_style {style} "{model}"',
+            "pair_coeff * * Ni O" if style == "dpa4spin" else "pair_coeff * *",
+            "run 0",
+        ]
+    )
     infile = tmp_path / "in.lammps"
     infile.write_text("\n".join(commands) + "\n")
     result = subprocess.run(
