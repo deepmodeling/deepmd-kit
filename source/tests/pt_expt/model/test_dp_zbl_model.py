@@ -180,7 +180,7 @@ class TestDPZBLModel(unittest.TestCase):
         self.assertIn("force", ret)
         self.assertIn("virial", ret)
 
-    def test_frozen_no_ghosts(self) -> None:
+    def test_frozen_with_and_without_ghosts(self) -> None:
         from deepmd.infer import (
             DeepPot,
         )
@@ -191,17 +191,23 @@ class TestDPZBLModel(unittest.TestCase):
         model = self._make_dp_model()
         eager = DPZBLModel.deserialize(model.serialize()).to(self.device).eval()
         coord = self.coord.clone().requires_grad_(True)
-        expected = eager(coord, self.atype)
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "zbl.pt2")
             deserialize_to_file(path, {"model": model.serialize()}, lower_kind="nlist")
             frozen = DeepPot(path, auto_batch_size=False)
-            result = frozen.eval(
-                coord.detach().cpu().numpy(), None, self.atype[0].cpu().numpy()
-            )
-        for value, key in zip(result, ("energy", "force", "virial"), strict=True):
-            reference = expected[key].detach().cpu().numpy().reshape(value.shape)
-            np.testing.assert_allclose(value, reference, rtol=1e-7, atol=1e-8)
+            extended, _, _, _ = self._prepare_lower_inputs()
+            self.assertGreater(extended.shape[1], self.natoms)
+            for cell in (None, self.cell.reshape(1, 9)):
+                with self.subTest(periodic=cell is not None):
+                    expected = eager(coord, self.atype, cell)
+                    result = frozen.eval(
+                        coord.detach().cpu().numpy(),
+                        cell.cpu().numpy() if cell is not None else None,
+                        self.atype[0].cpu().numpy(),
+                    )
+                    for value, key in zip(result, ("energy", "force", "virial"), strict=True):
+                        reference = expected[key].detach().cpu().numpy().reshape(value.shape)
+                        np.testing.assert_allclose(value, reference, rtol=1e-7, atol=1e-8)
 
     def test_forward_lower_exportable(self) -> None:
         md_dp = self._make_dp_model()
