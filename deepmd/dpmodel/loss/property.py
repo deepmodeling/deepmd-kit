@@ -11,6 +11,16 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.loss.loss import (
     Loss,
 )
+from deepmd.dpmodel.loss.reduction import (
+    absolute_error,
+    masked_frame_mean,
+)
+from deepmd.dpmodel.utils.neighbor_graph.graph import (
+    frame_id_from_n_node,
+)
+from deepmd.dpmodel.utils.neighbor_graph.segment import (
+    segment_sum,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -55,9 +65,11 @@ class PropertyLoss(Loss):
     beta : float
         The 'beta' parameter in 'smooth_mae' loss.
     out_bias : list or None
-        The bias for normalization.
+        Bias for normalization. ``None`` reads ``model_dict["_out_bias"]``
+        when provided, otherwise zero.
     out_std : list or None
-        The standard deviation for normalization.
+        Standard deviation for normalization. ``None`` reads
+        ``model_dict["_out_std"]`` when provided, otherwise one.
     intensive : bool
         Whether the property is intensive.
     **kwargs
@@ -107,17 +119,37 @@ class PropertyLoss(Loss):
         xp = array_api_compat.array_namespace(pred)
         dev = array_api_compat.device(pred)
         label = label_dict[var_name]
+        frame_mask = label_dict.get("frame_mask")
 
         # Normalize by natoms for extensive properties (without mutating input)
         if not self.intensive:
-            if "mask" in model_dict:
+            if "n_node" in model_dict:
+                n_node = model_dict["n_node"]
+                counts = xp.astype(n_node, pred.dtype)
+                if "mask" in model_dict:
+                    mask = xp.reshape(model_dict["mask"], (-1,))
+                    counts = segment_sum(
+                        xp.astype(mask, pred.dtype),
+                        frame_id_from_n_node(n_node, n_total=mask.shape[0]),
+                        n_node.shape[0],
+                    )
+                real_natoms = xp.reshape(
+                    xp.where(counts > 0, counts, xp.ones_like(counts)),
+                    (-1,) + (1,) * (pred.ndim - 1),
+                )
+                pred = pred / real_natoms
+                label = label / real_natoms
+            elif "mask" in model_dict:
                 # Per-frame real atom count: shape [nf] → broadcast over [nf, task_dim].
                 real_natoms = xp.reshape(
                     xp.astype(xp.sum(model_dict["mask"], axis=-1), pred.dtype),
                     (-1,) + (1,) * (pred.ndim - 1),
                 )
-                pred = pred / real_natoms
-                label = label / real_natoms
+                safe_natoms = xp.where(
+                    real_natoms > 0, real_natoms, xp.ones_like(real_natoms)
+                )
+                pred = pred / safe_natoms
+                label = label / safe_natoms
             else:
                 pred = pred / natoms
                 label = label / natoms
@@ -125,10 +157,14 @@ class PropertyLoss(Loss):
         # Get out_std and out_bias
         if self.out_std is not None:
             out_std = xp.asarray(self.out_std, dtype=pred.dtype, device=dev)
+        elif "_out_std" in model_dict:
+            out_std = xp.astype(model_dict["_out_std"], pred.dtype)
         else:
             out_std = xp.ones((self.task_dim,), dtype=pred.dtype, device=dev)
         if self.out_bias is not None:
             out_bias = xp.asarray(self.out_bias, dtype=pred.dtype, device=dev)
+        elif "_out_bias" in model_dict:
+            out_bias = xp.astype(model_dict["_out_bias"], pred.dtype)
         else:
             out_bias = xp.zeros((self.task_dim,), dtype=pred.dtype, device=dev)
 
@@ -139,43 +175,62 @@ class PropertyLoss(Loss):
         norm_label = (label - out_bias) / out_std
         diff = norm_label - norm_pred
 
+        def sum_frames(value: Array) -> Array:
+            if frame_mask is None:
+                return xp.sum(value)
+            mask = xp.reshape(frame_mask, (-1,) + (1,) * (value.ndim - 1))
+            return xp.sum(xp.where(mask, value, xp.zeros_like(value)))
+
+        def root_mean_square(value: Array) -> Array:
+            mean_square = masked_frame_mean(xp.square(value), frame_mask)
+            zero = mean_square == 0
+            safe_square = xp.where(zero, xp.ones_like(mean_square), mean_square)
+            return xp.where(zero, xp.zeros_like(mean_square), xp.sqrt(safe_square))
+
         if self.loss_func == "smooth_mae":
-            abs_diff = xp.abs(diff)
+            abs_diff = absolute_error(diff)
             smooth_l1 = xp.where(
                 abs_diff < self.beta,
                 0.5 * diff**2 / self.beta,
                 abs_diff - 0.5 * self.beta,
             )
-            loss = loss + xp.sum(smooth_l1)
+            loss = loss + sum_frames(smooth_l1)
         elif self.loss_func == "mae":
-            loss = loss + xp.sum(xp.abs(diff))
+            loss = loss + sum_frames(absolute_error(diff))
         elif self.loss_func == "mse":
-            loss = loss + xp.sum(xp.square(diff))
+            loss = loss + sum_frames(xp.square(diff))
         elif self.loss_func == "rmse":
-            loss = loss + xp.sqrt(xp.mean(xp.square(diff)))
+            loss = loss + root_mean_square(diff)
         elif self.loss_func == "mape":
-            loss = loss + xp.mean(xp.abs((label - pred) / (label + 1e-3)))
+            loss = loss + masked_frame_mean(
+                absolute_error((label - pred) / (label + 1e-3)), frame_mask
+            )
         else:
             raise RuntimeError(f"Unknown loss function : {self.loss_func}")
 
         # metrics (computed on un-normalized values)
         if "smooth_mae" in self.metric:
-            abs_raw = xp.abs(label - pred)
-            more_loss["smooth_mae"] = xp.mean(
+            abs_raw = absolute_error(label - pred)
+            more_loss["smooth_mae"] = masked_frame_mean(
                 xp.where(
                     abs_raw < self.beta,
                     0.5 * (label - pred) ** 2 / self.beta,
                     abs_raw - 0.5 * self.beta,
-                )
+                ),
+                frame_mask,
             )
         if "mae" in self.metric:
-            more_loss["mae"] = xp.mean(xp.abs(label - pred))
+            more_loss["mae"] = masked_frame_mean(
+                absolute_error(label - pred), frame_mask
+            )
         if "mse" in self.metric:
-            more_loss["mse"] = xp.mean(xp.square(label - pred))
+            more_loss["mse"] = masked_frame_mean(xp.square(label - pred), frame_mask)
         if "rmse" in self.metric:
-            more_loss["rmse"] = xp.sqrt(xp.mean(xp.square(label - pred)))
+            more_loss["rmse"] = root_mean_square(label - pred)
         if "mape" in self.metric:
-            more_loss["mape"] = xp.mean(xp.abs((label - pred) / (label + 1e-3)))
+            more_loss["mape"] = masked_frame_mean(
+                absolute_error((label - pred) / (label + 1e-3)), frame_mask
+            )
 
         return loss, more_loss
 

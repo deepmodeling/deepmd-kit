@@ -31,6 +31,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_matmul,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -1064,7 +1065,7 @@ class WignerDCalculator(NativeOP):
         # einsum "nabcd,ijabcd->nij" as a flattened matmul over the (a, b, c, d) axes.
         q4_flat = xp.reshape(q4, (n_edge, 256))
         c_flat = xp.reshape(c_l2, (25, 256))
-        out = xp.matmul(q4_flat, xp.permute_dims(c_flat, (1, 0)))
+        out = xp_matmul(q4_flat, xp.permute_dims(c_flat, (1, 0)))
         return xp.reshape(out, (n_edge, 5, 5))
 
     def _compute_l3_block(self, edge_quaternion: Any) -> Any:
@@ -1079,7 +1080,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         return xp.reshape(D_flat, (n_edge, 7, 7))
 
     def _compute_l3l4_blocks(
@@ -1097,7 +1098,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         D_l3 = xp.reshape(D_flat[:, :49], (n_edge, 7, 7))
         D_l4 = xp.reshape(D_flat[:, 49:], (n_edge, 9, 9))
         return D_l3, D_l4
@@ -1114,7 +1115,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         return xp.reshape(D_flat, (n_edge, 11, 11))
 
     def _compute_l5l6_blocks(
@@ -1132,7 +1133,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         D_l5 = xp.reshape(D_flat[:, :121], (n_edge, 11, 11))
         D_l6 = xp.reshape(D_flat[:, 121:], (n_edge, 13, 13))
         return D_l5, D_l6
@@ -1153,7 +1154,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         return xp.reshape(D_flat, (n_edge, 15, 15))
 
     def _compute_l7l8_blocks(
@@ -1175,7 +1176,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         D_l7 = xp.reshape(D_flat[:, :225], (n_edge, 15, 15))
         D_l8 = xp.reshape(D_flat[:, 225:], (n_edge, 17, 17))
         return D_l7, D_l8
@@ -1196,7 +1197,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         return xp.reshape(D_flat, (n_edge, 19, 19))
 
     def _compute_l9l10_blocks(
@@ -1218,7 +1219,7 @@ class WignerDCalculator(NativeOP):
             dtype=edge_quaternion.dtype,
             device=device,
         )
-        D_flat = xp.matmul(monomials, xp.permute_dims(c, (1, 0)))
+        D_flat = xp_matmul(monomials, xp.permute_dims(c, (1, 0)))
         D_l9 = xp.reshape(D_flat[:, :361], (n_edge, 19, 19))
         D_l10 = xp.reshape(D_flat[:, 361:], (n_edge, 21, 21))
         return D_l9, D_l10
@@ -1818,9 +1819,9 @@ class WignerDCalculator(NativeOP):
         U_re_t = xp_asarray_nodetach(xp, U_re_t, dtype=D_re.dtype, device=device)
         U_im_t = xp_asarray_nodetach(xp, U_im_t, dtype=D_re.dtype, device=device)
 
-        temp_re = xp.matmul(D_re, U_re_t) + xp.matmul(D_im, U_im_t)
-        temp_im = xp.matmul(D_im, U_re_t) - xp.matmul(D_re, U_im_t)
-        return xp.matmul(U_re, temp_re) - xp.matmul(U_im, temp_im)
+        temp_re = xp_matmul(D_re, U_re_t) + xp_matmul(D_im, U_im_t)
+        temp_im = xp_matmul(D_im, U_re_t) - xp_matmul(D_re, U_im_t)
+        return xp_matmul(U_re, temp_re) - xp_matmul(U_im, temp_im)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize WignerDCalculator (lmax and precision are stored by parent)."""

@@ -78,8 +78,11 @@ class DPAtomicModel(BaseAtomicModel):
         )
 
     def adam_route_patterns(self) -> list[str]:
-        """Prefix the descriptor's AdamW patterns with its parameter path."""
-        return [f"descriptor.{p}" for p in self.descriptor.adam_route_patterns()]
+        """Prefix the descriptor's and fitting's AdamW patterns with their paths."""
+        return [
+            *(f"descriptor.{p}" for p in self.descriptor.adam_route_patterns()),
+            *(f"fitting_net.{p}" for p in self.fitting_net.adam_route_patterns()),
+        ]
 
     @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:

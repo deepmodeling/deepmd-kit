@@ -79,14 +79,16 @@ The `.pt2` suffix identifies an AOTInductor package, but not its lower-input
 ABI. A DPA4/SeZM model frozen with `dp --pt freeze` normally uses the legacy
 `edge_vec` ABI (`lower_input_kind: edge_vec`). A graph model frozen with
 `dp --pt-expt freeze --lower-kind graph` uses the NeighborGraph ABI
-(`lower_input_kind: graph`). The `dp --pt-expt compress` workflow can instead
-export a compressed DPA-1 model through the compact canonical
-`dpa1_canonical` ABI (`lower_input_kind: dpa1_canonical`) when the canonical
-compression is eligible. All variants are loaded for inference by the
-PyTorch-Exportable runtime, which reads this metadata to select the correct
-input path. The `--lower-kind` option controls only the PyTorch-Exportable
-freeze route; see the [DPA4 export documentation](model/dpa4.md#freeze-to-pt2)
-for the separate DPA4/SeZM AOTInductor export route.
+(`lower_input_kind: graph`), except on a CUDA device: there a compressed DPA-1
+or DPA4C model exported by `dp --pt-expt compress` and a single-precision DPA4
+model frozen by `dp --pt-expt freeze` use the compact canonical ABI
+(`lower_input_kind: dpa_canonical`), which the LAMMPS Kokkos pair styles feed
+from their device-resident neighbor lists. All variants are loaded for
+inference by the PyTorch-Exportable runtime, which reads this metadata to
+select the correct input path. The `--lower-kind` option controls only the
+PyTorch-Exportable freeze route; see the
+[DPA4 export documentation](model/dpa4.md#freeze-to-pt2) for the separate
+DPA4/SeZM AOTInductor export route.
 
 ### JAX {{ jax_icon }}
 
@@ -148,7 +150,7 @@ PyTorch-Exportable `.pte` and `.pt2` runtime formats. In particular, `.pt2`
 selects the PyTorch-Exportable inference loader even when the file was produced
 by the DPA4/SeZM `dp --pt freeze` route described above; the archive metadata
 then selects its `edge_vec`, dense `nlist`, NeighborGraph, or compact
-`dpa1_canonical` ABI.
+canonical ABI.
 
 ## Convert model files between backends
 

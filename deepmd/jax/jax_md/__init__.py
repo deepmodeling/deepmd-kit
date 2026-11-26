@@ -38,7 +38,7 @@ def load_model(model: str | Path | Any) -> Any:
 
     model_path = str(Path(model).resolve())
     if model_path.endswith(".jax"):
-        data = serialize_from_file(model_path)
+        data = serialize_from_file(model_path, training=False)
         jax_model = BaseModel.deserialize(data["model"])
         jax_model.model_def_script = json.dumps(data.get("model_def_script", {}))
         return jax_model

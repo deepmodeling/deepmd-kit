@@ -1901,9 +1901,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
                 with_comm=False,
             )
             dp = DeepPot(path, auto_batch_size=False, neighbor_graph_method="dense")
-            self.assertEqual(
-                dp.deep_eval.metadata["lower_input_kind"], "dpa1_canonical"
-            )
+            self.assertEqual(dp.deep_eval.metadata["lower_input_kind"], "dpa_canonical")
             with mock.patch.object(
                 dp.deep_eval, "_pt2_runner", wraps=dp.deep_eval._pt2_runner
             ) as run:
@@ -1960,10 +1958,11 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         exported, metadata, _model_json, output_keys = _trace_and_export(
             {"model": model.serialize()},
             do_atomic_virial=True,
-            lower_kind="dpa1_canonical",
+            lower_kind="dpa_canonical",
         )
 
-        self.assertEqual(metadata["lower_input_kind"], "dpa1_canonical")
+        self.assertEqual(metadata["lower_input_kind"], "dpa_canonical")
+        self.assertEqual(metadata["canonical_evaluator"], "dpa1")
         self.assertEqual(metadata["graph_edge_dtype"], "float32")
         self.assertEqual(metadata["canonical_index_dtype"], "auto")
         self.assertEqual(metadata["canonical_index_storage"], "byte_words")

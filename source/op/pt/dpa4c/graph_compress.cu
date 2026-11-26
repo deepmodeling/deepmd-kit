@@ -69,25 +69,27 @@ struct Dimensions {
   int coupling_records;
   int spin_channels;
   int basis;
+  int spin_mode;
 };
 
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 Dimensions dimensions_of() {
-  using P = Profile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   return {P::MomentWidth, P::OutputWidth,
           P::C1,          deepmd_dpa4c::coupling_record_count(Lmax),
-          P::Cs,          P::Basis};
+          P::Cs,          P::Basis,
+          SpinMode};
 }
 
-template <int Channels, bool HasSpin>
+template <int Channels, int SpinMode>
 Dimensions dimensions_for(int lmax) {
   switch (lmax) {
     case 2:
-      return dimensions_of<Channels, 2, HasSpin>();
+      return dimensions_of<Channels, 2, SpinMode>();
     case 3:
-      return dimensions_of<Channels, 3, HasSpin>();
+      return dimensions_of<Channels, 3, SpinMode>();
     case 4:
-      return dimensions_of<Channels, 4, HasSpin>();
+      return dimensions_of<Channels, 4, SpinMode>();
     default:
       TORCH_CHECK(false, "dpa4c_graph_compress: unsupported lmax ", lmax);
   }
@@ -101,11 +103,20 @@ bool prefetches_bonds(long bytes) {
   return bytes > at::cuda::getCurrentDeviceProperties()->l2CacheSize;
 }
 
-Dimensions profile_dimensions(int channels, int lmax, bool has_spin) {
-#define DPA4C_DIMENSIONS(width)                           \
-  if (channels == width) {                                \
-    return has_spin ? dimensions_for<width, true>(lmax)   \
-                    : dimensions_for<width, false>(lmax); \
+Dimensions profile_dimensions(int channels,
+                              int lmax,
+                              bool has_spin,
+                              long output_width = 0) {
+#define DPA4C_DIMENSIONS(width)                                     \
+  if (channels == width) {                                          \
+    if (!has_spin) return dimensions_for<width, 0>(lmax);           \
+    const Dimensions orbit = dimensions_for<width, 1>(lmax);        \
+    if (output_width == orbit.output_width) return orbit;           \
+    const Dimensions exchange = dimensions_for<width, 2>(lmax);     \
+    TORCH_CHECK(output_width == exchange.output_width,              \
+                "dpa4c_graph_compress: invalid spin output width ", \
+                output_width);                                      \
+    return exchange;                                                \
   }
   DPA4C_FOR_EACH_CHANNEL(DPA4C_DIMENSIONS)
 #undef DPA4C_DIMENSIONS
@@ -241,32 +252,33 @@ struct BlockWidths {
   int record;
 };
 
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 BlockWidths block_widths_of() {
-  using B = deepmd_dpa4c::BlockProfile<Channels, Lmax, HasSpin>;
+  using B = deepmd_dpa4c::BlockProfile<Channels, Lmax, SpinMode>;
   return {B::SourceWidth, B::CotangentWidth, B::TransportWidth, B::NodeWidth,
           B::Width};
 }
 
-template <int Channels, bool HasSpin>
+template <int Channels, int SpinMode>
 BlockWidths block_widths_for(int lmax) {
   switch (lmax) {
     case 2:
-      return block_widths_of<Channels, 2, HasSpin>();
+      return block_widths_of<Channels, 2, SpinMode>();
     case 3:
-      return block_widths_of<Channels, 3, HasSpin>();
+      return block_widths_of<Channels, 3, SpinMode>();
     case 4:
-      return block_widths_of<Channels, 4, HasSpin>();
+      return block_widths_of<Channels, 4, SpinMode>();
     default:
       TORCH_CHECK(false, "dpa4c_graph_compress: unsupported lmax ", lmax);
   }
 }
 
-BlockWidths block_widths(int channels, int lmax, bool has_spin) {
-#define DPA4C_WIDTHS(width)                                 \
-  if (channels == width) {                                  \
-    return has_spin ? block_widths_for<width, true>(lmax)   \
-                    : block_widths_for<width, false>(lmax); \
+BlockWidths block_widths(int channels, int lmax, int spin_mode) {
+#define DPA4C_WIDTHS(width)                                      \
+  if (channels == width) {                                       \
+    if (spin_mode == 2) return block_widths_for<width, 2>(lmax); \
+    if (spin_mode == 1) return block_widths_for<width, 1>(lmax); \
+    return block_widths_for<width, 0>(lmax);                     \
   }
   DPA4C_FOR_EACH_CHANNEL(DPA4C_WIDTHS)
 #undef DPA4C_WIDTHS
@@ -298,8 +310,9 @@ struct Payload {
   torch::Tensor spin;
   torch::Tensor spin_pair;
   torch::Tensor spin_type;
-  // Per-element length scale in Å with one entry per type-table row.
-  torch::Tensor contact_radius;
+  // Data edge in Å of every ordered type pair, row `center * type_count +
+  // neighbor` of the type table; empty without a contact clamp.
+  torch::Tensor contact_edges;
   bool canonical;
   int64_t lmax;
   double table_stride;
@@ -307,10 +320,8 @@ struct Payload {
   double rcut;
   double eps;
   double degree_floor;
-  // Bounds of the inner bridging switch as fractions of a pair's own length
-  // scale; equal fractions mean no window.
-  double f_inner;
-  double f_outer;
+  // Inner fraction of the contact clamp, in (0, 1) for a launch with edges.
+  double contact_inner;
   int64_t node_begin = 0;
 };
 
@@ -361,7 +372,7 @@ Arguments build_arguments(const Payload& payload,
         &payload.type_embedding, &payload.readout_matrices,
         &payload.coupling_meta, &payload.coupling_entry,
         &payload.coupling_value, &payload.output_mean, &payload.output_inv_std,
-        &payload.contact_radius}) {
+        &payload.contact_edges}) {
     TORCH_CHECK(tensor->is_cuda() && tensor->device() == device,
                 "dpa4c_graph_compress: every tensor input must be a CUDA "
                 "tensor on the device of edge_vec");
@@ -392,7 +403,7 @@ Arguments build_arguments(const Payload& payload,
         &payload.pair_film, &payload.pair_mixing, &payload.type_embedding,
         &payload.readout_matrices, &payload.coupling_value,
         &payload.output_mean, &payload.output_inv_std,
-        &payload.contact_radius}) {
+        &payload.contact_edges}) {
     TORCH_CHECK(tensor->scalar_type() == torch::kFloat32,
                 "dpa4c_graph_compress: tables and weights must be fp32");
   }
@@ -402,10 +413,11 @@ Arguments build_arguments(const Payload& payload,
               "dpa4c_graph_compress: table_stride must be positive and "
               "finite, got ",
               payload.table_stride);
-  TORCH_CHECK(payload.f_inner >= 0.0 && payload.f_outer >= payload.f_inner,
-              "dpa4c_graph_compress: the bridging switch needs 0 <= f_inner <= "
-              "f_outer, got ",
-              payload.f_inner, " and ", payload.f_outer);
+  TORCH_CHECK(payload.contact_edges.numel() == 0 ||
+                  (payload.contact_inner > 0.0 && payload.contact_inner < 1.0),
+              "dpa4c_graph_compress: the inner fraction of the contact clamp "
+              "must lie strictly between 0 and 1, got ",
+              payload.contact_inner);
   // The shared mode cache is sized from a compile-time maximum and the split
   // spline row assumes an even table width, so the rank set is closed.
   TORCH_CHECK(radial_modes == 0 || radial_modes == 2 || radial_modes == 4 ||
@@ -480,10 +492,12 @@ Arguments build_arguments(const Payload& payload,
   TORCH_CHECK(payload.output_mean.numel() == widths.output_width &&
                   payload.output_inv_std.numel() == widths.output_width,
               "dpa4c_graph_compress: invalid output calibration shape");
-  TORCH_CHECK(payload.contact_radius.sizes() ==
-                  torch::IntArrayRef({static_cast<long>(type_count)}),
-              "dpa4c_graph_compress: contact_radius must have shape "
-              "(type_count,)");
+  TORCH_CHECK(
+      payload.contact_edges.numel() == 0 ||
+          payload.contact_edges.sizes() ==
+              torch::IntArrayRef({static_cast<long>(type_count) * type_count}),
+      "dpa4c_graph_compress: contact_edges must be empty or have "
+      "shape (type_count^2,)");
   // The scans read the radial tables, the low-rank expansion, the mode mixing
   // and the per-type spin table as float4, and the PairFiLM and ordered spin
   // caches as float2.
@@ -542,7 +556,7 @@ Arguments build_arguments(const Payload& payload,
   }
 
   Arguments arguments;
-  arguments.has_spin = has_spin;
+  arguments.spin_mode = widths.spin_mode;
   arguments.spin = has_spin ? payload.spin.data_ptr<float>() : nullptr;
   arguments.spin_pair =
       has_spin ? payload.spin_pair.data_ptr<float>() : nullptr;
@@ -562,11 +576,9 @@ Arguments build_arguments(const Payload& payload,
   arguments.rcut = static_cast<float>(payload.rcut);
   arguments.eps = static_cast<float>(payload.eps);
   arguments.degree_floor = static_cast<float>(payload.degree_floor);
-  if (payload.f_outer > payload.f_inner) {
-    arguments.f_inner = static_cast<float>(payload.f_inner);
-    arguments.f_outer = static_cast<float>(payload.f_outer);
-    arguments.inverse_f_width =
-        static_cast<float>(1.0 / (payload.f_outer - payload.f_inner));
+  if (payload.contact_edges.numel() != 0) {
+    arguments.contact_edges = payload.contact_edges.data_ptr<float>();
+    arguments.contact_inner = static_cast<float>(payload.contact_inner);
     arguments.bridged = true;
   }
   arguments.canonical = payload.canonical;
@@ -600,15 +612,14 @@ Arguments build_arguments(const Payload& payload,
   arguments.coupling_value = payload.coupling_value.data_ptr<float>();
   arguments.output_mean = payload.output_mean.data_ptr<float>();
   arguments.output_inv_std = payload.output_inv_std.data_ptr<float>();
-  arguments.contact_radius = payload.contact_radius.data_ptr<float>();
   return arguments;
 }
 
 /// Attach the analytical pair potential to one backward launch.
 ///
 /// \param arguments Launch bundle of the run.
-/// \param pair_table Series constants of every ordered type pair with shape
-///                   `((T + 1)^2, 8)`, fp32.
+/// \param pair_table Series constants and truncation of every ordered type
+///                   pair with shape `((T + 1)^2, kPairRow)`, fp32.
 /// \param device Device of the edge vectors, which the table must share.
 /// \param pair_seed Energy cotangent of the first node of the run, fp64.
 /// \param pair_energy Energy of the first node of the run, fp64; the scan
@@ -623,10 +634,11 @@ void attach_pair_term(Arguments& arguments,
   TORCH_CHECK(pair_table.is_cuda() && pair_table.device() == device &&
                   pair_table.is_contiguous() &&
                   pair_table.scalar_type() == torch::kFloat32 &&
-                  pair_table.sizes() == torch::IntArrayRef({pairs, 8}),
+                  pair_table.sizes() ==
+                      torch::IntArrayRef({pairs, deepmd_dpa4c::kPairRow}),
               "dpa4c_graph_compress: pair_table must be a contiguous fp32 "
               "CUDA tensor on the device of edge_vec with shape "
-              "(type_count^2, 8)");
+              "(type_count^2, 16)");
   arguments.pair_table = pair_table.data_ptr<float>();
   arguments.pair_seed = pair_seed;
   arguments.pair_energy = pair_energy;
@@ -636,14 +648,11 @@ void attach_pair_term(Arguments& arguments,
 /// Words that one scan of the node types of a canonical system writes,
 /// allocated cleared, for the edge kernels that follow it: whether any node
 /// carries a type other than that of node zero, which selects the folded scans
-/// (`Arguments::type_mismatch`), the largest length-scale radius among the
-/// node types, which bounds the bridging windows of every row
-/// (`Arguments::largest_radius`), and the bitmap of the node types, which
+/// (`Arguments::type_mismatch`), and the bitmap of the node types, which
 /// numbers the types of a system for the slotted scans
 /// (`Arguments::type_present`).
 struct NodeTypeWords {
   int type_mismatch;
-  float largest_radius;
   unsigned type_present[kTypeWords];
 };
 
@@ -662,24 +671,11 @@ __device__ __forceinline__ void mark_type(long type,
 
 /// Fold the node types that the threads of a block have scanned into `words`.
 /// Every thread of the block takes part: `same` tells whether all of the
-/// thread's nodes carry the type of node zero, `largest` is the largest
-/// radius among them, and `present` the bitmap of their types. Radii are
-/// positive, so their bit patterns order as the integers do and the integer
-/// maximum is the floating-point one.
+/// thread's nodes carry the type of node zero, and `present` the bitmap of
+/// their types.
 __device__ __forceinline__ void publish_node_types(
-    bool same,
-    float largest,
-    const unsigned (&present)[kTypeWords],
-    NodeTypeWords* words) {
+    bool same, const unsigned (&present)[kTypeWords], NodeTypeWords* words) {
   constexpr int kLanes = 32;
-#pragma unroll
-  for (int offset = kLanes / 2; offset > 0; offset >>= 1) {
-    largest = fmaxf(largest, __shfl_xor_sync(0xffffffffu, largest, offset));
-  }
-  if (threadIdx.x % kLanes == 0 && largest > 0.0f) {
-    atomicMax(reinterpret_cast<int*>(&words->largest_radius),
-              __float_as_int(largest));
-  }
 #pragma unroll
   for (int word = 0; word < kTypeWords; ++word) {
     unsigned bits = present[word];
@@ -696,34 +692,20 @@ __device__ __forceinline__ void publish_node_types(
   }
 }
 
-// Scan the node types of a canonical system into `words`; a null
-// `contact_radius` leaves the largest radius at zero.
+// Scan the node types of a canonical system into `words`.
 __global__ void node_type_kernel(long count,
                                  const long* __restrict__ atype,
-                                 const float* __restrict__ contact_radius,
                                  NodeTypeWords* __restrict__ words) {
   const long first = atype[0];
   bool same = true;
-  float largest = 0.0f;
   unsigned present[kTypeWords] = {};
   for (long node = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x;
        node < count; node += static_cast<long>(blockDim.x) * gridDim.x) {
     const long type = atype[node];
     same &= type == first;
     mark_type(type, present);
-    if (contact_radius != nullptr && type >= 0) {
-      largest = fmaxf(largest, __ldg(contact_radius + type));
-    }
   }
-  publish_node_types(same, largest, present, words);
-}
-
-/// Radius table of the node-type scan: that of a launch with a bridging
-/// window, whose edge scans bound the window by the largest radius, and none
-/// otherwise.
-const float* windowed_radii(const Arguments& arguments) {
-  return arguments.f_outer > arguments.f_inner ? arguments.contact_radius
-                                               : nullptr;
+  publish_node_types(same, present, words);
 }
 
 /// Bitmap of the node types of `words` for a launch that its slotted scans
@@ -756,11 +738,10 @@ torch::Tensor scan_node_types(const torch::Tensor& atype,
     const int blocks = static_cast<int>(
         std::min<long>((count + kThreads - 1) / kThreads, 1024));
     node_type_kernel<<<blocks, kThreads, 0, stream>>>(
-        count, atype.data_ptr<long>(), windowed_radii(arguments), node_types);
+        count, atype.data_ptr<long>(), node_types);
     DPA4C_CHECK_LAUNCH("dpa4c node types");
   }
   arguments.type_mismatch = &node_types->type_mismatch;
-  arguments.largest_radius = &node_types->largest_radius;
   arguments.type_present = present_types(arguments, node_types);
   return words;
 }
@@ -789,7 +770,7 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
     torch::Tensor spin,
     torch::Tensor spin_pair,
     torch::Tensor spin_type,
-    torch::Tensor contact_radius,
+    torch::Tensor contact_edges,
     bool canonical,
     int64_t lmax,
     double table_stride,
@@ -797,18 +778,17 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
     double rcut,
     double eps,
     double degree_floor,
-    double f_inner,
-    double f_outer) {
+    double contact_inner) {
   const Payload payload{edge_index,          edge_mask,      destination_order,
                         destination_row_ptr, atype,          table,
                         basis_table,         basis_matrix,   pair_film,
                         pair_mixing,         type_embedding, readout_matrices,
                         coupling_meta,       coupling_entry, coupling_value,
                         output_mean,         output_inv_std, spin,
-                        spin_pair,           spin_type,      contact_radius,
+                        spin_pair,           spin_type,      contact_edges,
                         canonical,           lmax,           table_stride,
                         table_max,           rcut,           eps,
-                        degree_floor,        f_inner,        f_outer};
+                        degree_floor,        contact_inner};
   const long node_count = destination_row_ptr.numel() - 1;
   // The destination row pointer defines the node axis; the type table must
   // describe exactly that axis, or the two disagree on how many nodes exist.
@@ -817,7 +797,8 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
               "different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
   const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax), spin.dim() == 2);
+      profile_dimensions(channels, static_cast<int>(lmax), spin.dim() == 2,
+                         output_inv_std.numel());
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_graph_compress: edge_vec must be a CUDA tensor");
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
@@ -863,7 +844,7 @@ dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
                                    torch::Tensor spin,
                                    torch::Tensor spin_pair,
                                    torch::Tensor spin_type,
-                                   torch::Tensor contact_radius,
+                                   torch::Tensor contact_edges,
                                    bool canonical,
                                    int64_t lmax,
                                    double table_stride,
@@ -871,8 +852,7 @@ dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
                                    double rcut,
                                    double eps,
                                    double degree_floor,
-                                   double f_inner,
-                                   double f_outer,
+                                   double contact_inner,
                                    torch::Tensor pair_table,
                                    torch::Tensor pair_seed,
                                    bool reuse_state) {
@@ -882,10 +862,10 @@ dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
                         pair_mixing,         type_embedding, readout_matrices,
                         coupling_meta,       coupling_entry, coupling_value,
                         output_mean,         output_inv_std, spin,
-                        spin_pair,           spin_type,      contact_radius,
+                        spin_pair,           spin_type,      contact_edges,
                         canonical,           lmax,           table_stride,
                         table_max,           rcut,           eps,
-                        degree_floor,        f_inner,        f_outer};
+                        degree_floor,        contact_inner};
   const bool has_spin = spin.dim() == 2;
   const long node_count = destination_row_ptr.numel() - 1;
   // The destination row pointer defines the node axis; the type table must
@@ -895,8 +875,8 @@ dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
       "dpa4c_graph_compress_backward: atype and destination_row_ptr describe "
       "different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
-  const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax), has_spin);
+  const Dimensions widths = profile_dimensions(
+      channels, static_cast<int>(lmax), has_spin, output_inv_std.numel());
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_graph_compress_backward: edge_vec must be a CUDA tensor");
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
@@ -1003,7 +983,7 @@ dpa4c_graph_compress_backward(torch::Tensor descriptor_gradient,
                               torch::Tensor spin,
                               torch::Tensor spin_pair,
                               torch::Tensor spin_type,
-                              torch::Tensor contact_radius,
+                              torch::Tensor contact_edges,
                               bool canonical,
                               int64_t lmax,
                               double table_stride,
@@ -1011,8 +991,7 @@ dpa4c_graph_compress_backward(torch::Tensor descriptor_gradient,
                               double rcut,
                               double eps,
                               double degree_floor,
-                              double f_inner,
-                              double f_outer,
+                              double contact_inner,
                               torch::Tensor pair_table,
                               torch::Tensor pair_seed) {
   return dpa4c_graph_compress_backward_impl(
@@ -1020,8 +999,8 @@ dpa4c_graph_compress_backward(torch::Tensor descriptor_gradient,
       destination_order, destination_row_ptr, atype, table, basis_table,
       basis_matrix, pair_film, pair_mixing, type_embedding, readout_matrices,
       coupling_meta, coupling_entry, coupling_value, output_mean,
-      output_inv_std, spin, spin_pair, spin_type, contact_radius, canonical,
-      lmax, table_stride, table_max, rcut, eps, degree_floor, f_inner, f_outer,
+      output_inv_std, spin, spin_pair, spin_type, contact_edges, canonical,
+      lmax, table_stride, table_max, rcut, eps, degree_floor, contact_inner,
       pair_table, pair_seed, false);
 }
 
@@ -1045,15 +1024,14 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_canonical_compress(
     torch::Tensor spin,
     torch::Tensor spin_pair,
     torch::Tensor spin_type,
-    torch::Tensor contact_radius,
+    torch::Tensor contact_edges,
     int64_t lmax,
     double table_stride,
     double table_max,
     double rcut,
     double eps,
     double degree_floor,
-    double f_inner,
-    double f_outer) {
+    double contact_inner) {
   source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa4c_canonical_compress: source and edge_vec must share the "
@@ -1065,8 +1043,8 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_canonical_compress(
       atype, table, basis_table, basis_matrix, pair_film, pair_mixing,
       type_embedding, readout_matrices, coupling_meta, coupling_entry,
       coupling_value, output_mean, output_inv_std, spin, spin_pair, spin_type,
-      contact_radius, true, lmax, table_stride, table_max, rcut, eps,
-      degree_floor, f_inner, f_outer);
+      contact_edges, true, lmax, table_stride, table_max, rcut, eps,
+      degree_floor, contact_inner);
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
@@ -1091,15 +1069,14 @@ dpa4c_canonical_compress_backward_common(torch::Tensor descriptor_gradient,
                                          torch::Tensor spin,
                                          torch::Tensor spin_pair,
                                          torch::Tensor spin_type,
-                                         torch::Tensor contact_radius,
+                                         torch::Tensor contact_edges,
                                          int64_t lmax,
                                          double table_stride,
                                          double table_max,
                                          double rcut,
                                          double eps,
                                          double degree_floor,
-                                         double f_inner,
-                                         double f_outer,
+                                         double contact_inner,
                                          bool reuse_state) {
   source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
@@ -1117,8 +1094,8 @@ dpa4c_canonical_compress_backward_common(torch::Tensor descriptor_gradient,
           basis_matrix, pair_film, pair_mixing, type_embedding,
           readout_matrices, coupling_meta, coupling_entry, coupling_value,
           output_mean, output_inv_std, spin, spin_pair, spin_type,
-          contact_radius, true, lmax, table_stride, table_max, rcut, eps,
-          degree_floor, f_inner, f_outer, no_pair, no_pair, reuse_state);
+          contact_edges, true, lmax, table_stride, table_max, rcut, eps,
+          degree_floor, contact_inner, no_pair, no_pair, reuse_state);
   return {edge_gradient, spin_gradient, edge_spin_gradient};
 }
 
@@ -1144,21 +1121,20 @@ dpa4c_canonical_compress_backward(torch::Tensor descriptor_gradient,
                                   torch::Tensor spin,
                                   torch::Tensor spin_pair,
                                   torch::Tensor spin_type,
-                                  torch::Tensor contact_radius,
+                                  torch::Tensor contact_edges,
                                   int64_t lmax,
                                   double table_stride,
                                   double table_max,
                                   double rcut,
                                   double eps,
                                   double degree_floor,
-                                  double f_inner,
-                                  double f_outer) {
+                                  double contact_inner) {
   return dpa4c_canonical_compress_backward_common(
       descriptor_gradient, state, edge_vec, source, destination_row_ptr, atype,
       table, basis_table, basis_matrix, pair_film, pair_mixing, type_embedding,
       readout_matrices, coupling_meta, coupling_entry, coupling_value,
-      output_mean, output_inv_std, spin, spin_pair, spin_type, contact_radius,
-      lmax, table_stride, table_max, rcut, eps, degree_floor, f_inner, f_outer,
+      output_mean, output_inv_std, spin, spin_pair, spin_type, contact_edges,
+      lmax, table_stride, table_max, rcut, eps, degree_floor, contact_inner,
       false);
 }
 
@@ -1184,21 +1160,20 @@ dpa4c_canonical_compress_backward_inplace(torch::Tensor descriptor_gradient,
                                           torch::Tensor spin,
                                           torch::Tensor spin_pair,
                                           torch::Tensor spin_type,
-                                          torch::Tensor contact_radius,
+                                          torch::Tensor contact_edges,
                                           int64_t lmax,
                                           double table_stride,
                                           double table_max,
                                           double rcut,
                                           double eps,
                                           double degree_floor,
-                                          double f_inner,
-                                          double f_outer) {
+                                          double contact_inner) {
   return dpa4c_canonical_compress_backward_common(
       descriptor_gradient, state, edge_vec, source, destination_row_ptr, atype,
       table, basis_table, basis_matrix, pair_film, pair_mixing, type_embedding,
       readout_matrices, coupling_meta, coupling_entry, coupling_value,
-      output_mean, output_inv_std, spin, spin_pair, spin_type, contact_radius,
-      lmax, table_stride, table_max, rcut, eps, degree_floor, f_inner, f_outer,
+      output_mean, output_inv_std, spin, spin_pair, spin_type, contact_edges,
+      lmax, table_stride, table_max, rcut, eps, degree_floor, contact_inner,
       true);
 }
 
@@ -1250,11 +1225,9 @@ __global__ void energy_force_prologue_kernel(
     bool* __restrict__ charged,
     unsigned long long* __restrict__ force,
     unsigned long long* __restrict__ spin_force,
-    const float* __restrict__ contact_radius,
     EvaluationWords* __restrict__ words) {
   const long first = atype[0] < 0 ? 0 : atype[0];
   bool same = true;
-  float largest = 0.0f;
   unsigned present[kTypeWords] = {};
   for (long node = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x;
        node < node_count; node += static_cast<long>(blockDim.x) * gridDim.x) {
@@ -1263,9 +1236,6 @@ __global__ void energy_force_prologue_kernel(
     node_type[node] = type;
     same &= type == first;
     mark_type(type, present);
-    if (contact_radius != nullptr) {
-      largest = fmaxf(largest, __ldg(contact_radius + type));
-    }
     long frame = 0;
     long frame_begin = 0;
     if (frame_count > 1) {
@@ -1297,7 +1267,7 @@ __global__ void energy_force_prologue_kernel(
       }
     }
   }
-  publish_node_types(same, largest, present, &words->node_types);
+  publish_node_types(same, present, &words->node_types);
 }
 
 // Frame totals the single-frame epilogue reduces: the energy and the nine
@@ -1533,11 +1503,10 @@ int epilogue_blocks(long node_count) {
 
 // Validates the graph inputs of a fused energy-force operator named ``op``
 // that its prologue reads before the runs validate the rest of the payload:
-// the frame counts, the node types and, for a windowed descriptor, the
-// contact radii, and the source CSR, which is either complete, requesting the
-// per-atom virial, or the two-entry placeholder that declines it. ``source``
-// is replaced by its typed view. Returns whether the per-atom virial is
-// requested.
+// the frame counts and the node types, and the source CSR, which is either
+// complete, requesting the per-atom virial, or the two-entry placeholder that
+// declines it. ``source`` is replaced by its typed view. Returns whether the
+// per-atom virial is requested.
 bool check_energy_force_inputs(const char* op,
                                const torch::Tensor& edge_vec,
                                torch::Tensor& source,
@@ -1546,11 +1515,7 @@ bool check_energy_force_inputs(const char* op,
                                const torch::Tensor& source_order,
                                const torch::Tensor& n_node,
                                const torch::Tensor& n_local,
-                               const torch::Tensor& atype,
-                               const torch::Tensor& type_embedding,
-                               const torch::Tensor& contact_radius,
-                               double f_inner,
-                               double f_outer) {
+                               const torch::Tensor& atype) {
   TORCH_CHECK(edge_vec.is_cuda(), op, ": edge_vec must be a CUDA tensor");
   source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0), op,
@@ -1578,14 +1543,6 @@ bool check_energy_force_inputs(const char* op,
               op,
               ": atype must be a contiguous int64 tensor of shape (N,) on the "
               "device of edge_vec");
-  TORCH_CHECK(
-      f_outer <= f_inner || (on_device(contact_radius) &&
-                             contact_radius.scalar_type() == torch::kFloat32 &&
-                             contact_radius.dim() == 1 &&
-                             contact_radius.size(0) == type_embedding.size(0)),
-      op,
-      ": a windowed descriptor needs contiguous fp32 contact radii of shape "
-      "(type_count,) on the device of edge_vec");
   const bool atom_virial = source_row_ptr.numel() == node_count + 1 &&
                            source_order.numel() == edge_count;
   TORCH_CHECK(
@@ -1972,212 +1929,6 @@ struct HaloPlan {
   }
 };
 
-// === Source gate of a bridged descriptor of several blocks ===
-//
-// The envelope of an edge carries the leave-one-out gate of its source, the
-// product of the switches of the other pairs of the source (Arguments::
-// source_gate). A canonical graph holds both directions of every bond, so
-// the row of a node holds every pair of the node, and the totals of the
-// switches of an owned node follow from its own row; those of a halo row
-// arrive from its owner.
-
-constexpr int kGateThreads = 256;
-constexpr int kGateWarps = kGateThreads / deepmd_dpa4c::kWarpSize;
-
-/// The switch of the pair of an entry of the row of ``row_node`` and the
-/// slope of the switch with respect to the length; the length, the unit
-/// vector and the vector of the entry are returned as well.
-struct PairSwitch {
-  float weight;
-  float slope;
-  float radius;
-  float vector[3];
-};
-
-template <typename index_t>
-__device__ __forceinline__ PairSwitch pair_switch(const Arguments& args,
-                                                  long row_node,
-                                                  long position) {
-  PairSwitch pair;
-  const float x = args.edge_vec[position * 3 + 0];
-  const float y = args.edge_vec[position * 3 + 1];
-  const float z = args.edge_vec[position * 3 + 2];
-  pair.vector[0] = x;
-  pair.vector[1] = y;
-  pair.vector[2] = z;
-  // The regularized length of load_geometry, so that the switch of the
-  // totals is that of the edge scans.
-  const float square = x * x + y * y + z * z + args.eps * args.eps;
-  pair.radius = square * rsqrtf(square);
-  pair.weight = 1.0f;
-  pair.slope = 0.0f;
-  const long source =
-      static_cast<long>(static_cast<const index_t*>(args.edge_index)[position]);
-  const float contact = __ldg(args.contact_radius + args.atype[row_node]) +
-                        __ldg(args.contact_radius + args.atype[source]);
-  if (pair.radius < args.f_outer * contact) {
-    const float t = deepmd_dpa4c::window_parameter(
-        __fdividef(pair.radius, contact), args.f_inner, args.inverse_f_width);
-    pair.weight = deepmd_dpa4c::bridging_switch(t);
-    pair.slope = __fdividef(
-        deepmd_dpa4c::bridging_switch_derivative(t, args.inverse_f_width),
-        contact);
-  }
-  return pair;
-}
-
-/// The totals of the switches of the pairs of every owned node: the sum of
-/// the logarithms of the nonzero switches and the number of zero ones. One
-/// warp scans one row, and the lanes combine their partial totals in a fixed
-/// order.
-template <typename index_t>
-__global__ void __launch_bounds__(kGateThreads)
-    source_gate_kernel(const Arguments args, float2* totals) {
-  const long row =
-      static_cast<long>(blockIdx.x) * kGateWarps + threadIdx.x / 32;
-  if (row >= args.node_count) {
-    return;
-  }
-  const int lane = threadIdx.x % 32;
-  const long node = args.node_begin + row;
-  float log_sum = 0.0f;
-  float frozen = 0.0f;
-  for (long position = args.destination_row_ptr[row] + lane;
-       position < args.destination_row_ptr[row + 1]; position += 32) {
-    const float weight = pair_switch<index_t>(args, node, position).weight;
-    if (weight <= 0.0f) {
-      frozen += 1.0f;
-    } else {
-      log_sum += __logf(weight);
-    }
-  }
-#pragma unroll
-  for (int offset = 16; offset > 0; offset >>= 1) {
-    log_sum += __shfl_xor_sync(0xffffffffu, log_sum, offset);
-    frozen += __shfl_xor_sync(0xffffffffu, frozen, offset);
-  }
-  if (lane == 0) {
-    totals[node] = make_float2(log_sum, frozen);
-  }
-}
-
-/// The slope of the switches under a source gate. The switch ``w`` of a pair
-/// of node ``j`` enters the gate of every other edge that ``j`` emits, so with
-/// the gate total ``A_j``, the sum over the edges of ``j`` of the envelope
-/// cotangent times the envelope, the energy changes through those gates with
-/// the length of the pair by ``(dw/dr / w) (A_j - a)``, where ``a`` is the
-/// term of the edge along the pair itself. That term cancels the slope of the
-/// switch in the envelope of the edge, which the edge scans therefore leave
-/// out (radial_chain), so this pass adds ``(dw/dr / w) A_j`` to every edge of
-/// ``j`` whose switch lies strictly between zero and one. One warp scans the
-/// row of one owned node ``j``, whose entries are the pairs of ``j``, each read
-/// as the edge ``j`` emits: the entry gains the force ``+g``, the row ``-g``
-/// and the virial ``-g (x) v``, which is attributed to ``j``; the lanes combine
-/// the share of the row in a fixed order.
-template <typename index_t>
-__global__ void __launch_bounds__(kGateThreads)
-    gate_closure_kernel(const Arguments args,
-                        const float2* totals,
-                        const float* gate_sums,
-                        unsigned long long* force,
-                        float* virial) {
-  const long row =
-      static_cast<long>(blockIdx.x) * kGateWarps + threadIdx.x / 32;
-  if (row >= args.node_count) {
-    return;
-  }
-  const long node = args.node_begin + row;
-  if (!deepmd_dpa4c::has_window_pair(totals[node])) {
-    return;
-  }
-  const int lane = threadIdx.x % 32;
-  const float total = gate_sums[node];
-  float share[12] = {};
-  for (long position = args.destination_row_ptr[row] + lane;
-       position < args.destination_row_ptr[row + 1]; position += 32) {
-    const PairSwitch pair = pair_switch<index_t>(args, node, position);
-    if (pair.weight <= 0.0f || pair.weight >= 1.0f) {
-      continue;
-    }
-    // The stored vector points from the entry to the row; the edge the row
-    // emits points the other way.
-    const float scale =
-        __fdividef(pair.slope, pair.weight) * total / pair.radius;
-    const long entry = static_cast<long>(
-        static_cast<const index_t*>(args.edge_index)[position]);
-    unsigned long long* const words = force + entry * deepmd_dpa4c::kForceWords;
-#pragma unroll
-    for (int component = 0; component < 3; ++component) {
-      const float gradient = -scale * pair.vector[component];
-      deepmd_dpa4c::check_force_range(gradient, words);
-      atomicAdd(words + component, deepmd_dpa4c::fixed_point(gradient));
-      share[component] -= gradient;
-    }
-#pragma unroll
-    for (int component = 0; component < 9; ++component) {
-      share[3 + component] -=
-          scale * pair.vector[component / 3] * pair.vector[component % 3];
-    }
-  }
-#pragma unroll
-  for (int component = 0; component < 12; ++component) {
-#pragma unroll
-    for (int offset = 16; offset > 0; offset >>= 1) {
-      share[component] +=
-          __shfl_xor_sync(0xffffffffu, share[component], offset);
-    }
-  }
-  if (lane == 0) {
-    unsigned long long* const words = force + node * deepmd_dpa4c::kForceWords;
-#pragma unroll
-    for (int component = 0; component < 3; ++component) {
-      deepmd_dpa4c::check_force_range(share[component], words);
-      atomicAdd(words + component, deepmd_dpa4c::fixed_point(share[component]));
-    }
-#pragma unroll
-    for (int component = 0; component < 9; ++component) {
-      virial[node * 9 + component] += share[3 + component];
-    }
-  }
-}
-
-int gate_blocks(const Arguments& args) {
-  return static_cast<int>((args.node_count + kGateWarps - 1) / kGateWarps);
-}
-
-/// The switch totals of the owned rows of ``args`` into ``totals``.
-void launch_source_gate(const Arguments& args,
-                        float2* totals,
-                        cudaStream_t stream) {
-  if (args.node_count == 0) {
-    return;
-  }
-  with_index_type(args.index_kind, [&](auto index) {
-    source_gate_kernel<decltype(index)>
-        <<<gate_blocks(args), kGateThreads, 0, stream>>>(args, totals);
-  });
-  DPA4C_CHECK_LAUNCH("dpa4c switch totals of the source gate");
-}
-
-/// The slope of the switches of the owned rows of ``args`` under a source
-/// gate, onto the fixed-point forces and the virial of every node.
-void launch_gate_closure(const Arguments& args,
-                         const float2* totals,
-                         const float* gate_sums,
-                         unsigned long long* force,
-                         float* virial,
-                         cudaStream_t stream) {
-  if (args.node_count == 0) {
-    return;
-  }
-  with_index_type(args.index_kind, [&](auto index) {
-    gate_closure_kernel<decltype(index)>
-        <<<gate_blocks(args), kGateThreads, 0, stream>>>(
-            args, totals, gate_sums, force, virial);
-  });
-  DPA4C_CHECK_LAUNCH("dpa4c switch slope of the source gate");
-}
-
 /// The validated border plan of an energy-force evaluation. The send list,
 /// the swaps and the communicator come together, for a descriptor of further
 /// blocks; a plan with halo rows serves a single frame.
@@ -2308,7 +2059,6 @@ Arguments first_block_run(Payload payload,
   arguments.descriptor = descriptor;
   arguments.state_out = state;
   arguments.type_mismatch = &words->node_types.type_mismatch;
-  arguments.largest_radius = &words->node_types.largest_radius;
   arguments.type_present = present_types(arguments, &words->node_types);
   return arguments;
 }
@@ -2572,9 +2322,6 @@ struct BlockPass {
   int channels;
   int lmax;
   bool has_spin;
-  // Whether the descriptor has a bridging window, whose switches gate the
-  // edges of every source (Arguments::source_gate).
-  bool bridged;
   const Dimensions& widths;
   long node_count;
   long run;
@@ -2612,23 +2359,16 @@ struct BlockPass {
 /// below that of the block before read the edges inside it alone, selected
 /// once from the edges of the block before.
 ///
-/// A bridged descriptor gates the edges of every source by the switches of
-/// its other pairs: the switch totals of every node precede the first block,
-/// every edge backward adds the envelope cotangents times the envelopes of the
-/// edges of a gated source to its gate total, and once the totals of the halo
-/// rows have reached their owners, a last pass adds the slope of the
-/// switches through the gates.
-///
 /// ``first_arguments(begin, count)`` returns the launch of the first block
 /// over a run, and ``attach_force(arguments, begin, count)`` adds the force
-/// assembly to it. Returns the virial of the edges of the further blocks and
-/// of the gates, attributed to the node that emits each, (node_count, 9).
+/// assembly to it. Returns the virial of the edges of the further blocks,
+/// attributed to the node that emits each, (node_count, 9).
 template <class FirstArguments, class AttachForce>
 torch::Tensor evaluate_further_blocks(const BlockPass& pass,
-                                      const FirstArguments& launch_arguments,
+                                      const FirstArguments& first_arguments,
                                       const AttachForce& attach_force) {
   const BlockWidths sizes =
-      block_widths(pass.channels, pass.lmax, pass.has_spin);
+      block_widths(pass.channels, pass.lmax, pass.widths.spin_mode);
   const torch::Tensor& records = pass.records;
   TORCH_CHECK(records.device() == pass.descriptor.device() &&
                   records.scalar_type() == torch::kFloat32 &&
@@ -2647,31 +2387,8 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
   const int channels = pass.channels;
   const cudaStream_t stream = pass.stream;
   const auto f32 = pass.descriptor.options();
-  const auto i64 = f32.dtype(torch::kInt64);
   float* const state = pass.state.data_ptr<float>();
   const bool deferred = static_cast<bool>(pass.head.all);
-
-  // === Source gate ===
-  // The switch totals of the owned rows, and of the halo rows from their
-  // owners, which every launch of the first block and of the further blocks
-  // reads.
-  torch::Tensor gate_totals;
-  if (pass.bridged) {
-    gate_totals = torch::zeros({node_count, 2}, f32);
-    launch_source_gate(launch_arguments(0, owned),
-                       reinterpret_cast<float2*>(gate_totals.data_ptr<float>()),
-                       stream);
-    pass.halo.exchange(gate_totals);
-  }
-  const float2* const source_gate =
-      pass.bridged
-          ? reinterpret_cast<const float2*>(gate_totals.data_ptr<float>())
-          : nullptr;
-  const auto first_arguments = [&](long begin, long count) {
-    Arguments arguments = launch_arguments(begin, count);
-    arguments.source_gate = source_gate;
-    return arguments;
-  };
 
   // === Edges of every further block ===
   std::vector<EdgeGraph> graphs;
@@ -2767,15 +2484,6 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
   auto center_gradient = torch::empty({node_count, kBlockHeads}, f32);
   auto carried = torch::empty({node_count, state_width}, f32);
   auto block_virial = torch::zeros({node_count, 9}, f32);
-  // The gate totals of every node: those of the first block in fixed point,
-  // those of the further blocks, whose backward scans the rows of the sources,
-  // as row sums.
-  torch::Tensor gate_fixed;
-  torch::Tensor gate_rows;
-  if (pass.bridged) {
-    gate_fixed = torch::zeros({node_count}, i64);
-    gate_rows = torch::zeros({node_count}, f32);
-  }
   // === Run buffers ===
   auto transport = torch::empty({run, sizes.transport}, f32);
   auto source_gradient = torch::empty({run, sizes.source}, f32);
@@ -2900,9 +2608,6 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
       BlockArguments block = block_arguments(edges, b);
       block.source_gradient = source_gradient.data_ptr<float>();
       block.source_virial = rows(block_virial, begin);
-      if (pass.bridged) {
-        block.gate_sums = gate_rows.data_ptr<float>();
-      }
       scan_run(BlockStage::Backward, block, b, begin, cotangents[b % 2]);
 
       // The invariants of the block before, which the node maps of the
@@ -2933,28 +2638,10 @@ torch::Tensor evaluate_further_blocks(const BlockPass& pass,
       Arguments first = first_arguments(begin, count);
       first.moment_gradient = state;
       attach_force(first, begin, count);
-      if (pass.bridged) {
-        first.gate_sums = reinterpret_cast<unsigned long long*>(
-            gate_fixed.data_ptr<int64_t>());
-      }
       dispatch_first_stage(channels, FirstStage::EdgeBackward, first, stream);
     }
   }
 
-  // === Slope of the switches through the gates ===
-  if (pass.bridged) {
-    auto gate_sums =
-        gate_fixed.to(torch::kFloat64)
-            .mul_(1.0 / static_cast<double>(deepmd_dpa4c::kForceFixedScale))
-            .add_(gate_rows)
-            .to(torch::kFloat32)
-            .reshape({node_count, 1})
-            .contiguous();
-    pass.halo.accumulate(gate_sums);
-    launch_gate_closure(first_arguments(0, owned), source_gate,
-                        gate_sums.data_ptr<float>(), pass.force,
-                        block_virial.data_ptr<float>(), stream);
-  }
   return block_virial;
 }
 
@@ -3035,15 +2722,14 @@ dpa4c_canonical_compress_energy_force(
     torch::Tensor spin,
     torch::Tensor spin_pair,
     torch::Tensor spin_type,
-    torch::Tensor contact_radius,
+    torch::Tensor contact_edges,
     int64_t lmax,
     double table_stride,
     double table_max,
     double rcut,
     double eps,
     double degree_floor,
-    double f_inner,
-    double f_outer,
+    double contact_inner,
     std::vector<torch::Tensor> ws,
     std::vector<torch::Tensor> bs,
     std::vector<int64_t> resnets,
@@ -3061,14 +2747,14 @@ dpa4c_canonical_compress_energy_force(
     std::optional<std::vector<double>> block_rcut) {
   const bool atom_virial = check_energy_force_inputs(
       "dpa4c_canonical_compress_energy_force", edge_vec, source,
-      destination_row_ptr, source_row_ptr, source_order, n_node, n_local, atype,
-      type_embedding, contact_radius, f_inner, f_outer);
+      destination_row_ptr, source_row_ptr, source_order, n_node, n_local,
+      atype);
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
   const long node_count = atype.size(0);
   const int channels = static_cast<int>(type_embedding.size(1));
   const bool has_spin = spin.dim() == 2;
-  const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax), has_spin);
+  const Dimensions widths = profile_dimensions(
+      channels, static_cast<int>(lmax), has_spin, output_inv_std.numel());
   const long frame_count = n_node.size(0);
   const FurtherBlocks further = further_blocks(
       "dpa4c_canonical_compress_energy_force", blocks, block_rcut, rcut);
@@ -3143,7 +2829,6 @@ dpa4c_canonical_compress_energy_force(
       has_spin ? reinterpret_cast<unsigned long long*>(
                      spin_fixed.data_ptr<int64_t>())
                : nullptr,
-      f_outer > f_inner ? contact_radius.data_ptr<float>() : nullptr,
       evaluation_words);
   DPA4C_CHECK_LAUNCH("dpa4c energy-force prologue");
 
@@ -3182,7 +2867,7 @@ dpa4c_canonical_compress_energy_force(
                         spin,
                         spin_pair,
                         spin_type,
-                        contact_radius,
+                        contact_edges,
                         true,
                         lmax,
                         table_stride,
@@ -3190,8 +2875,7 @@ dpa4c_canonical_compress_energy_force(
                         rcut,
                         eps,
                         degree_floor,
-                        f_inner,
-                        f_outer};
+                        contact_inner};
   // The launch bundle of the first block over the run of ``count`` owned rows
   // from ``begin``, into the run buffers.
   const auto first_arguments = [&](long begin, long count) {
@@ -3246,7 +2930,6 @@ dpa4c_canonical_compress_energy_force(
         channels,
         static_cast<int>(lmax),
         has_spin,
-        f_outer > f_inner,
         widths,
         node_count,
         run,
@@ -3375,15 +3058,14 @@ dpa4c_canonical_compress_long_range_energy_force(
     torch::Tensor spin,
     torch::Tensor spin_pair,
     torch::Tensor spin_type,
-    torch::Tensor contact_radius,
+    torch::Tensor contact_edges,
     int64_t lmax,
     double table_stride,
     double table_max,
     double rcut,
     double eps,
     double degree_floor,
-    double f_inner,
-    double f_outer,
+    double contact_inner,
     std::vector<torch::Tensor> ws,
     std::vector<torch::Tensor> bs,
     std::vector<int64_t> resnets,
@@ -3419,7 +3101,7 @@ dpa4c_canonical_compress_long_range_energy_force(
       "dpa4c_canonical_compress_long_range_energy_force";
   const bool atom_virial = check_energy_force_inputs(
       kOp, edge_vec, source, destination_row_ptr, source_row_ptr, source_order,
-      n_node, n_local, atype, type_embedding, contact_radius, f_inner, f_outer);
+      n_node, n_local, atype);
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
   TORCH_CHECK(spin.dim() != 2, kOp,
               ": a descriptor with a spin condition is not supported");
@@ -3488,8 +3170,7 @@ dpa4c_canonical_compress_long_range_energy_force(
       atype.data_ptr<long>(), node_type.data_ptr<long>(),
       seed.data_ptr<double>(), mask.data_ptr<int>(), charged.data_ptr<bool>(),
       reinterpret_cast<unsigned long long*>(force_fixed.data_ptr<int64_t>()),
-      nullptr, f_outer > f_inner ? contact_radius.data_ptr<float>() : nullptr,
-      evaluation_words);
+      nullptr, evaluation_words);
   DPA4C_CHECK_LAUNCH("dpa4c long-range energy-force prologue");
 
   const FittingLayerPlan plan = fitting_layer_plan(ws);
@@ -3538,7 +3219,7 @@ dpa4c_canonical_compress_long_range_energy_force(
                         spin,
                         spin_pair,
                         spin_type,
-                        contact_radius,
+                        contact_edges,
                         true,
                         lmax,
                         table_stride,
@@ -3546,8 +3227,7 @@ dpa4c_canonical_compress_long_range_energy_force(
                         rcut,
                         eps,
                         degree_floor,
-                        f_inner,
-                        f_outer};
+                        contact_inner};
 
   // === Steps 2 to 4. Charges, long range and cotangent of the descriptor ===
   // Over the owned nodes, whose descriptor rows the first step has filled.
@@ -3695,7 +3375,6 @@ dpa4c_canonical_compress_long_range_energy_force(
         channels,
         static_cast<int>(lmax),
         /*has_spin=*/false,
-        f_outer > f_inner,
         widths,
         node_count,
         run,

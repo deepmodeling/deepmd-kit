@@ -18,6 +18,9 @@ from deepmd.dpmodel.utils.multi_task import (
 from deepmd.pt_expt.train.utils import (
     MatmulPrecisionPolicy,
 )
+from deepmd.pt_expt.utils.contact_clamp import (
+    require_checkpoint_contact_records,
+)
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +89,7 @@ class ModelWrapper(torch.nn.Module):
         matmul_precision: MatmulPrecisionPolicy | None = None,
     ) -> None:
         super().__init__()
+        self.register_load_state_dict_pre_hook(require_checkpoint_contact_records)
         self.model_params = model_params if model_params is not None else {}
         self.matmul_precision = (
             matmul_precision
@@ -170,8 +174,13 @@ class ModelWrapper(torch.nn.Module):
                 f"Multitask model must specify the inference task! "
                 f"Supported tasks are {list(self.model.keys())}."
             )
+        # The forces are derivatives with respect to the coordinates. They are
+        # marked here rather than on the batch: a parameter-sharding wrapper
+        # ties its resharding to the backward of every input of this module
+        # that requires gradients, and the engine may run that backward before
+        # the nodes of the force graph, which still read the parameters.
         input_dict = {
-            "coord": coord,
+            "coord": coord.requires_grad_(True),
             "atype": atype,
             "box": box,
             "do_atomic_virial": do_atomic_virial,

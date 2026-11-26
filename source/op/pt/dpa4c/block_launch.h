@@ -55,9 +55,9 @@ constexpr int aligned_floats(int count) { return (count + 3) / 4 * 4; }
 
 /// Widths of a further block and the offsets of the sections of its record,
 /// mirroring ``block_layout`` of deepmd/pt_expt/kernels/dpa4c/attention.py.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 struct BlockProfile {
-  using P = Profile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   static constexpr int Heads = kBlockHeads;
   static constexpr int StateHidden = kBlockStateHidden;
   /// Non-scalar harmonic components, those of the keys of a node.
@@ -211,11 +211,6 @@ struct BlockArguments {
   float* source_gradient = nullptr;
   /// Virial of the edges every row emits, which the backward adds, (run, 9).
   float* source_virial = nullptr;
-  /// Gate totals of every node of the node set under a source gate
-  /// (Arguments::source_gate), onto which the backward adds, per row, the sum
-  /// over the edges the row emits of the envelope cotangent times the
-  /// envelope; null without a source gate.
-  float* gate_sums = nullptr;
   /// Cotangent of the invariants of block k - 1, (run, OutputWidth); it may
   /// take the place of ``descriptor``.
   float* descriptor_gradient = nullptr;

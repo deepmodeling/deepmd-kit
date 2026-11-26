@@ -66,6 +66,7 @@ class GatedActivation(GatedActivationDP):
             and self.layout == "fndc"
             and self.activation_function == "silu"
             and not self.mlp_bias
+            and self.experts is None
             and register_footprint_ok
             and max(self.triton_infer_level, self.triton_train_level) >= 1
         ):
@@ -75,7 +76,12 @@ class GatedActivation(GatedActivationDP):
 
             self._fused_gated_act = fused_gated_activation
 
-    def call(self, x: torch.Tensor, gate: torch.Tensor | None = None) -> torch.Tensor:
+    def call(
+        self,
+        x: torch.Tensor,
+        gate: torch.Tensor | None = None,
+        route: Any = None,
+    ) -> torch.Tensor:
         active_level = (
             self.triton_train_level if self.training else self.triton_infer_level
         )
@@ -97,4 +103,4 @@ class GatedActivation(GatedActivationDP):
                 self.channels,
             )
             return out.view_as(x)
-        return super().call(x, gate)
+        return super().call(x, gate, route)

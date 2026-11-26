@@ -4,18 +4,20 @@ option(
   "Embed a lowest-supported PTX fallback in the PyTorch CUDA operator library"
   ON)
 
-# Graph-lower operators of the CPU backend. The schemas are declared in their
-# own translation units so that an operator stays visible when the CUDA half is
-# absent, and each instruction-set instantiation is compiled with only that
-# level's flags: the library ships in a wheel and in the LAMMPS deployment tree,
-# so it must load on a host older than the one that built it and select its
-# kernels through CPUID at run time.
+# Graph-lower operators of the CPU backend, and the border exchange of a
+# decomposed node set, which serves host and CUDA rows alike. The schemas are
+# declared in their own translation units so that an operator stays visible when
+# the CUDA half is absent, and each instruction-set instantiation is compiled
+# with only that level's flags: the library ships in a wheel and in the LAMMPS
+# deployment tree, so it must load on a host older than the one that built it
+# and select its kernels through CPUID at run time.
 set(DPA4C_CPU_ISA_SRC
     dpa4c/graph_compress_cpu_scalar.cc dpa4c/graph_compress_cpu_avx2.cc
     dpa4c/graph_compress_cpu_avx512.cc)
 list(
   APPEND
   OP_SRC
+  border_exchange.cc
   graph_ops_schema.cc
   cpu/allocator_policy.cc
   cpu/edge_force_virial_cpu.cc
@@ -183,6 +185,24 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   # those of DPA4C_FOR_EACH_CHANNEL and the degrees those that
   # dpa4c/graph_compress.cu dispatches.
   set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC dpa4c/graph_compress.cu)
+  # Generated shards depend on their kernel and shared ABI declarations.
+  set(DPA4C_COMMON_HEADERS
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress.cuh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/pair_potential.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_launch.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/block_launch.h")
+  set_property(
+    SOURCE dpa4c/graph_compress.cu
+    APPEND
+    PROPERTY OBJECT_DEPENDS
+             ${DPA4C_COMMON_HEADERS}
+             "${CMAKE_CURRENT_SOURCE_DIR}/border_exchange.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/canonical_index.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/communicator.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/graph_ops.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/fitting_plan.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/long_range/charge_sum.h"
+             "${CMAKE_CURRENT_SOURCE_DIR}/long_range/domain_exchange.h")
   set(DPA4C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/dpa4c")
   set(DPA4C_KERNEL_HEADER
       "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_kernel.cuh")
@@ -227,6 +247,11 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
           "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}.cu"
       )
       configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      set_property(
+        SOURCE "${DPA4C_SHARD}"
+        APPEND
+        PROPERTY OBJECT_DEPENDS ${DPA4C_COMMON_HEADERS}
+                 "${DPA4C_KERNEL_HEADER}")
       list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
       # The kernels of the further message-passing blocks are instantiated in
       # shards of their own, which compile beside those of the first block.
@@ -238,6 +263,12 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
           "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}_block.cu"
       )
       configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      set_property(
+        SOURCE "${DPA4C_SHARD}"
+        APPEND
+        PROPERTY OBJECT_DEPENDS ${DPA4C_COMMON_HEADERS}
+                 "${DPA4C_KERNEL_HEADER}"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/simt_gemm.cuh")
       list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
       set(DPA4C_KERNEL_HEADER "${DPA4C_KERNEL_HEADER_SAVED}")
       unset(DPA4C_BLOCK_SHARD_INSTANTIATIONS)
@@ -255,6 +286,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   unset(DPA4C_SHARD_GROUPS)
   unset(DPA4C_SHARD_WIDTH)
   unset(DPA4C_KERNEL_HEADER)
+  unset(DPA4C_COMMON_HEADERS)
   unset(DPA4C_GENERATED_DIR)
   set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
       dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu
@@ -271,7 +303,6 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     edge_force_virial.cu
     long_range/direct_sum.cu
     long_range/domain_exchange.cc
-    border_exchange.cc
     long_range/latent_charge_sum.cu
     long_range/mesh_sum.cu
     dpa1_graph_energy_force.cu
@@ -309,6 +340,9 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
                                               ${DEEPMD_PT_CUDA_ARCHITECTURES})
   endif()
   target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublasLt CUDA::cufft)
+  # Operators that serve host and device rows order the device ones through the
+  # c10 CUDA stream API of a CUDA-enabled PyTorch.
+  target_compile_definitions(deepmd_op_pt PRIVATE DEEPMD_TORCH_HAS_CUDA)
   # libtorch headers require at least C++17, and PyTorch 2.14+ requires C++20.
   # Preserve an explicitly higher CUDA standard requested by the user.
   set(DEEPMD_PT_CUDA_STANDARD 17)

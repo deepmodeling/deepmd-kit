@@ -30,11 +30,6 @@ from deepmd.env import (
     LRU_CACHE_SIZE,
 )
 from deepmd.utils import random as dp_random
-from deepmd.utils.bridging import (
-    expand_bridging_method,
-    resolve_bridging_window,
-    window_midpoint,
-)
 from deepmd.utils.path import (
     DPH5Path,
     DPPath,
@@ -123,19 +118,17 @@ class DeepmdData:
             else:
                 self.enforce_type_map = True
                 sorter = np.argsort(type_map)
-                self.type_idx_map = np.array(
-                    sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
-                )
-                # padding for virtual atom
-                self.type_idx_map = np.append(
-                    self.type_idx_map, np.array([-1], dtype=np.int32)
-                )
+                self.type_idx_map = np.empty(len(self.type_map) + 1, dtype=np.int32)
+                self.type_idx_map[:-1] = sorter[
+                    np.searchsorted(type_map, self.type_map, sorter=sorter)
+                ]
+                self.type_idx_map[-1] = -1  # Virtual atom.
             self.type_map = type_map
-        # Element-based derived fields may use the model's names without a
-        # dataset map. Those names do not define the reader's numeric type
-        # domain: legacy spin data also stores unnamed virtual atom types.
-        self._element_type_map = tuple(type_map or self.type_map or ())
-        if type_map is None and self.type_map is None and self.mixed_type:
+        # Unnamed mixed systems index the model map; their type.raw contains
+        # only placeholders. Non-mixed systems retain their own numeric domain,
+        # which can include the virtual atom types of a spin model.
+        self._model_ntypes = len(type_map or ())
+        if self.mixed_type and self.type_map is None and not self._model_ntypes:
             raise RuntimeError("mixed_type format must have type_map!")
         # make idx map
         self.sort_atoms = sort_atoms
@@ -179,7 +172,6 @@ class DeepmdData:
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
         special_shape: str | None = None,
-        length_scale: str = "absolute",
     ) -> "DeepmdData":
         """Add a data item that to be loaded.
 
@@ -214,12 +206,6 @@ class DeepmdData:
             ``"frame_major"`` stores one variable-length ``(npoints, ndof)``
             array per frame (e.g. grid/density), kept as a frame-major
             ``(nframes, npoints, ndof)`` tensor without any natoms reshaping.
-        length_scale : str, optional
-            Per-element length scale a derived geometric item measures its
-            default against: ``"absolute"`` gives every element the unit radius,
-            so the default is a distance in Å, while ``"covalent"`` gives each
-            element its covalent radius, so the default is a fraction of each
-            atom pair's own bond length.
         """
         # normalize key: "atomic_" prefix -> "atom_", same convention as _load_set output
         if key.startswith("atomic_"):
@@ -235,7 +221,6 @@ class DeepmdData:
             "default": default,
             "dtype": dtype,
             "output_natoms_for_type_sel": output_natoms_for_type_sel,
-            "length_scale": length_scale,
         }
         if special_shape is not None:
             # Preserve the established dictionary schema for ordinary labels;
@@ -530,7 +515,7 @@ class DeepmdData:
         -------
         np.ndarray
             Half-thresholds in Å with shape (ntypes,), read-only because the
-            table is shared by every reader of the same window and type map.
+            table is shared by every reader of the same distance and type count.
         """
         from deepmd.dpmodel.utils.dist_check import (
             requirement_half_thresholds,
@@ -539,9 +524,7 @@ class DeepmdData:
         requirement = self.data_dict["pair_margin"]
         return requirement_half_thresholds(
             float(requirement.get("default", 0.0)),
-            str(requirement.get("length_scale", "absolute")),
-            self._element_type_map or None,
-            max(self.get_ntypes(), len(self._element_type_map)),
+            max(self.get_ntypes(), self._model_ntypes),
         )
 
     def _derive_pair_margin_batch(
@@ -667,8 +650,11 @@ class DeepmdData:
         """Number of atom types in the system."""
         if self.type_map is not None:
             return len(self.type_map)
-        else:
-            return max(self.get_atom_type()) + 1
+        if self.mixed_type:
+            # With no dataset map, real frame types index the supplied model map;
+            # type.raw contains only placeholder indices.
+            return self._model_ntypes
+        return max(self.get_atom_type()) + 1
 
     def get_type_map(self) -> list[str]:
         """Get the type map."""
@@ -786,25 +772,8 @@ class DeepmdData:
                 mmap_types = type_path.load_numpy()
             else:
                 mmap_types = self._get_memmap(type_path)
-            real_type = mmap_types[local_idx].copy().astype(np.int32)
-
-            if self.enforce_type_map:
-                try:
-                    real_type = self.type_idx_map[real_type].astype(np.int32)
-                except IndexError as e:
-                    raise IndexError(
-                        f"some types in 'real_atom_types.npy' of set {set_dir} are not contained in {self.get_ntypes()} types!"
-                    ) from e
-
-            frame_data["type"] = real_type
-            ntypes = self.get_ntypes()
-            natoms = len(real_type)
-            # Use bincount for efficient counting of each type
-            natoms_vec = np.bincount(
-                real_type[real_type >= 0], minlength=ntypes
-            ).astype(np.int32)
-            frame_data["real_natoms_vec"] = np.concatenate(
-                (np.array([natoms, natoms], dtype=np.int32), natoms_vec)
+            frame_data["type"], frame_data["real_natoms_vec"] = self._mixed_frame_types(
+                mmap_types[local_idx], set_dir
             )
         else:
             frame_data["type"] = self.atom_type[self.idx_map]
@@ -1153,39 +1122,8 @@ class DeepmdData:
                 )
 
         if self.mixed_type:
-            # nframes x natoms
-            atom_type_mix = self._load_type_mix(set_name)
-            if self.enforce_type_map:
-                try:
-                    atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(np.int32)
-                except IndexError as e:
-                    raise IndexError(
-                        f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
-                    ) from e
-                atom_type_mix = atom_type_mix_
-            real_type = atom_type_mix.reshape([nframes, self.natoms])
-            data["type"] = real_type
-            natoms = data["type"].shape[1]
-            # nframes x ntypes
-            atom_type_nums = np.array(
-                [(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
-                dtype=np.int32,
-            ).T
-            ghost_nums = np.array(
-                [(real_type == -1).sum(axis=-1)],
-                dtype=np.int32,
-            ).T
-            assert (
-                atom_type_nums.sum(axis=-1) + ghost_nums.sum(axis=-1) == natoms
-            ).all(), (
-                f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
-            )
-            data["real_natoms_vec"] = np.concatenate(
-                (
-                    np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
-                    atom_type_nums,
-                ),
-                axis=-1,
+            data["type"], data["real_natoms_vec"] = self._mixed_frame_types(
+                self._load_type_mix(set_name).reshape(nframes, self.natoms), set_name
             )
         else:
             data["type"] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
@@ -1193,6 +1131,35 @@ class DeepmdData:
         # standardize keys
         data = {kk.replace("atomic", "atom"): vv for kk, vv in data.items()}
         return data
+
+    def _mixed_frame_types(
+        self, types: np.ndarray, directory: DPPath
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Map one or more frames and count real atoms in the model type domain."""
+        ntypes = self.get_ntypes()
+        limit = len(self.type_idx_map) - 1 if self.enforce_type_map else ntypes
+        if types.dtype.kind not in "iuf" or not np.all((types >= -1) & (types < limit)):
+            raise ValueError(
+                f"Mixed atom types in {directory} must be integer indices equal to -1 or in [0, {limit})."
+            )
+        # A frame may be a read-only memory map. Advanced indexing returns an
+        # owned array; without remapping the conversion must provide that copy.
+        indices = types.astype(np.int32, copy=not self.enforce_type_map)
+        if types.dtype.kind == "f" and not np.array_equal(types, indices):
+            raise ValueError(
+                f"Mixed atom types in {directory} must be integer indices."
+            )
+        types = self.type_idx_map[indices] if self.enforce_type_map else indices
+        frames = types.reshape(-1, self.natoms)
+        # Bin zero of each frame counts virtual atoms and is not returned.
+        stride = ntypes + 1
+        bins = np.arange(len(frames), dtype=np.int64)[:, None] * stride + frames + 1
+        counts = np.bincount(bins.ravel(), minlength=len(frames) * stride).reshape(
+            -1, stride
+        )
+        natoms_vec = np.full((len(frames), ntypes + 2), self.natoms, dtype=np.int32)
+        natoms_vec[:, 2:] = counts[:, 1:]
+        return types, natoms_vec.reshape(*types.shape[:-1], ntypes + 2)
 
     def _get_data_path(self, set_name: "DPPath", key: str) -> "DPPath":
         """Return the path for a data file, trying both atom_ and atomic_ naming."""
@@ -1550,8 +1517,7 @@ class DeepmdData:
 
     def _load_type_mix(self, set_name: DPPath) -> np.ndarray:
         type_path = set_name / "real_atom_types.npy"
-        real_type = type_path.load_numpy().astype(np.int32).reshape([-1, self.natoms])
-        return real_type
+        return type_path.load_numpy().reshape([-1, self.natoms])
 
     def _make_idx_map(self, atom_type: np.ndarray) -> np.ndarray:
         natoms = atom_type.shape[0]
@@ -1648,12 +1614,6 @@ class DataRequirementItem:
         available. ``"derived"`` computes the value from structural frame
         data. Only optional tracked fields require availability-homogeneous
         batching.
-    length_scale : {"absolute", "covalent"}, optional
-        Per-element length scale a derived geometric field measures its
-        default against. ``"absolute"`` gives every element the unit radius,
-        so the default is a distance in Å; ``"covalent"`` gives each element
-        its covalent radius, so the default is a fraction of each atom pair's
-        own bond length.
     """
 
     def __init__(
@@ -1670,7 +1630,6 @@ class DataRequirementItem:
         output_natoms_for_type_sel: bool = False,
         special_shape: str | None = None,
         source_policy: DataRequirementSourcePolicy = "tracked",
-        length_scale: str = "absolute",
     ) -> None:
         if source_policy not in {"tracked", "default", "derived"}:
             raise ValueError(
@@ -1694,7 +1653,6 @@ class DataRequirementItem:
         self.output_natoms_for_type_sel = output_natoms_for_type_sel
         self.special_shape = special_shape
         self.source_policy = source_policy
-        self.length_scale = length_scale
         self.dict = self.to_dict()
 
     def to_dict(self) -> dict:
@@ -1710,7 +1668,6 @@ class DataRequirementItem:
             "dtype": self.dtype,
             "output_natoms_for_type_sel": self.output_natoms_for_type_sel,
             "source_policy": self.source_policy,
-            "length_scale": self.length_scale,
         }
         if self.special_shape is not None:
             data["special_shape"] = self.special_shape
@@ -1739,105 +1696,33 @@ def has_data_requirement(requirements: Iterable[DataRequirementItem], key: str) 
     return any(item.key == key for item in requirements)
 
 
-def min_pair_dist_requirement(
-    model_params: dict,
-    min_pair_dist: float,
-) -> DataRequirementItem | None:
+def min_pair_dist_requirement(min_pair_dist: float) -> DataRequirementItem | None:
     """
-    Build the frame-filter requirement a model and its dataset config imply.
-
-    A bridged model owns the window. In its lower half the bridging modules
-    throttle the learned energy to less than half of its amplitude, so a label
-    there asks the model for a multiple of the residual it has to express, and
-    a frame holding a pair that close steers the fit inside the window. The
-    filter is therefore the window midpoint, read from the model rather than
-    restated in the dataset section. Any other model has no such radius, and
-    the dataset section may still ask for a plain distance floor.
+    Build the frame-filter requirement of a dataset's ``min_pair_dist``.
 
     Parameters
     ----------
-    model_params : dict
-        The model section of the training config, in either the concise
-        ``bridging_method`` spelling or the canonical composition form.
     min_pair_dist : float
         The ``training_data.min_pair_dist`` value, a distance in Å. Zero or
-        less leaves an unbridged model unfiltered.
+        less leaves the dataset unfiltered.
 
     Returns
     -------
     DataRequirementItem or None
         The requirement of the derived ``pair_margin`` field, or None when no
         filter applies.
-
-    Raises
-    ------
-    ValueError
-        If a bridged model is given an explicit ``min_pair_dist``, which would
-        put a second, silently disagreeing copy of the filter radius in the
-        input.
     """
-    # A model is bridged exactly when its canonical composition carries an
-    # analytical child, which is the same test the composition builder applies
-    # and covers every learned family it accepts, DPA4C included.
-    canonical = expand_bridging_method(model_params)
-    inner = next(
-        (
-            sub
-            for sub in (canonical.get("models") or [])
-            if isinstance(sub, dict) and sub.get("type") == "inner_potential"
-        ),
-        None,
-    )
-    if inner is not None:
-        if min_pair_dist > 0.0:
-            raise ValueError(
-                "`training_data.min_pair_dist` must not be set on a bridged "
-                "model: the filter is the midpoint of the bridging window and "
-                "is taken from the model. Remove the key."
-            )
-        window = resolve_bridging_window(inner)
-        fraction = window_midpoint(
-            window["inner_clamp_f_inner"], window["inner_clamp_f_outer"]
-        )
-        scale = window["inner_clamp_scale"]
-    else:
-        fraction, scale = min_pair_dist, "absolute"
-    # An unbridged model without a floor registers no requirement, so a zero
-    # radius cannot leave one behind that the reader would then refuse to
-    # derive; a bridged window is positive by construction.
-    if fraction <= 0.0:
+    if min_pair_dist <= 0.0:
         return None
-    return _pair_margin_requirement(fraction, scale)
-
-
-def _pair_margin_requirement(fraction: float, length_scale: str) -> DataRequirementItem:
-    """Assemble the derived frame-filter requirement.
-
-    The default carries the filter radius and the length scale names the
-    per-element radii it multiplies, which is everything a reader needs to
-    size the per-type thresholds from its own type map. The field holds each
-    frame's margin against those thresholds, a dimensionless ratio the filter
-    compares against one.
-
-    Parameters
-    ----------
-    fraction : float
-        Filter radius, as a fraction of the pair length scale.
-    length_scale : str
-        Either ``"covalent"`` or ``"absolute"``.
-
-    Returns
-    -------
-    DataRequirementItem
-        The requirement for the derived ``pair_margin`` field.
-    """
+    # The default carries the filter distance in Å. The field holds each frame's
+    # margin against that distance, a dimensionless ratio the filter compares
+    # against one.
     return DataRequirementItem(
         "pair_margin",
         1,
         atomic=False,
         must=False,
         high_prec=False,
-        default=fraction,
+        default=min_pair_dist,
         source_policy="derived",
-        length_scale=length_scale,
     )

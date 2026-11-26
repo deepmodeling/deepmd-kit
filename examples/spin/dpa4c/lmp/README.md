@@ -65,17 +65,13 @@ configuration, which exercises the conservative force, the neighbor rebuilds
 and the domain decomposition; the thermostat does not touch the moments, so
 they stay fixed through that stage.
 
-By default the pair style stores the precession magnetic force that the LAMMPS
-SPIN package expects, the negative energy gradient `-dE/dS` scaled by the
-moment magnitude over `hbar`. The `fix nve/spin` of a stock LAMMPS build does
+The pair style stores the magnetic force in the convention of the LAMMPS SPIN
+package: the negative energy gradient `-dE/dS` with respect to the moment, all
+three components of it, scaled by the moment magnitude over `hbar`. The TSPIN
+fixes of the SPIN package, `fix nve/tspin` and its thermostats, which LAMMPS
+provides in its releases after 30 Sep 2026, integrate the direction and the
+magnitude of every moment from it. The `fix nve/spin` of the SPIN package does
 not use this force: the fix evaluates the magnetic force itself, through the
 pair styles whose names begin with `spin`, and `dpa4spin` and `dpa4spin/kk` are
 not among them. With no such pair style, the fix runs silently on a single MPI
-rank and stops with a sectoring error on several. Spin dynamics therefore needs
-a LAMMPS build whose integrator reads the magnetic force of the pair style.
-
-A Newtonian integrator of the Cartesian spin vector needs `-dE/dS` itself
-rather than the precession force. Appending `magnetic_force cartesian` to the
-`pair_style` line selects `-dE/dS` and requires `units metal`; the pair style
-declares the selected convention through
-`Pair::extract("fm_cartesian_force", dim)`.
+rank and stops with a sectoring error on several.

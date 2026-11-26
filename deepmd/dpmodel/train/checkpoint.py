@@ -12,6 +12,7 @@ from __future__ import (
 )
 
 import logging
+import shutil
 from math import (
     ceil,
 )
@@ -189,7 +190,7 @@ class CheckpointStore:
             if current_step is not None and path.name == current.name:
                 continue
             if current_step is not None and step > current_step:
-                path.unlink(missing_ok=True)
+                _remove_checkpoint(path)
             else:
                 retained.append((step, path))
         retained.sort(key=lambda item: (item[0], item[1].name))
@@ -198,7 +199,15 @@ class CheckpointStore:
         occupied = 1 if current_step is not None else 0
         excess = max(0, len(retained) + occupied - self.max_keep)
         for _, path in retained[:excess]:
-            path.unlink(missing_ok=True)
+            _remove_checkpoint(path)
+
+
+def _remove_checkpoint(path: Path) -> None:
+    """Remove one managed checkpoint file or directory."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
 
 
 def resolve_keep_ckpt_count(
@@ -244,6 +253,7 @@ def build_checkpoint_stores(
     num_steps: int,
     ema_prefix: str | Path,
     rank: int = 0,
+    suffix: str = ".pt",
 ) -> tuple[CheckpointStore, CheckpointStore]:
     """Build the checkpoint stores of a training run.
 
@@ -268,6 +278,8 @@ def build_checkpoint_stores(
     rank : int, optional
         Global rank. Only the chief creates directories. The resolved
         retention is reported by each node's local chief when available.
+    suffix : str, optional
+        Backend checkpoint suffix, including the leading dot.
 
     Returns
     -------
@@ -303,11 +315,13 @@ def build_checkpoint_stores(
         save_dir=directory,
         max_keep=max_keep,
         pointer_file="checkpoint",
+        suffix=suffix,
     )
     ema_store = CheckpointStore(
         ema_prefix,
         save_dir=directory,
         max_keep=ema_max_keep,
+        suffix=suffix,
     )
     if rank == 0:
         store.prepare()

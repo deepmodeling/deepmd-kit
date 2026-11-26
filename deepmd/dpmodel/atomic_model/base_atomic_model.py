@@ -188,6 +188,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has default frame parameters."""
         return False
 
+    def requires_full_neighbor_list(self) -> bool:
+        """Whether evaluation requires every neighbor inside the cutoff."""
+        return False
+
     def uses_graph_lower(self) -> bool:
         """Returns whether this atomic model supports the NeighborGraph lower.
 
@@ -294,6 +298,22 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return False
 
+    def observe_contacts(self, graph: Any, atype: Array) -> None:
+        """Record the pair separations of a training graph.
+
+        Generic capability (concrete default: nothing to record). A model
+        whose learned part clamps the separations it reads below its data
+        edges records them here, before the batch is evaluated, so that a
+        batch is read with the edges that include its own contacts.
+
+        Parameters
+        ----------
+        graph
+            Neighbor graph of the training batch.
+        atype
+            Flat types of its nodes with shape (N,).
+        """
+
     def has_message_passing_across_ranks(self) -> bool:
         """Whether multi-rank inference needs a cross-rank ghost exchange.
 
@@ -307,7 +327,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Whether this atomic model can run under MPI domain decomposition.
 
         Default ``True``; a model folding state no single rank observes
-        (e.g. SFPG bridging before its exchange lands) overrides to False.
+        overrides to False.
         """
         return True
 
@@ -341,6 +361,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         traced through the reference tabulation kernel.
         """
         return True
+
+    def supports_canonical_graph(self) -> bool:
+        """Whether the graph lower evaluates the compact canonical graph.
+
+        See the descriptor capability of the same name. The compact canonical
+        graph carries every pair within the cutoff, so a model-level pair
+        exclusion, which the graph build applies, rules it out; an atomic
+        model without the capability serves no compact canonical graph.
+        """
+        return False
 
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
