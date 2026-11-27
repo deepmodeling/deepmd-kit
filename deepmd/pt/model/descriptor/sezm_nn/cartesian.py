@@ -354,6 +354,9 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
     supplies the cross-degree mixing that the local-frame ``SO2Linear`` provided,
     but in the global frame and without any Wigner-D rotation.
 
+    ``parity=True`` uses the projected anticommutator operator, so the
+    output obeys the natural inversion parity of each angular degree.
+
     Parameters
     ----------
     lmax : int
@@ -383,6 +386,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         focus_dim: int,
         n_focus: int,
         n_layers: int,
@@ -404,6 +408,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
             seed=seed,
             trainable=trainable,
         )
+        self.parity = bool(parity)
         self.eps = float(eps)
 
         # Non-persistent: a deterministic constant rebuilt on construction and
@@ -412,11 +417,15 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         # projection ``W[p, d, k, j] = sum_i B[p, i, j] B[d, i, k]`` that maps an
         # edge component to its channel-shared packed operator (see ``forward``).
         basis = build_cartesian_basis(self.lmax, dtype=self.dtype, device=self.device)
-        self.register_buffer(
-            "right_mult_proj",
-            torch.einsum("pij,dik->pdkj", basis, basis),
-            persistent=False,
-        )
+        projection = torch.einsum("pij,dik->pdkj", basis, basis)
+        if self.parity:
+            # Inversion transposes the packed Cartesian tensor. The
+            # anticommutator commutes with this transformation; projecting
+            # its operator here avoids a second per-channel matrix product.
+            projection = 0.5 * (
+                projection + torch.einsum("pki,dji->pdkj", basis, basis)
+            )
+        self.register_buffer("right_mult_proj", projection, persistent=False)
 
     def forward(
         self,

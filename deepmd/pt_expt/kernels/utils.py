@@ -28,6 +28,10 @@ import os
 
 import torch
 
+from deepmd.dpmodel.train.inference import (
+    infer_amp_enabled,
+)
+
 _INFER_TRUE = ("1", "true", "yes", "on")
 
 TRITON_INFER_LEVELS = (0, 1, 2, 3)
@@ -379,4 +383,4 @@ def use_amp_infer() -> bool:
     bool
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
-    return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+    return infer_amp_enabled()

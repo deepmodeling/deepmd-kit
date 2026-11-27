@@ -4,9 +4,34 @@
 from collections.abc import (
     Mapping,
 )
+from copy import (
+    deepcopy,
+)
 from typing import (
     Any,
 )
+
+
+def select_checkpoint_head(state: dict[str, Any], head: str) -> dict[str, Any]:
+    """Extract one resolved checkpoint head as a single-task wrapper state.
+
+    Every head stores its full weights, including shared parameters. The
+    selected weights need no cross-task sharing links and are loaded under
+    the single-task name. Tensor storage is reused; model construction and
+    loading do not require another copy of the checkpoint.
+    """
+    extra = state["_extra_state"]
+    selected = {key: value for key, value in extra.items() if key != "shared_links"}
+    selected["model_params"] = deepcopy(extra["model_params"]["model_dict"][head])
+    prefix = f"model.{head}."
+    return {
+        "_extra_state": selected,
+        **{
+            "model.Default." + key.removeprefix(prefix): value
+            for key, value in state.items()
+            if key.startswith(prefix)
+        },
+    }
 
 
 def detect_pt_checkpoint_backend(checkpoint: Any) -> str | None:

@@ -117,7 +117,10 @@ class InvarFitting(GeneralFitting):
     default_fparam: list[float], optional
         The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
         this value will be used as the default value for the frame parameter in the fitting net.
-
+    moe: dict, optional
+        Mixture of experts (MoE) of the fitting network: the weights of every layer
+        depend on the task of the model and on the element of the atom (see
+        :class:`~deepmd.dpmodel.fitting.general_fitting.GeneralFitting`).
     """
 
     def __init__(
@@ -147,6 +150,7 @@ class InvarFitting(GeneralFitting):
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         default_fparam: list[float] | None = None,
+        moe: dict[str, Any] | None = None,
     ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -193,6 +197,7 @@ class InvarFitting(GeneralFitting):
             type_map=type_map,
             seed=seed,
             default_fparam=default_fparam,
+            moe=moe,
         )
 
     def serialize(self) -> dict:
@@ -241,8 +246,8 @@ class InvarFitting(GeneralFitting):
         fparam: Array | None = None,
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
-        node_gate: Array | None = None,
         return_middle_output: bool = False,
+        condition: Any = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -268,13 +273,14 @@ class InvarFitting(GeneralFitting):
         vacuum_descriptor
             The descriptor of an isolated atom of every type, required by
             ``vacuum_ref``. shape: ntypes x nd
-        node_gate
-            Per-atom source gate of a bridged descriptor; the learned part of
-            the output fades with it. shape: nf x nloc x 1
         return_middle_output
             Whether this call also returns the input of the output layer, the
             activation after the last hidden layer, under the
             ``middle_output`` key.
+        condition
+            Conditions of the frames of the atoms (see
+            :class:`~deepmd.dpmodel.utils.expert_route.ExpertCondition`),
+            which an MoE fitting reads.
 
         """
         return self._call_common(
@@ -286,6 +292,6 @@ class InvarFitting(GeneralFitting):
             fparam,
             aparam,
             vacuum_descriptor=vacuum_descriptor,
-            node_gate=node_gate,
             return_middle_output=return_middle_output,
+            condition=condition,
         )

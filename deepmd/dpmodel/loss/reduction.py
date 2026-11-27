@@ -72,6 +72,50 @@ from deepmd.dpmodel.array_api import (
 )
 
 
+def masked_frame_mean(elem: Array, frame_mask: Array | None = None) -> Array:
+    """Average frame contributions without counting static padding frames.
+
+    ``frame_mask`` has shape (nf,) and distinguishes physical frames from
+    graph-capacity padding. Every real frame has equal weight, independently
+    of its atom count. With no mask, the ordinary element mean is returned.
+    """
+    xp = array_api_compat.array_namespace(elem)
+    if frame_mask is None:
+        return xp.mean(elem)
+    per_frame = xp.mean(xp.reshape(elem, (frame_mask.shape[0], -1)), axis=1)
+    mask = xp.astype(frame_mask, per_frame.dtype)
+    count = xp.sum(mask)
+    return xp.sum(xp.where(frame_mask, per_frame, xp.zeros_like(per_frame))) / xp.where(
+        count > 0, count, xp.ones_like(count)
+    )
+
+
+def safe_vector_norm(value: Array, axis: int = -1) -> Array:
+    """Return the Euclidean norm with the zero subgradient at the origin.
+
+    The square root sees a strictly positive argument even for a zero vector,
+    keeping masked padding differentiable under nested reverse-mode transforms.
+    Nonzero vectors retain the exact Euclidean norm without an epsilon offset.
+    """
+    xp = array_api_compat.array_namespace(value)
+    squared = xp.sum(value * value, axis=axis)
+    zero = squared == 0
+    safe_squared = xp.where(zero, xp.ones_like(squared), squared)
+    return xp.where(zero, xp.zeros_like(squared), xp.sqrt(safe_squared))
+
+
+def absolute_error(value: Array) -> Array:
+    """Return absolute real residuals with the zero subgradient at exact fits.
+
+    Strict signs make the derivative convention independent of the backend's
+    ``abs`` implementation. An exactly fitted label contributes no gradient.
+    """
+    xp = array_api_compat.array_namespace(value)
+    return xp.where(
+        value == 0, xp.zeros_like(value), xp.where(value > 0, value, -value)
+    )
+
+
 def masked_atom_mean(elem: Array, maskf: Array, ncomp: int) -> Array:
     """Idiom 1: mean of a per-atom contribution over the batch's real labels.
 

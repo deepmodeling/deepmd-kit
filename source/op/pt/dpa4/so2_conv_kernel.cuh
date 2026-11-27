@@ -106,10 +106,10 @@ struct ConvSmem {
   float* softr;    // (H,) accumulator rescale of the current chunk
   float* gwig;     // (BE, NW) Wigner-gradient accumulator, backward only
 
-  DPA4_DEV void bind(float* base, int kc_len, int n_head) {
+  DPA4_DEV void bind(float* base, int kc_len, int n_head, bool parity) {
     scratch = base;
     astage = scratch + SCRATCH;
-    wig = astage + T::WARPS * T::TM * kWarp;
+    wig = astage + T::WARPS * T::TM * kWarp * (parity ? 2 : 1);
     kc = wig + T::BE * S::NW;
     alpha = kc + T::BE * kc_len;
     rescale = alpha + T::BE * n_head;
@@ -119,9 +119,9 @@ struct ConvSmem {
     gwig = softr + n_head;
   }
 
-  static int bytes(int kc_len, int n_head, bool backward) {
+  static int bytes(int kc_len, int n_head, bool backward, bool parity) {
     return static_cast<int>(sizeof(float)) *
-           (SCRATCH + T::WARPS * T::TM * kWarp +
+           (SCRATCH + T::WARPS * T::TM * kWarp * (parity ? 2 : 1) +
             T::BE * (S::NW + kc_len + n_head) + S::DIM + 3 * n_head +
             (backward ? T::BE * S::NW : 0));
   }
@@ -139,8 +139,8 @@ struct ConvSmem {
 ///
 /// Broadcast one reduction step's edge tile from the step-major stage.
 ///
-/// Every lane reads the same address, and tile sizes of four and two map onto
-/// one 16- or 8-byte load.
+/// Every lane reads the same address. Tiles use 16- or 8-byte loads; the
+/// stacked eight-row tile reads two consecutive 16-byte vectors.
 template <int TM>
 DPA4_DEV void broadcast_tile(const float* step, float (&av)[TM]) {
   if constexpr (TM == 4) {
@@ -149,6 +149,17 @@ DPA4_DEV void broadcast_tile(const float* step, float (&av)[TM]) {
     av[1] = v.y;
     av[2] = v.z;
     av[3] = v.w;
+  } else if constexpr (TM == 8) {
+    const float4 first = *reinterpret_cast<const float4*>(step);
+    const float4 second = *reinterpret_cast<const float4*>(step + 4);
+    av[0] = first.x;
+    av[1] = first.y;
+    av[2] = first.z;
+    av[3] = first.w;
+    av[4] = second.x;
+    av[5] = second.y;
+    av[6] = second.z;
+    av[7] = second.w;
   } else if constexpr (TM == 2) {
     const float2 v = *reinterpret_cast<const float2*>(step);
     av[0] = v.x;
@@ -324,6 +335,49 @@ DPA4_DEV void row_multiply(const float* __restrict__ w,
   }
 }
 
+/// Contract both order signs as one row stack against a shared weight.
+/// The uniform runtime branch preserves the instantiation grid while halving
+/// the reduction and output widths of reflection-preserving order blocks.
+template <int L, int CF, typename T>
+DPA4_DEV void order_multiply(const float* w,
+                             const float (&u)[T::TM][ConvShape<L, CF>::RB],
+                             float* scratch,
+                             float* astage,
+                             int warp,
+                             int lane,
+                             bool active,
+                             bool parity,
+                             float (&out)[T::TM][ConvShape<L, CF>::M1B]) {
+  using S = ConvShape<L, CF>;
+  if (!parity) {
+    row_multiply<T, T::TM, S::RB, S::M1B, S::M0B, S::M1, S::M1>(
+        w, u, scratch, astage + warp * T::TM * kWarp, lane, active, out);
+    return;
+  }
+  constexpr int HALF = S::M1B / 2;
+  float rows[2 * T::TM][HALF];
+  float result[2 * T::TM][HALF];
+#pragma unroll
+  for (int i = 0; i < T::TM; ++i) {
+#pragma unroll
+    for (int j = 0; j < HALF; ++j) {
+      rows[i][j] = active ? u[i][S::M0B + j] : 0.f;
+      rows[T::TM + i][j] = active ? u[i][S::M0B + HALF + j] : 0.f;
+    }
+  }
+  row_multiply<T, 2 * T::TM, HALF, HALF, 0, S::M1 / 2, S::M1 / 2>(
+      w, rows, scratch, astage + warp * 2 * T::TM * kWarp, lane, active,
+      result);
+#pragma unroll
+  for (int i = 0; i < T::TM; ++i) {
+#pragma unroll
+    for (int j = 0; j < HALF; ++j) {
+      out[i][j] = result[i][j];
+      out[i][HALF + j] = result[T::TM + i][j];
+    }
+  }
+}
+
 /// Stage the per-edge geometry and topology of one chunk.
 template <int L, int CF, typename T>
 DPA4_DEV void load_chunk(const ConvArgs& a,
@@ -487,7 +541,7 @@ DPA4_DEV void run_stack(const ConvArgs& a,
                         float (&ureg)[T::TM][ConvShape<L, CF>::RB]) {
   using S = ConvShape<L, CF>;
   const long w0_stride = static_cast<long>(S::M0) * S::M0;
-  const long w1_stride = static_cast<long>(S::M1) * S::M1;
+  const long w1_stride = static_cast<long>(S::M1) * S::M1 / (a.parity ? 4 : 1);
   const long gw_stride = static_cast<long>(CF) * S::GATE;
   const long z_stride = static_cast<long>(a.n_edge) * a.n_focus * S::ROW;
   const bool active = warp * T::TM < ne;
@@ -531,9 +585,9 @@ DPA4_DEV void run_stack(const ConvArgs& a,
       }
     }
     float acc1[T::TM][S::M1B];
-    row_multiply<T, T::TM, S::RB, S::M1B, S::M0B, S::M1, S::M1>(
-        a.w1 + (layer * a.n_focus + focus) * w1_stride, ureg, sm.scratch,
-        sm.astage + warp * T::TM * kWarp, lane, active, acc1);
+    order_multiply<L, CF, T>(a.w1 + (layer * a.n_focus + focus) * w1_stride,
+                             ureg, sm.scratch, sm.astage, warp, lane, active,
+                             a.parity, acc1);
     if (active) {
 #pragma unroll
       for (int i = 0; i < T::TM; ++i) {
@@ -585,7 +639,7 @@ __global__ __launch_bounds__(T::NT,
   using S = ConvShape<L, CF>;
   extern __shared__ float smem[];
   ConvSmem<L, CF, T> sm;
-  sm.bind(smem, a.kc_len, a.n_head);
+  sm.bind(smem, a.kc_len, a.n_head, a.parity);
   __shared__ int64_t edge_s[T::BE];
   __shared__ int64_t peer_s[T::BE];
   // Transaction barriers of the panel staging, one per buffer. They are armed
@@ -763,7 +817,7 @@ __global__ __launch_bounds__(T::NT, T::OCC) void so2_conv_bwd_kernel(
   using S = ConvShape<L, CF>;
   extern __shared__ float smem[];
   ConvSmem<L, CF, T> sm;
-  sm.bind(smem, a.kc_len, a.n_head);
+  sm.bind(smem, a.kc_len, a.n_head, a.parity);
   __shared__ int64_t edge_s[T::BE];
   __shared__ int64_t peer_s[T::BE];
   // Transaction barriers of the panel staging, one per buffer. They are armed
@@ -777,7 +831,7 @@ __global__ __launch_bounds__(T::NT, T::OCC) void so2_conv_bwd_kernel(
   const int lane = tid & (kWarp - 1);
   const int head_dim = CF / a.n_head;
   const long w0_stride = static_cast<long>(S::M0) * S::M0;
-  const long w1_stride = static_cast<long>(S::M1) * S::M1;
+  const long w1_stride = static_cast<long>(S::M1) * S::M1 / (a.parity ? 4 : 1);
   const long gw_stride = static_cast<long>(CF) * S::GATE;
   const long z_stride = static_cast<long>(a.n_edge) * a.n_focus * S::ROW;
   for (int d = tid; d < S::DIM; d += T::NT) {
@@ -907,9 +961,9 @@ __global__ __launch_bounds__(T::NT, T::OCC) void so2_conv_bwd_kernel(
             w0t + ((a.n_layers - 1) * a.n_focus + focus) * w0_stride, ureg,
             sm.scratch, sm.astage + warp * T::TM * kWarp, lane, active, acc0);
         float acc1[T::TM][S::M1B];
-        row_multiply<T, T::TM, S::RB, S::M1B, S::M0B, S::M1, S::M1>(
+        order_multiply<L, CF, T>(
             w1t + ((a.n_layers - 1) * a.n_focus + focus) * w1_stride, ureg,
-            sm.scratch, sm.astage + warp * T::TM * kWarp, lane, active, acc1);
+            sm.scratch, sm.astage, warp, lane, active, a.parity, acc1);
 #pragma unroll
         for (int i = 0; i < T::TM; ++i) {
 #pragma unroll
@@ -1017,9 +1071,9 @@ __global__ __launch_bounds__(T::NT, T::OCC) void so2_conv_bwd_kernel(
             w0t + (layer * a.n_focus + focus) * w0_stride, ureg, sm.scratch,
             sm.astage + warp * T::TM * kWarp, lane, active, acc0);
         float acc1[T::TM][S::M1B];
-        row_multiply<T, T::TM, S::RB, S::M1B, S::M0B, S::M1, S::M1>(
-            w1t + (layer * a.n_focus + focus) * w1_stride, ureg, sm.scratch,
-            sm.astage + warp * T::TM * kWarp, lane, active, acc1);
+        order_multiply<L, CF, T>(w1t + (layer * a.n_focus + focus) * w1_stride,
+                                 ureg, sm.scratch, sm.astage, warp, lane,
+                                 active, a.parity, acc1);
 #pragma unroll
         for (int i = 0; i < T::TM; ++i) {
 #pragma unroll

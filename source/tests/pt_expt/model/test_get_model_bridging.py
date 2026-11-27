@@ -52,8 +52,8 @@ def _dpa4_standard_config() -> dict:
 
 def _bridged(data: dict) -> dict:
     data["bridging_method"] = "ZBL"
-    data["bridging_r_inner"] = 0.8
-    data["bridging_r_outer"] = 1.2
+    data["bridging_truncation"] = 1.05
+    data["bridging_clamp"] = 0.7
     return data
 
 
@@ -71,7 +71,8 @@ def test_get_model_expands_bridging_without_dpa4_model_type() -> None:
     model = get_model(_bridged(_dpa4_standard_config()))
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
     assert len(model.atomic_model.models) == 2
-    assert model.atomic_model.models[0].descriptor.bridging_switch is not None
+    assert model.atomic_model.models[0].descriptor.contact_clamp.inner == 0.7
+    assert model.atomic_model.models[1].potential.truncation == 1.05
 
 
 def test_sezm_builder_rejects_bridging() -> None:
@@ -98,11 +99,11 @@ def test_bridged_dpa4_forwards_preset() -> None:
 
 def test_standard_builder_without_bridging_is_unaffected() -> None:
     """The rejection keys on the flag, not on the DPA4 components: a plain
-    DPA4 standard model still builds and carries no bridging switch.
+    DPA4 standard model still builds and carries no contact clamp.
     """
     model = get_standard_model(_dpa4_standard_config())
     assert not isinstance(model.atomic_model, LinearEnergyAtomicModel)
-    assert model.atomic_model.descriptor.bridging_switch is None
+    assert model.atomic_model.descriptor.contact_clamp is None
 
 
 @pytest.mark.parametrize(
@@ -114,24 +115,22 @@ def test_standard_builder_without_bridging_is_unaffected() -> None:
 )
 def test_dpa4_model_type_owns_the_composition(model_type: str) -> None:
     """The one supported spelling composes [learned, InnerPotential] and
-    injects the radii into the learned child's descriptor.
+    gives the learned child's descriptor its contact clamp.
     """
     data = _bridged(_dpa4_standard_config())
     data["type"] = model_type
     model = get_model(copy.deepcopy(data))
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
     assert len(model.atomic_model.models) == 2
-    # a composition without the inner-clamp radii would be half-applied
-    assert model.atomic_model.models[0].descriptor.bridging_switch is not None
+    # a composition without the clamp would be half-applied
+    assert model.atomic_model.models[0].descriptor.contact_clamp.inner == 0.7
 
 
 def test_pt_checkpoint_eval_works_for_composition(tmp_path) -> None:
     """``DeepEval`` on a ``.pt`` checkpoint of a bridging composition.
 
-    ``LinearEnergyAtomicModel`` has no single ``.descriptor``;
-    ``_load_pt``'s metadata block previously crashed with
-    ``AttributeError`` on ``model.get_descriptor()`` (issue #5906 Task 4
-    audit, gap 1). ``ntypes`` now comes from the model API.
+    ``LinearEnergyAtomicModel`` has no single ``.descriptor``, so the
+    metadata block of ``_load_pt`` reads ``ntypes`` from the model API.
     """
     import numpy as np
     import torch
@@ -164,8 +163,7 @@ def test_pt_checkpoint_eval_works_for_composition(tmp_path) -> None:
 
 def test_compile_attention_probe_tolerates_composition() -> None:
     """``enable_compile``'s DPA1-attention warning probe must degrade
-    gracefully for compositions instead of crashing on
-    ``model.get_descriptor()`` (issue #5906 Task 4 audit, gap 1 twin).
+    gracefully for compositions, which have no single ``get_descriptor()``.
     """
     from deepmd.pt_expt.train.training import (
         _warn_compiled_attention,
@@ -215,8 +213,8 @@ def _canonical_config() -> dict:
             {
                 "type": "inner_potential",
                 "mode": "ZBL",
-                "r_inner": 0.8,
-                "r_outer": 1.2,
+                "truncation": 1.05,
+                "clamp": 0.7,
             },
         ],
     }
@@ -236,17 +234,16 @@ def test_third_child_without_common_route_raises() -> None:
 
 
 def test_canonical_composition_builds() -> None:
-    """The canonical spelling composes [learned, InnerPotential] with the
-    clamp radii derived onto the learned child's descriptor.
+    """The canonical spelling composes [learned, InnerPotential], with the
+    clamp option derived onto the learned child's descriptor and the
+    truncation kept by the analytical child.
     """
     model = get_model(_canonical_config())
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
     assert len(model.atomic_model.models) == 2
-    learned = model.atomic_model.models[0]
-    assert learned.descriptor.bridging_switch is not None
-    assert float(learned.descriptor.bridging_switch.f_inner) == 0.8
-    assert float(learned.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
-    assert learned.descriptor.bridging_scale == "absolute"
+    learned, analytical = model.atomic_model.models
+    assert learned.descriptor.contact_clamp.inner == 0.7
+    assert analytical.potential.truncation == 1.05
 
 
 def test_canonical_matches_sugar_serialize() -> None:
@@ -270,17 +267,19 @@ def test_canonical_matches_sugar_serialize() -> None:
     assert _strip_arrays(d_canon) == _strip_arrays(d_sugar)
 
 
-def test_canonical_native_spin_composition() -> None:
+@pytest.mark.parametrize("scheme", ["native:orbit", "native:exchange"])
+def test_canonical_native_spin_composition(scheme: str) -> None:
     """A top-level native-spin section wraps the canonical composition."""
     from deepmd.pt_expt.model.native_spin_model import (
         NativeSpinEnergyModel,
     )
 
     cfg = _canonical_config()
-    cfg["spin"] = {"scheme": "native", "use_spin": [True, False]}
+    cfg["spin"] = {"scheme": scheme, "use_spin": [True, False]}
     model = get_model(cfg)
     assert isinstance(model, NativeSpinEnergyModel)
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+    assert model.atomic_model.models[0].descriptor.spin_mode == scheme.split(":")[1]
 
 
 def test_canonical_requires_sum_weights() -> None:
@@ -310,7 +309,7 @@ def test_canonical_child_gets_dpa4_defaults() -> None:
     del cfg["models"][0]["fitting_net"]["type"]
     model = get_model(cfg)
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
-    assert model.atomic_model.models[0].descriptor.bridging_switch is not None
+    assert model.atomic_model.models[0].descriptor.contact_clamp is not None
 
 
 def test_nested_bridging_flag_on_child_raises() -> None:

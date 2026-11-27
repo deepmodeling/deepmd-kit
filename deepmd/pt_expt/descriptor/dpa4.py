@@ -11,12 +11,14 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingSwitch as BridgingSwitchDP
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
+from deepmd.dpmodel.utils.expert_linear import (
+    MAP_EXPERT_ATTRS,
+)
 from deepmd.pt_expt.common import (
+    promote_buffers,
     register_dpmodel_mapping,
     torch_module,
 )
@@ -26,6 +28,9 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
+)
+from deepmd.pt_expt.utils.expert_route import (  # noqa: F401
+    ConditionRouter,
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
@@ -46,32 +51,6 @@ register_dpmodel_mapping(SwiGLUDP, lambda v: SwiGLU())
 class C3CutoffEnvelope(C3CutoffEnvelopeDP):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
-
-
-@torch_module
-class InnerClamp(InnerClampDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-# InnerClamp/BridgingSwitch are parameter-free (the two window fractions only,
-# no serialize()); rebuild fresh from the stored constructor arguments.
-register_dpmodel_mapping(
-    InnerClampDP,
-    lambda v: InnerClamp(v.f_inner, v.f_outer),
-)
-
-
-@torch_module
-class BridgingSwitch(BridgingSwitchDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-register_dpmodel_mapping(
-    BridgingSwitchDP,
-    lambda v: BridgingSwitch(v.f_inner, v.f_outer),
-)
 
 
 # C3CutoffEnvelope carries only scalar configuration (cutoff radius and
@@ -111,6 +90,8 @@ register_dpmodel_mapping(GridProductDP, lambda v: GridProduct())
 # too.  Lists of weights (e.g. ``SO2Linear.weight_m``) are already converted
 # to trainable ``ParameterList`` by ``_try_convert_list``.
 # ---------------------------------------------------------------------------
+# Element increments and routed experts of an expert map.
+_EXPERT_ATTRS = MAP_EXPERT_ATTRS
 _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     # dpa4_nn.norm
     "RMSNorm": ("adam_scale",),
@@ -121,8 +102,11 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     "RadialBasis": ("adam_freqs",),
     # dpa4_nn.so3
     "SO3Linear": ("weight", "bias"),
+    "ExpertSO3Linear": ("weight", "bias", *_EXPERT_ATTRS),
     "FocusLinear": ("weight", "bias"),
+    "ExpertFocusLinear": ("weight", "bias", *_EXPERT_ATTRS),
     "ChannelLinear": ("weight", "bias"),
+    "ExpertChannelLinear": ("weight", "bias", *_EXPERT_ATTRS),
     # dpa4_nn.so2
     "SO2Linear": ("weight_m0", "bias0"),
     "DynamicRadialDegreeMixer": ("weight", "channel_basis"),
@@ -135,15 +119,9 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     ),
     # dpa4_nn.embedding
     "SeZMTypeEmbedding": ("adam_type_embedding",),
-    # dpa4_nn.embedding (native spin): these are nn.Parameter in pt but land as
-    # numpy->buffer in dpmodel; mag_layer1/2 are NativeLayer and auto-promote,
-    # and _promote_trainable skips a missing buffer, so no-spin configs (where
-    # spin_scale is absent) stay safe.
-    "SpinEmbedding": ("adam_spin_vec_weight", "adam_spin_nbr_weight"),
-    "EnvironmentInitialEmbedding": ("spin_scale",),
     # dpa4_nn.attn_res
     "DepthAttnRes": ("adamw_pseudo_query",),
-    # dpa4_nn.grid_net (residual_scale is None when disabled; _promote_trainable
+    # dpa4_nn.grid_net (residual_scale is None when disabled; promote_buffers
     # skips the missing buffer, so listing both concrete subclasses is safe)
     "S2GridNet": ("residual_scale",),
     "SO3GridNet": ("residual_scale",),
@@ -152,20 +130,13 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     # than NativeLayer objects, so they need an explicit entry here.
     "FrameExpand": ("weight",),
     "FrameContract": ("weight",),
-    # descriptor-level FiLM strengths
-    "DescrptDPA4": ("film_scale_strength_log", "film_shift_strength_log"),
+    # descriptor-level FiLM strengths and the task embedding of the router
+    "DescrptDPA4": (
+        "film_scale_strength_log",
+        "film_shift_strength_log",
+        "adam_task_embedding",
+    ),
 }
-
-
-def _promote_trainable(module: torch.nn.Module, names: tuple[str, ...]) -> None:
-    """Re-register the given float buffers of *module* as Parameters."""
-    trainable = bool(getattr(module, "trainable", True))
-    for name in names:
-        buf = module._buffers.get(name)
-        if buf is None or not buf.is_floating_point():
-            continue
-        del module._buffers[name]
-        setattr(module, name, torch.nn.Parameter(buf, requires_grad=trainable))
 
 
 def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
@@ -178,7 +149,7 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
     for sub in module.modules():
         names = _TRAINABLE_ATTRS.get(type(sub).__name__)
         if names is not None:
-            _promote_trainable(sub, names)
+            promote_buffers(sub, names, bool(getattr(sub, "trainable", True)))
     # Freeze every Parameter under a ``trainable=False`` module.  This covers
     # parameters that exist regardless of the promotion table above, e.g. the
     # ``SO2Linear.weight_m`` list, which ``_try_convert_list`` converts to a
@@ -198,22 +169,18 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
 class DescrptDPA4(DescrptDPA4DP):
     _update_sel_cls = UpdateSel
 
-    #: The per-element length scales of the bridging window follow from
-    #: ``type_map``, which the constructor resolves on every load, so the
-    #: buffer they land in stays out of the state dict.
-    CONFIG_DERIVED_ARRAYS = ("contact_radius",)
-
     def adam_route_patterns(self) -> list[str]:
         """
         Name patterns, relative to the descriptor, of the tensors that take the
         AdamW path under HybridMuon: the first layer of the radial embedding and
         the radial projection of the environment seed, which read the radial
         basis and whose rows for rarely visited separations receive almost no
-        gradient.
+        gradient, and the task increments of the expert maps.
         """
         return [
             "radial_embedding.net.0.",
             "env_seed_embedding.rbf_proj_layer1.",
+            *super().adam_route_patterns(),
         ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -236,19 +203,14 @@ class DescrptDPA4(DescrptDPA4DP):
         # distance and are cheap enough that the compiler inlines them into
         # every consumer and re-evaluates them there. Behind an operator
         # boundary the chain runs once per step.
-        self._cuda_radial_fn = None
+        self._cuda_infer_level = cuda_infer_level()
+        self._bind_radial_kernel()
         self._cuda_wigner_fn = None
-        if cuda_infer_level() >= 1:
-            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
-                make_cuda_edge_radial,
-            )
+        if self._cuda_infer_level >= 1:
             from deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense import (
                 make_cuda_wigner_dense,
             )
 
-            self._cuda_radial_fn = make_cuda_edge_radial(
-                self.edge_envelope, self.radial_basis
-            )
             # The dense Wigner pair otherwise costs five full-size passes
             # over the (E, D, D) tensors; the fused build pays only the
             # output writes.
@@ -273,7 +235,7 @@ class DescrptDPA4(DescrptDPA4DP):
         # Persisted descriptor version, for the same reason: pt_expt rebuilds
         # the module from config before loading, so without a buffer every
         # checkpoint would come back claiming the semantics of the running
-        # code and silently skip ``_migrate_variables``.
+        # code and silently skip ``_migrate_version``.
         torch.nn.Module.register_buffer(
             self,
             "version_tensor",
@@ -281,6 +243,38 @@ class DescrptDPA4(DescrptDPA4DP):
         )
         self.use_amp_infer = use_amp_infer()
         _promote_trainable_tree(self)
+
+    def _bind_radial_kernel(self) -> None:
+        """
+        Bind the fused radial operator to the current envelope and basis modules.
+
+        The operator reads the basis frequencies from the module it is bound to,
+        so it is bound again whenever loading variables replaces that module.
+        """
+        self._cuda_radial_fn = None
+        if self._cuda_infer_level >= 1:
+            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+                make_cuda_edge_radial,
+            )
+
+            self._cuda_radial_fn = make_cuda_edge_radial(
+                self.edge_envelope, self.radial_basis
+            )
+
+    def _load_variables(self, variables: dict[str, Any]) -> None:
+        """Load variables and bind the fused radial operator to the loaded basis."""
+        super()._load_variables(variables)
+        self._bind_radial_kernel()
+
+    def share_params(self, *args: Any, **kwargs: Any) -> None:
+        """Share the parameters of a base descriptor and bind the fused radial operator to the shared basis.
+
+        Merging the statistics writes the initial null masses of the shared
+        blocks, which are parameters, so the sharing runs without autograd.
+        """
+        with torch.no_grad():
+            super().share_params(*args, **kwargs)
+        self._bind_radial_kernel()
 
     def _shared_wigner_runs(self, edge_cache: Any, lmax: int) -> torch.Tensor | None:
         """
@@ -312,11 +306,11 @@ class DescrptDPA4(DescrptDPA4DP):
         if self.training:
             if not self._packed_wigner_train:
                 return None
-            fused = self.blocks[0].so2_conv._cuda_value_train
+            fused = self.blocks[self._widest_block_index].so2_conv._cuda_value_train
         else:
             if not self._wigner_free_conv:
                 return None
-            fused = self.blocks[0].so2_conv._cuda_conv_fn
+            fused = self.blocks[self._widest_block_index].so2_conv._cuda_conv_fn
         if fused is None or lmax > self.lmax:
             return None
         return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]
@@ -331,59 +325,21 @@ class DescrptDPA4(DescrptDPA4DP):
         obj.version_tensor.fill_(obj.version)
         return _promote_trainable_tree(obj)
 
+    def compute_input_stats(self, merged: Any, path: Any | None = None) -> None:
+        """Measure the density statistics without recording an autograd graph."""
+        with torch.no_grad():
+            super().compute_input_stats(merged, path)
+
     def _in_training_mode(self) -> bool:
         """Torch runtime hook for the training-only random local-Z roll.
 
         Overrides the dpmodel default (``False``) with the torch module's
         ``training`` flag, restoring pt's ``random_gamma=self.random_gamma
         and self.training`` semantics: train-mode forwards draw a fresh
-        gamma per call, eval/export forwards fix gamma (the export path
-        calls ``model.eval()`` before tracing).
+        gamma per call, eval/export forwards fix gamma (the export path calls
+        ``model.eval()`` before tracing).
         """
         return bool(self.training)
-
-    def _gate_partial_exchange(
-        self,
-        partials: torch.Tensor,
-        comm_dict: dict[str, torch.Tensor],
-    ) -> torch.Tensor:
-        """Reverse-accumulate ghost partials to owners, then broadcast back.
-
-        ``border_op_backward`` sums each ghost row into its owner across
-        ranks and zeroes the ghost rows; ``border_op`` refills them with the
-        completed owner values. Both ops carry autograd (the two are
-        transposes), so gate gradients cross ranks (issue #5906).
-
-        Parameters
-        ----------
-        partials
-            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
-        comm_dict
-            The border-exchange control tensors.
-
-        Returns
-        -------
-        torch.Tensor
-            The globally completed (n_nodes, 2) tensor.
-        """
-        # border_op exchanges rows by raw pointer arithmetic; a strided
-        # view would corrupt the exchange.
-        p = partials.contiguous()
-        comm_args = (
-            comm_dict["send_list"],
-            comm_dict["send_proc"],
-            comm_dict["recv_proc"],
-            comm_dict["send_num"],
-            comm_dict["recv_num"],
-        )
-        tail = (
-            comm_dict["communicator"],
-            comm_dict["nlocal"],
-            comm_dict["nghost"],
-        )
-        p = torch.ops.deepmd_export.border_op_backward(*comm_args, p, *tail)
-        p = torch.ops.deepmd_export.border_op(*comm_args, p, *tail)
-        return p
 
     def disable_graph_lower(self) -> None:
         """Persisted variant of the dpmodel escape hatch (see base class).
@@ -426,9 +382,7 @@ class DescrptDPA4(DescrptDPA4DP):
         if version_key not in state_dict:
             state_dict[version_key] = self.version_tensor.new_tensor(1.1)
         state_dict[version_key] = self.version_tensor.new_tensor(
-            self._migrate_variables(
-                state_dict, float(state_dict[version_key].item()), prefix
-            )
+            self._migrate_version(float(state_dict[version_key].item()))
         )
 
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
@@ -460,13 +414,3 @@ class DescrptDPA4(DescrptDPA4DP):
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 return super()._forward_blocks(x, *args, **kwargs)
         return super()._forward_blocks(x, *args, **kwargs)
-
-    def share_params(
-        self,
-        base_class: "DescrptDPA4",
-        shared_level: int,
-        model_prob: float = 1.0,
-        resume: bool = False,
-    ) -> None:
-        # Multi-task parameter sharing for DPA4 is out of scope for this PR.
-        raise NotImplementedError("share_params is not yet implemented for DescrptDPA4")

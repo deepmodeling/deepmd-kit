@@ -62,6 +62,7 @@ def test(
     detail_file: str,
     atomic: bool,
     head: str | None = None,
+    symm_virial: bool = False,
     **kwargs: Any,
 ) -> None:
     """Test model predictions.
@@ -90,6 +91,8 @@ def test(
         whether per atom quantities should be computed
     head : Optional[str], optional
         (Supported backend: PyTorch) Task head to test if in multi-task mode.
+    symm_virial : bool
+        Compare symmetric virials and stresses, including detail outputs.
     **kwargs
         additional arguments
 
@@ -138,7 +141,9 @@ def test(
 
     # init model
     dp = DeepEval(model, head=head)
-    tester = build_tester(dp, atomic=atomic)
+    tester = build_tester(dp, atomic=atomic, symm_virial=symm_virial)
+    if symm_virial:
+        log.info("# symm_v=1")
 
     for cc, system in enumerate(all_sys):
         log.info("# ---------------output of dp test--------------- ")

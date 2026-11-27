@@ -1,7 +1,21 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     cast,
 )
+
+import array_api_compat
+
+
+def symmetrize_virial(value: Any) -> Any:
+    """Return the symmetric virial, preserving its shape, dtype and device.
+
+    The input has nine Cartesian components per frame. The projection stays
+    differentiable and does not modify the model prediction or its labels.
+    """
+    xp = array_api_compat.array_namespace(value)
+    tensor = xp.reshape(value, (-1, 3, 3))
+    return xp.reshape(0.5 * (tensor + xp.matrix_transpose(tensor)), value.shape)
 
 
 def resolve_huber_deltas(

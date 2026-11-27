@@ -22,7 +22,7 @@ def test_edge_vec_metadata_warns() -> None:
     [
         "nlist",  # pt_expt dense freeze
         "graph",  # pt_expt graph freeze
-        "dpa1_canonical",  # dpa1 compact-canonical freeze
+        "dpa_canonical",  # compact canonical freeze
         None,  # pre-metadata archives
     ],
 )

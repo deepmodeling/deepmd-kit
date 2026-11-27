@@ -1972,7 +1972,8 @@ class DeepSpin : public DeepBaseModel {
    * Graph, moment, and output pointers reside on the model device; the halo
    * rows of the moment carry their owner's value. ``d_virial`` may be null
    * when the virial is not requested. ``d_atom_virial`` may be null, and then
-   * so may the source CSR. ``world`` and ``halo`` are the MPI communicator
+   * so may the source CSR unless canonical_graph_requires_source_csr()
+   * holds. ``world`` and ``halo`` are the MPI communicator
    * of a system on several ranks and the halo exchange of a node set with
    * halo nodes, which a model with further message-passing blocks reads
    * (canonical_graph_requires_halo()); a null pointer omits either for a
@@ -2012,6 +2013,16 @@ class DeepSpin : public DeepBaseModel {
    */
   bool uses_canonical_graph_inference() const {
     const bool result = DP_DeepSpinUsesCanonicalGraphInference(dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
+    return result;
+  }
+
+  /**
+   * @brief Query whether every compact canonical evaluation reads the source
+   * CSR; see DP_DeepSpinCanonicalGraphRequiresSourceCSR.
+   */
+  bool canonical_graph_requires_source_csr() const {
+    const bool result = DP_DeepSpinCanonicalGraphRequiresSourceCSR(dp);
     DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
     return result;
   }

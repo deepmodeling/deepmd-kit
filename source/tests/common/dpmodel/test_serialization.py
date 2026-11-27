@@ -74,6 +74,25 @@ def test_save_dp_model_accepts_hdf5_dataset_without_mutation(tmp_path: Path) -> 
     )
 
 
+@pytest.mark.parametrize("suffix", [".dp", ".hlo", ".yaml"])
+def test_inference_model_omits_portable_training_state(
+    tmp_path: Path, suffix: str
+) -> None:
+    """Inference files retain model arrays without embedding optimizer records."""
+    weights = np.arange(6, dtype=np.float64).reshape(2, 3)
+    data = {
+        "model": {"@variables": {"weights": weights}},
+        "training": {"optimizer": {"momentum": np.ones_like(weights)}},
+    }
+    original = deepcopy(data)
+    path = tmp_path / f"model{suffix}"
+    save_dp_model(str(path), data)
+    restored = load_dp_model(str(path))
+    assert "training" not in restored
+    np.testing.assert_array_equal(restored["model"]["@variables"]["weights"], weights)
+    np.testing.assert_equal(data, original)
+
+
 @pytest.mark.parametrize(
     ("stored_lower_kind", "expected_lower_kind"),
     [

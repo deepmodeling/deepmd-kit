@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Device-resident border exchange of a domain-decomposed system: the forward
-// communication of border_op, with the send lists on the device, and its
-// reverse, which accumulates the halo rows onto their atoms.
+// Border exchange of a domain-decomposed system: the forward communication of
+// border_op, with the send lists on the device of the rows, and its reverse,
+// which accumulates the halo rows onto their atoms.
 //
 // The node set of a domain holds its owned rows first, then its halo rows,
 // which images of atoms that other swaps deliver. A plan describes the swaps
@@ -17,17 +17,21 @@
 //               receives into the first halo row, every further swap into the
 //               row after those of the swap before it, and the swaps together
 //               fill every halo row.
-//   send_nodes  int32 CUDA tensor holding the rows sent in every swap, the
-//               swaps concatenated in order. A swap may send a halo row that
-//               an earlier swap received.
+//   send_nodes  int32 tensor on the device of the rows holding the rows sent
+//               in every swap, the swaps concatenated in order. A swap may
+//               send a halo row that an earlier swap received.
 //   communicator int64 CPU tensor of one element holding the address of the
 //               MPI_Comm handle of the caller (communicator.h), zero for a
 //               single process, whose swaps are all self swaps.
 //
-// A self swap, whose two ranks are this rank, copies the rows on the device.
-// The swaps run in order, so the halo rows of an image of an image are filled
+// A self swap, whose two ranks are this rank, copies the rows in place. The
+// swaps run in order, so the halo rows of an image of an image are filled
 // after the rows they copy. Messages of zero rows are never posted, so a rank
 // whose swaps carry no rows need not take part.
+//
+// The operators deepmd::border_exchange and deepmd::border_exchange_backward
+// expose the exchange to autograd: the first returns a copy of its rows with
+// the halo rows refreshed, the second is its vector-Jacobian product.
 
 #pragma once
 
@@ -59,11 +63,11 @@ std::int64_t check_border_plan(const torch::Tensor& send_nodes,
                                std::int64_t node_count,
                                const char* op);
 
-/// Replace every halo row of ``rows``, a contiguous float32 CUDA matrix of
-/// shape (node_count, W), by the row of the atom it images, swap by swap. The
-/// host waits for the current stream once before every swap that MPI carries,
-/// so that MPI reads complete rows; the received rows reach the device in
-/// stream order.
+/// Replace every halo row of ``rows``, a contiguous float32 or float64 matrix
+/// of shape (node_count, W) on the host or a CUDA device, by the row of the
+/// atom it images, swap by swap. For device rows the host waits for the
+/// current stream once before every swap that MPI carries, so that MPI reads
+/// complete rows; the received rows reach the device in stream order.
 void border_exchange(const torch::Tensor& rows,
                      const torch::Tensor& send_nodes,
                      const torch::Tensor& swaps,

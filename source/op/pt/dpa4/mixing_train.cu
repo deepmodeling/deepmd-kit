@@ -483,17 +483,17 @@ __global__ void mixing_entry_bwd_kernel(
 // heuristic degrades to percent-level kernels for such shapes, while its
 // top choice with ample workspace is a split-K algorithm within a factor
 // ~1.5 of the traffic bound. The top candidates are timed once and cached per
-// shape, output mode and process.
+// layout, edge-count bucket, output mode and process.
 // ---------------------------------------------------------------------------
 struct LtShapeKey {
   int m, n, lda, ldb, batch;
-  long k, sa, sb;
+  long k;
   int dtype;
   bool accumulate;
   bool operator==(const LtShapeKey& o) const {
     return m == o.m && n == o.n && lda == o.lda && ldb == o.ldb &&
-           batch == o.batch && k == o.k && sa == o.sa && sb == o.sb &&
-           dtype == o.dtype && accumulate == o.accumulate;
+           batch == o.batch && k == o.k && dtype == o.dtype &&
+           accumulate == o.accumulate;
   }
 };
 
@@ -501,7 +501,7 @@ struct LtShapeKeyHash {
   size_t operator()(const LtShapeKey& s) const {
     size_t h = (size_t)s.m;
     for (long v : {(long)s.n, (long)s.lda, (long)s.ldb, (long)s.batch, s.k,
-                   s.sa, s.sb, (long)s.dtype, (long)s.accumulate}) {
+                   (long)s.dtype, (long)s.accumulate}) {
       h = h * 1000003u + (size_t)v;
     }
     return h;
@@ -510,26 +510,40 @@ struct LtShapeKeyHash {
 
 constexpr size_t kLtWorkspaceBytes = 32u << 20;
 
+// The edge count of a training step varies from step to step and enters the
+// contractions as the row count (block GEMMs) or the reduction length
+// (weight gradients), and through the batch strides of the edge surfaces. The
+// algorithm caches therefore key a contraction by its layout and by this
+// bucket of the edge count, the next power of two, rather than by the exact
+// count: a candidate sweep per distinct count would run on every step. A
+// cached algorithm is checked against the exact problem before each use.
+long edge_bucket(long edges) {
+  long bucket = 1;
+  while (bucket < edges) {
+    bucket <<= 1;
+  }
+  return bucket;
+}
+
 struct LtBmmKey {
   long m, n, k;
   int lda, ldb, ldc, ldd, batch;
-  long sa, sb, sc, sd;
+  long sb;
   int dtype;
   bool trans_b, add;
   bool operator==(const LtBmmKey& o) const {
     return m == o.m && n == o.n && k == o.k && lda == o.lda && ldb == o.ldb &&
-           ldc == o.ldc && ldd == o.ldd && batch == o.batch && sa == o.sa &&
-           sb == o.sb && sc == o.sc && sd == o.sd && dtype == o.dtype &&
-           trans_b == o.trans_b && add == o.add;
+           ldc == o.ldc && ldd == o.ldd && batch == o.batch && sb == o.sb &&
+           dtype == o.dtype && trans_b == o.trans_b && add == o.add;
   }
 };
 
 struct LtBmmKeyHash {
   size_t operator()(const LtBmmKey& s) const {
     size_t h = (size_t)s.m;
-    for (long v : {s.n, s.k, (long)s.lda, (long)s.ldb, (long)s.ldc, (long)s.ldd,
-                   (long)s.batch, s.sa, s.sb, s.sc, s.sd, (long)s.dtype,
-                   (long)s.trans_b, (long)s.add}) {
+    for (long v :
+         {s.n, s.k, (long)s.lda, (long)s.ldb, (long)s.ldc, (long)s.ldd,
+          (long)s.batch, s.sb, (long)s.dtype, (long)s.trans_b, (long)s.add}) {
       h = h * 1000003u + (size_t)v;
     }
     return h;
@@ -547,6 +561,20 @@ void lt_block_bmm(const at::Tensor& A,
                   at::Tensor& D,
                   const at::Tensor& workspace,
                   cudaStream_t stream) {
+  // Reflection-preserving order blocks share one weight between two
+  // independent component stripes. Views retain the producer's row stride.
+  if (A.size(2) == 2 * B.size(1)) {
+    TORCH_INTERNAL_ASSERT(D.size(2) == 2 * B.size(2));
+    for (int sign = 0; sign < 2; ++sign) {
+      auto input = A.slice(2, sign * B.size(1), (sign + 1) * B.size(1));
+      auto output = D.slice(2, sign * B.size(2), (sign + 1) * B.size(2));
+      auto residual = C.defined()
+                          ? C.slice(2, sign * B.size(2), (sign + 1) * B.size(2))
+                          : at::Tensor();
+      lt_block_bmm(input, B, residual, output, workspace, stream);
+    }
+    return;
+  }
   static std::mutex mu;
   static std::unordered_map<LtBmmKey, cublasLtMatmulHeuristicResult_t,
                             LtBmmKeyHash>
@@ -579,21 +607,14 @@ void lt_block_bmm(const at::Tensor& A,
   const bool trans_b = B.stride(2) != 1;
   const int ldb = (int)(trans_b ? B.stride(2) : B.stride(1));
   const at::Tensor& C_layout = add ? C : D;
-  const LtBmmKey key{m,
-                     n,
-                     k,
-                     (int)A.stride(1),
-                     ldb,
-                     (int)C_layout.stride(1),
-                     (int)D.stride(1),
-                     batch,
-                     A.stride(0),
-                     B.stride(0),
-                     C_layout.stride(0),
-                     D.stride(0),
-                     (int)A.scalar_type(),
-                     trans_b,
-                     add};
+  const int lda = (int)A.stride(1);
+  const int ldc = (int)C_layout.stride(1);
+  const int ldd = (int)D.stride(1);
+  // The edge surfaces' batch strides follow the edge count and stay out of
+  // the key; the weight stride is fixed by the layout.
+  const LtBmmKey key{
+      edge_bucket(m),       n,       k,  lda, ldb, ldc, ldd, batch, B.stride(0),
+      (int)A.scalar_type(), trans_b, add};
 
   const cudaDataType_t data_type =
       A.scalar_type() == at::kBFloat16 ? CUDA_R_16BF : CUDA_R_32F;
@@ -608,13 +629,14 @@ void lt_block_bmm(const at::Tensor& A,
   cublasLtMatrixLayout_t la, lb, lc, ld;
   const long b_rows = trans_b ? n : k;
   const long b_cols = trans_b ? k : n;
-  cublasLtMatrixLayoutCreate(&la, data_type, m, k, key.lda);
-  cublasLtMatrixLayoutCreate(&lb, data_type, b_rows, b_cols, key.ldb);
-  cublasLtMatrixLayoutCreate(&lc, data_type, m, n, key.ldc);
-  cublasLtMatrixLayoutCreate(&ld, data_type, m, n, key.ldd);
+  cublasLtMatrixLayoutCreate(&la, data_type, m, k, lda);
+  cublasLtMatrixLayoutCreate(&lb, data_type, b_rows, b_cols, ldb);
+  cublasLtMatrixLayoutCreate(&lc, data_type, m, n, ldc);
+  cublasLtMatrixLayoutCreate(&ld, data_type, m, n, ldd);
   const cublasLtOrder_t row_order = CUBLASLT_ORDER_ROW;
-  for (auto [layout, stride] : {std::pair{la, key.sa}, std::pair{lb, key.sb},
-                                std::pair{lc, key.sc}, std::pair{ld, key.sd}}) {
+  for (auto [layout, stride] :
+       {std::pair{la, A.stride(0)}, std::pair{lb, B.stride(0)},
+        std::pair{lc, C_layout.stride(0)}, std::pair{ld, D.stride(0)}}) {
     cublasLtMatrixLayoutSetAttribute(layout, CUBLASLT_MATRIX_LAYOUT_ORDER,
                                      &row_order, sizeof(row_order));
     cublasLtMatrixLayoutSetAttribute(layout, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
@@ -633,6 +655,12 @@ void lt_block_bmm(const at::Tensor& A,
       algo = it->second;
       have_algo = true;
     }
+  }
+  if (have_algo) {
+    cublasLtMatmulHeuristicResult_t checked;
+    have_algo = cublasLtMatmulAlgoCheck(handle, op, la, lb, lc, ld, &algo.algo,
+                                        &checked) == CUBLAS_STATUS_SUCCESS &&
+                checked.workspaceSize <= (size_t)workspace.numel();
   }
   if (!have_algo) {
     cublasLtMatmulPreference_t pref;
@@ -693,10 +721,7 @@ void lt_block_bmm(const at::Tensor& A,
       cudaEventDestroy(ev1);
     }
     std::lock_guard<std::mutex> lock(mu);
-    const auto [it, inserted] = algo_cache.emplace(key, algo);
-    if (!inserted) {
-      algo = it->second;
-    }
+    algo_cache.insert_or_assign(key, algo);
   }
 
   const float one = 1.0f;
@@ -753,6 +778,16 @@ void lt_weight_grad(const at::Tensor& A,
                     const at::Tensor& workspace,
                     cudaStream_t stream,
                     bool accumulate = false) {
+  // Both order signs differentiate the same weight; their contractions add.
+  if (A.size(2) == 2 * C.size(1)) {
+    TORCH_INTERNAL_ASSERT(B.size(2) == 2 * C.size(2));
+    lt_weight_grad(A.slice(2, 0, C.size(1)), B.slice(2, 0, C.size(2)), C,
+                   workspace, stream, accumulate);
+    lt_weight_grad(A.slice(2, C.size(1), A.size(2)),
+                   B.slice(2, C.size(2), B.size(2)), C, workspace, stream,
+                   true);
+    return;
+  }
   static std::mutex mu;
   static std::unordered_map<LtShapeKey, cublasLtMatmulHeuristicResult_t,
                             LtShapeKeyHash>
@@ -784,9 +819,16 @@ void lt_weight_grad(const at::Tensor& A,
   const long K = A.size(1);
   const int m = (int)A.size(2);
   const int n = (int)B.size(2);
-  const LtShapeKey key{
-      m, n,           (int)A.stride(1), (int)B.stride(1),     batch,
-      K, A.stride(0), B.stride(0),      (int)A.scalar_type(), accumulate};
+  // The reduction runs over the edges: their count enters the key as its
+  // bucket, and the edge surfaces' batch strides stay out of it.
+  const LtShapeKey key{m,
+                       n,
+                       (int)A.stride(1),
+                       (int)B.stride(1),
+                       batch,
+                       edge_bucket(K),
+                       (int)A.scalar_type(),
+                       accumulate};
 
   const cudaDataType_t ab_type =
       A.scalar_type() == at::kBFloat16 ? CUDA_R_16BF : CUDA_R_32F;
@@ -807,7 +849,8 @@ void lt_weight_grad(const at::Tensor& A,
   cublasLtMatrixLayoutCreate(&lc, ab_type, m, n, n);
   const long sc = (long)m * n;
   for (auto [layout, stride] :
-       {std::pair{la, key.sa}, std::pair{lb, key.sb}, std::pair{lc, sc}}) {
+       {std::pair{la, A.stride(0)}, std::pair{lb, B.stride(0)},
+        std::pair{lc, sc}}) {
     cublasLtMatrixLayoutSetAttribute(layout, CUBLASLT_MATRIX_LAYOUT_ORDER,
                                      &row_order, sizeof(row_order));
     cublasLtMatrixLayoutSetAttribute(layout, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
@@ -825,6 +868,15 @@ void lt_weight_grad(const at::Tensor& A,
     if (it != algo_cache.end()) {
       algo = it->second;
       have_algo = true;
+    }
+  }
+  if (have_algo) {
+    cublasLtMatmulHeuristicResult_t checked;
+    have_algo = cublasLtMatmulAlgoCheck(handle, op, la, lb, lc, lc, &algo.algo,
+                                        &checked) == CUBLAS_STATUS_SUCCESS &&
+                checked.workspaceSize <= (size_t)workspace.numel();
+    if (have_algo) {
+      algo.workspaceSize = checked.workspaceSize;
     }
   }
   if (!have_algo) {
@@ -887,10 +939,7 @@ void lt_weight_grad(const at::Tensor& A,
       cudaEventDestroy(ev1);
     }
     std::lock_guard<std::mutex> lock(mu);
-    const auto [it, inserted] = algo_cache.emplace(key, algo);
-    if (!inserted) {
-      algo = it->second;
-    }
+    algo_cache.insert_or_assign(key, algo);
   }
 
   const float one = 1.0f;
@@ -1587,8 +1636,9 @@ mixing_bwd2(const at::Tensor& grad_out_in,
       auto y1 = y_fm.slice(2, m0, row_w);
       at::bmm_out(y0, u_final.slice(2, 0, m0),
                   w0t_all[n_gated].transpose(1, 2));
-      at::bmm_out(y1, u_final.slice(2, m0, row_w),
-                  w1t_all[n_gated].transpose(1, 2));
+      lt_block_bmm(u_final.slice(2, m0, row_w),
+                   w1t_all[n_gated].transpose(1, 2), at::Tensor(), y1,
+                   lt_workspace, stream);
       y_fm.add_(u_final);
     }
     auto ha = h_alpha.value().to(u_final.scalar_type()).unsqueeze(-1);
@@ -1601,7 +1651,8 @@ mixing_bwd2(const at::Tensor& grad_out_in,
       auto hu0 = hu.slice(2, 0, m0);
       auto hu1 = hu.slice(2, m0, row_w);
       at::bmm_out(hu0, v.slice(2, 0, m0), w0t_all[n_gated]);
-      at::bmm_out(hu1, v.slice(2, m0, row_w), w1t_all[n_gated]);
+      lt_block_bmm(v.slice(2, m0, row_w), w1t_all[n_gated], at::Tensor(), hu1,
+                   lt_workspace, stream);
       hu.add_(v);
     }
     grad_u_final = hu;

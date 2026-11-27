@@ -48,9 +48,9 @@ class TestPolarFittingBackendBuffers(unittest.TestCase):
         expected = fitting(descriptor, atype, gr=rotation)["polarizability"]
 
         result = fitting(
-            torch.as_tensor(descriptor),
-            torch.as_tensor(atype),
-            gr=torch.as_tensor(rotation),
+            torch.as_tensor(descriptor, device="cpu"),
+            torch.as_tensor(atype, device="cpu"),
+            gr=torch.as_tensor(rotation, device="cpu"),
         )["polarizability"]
 
         self.assertIsInstance(result, torch.Tensor)

@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Native-spin SeZM energy model.
 
-The model injects the
-per-atom spin vector directly into the descriptor as an equivariant feature
-(``l = 0`` magnitude and ``l = 1`` direction) and obtains the magnetic force as
-the negative spin gradient of the energy. The neighbor list, type map and
-selection use the real-system sizes.
+The native scheme conditions the descriptor on time-even contractions of
+atomic magnetic moments and obtains the magnetic force as the negative spin
+gradient of the energy. The neighbor list, type map and selection use the
+real-system sizes.
 """
 
 from copy import (
@@ -500,9 +499,11 @@ class SeZMNativeSpinModel(SeZMModel):
         """Deserialize a native-spin SeZM model."""
         data = data.copy()
         version = int(data.pop("@version", 1))
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         spin = Spin.deserialize(data.pop("spin"))
         atomic_model = SeZMAtomicModel.deserialize(data.pop("atomic_model"))
-        return cls(atomic_model_=atomic_model, spin=spin, **data)
+        model = cls(atomic_model_=atomic_model, spin=spin, **data)
+        model._restore_lora_trainability()
+        return model

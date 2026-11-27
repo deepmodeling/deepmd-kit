@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Isolated-atom reference of a DPA4 model on the pt_expt graph route.
 
-The reference node of every type is conditioned as the neutral ground-state
-atom: zero charge with the ground-state multiplicity for the charge/spin
-conditioning and a spin vector of one Bohr magneton per unpaired electron for
-the native spin. An isolated atom under these conditions contributes exactly
-its bias, and any cluster differs from the unreferenced model by the
-isolated-atom network output of its atoms.
+The reference node of every type is conditioned as its reference atom: the
+charge/spin condition the preset names or the default condition for the
+charge/spin conditioning, and a spin vector of one Bohr magneton per unpaired
+electron for the native spin. An isolated atom under these conditions
+contributes exactly its bias, and any cluster differs from the unreferenced
+model by the isolated-atom network output of its atoms.
 """
 
 import numpy as np
@@ -32,7 +32,6 @@ from deepmd.pt_expt.utils import (
     env,
 )
 from deepmd.utils.vacuum_reference import (
-    reference_charge_spin,
     reference_spin,
 )
 
@@ -72,13 +71,13 @@ CONFIG = {
 PRESET = {"energy": {"O": float(BIAS[0, 0]), "H": float(BIAS[1, 0])}}
 
 
-def make_model(vacuum_ref: bool, preset: bool = True) -> EnergyModel:
+def make_model(vacuum_ref: bool, preset: bool | dict = True) -> EnergyModel:
     config = {
         **CONFIG,
         "fitting_net": {**CONFIG["fitting_net"], "vacuum_ref": vacuum_ref},
     }
     if preset:
-        config["preset_out_bias"] = PRESET
+        config["preset_out_bias"] = PRESET if preset is True else preset
     model = get_model(config)
     data = jitter_zero_arrays(
         model.atomic_model.descriptor.serialize(), np.random.default_rng(3)
@@ -147,12 +146,13 @@ def test_isolated_atoms_and_reference_subtraction() -> None:
     spin = rng.normal(size=(2, 6, 3)) * (atype == 0)[..., None]
     iso_coord = np.zeros((2, 1, 3))
     iso_atype = np.array([[0], [1]])
-    iso_charge_spin = reference_charge_spin(TYPE_MAP)
-    iso_spin = reference_spin(TYPE_MAP)[:, None, :]
     vac = make_model(True)
     ref = make_model(False)
+    # the preset names no condition, so the reference is the default one
+    iso_charge_spin = vac.atomic_model.vacuum_charge_spin.cpu().numpy()
+    iso_spin = reference_spin(TYPE_MAP)[:, None, :]
 
-    # an isolated neutral ground-state atom contributes exactly its bias
+    # an isolated atom under its reference condition contributes exactly its bias
     np.testing.assert_allclose(
         atom_energies(vac, iso_coord, iso_atype, iso_charge_spin, iso_spin),
         BIAS[:, 0][:, None],
@@ -178,6 +178,52 @@ def test_isolated_atoms_and_reference_subtraction() -> None:
     assert np.abs(other[0, 0] - BIAS[0, 0]) > 1e-8
 
 
+def test_reference_atom_takes_the_spin_moment_of_the_preset() -> None:
+    """An isolated atom carries its preset energy at the moment named with it."""
+    moment = 1.25
+    preset = {"energy": {"O": {"value": float(BIAS[0, 0]), "spin": moment}, "H": 0.5}}
+    model = make_model(True, preset)
+    iso_coord = np.zeros((2, 1, 3))
+    iso_atype = np.array([[0], [1]])
+    iso_charge_spin = model.atomic_model.vacuum_charge_spin.cpu().numpy()
+    # the direction of the moment is immaterial for an isolated atom
+    named = np.array([[[moment, 0.0, 0.0]], [[0.0, 0.0, 0.0]]])
+    ground = reference_spin(TYPE_MAP)[:, None, :]
+
+    def energies(spin: np.ndarray) -> np.ndarray:
+        return atom_energies(model, iso_coord, iso_atype, iso_charge_spin, spin)[:, 0]
+
+    np.testing.assert_allclose(energies(named), BIAS[:, 0], rtol=1e-10, atol=1e-10)
+    # the unpaired-electron count is another moment, with a learned deviation
+    assert abs(energies(ground)[0] - BIAS[0, 0]) > 1e-8
+    # the record keeps the moment, and the fold evaluates the reference at it
+    restored = EnergyModel.deserialize(model.serialize()).to(env.DEVICE).eval()
+    np.testing.assert_array_equal(
+        restored.atomic_model.vacuum_spin.cpu().numpy()[:, 2], [moment, 1.0]
+    )
+    model.fold_vacuum_reference()
+    np.testing.assert_allclose(energies(named), BIAS[:, 0], rtol=1e-10, atol=1e-10)
+
+
+def test_compiled_graphs_follow_the_reference_moment() -> None:
+    """Branches sharing their networks share a compiled graph only at equal moments."""
+    from deepmd.pt_expt.train.training import (
+        _get_model_structure_key,
+    )
+
+    def branch(moment: float) -> EnergyModel:
+        return make_model(
+            True, {"energy": {"O": {"value": -3.0, "spin": moment}, "H": 0.5}}
+        )
+
+    first, twin, other = branch(1.0), branch(1.0), branch(3.0)
+    for model in (twin, other):
+        model.atomic_model.descriptor = first.atomic_model.descriptor
+        model.atomic_model.fitting_net = first.atomic_model.fitting_net
+    assert _get_model_structure_key(twin) == _get_model_structure_key(first)
+    assert _get_model_structure_key(other) != _get_model_structure_key(first)
+
+
 def test_fold_reproduces_the_referenced_model() -> None:
     """Folding the reference into the bias keeps every energy and drops the rows."""
     rng = np.random.default_rng(1)
@@ -187,9 +233,9 @@ def test_fold_reproduces_the_referenced_model() -> None:
     spin = rng.normal(size=(2, 6, 3)) * (atype == 0)[..., None]
     iso_coord = np.zeros((2, 1, 3))
     iso_atype = np.array([[0], [1]])
-    iso_charge_spin = reference_charge_spin(TYPE_MAP)
-    iso_spin = reference_spin(TYPE_MAP)[:, None, :]
     model = make_model(True)
+    iso_charge_spin = model.atomic_model.vacuum_charge_spin.cpu().numpy()
+    iso_spin = reference_spin(TYPE_MAP)[:, None, :]
     e_cluster = atom_energies(model, coord, atype, charge_spin, spin)
     e_iso = atom_energies(model, iso_coord, iso_atype, iso_charge_spin, iso_spin)
 
@@ -207,6 +253,115 @@ def test_fold_reproduces_the_referenced_model() -> None:
         rtol=1e-10,
         atol=1e-10,
     )
+
+
+def test_reference_condition_named_by_the_preset() -> None:
+    """A table that names the state of its isolated atoms sets the reference."""
+    # the atom hydrogens of a table are doublets, the oxygens triplets
+    preset = {
+        "energy": {
+            "O": {"value": float(BIAS[0, 0]), "charge": 0, "multiplicity": 3},
+            "H": {"value": float(BIAS[1, 0]), "charge": 0, "multiplicity": 2},
+        }
+    }
+    model = make_model(True, preset)
+    np.testing.assert_array_equal(
+        model.atomic_model.vacuum_charge_spin.cpu().numpy(),
+        [[0.0, 3.0], [0.0, 2.0]],
+    )
+    iso_coord = np.zeros((2, 1, 3))
+    iso_atype = np.array([[0], [1]])
+    iso_spin = reference_spin(TYPE_MAP)[:, None, :]
+    # an isolated atom in the named state has exactly its preset energy
+    np.testing.assert_allclose(
+        atom_energies(
+            model, iso_coord, iso_atype, np.array([[0.0, 3.0], [0.0, 2.0]]), iso_spin
+        ),
+        BIAS[:, 0][:, None],
+        rtol=1e-10,
+        atol=1e-10,
+    )
+    # the named state, not the frame condition, is the reference: a frame in
+    # the default condition is a learned deviation from it
+    other = atom_energies(
+        model, iso_coord, iso_atype, np.array([[0.0, 1.0]] * 2), iso_spin
+    )
+    assert np.all(np.abs(other[:, 0] - BIAS[:, 0]) > 1e-8)
+    # the record keeps the condition, so a rebuild references the same atoms
+    restored = EnergyModel.deserialize(model.serialize()).to(env.DEVICE).eval()
+    np.testing.assert_array_equal(
+        restored.atomic_model.vacuum_charge_spin.cpu().numpy(),
+        [[0.0, 3.0], [0.0, 2.0]],
+    )
+
+
+def test_reference_condition_of_a_table_without_one_is_the_default() -> None:
+    """A table that names no state references the default condition."""
+    # the preset of this module names no condition, so every type takes the
+    # default condition of the descriptor, whatever its element
+    model = make_model(True)
+    np.testing.assert_array_equal(
+        model.atomic_model.vacuum_charge_spin.cpu().numpy(),
+        [[0.0, 1.0], [0.0, 1.0]],
+    )
+    iso_coord = np.zeros((2, 1, 3))
+    iso_atype = np.array([[0], [1]])
+    iso_spin = reference_spin(TYPE_MAP)[:, None, :]
+    np.testing.assert_allclose(
+        atom_energies(
+            model, iso_coord, iso_atype, np.array([[0.0, 1.0]] * 2), iso_spin
+        ),
+        BIAS[:, 0][:, None],
+        rtol=1e-10,
+        atol=1e-10,
+    )
+    # a type that is no element needs no name either
+    config = {
+        **CONFIG,
+        "type_map": ["O", "Fe_U"],
+        "descriptor": {**CONFIG["descriptor"], "ntypes": 2},
+        "preset_out_bias": {
+            "energy": {
+                "O": float(BIAS[0, 0]),
+                "Fe_U": {"value": float(BIAS[1, 0]), "spin": 4.0},
+            }
+        },
+        "fitting_net": {**CONFIG["fitting_net"], "vacuum_ref": True},
+    }
+    model = get_model(config)
+    np.testing.assert_array_equal(
+        model.atomic_model.vacuum_charge_spin.cpu().numpy(),
+        [[0.0, 1.0], [0.0, 1.0]],
+    )
+
+
+def test_compiled_graphs_follow_the_reference_condition() -> None:
+    """Branches sharing their networks share a graph only at equal references."""
+    from deepmd.pt_expt.train.training import (
+        _get_model_structure_key,
+    )
+
+    def branch(multiplicity: int) -> EnergyModel:
+        return make_model(
+            True,
+            {
+                "energy": {
+                    "O": {
+                        "value": float(BIAS[0, 0]),
+                        "charge": 0,
+                        "multiplicity": multiplicity,
+                    },
+                    "H": float(BIAS[1, 0]),
+                }
+            },
+        )
+
+    first, twin, other = branch(3), branch(3), branch(1)
+    for model in (twin, other):
+        model.atomic_model.descriptor = first.atomic_model.descriptor
+        model.atomic_model.fitting_net = first.atomic_model.fitting_net
+    assert _get_model_structure_key(twin) == _get_model_structure_key(first)
+    assert _get_model_structure_key(other) != _get_model_structure_key(first)
 
 
 def test_fold_vacuum_reference_keeps_cpu_residency(monkeypatch) -> None:
@@ -247,7 +402,7 @@ def test_dense_and_graph_routes_share_the_vacuum_descriptor() -> None:
     graph, atype_all, charge_spin, spin = am.append_vacuum_frames(
         graph, atype.reshape(-1), charge_spin, spin
     )
-    gg, _, _ = am.descriptor.call_graph(
+    gg, _ = am.descriptor.call_graph(
         graph,
         atype_all,
         type_embedding=am.descriptor.graph_type_embedding_table(),

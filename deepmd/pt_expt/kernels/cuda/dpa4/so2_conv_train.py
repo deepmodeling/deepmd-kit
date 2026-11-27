@@ -1009,19 +1009,18 @@ class SO2ValueTrainCuda:
         )
 
         run_coeff, _, run_exponents, _ = wigner_run_tables(conv.lmax)
-        self._run_coeff_cpu = run_coeff
-        self._run_coeff: Tensor | None = None
+        # The table is a non-persistent buffer of the convolution: it moves
+        # with the module and every trace captures it as a real tensor.
+        conv.register_buffer(
+            "_cuda_run_coeff",
+            run_coeff.to(device=next(conv.parameters()).device),
+            persistent=False,
+        )
         self._run_exponents = [int(value) for value in run_exponents.reshape(-1)]
 
-    def _run_coefficients(self, device: torch.device, dtype: torch.dtype) -> Tensor:
-        """Return the packed-run coefficient table on the compute device."""
-        if (
-            self._run_coeff is None
-            or self._run_coeff.device != device
-            or self._run_coeff.dtype != dtype
-        ):
-            self._run_coeff = self._run_coeff_cpu.to(device=device, dtype=dtype)
-        return self._run_coeff
+    def _run_coefficients(self, dtype: torch.dtype) -> Tensor:
+        """Return the packed-run coefficient table in the compute dtype."""
+        return self._conv._cuda_run_coeff.to(dtype=dtype)
 
     @torch.amp.autocast("cuda", enabled=False)
     def edge_runs(self, edge_cache: Any) -> Tensor:
@@ -1042,9 +1041,7 @@ class SO2ValueTrainCuda:
             )
             runs = torch.matmul(
                 monomials,
-                self._run_coefficients(quaternion.device, monomials.dtype).transpose(
-                    0, 1
-                ),
+                self._run_coefficients(monomials.dtype).transpose(0, 1),
             )
             if store is not None:
                 store[key] = runs
@@ -1060,13 +1057,16 @@ class SO2ValueTrainCuda:
         conv = self._conv
         m0 = (conv.lmax + 1) * conv.so2_focus_dim
         w0_list, w1_list, gw_list = [], [], []
+        # A parity map has no W_v block, so its |m| = 1 block is
+        # [[W_u, 0], [0, W_u]] and the kernels read the shared W_u of one sign.
+        m1 = (1 if conv.parity else 2) * conv.lmax * conv.so2_focus_dim
         for layer, linear in enumerate(conv.so2_linears):
             weight = linear._build_so2_weight()
             if not differentiable:
                 weight = weight.detach()
-            weight = weight.permute(1, 0, 2).contiguous()
+            weight = weight.permute(1, 0, 2)  # (F, D_m*Cf, D_m*Cf)
             w0_list.append(weight[:, :m0, :m0])
-            w1_list.append(weight[:, m0:, m0:])
+            w1_list.append(weight[:, m0 : m0 + m1, m0 : m0 + m1])
             non_linear = conv.non_linearities[layer]
             if type(non_linear).__name__ == "GatedActivation":
                 gate = non_linear.gate_linear.weight

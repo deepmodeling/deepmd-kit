@@ -269,3 +269,27 @@ class TestNativeSpinModelRegistryDispatch:
         e1 = model.call(coord, atype, spin, box=box)["energy"]
         e2 = m2.call(coord, atype, spin, box=box)["energy"]
         np.testing.assert_allclose(e1, e2, rtol=1e-12)
+
+
+def test_spin_free_replica_shares_common_layers() -> None:
+    base = _jittered_model(seed=3)
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    del config["spin"]
+    # Native spin implies parity, which a spin-free replica sets explicitly.
+    config["descriptor"]["parity"] = True
+    replica = get_model(config)
+    standalone = replica.atomic_model.descriptor.serialize()["@variables"]
+    descriptor = replica.atomic_model.descriptor
+    base_descriptor = base.atomic_model.descriptor
+    descriptor.share_params(base_descriptor, 0)
+
+    assert descriptor.spin_embedding is None
+    assert descriptor.env_seed_embedding is not base_descriptor.env_seed_embedding
+    assert (
+        descriptor.env_seed_embedding.g_layer1
+        is base_descriptor.env_seed_embedding.g_layer1
+    )
+    assert descriptor.blocks is base_descriptor.blocks
+    assert descriptor.serialize()["@variables"].keys() == standalone.keys()
+    with pytest.raises(ValueError, match="native-spin branch"):
+        base_descriptor.share_params(get_model(config).atomic_model.descriptor, 0)

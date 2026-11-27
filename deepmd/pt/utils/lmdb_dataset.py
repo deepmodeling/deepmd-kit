@@ -206,6 +206,8 @@ class LmdbDataset(Dataset):
           are padded with phantom atoms.
     auto_prob_style : str, optional
         ``auto_prob`` string used to reweight the original systems.
+    seed : int, optional
+        Global seed for deterministic LMDB batch order across epochs.
     """
 
     def __init__(
@@ -214,6 +216,7 @@ class LmdbDataset(Dataset):
         type_map: list[str],
         batch_size: int | str = "auto",
         auto_prob_style: str | None = None,
+        seed: int | None = None,
     ) -> None:
         self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
         self._collate = functools.partial(
@@ -239,6 +242,7 @@ class LmdbDataset(Dataset):
         sampler = LmdbBatchSampler(
             self._reader,
             shuffle=True,
+            seed=seed,
             block_targets=self._block_targets,
         )
         self._batch_sampler = _LmdbBatchSamplerTorch(sampler)
