@@ -84,10 +84,10 @@ class DOSLoss(TaskLoss):
             and self.limit_pref_acdf >= 0.0
         ), "Can not assign negative weight to `pref` and `pref_atomic`"
 
-        self.has_dos = (start_pref_dos != 0.0 and limit_pref_dos != 0.0) or inference
-        self.has_cdf = (start_pref_cdf != 0.0 and limit_pref_cdf != 0.0) or inference
-        self.has_ados = (start_pref_ados != 0.0 and limit_pref_ados != 0.0) or inference
-        self.has_acdf = (start_pref_acdf != 0.0 and limit_pref_acdf != 0.0) or inference
+        self.has_dos = (start_pref_dos != 0.0 or limit_pref_dos != 0.0) or inference
+        self.has_cdf = (start_pref_cdf != 0.0 or limit_pref_cdf != 0.0) or inference
+        self.has_ados = (start_pref_ados != 0.0 or limit_pref_ados != 0.0) or inference
+        self.has_acdf = (start_pref_acdf != 0.0 or limit_pref_acdf != 0.0) or inference
 
         assert self.has_dos or self.has_cdf or self.has_ados or self.has_acdf, (
             AssertionError(
