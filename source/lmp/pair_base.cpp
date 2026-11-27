@@ -476,6 +476,11 @@ void PairDeepBaseModel::write_restart(FILE*) {
 }
 
 void PairDeepBaseModel::init_style() {
+  if (comm->style != Comm::BRICK) {
+    error->all(FLERR,
+               "DeepMD pair styles do not support comm_style tiled; "
+               "use comm_style brick");
+  }
   model_deviation.start_run();
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
