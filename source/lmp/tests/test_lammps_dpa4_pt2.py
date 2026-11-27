@@ -15,7 +15,7 @@ dense archive; multi-rank inference on it fails fast in C++ instead (see
 the "Deferred" note below). This is scoped to the dense lower only: the
 GRAPH ``.pt2`` (``deeppot_dpa4_graph.pt2``, ``test_lammps_dpa4_graph_pt2.py``)
 DOES carry a with-comm artifact (``has_message_passing_across_ranks()``
-returns ``self.bridging_switch is None``) and runs multi-rank via the same
+returns ``True``) and runs multi-rank via the same
 generic dispatch DPA2 uses.
 
 Single-rank cells covered here (all on this single artifact):

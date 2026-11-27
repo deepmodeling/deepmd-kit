@@ -260,6 +260,16 @@ class ConvCase:
         """Dense transcription of the fused convolution."""
         lmax, cf, n_focus = self.lmax, self.focus_dim, self.n_focus
         n_deg = lmax + 1
+        weight1 = self.w1
+        if weight1.shape[-1] == lmax * cf:
+            zero = torch.zeros_like(weight1)
+            weight1 = torch.cat(
+                [
+                    torch.cat([weight1, zero], dim=-1),
+                    torch.cat([zero, weight1], dim=-1),
+                ],
+                dim=-2,
+            )
         m0 = n_deg * cf
         n_edge = self.src.shape[0]
         n_node, c_wide = self.x.shape[0], self.x.shape[2]
@@ -292,7 +302,7 @@ class ConvCase:
         )
         for layer in range(self.n_layers):
             z0 = torch.einsum("efi,fio->efo", u[:, :, :m0], self.w0[layer])
-            z1 = torch.einsum("efi,fio->efo", u[:, :, m0:], self.w1[layer])
+            z1 = torch.einsum("efi,fio->efo", u[:, :, m0:], weight1[layer])
             if layer < self.n_layers - 1:
                 sig = torch.sigmoid(
                     torch.einsum("efi,fio->efo", z0[:, :, :cf], self.gw[layer])
@@ -379,6 +389,32 @@ class ConvCase:
 @unittest.skipUnless(CUDA_CONV, "requires the CUDA dpa4_so2_conv operator")
 class TestSeZMConvCuda(unittest.TestCase):
     """Numerical contract of the fused SO(2) convolution."""
+
+    def test_parity_shared_weight_forward_and_backward(self) -> None:
+        """Reflection-preserving blocks skip zero products in both directions."""
+        leaves = ("x", "quat", "kc", "q", "k", "env", "rad0", "head_gate")
+        for lmax, channels in ((1, 32), (2, 32), (4, 64)):
+            with self.subTest(lmax=lmax, channels=channels):
+                case = ConvCase(n_node=13, degree=7, lmax=lmax, focus_dim=channels)
+                width = lmax * channels
+                case.w1 = case.w1[..., :width, :width].contiguous()
+                for leaf in leaves:
+                    setattr(
+                        case, leaf, getattr(case, leaf).detach().requires_grad_(True)
+                    )
+                reference = case.reference()
+                probe = torch.randn_like(reference)
+                expected = torch.autograd.grad(
+                    reference, [getattr(case, key) for key in leaves], probe
+                )
+                actual = case.fused()[0]
+                observed = torch.autograd.grad(
+                    actual, [getattr(case, key) for key in leaves], probe
+                )
+                torch.testing.assert_close(actual, reference, atol=5e-5, rtol=1e-4)
+                for got, want in zip(observed, expected, strict=True):
+                    scale = max(float(want.abs().max()), 1.0)
+                    torch.testing.assert_close(got, want, atol=5e-5 * scale, rtol=1e-4)
 
     def test_rejects_multiple_attention_heads(self) -> None:
         case = ConvCase(n_head=2, focus_dim=64)
@@ -524,6 +560,37 @@ class TestSeZMGridPairCuda(unittest.TestCase):
         lg = torch.einsum("gp,npc->ngc", to_grid, left)
         rg = torch.einsum("gp,npc->ngc", to_grid, right)
         return torch.einsum("gp,ngc->npc", from_grid_t, lg * rg)
+
+    def test_parity_split_matches_paired_quadrature(self) -> None:
+        """CUDA inversion projection shares synthesis reads across parities."""
+        for p_dim, channels, n_grid in GRID_SHAPES:
+            with self.subTest(slots=p_dim, channels=channels):
+                left, right, to_grid, from_grid = self._case(7, p_dim, channels, n_grid)
+                even_count = {9: 6, 12: 3, 27: 18, 48: 18, 75: 45, 108: 45, 147: 84}[
+                    p_dim
+                ]
+                order = torch.randperm(p_dim, device="cuda")
+                parity = torch.ones(p_dim, device="cuda", dtype=torch.int64)
+                parity[order[:even_count]] = 0
+                sign = 1 - 2 * parity
+                paired_t = torch.cat([to_grid, to_grid * sign[None, :]], dim=0)
+                paired_f = 0.5 * torch.cat(
+                    [from_grid, from_grid * sign[None, :]], dim=0
+                )
+                left.requires_grad_(True)
+                right.requires_grad_(True)
+                want = self._reference(left, right, paired_t, paired_f)
+                got = grid_pair(left, right, to_grid, from_grid, order, even_count)
+                probe = torch.randn_like(got)
+                expected = torch.autograd.grad(want, (left, right), probe)
+                observed = torch.autograd.grad(got, (left, right), probe)
+                for actual, reference in zip(
+                    (got, *observed), (want, *expected), strict=True
+                ):
+                    scale = max(float(reference.abs().max()), 1.0)
+                    torch.testing.assert_close(
+                        actual, reference, atol=5e-6 * scale, rtol=1e-5
+                    )
 
     def test_forward_matches_the_projector_composition(self) -> None:
         # Every coefficient-slot count of the zoo, at the grid size that ships

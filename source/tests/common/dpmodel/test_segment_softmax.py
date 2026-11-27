@@ -324,17 +324,19 @@ class TestSignedPhantomStrictPositivity:
         import torch
 
         # inactive-floor regime: logits far above phantom_logit
-        data = torch.tensor([20.0, 21.0], dtype=torch.float32, requires_grad=True)
-        ids = torch.tensor([0, 0], dtype=torch.int64)
+        data = torch.tensor(
+            [20.0, 21.0], dtype=torch.float32, requires_grad=True, device="cpu"
+        )
+        ids = torch.tensor([0, 0], dtype=torch.int64, device="cpu")
         w = segment_softmax(
             data,
             ids,
             1,
-            phantom_count=torch.tensor([-1.0], dtype=torch.float32),
+            phantom_count=torch.tensor([-1.0], dtype=torch.float32, device="cpu"),
             phantom_logit=-20.0,
-            slot_weight=torch.ones(2, dtype=torch.float32),
+            slot_weight=torch.ones(2, dtype=torch.float32, device="cpu"),
         )
-        v = torch.tensor([1.0, 2.0])
+        v = torch.tensor([1.0, 2.0], device="cpu")
         (w * v).sum().backward()
         assert torch.all(torch.isfinite(data.grad))
         # analytic softmax-jacobian reference: g_i = w_i * (v_i - sum_j w_j v_j)
@@ -346,14 +348,16 @@ class TestSignedPhantomStrictPositivity:
         assert np.abs(ref).max() > 0.1  # nontrivial gradient, not all-zero
 
         # active-floor regime: signed denominator below the floor threshold
-        data = torch.tensor([-21.0, -21.0], dtype=torch.float32, requires_grad=True)
+        data = torch.tensor(
+            [-21.0, -21.0], dtype=torch.float32, requires_grad=True, device="cpu"
+        )
         w = segment_softmax(
             data,
             ids,
             1,
-            phantom_count=torch.tensor([-1.0], dtype=torch.float32),
+            phantom_count=torch.tensor([-1.0], dtype=torch.float32, device="cpu"),
             phantom_logit=-20.0,
-            slot_weight=torch.ones(2, dtype=torch.float32),
+            slot_weight=torch.ones(2, dtype=torch.float32, device="cpu"),
         )
         (w * v).sum().backward()
         assert torch.all(torch.isfinite(data.grad))
@@ -577,17 +581,19 @@ class TestFloat32HighLogitBackward:
     def test_torch_high_logits_backward_finite(self) -> None:
         import torch
 
-        data = torch.tensor([68.0, 69.0], dtype=torch.float32, requires_grad=True)
-        ids = torch.tensor([0, 0], dtype=torch.int64)
+        data = torch.tensor(
+            [68.0, 69.0], dtype=torch.float32, requires_grad=True, device="cpu"
+        )
+        ids = torch.tensor([0, 0], dtype=torch.int64, device="cpu")
         w = segment_softmax(
             data,
             ids,
             1,
-            phantom_count=torch.tensor([0.0], dtype=torch.float32),
+            phantom_count=torch.tensor([0.0], dtype=torch.float32, device="cpu"),
             phantom_logit=-20.0,
-            slot_weight=torch.ones(2, dtype=torch.float32),
+            slot_weight=torch.ones(2, dtype=torch.float32, device="cpu"),
         )
-        v = torch.tensor([1.0, 2.0])
+        v = torch.tensor([1.0, 2.0], device="cpu")
         (w * v).sum().backward()
         assert torch.all(torch.isfinite(data.grad))
         w64 = np.exp([68.0, 69.0] - np.float64(69.0))

@@ -430,9 +430,9 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
 
 /**
  * @brief Evaluate a compact canonical graph on the model device: the
- * device-resident inference of the DPA4 family, whose compressed DPA4C
- * archives are frozen with the compact canonical lower, as are compressed
- * DPA1 archives.
+ * device-resident inference of the DPA4 family, whose DPA4 archives and
+ * compressed DPA4C archives are frozen with the compact canonical lower, as
+ * are compressed DPA1 archives.
  *
  * @param[in] dp The DP to use.
  * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
@@ -1409,7 +1409,8 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
 
 /**
  * @brief Evaluate a compact canonical graph on the model device with a DP spin
- * model: the device-resident inference of native-spin DPA4C archives.
+ * model: the device-resident inference of native-spin archives of the DPA4
+ * family frozen with the compact canonical lower.
  *
  * @param[in] dp The DP spin model to use.
  * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
@@ -1424,9 +1425,9 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
  * @param[in] index_width Width of each source index, four or eight bytes.
  * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
  * @param[in] d_destination_row_ptr Destination CSR offsets.
- * @param[in] d_source_row_ptr Source CSR offsets, read only for the per-atom
- * virial. May be NULL together with ``d_source_order`` when ``d_atom_virial``
- * is NULL.
+ * @param[in] d_source_row_ptr Source CSR offsets. May be NULL together with
+ * ``d_source_order`` and ``d_atom_virial`` unless
+ * DP_DeepSpinCanonicalGraphRequiresSourceCSR reports otherwise.
  * @param[in] d_source_order Source-grouped int64 edge storage positions.
  * @param[in] d_spin FP32 per-node magnetic moment, shape ``(nall_nodes, 3)``;
  * halo rows carry their owner's moment.
@@ -1506,6 +1507,14 @@ extern void DP_DPA4SpinComputeCanonicalGraphGPU(
  * @since API version 30
  */
 extern bool DP_DeepSpinUsesCanonicalGraphInference(DP_DeepSpin* dp);
+
+/**
+ * @brief Query whether every compact canonical evaluation of a DP spin model
+ * reads the source CSR, as DP_DeepPotCanonicalGraphRequiresSourceCSR reports
+ * for a DP.
+ * @since API version 32
+ */
+extern bool DP_DeepSpinCanonicalGraphRequiresSourceCSR(DP_DeepSpin* dp);
 
 /**
  * @brief Query whether a compact canonical evaluation of a node set with halo

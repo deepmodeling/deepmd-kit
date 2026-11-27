@@ -11,12 +11,13 @@ from typing import (
 )
 
 from deepmd.utils.bridging import (
-    resolve_bridging_window,
+    resolve_bridging_options,
     route_canonical_learned_options,
 )
 from deepmd.utils.spin import (
     Spin,
     env_protection_descriptors,
+    is_native_spin_scheme,
 )
 
 ModelBuilder = Callable[[dict], Any]
@@ -238,11 +239,10 @@ def get_linear_atomic_model(
     Children with a ``descriptor`` build as learned atomic models through
     the backend registries; ``pairtab`` children build as pair-tabulation
     atomic models; an ``inner_potential`` child builds the analytical
-    bridging term. The composition is the ONE owner of the bridging
-    coupling: it derives the learned sibling descriptor's
-    ``inner_clamp_f_inner``/``_f_outer``/``_scale`` from the
-    ``inner_potential`` child's window, so the window is written once in
-    the config (issue #5948).
+    close-contact term. The composition is the ONE owner of the bridging
+    coupling: it derives the learned sibling descriptor's ``contact_clamp``
+    from the ``inner_potential`` child's ``clamp``, so the option is written
+    once in the config (issue #5948).
 
     Parameters
     ----------
@@ -267,7 +267,7 @@ def get_linear_atomic_model(
         runtime state the children hold (e.g. ``use_amp``).
     descriptor_child_builder : callable, optional
         Backend hook for descriptor-bearing children: called with the
-        child config (``type_map`` and derived clamp radii already
+        child config (``type_map`` and the derived contact clamp already
         injected) and returns the child atomic model, or ``None`` to fall
         back to the generic registry build. Backends use it to route
         family-specific model types (e.g. DPA4/SeZM) through their
@@ -373,7 +373,7 @@ def get_linear_atomic_model(
             "dpa4c",
             "DPA4C",
         ):
-            # same family restriction as the pt builder: the bridging window
+            # same family restriction as the pt builder: the contact clamp
             # below only exists on DPA4-family descriptors, so any other
             # family would die on an obscure unknown-kwarg TypeError
             raise NotImplementedError(
@@ -381,11 +381,12 @@ def get_linear_atomic_model(
                 "bridging only for the DPA4 descriptor family (DPA4/SeZM and "
                 f"DPA4C), but got {learned_descriptor_type!r}."
             )
-        # The composition derives the sibling descriptor's clamp window from
-        # the inner_potential child: one source of truth for the window.
-        inner_cfg = children[inner_indices[0]]
+        # The composition derives the sibling descriptor's contact clamp from
+        # the inner_potential child: one source of truth for the option.
+        bridging = resolve_bridging_options(children[inner_indices[0]])
         learned_descriptor = children[learned_indices[0]]["descriptor"]
-        learned_descriptor.update(resolve_bridging_window(inner_cfg))
+        learned_descriptor["contact_clamp"] = bridging["clamp"]
+        learned_descriptor["contact_support"] = bridging["support"]
         route_canonical_learned_options(data, children[learned_indices[0]])
         preset_out_bias = children[learned_indices[0]].get("preset_out_bias")
 
@@ -467,8 +468,16 @@ def get_linear_atomic_model(
         built[i] = InnerPotentialAtomicModel(
             type_map=copy.deepcopy(type_map),
             mode=children[i].get("mode", "zbl"),
-            rcut=learned_descriptor_obj.get_rcut(),
+            precision=learned_descriptor_obj.precision,
+            rcut=min(
+                getattr(
+                    learned_descriptor_obj,
+                    "block_rcut",
+                    [learned_descriptor_obj.get_rcut()],
+                )
+            ),
             sel=learned_descriptor_obj.get_sel(),
+            truncation=resolve_bridging_options(children[i])["truncation"],
         )
     return LinearEnergyAtomicModel(
         models=[built[i] for i in range(len(children))],
@@ -555,7 +564,7 @@ def get_model(
     model_type = data.get("type", "standard")
     if model_type == "standard":
         if "spin" in data:
-            if str(data["spin"].get("scheme", "deepspin")) == "native":
+            if is_native_spin_scheme(data["spin"].get("scheme", "deepspin")):
                 if native_spin_model_factory is None:
                     raise NotImplementedError(
                         "Native spin model is not implemented yet."

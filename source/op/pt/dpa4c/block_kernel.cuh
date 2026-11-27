@@ -100,14 +100,14 @@ struct BlockPanel<128, Lmax, Reverse> : ScanShape<32, 4, 4, Reverse> {};
 /// direction of the scan, and its panel geometry (BlockPanel). ``Reverse``
 /// marks the backward, which reads every entry of a row as the edge the row
 /// emits.
-template <int ChannelCount, int Degree, bool Spin, bool Modes, bool Backward>
+template <int ChannelCount, int Degree, int Spin, bool Modes, bool Backward>
 struct PanelLayout {
   static constexpr int Channels = ChannelCount;
   static constexpr int Lmax = Degree;
-  static constexpr bool HasSpin = Spin;
+  static constexpr int SpinMode = Spin;
   static constexpr bool HasModes = Modes;
   static constexpr bool Reverse = Backward;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   using S = BlockPanel<Channels, Lmax, Reverse>;
   static constexpr int Edges = S::Edges;
   static_assert(Edges == kWarpSize || Edges == 2 * kWarpSize,
@@ -637,15 +637,15 @@ struct SaturatedStager : deepmd_gemm::InputStager<NodeTile, Vector> {
 
 /// The accumulators of the node input layer of the tile of a CTA, pre - b,
 /// for the column tile at ``tile.col0``.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __device__ __forceinline__ void node_input_layer(
     const BlockArguments& block,
     const deepmd_gemm::TileIndex& tile,
     const deepmd_gemm::LaneOrigin& origin,
     deepmd_gemm::GemmStorage<NodeTile>& smem,
     deepmd_gemm::Accumulators<NodeTile>& acc) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   SaturatedStager<P::OutputWidth % 4 == 0> a(
       block.descriptor, tile.row0, block.edges.node_count, P::OutputWidth,
       __ldg(block.record + 1));
@@ -685,12 +685,12 @@ __device__ __forceinline__ void store_gate(
 /// and, in the CTA of the first column tile, the encoded state, the saturated
 /// keys of the moments of block k - 1 and the divisor columns of the
 /// descriptor, which every further block carries.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(
     NodeTile::threads,
     NodeTile::min_blocks) void block_maps_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   const float* record = block.record;
   __shared__ __align__(16) deepmd_gemm::GemmStorage<NodeTile> smem;
@@ -698,7 +698,7 @@ __global__ __launch_bounds__(
   const deepmd_gemm::TileIndex tile =
       deepmd_gemm::tile_index<NodeTile>(B::NodeWidth);
   deepmd_gemm::Accumulators<NodeTile> acc;
-  node_input_layer<Channels, Lmax, HasSpin>(block, tile, origin, smem, acc);
+  node_input_layer<Channels, Lmax, SpinMode>(block, tile, origin, smem, acc);
 
   // === Hidden-layer term and null-mass logits ===
 #pragma unroll
@@ -794,13 +794,13 @@ __global__ __launch_bounds__(
 /// state cotangent back onto its gate and value, which the first column tile
 /// of the layer recomputes; the hidden-layer term and the null-mass logits
 /// pass theirs through.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(
     NodeTile::threads,
     NodeTile::min_blocks) void block_map_cotangent_kernel(BlockArguments
                                                               block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   const float* record = block.record;
   __shared__ __align__(16) deepmd_gemm::GemmStorage<NodeTile> smem;
@@ -808,7 +808,7 @@ __global__ __launch_bounds__(
   const deepmd_gemm::TileIndex tile =
       deepmd_gemm::tile_index<NodeTile>(NodeTile::cols);
   deepmd_gemm::Accumulators<NodeTile> acc;
-  node_input_layer<Channels, Lmax, HasSpin>(block, tile, origin, smem, acc);
+  node_input_layer<Channels, Lmax, SpinMode>(block, tile, origin, smem, acc);
   auto* gate = reinterpret_cast<float (*)[B::NodeHidden]>(&smem.a[0][0][0]);
   auto* d_product = reinterpret_cast<float (*)[B::StateHidden]>(
       &smem.a[0][0][0] + NodeTile::rows * B::NodeHidden);
@@ -953,12 +953,12 @@ __global__ __launch_bounds__(
 /// layer contracted with the transpose of the layer, times the slope of the
 /// saturation, into ``descriptor_gradient``, which may take the place of
 /// ``descriptor``.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(
     NodeTile::threads,
     NodeTile::min_blocks) void block_map_input_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   __shared__ __align__(16) deepmd_gemm::GemmStorage<NodeTile> smem;
   const deepmd_gemm::LaneOrigin origin = deepmd_gemm::lane_origin<NodeTile>();
@@ -1000,11 +1000,11 @@ __global__ __launch_bounds__(
 /// cotangents that the edges of block k read, the cotangent of the null-mass
 /// logits, and the moment gradient carried back to the first block. One warp
 /// owns one node.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(kBlockThreads) void block_cotangent_kernel(
     BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const Arguments& args = block.edges;
   const float* record = block.record;
   const int lane = threadIdx.x % kWarpSize;
@@ -1261,8 +1261,9 @@ struct __align__(16) PanelEdges {
   float block_envelope[Edges];
   float envelope_slope[BackwardEdges];
   float block_slope[BackwardEdges];
-  /// Slope of the length the table reads with respect to the true one: the
-  /// switch inside a bridging window, one elsewhere.
+  /// Slope of the length the table and the envelope read with respect to the
+  /// true one: the smootherstep inside the contact clamp window of the pair,
+  /// one elsewhere.
   float seen_slope[BackwardEdges];
   long source[Edges];
   float vector[3][BackwardEdges];
@@ -1521,8 +1522,9 @@ __device__ __forceinline__ void prefetch_block_bonds(const Arguments& args,
 }
 
 /// The first-block envelope of an edge, the length its radial table reads,
-/// and, for the backward, their slopes with respect to the true length.
-struct BridgedEnvelope {
+/// and, for the backward, the slope of the envelope and the slope of that
+/// length with respect to the true length.
+struct FirstBlockEnvelope {
   float envelope;
   float seen;
   float slope;
@@ -1530,44 +1532,29 @@ struct BridgedEnvelope {
 };
 
 /// The envelope and the table length of the first block for an edge of length
-/// ``radius`` between nodes of the types ``center_type`` and
-/// ``source_type``, as load_geometry forms them: inside the bridging window of
-/// the pair the table reads the clamped length and the envelope carries the
-/// switch, and the source gate of a bridged descriptor of several blocks
-/// multiplies the envelope of every edge. Under the gate the slope of the
-/// switch enters through the gates of the other edges of the source, which
-/// gate_closure_kernel adds, so the slope keeps c3'(r̃) w^2 alone (see
-/// radial_chain). A bridged launch of the further blocks always carries the
-/// source gate (evaluate_further_blocks), so the slope of a window without
-/// one is not formed here.
-__device__ __forceinline__ BridgedEnvelope
-bridged_envelope(const Arguments& args,
-                 float radius,
-                 int center_type,
-                 int source_type,
-                 long source) {
-  BridgedEnvelope result{c3_envelope(radius, args.rcut), radius,
-                         c3_envelope_derivative(radius, args.rcut), 1.0f};
-  if (!args.bridged) {
+/// ``radius`` between nodes of the types ``center_type`` and ``source_type``,
+/// as load_geometry forms them: the cutoff factor of the length that the
+/// contact clamp of the pair leaves, which is the true length outside the
+/// clamp window of the pair. The table and the envelope both read that length,
+/// so the slope of the envelope carries the slope of the clamped length, and
+/// the table slope is scaled by it where it is applied.
+__device__ __forceinline__ FirstBlockEnvelope first_block_envelope(
+    const Arguments& args, float radius, int center_type, int source_type) {
+  FirstBlockEnvelope result{c3_envelope(radius, args.rcut), radius,
+                            c3_envelope_derivative(radius, args.rcut), 1.0f};
+  if (args.contact_edges == nullptr) {
     return result;
   }
-  float weight = 1.0f;
-  const float contact = __ldg(args.contact_radius + center_type) +
-                        __ldg(args.contact_radius + source_type);
-  if (radius < args.f_outer * contact) {
-    const float t = window_parameter(__fdividef(radius, contact), args.f_inner,
-                                     args.inverse_f_width);
-    weight = bridging_switch(t);
-    result.seen = clamped_length(t, contact, args.f_inner, args.f_outer);
-    result.envelope = c3_envelope(result.seen, args.rcut) * weight;
+  const float edge_length =
+      __ldg(args.contact_edges +
+            static_cast<long>(center_type) * args.type_count + source_type);
+  if (radius < edge_length) {
+    const float t = clamp_parameter(radius, edge_length, args.contact_inner);
+    result.seen = clamped_separation(t, edge_length, args.contact_inner);
+    result.seen_slope = clamp_slope(t);
+    result.envelope = c3_envelope(result.seen, args.rcut);
     result.slope =
-        c3_envelope_derivative(result.seen, args.rcut) * weight * weight;
-    result.seen_slope = weight;
-  }
-  if (args.source_gate != nullptr) {
-    const float gate = leave_one_out_gate(args.source_gate[source], weight);
-    result.envelope *= gate;
-    result.slope *= gate;
+        c3_envelope_derivative(result.seen, args.rcut) * result.seen_slope;
   }
   return result;
 }
@@ -1639,20 +1626,21 @@ __device__ __forceinline__ void load_panel_edges(
       const float z = sign * args.edge_vec[position * 3 + 2];
       const EdgeGeometry geometry = block_geometry(x, y, z, args.eps);
       // The envelope and the radial table of the first block, under the
-      // bridging window of its pair and the source gate (load_geometry); the
-      // envelope of the block reads the true length.
-      const BridgedEnvelope first = bridged_envelope(
+      // contact clamp of its pair (load_geometry); the envelope of the block
+      // reads the same clamped length.
+      const FirstBlockEnvelope first = first_block_envelope(
           args, geometry.radius, static_cast<int>(args.atype[destination]),
-          static_cast<int>(args.atype[source]), source);
+          static_cast<int>(args.atype[source]));
       edges.envelope[e] = first.envelope;
-      edges.block_envelope[e] = c3_envelope(geometry.radius, cutoff);
+      edges.block_envelope[e] = c3_envelope(first.seen, cutoff);
       if constexpr (Reverse) {
         edges.vector[0][e] = x;
         edges.vector[1][e] = y;
         edges.vector[2][e] = z;
         edges.envelope_slope[e] = first.slope;
         edges.seen_slope[e] = first.seen_slope;
-        edges.block_slope[e] = c3_envelope_derivative(geometry.radius, cutoff);
+        edges.block_slope[e] =
+            c3_envelope_derivative(first.seen, cutoff) * first.seen_slope;
       }
       const TableLocation location = locate_table<true>(
           first.seen, args.table_stride, args.table_max, args.interval_count);
@@ -1790,7 +1778,7 @@ __device__ __forceinline__ void panel_radial(
                                              edges.mode_slopes[e], Modes, value,
                                              derivative);
           }
-          if (args.bridged) {
+          if (args.contact_edges != nullptr) {
             derivative *= edges.seen_slope[e];
           }
           slope[n0 + b] = active ? fmaf(edges.envelope_slope[e], value,
@@ -1971,15 +1959,15 @@ constexpr size_t block_forward_shared_bytes() {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           typename index_t,
           bool Resident>
 __global__ __launch_bounds__(
     kBlockThreads,
     BlockPanel<Channels, Lmax, false>::
         MinBlocks) void block_forward_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, false>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, false>;
   using B = typename L::B;
   using R = RadialPanel<L>;
   constexpr int TE = L::TE;
@@ -2173,8 +2161,8 @@ __global__ __launch_bounds__(
 }
 
 /// Per-edge arrays of the backward scan after the operand, each value-major:
-/// the radial and block-envelope cotangents of the amplitudes, their part
-/// that the source gate reads, the field cotangents, the correction
+/// the radial and block-envelope cotangents of the amplitudes, the field
+/// cotangents, the correction
 /// amplitudes of the channels of degree one, the destination cotangents of
 /// the transport and of the denominators (padded rows), and the
 /// transport-weight cotangents, the key products and the weight cotangents of
@@ -2188,10 +2176,7 @@ struct BackwardPanel {
   static constexpr int Edges = L::Edges;
   static constexpr int Radial = 0;
   static constexpr int Envelope = Radial + Edges;
-  /// Sum over the channels of the amplitude cotangents times the amplitudes,
-  /// for the source gate of a bridged descriptor.
-  static constexpr int GateTotal = Envelope + Edges;
-  static constexpr int FieldGradient = GateTotal + Edges;
+  static constexpr int FieldGradient = Envelope + Edges;
   static constexpr int DeltaLow = FieldGradient + B::Fields * Edges;
   static constexpr int TransportCotangent = DeltaLow + B::P::C1 * Edges;
   static constexpr int TransportCotangentWidth = B::KeyWidth + B::Heads;
@@ -2224,7 +2209,7 @@ constexpr size_t block_backward_shared_bytes() {
   return panel_operand_offset<L>() +
          sizeof(float) *
              (B::Operand * L::Stride + A::Floats +
-              kBlockRows * (B::KeyWidth + B::SourceWidth + 13) +
+              kBlockRows * (B::KeyWidth + B::SourceWidth + 12) +
               (Resident
                    ? A::PartialFloats + 2 * B::Operand * Channels +
                          2 * Channels * Channels
@@ -2242,15 +2227,15 @@ constexpr size_t block_backward_shared_bytes() {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           typename index_t,
           bool Resident>
 __global__ __launch_bounds__(
     kBlockThreads,
     BlockPanel<Channels, Lmax, true>::
         MinBlocks) void block_backward_kernel(BlockArguments block) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, true>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, true>;
   using B = typename L::B;
   using A = BackwardPanel<L>;
   using R = RadialPanel<L>;
@@ -2259,12 +2244,10 @@ __global__ __launch_bounds__(
   constexpr int Stride = L::Stride;
   constexpr int Edges = L::Edges;
   // Row sums: the cotangent of the source features, then the force and the
-  // virial of the edges the row emits, and the gate total of the row under a
-  // source gate.
-  constexpr int Sums = B::SourceWidth + 13;
+  // virial of the edges the row emits.
+  constexpr int Sums = B::SourceWidth + 12;
   constexpr int ForceSum = B::SourceWidth;
   constexpr int VirialSum = B::SourceWidth + 3;
-  constexpr int GateSum = B::SourceWidth + 12;
   const Arguments& args = block.edges;
   const float* record = block.record;
   const float amplitude_knee = __ldg(record + 3);
@@ -2286,8 +2269,6 @@ __global__ __launch_bounds__(
   float* panel = operand + B::Operand * Stride;
   float* radial_total = panel + A::Radial;
   float* envelope_total = panel + A::Envelope;
-  float* gate_total = panel + A::GateTotal;
-  const bool gated = args.source_gate != nullptr;
   auto* field_gradient =
       reinterpret_cast<float (*)[Edges]>(panel + A::FieldGradient);
   auto* delta_low = reinterpret_cast<float (*)[Edges]>(panel + A::DeltaLow);
@@ -2602,29 +2583,8 @@ __global__ __launch_bounds__(
         operand[(B::Fields + c0 + j) * Stride + e0 + i] = acc[i][j];
       }
     }
-    if (gated) {
-      // Under a source gate the envelope of an edge enters the gates of the
-      // other edges of its source: the cotangent of the envelope times the
-      // envelope takes the sum over the channels of the amplitude cotangents
-      // times the amplitudes, which carry the envelope.
-#pragma unroll
-      for (int i = 0; i < TE; ++i) {
-        float value = 0.0f;
-#pragma unroll
-        for (int j = 0; j < TC; ++j) {
-          value = fmaf(acc[i][j], phi[i][j], value);
-        }
-        const float total = tile_sum(value);
-        if (tile.leader) {
-          group_partial[tile.group * Edges + e0 + i] = total;
-        }
-      }
-    }
     __syncthreads();
     radial_cotangent<L>(operand, slope, octet_partial, radial_total);
-    if (gated) {
-      close_channel_groups<L>(group_partial, gate_total, 1);
-    }
     __syncthreads();
 
     // === Per-edge gradient, force and virial ===
@@ -2687,12 +2647,6 @@ __global__ __launch_bounds__(
       const float radial_gradient = radial_total[e] +
                                     envelope_part * edges.envelope_slope[e] +
                                     block_total * edges.block_slope[e];
-      if (gated) {
-        // The cotangent of the envelope times the envelope, which joins the
-        // gate total of the row, the source of every entry; the radial
-        // cotangent above was its last reader.
-        radial_total[e] = fmaf(envelope, envelope_part, gate_total[e]);
-      }
       float low[9];
 #pragma unroll
       for (int index = 0; index < 9; ++index) {
@@ -2733,9 +2687,9 @@ __global__ __launch_bounds__(
     // === Key cotangent, force and virial of every row ===
     // The fields read the row's keys along the reversed bond, and the
     // transport scales them by the mass, the transport weight and the
-    // destination cotangent. The force, the virial and the gate total of the
-    // rows follow on the warps after those of the keys.
-    constexpr int KeyParts = row_sum_parts(B::KeyWidth + 13);
+    // destination cotangent. The force and the virial of the rows follow on
+    // the warps after those of the keys.
+    constexpr int KeyParts = row_sum_parts(B::KeyWidth + 12);
     add_row_sums<KeyParts>(
         edges.rows, B::KeyWidth,
         [&](int component) {
@@ -2755,11 +2709,9 @@ __global__ __launch_bounds__(
         },
         &sums[0][0], Sums);
     add_row_sums<KeyParts>(
-        edges.rows, gated ? 13 : 12,
+        edges.rows, 12,
         [&](int component) {
-          return RowProduct{
-              component < 12 ? operand + component * Stride : radial_total,
-              nullptr, nullptr};
+          return RowProduct{operand + component * Stride, nullptr, nullptr};
         },
         &sums[0][ForceSum], Sums, row_sum_lanes<KeyParts>(B::KeyWidth));
   }
@@ -2783,11 +2735,6 @@ __global__ __launch_bounds__(
       atomicAdd(args.force + node * kForceWords + q, fixed_point(value));
     } else {
       block.source_virial[row * 9 + q - 3] += sums[r][VirialSum + q - 3];
-    }
-  }
-  if (gated) {
-    for (int r = threadIdx.x; r < rows; r += kBlockThreads) {
-      block.gate_sums[args.node_begin + scan.row[r]] += sums[r][GateSum];
     }
   }
 }
@@ -2974,37 +2921,37 @@ void launch_panel_scan(Kernel kernel,
   }
 }
 
-template <int Channels, int Lmax, bool HasModes, bool HasSpin, typename index_t>
+template <int Channels, int Lmax, bool HasModes, int SpinMode, typename index_t>
 void launch_block_scan(BlockStage stage,
                        const BlockArguments& arguments,
                        cudaStream_t stream) {
   if (stage == BlockStage::Forward) {
-    using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, false>;
+    using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, false>;
     launch_panel_scan<L::Edges, block_forward_shared_bytes<L, true>(),
                       block_forward_shared_bytes<L, false>()>(
         [](auto resident) {
-          return block_forward_kernel<Channels, Lmax, HasModes, HasSpin,
+          return block_forward_kernel<Channels, Lmax, HasModes, SpinMode,
                                       index_t, decltype(resident)::value>;
         },
         arguments, stream);
   } else {
-    using L = PanelLayout<Channels, Lmax, HasSpin, HasModes, true>;
+    using L = PanelLayout<Channels, Lmax, SpinMode, HasModes, true>;
     launch_panel_scan<L::Edges, block_backward_shared_bytes<L, true>(),
                       block_backward_shared_bytes<L, false>()>(
         [](auto resident) {
-          return block_backward_kernel<Channels, Lmax, HasModes, HasSpin,
+          return block_backward_kernel<Channels, Lmax, HasModes, SpinMode,
                                        index_t, decltype(resident)::value>;
         },
         arguments, stream);
   }
 }
 
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 void launch_block_nodes(BlockStage stage,
                         const BlockArguments& arguments,
                         cudaStream_t stream) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  using B = BlockProfile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
+  using B = BlockProfile<Channels, Lmax, SpinMode>;
   const long count = arguments.edges.node_count;
   if (count == 0) {
     return;
@@ -3017,18 +2964,18 @@ void launch_block_nodes(BlockStage stage,
   };
   switch (stage) {
     case BlockStage::Maps:
-      block_maps_kernel<Channels, Lmax, HasSpin>
+      block_maps_kernel<Channels, Lmax, SpinMode>
           <<<tiles(B::NodeWidth), NodeTile::threads, 0, stream>>>(arguments);
       return;
     case BlockStage::MapBackward:
-      block_map_cotangent_kernel<Channels, Lmax, HasSpin>
+      block_map_cotangent_kernel<Channels, Lmax, SpinMode>
           <<<tiles(NodeTile::cols), NodeTile::threads, 0, stream>>>(arguments);
-      block_map_input_kernel<Channels, Lmax, HasSpin>
+      block_map_input_kernel<Channels, Lmax, SpinMode>
           <<<tiles(P::OutputWidth), NodeTile::threads, 0, stream>>>(arguments);
       return;
     case BlockStage::Cotangents: {
       constexpr int Warps = kBlockThreads / kWarpSize;
-      block_cotangent_kernel<Channels, Lmax, HasSpin>
+      block_cotangent_kernel<Channels, Lmax, SpinMode>
           <<<static_cast<int>((count + Warps - 1) / Warps), kBlockThreads, 0,
              stream>>>(arguments);
       return;
@@ -3048,24 +2995,27 @@ void launch_block(BlockStage stage,
   const bool wide = args.index_kind == IndexKind::Bits64;
   const auto dispatch = [&](auto modes, auto spin) {
     constexpr bool HasModes = decltype(modes)::value;
-    constexpr bool HasSpin = decltype(spin)::value;
+    constexpr int SpinMode = decltype(spin)::value;
     if (!scan) {
-      launch_block_nodes<Channels, Lmax, HasSpin>(stage, arguments, stream);
+      launch_block_nodes<Channels, Lmax, SpinMode>(stage, arguments, stream);
     } else if (wide) {
-      launch_block_scan<Channels, Lmax, HasModes, HasSpin, long>(
+      launch_block_scan<Channels, Lmax, HasModes, SpinMode, long>(
           stage, arguments, stream);
     } else {
-      launch_block_scan<Channels, Lmax, HasModes, HasSpin, std::uint32_t>(
+      launch_block_scan<Channels, Lmax, HasModes, SpinMode, std::uint32_t>(
           stage, arguments, stream);
     }
   };
   const bool modes = args.radial_modes > 0;
-  if (args.has_spin) {
-    modes ? dispatch(std::true_type{}, std::true_type{})
-          : dispatch(std::false_type{}, std::true_type{});
+  if (args.spin_mode == 2) {
+    modes ? dispatch(std::true_type{}, std::integral_constant<int, 2>{})
+          : dispatch(std::false_type{}, std::integral_constant<int, 2>{});
+  } else if (args.spin_mode == 1) {
+    modes ? dispatch(std::true_type{}, std::integral_constant<int, 1>{})
+          : dispatch(std::false_type{}, std::integral_constant<int, 1>{});
   } else {
-    modes ? dispatch(std::true_type{}, std::false_type{})
-          : dispatch(std::false_type{}, std::false_type{});
+    modes ? dispatch(std::true_type{}, std::integral_constant<int, 0>{})
+          : dispatch(std::false_type{}, std::integral_constant<int, 0>{});
   }
 }
 

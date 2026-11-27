@@ -27,6 +27,9 @@ from deepmd.dpmodel.model.dp_linear_model import (
 from deepmd.dpmodel.model.model import (
     get_model,
 )
+from deepmd.utils.element_radii import (
+    covalent_radii_from_type_map,
+)
 
 ZBL_CONFIG = {
     "type_map": ["Ni", "O"],
@@ -45,9 +48,44 @@ ZBL_CONFIG = {
     },
     "fitting_net": {"type": "dpa4_ener", "neuron": [8, 8]},
     "bridging_method": "ZBL",
-    "bridging_r_inner": 0.8,
-    "bridging_r_outer": 1.2,
+    "bridging_truncation": 1.1,
+    "bridging_clamp": 0.7,
 }
+
+
+def _zbl_series(zi: float, zj: float) -> tuple[np.ndarray, np.ndarray]:
+    """Amplitudes in eV Å and decay rates in Å⁻¹ of the universal ZBL series."""
+    a = 0.88534 * 0.5291772109 / (zi**0.23 + zj**0.23)
+    amplitude = 14.3996 * zi * zj * np.array([0.18175, 0.50986, 0.28022, 0.028171])
+    return amplitude, np.array([3.1998, 0.94229, 0.4029, 0.20162]) / a
+
+
+def _truncated_zbl(r: float, zi: float, zj: float, end: float) -> float:
+    """The ZBL pair energy minus its cubic Taylor polynomial at ``end``, in eV."""
+    import math
+
+    if r >= end:
+        return 0.0
+    amplitude, rate = _zbl_series(zi, zj)
+
+    def derivative(x: float, n: int) -> float:
+        factor = sum(
+            math.factorial(n) / math.factorial(n - k) * rate ** (n - k) / x ** (k + 1)
+            for k in range(n + 1)
+        )
+        return float((-1) ** n * np.sum(amplitude * np.exp(-rate * x) * factor))
+
+    delta = r - end
+    return derivative(r, 0) - sum(
+        derivative(end, k) * delta**k / math.factorial(k) for k in range(4)
+    )
+
+
+#: Covalent radii in Å of the elements these tests use, which set where the
+#: truncated term of each pair ends.
+_COVALENT = dict(
+    zip(["Ni", "O"], covalent_radii_from_type_map(["Ni", "O"]).tolist(), strict=True)
+)
 
 
 def _close_pair_inputs():
@@ -59,8 +97,11 @@ def _close_pair_inputs():
     return coord, atype, box
 
 
-def test_builder_composes_linear_model():
-    model = get_model(copy.deepcopy(ZBL_CONFIG))
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+def test_builder_composes_linear_model(precision: str) -> None:
+    config = copy.deepcopy(ZBL_CONFIG)
+    config["descriptor"]["precision"] = precision
+    model = get_model(config)
     assert type(model) is LinearEnergyModel
     am = model.atomic_model
     assert isinstance(am, LinearEnergyAtomicModel)
@@ -70,12 +111,14 @@ def test_builder_composes_linear_model():
         kinds == ["EnergyAtomicModel", "InnerPotentialAtomicModel"]
         or kinds[1] == "InnerPotentialAtomicModel"
     )
-    # radii wired to the LEARNED child's descriptor: the switch spans the
-    # window and the clamp freezes two fifths into it
-    dp_child = am.models[0]
-    assert float(dp_child.descriptor.bridging_switch.f_inner) == 0.8
-    assert float(dp_child.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
-    assert dp_child.descriptor.bridging_scale == "absolute"
+    # the clamp is wired to the LEARNED child's descriptor, the truncation to
+    # the analytical one
+    dp_child, inner = am.models
+    assert dp_child.descriptor.contact_clamp.inner == 0.7
+    assert inner.potential.truncation == 1.1
+    assert inner.potential.pair_table.dtype == np.dtype(precision)
+    restored = type(inner).deserialize(inner.serialize())
+    assert restored.potential.pair_table.dtype == np.dtype(precision)
 
 
 def test_bridged_preset_belongs_to_output_statistics() -> None:
@@ -153,8 +196,6 @@ def test_zbl_child_equals_composition_minus_learned():
     assert diff > 1e-3, f"ZBL contribution missing or non-positive: {diff:.3e}"
     # EXACT analytical check (gas phase, no box: a direct double loop over
     # pairs within rcut is the complete reference).
-    import math
-
     e_gas_sum = model.call_common(coord, atype, neighbor_graph_method="dense")[
         "energy_redu"
     ]
@@ -162,23 +203,14 @@ def test_zbl_child_equals_composition_minus_learned():
         "energy_redu"
     ]
     z_of = {0: 28.0, 1: 8.0}  # Ni, O
+    radius_of = {0: _COVALENT["Ni"], 1: _COVALENT["O"]}
     total = 0.0
     for i in range(6):
         for j in range(i + 1, 6):
             r = float(np.linalg.norm(coord[0, i] - coord[0, j]))
-            if r >= 4.0:
-                continue
-            zi, zj = z_of[int(atype[0, i])], z_of[int(atype[0, j])]
-            a = 0.88534 * 0.5291772109 / (zi**0.23 + zj**0.23)
-            phi = sum(
-                ak * math.exp(-bk * (r / a))
-                for ak, bk in zip(
-                    (0.18175, 0.50986, 0.28022, 0.028171),
-                    (3.1998, 0.94229, 0.4029, 0.20162),
-                    strict=True,
-                )
-            )
-            total += 14.3996 * zi * zj / r * phi
+            ti, tj = int(atype[0, i]), int(atype[0, j])
+            end = 1.1 * (radius_of[ti] + radius_of[tj])
+            total += _truncated_zbl(r, z_of[ti], z_of[tj], end)
     np.testing.assert_allclose(
         float(np.sum(e_gas_sum - e_gas_dp)), total, rtol=1e-10, atol=1e-10
     )
@@ -250,9 +282,7 @@ def test_linear_graph_lower_requires_all_children():
 
 
 def test_zbl_atomic_graph_values():
-    """Atomic-model wrapper reproduces the kernel's known values."""
-    import math
-
+    """Atomic-model wrapper reproduces the truncated pair energy."""
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -266,17 +296,9 @@ def test_zbl_atomic_graph_values():
         edge_mask=np.ones(2, dtype=bool),
     )
     out = zbl.forward_common_atomic_graph(graph, np.zeros(2, dtype=np.int64))
-    a = 0.88534 * 0.5291772109 / (8.0**0.23 + 8.0**0.23)
-    phi = sum(
-        ak * math.exp(-bk * (r / a))
-        for ak, bk in zip(
-            (0.18175, 0.50986, 0.28022, 0.028171),
-            (3.1998, 0.94229, 0.4029, 0.20162),
-            strict=True,
-        )
-    )
-    ref = 14.3996 * 64.0 / r * phi
-    np.testing.assert_allclose(float(np.sum(out["energy"])), ref, atol=1e-5)
+    ref = _truncated_zbl(r, 8.0, 8.0, 1.1 * 2 * _COVALENT["O"])
+    assert ref > 0.0
+    np.testing.assert_allclose(float(np.sum(out["energy"])), ref, rtol=1e-10)
 
 
 def _pair_energy(model, natoms=2, r=1.0):
@@ -317,8 +339,8 @@ class TestInnerPotentialChangeTypeMap:
         assert abs(e_fresh - e_hh) > 1.0
         np.testing.assert_allclose(_pair_energy(model), e_fresh, rtol=1e-12)
         np.testing.assert_allclose(
-            np.asarray(model.potential.series_table),
-            np.asarray(fresh.potential.series_table),
+            np.asarray(model.potential.pair_table),
+            np.asarray(fresh.potential.pair_table),
             rtol=1e-12,
         )
         assert model.potential.type_map == ["O", "H"]
@@ -328,7 +350,7 @@ class TestInnerPotentialChangeTypeMap:
         model.change_type_map(["H", "O", "Ni"])
         assert model.potential.ntypes == 3
         # one row per ordered pair of the three types plus the padding type
-        assert model.potential.series_table.shape == (16, 8)
+        assert model.potential.pair_table.shape == (16, 16)
         # the new type is now addressable -- a stale (length-2) table raises
         # IndexError here
         graph_atype = np.full(2, 2, dtype=np.int64)
@@ -354,8 +376,8 @@ class TestInnerPotentialChangeTypeMap:
         assert model.potential.ntypes == 1
         fresh = InnerPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
         np.testing.assert_allclose(
-            np.asarray(model.potential.series_table),
-            np.asarray(fresh.potential.series_table),
+            np.asarray(model.potential.pair_table),
+            np.asarray(fresh.potential.pair_table),
             rtol=1e-12,
         )
         np.testing.assert_allclose(_pair_energy(model), _pair_energy(fresh), rtol=1e-12)
@@ -395,15 +417,17 @@ class TestNativeSpinCapabilityOnAtomicModel:
         # inherits the concrete base default -- no descriptor, no spin input
         assert zbl.supports_native_spin() is False
 
-    def test_composition_is_capable_when_any_child_is(self) -> None:
+    @pytest.mark.parametrize("scheme", ["native:orbit", "native:exchange"])
+    def test_composition_is_capable_when_any_child_is(self, scheme: str) -> None:
         """ANY, not ALL: analytical children accept and ignore ``spin``."""
         learned = get_model(
             {
                 **copy.deepcopy(ZBL_CONFIG),
-                "spin": {"use_spin": [True, False], "scheme": "native"},
+                "spin": {"use_spin": [True, False], "scheme": scheme},
             }
         ).atomic_model
         assert learned.supports_native_spin() is True
+        assert learned.models[0].descriptor.spin_mode == scheme.split(":")[1]
         kinds = [type(c).__name__ for c in learned.models]
         assert kinds[1] == "InnerPotentialAtomicModel", kinds
         # ... and the spin-free analytical child alone is not capable
@@ -437,7 +461,7 @@ class TestCompositionForwardsConditioningCapabilities:
         config = copy.deepcopy(ZBL_CONFIG)
         config["descriptor"]["add_chg_spin_ebd"] = chg_spin
         if not bridging:
-            for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+            for key in ("bridging_method", "bridging_truncation", "bridging_clamp"):
                 config.pop(key, None)
         return get_model(config)
 
@@ -488,7 +512,7 @@ class TestCompositionCarriesPairExclusion:
         if spin:
             config["spin"] = {"use_spin": [True, False], "scheme": "native"}
         if not bridging:
-            for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+            for key in ("bridging_method", "bridging_truncation", "bridging_clamp"):
                 config.pop(key, None)
         return get_model(config)
 
@@ -535,7 +559,7 @@ class TestCompositionCarriesAtomExclusion:
         config = copy.deepcopy(ZBL_CONFIG)
         config["atom_exclude_types"] = [1]
         if not bridging:
-            for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+            for key in ("bridging_method", "bridging_truncation", "bridging_clamp"):
                 config.pop(key, None)
         return get_model(config)
 
@@ -766,8 +790,8 @@ def _canonical_config() -> dict:
             {
                 "type": "inner_potential",
                 "mode": "ZBL",
-                "r_inner": 0.8,
-                "r_outer": 1.2,
+                "truncation": 1.1,
+                "clamp": 0.7,
             },
         ],
     }
@@ -783,13 +807,10 @@ class TestCanonicalComposition:
         assert isinstance(am, LinearEnergyAtomicModel)
         assert am.weights == "sum"
         assert isinstance(am.models[1], InnerPotentialAtomicModel)
-        # the composition derives the learned sibling's clamp window from
-        # the inner_potential child: one source of truth for the radii
+        # the composition derives the learned sibling's contact clamp from
+        # the inner_potential child: one source of truth for the option
         dp_child = am.models[0]
-        assert float(dp_child.descriptor.bridging_switch.f_inner) == 0.8
-        assert float(dp_child.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
-        assert dp_child.descriptor.bridging_scale == "absolute"
-        assert dp_child.descriptor.bridging_switch is not None
+        assert dp_child.descriptor.contact_clamp.inner == 0.7
 
     def test_canonical_matches_sugar_energy(self) -> None:
         """Same seeds, both spellings: bit-identical construction, so the
@@ -1047,7 +1068,7 @@ def test_nlh_atomic_model_roundtrips_the_mode():
     restored = InnerPotentialAtomicModel.deserialize(data)
     assert restored.potential.mode == "NLH"
     np.testing.assert_allclose(
-        np.asarray(restored.potential.series_table),
-        np.asarray(child.potential.series_table),
+        np.asarray(restored.potential.pair_table),
+        np.asarray(child.potential.pair_table),
         rtol=1e-12,
     )

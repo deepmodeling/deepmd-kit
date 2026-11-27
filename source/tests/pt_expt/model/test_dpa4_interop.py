@@ -29,9 +29,6 @@ from deepmd.pt.optimizer.hybrid_muon import (
     get_adam_route,
 )
 from deepmd.pt_expt.model import get_model as pt_expt_get_model
-from deepmd.pt_expt.model.dpa4_model import (
-    DPA4EnergyModel,
-)
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
 )
@@ -46,6 +43,9 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.utils.dpa4_serialization import (
+    normalize_sezm_atomic,
 )
 
 if TYPE_CHECKING:
@@ -164,9 +164,7 @@ class TestDPA4Interop:
                 "models": [config, hybrid],
             }
         elif layout == "zbl":
-            config.update(
-                bridging_method="ZBL", bridging_r_inner=0.8, bridging_r_outer=1.2
-            )
+            config.update(bridging_method="ZBL")
         elif layout == "spin":
             config["spin"] = {"use_spin": [True, False], "scheme": "native"}
         elif layout == "default":
@@ -293,9 +291,9 @@ class TestDPA4Interop:
     def test_serialize_layout(self, pt_dpa4_model) -> None:
         """The pt serialize layout matches the interop override's expectations."""
         ser = pt_dpa4_model.serialize()
-        # wrapper: recognised model type + @version 1
+        # wrapper: recognised model type + @version 2
         assert ser["type"].lower() in ("sezm", "dpa4")
-        assert ser["@version"] == 1
+        assert ser["@version"] == 2
         # nested atomic: sezm_atomic @version 3 carrying the pt-only dens state
         atomic = ser["atomic_model"]
         assert atomic["type"] == "sezm_atomic"
@@ -316,7 +314,7 @@ class TestDPA4Interop:
         """The pt-only ``dens_force_rmsd`` @variable is dropped on normalize."""
         atomic = pt_dpa4_model.serialize()["atomic_model"]
         assert set(atomic["@variables"]) >= {"out_bias", "out_std", "dens_force_rmsd"}
-        normalized = DPA4EnergyModel._normalize_pt_sezm_atomic(atomic)
+        normalized = normalize_sezm_atomic(atomic)
         assert set(normalized["@variables"]) == {"out_bias", "out_std"}
         # version coerced to the standard atomic schema, type rewritten
         assert normalized["@version"] == 2
@@ -367,7 +365,7 @@ class TestDPA4Interop:
             ),
             # unsupported wrapper @version (Fix 1 guard) -> ValueError
             (
-                lambda s: s.__setitem__("@version", 2),
+                lambda s: s.__setitem__("@version", 3),
                 ValueError,
                 "not compatible",
             ),
@@ -387,7 +385,7 @@ class TestDPA4Interop:
         """Both in-range atomic @versions {2, 3} normalize without raising."""
         atomic = pt_dpa4_model.serialize()["atomic_model"]
         atomic["@version"] = version
-        normalized = DPA4EnergyModel._normalize_pt_sezm_atomic(atomic)
+        normalized = normalize_sezm_atomic(atomic)
         assert normalized["@version"] == 2
 
 

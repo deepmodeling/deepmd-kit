@@ -28,7 +28,7 @@ namespace deepmd_compat = deepmd;
 namespace deepmd_compat = deepmd::hpp;
 #endif
 
-#include <fstream>
+#include <deque>
 #include <iostream>
 #include <map>
 
@@ -53,8 +53,10 @@ class PairDeepMD : public PairDeepBaseModel {
   double eval_energy_with_fparam(const std::vector<double>& fparam_override);
 
  protected:
+  // The first model of the ensemble, which drives the dynamics, and the
+  // others, evaluated at the steps that write the model deviation.
   deepmd_compat::DeepPot deep_pot;
-  deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
+  std::deque<deepmd_compat::DeepPot> ensemble;
   // Assemble the send/recv swap metadata (a comm-only neighbor list; its
   // geometry fields are unused) for the device-resident message-passing path,
   // where ghost features are exchanged across ranks inside the forward pass.

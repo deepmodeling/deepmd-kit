@@ -86,23 +86,38 @@ class NeighborStatOP(NativeOP):
             - xp.reshape(coord0, (nframes, -1, 3))[:, :, None, :]
         )
         assert list(diff.shape) == [nframes, nloc, nall, 3]
-        # remove the diagonal elements
-        mask = xp.eye(nloc, nall, dtype=xp.bool, device=array_api_compat.device(diff))
-        mask = xp.tile(mask[None, :, :, None], (nframes, 1, 1, 3))
-        diff = xp.where(mask, xp.full_like(diff, xp.inf), diff)
+        # A valid statistics pair must contain two real atoms.  In particular,
+        # virtual centers must not contribute an artificially large neighbor row,
+        # and virtual neighbors must not drive the minimum distance to zero.
+        self_pair = xp.eye(
+            nloc, nall, dtype=xp.bool, device=array_api_compat.device(diff)
+        )
+        real_center = atype >= 0
+        real_neighbor = extend_atype >= 0
+        valid_pair = (
+            ~self_pair[None, :, :] & real_center[:, :, None] & real_neighbor[:, None, :]
+        )
         rr2 = xp.sum(xp.square(diff), axis=-1)
+        rr2 = xp.where(valid_pair, rr2, xp.full_like(rr2, xp.inf))
         min_rr2 = xp.min(rr2, axis=-1)
         # count the number of neighbors
+        within_rcut = valid_pair & (rr2 < self.rcut**2)
         if not self.mixed_types:
-            mask = rr2 < self.rcut**2
             nneis = []
             for ii in range(self.ntypes):
-                nneis.append(xp.sum(mask & (extend_atype == ii)[:, None, :], axis=-1))
+                nneis.append(
+                    xp.sum(
+                        xp.astype(
+                            within_rcut & (extend_atype == ii)[:, None, :],
+                            extend_atype.dtype,
+                        ),
+                        axis=-1,
+                    )
+                )
             nnei = xp.stack(nneis, axis=-1)
         else:
-            mask = rr2 < self.rcut**2
-            # virtual type (<0) are not counted
-            nnei = xp.sum(mask & (extend_atype >= 0)[:, None, :], axis=-1)
+            # Array API reductions accept numeric rather than boolean inputs.
+            nnei = xp.sum(xp.astype(within_rcut, extend_atype.dtype), axis=-1)
             nnei = xp.reshape(nnei, (nframes, nloc, 1))
         max_nnei = xp.max(nnei, axis=1)
         return min_rr2, max_nnei

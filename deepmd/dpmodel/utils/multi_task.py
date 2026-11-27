@@ -14,6 +14,14 @@ from typing import (
 
 log = logging.getLogger(__name__)
 
+# Branch entries that a string replaces by an entry of ``shared_dict``. The
+# branches that reference one descriptor or fitting network also share its
+# parameters; the other entries are settings, which every branch receives as
+# a copy.
+SHARED_COMPONENTS = ("descriptor", "fitting_net")
+SHARED_SETTINGS = ("type_map", "spin", "preset_out_bias")
+SHARED_ENTRIES = (*SHARED_SETTINGS, *SHARED_COMPONENTS)
+
 
 def cascade_top_level_defaults(model_config: dict[str, Any]) -> None:
     """Lower model-wide entries into each multi-task branch in-place."""
@@ -42,7 +50,8 @@ def preprocess_shared_params(
     model_config : dict[str, Any]
         Multi-task model configuration containing ``model_dict`` and an optional
         ``shared_dict``. String references to shared descriptors, fitting
-        networks, and type maps are replaced in-place by their configurations.
+        networks, type maps, spin settings and preset output biases are
+        replaced in-place by their configurations.
     get_class_name : Callable[[str, dict[str, Any]], type]
         Backend-specific callback that resolves the class for a shared
         descriptor or fitting-network configuration.
@@ -60,9 +69,9 @@ def preprocess_shared_params(
     model_config : dict[str, Any]
         The input configuration with shared references expanded.
     shared_links : dict[str, Any]
-        Sharing metadata keyed by entries in ``shared_dict``. Each entry records
-        the resolved class and the model components linked to it, sorted by
-        sharing level.
+        Sharing metadata keyed by the entries of ``shared_dict`` referenced as
+        a descriptor or a fitting network. Each entry records the resolved
+        class and the model components linked to it, sorted by sharing level.
 
     Raises
     ------
@@ -74,7 +83,6 @@ def preprocess_shared_params(
     if cascade_defaults:
         cascade_top_level_defaults(model_config)
 
-    supported_types = ["type_map", "descriptor", "fitting_net"]
     shared_dict = model_config.get("shared_dict", {})
     shared_links: dict[str, Any] = {}
     type_map_keys: list[str] = []
@@ -105,7 +113,7 @@ def preprocess_shared_params(
         if shared_type == "type_map":
             if key_in_dict not in type_map_keys:
                 type_map_keys.append(key_in_dict)
-        else:
+        elif shared_type in SHARED_COMPONENTS:
             if shared_key not in shared_links:
                 shared_links[shared_key] = {
                     "type": get_class_name(shared_type, shared_dict[shared_key]),
@@ -122,7 +130,7 @@ def preprocess_shared_params(
     for model_key in model_config["model_dict"]:
         model_params_item = model_config["model_dict"][model_key]
         for item_key in model_params_item:
-            if item_key not in supported_types:
+            if item_key not in SHARED_ENTRIES:
                 continue
             item_params = model_params_item[item_key]
             if isinstance(item_params, str):
@@ -321,7 +329,10 @@ def get_descriptor_component(model: Any, shared_type: str) -> Any:
 def set_descriptor_component(model: Any, shared_type: str, descriptor: Any) -> None:
     """Set a model descriptor or a hybrid sub-descriptor by shared type."""
     if shared_type == "descriptor":
-        model.atomic_model.descriptor = descriptor
+        owner = _atomic_model_attr_owner(model.atomic_model, "descriptor")
+        if owner is None:
+            raise ValueError("The model has no learned descriptor to share.")
+        owner.descriptor = descriptor
         return
     if "hybrid" in shared_type:
         hybrid_index = int(shared_type.split("_")[-1])
@@ -331,10 +342,26 @@ def set_descriptor_component(model: Any, shared_type: str, descriptor: Any) -> N
 
 
 def get_atomic_model_attr(model: Any, attr: str) -> Any | None:
-    """Get an attribute from ``model.atomic_model`` if it exists."""
-    if hasattr(model.atomic_model, attr):
-        return getattr(model.atomic_model, attr)
-    return None
+    """Get an attribute from the unique learned component of an atomic model."""
+    owner = _atomic_model_attr_owner(model.atomic_model, attr)
+    return getattr(owner, attr) if owner is not None else None
+
+
+def _atomic_model_attr_owner(atomic_model: Any, attr: str) -> Any | None:
+    """Find an unambiguous component while leaving analytical children intact."""
+    if hasattr(atomic_model, attr):
+        return atomic_model
+    owners = [
+        owner
+        for child in getattr(atomic_model, "models", ())
+        if (owner := _atomic_model_attr_owner(child, attr)) is not None
+    ]
+    if len(owners) > 1:
+        raise ValueError(
+            f"The atomic-model composition has {len(owners)} components with {attr!r}; "
+            "the requested shared component is ambiguous."
+        )
+    return owners[0] if owners else None
 
 
 def sanitize_shared_links(shared_links: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -359,3 +386,40 @@ def _model_prob_ratio(
     return float(model_key_prob_map[model_key_link]) / float(
         model_key_prob_map[model_key_base]
     )
+
+
+def get_case_embd_config(
+    model_params: dict[str, Any],
+) -> tuple[bool, dict[str, int]]:
+    """Check whether case embedding is enabled and build the index map.
+
+    Parameters
+    ----------
+    model_params : dict
+        Model parameters containing ``model_dict``.
+
+    Returns
+    -------
+    do_case_embd : bool
+        Whether case embedding is enabled.
+    case_embd_index : dict
+        Mapping from model key to case index (sorted alphabetically).
+    """
+    assert "model_dict" in model_params, (
+        "Only support setting case embedding for multi-task model!"
+    )
+    model_keys = list(model_params["model_dict"])
+    sorted_model_keys = sorted(model_keys)
+    numb_case_embd_list = [
+        model_params["model_dict"][mk].get("fitting_net", {}).get("dim_case_embd", 0)
+        for mk in sorted_model_keys
+    ]
+    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
+        raise ValueError(
+            "All models must have the same dimension of case embedding, "
+            f"while the settings are: {numb_case_embd_list}"
+        )
+    if numb_case_embd_list[0] == 0:
+        return False, {}
+    case_embd_index = {mk: idx for idx, mk in enumerate(sorted_model_keys)}
+    return True, case_embd_index

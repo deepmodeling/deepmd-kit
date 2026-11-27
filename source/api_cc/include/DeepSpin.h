@@ -308,6 +308,7 @@ class DeepSpinBackend : public DeepBaseModelBackend {
       const std::int64_t edge_storage,
       void* stream);
   virtual bool uses_canonical_graph_inference() const;
+  virtual bool canonical_graph_requires_source_csr() const;
   virtual bool canonical_graph_requires_halo() const;
 
   /**
@@ -619,6 +620,14 @@ class DeepSpin : public DeepBaseModel {
    * @brief Whether the loaded artifact uses the compact canonical graph ABI.
    */
   bool uses_canonical_graph_inference() const;
+
+  /**
+   * @brief Whether every compact canonical evaluation reads the source CSR,
+   * rather than only an evaluation that requests the per-atom virial, as
+   * DeepPot::canonical_graph_requires_source_csr reports for a model without
+   * spin.
+   */
+  bool canonical_graph_requires_source_csr() const;
 
   /**
    * @brief Whether a compact canonical evaluation of a node set with halo

@@ -276,11 +276,24 @@ class _GridPairCase:
         *,
         seed: int,
         n_node: int = 300,
+        parity: bool = False,
     ) -> None:
         device = torch.device("cuda")
         torch.manual_seed(seed)
         self.n_frames = n_frames
         coeff_dim = (lmax + 1) ** 2
+        degree = torch.repeat_interleave(
+            torch.arange(lmax + 1, device=device),
+            2 * torch.arange(lmax + 1, device=device) + 1,
+        )
+        self.parity = parity
+        self.slot_sign = (1 - 2 * (degree % 2)).repeat_interleave(n_frames)
+        self.parity_order = torch.cat(
+            [torch.where(self.slot_sign == 1)[0], torch.where(self.slot_sign == -1)[0]]
+        )
+        self.even_count = (
+            int(sum(2 * degree + 1 for degree in range(0, lmax + 1, 2))) * n_frames
+        )
         double = {"device": device, "dtype": torch.float64}
 
         self.left = torch.randn(
@@ -358,8 +371,25 @@ class _GridPairCase:
             else torch.autocast("cuda", enabled=False)
         )
         with context:
-            evaluate = grid_pair_train if fused else _eager_pair
-            out = evaluate(left, right, to_grid, from_grid, self.n_frames)
+            if fused:
+                out = grid_pair_train(
+                    left,
+                    right,
+                    to_grid,
+                    from_grid,
+                    self.n_frames,
+                    self.parity_order if self.parity else None,
+                    self.even_count if self.parity else 0,
+                )
+            else:
+                if self.parity:
+                    to_grid = torch.cat(
+                        [to_grid, to_grid * self.slot_sign[None, :]], dim=0
+                    )
+                    from_grid = 0.5 * torch.cat(
+                        [from_grid, from_grid * self.slot_sign[None, :]], dim=0
+                    )
+                out = _eager_pair(left, right, to_grid, from_grid, self.n_frames)
         return grad_chain(out, [left, right], self.cotangent, self.second_cotangents)
 
 
@@ -550,24 +580,6 @@ def test_aotautograd_reuses_multifocus_stride_across_batch_shapes() -> None:
     assert compile_counter.frame_count == 1
 
 
-@pytest.fixture
-def tf32_disabled() -> Iterator[None]:
-    """Disable TF32 in cuBLAS and cuDNN for one test and restore it afterwards.
-
-    The flags are restored through their own attributes: the cuBLAS flag is
-    served by the ``__getattr__`` of its module rather than an attribute
-    entry, which ``monkeypatch.setattr`` of pytest 9.2 records as absent and
-    deletes at teardown.
-    """
-    backends = (torch.backends.cuda.matmul, torch.backends.cudnn)
-    previous = [backend.allow_tf32 for backend in backends]
-    for backend in backends:
-        backend.allow_tf32 = False
-    yield
-    for backend, allow_tf32 in zip(backends, previous, strict=True):
-        backend.allow_tf32 = allow_tf32
-
-
 @pytest.mark.usefixtures("tf32_disabled")
 @pytest.mark.parametrize(
     ("n_focus", "channels", "amp", "force_reference"),
@@ -746,3 +758,38 @@ def test_cold_compiled_force_backward(
             ):
                 torch.testing.assert_close(got, want)
     assert counter.frame_count == 1
+
+
+@requires_cuda
+@pytest.mark.parametrize(
+    "shape",
+    [(1, 3, 1, 32, 24), (2, 3, 2, 32, 104), (4, 3, 2, 32, 296), (5, 1, 1, 64, 344)],
+)
+@pytest.mark.parametrize("amp", [False, True])
+def test_parity_split_matches_paired_quadrature(
+    shape: tuple[int, ...],
+    amp: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One quadrature preserves paired-plan values and both derivative orders."""
+    if amp and not torch.cuda.is_bf16_supported(including_emulation=False):
+        pytest.skip("Native CUDA bfloat16 is required")
+
+    def reject_fallback(*args: object, **kwargs: object) -> tuple[torch.Tensor, ...]:
+        raise AssertionError("The parity test requires the fused grid kernels")
+
+    monkeypatch.setattr(grid_pair_module, "_eager_projected", reject_fallback)
+    runs = []
+    for seed in DRAW_SEEDS:
+        case = _GridPairCase(*shape, seed=seed, n_node=16, parity=True)
+        runs.append(
+            deviations(
+                case.quantity_names(),
+                case.evaluate(fused=False, dtype=torch.float64, amp=False),
+                case.evaluate(fused=False, dtype=torch.float32, amp=amp),
+                case.evaluate(fused=True, dtype=torch.float32, amp=amp, strided=True),
+                factor=5.0,
+                working_dtype=torch.bfloat16 if amp else torch.float32,
+            )
+        )
+    assert_conditioned(median_deviations(runs))

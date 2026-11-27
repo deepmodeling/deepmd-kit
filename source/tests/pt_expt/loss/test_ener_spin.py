@@ -324,11 +324,14 @@ class TestEnergySpinLoss:
             "energy": torch.zeros((2, 1), dtype=dtype, device=device),
             "force": padded(force),
             "force_mag": padded(force_mag),
-            "mask_mag": padded(magnetic.to(dtype), fill=1.0).bool(),
+            "mask_mag": padded(magnetic.to(dtype)).bool(),
             "virial": torch.arange(18, dtype=dtype, device=device).reshape(2, 9),
             "atom_energy": padded(atom_energy, fill=100.0),
             "mask": real_atom.to(dtype),
         }
+        # Padding has no magnetic degree of freedom. Atomic-energy exclusion
+        # is independent and is covered by the shared spin-loss regression.
+        assert not model_rect["mask_mag"][~real_atom].any()
         label_rect = {
             "energy": torch.tensor([[1.0], [2.0]], dtype=dtype, device=device),
             "force": padded(force + 0.5, fill=100.0),

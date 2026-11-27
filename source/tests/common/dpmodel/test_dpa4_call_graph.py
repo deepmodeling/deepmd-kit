@@ -147,9 +147,8 @@ def _run_graph(dd, coord, atype, nlist, permute_seed=None):
             edge_vec=graph.edge_vec[perm],
             edge_mask=graph.edge_mask[perm],
         )
-    out, rot_mat, node_gate = dd.call_graph(graph, atype.reshape(-1))
+    out, rot_mat = dd.call_graph(graph, atype.reshape(-1))
     assert rot_mat is None
-    assert node_gate is None
     return np.asarray(out)
 
 
@@ -203,8 +202,8 @@ def test_call_graph_spin_sensitivity() -> None:
     atype_flat = atype.reshape(-1)
     rng = np.random.default_rng(3)
     spin = rng.normal(size=(atype_flat.shape[0], 3))
-    out0, _, _ = dd.call_graph(graph, atype_flat)
-    out1, _, _ = dd.call_graph(graph, atype_flat, spin=spin)
+    out0, _ = dd.call_graph(graph, atype_flat)
+    out1, _ = dd.call_graph(graph, atype_flat, spin=spin)
     assert not np.allclose(np.asarray(out0), np.asarray(out1))
 
 
@@ -219,7 +218,7 @@ def test_call_graph_spin_matches_dense_adapter() -> None:
         coord.reshape(nf, -1), atype, nlist, spin=spin.reshape(nf, nloc, 3)
     )
     graph, atype_flat = _graph_from_padded_nlist(coord, atype, nlist, None)
-    out, _, _ = dd.call_graph(graph, atype_flat, spin=spin)
+    out, _ = dd.call_graph(graph, atype_flat, spin=spin)
     np.testing.assert_allclose(
         np.asarray(out).reshape(nf, nloc, -1),
         np.asarray(ref),
@@ -268,8 +267,8 @@ def test_call_graph_charge_spin_sensitivity() -> None:
     nf = atype.shape[0]
     cs0 = np.tile(np.array([[0.0, 1.0]]), (nf, 1))
     cs1 = np.tile(np.array([[1.0, 1.0]]), (nf, 1))
-    out0, _, _ = dd.call_graph(graph, atype_flat, charge_spin=cs0)
-    out1, _, _ = dd.call_graph(graph, atype_flat, charge_spin=cs1)
+    out0, _ = dd.call_graph(graph, atype_flat, charge_spin=cs0)
+    out1, _ = dd.call_graph(graph, atype_flat, charge_spin=cs1)
     assert not np.allclose(np.asarray(out0), np.asarray(out1))
 
 
@@ -287,7 +286,7 @@ def test_call_graph_charge_spin_matches_dense_adapter() -> None:
     cs = np.array([[0.3, -0.7], [1.0, 0.2]])
     ref, *_ = dd.call(coord.reshape(nf, -1), atype, nlist, charge_spin=cs)
     graph, atype_flat = _graph_from_padded_nlist(coord, atype, nlist, None)
-    out, _, _ = dd.call_graph(graph, atype_flat, charge_spin=cs)
+    out, _ = dd.call_graph(graph, atype_flat, charge_spin=cs)
     np.testing.assert_allclose(
         np.asarray(out).reshape(nf, nloc, -1),
         np.asarray(ref),
@@ -353,8 +352,8 @@ def test_message_sensitive_fixture_is_edge_dependent() -> None:
     graph_no_edges = dataclasses.replace(
         graph, edge_mask=np.zeros_like(graph.edge_mask)
     )
-    out_with_edges, _, _ = dd.call_graph(graph, atype.reshape(-1))
-    out_no_edges, _, _ = dd.call_graph(graph_no_edges, atype.reshape(-1))
+    out_with_edges, _ = dd.call_graph(graph, atype.reshape(-1))
+    out_no_edges, _ = dd.call_graph(graph_no_edges, atype.reshape(-1))
     out_with_edges = np.asarray(out_with_edges)
     out_no_edges = np.asarray(out_no_edges)
     assert np.max(np.abs(out_with_edges - out_no_edges)) > 1e-6
@@ -430,10 +429,11 @@ def test_supports_native_spin_capability_gate() -> None:
 
 
 def test_uses_graph_lower_feature_gates() -> None:
-    # Every conditioning input DPA4 supports now rides the graph lower: native
-    # spin, charge/spin FiLM, and SFPG bridging. Only the explicit escape
-    # hatch (disable_graph_lower / _graph_lower_disabled) gates it off.
-    for attr in ("charge_spin_embedding", "bridging_switch", "spin_embedding"):
+    # Every conditioning input DPA4 supports rides the graph lower: native
+    # spin, charge/spin FiLM, and the contact clamp of a bridged model. Only
+    # the explicit escape hatch (disable_graph_lower / _graph_lower_disabled)
+    # gates it off.
+    for attr in ("charge_spin_embedding", "contact_clamp", "spin_embedding"):
         dd = make_descriptor()
         assert dd.uses_graph_lower() is True
         setattr(dd, attr, object())  # any non-None sentinel
@@ -495,14 +495,12 @@ def test_output_stat_graph_wrapper_flattens_aparam() -> None:
 
 
 def make_bridging_descriptor(seed: int = 99) -> DescrptDPA4:
-    """A SFPG-bridging variant of ``make_message_sensitive_descriptor()``.
+    """A bridged variant of ``make_message_sensitive_descriptor()``.
 
-    ``inner_clamp_f_inner``/``inner_clamp_f_outer`` build ``InnerClamp`` (edge
-    distance freeze) and ``BridgingSwitch`` (per-source edge gate) -- see
-    ``test_message_passing_semantics`` in ``test_descrpt_dpa4.py`` for the
-    same construction. The absolute scale gives every pair the unit length
-    scale, so the two fractions are the window radii in Å. Jittered for the
-    same message-sensitivity reason as ``make_message_sensitive_descriptor``.
+    The contact clamp starts from the covalent bond length of every pair (Ni-O
+    1.87 Å here) and freezes the read separation below ``0.75`` of it. Jittered
+    for the same message-sensitivity reason as
+    ``make_message_sensitive_descriptor``.
     """
     dd = DescrptDPA4(
         ntypes=2,
@@ -516,91 +514,84 @@ def make_bridging_descriptor(seed: int = 99) -> DescrptDPA4:
         precision="float64",
         seed=7,
         random_gamma=False,
-        inner_clamp_f_inner=0.8,
-        inner_clamp_f_outer=1.2,
-        inner_clamp_scale="absolute",
+        type_map=["Ni", "O"],
+        contact_clamp=0.75,
     )
     data = dd.serialize()
     data = jitter_zero_arrays(data, np.random.default_rng(seed))
     return DescrptDPA4.deserialize(data)
 
 
-def _sphere_points(n_points: int, radius: float) -> np.ndarray:
-    """Deterministic Fibonacci-like sphere sampling around the origin."""
-    idx = np.arange(n_points, dtype=np.float64)
-    phi = np.pi * (3.0 - np.sqrt(5.0))  # golden-angle step
-    z = 1.0 - 2.0 * (idx + 0.5) / float(n_points)
-    rho = np.sqrt(np.clip(1.0 - z * z, 0.0, None))
-    theta = phi * idx
-    return np.stack(
-        [radius * rho * np.cos(theta), radius * rho * np.sin(theta), radius * z],
-        axis=-1,
-    )  # (n_points, 3)
+def _closing_pair_descriptor_outputs(
+    dd: DescrptDPA4, separations: np.ndarray
+) -> np.ndarray:
+    """3-atom probe (A, B, C) with the A-B pair closing along a fixed axis.
 
-
-def _frozen_sphere_descriptor_outputs(
-    dd: DescrptDPA4, near_distance: float, n_points: int = 12
-) -> tuple[np.ndarray, np.ndarray | None]:
-    """3-atom probe (A, B, C): A fixed at the origin, B rigidly slides on a
-    sphere of radius ``near_distance`` around A (inside the frozen zone), C
-    anchored well outside the bridging window as an ordinary GNN neighbor of
-    both. Returns the flat call_graph descriptor reshaped to
-    ``(n_points, 3, channels)`` and the per-node source gate reshaped to
-    ``(n_points, 3)`` (``None`` for an unbridged descriptor).
-
-    Mirrors pt's ``TestSourceFreezePropagationGate._build_three_atom_box`` /
-    ``_evaluate_frozen_sphere_atom_energies`` at the descriptor level. The
-    gate leaves the two edges of the frozen pair alive, so the descriptors of
-    A and B keep following each other; what leaves the graph are the four
-    edges the frozen pair emits into C, which is where the invariance lands.
-    An invariant descriptor of C carries over to any per-atom fitting net,
-    itself a function of C's descriptor and type alone.
+    A sits at the origin, B on the x axis at each separation, and C is an
+    ordinary neighbor of both. Returns the flat call_graph descriptor reshaped
+    to ``(len(separations), 3, channels)``.
     """
-    directions = _sphere_points(n_points, near_distance)
+    n_points = separations.shape[0]
     coord = np.zeros((n_points, 3, 3), dtype=np.float64)
-    coord[:, 1, :] = directions  # B rotates around A, radius fixed
-    coord[:, 2, :] = np.array([2.4, 0.0, 0.0])  # C: ordinary neighbor, static
+    coord[:, 1, 0] = separations
+    coord[:, 2, :] = np.array([0.3, 2.4, 0.2])
     atype = np.tile(np.array([[0, 1, 0]], dtype=np.int64), (n_points, 1))
     nlist = build_neighbor_list_np(coord, dd.get_rcut(), nnei=4)
     graph = make_graph_from_nlist(coord, nlist)
-    out, _, node_gate = dd.call_graph(graph, atype.reshape(-1))
-    return (
-        np.asarray(out).reshape(n_points, 3, -1),
-        None if node_gate is None else np.asarray(node_gate).reshape(n_points, 3),
+    out, _ = dd.call_graph(graph, atype.reshape(-1))
+    return np.asarray(out).reshape(n_points, 3, -1)
+
+
+def test_call_graph_clamp_freezes_every_descriptor_below_the_freeze() -> None:
+    """Below the frozen read separation, no descriptor depends on the pair.
+
+    Only the two edges of the A-B pair are shortened, along their own
+    directions, while every other edge of the graph stays as it is. The clamp
+    freezes what every message reads of that separation, so the descriptors of
+    the pair and of the third atom, which hears of it only through messages,
+    stop changing with it; above the freeze they still follow it.
+    """
+    dd = make_bridging_descriptor()
+    edge = float(np.asarray(dd.contact_clamp.edges)[0, 1])
+    coord = np.array([[[0.0, 0.0, 0.0], [edge, 0.0, 0.0], [0.3, 2.4, 0.2]]])
+    atype = np.array([0, 1, 0], dtype=np.int64)
+    nlist = build_neighbor_list_np(coord, dd.get_rcut(), nnei=4)
+    graph = make_graph_from_nlist(coord, nlist)
+    src, dst = np.asarray(graph.edge_index)
+    pair = ((src == 0) & (dst == 1)) | ((src == 1) & (dst == 0))
+    assert pair.sum() == 2
+
+    def descriptor_at(separation: float) -> np.ndarray:
+        edge_vec = np.asarray(graph.edge_vec).copy()
+        edge_vec[pair] *= separation / edge
+        out, _ = dd.call_graph(dataclasses.replace(graph, edge_vec=edge_vec), atype)
+        return np.asarray(out)
+
+    frozen = [descriptor_at(f * edge) for f in (0.2, 0.4, 0.6, 0.75)]
+    span = max(np.max(np.abs(out - frozen[0])) for out in frozen)
+    assert span < 1e-12, span
+    assert np.max(np.abs(descriptor_at(0.9 * edge) - frozen[0])) > 1e-8
+
+
+def test_call_graph_clamp_is_the_identity_above_the_edge() -> None:
+    """At and above the data edge the bridged descriptor is the unbridged one."""
+    bridged = make_bridging_descriptor()
+    plain_data = bridged.serialize()
+    plain_data["config"]["contact_clamp"] = None
+    plain_data["@variables"].pop("contact_clamp.edges")
+    plain = DescrptDPA4.deserialize(plain_data)
+    edge = float(np.asarray(bridged.contact_clamp.edges)[0, 1])
+    separations = edge * np.array([1.0, 1.2, 1.6])
+    np.testing.assert_array_equal(
+        _closing_pair_descriptor_outputs(bridged, separations),
+        _closing_pair_descriptor_outputs(plain, separations),
     )
-
-
-def test_call_graph_bridging_frozen_sphere_invariance() -> None:
-    """SFPG bridging on the graph route: the frozen pair (A, B) must vanish
-    from the environment of the third atom C, so C's descriptor is invariant
-    to their rigid motion inside the frozen zone (below r_inner=0.8).
-
-    The pair itself stays connected -- the leave-one-out gate keeps the two
-    edges between A and B -- so A's descriptor still follows the direction of
-    B; what makes that harmless is the per-node gate, which is exactly zero on
-    both frozen atoms and one on C.
-    """
-    dd = make_bridging_descriptor()
-    out, node_gate = _frozen_sphere_descriptor_outputs(dd, near_distance=0.5)
-    span_c = np.max(np.abs(out[:, 2, :] - out[0:1, 2, :]))
-    assert span_c < 1e-10, span_c
-    span_a = np.max(np.abs(out[:, 0, :] - out[0:1, 0, :]))
-    assert span_a > 1e-6, span_a
-    np.testing.assert_array_equal(node_gate[:, :2], np.zeros((out.shape[0], 2)))
-    np.testing.assert_array_equal(node_gate[:, 2], np.ones(out.shape[0]))
-
-
-def test_call_graph_bridging_leak_reopens_when_gate_disabled() -> None:
-    """Ablation: clearing bridging_switch (InnerClamp stays active) must
-    reopen the direction/multi-hop leak on the graph route -- pins that SFPG,
-    not InnerClamp alone, owns the invariance above.
-    """
-    dd = make_bridging_descriptor()
-    dd.bridging_switch = None
-    out, node_gate = _frozen_sphere_descriptor_outputs(dd, near_distance=0.5)
-    assert node_gate is None
-    span_c = np.max(np.abs(out[:, 2, :] - out[0:1, 2, :]))
-    assert span_c > 1e-6, span_c
+    # Inside the ramp the two differ.
+    inside = edge * np.array([0.85])
+    assert not np.allclose(
+        _closing_pair_descriptor_outputs(bridged, inside),
+        _closing_pair_descriptor_outputs(plain, inside),
+    )
 
 
 def test_charge_spin_model_routes_through_graph_lower() -> None:

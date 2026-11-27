@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Multi-rank LAMMPS driver for the native-spin DPA4 graph ``.pt2`` fixture.
 
-``atom_style spin`` / ``pair_style deepspin`` runner for
-``test_lammps_dpa4_spin_graph_pt2.py``'s multi-rank comparison.  The
-native-spin DPA4 graph archive now carries the nested with-comm AOTI
-artifact, so ``DeepSpinPTExpt::compute_inner`` drives a real domain-
-decomposed run through ``run_model_graph_with_comm`` (per-block ghost
-FEATURE refresh via ``border_op``; ghost SPINS arrive through the LAMMPS
-``sp`` forward-comm).
+``atom_style spin`` runner of ``pair_style deepspin`` or ``dpa4spin`` for
+the multi-rank comparisons of the native-spin DPA4 graph archives.  Their
+graph lower carries the halo exchange of the further message-passing blocks
+in its main program, so ``NativeSpinPTExpt`` drives a real domain-decomposed
+run for both styles (per-block ghost FEATURE refresh through the border plan;
+ghost SPINS arrive through the LAMMPS ``sp`` forward-comm).
 
 Rank 0 writes potential energy + per-atom force (3 cols) + per-atom
 force_mag (3 cols) to ``OUTPUT``, id-ordered, so the parent pytest process
@@ -46,6 +45,13 @@ parser.add_argument(
     "domain decomposition (nswap>0). Pass '1 1 1' for a single-rank "
     "reference run on the same archive.",
 )
+parser.add_argument(
+    "--pair-style",
+    choices=("deepspin", "dpa4spin"),
+    default="deepspin",
+    help="Pair style that serves the archive; both store the precession "
+    "magnetic force by default.",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -61,7 +67,7 @@ lammps.mass("1 58")
 lammps.mass("2 16")
 lammps.timestep(0.0005)
 lammps.fix("1 all nve")
-lammps.pair_style(f"deepspin {args.PB_FILE}")
+lammps.pair_style(f"{args.pair_style} {args.PB_FILE}")
 lammps.pair_coeff("* *")
 # Per-atom magnetic force components: LAMMPS does not expose ``fm`` through
 # the legacy extract/gather_atoms registry, so go via

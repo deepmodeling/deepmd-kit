@@ -164,6 +164,8 @@ class EquivariantRMSNorm(NativeOP):
         Whether parameters are trainable.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("scalar_mask",)
+
     def __init__(
         self,
         lmax: int,
@@ -193,7 +195,13 @@ class EquivariantRMSNorm(NativeOP):
         self.bias = np.zeros((self.n_focus, self.channels), dtype=prec)
 
         # === Step 2. Index and Weight Buffers ===
-        self.expand_index = map_degree_idx(self.lmax)
+        expand_index = map_degree_idx(self.lmax)
+        self.expand_index = expand_index
+        # Indicator of the l=0 coefficient on the packed degree axis, with
+        # shape (D, 1, 1). Centering and bias act through it on the whole
+        # tensor, so the forward never slices or concatenates the degree axis
+        # and its result is independent of the memory layout of the input.
+        self.scalar_mask = (expand_index == 0).astype(prec).reshape(-1, 1, 1)
 
         # Pre-fuse degree balancing and channel averaging into a single weight:
         #   w_d = 1 / ((2l+1) * (lmax+1) * C)
@@ -224,45 +232,29 @@ class EquivariantRMSNorm(NativeOP):
         device = array_api_compat.device(x)
         in_dtype = x.dtype
         x = xp.astype(x, get_xp_precision(xp, self.precision))
-        x0 = x[:, :1, :, :]  # (N, 1, F, C)
-        xt = x[:, 1:, :, :]  # (N, D-1, F, C)
+        scalar_mask = xp_asarray_nodetach(xp, self.scalar_mask, device=device)
 
-        # === Step 1. Center the scalar slice ===
-        x0 = x0 - xp.mean(x0, axis=-1, keepdims=True)
+        # === Step 1. Center the scalar row ===
+        # (N, 1, F, 1) channel mean of the l=0 row, read and subtracted through
+        # the mask so that the degree axis is never sliced.
+        scalar_mean = xp.mean(
+            xp.sum(x * scalar_mask, axis=1, keepdims=True), axis=-1, keepdims=True
+        )
+        x = x - scalar_mean * scalar_mask
 
         # === Step 2. Compute a shared degree-balanced RMS ===
         balance_weight = xp_asarray_nodetach(xp, self.balance_weight, device=device)
-        mean_variance = xp.sum(x0 * x0, axis=(1, 3)) * balance_weight[0]
-        if self.lmax > 0:
-            mean_variance = mean_variance + xp.sum(
-                (xt * xt) * balance_weight[1:][None, :, None, None], axis=(1, 3)
-            )
+        mean_variance = xp.sum((x * x) * balance_weight[:, None, None], axis=(1, 3))
         inv_rms = 1.0 / xp.sqrt(mean_variance + self.eps)
         inv_rms = inv_rms[:, None, :, None]  # (N, 1, F, 1)
 
-        x0 = x0 * inv_rms
-        if self.lmax > 0:
-            xt = xt * inv_rms
-
-        # === Step 3. Apply per-degree affine parameters ===
+        # === Step 3. Apply per-degree scale and scalar bias ===
         adam_scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
         expand_index = xp_asarray_nodetach(xp, self.expand_index, device=device)
-        expanded_scale = xp.take(adam_scale, expand_index, axis=0)
-        expanded_scale = expanded_scale[None, ...]  # (1, D, F, C)
-        x0 = x0 * expanded_scale[:, :1, :, :]
-        if self.lmax > 0:
-            xt = xt * expanded_scale[:, 1:, :, :]
-
-        # === Step 4. Add scalar bias and restore layout ===
-        bias0 = xp.reshape(
-            xp_asarray_nodetach(xp, self.bias[...], device=device),
-            (1, 1, self.n_focus, -1),
-        )  # (1, 1, F, C)
-        x0 = x0 + bias0
-
-        out = x0 if self.lmax == 0 else xp.concat([x0, xt], axis=1)
-        out = xp.astype(out, in_dtype)
-        return out
+        expanded_scale = xp.take(adam_scale, expand_index, axis=0)  # (D, F, C)
+        bias = xp_asarray_nodetach(xp, self.bias[...], device=device)
+        out = x * inv_rms * expanded_scale + scalar_mask * bias
+        return xp.astype(out, in_dtype)
 
     def serialize(self) -> dict[str, Any]:
         return {

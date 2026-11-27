@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Compact canonical graph contract for compressed CUDA deployment."""
+"""Compact canonical graph contract of the CUDA deployment of the DPA4 family."""
 
 from __future__ import (
     annotations,
@@ -7,6 +7,9 @@ from __future__ import (
 
 from dataclasses import (
     dataclass,
+)
+from functools import (
+    cache,
 )
 from itertools import (
     pairwise,
@@ -22,6 +25,12 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
+
+#: Lower kind of the programs that read the compact canonical graph. The fused
+#: operators of compressed DPA1 and compressed DPA4C evaluate their models on
+#: it, and the graph forward of the model evaluates any other model that it
+#: serves (see :func:`~deepmd.pt_expt.model.graph_lower.canonical_lower_evaluator`).
+CANONICAL_LOWER_KIND = "dpa_canonical"
 
 INT32_MAX = (1 << 31) - 1
 
@@ -56,6 +65,21 @@ def canonical_index_words(storage: torch.Tensor) -> torch.Tensor:
     return storage.view(dtype).squeeze(-1)
 
 
+def canonical_index_values(storage: torch.Tensor) -> torch.Tensor:
+    """Read canonical index words, or their byte carrier, as int64 values.
+
+    An exported program keeps the word width of the byte carrier dynamic,
+    which no dtype view can follow; the little-endian bytes of a word combine
+    arithmetically instead, so one program serves both widths.
+    """
+    if storage.dtype != torch.uint8:
+        return storage.to(torch.int64)
+    shift = 8 * torch.arange(
+        storage.shape[-1], dtype=torch.int64, device=storage.device
+    )
+    return (storage.to(torch.int64) << shift).sum(-1)
+
+
 @dataclass(frozen=True)
 class CanonicalGraph:
     """Store a cutoff-compacted destination-major graph without redundant fields.
@@ -65,9 +89,10 @@ class CanonicalGraph:
     past the physical edges are guards excluded from every CSR row.
 
     The source CSR serves the consumers that group edges by source: the DPA1
-    force assembly and the source-attributed per-atom virial of DPA4C. A DPA4C
-    graph whose caller declines the per-atom virial may carry two-entry
-    placeholders in its place.
+    force assembly, the graph forward and force assembly of DPA4, and the
+    source-attributed per-atom virial of DPA4C. A DPA4C graph whose caller
+    declines the per-atom virial may carry two-entry placeholders in its
+    place.
 
     Parameters
     ----------
@@ -138,6 +163,91 @@ class BorderPlan:
             swaps=torch.zeros(0, 5, dtype=torch.int32, device="cpu"),
             communicator=torch.zeros(1, dtype=torch.int64, device="cpu"),
         )
+
+    def exchange(self, rows: torch.Tensor) -> torch.Tensor:
+        """Refresh the halo rows of a node feature from their owners.
+
+        The exchange is differentiable: its backward adds the gradient of
+        every halo row onto the row of the atom it images, on the rank that
+        owns it, and leaves none on the halo rows.
+
+        Parameters
+        ----------
+        rows
+            Node feature with shape ``(N, W)``, float32 or float64, on the
+            device of the send list.
+
+        Returns
+        -------
+        torch.Tensor
+            A contiguous copy of ``rows`` whose halo rows hold the rows of
+            the atoms they image.
+        """
+        _register_border_exchange()
+        return torch.ops.deepmd.border_exchange(
+            rows, self.send_nodes, self.swaps, self.communicator
+        )
+
+
+def _border_exchange_fake(
+    rows: torch.Tensor,
+    send_nodes: torch.Tensor,
+    swaps: torch.Tensor,
+    communicator: torch.Tensor,
+) -> torch.Tensor:
+    del send_nodes, swaps, communicator
+    return rows.new_empty(rows.shape)
+
+
+def _border_exchange_setup_context(
+    ctx: torch.autograd.function.FunctionCtx,
+    inputs: tuple[torch.Tensor, ...],
+    output: torch.Tensor,
+) -> None:
+    del output
+    _, send_nodes, swaps, communicator = inputs
+    ctx.save_for_backward(send_nodes, swaps, communicator)
+
+
+def _border_exchange_backward(
+    ctx: torch.autograd.function.FunctionCtx, gradient: torch.Tensor
+) -> tuple[torch.Tensor, None, None, None]:
+    send_nodes, swaps, communicator = ctx.saved_tensors
+    return (
+        torch.ops.deepmd.border_exchange_backward(
+            gradient, send_nodes, swaps, communicator
+        ),
+        None,
+        None,
+        None,
+    )
+
+
+@cache
+def _register_border_exchange() -> None:
+    """Register the shapes and the gradient of the border exchange operators.
+
+    The operator library implements both directions on the host and on CUDA
+    devices; the export tracer needs their shapes, and autograd the backward
+    operator as the gradient of the forward one.
+    """
+    import deepmd.pt.cxx_op  # noqa: F401
+
+    if not hasattr(torch.ops.deepmd, "border_exchange"):
+        raise RuntimeError(
+            "the loaded DeePMD-kit operator library lacks deepmd::border_exchange, "
+            "which refreshes the halo rows of a decomposed node set; reinstall "
+            "DeePMD-kit so that its operator library matches the Python package"
+        )
+    torch.library.register_fake("deepmd::border_exchange")(_border_exchange_fake)
+    torch.library.register_fake("deepmd::border_exchange_backward")(
+        _border_exchange_fake
+    )
+    torch.library.register_autograd(
+        "deepmd::border_exchange",
+        _border_exchange_backward,
+        setup_context=_border_exchange_setup_context,
+    )
 
 
 def validate_reciprocal_canonical_graph(graph: CanonicalGraph) -> None:
@@ -374,6 +484,58 @@ def canonical_graph_from_neighbor_graph(
     return result
 
 
+def neighbor_graph_from_canonical(
+    graph: CanonicalGraph, node_count: int
+) -> NeighborGraph:
+    """View a compact canonical graph as a destination-major NeighborGraph.
+
+    Every storage slot becomes an edge. A physical edge keeps its source and
+    takes the destination of the CSR row that holds it. A guard slot past the
+    physical edges joins a node to itself and is masked, the nodes taken in
+    turn, so that an operator that groups the slots by endpoint finds them
+    spread over its rows; both CSR views hold the physical edges alone.
+
+    Parameters
+    ----------
+    graph
+        Compact graph with a complete source CSR.
+    node_count
+        Flat node count ``N``.
+
+    Returns
+    -------
+    NeighborGraph
+        Graph over the storage axis of ``graph``, sharing its edge vectors.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
+
+    source = canonical_index_values(graph.source)
+    slot = torch.arange(source.shape[0], dtype=torch.int64, device=source.device)
+    physical = slot < graph.destination_row_ptr[-1:]
+    guard = slot % node_count
+    # Row i owns [row_ptr[i], row_ptr[i + 1]). Searching the full offsets
+    # keeps the boundary tensor at storage offset zero in the compiled graph.
+    destination = torch.where(
+        physical,
+        torch.searchsorted(graph.destination_row_ptr, slot, right=True) - 1,
+        guard,
+    )
+    return NeighborGraph(
+        n_node=graph.n_node,
+        edge_index=torch.stack((torch.where(physical, source, guard), destination)),
+        edge_vec=graph.edge_vec,
+        edge_mask=physical,
+        n_local=graph.n_local,
+        destination_order=slot,
+        destination_row_ptr=graph.destination_row_ptr,
+        source_order=graph.source_order,
+        source_row_ptr=graph.source_row_ptr,
+        destination_sorted=True,
+    )
+
+
 def canonical_graph_from_pairs(
     center: torch.Tensor,
     source: torch.Tensor,
@@ -443,13 +605,17 @@ def canonical_graph_from_pairs(
 
 
 __all__ = [
+    "CANONICAL_LOWER_KIND",
     "INT32_MAX",
+    "BorderPlan",
     "CanonicalGraph",
     "canonical_graph_from_neighbor_graph",
     "canonical_graph_from_pairs",
     "canonical_index_bytes",
     "canonical_index_dtype",
+    "canonical_index_values",
     "canonical_index_words",
+    "neighbor_graph_from_canonical",
     "validate_canonical_graph_shapes",
     "validate_reciprocal_canonical_graph",
 ]

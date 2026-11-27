@@ -12,19 +12,17 @@ coverage at all; the pair style is a distinct consumer (its own nlist/ghost
 handling, per-atom virial accumulation and unit conversion), so a regression
 confined to it was invisible.
 
-Multi-rank correctness (issue #5906)
-------------------------------------
-Bridging enables the descriptor's Source Freeze Propagation Gate, whose
-per-node ``eta_j = prod_{e: src_e = j} w_e`` folds a node's FULL outgoing-edge
-set.  Edges exist only for owned centres, so the per-node partials are
-rank-incomplete; the with-comm artifact completes them with one
-reverse-accumulate + forward-broadcast border exchange before the gate is
-applied (``gen_dpa4_zbl.py`` asserts ``has_comm_artifact is True`` and that
-the nested ``forward_lower_with_comm.pt2`` entry exists).  This file pins the
-end-to-end contract with a 2-rank vs 1-rank parity run whose sub-``r_outer``
-close pair STRADDLES the ``processors 2 1 1`` x-boundary -- without that
-geometry every cross-rank gate contribution is ``log w = 0`` and the parity
-holds vacuously -- see ``test_pair_deepmd_mpi_dpa4_zbl_close_pair_parity``.
+Multi-rank correctness
+----------------------
+The analytical term and the contact clamp of the learned descriptor read the
+types of both ends of every edge, and the source of an edge that crosses a
+domain boundary is a ghost row; the learned child exchanges its ghost
+features between blocks (``gen_dpa4_zbl.py`` asserts ``has_comm_artifact is
+True`` and that the nested ``forward_lower_with_comm.pt2`` entry exists).
+This file pins the end-to-end contract with a 2-rank vs 1-rank parity run
+whose close pair, inside the range of the analytical term and below the
+frozen radius of its clamp, STRADDLES the ``processors 2 1 1`` x-boundary --
+see ``test_pair_deepmd_mpi_dpa4_zbl_close_pair_parity``.
 
 Reference values are computed LIVE at test-setup time via
 ``deepmd.infer.DeepPot.eval`` on the archive itself, mirroring
@@ -85,9 +83,9 @@ _MPI_DEFAULT_TIMEOUT = 600.0
 
 # 6-atom NiO system, coordinates verbatim from
 # ``source/tests/infer/gen_dpa4_zbl.py``'s ``_COORDS``: atoms 0 and 1 sit
-# 0.9 A apart, inside ``bridging_r_outer``, so the analytical ZBL term
-# contributes a large, unmistakable repulsion (~1.4e3 eV/A forces) rather
-# than a numerical afterthought.  The box is 13x13x13 A (NOT the generator's
+# 0.9 A apart, far inside the range of the analytical term, so the ZBL term
+# contributes a large, unmistakable repulsion rather than a numerical
+# afterthought.  The box is 13x13x13 A (NOT the generator's
 # 6x6x6 -- see the module docstring).
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
@@ -104,12 +102,12 @@ coord = np.array(
 # -> LAMMPS types [1,1,1,2,2,2] under identity ``pair_coeff * *``.
 type_NiO = np.array([1, 1, 1, 2, 2, 2])
 
-# Close-pair variant for the 2-rank parity test (issue #5906): the SAME
-# 6-atom geometry shifted along x so the 0.9 A Ni-Ni pair (inside the
-# bridging window, r_inner=0.8 < 0.9 < r_outer=1.2) STRADDLES the
-# ``processors 2 1 1`` boundary at lx/2 = 6.5.  Atom 0 lands at x = 6.3
-# (rank 0) and atom 1 at x = 7.2 (rank 1), so the pair's SFPG gate
-# contribution crosses the rank boundary -- the load-bearing geometry.
+# Close-pair variant for the 2-rank parity test: the SAME 6-atom geometry
+# shifted along x so the 0.9 A Ni-Ni pair (below the 1.65 A frozen radius of
+# its contact clamp) STRADDLES the ``processors 2 1 1`` boundary at
+# lx/2 = 6.5.  Atom 0 lands at x = 6.3 (rank 0) and atom 1 at x = 7.2
+# (rank 1), so the pair's analytical term and clamp read a ghost source --
+# the load-bearing geometry.
 _CLOSE_PAIR_X_SHIFT = 5.3
 coord_close_pair = coord + np.array([_CLOSE_PAIR_X_SHIFT, 0.0, 0.0])
 data_file_close_pair = Path(__file__).parent / "data_dpa4_zbl_close_pair_pt2.lmp"
@@ -418,22 +416,20 @@ def _run_mpi_subprocess(
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
 def test_pair_deepmd_mpi_dpa4_zbl_close_pair_parity() -> None:
-    """Issue #5906 Task 2 E2E: a bridged model, 2 ranks, with a 0.9 A
-    contact STRADDLING the ``processors 2 1 1`` x-boundary.
+    """A bridged model, 2 ranks, with a 0.9 A contact STRADDLING the
+    ``processors 2 1 1`` x-boundary.
 
-    Without the cross-boundary close pair this test is vacuous (edges at
-    ``r >= r_outer`` contribute ``log w = 0``); the geometry guard below
-    pins that the pair actually straddles the split.  The 2-rank run
-    exercises the with-comm artifact's SFPG completion (reverse-accumulate
-    + broadcast of the per-node ``[log_eta, zero_count]`` partials), the
-    per-block ghost exchange, and the reverse-comm force fold; the 1-rank
-    run is the plain-artifact reference on the same trajectory.
+    The geometry guard below pins that the pair actually straddles the
+    split, so its analytical term and contact clamp read a ghost source.
+    The 2-rank run exercises the with-comm artifact's per-block ghost
+    exchange and the reverse-comm force fold; the 1-rank run is the
+    plain-artifact reference on the same trajectory.
     """
     lx = float(box[1] - box[0])
     x_lo, x_hi = float(coord_close_pair[0, 0]), float(coord_close_pair[1, 0])
     assert x_lo < lx / 2.0 < x_hi, (
         "the close pair no longer straddles the processors 2 1 1 boundary; "
-        "the parity below would be vacuous for the SFPG exchange"
+        "the parity below would not reach a ghost source of the pair"
     )
     ref = _run_mpi_subprocess(
         nprocs=1, processors="1 1 1", data_path=data_file_close_pair

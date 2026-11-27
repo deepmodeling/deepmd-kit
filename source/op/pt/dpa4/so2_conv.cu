@@ -215,6 +215,7 @@ dpa4::ConvArgs make_args(const ConvConfig& c,
   a.cb = cb.data_ptr<float>();
   a.w0 = w0.data_ptr<float>();
   a.w1 = w1.data_ptr<float>();
+  a.parity = w1.size(-2) == c.lmax * c.focus_dim;
   a.gw = gw.data_ptr<float>();
   a.head_gate = head_gate.data_ptr<float>();
   a.rescale = rescale.data_ptr<float>();

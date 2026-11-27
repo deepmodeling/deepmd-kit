@@ -216,8 +216,8 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 
 		# Native-spin DPA4 graph archives (baseline + model-level pair
 		# exclusion). Without this the whole native-spin graph C++ suite
-		# GTEST_SKIPs on the missing fixture, which is how a dead
-		# applyPairExclusion seam in DeepSpinPTExpt went unnoticed.
+		# GTEST_SKIPs on the missing fixture, and a dead applyPairExclusion
+		# seam of the native-spin backend goes unnoticed.
 		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4_spin.py &
 		PID11=$!
 		# DPA4 + analytical ZBL bridging: a linear COMPOSITION on the graph
@@ -231,7 +231,7 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 		PID13=$!
 		# Native-spin DPA4 + ZBL bridging COMBINED: spin reaching a linear
 		# composition, including the source-freeze gate's cross-rank exchange
-		# through the nested with-comm artifact.
+		# through the border plan of the graph lower.
 		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
 		PID14=$!
 		# Minimal native-spin DPA4C for LAMMPS pair_style dpa4spin (no
@@ -239,13 +239,11 @@ if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 		# convention behavioral tests.
 		run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_spin_lmp.py &
 		PID14B=$!
-		# Native-spin DPA4C: the archives above all ship a with-comm artifact
-		# and are therefore served by DeepSpinPTExpt, which leaves
-		# NativeSpinPTExpt -- the class the dispatch selects for a native-spin
-		# archive without one -- uncovered. DPA4C keeps its messaging local and
-		# so reaches it. The compiled graph calls CUDA-only operators, so the
-		# fixture is generated only where the C++ suite has a GPU; the tests
-		# built on it skip when it is absent.
+		# Native-spin DPA4C with frame and atomic parameters and a charge
+		# state, served by NativeSpinPTExpt like every native-spin archive.
+		# The compiled graph calls CUDA-only operators, so the fixture is
+		# generated only where the C++ suite has a GPU; the tests built on it
+		# skip when it is absent.
 		if [ "${DP_VARIANT}" = "cuda" ]; then
 			run_generator ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
 			PID15=$!
