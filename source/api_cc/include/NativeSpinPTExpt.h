@@ -22,7 +22,7 @@
 // commonPTExpt.h.
 namespace deepmd::ptexpt {
 class ChargeStateFold;
-class GraphReplay;
+class CanonicalExecution;
 struct HaloTensors;
 }  // namespace deepmd::ptexpt
 
@@ -587,7 +587,7 @@ class NativeSpinPTExpt : public DeepSpinBackend {
   // CUDA-graph replay of repeated device-resident canonical evaluations,
   // declared after the loader and the condition so that the graph is released
   // before the constants and the condition it reads.
-  std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
+  std::unique_ptr<deepmd::ptexpt::CanonicalExecution> canonical_execution_;
   // Serializes the runs of the model, which runs on a single-threaded runner,
   // the device-resident entry point, whose replay of canonical evaluations
   // keeps its graph across calls, and the replacement of the constants. The

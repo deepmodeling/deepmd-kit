@@ -44,6 +44,8 @@
 #include "expected_ref.h"
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+#include <ATen/record_function.h>
+#include <c10/util/ScopeExit.h>
 #include <torch/torch.h>
 
 #include "commonPT.h"
@@ -579,7 +581,9 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
   void run_device_entry(void* stream,
                         const bool source_csr = true,
                         const bool virial = true,
-                        const DP_HaloExchange* halo = nullptr) {
+                        const DP_HaloExchange* halo = nullptr,
+                        Evaluator* evaluator = nullptr) {
+    auto& model = evaluator ? *evaluator : dp;
     double* const atom_energy = out_atom_energy.data_ptr<double>();
     double* const force = out_force.data_ptr<double>();
     double* const total_virial =
@@ -596,14 +600,14 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
     const std::int64_t* const source_order =
         source_csr ? graph_source_order.data_ptr<std::int64_t>() : nullptr;
     if constexpr (Case::kSpin) {
-      dp.compute_canonical_graph_gpu(
+      model.compute_canonical_graph_gpu(
           atom_energy, force, out_force_mag.data_ptr<double>(), total_virial,
           atom_virial, atype, source, deepmd::canonical_index_width(nodes),
           edge_vec, destination_row_ptr, source_row_ptr, source_order,
           graph_spin.data_ptr<float>(), /*world=*/nullptr, halo, natoms, nodes,
           edge_storage, stream);
     } else {
-      dp.compute_canonical_graph_gpu(
+      model.compute_canonical_graph_gpu(
           atom_energy, force, total_virial, atom_virial, atype, source,
           deepmd::canonical_index_width(nodes), edge_vec, destination_row_ptr,
           source_row_ptr, source_order,
@@ -834,8 +838,7 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
              a_graph_with_halo_nodes_matches_the_host_entry) {
   // The unfolded graph gives every ghost atom a node, whose forces the caller
   // adds to those of its owner, as the reverse communication of domain
-  // decomposition does; the extents of such a graph change with every
-  // neighbor rebuild, so it is evaluated eagerly. Its rows are those of the
+  // decomposition does. Its rows are those of the
   // folded graph, so its energies, folded forces and virial agree with the
   // host entry points up to the summation order of the run, which the node
   // count of the graph configures. An archive whose blocks read features of
@@ -847,10 +850,57 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
   const auto exchange = this->self_exchange(graph);
   const DP_HaloExchange plan = exchange.plan();
   const bool exchanges = this->dp.canonical_graph_requires_halo();
-  for (int call = 0; call < 2; ++call) {
+  for (int call = 0; call < 3; ++call) {
     SCOPED_TRACE("call " + std::to_string(call));
     this->expect_folded(this->evaluate(true, true, exchanges ? &plan : nullptr),
                         graph.owner);
+  }
+  if (TypeParam::kSourceCsrOptional && !exchanges) {
+    const auto eager = [&](int count) {
+      typename TypeParam::Evaluator fresh;
+      fresh.init(TypeParam::kModelPath);
+      this->natoms = count;
+      this->reset_outputs();
+      this->run_device_entry(nullptr, true, true, nullptr, &fresh);
+      auto result = this->read_back();
+      result.atom_energy.resize(count);
+      return result;
+    };
+    const int full = this->natoms;
+    const auto large = eager(full);
+    const auto small = eager(full - 1);
+    const auto empty = eager(0);
+    ASSERT_FALSE(empty.atom_virial.empty());
+    for (const double value : empty.atom_virial) {
+      EXPECT_DOUBLE_EQ(value, 0.0);
+    }
+    ASSERT_GT(max_difference(small.force, large.force), 1e-8);
+    static thread_local int replays;
+    replays = 0;
+    const auto handle = at::addThreadLocalCallback(
+        at::RecordFunctionCallback([](const at::RecordFunction& event)
+                                       -> std::unique_ptr<at::ObserverContext> {
+          if (std::string(event.name()) == "deepmd::canonical_graph_replay") {
+            ++replays;
+          }
+          return nullptr;
+        }).scopes({at::RecordScope::USER_SCOPE}));
+    const auto cleanup =
+        c10::make_scope_exit([&]() { at::removeCallback(handle); });
+    for (const int count : {full - 1, full}) {
+      const int before = replays;
+      this->natoms = count;
+      this->out_atom_energy.fill_(123456.0);
+      this->run_device_entry(nullptr);
+      auto actual = this->read_back();
+      if (count < full) {
+        EXPECT_DOUBLE_EQ(actual.atom_energy.at(count), 123456.0);
+      }
+      actual.atom_energy.resize(count);
+      this->expect_agreement(actual, count == full ? large : small,
+                             "owned count");
+      EXPECT_GT(replays, before) << "expected same-key CUDA graph replay";
+    }
   }
   // A failed C API call stores its error on the handle, so rejection is
   // checked after the successful evaluations of that handle: the halo

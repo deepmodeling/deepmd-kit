@@ -39,6 +39,8 @@
 #include "block_launch.h"
 #include "graph_compress.cuh"
 #include "graph_compress_launch.h"
+#include "local_node_extent.h"
+#include "node_type_summary.h"
 
 namespace {
 
@@ -655,19 +657,6 @@ struct NodeTypeWords {
   unsigned type_present[kTypeWords];
 };
 
-/// Set the bit of `type` in a bitmap of node types. A negative type, and a
-/// type beyond the words of the bitmap, which a launch of more types never
-/// reads, set none.
-__device__ __forceinline__ void mark_type(long type,
-                                          unsigned (&present)[kTypeWords]) {
-#pragma unroll
-  for (int word = 0; word < kTypeWords; ++word) {
-    if (type >> 5 == word) {
-      present[word] |= 1u << (type & 31);
-    }
-  }
-}
-
 /// Fold the node types that the threads of a block have scanned into `words`.
 /// Every thread of the block takes part: `same` tells whether all of the
 /// thread's nodes carry the type of node zero, and `present` the bitmap of
@@ -701,8 +690,7 @@ __global__ void node_type_kernel(long count,
   for (long node = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x;
        node < count; node += static_cast<long>(blockDim.x) * gridDim.x) {
     const long type = atype[node];
-    same &= type == first;
-    mark_type(type, present);
+    same &= deepmd::dpa4c::scan_node_type(type, first, present);
   }
   publish_node_types(same, present, words);
 }
@@ -1233,8 +1221,7 @@ __global__ void energy_force_prologue_kernel(
     const long raw = atype[node];
     const long type = raw < 0 ? 0 : raw;
     node_type[node] = type;
-    same &= type == first;
-    mark_type(type, present);
+    same &= deepmd::dpa4c::scan_node_type(raw, first, present);
     long frame = 0;
     long frame_begin = 0;
     if (frame_count > 1) {
@@ -2764,7 +2751,10 @@ dpa4c_canonical_compress_energy_force(
   // A node set with halo rows evaluates its owned rows: the halo rows carry
   // no edges, and every feature of theirs that an edge reads arrives from the
   // rank that owns them.
-  const long owned = halo.owned;
+  const long owned =
+      block_count == 0 && frame_count == 1
+          ? deepmd::LocalNodeExtent::lookup(n_local.data_ptr(), halo.owned)
+          : halo.owned;
   const auto f32 = edge_vec.options().dtype(torch::kFloat32);
   const auto f64 = edge_vec.options().dtype(torch::kFloat64);
   const auto i64 = edge_vec.options().dtype(torch::kInt64);
@@ -2786,20 +2776,24 @@ dpa4c_canonical_compress_energy_force(
   // With further blocks the runs cover the owned rows alone, and every node
   // backward adds its on-site magnetic gradient, so the node buffers the
   // epilogue reads start cleared.
-  auto raw_energy = node_buffer(block_count, {node_count}, f64);
+  const bool clear_rows = block_count > 0 || owned < node_count;
+  auto raw_energy = node_buffer(clear_rows, {node_count}, f64);
   auto seed = torch::empty({node_count}, f64);
   auto node_type = torch::empty({node_count}, i64);
   auto force_fixed = torch::empty({node_count, kForceWords}, i64);
-  auto node_virial = node_buffer(block_count, {node_count, 9}, f32);
+  auto node_virial = node_buffer(clear_rows, {node_count, 9}, f32);
   // The on-site magnetic gradient is node local, so a run writes only its own
   // rows. The neighbour part belongs to source nodes that other runs own and
   // accumulates in fixed point like the force.
-  auto spin_gradient = has_spin ? node_buffer(block_count, {node_count, 3}, f32)
+  auto spin_gradient = has_spin ? node_buffer(clear_rows, {node_count, 3}, f32)
                                 : torch::Tensor();
   auto spin_fixed =
       has_spin ? torch::empty({node_count, kForceWords}, i64) : torch::Tensor();
   auto edge_gradient =
       atom_virial ? torch::empty_like(edge_vec_float) : torch::Tensor();
+  if (atom_virial && owned == 0) {
+    edge_gradient.zero_();
+  }
   const int blocks_of_epilogue = epilogue_blocks(node_count);
   auto words =
       torch::zeros({static_cast<long>(sizeof(EvaluationWords) / sizeof(int))},

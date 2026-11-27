@@ -481,10 +481,15 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   // The source CSR feeds the source-attributed per-atom virial, and every
   // force assembly of an artifact that groups edges by source.
   const bool source_csr = canonical_source_csr || cvflag_atom;
+  int model_rows = 0;
   if (canonical_graph) {
-    compact_graph.build(list, cutoff, dist_unit_cvt_factor, source_csr);
+    // Keep the exact node extent for source-attributed atomic virials.
+    model_rows =
+        compact_graph.build(list, cutoff, dist_unit_cvt_factor, source_csr,
+                            multi_rank && !canonical_halo && !long_range);
   } else {
     nedge = build_edges_device();
+    model_rows = compact_graph.nnode_model;
   }
   const int nloc_m = compact_graph.nloc_model;    // local nodes (energy)
   const int nnode_m = compact_graph.nnode_model;  // all nodes (force / virial)
@@ -502,11 +507,11 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     d_atom_energy =
         Kokkos::View<double*, DeviceType>("deepmd/kk:atom_energy", nlocal);
   }
-  if ((int)d_out_force.extent(0) < 3 * nnode_m) {
-    d_out_force =
-        Kokkos::View<double*, DeviceType>("deepmd/kk:out_force", 3 * nnode_m);
-    d_atom_virial =
-        Kokkos::View<double*, DeviceType>("deepmd/kk:atom_virial", 9 * nnode_m);
+  if (d_out_force.extent(0) < 3 * static_cast<std::size_t>(model_rows)) {
+    d_out_force = Kokkos::View<double*, DeviceType>(
+        "deepmd/kk:out_force", 3 * static_cast<std::size_t>(model_rows));
+    d_atom_virial = Kokkos::View<double*, DeviceType>(
+        "deepmd/kk:atom_virial", 9 * static_cast<std::size_t>(model_rows));
   }
 
   // Runtime frame (fparam) and per-atom (aparam) parameters, built per step
@@ -641,7 +646,7 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
             compact_graph.d_destination_row_ptr.data(),
             source_csr ? compact_graph.d_source_row_ptr.data() : nullptr,
             source_csr ? compact_graph.d_source_order.data() : nullptr,
-            coord_ptr, world_ptr, model_halo, cell_ptr, nloc_m, nnode_m,
+            coord_ptr, world_ptr, model_halo, cell_ptr, nloc_m, model_rows,
             compact_graph.storage_count, model_stream);
       } else if (edge_vec_fp32) {
         model.compute_edges_gpu(d_atom_energy.data(), d_out_force.data(),
