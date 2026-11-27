@@ -967,7 +967,7 @@ def test_change_bias_keeps_the_graph_lower(
     bias = [0.5, -1.25]
     updated = tmp_path / f"long_range_updated{suffix}"
     if recorded != "graph":
-        with pytest.raises(ValueError, match="Cannot preserve the dpa4c_canonical ABI"):
+        with pytest.raises(ValueError, match=f"Cannot preserve the {recorded} ABI"):
             change_bias(str(frozen), bias_value=bias, output=str(updated))
         assert not updated.exists()
         return
