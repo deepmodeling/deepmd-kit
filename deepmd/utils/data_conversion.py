@@ -38,7 +38,6 @@ log = logging.getLogger(__name__)
 _DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
 _DPDATA_DEFAULT_OUT_FORMAT = "deepmd/lmdb"
 _DPDATA_CONVERSION_SCHEMA_VERSION = "4"
-_DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str, bool, str], list[str]] = {}
 _DPDATA_SOURCE_HASH_LIMIT = 1024 * 1024
 _CONVERSION_LOCK_HEARTBEAT_SECONDS = 5.0
 # Allow for shared-filesystem attribute caching before diagnosing a stalled
@@ -383,6 +382,10 @@ def _lock_owner_is_alive(payload: dict[str, Any]) -> bool | None:
         return None
     if pid <= 0:
         return None
+    # Signal zero is a liveness probe only on POSIX. On Windows, os.kill
+    # interprets it as CTRL_C_EVENT and can terminate the lock owner.
+    if os.name != "posix":
+        return None
     expected_start = payload.get("process_start")
     current_start = _process_start_time(pid)
     if expected_start is not None and current_start is not None:
@@ -399,9 +402,9 @@ def _lock_owner_is_alive(payload: dict[str, Any]) -> bool | None:
 def _recover_stale_conversion_lock(lock_path: Path) -> bool:
     """Recover dead local owners and abandoned, uninitialized lock files.
 
-    A remote host's heartbeat may look stale because of NFS attribute caching
-    or clock skew. Never evict an identified remote writer on that evidence;
-    report the stalled lock for owner verification instead of racing it.
+    A heartbeat may look stale because of filesystem caching or clock skew.
+    If a writer is identified but we cannot safely check whether it is alive,
+    report the stalled lock for verification rather than evicting the writer.
     """
     # Hold the same guard as creation/release across both the inode check
     # and unlink. Another recovering waiter cannot publish a live successor
@@ -424,15 +427,13 @@ def _recover_stale_conversion_lock(lock_path: Path) -> bool:
         lease_expired = (
             time.time() - lock_stat.st_mtime > _CONVERSION_LOCK_STALE_SECONDS
         )
-        if (
-            owner_alive is None
-            and lease_expired
-            and payload.get("hostname") not in (None, socket.gethostname())
-        ):
+        hostname = payload.get("hostname")
+        if owner_alive is None and lease_expired and hostname:
+            locality = "local" if hostname == socket.gethostname() else "remote"
             raise RuntimeError(
-                f"Cannot verify the remote owner of stalled dpdata conversion lock "
-                f"{lock_path} on {payload['hostname']}. Check that the owner has "
-                "stopped before removing the lock and retrying."
+                f"Cannot verify the {locality} owner of stalled dpdata conversion "
+                f"lock {lock_path} on {hostname}. Check that the owner has stopped "
+                "before removing the lock and retrying."
             )
         stale = owner_alive is False or (owner_alive is None and lease_expired)
         if not stale or not _same_lock_file(lock_path, lock_stat):
@@ -556,23 +557,7 @@ def _convert_system_by_dpdata(
     out_fmt = _canonical_dpdata_out_format(out_fmt)
     output = _conversion_cache_path(source, fmt, out_fmt, labeled=labeled)
     _ensure_private_conversion_cache(output.parent)
-    cache_key = (
-        str(Path.cwd().resolve(strict=False)),
-        str(source.resolve(strict=False)),
-        fmt,
-        out_fmt,
-        labeled,
-        str(output),
-    )
-    cached_systems = _DPDATA_CONVERSION_CACHE.get(cache_key)
     conversion_current = _is_conversion_current(source, output)
-    if cached_systems is not None:
-        if conversion_current:
-            return cached_systems
-        # A long-lived training/validation process may observe source files
-        # rewritten in place. Drop the fast-path entry so the normal locked
-        # conversion flow refreshes the on-disk result before it is reused.
-        del _DPDATA_CONVERSION_CACHE[cache_key]
 
     lock_path = output.with_suffix(output.suffix + ".lock")
     # Reuse only this pre-lock check. Waiting, acquiring the lock and writing
@@ -615,8 +600,9 @@ def _convert_system_by_dpdata(
     if _is_dpdata_lmdb_format(out_fmt):
         converted_systems = [str(output)]
     else:
+        # The manifest may describe a publication by another process, whose
+        # system membership can differ from what a previous call discovered.
         converted_systems = expand_systems(str(output))
     if not converted_systems:
         raise RuntimeError(f"No DeePMD systems were found in converted file {output}")
-    _DPDATA_CONVERSION_CACHE[cache_key] = converted_systems
     return converted_systems

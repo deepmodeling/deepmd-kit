@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import types
@@ -41,6 +42,9 @@ from deepmd.utils.data_system import (
     get_data,
     process_systems,
     validate_backend_data_config,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 
@@ -234,14 +238,10 @@ class TestDpdataFormatConversion(unittest.TestCase):
         _FakeMultiSystems.write_count = 0
         _FakeMultiSystems.load_calls = []
         _FakeMultiSystems.to_calls = []
-        data_conversion._DPDATA_CONVERSION_CACHE.clear()
         self.fake_dpdata = types.SimpleNamespace(
             MultiSystems=_FakeMultiSystems,
             LabeledSystem=_FakeLabeledSystem,
         )
-
-    def tearDown(self) -> None:
-        data_conversion._DPDATA_CONVERSION_CACHE.clear()
 
     def _expected_lmdb_write(self, output: str) -> tuple[str, str, dict]:
         """Windows stages a new database; POSIX uses dpdata's overwrite path."""
@@ -286,7 +286,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
             other_cwd / ".deepmd_dpdata_cache",
         )
 
-    def test_process_systems_revalidates_in_memory_cache(self) -> None:
+    def test_process_systems_refreshes_existing_cache(self) -> None:
         """A source rewrite in one process must refresh its converted output."""
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
             systems = process_systems(str(self.source), fmt="extxyz")
@@ -330,7 +330,6 @@ class TestDpdataFormatConversion(unittest.TestCase):
         original_stat = self.source.stat()
         self.source.write_text(extxyz.replace("energy=0.0", "energy=42.0"))
         os.utime(self.source, (original_stat.st_atime, original_stat.st_mtime - 86400))
-        data_conversion._DPDATA_CONVERSION_CACHE.clear()
         systems_again = process_systems(str(self.source), fmt="extxyz")
 
         self.assertEqual(len(systems), 1)
@@ -928,7 +927,6 @@ class TestDpdataFormatConversion(unittest.TestCase):
         )
         self.assertFalse(output.exists())
         self.assertFalse(data_conversion._conversion_manifest_path(output).exists())
-        self.assertFalse(data_conversion._DPDATA_CONVERSION_CACHE)
 
         self.source.write_text(labeled * 2)
         systems = process_systems(str(self.source), fmt="ase")
@@ -1015,42 +1013,87 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
         self.assertNotEqual(first, second)
 
-    def test_restored_sources_invalidate_memory_and_disk_caches(self) -> None:
+    @unittest.skipIf(os.name == "nt", "Windows may not replace an open HDF5 file")
+    def test_new_hdf5_reader_sees_refreshed_labels(self) -> None:
+        """A new DPPath sees new labels without invalidating an old reader."""
+        frame = (
+            "1\nProperties=species:S:1:pos:R:3:forces:R:3 energy=1.0\nH 0 0 0 0 0 0\n"
+        )
+        self.source.write_text(frame)
+        options = {"fmt": "extxyz", "out_fmt": "deepmd/hdf5"}
+        (system,) = process_systems(str(self.source), **options)
+        original = DPPath(system)
+        original_energy = original / "set.000" / "energy.npy"
+        np.testing.assert_array_equal(original_energy.load_numpy(), [[1.0]])
+
+        self.source.write_text(frame.replace("energy=1.0", "energy=42.0"))
+        self.assertEqual(process_systems(str(self.source), **options), [system])
+        refreshed = DPPath(system) / "set.000" / "energy.npy"
+        np.testing.assert_array_equal(refreshed.load_numpy(), [[42.0]])
+        np.testing.assert_array_equal(original_energy.load_numpy(), [[1.0]])
+        np.testing.assert_array_equal(
+            (original / "set.000" / "energy.npy").load_numpy(), [[1.0]]
+        )
+
+    def test_discovery_sees_systems_published_by_another_process(self) -> None:
+        """A disk-cache hit must discover the publisher's current systems."""
+        metadata = "Properties=species:S:1:pos:R:3:forces:R:3 energy=1.0\n"
+        frame = "H 0 0 0 0 0 0\n"
+        original = f"1\n{metadata}{frame}"
+        self.source.write_text(original)
+        options = {"fmt": "extxyz", "out_fmt": "deepmd/npy"}
+        seen = process_systems(str(self.source), **options)
+        self.assertEqual([Path(path).name for path in seen], ["H1"])
+
+        self.source.write_text(original + f"2\n{metadata}{frame}H 1 0 0 0 0 0\n")
+        result = subprocess.run(
+            [
+                sys.executable,
+                *(["-S"] if sys.flags.no_site else []),
+                "-c",
+                "import json, sys; from deepmd.utils.data_path import process_systems; "
+                "print(json.dumps(process_systems(sys.argv[1], fmt='extxyz', "
+                "out_fmt='deepmd/npy')))",
+                str(self.source),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        )
+        published = json.loads(result.stdout)
+        self.assertEqual({Path(path).name for path in published}, {"H1", "H2"})
+        self.assertCountEqual(process_systems(str(self.source), **options), published)
+
+    def test_restored_sources_invalidate_disk_cache(self) -> None:
         """Restored mtimes must invalidate file and directory conversions."""
         for directory in (False, True):
-            for fresh_process in (False, True):
-                for preserve_mtime in (False, True):
-                    with self.subTest(
-                        directory=directory,
-                        fresh_process=fresh_process,
-                        preserve_mtime=preserve_mtime,
-                    ):
-                        source = self.source
-                        if directory:
-                            source = self.root / "source-dir"
-                            child = source / "nested"
-                            child.mkdir(parents=True, exist_ok=True)
-                            source_file = child / "frame.extxyz"
-                        else:
-                            source_file = source
-                        source_file.write_text("original")
-                        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
-                            systems = process_systems(str(source), fmt="extxyz")
-                            before = _FakeMultiSystems.write_count
-                            stat = source_file.stat()
-                            source_file.write_text("restored")  # Same byte count.
-                            mtime = stat.st_mtime_ns - (
-                                0 if preserve_mtime else 86400 * 10**9
-                            )
-                            os.utime(source_file, ns=(stat.st_atime_ns, mtime))
-                            if fresh_process:
-                                data_conversion._DPDATA_CONVERSION_CACHE.clear()
-                            self.assertEqual(
-                                process_systems(str(source), fmt="extxyz"), systems
-                            )
-                            self.assertEqual(_FakeMultiSystems.write_count, before + 1)
-                            process_systems(str(source), fmt="extxyz")
-                            self.assertEqual(_FakeMultiSystems.write_count, before + 1)
+            for preserve_mtime in (False, True):
+                with self.subTest(directory=directory, preserve_mtime=preserve_mtime):
+                    source = self.source
+                    if directory:
+                        source = self.root / "source-dir"
+                        child = source / "nested"
+                        child.mkdir(parents=True, exist_ok=True)
+                        source_file = child / "frame.extxyz"
+                    else:
+                        source_file = source
+                    source_file.write_text("original")
+                    with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+                        systems = process_systems(str(source), fmt="extxyz")
+                        before = _FakeMultiSystems.write_count
+                        stat = source_file.stat()
+                        source_file.write_text("restored")  # Same byte count.
+                        mtime = stat.st_mtime_ns - (
+                            0 if preserve_mtime else 86400 * 10**9
+                        )
+                        os.utime(source_file, ns=(stat.st_atime_ns, mtime))
+                        self.assertEqual(
+                            process_systems(str(source), fmt="extxyz"), systems
+                        )
+                        self.assertEqual(_FakeMultiSystems.write_count, before + 1)
+                        process_systems(str(source), fmt="extxyz")
+                        self.assertEqual(_FakeMultiSystems.write_count, before + 1)
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "requires named pipes")
     def test_source_signature_does_not_open_special_files(self) -> None:
@@ -1299,22 +1342,52 @@ class TestDpdataFormatConversion(unittest.TestCase):
                 data_conversion._lock_owner_is_alive({"hostname": hostname, **payload})
             )
         payload = {"hostname": hostname, "pid": os.getpid(), "process_start": "123"}
-        with patch.object(data_conversion, "_process_start_time", return_value="123"):
-            self.assertTrue(data_conversion._lock_owner_is_alive(payload))
-        with patch.object(data_conversion, "_process_start_time", return_value="456"):
-            self.assertFalse(data_conversion._lock_owner_is_alive(payload))
+        with patch.object(data_conversion, "os", Mock(wraps=os)) as posix_os:
+            posix_os.name = "posix"
+            with patch.object(
+                data_conversion, "_process_start_time", return_value="123"
+            ):
+                self.assertTrue(data_conversion._lock_owner_is_alive(payload))
+            with patch.object(
+                data_conversion, "_process_start_time", return_value="456"
+            ):
+                self.assertFalse(data_conversion._lock_owner_is_alive(payload))
         for error, expected in (
             (None, True),
             (PermissionError(), True),
             (ProcessLookupError(), False),
         ):
             with (
+                patch.object(
+                    data_conversion, "os", Mock(wraps=os, name="posix_os")
+                ) as posix_os,
                 patch.object(data_conversion, "_process_start_time", return_value=None),
                 patch.object(data_conversion.os, "kill", side_effect=error),
             ):
+                posix_os.name = "posix"
                 self.assertEqual(
                     data_conversion._lock_owner_is_alive(payload), expected
                 )
+
+    def test_windows_lock_recovery_never_signals_the_owner(self) -> None:
+        """Even an expired heartbeat does not justify probing or evicting a PID."""
+        path = self.root / "windows-owner.lock"
+        path.write_text(
+            json.dumps({"hostname": data_conversion.socket.gethostname(), "pid": 123})
+        )
+        with patch.object(data_conversion, "os", Mock(wraps=os)) as windows_os:
+            windows_os.name = "nt"
+            self.assertFalse(data_conversion._recover_stale_conversion_lock(path))
+            expired = (
+                data_conversion.time.time()
+                - data_conversion._CONVERSION_LOCK_STALE_SECONDS
+                - 1
+            )
+            os.utime(path, (expired, expired))
+            with self.assertRaisesRegex(RuntimeError, "Cannot verify the local owner"):
+                data_conversion._recover_stale_conversion_lock(path)
+            windows_os.kill.assert_not_called()
+        self.assertTrue(path.exists())
 
     def test_stale_lock_recovery_preserves_live_owners_and_successors(self) -> None:
         """An old heartbeat alone cannot evict a known live local owner."""
