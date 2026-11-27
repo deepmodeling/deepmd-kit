@@ -24,6 +24,7 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.pt_expt.infer.deep_eval import DeepEval as PtExptDeepEval
 from deepmd.pt_expt.utils.canonical_graph import (
+    CANONICAL_LOWER_KIND,
     canonical_graph_from_pairs,
     validate_canonical_graph_shapes,
 )
@@ -243,8 +244,10 @@ def _make_evaluator(**metadata) -> PtExptDeepEval:
         "dim_fparam": 0,
         "dim_aparam": 0,
         "dim_chg_spin": 0,
+        "canonical_requires_reciprocal": False,
         **metadata,
     }
+    evaluator._device = torch.device("cpu")
     evaluator._dpmodel = None
     evaluator._is_spin = False
     evaluator._charge_state_fold = None
@@ -255,8 +258,8 @@ def _make_evaluator(**metadata) -> PtExptDeepEval:
     "metadata",
     [
         {"lower_input_kind": "dpa1_canonical"},
-        {"lower_input_kind": "dpa4c_canonical", "topologies": ("pme",)},
-        {"lower_input_kind": "dpa4c_canonical", "has_message_passing": True},
+        {"lower_input_kind": CANONICAL_LOWER_KIND, "topologies": ("pme",)},
+        {"lower_input_kind": CANONICAL_LOWER_KIND, "has_message_passing": True},
         {"graph_edge_dtype": "float32"},
     ],
     ids=["dpa1", "long-range-topology", "message-passing", "generic-graph"],
@@ -271,7 +274,7 @@ def test_ineligible_layouts_keep_source_csr(metadata: dict) -> None:
 def test_spin_keeps_source_csr() -> None:
     """The spin path keeps the default builder behaviour."""
     evaluator = _make_evaluator(
-        lower_input_kind="dpa4c_canonical", canonical_requires_source_csr=False
+        lower_input_kind=CANONICAL_LOWER_KIND, canonical_requires_source_csr=False
     )
     evaluator._is_spin = True
     assert evaluator._wants_source_csr(False) is True
@@ -280,8 +283,11 @@ def test_spin_keeps_source_csr() -> None:
 @pytest.mark.parametrize(
     "metadata",
     [
-        {"lower_input_kind": "dpa4c_canonical"},
-        {"lower_input_kind": "dpa4c_canonical", "canonical_requires_source_csr": True},
+        {"lower_input_kind": CANONICAL_LOWER_KIND},
+        {
+            "lower_input_kind": CANONICAL_LOWER_KIND,
+            "canonical_requires_source_csr": True,
+        },
     ],
     ids=["field-missing", "capability-required"],
 )
@@ -300,14 +306,14 @@ def test_missing_or_required_capability_keeps_source_csr(metadata: dict) -> None
 def test_only_explicit_false_is_a_grant(capability) -> None:
     """No other value of the capability field opens the placeholder path."""
     evaluator = _make_evaluator(
-        lower_input_kind="dpa4c_canonical", canonical_requires_source_csr=capability
+        lower_input_kind=CANONICAL_LOWER_KIND, canonical_requires_source_csr=capability
     )
     assert evaluator._wants_source_csr(False) is True
 
 
 def test_spin_entry_point_never_asks_for_omission() -> None:
     """``_eval_model_graph_spin`` leaves ``do_atomic_virial`` at its default."""
-    evaluator = _make_evaluator(lower_input_kind="dpa4c_canonical")
+    evaluator = _make_evaluator(lower_input_kind=CANONICAL_LOWER_KIND)
     evaluator._is_spin = True
     evaluator._is_pt2 = False
     evaluator.exported_module = mock.Mock(return_value={})
@@ -333,7 +339,7 @@ def test_spin_entry_point_never_asks_for_omission() -> None:
 def test_short_range_dpa4c_follows_the_request() -> None:
     """The eligible layout drops and restores the source CSR per call."""
     evaluator = _make_evaluator(
-        lower_input_kind="dpa4c_canonical", canonical_requires_source_csr=False
+        lower_input_kind=CANONICAL_LOWER_KIND, canonical_requires_source_csr=False
     )
     assert evaluator._wants_source_csr(True) is True
     assert evaluator._wants_source_csr(False) is False
@@ -375,7 +381,7 @@ def _run(evaluator, request_defs) -> bool:
 def _eligible_evaluator() -> PtExptDeepEval:
     """A DPA4C evaluator whose export declines the source CSR."""
     return _make_evaluator(
-        lower_input_kind="dpa4c_canonical", canonical_requires_source_csr=False
+        lower_input_kind=CANONICAL_LOWER_KIND, canonical_requires_source_csr=False
     )
 
 
@@ -397,11 +403,55 @@ def test_switching_requests_leaves_no_state() -> None:
     assert _run(evaluator, [_OUT]) is False
 
 
+@pytest.mark.parametrize("capability", [False, True, None])
+def test_real_vesin_request_sequence_packs_source_csr(capability) -> None:
+    """Real searches and ABI packing follow each request on one evaluator."""
+    from deepmd.pt_expt.utils.vesin_search import (
+        VesinNeighborSearch,
+    )
+
+    evaluator = _make_evaluator(
+        lower_input_kind=CANONICAL_LOWER_KIND, graph_edge_dtype="float32"
+    )
+    if capability is not None:
+        evaluator.metadata["canonical_requires_source_csr"] = capability
+    evaluator._neighbor_graph_method = "vesin"
+    evaluator._vesin_search = VesinNeighborSearch(skin=0.0, sorted=True)
+    evaluator._rcut = 1.1
+    evaluator._is_pt2 = False
+    packed = []
+
+    def forward(*inputs):
+        packed.append(tuple(value.clone() for value in inputs[:8]))
+        return {}
+
+    evaluator.exported_module = forward
+    coords = np.array(
+        [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]]
+    )
+    atom_types = np.zeros((1, 4), dtype=np.int32)
+    for outputs in ([_OUT], [_OUT, _DERV_C], [_OUT]):
+        evaluator._eval_model_graph(coords, None, atom_types, None, None, outputs, None)
+    assert [int(inputs[5][-1]) for inputs in packed] == [6, 6, 6]
+    assert [inputs[7].numel() for inputs in packed] == (
+        [2, 6, 2] if capability is False else [6, 6, 6]
+    )
+    assert [inputs[6].numel() for inputs in packed] == (
+        [2, 5, 2] if capability is False else [5, 5, 5]
+    )
+    for inputs in packed:
+        for index in range(6):
+            torch.testing.assert_close(inputs[index], packed[0][index], rtol=0, atol=0)
+
+
 def test_eval_model_graph_keeps_without_the_capability() -> None:
     """Architecture alone never permits placeholders."""
     for metadata in (
-        {"lower_input_kind": "dpa4c_canonical"},
-        {"lower_input_kind": "dpa4c_canonical", "canonical_requires_source_csr": True},
+        {"lower_input_kind": CANONICAL_LOWER_KIND},
+        {
+            "lower_input_kind": CANONICAL_LOWER_KIND,
+            "canonical_requires_source_csr": True,
+        },
     ):
         assert _run(_make_evaluator(**metadata), [_OUT, _DERV_C_REDU]) is True
 

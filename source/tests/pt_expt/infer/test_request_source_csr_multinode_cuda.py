@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Small native regressions of optional source CSR, without model assets."""
 
+from importlib import (
+    import_module,
+)
+
 import pytest
 import torch
 
-# Register the native library before evaluating the collection-time skip.
-import deepmd.pt  # noqa: F401
 from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     build_compression_artifacts,
     ensure_registered,
@@ -14,6 +16,9 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
 from deepmd.pt_expt.utils.canonical_graph import (
     canonical_graph_from_pairs,
 )
+
+# Register the native library before evaluating the collection-time skip.
+import_module("deepmd.pt")
 
 _GPU = pytest.mark.skipif(
     not torch.cuda.is_available() or not op_available(),

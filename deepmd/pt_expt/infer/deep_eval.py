@@ -2348,7 +2348,7 @@ class DeepEval(DeepEvalBackend):
             request asks for no per-atom virial.
         """
         return not (
-            self.metadata.get("lower_input_kind") == "dpa4c_canonical"
+            self.metadata.get("lower_input_kind") == CANONICAL_LOWER_KIND
             and self.metadata.get("canonical_requires_source_csr", True) is False
             and not do_atomic_virial
             and not getattr(self, "_is_spin", False)
