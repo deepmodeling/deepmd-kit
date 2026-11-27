@@ -264,13 +264,15 @@ class PairTabAtomicModel(BaseAtomicModel):
         mask = nlist >= 0
         masked_nlist = nlist * mask
 
-        atype = extended_atype[:, :nloc]  # (nframes, nloc)
+        # A prefix slice specializes the exported graph to nloc != nall.
+        dev = array_api_compat.device(extended_atype)
+        local_indices = xp.arange(nloc, dtype=xp.int64, device=dev)
+        atype = xp.take(extended_atype, local_indices, axis=1)
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)
 
         # (nframes, nloc, nnei), index type is int64.
-        dev = array_api_compat.device(extended_atype)
         j_type = extended_atype[
             xp.arange(extended_atype.shape[0], dtype=xp.int64, device=dev)[
                 :, None, None
@@ -386,7 +388,8 @@ class PairTabAtomicModel(BaseAtomicModel):
             :, None, None
         ]
         neighbor_atoms = coords[batch_indices, nlist]
-        loc_atoms = coords[:, : nlist.shape[1], :]
+        local_indices = xp.arange(nlist.shape[1], dtype=xp.int64, device=dev)
+        loc_atoms = xp.take(coords, local_indices, axis=1)
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
         pairwise_rr = safe_for_sqrt(xp.sum(pairwise_dr**2, axis=-1))
 
