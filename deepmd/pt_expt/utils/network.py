@@ -11,7 +11,13 @@ import torch
 from deepmd.dpmodel.common import (
     NativeOP,
 )
+from deepmd.dpmodel.utils.expert_linear import (
+    EXPERT_VARIANTS,
+    MAP_EXPERT_ATTRS,
+)
 from deepmd.dpmodel.utils.network import EmbeddingNet as EmbeddingNetDP
+from deepmd.dpmodel.utils.network import ExpertFittingNet as ExpertFittingNetDP
+from deepmd.dpmodel.utils.network import ExpertLayer as ExpertLayerDP
 from deepmd.dpmodel.utils.network import FittingNet as FittingNetDP
 from deepmd.dpmodel.utils.network import LayerNorm as LayerNormDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
@@ -94,8 +100,11 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return torch.nn.Module.__call__(self, *args, **kwargs)
 
+    # Arrays of the layer that are parameters when the layer is trainable.
+    _PARAMETER_NAMES: ClassVar[frozenset[str]] = frozenset({"w", "b", "idt"})
+
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"w", "b", "idt"} and "_parameters" in self.__dict__:
+        if name in self._PARAMETER_NAMES and "_parameters" in self.__dict__:
             val = to_torch_array(value)
             if val is None:
                 if name in self._parameters:
@@ -150,6 +159,10 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
             if self.b is not None
             else torch.matmul(x, self.w)
         )
+        return self._activate(x, y)
+
+    def _activate(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Apply the activation, timestep, and residual operations using pure torch ops."""
         if not self.autocast_output and y.dtype != x.dtype:
             y = y.to(x.dtype)
         y = _torch_activation(y, self.activation_function)
@@ -258,12 +271,51 @@ register_dpmodel_mapping(
 )
 
 
+class ExpertLayer(ExpertLayerDP, NativeLayer):
+    """PyTorch layer wrapping dpmodel's ``ExpertLayer``.
+
+    The MoE weights are parameters like the weights of the plain layer.
+    The affine map is the array-API one of the dpmodel class, and what
+    follows it is that of the plain PyTorch layer.
+    """
+
+    _PARAMETER_NAMES: ClassVar[frozenset[str]] = NativeLayer._PARAMETER_NAMES | set(
+        MAP_EXPERT_ATTRS
+    )
+
+    def forward(self, x: torch.Tensor, weights: Any) -> torch.Tensor:
+        return self.call(x, weights)
+
+
+EXPERT_VARIANTS[NativeLayer] = ExpertLayer
+
+register_dpmodel_mapping(
+    ExpertLayerDP,
+    lambda v: ExpertLayer.deserialize(v.serialize()),
+)
+
+
+class ExpertFittingNet(ExpertFittingNetDP, FittingNet):
+    """PyTorch fitting network of expert layers.
+
+    It is the plain PyTorch fitting network with the layers of the dpmodel
+    class.
+    """
+
+
+register_dpmodel_mapping(
+    ExpertFittingNetDP,
+    lambda v: ExpertFittingNet.deserialize(v.serialize()),
+)
+
+
 @torch_module
 class NetworkCollection(NetworkCollectionDP):
     NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
+        "expert_fitting_network": ExpertFittingNet,
     }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

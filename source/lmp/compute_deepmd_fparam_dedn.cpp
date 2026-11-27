@@ -13,7 +13,8 @@
 #include "fix.h"
 #include "force.h"
 #include "input.h"
-#include "lammps_modify_compat.h"
+#include "modify.h"
+#include "modify_lookup.h"
 #include "update.h"
 #include "variable.h"
 
@@ -131,7 +132,7 @@ double ComputeDeepmdFparamDedn::get_source_value() {
   }
 
   if (source_type == SRC_COMPUTE) {
-    Compute* compute = deepmd_lammps::get_compute(modify, source_id);
+    Compute* compute = deepmd_compute_by_id(modify, source_id);
     if (!compute) {
       error->all(FLERR, "Compute source not found: " + source_id);
     }
@@ -158,7 +159,7 @@ double ComputeDeepmdFparamDedn::get_source_value() {
     return compute->vector[source_index];
   }
 
-  Fix* fix = deepmd_lammps::get_fix(modify, source_id);
+  Fix* fix = deepmd_fix_by_id(modify, source_id);
   if (!fix) {
     error->all(FLERR, "Fix source not found: " + source_id);
   }

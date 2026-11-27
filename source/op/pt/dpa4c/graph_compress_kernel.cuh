@@ -42,9 +42,9 @@ constexpr int kModeStride = kMaxRadialModes + 4;
 /// the Gram of the whole block is what emits every admissible degree-one spin
 /// invariant; resolving all three regions through one accessor keeps the Gram
 /// and its VJP free of the distinction between them.
-template <int Channels, int Lmax>
+template <int Channels, int Lmax, int SpinMode>
 __device__ __forceinline__ int spin_vector_offset(int component, int channel) {
-  using P = Profile<Channels, Lmax, true>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   if (channel == 0) {
     return P::SpinOnsiteVector + component;
   }
@@ -54,18 +54,19 @@ __device__ __forceinline__ int spin_vector_offset(int component, int channel) {
              : P::SpinBond + component * P::Cs + (neighbor - P::Cs);
 }
 
-template <int Channels, int Lmax>
+template <int Channels, int Lmax, int SpinMode>
 __device__ __forceinline__ float spin_vector_value(const float* moments,
                                                    int component,
                                                    int channel) {
-  return moments[spin_vector_offset<Channels, Lmax>(component, channel)];
+  return moments[spin_vector_offset<Channels, Lmax, SpinMode>(component,
+                                                              channel)];
 }
 
-template <int Channels, int Lmax>
+template <int Channels, int Lmax, int SpinMode>
 __device__ __forceinline__ float spin_tensor_value(const float* moments,
                                                    int component,
                                                    int channel) {
-  using P = Profile<Channels, Lmax, true>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   return channel == 0 ? moments[P::SpinOnsiteTensor + component]
                       : moments[P::SpinTensor + component];
 }
@@ -96,9 +97,9 @@ __device__ __forceinline__ void decode_spin_tensor_pair(int entry,
 // The folded scans pay off once the per-channel coefficient work is a sizeable
 // part of an edge, which holds from thirty-two channels on.
 
-template <int Channels, bool HasSpin, bool Canonical>
+template <int Channels, bool Canonical>
 constexpr bool foldable() {
-  return Canonical && !HasSpin && Channels >= 32;
+  return Canonical && Channels >= 32;
 }
 
 // === Systems of a few types ===
@@ -145,23 +146,18 @@ constexpr bool foldable() {
 // adoption check of the low-rank table (`build_low_rank_table`), so its forces
 // follow the gradient of its energy to the accuracy of the compression.
 //
-// A spin profile slots its mode profiles alone, since it carries no low-rank
-// table; the spin families weight the moment of every neighbour and stay on
-// the edges. It has no single-type scan, so its slotted scans serve a system
-// of one type as well, in a single slot.
+// Native profiles slot their mode profiles while their spin amplitudes stay
+// edge local. A certified basis serves their single-type geometry; without
+// one, the single-type system uses the mode-slotted or pairwise scan.
 
 /// Whether the edge kernels of a profile slot the features of a system of a
 /// few types: a spin-free profile whose single-type scans fold and that
 /// carries radial modes or admits a low-rank table, or a canonical spin
 /// profile of thirty-two channels or more that carries radial modes.
-template <int Channels, bool HasModes, bool HasSpin, bool Canonical>
+template <int Channels, bool HasModes, int SpinMode, bool Canonical>
 constexpr bool slottable() {
-  if constexpr (HasSpin) {
-    return HasModes && Canonical && Channels >= 32;
-  } else {
-    return (HasModes || low_rank_basis(Channels) > 0) &&
-           foldable<Channels, HasSpin, Canonical>();
-  }
+  return (HasModes || (!SpinMode && low_rank_basis(Channels) > 0)) &&
+         foldable<Channels, Canonical>();
 }
 
 /// Slot tiles of a lane of an edge group of `EdgeWidth` lanes in a scan of
@@ -349,11 +345,13 @@ constexpr int type_slots(Scan kind) {
 
 /// Fewest node types of a system that the slotted scans of kind `kind` serve:
 /// one more than the four slots of the other slotted scans for the scans of
-/// eight slots, and for those of four two, or one for a spin profile, which
-/// has no single-type scan.
-template <bool HasSpin>
-constexpr int fewest_types(Scan kind) {
-  return type_slots(kind) > 4 ? 5 : (HasSpin ? 1 : 2);
+/// eight slots, and for those of four two, or one for a native profile
+/// without a certified basis.
+template <int SpinMode>
+__device__ __forceinline__ int fewest_types(Scan kind, const Arguments& args) {
+  return type_slots(kind) > 4
+             ? 5
+             : (SpinMode && args.basis_table == nullptr ? 1 : 2);
 }
 
 /// Table columns a scan of `Kind` reads before its mode profiles or extra
@@ -372,13 +370,13 @@ constexpr int fold_columns() {
 /// descriptor without mode profiles.
 template <int Channels,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Canonical,
           bool Backward,
           Scan Fold,
           int Slots>
 constexpr bool runs_slotted() {
-  return slottable<Channels, HasModes, HasSpin, Canonical>() &&
+  return slottable<Channels, HasModes, SpinMode, Canonical>() &&
          (HasModes || Fold == Scan::LowRank) &&
          (Slots <= 4 || HasModes || !Backward);
 }
@@ -388,12 +386,12 @@ constexpr bool runs_slotted() {
 /// slotted kernel, and the other kernel of a launch with slotted kernels.
 template <int Channels,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Canonical,
           bool Backward,
           Scan Fold>
 constexpr bool shares_launch() {
-  return slots_types(Fold) || runs_slotted<Channels, HasModes, HasSpin,
+  return slots_types(Fold) || runs_slotted<Channels, HasModes, SpinMode,
                                            Canonical, Backward, Fold, 4>();
 }
 
@@ -403,28 +401,30 @@ constexpr bool shares_launch() {
 /// launch every system that no slotted kernel of the launch serves.
 template <int Channels,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Canonical,
           bool Backward,
           Scan Fold>
 __device__ __forceinline__ bool serves_system(const Arguments& args) {
   if constexpr (slots_types(Fold)) {
-    return holds_types(args, fewest_types<HasSpin>(Fold), type_slots(Fold));
+    return holds_types(args, fewest_types<SpinMode>(Fold, args),
+                       type_slots(Fold));
   } else {
-    constexpr int Most = runs_slotted<Channels, HasModes, HasSpin, Canonical,
+    constexpr int Most = runs_slotted<Channels, HasModes, SpinMode, Canonical,
                                       Backward, Fold, 8>()
                              ? type_slots(Scan::Slotted8)
                              : type_slots(Scan::Slotted4);
-    return !holds_types(args, fewest_types<HasSpin>(Scan::Slotted4), Most);
+    return !holds_types(args, fewest_types<SpinMode>(Scan::Slotted4, args),
+                        Most);
   }
 }
 
 /// Whether the edge kernels of a profile run the low-rank single-type scan
 /// for a descriptor that carries the low-rank table.
-template <int Channels, int Lmax, bool HasSpin, bool Canonical>
+template <int Channels, int Lmax, int SpinMode, bool Canonical>
 constexpr bool folds_low_rank() {
-  return Profile<Channels, Lmax, HasSpin>::Basis > 0 &&
-         foldable<Channels, HasSpin, Canonical>();
+  return Profile<Channels, Lmax, SpinMode>::Basis > 0 &&
+         foldable<Channels, Canonical>();
 }
 
 /// Check the folded scan `Fold` of an edge kernel of direction `Backward`, and
@@ -434,30 +434,30 @@ constexpr bool folds_low_rank() {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Canonical,
           bool Backward,
           Scan Fold>
 __device__ __forceinline__ void enter_edge_scan(const Arguments& args) {
   static_assert(Fold != Scan::Pairwise &&
                     (!reads_low_rank(Fold) ||
-                     folds_low_rank<Channels, Lmax, HasSpin, Canonical>()) &&
+                     folds_low_rank<Channels, Lmax, SpinMode, Canonical>()) &&
                     (!slots_types(Fold) || slots_basis(Fold) || HasModes),
                 "the folded scan of a kernel is a single-type or a slotted "
                 "scan, reads the low-rank table only where it folds, and "
                 "slots the radial table for the mode profiles");
-  if constexpr (shares_launch<Channels, HasModes, HasSpin, Canonical, Backward,
+  if constexpr (shares_launch<Channels, HasModes, SpinMode, Canonical, Backward,
                               Fold>()) {
     retire_unless(
-        serves_system<Channels, HasModes, HasSpin, Canonical, Backward, Fold>(
+        serves_system<Channels, HasModes, SpinMode, Canonical, Backward, Fold>(
             args));
   }
 }
 
 /// Run `launch` with the single-type scan of the descriptor in `args`.
-template <int Channels, int Lmax, bool HasSpin, bool Canonical, typename Launch>
+template <int Channels, int Lmax, int SpinMode, bool Canonical, typename Launch>
 void dispatch_fold(const Arguments& args, Launch&& launch) {
-  if constexpr (folds_low_rank<Channels, Lmax, HasSpin, Canonical>()) {
+  if constexpr (folds_low_rank<Channels, Lmax, SpinMode, Canonical>()) {
     if (args.basis_table != nullptr) {
       launch(ScanTag<Scan::LowRank>{});
       return;
@@ -473,13 +473,13 @@ constexpr int kSpinLockstepRows = 20;
 
 /// Co-scheduled width of a canonical edge scan, in warps per block: that of
 /// `Lockstep`, in blocks of `kSpinLockstepRows` rows for a spin profile.
-template <int Channels, int Lmax, bool HasSpin, bool Canonical, bool Backward>
+template <int Channels, int Lmax, int SpinMode, bool Canonical, bool Backward>
 constexpr int coscheduled_warps() {
   constexpr int Warps = Lockstep<Channels, Lmax, Backward>::Warps;
   if constexpr (!Canonical || Warps == 1) {
     return 1;
   } else {
-    return HasSpin ? kSpinLockstepRows : Warps;
+    return SpinMode ? kSpinLockstepRows : Warps;
   }
 }
 
@@ -501,11 +501,11 @@ constexpr int kSlotLockstepRows = 16;
 /// of `kSlotLockstepRows` rows. The other scans hold the slots in the
 /// registers of `slot_resident_warps` resident warps, in blocks of independent
 /// rows.
-template <int Channels, int Lmax, bool HasSpin, bool Backward, int Slots>
+template <int Channels, int Lmax, int SpinMode, bool Backward, int Slots>
 constexpr int slot_coscheduled_warps() {
   if constexpr (Channels >= 128 && Slots > 4 && !Backward) {
     return kSlotLockstepRows;
-  } else if constexpr (HasSpin) {
+  } else if constexpr (SpinMode) {
     if constexpr (Channels >= 128) {
       return kSpinLockstepRows;
     } else {
@@ -977,7 +977,7 @@ __device__ __forceinline__ void sync_row() {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
           bool Canonical,
           typename index_t,
@@ -988,10 +988,10 @@ __global__ __launch_bounds__(
     Warps * Split * kWarpSize,
     (slots_types(Fold)
          ? slot_resident_warps<HasModes, windowed<Warps>() ? Warps : 0>()
-         : edge_resident_blocks<Channels, Lmax, HasModes, HasSpin, false>()) /
+         : edge_resident_blocks<Channels, Lmax, HasModes, SpinMode, false>()) /
         (Warps * Split)) void forward_kernel(Arguments args) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  enter_edge_scan<Channels, Lmax, HasModes, HasSpin, Canonical, false, Fold>(
+  using P = Profile<Channels, Lmax, SpinMode>;
+  enter_edge_scan<Channels, Lmax, HasModes, SpinMode, Canonical, false, Fold>(
       args);
   constexpr bool SlotScan = slots_types(Fold);
   constexpr int EdgeWidth = P::ForwardEdgeWidth;
@@ -1006,8 +1006,9 @@ __global__ __launch_bounds__(
   // The spin families share the neighbour width with degree two, so they
   // inherit its tiling. The single neighbour quadrupole distributes its five
   // components across lanes, exactly as the single-channel high degrees do.
-  constexpr int SpinTiles = HasSpin ? TensorTiles : 0;
-  constexpr int SpinTensorTiles = HasSpin ? (5 + EdgeWidth - 1) / EdgeWidth : 0;
+  constexpr int SpinTiles = SpinMode ? TensorTiles : 0;
+  constexpr int SpinTensorTiles =
+      SpinMode ? (5 + EdgeWidth - 1) / EdgeWidth : 0;
 
   static_assert(Warps == 1 || Split == 1,
                 "a block either holds several rows or shares one");
@@ -1041,12 +1042,6 @@ __global__ __launch_bounds__(
       static_cast<const index_t*>(args.destination_order);
   const int center_type =
       static_cast<int>(args.atype[args.node_begin + row_node]);
-  // The centre half of every pair length scale is a node constant, like the
-  // centre type it follows, and so is the length from which the window of no
-  // pair of the row needs resolving.
-  const float center_radius =
-      Bridged ? __ldg(args.contact_radius + center_type) : 0.0f;
-  const float bound = Bridged ? window_bound(args, center_radius) : 0.0f;
   const long begin = args.destination_row_ptr[row_node];
   const long end = active ? args.destination_row_ptr[row_node + 1] : begin;
   const int radial_modes = HasModes ? args.radial_modes : 0;
@@ -1073,7 +1068,8 @@ __global__ __launch_bounds__(
   // A single-type system accumulates the bare radial features in the moment
   // registers and the extra features in `extra`, laid out as one scalar,
   // three vector and five tensor sums per feature tile.
-  constexpr bool Foldable = foldable<Channels, HasSpin, Canonical>();
+  constexpr bool Foldable =
+      foldable<Channels, Canonical>() && (!SpinMode || Fold == Scan::LowRank);
   constexpr int ExtraFeatures = (HasModes ? kFoldedModes : 0) + 1;
   constexpr int ExtraTiles = (ExtraFeatures + EdgeWidth - 1) / EdgeWidth;
   float extra[ExtraTiles][9] = {};
@@ -1085,7 +1081,7 @@ __global__ __launch_bounds__(
   // A slotted scan accumulates the mode profiles and the basis functions of
   // the edges of each node type of its system in the slot of that type.
   static_assert(
-      !SlotScan || slottable<Channels, HasModes, HasSpin, Canonical>(),
+      !SlotScan || slottable<Channels, HasModes, SpinMode, Canonical>(),
       "a slotted scan serves a profile that slots");
   constexpr bool SlotModes = SlotScan && HasModes;
   constexpr bool SlotBasis = slots_basis(Fold);
@@ -1149,10 +1145,8 @@ __global__ __launch_bounds__(
         return;
       }
     }
-    const EdgeGeometry geometry = load_geometry<Bridged>(
-        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
-        args.inverse_f_width, center_radius, bound, args.contact_radius,
-        args.eps, args.edge_vec, args.source_gate);
+    const EdgeGeometry geometry =
+        load_geometry<Bridged>(args, edge, source, source_type, center_type);
     const TableLocation location = locate_table<Canonical>(
         geometry.seen, args.table_stride, args.table_max, args.interval_count);
     const TableRow row =
@@ -1169,6 +1163,82 @@ __global__ __launch_bounds__(
     float leading_payload = 0.0f;
     [[maybe_unused]] float leading_value = 0.0f;
 
+    const long pair =
+        static_cast<long>(center_type) * args.type_count + geometry.source_type;
+    // The spin payload is hoisted out of the channel loop: every channel
+    // multiplies the same conditioned neighbour moment and the same
+    // projection of that moment onto the bond, and only the amplitude varies
+    // with the channel.
+    [[maybe_unused]] float neighbor_spin[3] = {0.0f, 0.0f, 0.0f};
+    [[maybe_unused]] float neighbor_magnitude = 0.0f;
+    [[maybe_unused]] float neighbor_gate = 0.0f;
+    [[maybe_unused]] float bond_alignment = 0.0f;
+    [[maybe_unused]] const float2* spin_row = nullptr;
+    if constexpr (SpinMode) {
+      const SpinTypeWeights weights =
+          load_spin_type(args.spin_type, geometry.source_type);
+      load_conditioned_spin(args.spin, weights.scale, geometry.source,
+                            neighbor_spin);
+      neighbor_magnitude = neighbor_spin[0] * neighbor_spin[0] +
+                           neighbor_spin[1] * neighbor_spin[1] +
+                           neighbor_spin[2] * neighbor_spin[2];
+      neighbor_gate = weights.gate;
+      // Component of the neighbour moment along the bond. The bond-projected
+      // family is this scalar times the unit direction, which is
+      // `basis[1..3]`.
+      bond_alignment = neighbor_spin[0] * basis[1] +
+                       neighbor_spin[1] * basis[2] +
+                       neighbor_spin[2] * basis[3];
+      spin_row =
+          reinterpret_cast<const float2*>(args.spin_pair + pair * P::Cs * 2) +
+          base_channel;
+    }
+
+    [[maybe_unused]] float spin_zero = 0.0f;
+    const auto accumulate_spin = [&](int channel, int tile, float radial) {
+      if constexpr (SpinMode) {
+        if (channel < P::Cs) {
+          const float2 spin_film = __ldg(spin_row + tile * EdgeWidth);
+          const float weight =
+              fmaf(spin_film.x, radial, spin_film.y) * envelope * envelope;
+          spin_magnitude[tile] =
+              fmaf(weight, neighbor_magnitude, spin_magnitude[tile]);
+          spin_coordination[tile] =
+              fmaf(weight, neighbor_gate, spin_coordination[tile]);
+#pragma unroll
+          for (int component = 0; component < 3; ++component) {
+            spin_vector[tile][component] = fmaf(
+                weight, neighbor_spin[component], spin_vector[tile][component]);
+            if constexpr (P::HasOrbit) {
+              const float projected = weight * bond_alignment;
+              spin_bond[tile][component] = fmaf(projected, basis[1 + component],
+                                                spin_bond[tile][component]);
+            }
+          }
+          if (channel == 0) {
+            spin_zero = weight;
+          }
+        }
+      }
+    };
+    const auto accumulate_spin_tensor = [&]() {
+      if constexpr (SpinMode) {
+        // The single neighbour quadrupole reads the leading spin channel only,
+        // so its five components are distributed across the lanes of the edge
+        // group and each is evaluated on the one lane that owns it.
+        const float weight = __shfl_sync(mask, spin_zero, leader);
+#pragma unroll
+        for (int component = 0; component < 5; ++component) {
+          if (component % EdgeWidth == base_channel) {
+            spin_tensor[component / EdgeWidth] = fmaf(
+                weight,
+                spin_quadrupole_component(neighbor_spin[0], neighbor_spin[1],
+                                          neighbor_spin[2], component),
+                spin_tensor[component / EdgeWidth]);
+          }
+        }
+      }
+    };
     if constexpr (Folded) {
       float leading = 0.0f;
       // A column below ``C1`` is the channel of that index; a low-rank table
@@ -1193,10 +1263,12 @@ __global__ __launch_bounds__(
                 fmaf(angular, basis[4 + component], tensor[tile][component]);
           }
         }
+        accumulate_spin(channel, tile, radial);
         if (tile == 0) {
           leading = radial;
         }
       }
+      accumulate_spin_tensor();
       float feature_value[ExtraTiles] = {};
 #pragma unroll
       for (int tile = 0; tile < ExtraTiles; ++tile) {
@@ -1238,8 +1310,6 @@ __global__ __launch_bounds__(
         }
         __syncwarp(mask);
       }
-      const long pair = static_cast<long>(center_type) * args.type_count +
-                        geometry.source_type;
       const float2* film_row = reinterpret_cast<const float2*>(
                                    args.pair_film + pair * Channels * 2) +
                                base_channel;
@@ -1248,36 +1318,6 @@ __global__ __launch_bounds__(
                          (pair * Channels + base_channel) * radial_modes
                    : nullptr;
 
-      // The spin payload is hoisted out of the channel loop: every channel
-      // multiplies the same conditioned neighbour moment and the same
-      // projection of that moment onto the bond, and only the amplitude varies
-      // with the channel.
-      [[maybe_unused]] float neighbor_spin[3] = {0.0f, 0.0f, 0.0f};
-      [[maybe_unused]] float neighbor_magnitude = 0.0f;
-      [[maybe_unused]] float neighbor_gate = 0.0f;
-      [[maybe_unused]] float bond_alignment = 0.0f;
-      [[maybe_unused]] const float2* spin_row = nullptr;
-      if constexpr (HasSpin) {
-        const SpinTypeWeights weights =
-            load_spin_type(args.spin_type, geometry.source_type);
-        load_conditioned_spin(args.spin, weights.scale, geometry.source,
-                              neighbor_spin);
-        neighbor_magnitude = neighbor_spin[0] * neighbor_spin[0] +
-                             neighbor_spin[1] * neighbor_spin[1] +
-                             neighbor_spin[2] * neighbor_spin[2];
-        neighbor_gate = weights.gate;
-        // Component of the neighbour moment along the bond. The bond-projected
-        // family is this scalar times the unit direction, which is
-        // `basis[1..3]`.
-        bond_alignment = neighbor_spin[0] * basis[1] +
-                         neighbor_spin[1] * basis[2] +
-                         neighbor_spin[2] * basis[3];
-        spin_row =
-            reinterpret_cast<const float2*>(args.spin_pair + pair * P::Cs * 2) +
-            base_channel;
-      }
-
-      [[maybe_unused]] float spin_zero = 0.0f;
 #pragma unroll
       for (int tile = 0; tile < EdgeTiles; ++tile) {
         const int channel = base_channel + tile * EdgeWidth;
@@ -1307,50 +1347,14 @@ __global__ __launch_bounds__(
                 fmaf(angular, basis[4 + component], tensor[tile][component]);
           }
         }
-        if constexpr (HasSpin) {
-          if (channel < P::Cs) {
-            const float2 spin_film = __ldg(spin_row + tile * EdgeWidth);
-            const float weight =
-                fmaf(spin_film.x, radial, spin_film.y) * envelope * envelope;
-            spin_magnitude[tile] =
-                fmaf(weight, neighbor_magnitude, spin_magnitude[tile]);
-            spin_coordination[tile] =
-                fmaf(weight, neighbor_gate, spin_coordination[tile]);
-            const float projected = weight * bond_alignment;
-#pragma unroll
-            for (int component = 0; component < 3; ++component) {
-              spin_vector[tile][component] =
-                  fmaf(weight, neighbor_spin[component],
-                       spin_vector[tile][component]);
-              spin_bond[tile][component] = fmaf(projected, basis[1 + component],
-                                                spin_bond[tile][component]);
-            }
-            if (channel == 0) {
-              spin_zero = weight;
-            }
-          }
-        }
+        accumulate_spin(channel, tile, radial);
         if (channel == 0) {
           leading_payload = angular;
           leading_value = film_value;
         }
       }
-      if constexpr (HasSpin) {
-        // The single neighbour quadrupole reads the leading spin channel only,
-        // so its five components are distributed across the lanes of the edge
-        // group and each is evaluated on the one lane that owns it.
-        const float weight = __shfl_sync(mask, spin_zero, leader);
-#pragma unroll
-        for (int component = 0; component < 5; ++component) {
-          if (component % EdgeWidth == base_channel) {
-            spin_tensor[component / EdgeWidth] = fmaf(
-                weight,
-                spin_quadrupole_component(neighbor_spin[0], neighbor_spin[1],
-                                          neighbor_spin[2], component),
-                spin_tensor[component / EdgeWidth]);
-          }
-        }
-      }
+
+      accumulate_spin_tensor();
       if constexpr (slots_types(Kind)) {
         const int slot = type_slot(slots, geometry.source_type);
         if constexpr (HasModes) {
@@ -1417,6 +1421,7 @@ __global__ __launch_bounds__(
         }
       }
     }
+
     if constexpr (Lmax >= 3) {
       // Degrees three and above read only the leading channel, so their
       // components are distributed across the lanes of the edge group. The
@@ -1475,12 +1480,12 @@ __global__ __launch_bounds__(
   }
   // === Step 1b. Merge the warps that share the row ===
   // The accumulators that `accumulators` visits, in its order.
-  constexpr int Accumulators = ScanTiles + 3 * AngularTiles + 5 * TensorTiles +
-                               (Lmax >= 3 ? HighTiles : 0) + 2 + 8 * SpinTiles +
-                               SpinTensorTiles +
-                               (Foldable && !SlotScan ? 9 * ExtraTiles : 0) +
-                               (SlotModes ? 9 * SlotTiles : 0) +
-                               (SlotBasis ? BasisTiles * Slots + 1 : 0);
+  constexpr int Accumulators =
+      ScanTiles + 3 * AngularTiles + 5 * TensorTiles +
+      (Lmax >= 3 ? HighTiles : 0) + 2 + (P::HasOrbit ? 8 : 5) * SpinTiles +
+      SpinTensorTiles + (Foldable && !SlotScan ? 9 * ExtraTiles : 0) +
+      (SlotModes ? 9 * SlotTiles : 0) +
+      (SlotBasis ? BasisTiles * Slots + 1 : 0);
   __shared__ float split_buffer[split_buffer_floats<Split>()];
   const auto accumulators = [&](auto&& visit) {
 #pragma unroll
@@ -1509,7 +1514,7 @@ __global__ __launch_bounds__(
     }
     visit(scalar_mass);
     visit(angular_mass);
-    if constexpr (HasSpin) {
+    if constexpr (SpinMode) {
 #pragma unroll
       for (int tile = 0; tile < SpinTiles; ++tile) {
         visit(spin_magnitude[tile]);
@@ -1517,7 +1522,9 @@ __global__ __launch_bounds__(
 #pragma unroll
         for (int component = 0; component < 3; ++component) {
           visit(spin_vector[tile][component]);
-          visit(spin_bond[tile][component]);
+          if constexpr (P::HasOrbit) {
+            visit(spin_bond[tile][component]);
+          }
         }
       }
 #pragma unroll
@@ -1587,7 +1594,7 @@ __global__ __launch_bounds__(
         high[tile] = reduce_channel_groups<EdgeWidth>(high[tile]);
       }
     }
-    if constexpr (HasSpin) {
+    if constexpr (SpinMode) {
 #pragma unroll
       for (int tile = 0; tile < SpinTiles; ++tile) {
         spin_magnitude[tile] =
@@ -1598,8 +1605,10 @@ __global__ __launch_bounds__(
         for (int component = 0; component < 3; ++component) {
           spin_vector[tile][component] =
               reduce_channel_groups<EdgeWidth>(spin_vector[tile][component]);
-          spin_bond[tile][component] =
-              reduce_channel_groups<EdgeWidth>(spin_bond[tile][component]);
+          if constexpr (P::HasOrbit) {
+            spin_bond[tile][component] =
+                reduce_channel_groups<EdgeWidth>(spin_bond[tile][component]);
+          }
         }
       }
 #pragma unroll
@@ -1852,7 +1861,7 @@ __global__ __launch_bounds__(
         }
       }
     }
-    if constexpr (HasSpin) {
+    if constexpr (SpinMode) {
       // The reduced spin families carry the same squared envelope as every
       // non-scalar geometric moment and therefore share its normalizer.
 #pragma unroll
@@ -1867,8 +1876,10 @@ __global__ __launch_bounds__(
           for (int component = 0; component < 3; ++component) {
             moments[P::SpinVector + component * P::Cs + channel] =
                 spin_vector[tile][component] * angular_norm;
-            moments[P::SpinBond + component * P::Cs + channel] =
-                spin_bond[tile][component] * angular_norm;
+            if constexpr (P::HasOrbit) {
+              moments[P::SpinBond + component * P::Cs + channel] =
+                  spin_bond[tile][component] * angular_norm;
+            }
           }
         }
       }
@@ -1881,7 +1892,7 @@ __global__ __launch_bounds__(
       }
     }
   }
-  if constexpr (HasSpin) {
+  if constexpr (SpinMode) {
     // The on-site families are node local. They are written after the
     // division so that an invariant pairing an on-site channel with a
     // neighbour channel carries exactly one neighborhood normalizer.
@@ -1922,10 +1933,10 @@ __global__ __launch_bounds__(
 // whose capacity follows the carveout the scan's shared memory selects; the
 // readout buffers of a resident node would double that carveout at full
 // occupancy.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __global__ __launch_bounds__(kWarpSize) void forward_readout_kernel(
     Arguments args) {
-  using P = Profile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   const int thread = threadIdx.x;
   const long node = blockIdx.x;
   if (node >= args.node_count) {
@@ -2166,17 +2177,18 @@ __global__ __launch_bounds__(kWarpSize) void forward_readout_kernel(
   }
 
   // === Step 3. Emit the spin invariants of even spin order ===
-  if constexpr (HasSpin) {
+  if constexpr (SpinMode) {
     for (int pair = thread; pair < P::SpinGramVector; pair += P::Threads) {
       int row, column;
       decode_upper_pair(pair, P::SpinVectorWidth, row, column);
       float value = 0.0f;
 #pragma unroll
       for (int component = 0; component < 3; ++component) {
-        value =
-            fmaf(spin_vector_value<Channels, Lmax>(moments, component, row),
-                 spin_vector_value<Channels, Lmax>(moments, component, column),
-                 value);
+        value = fmaf(spin_vector_value<Channels, Lmax, SpinMode>(
+                         moments, component, row),
+                     spin_vector_value<Channels, Lmax, SpinMode>(
+                         moments, component, column),
+                     value);
       }
       store_descriptor(args.descriptor, args.output_mean, args.output_inv_std,
                        node, P::OutputWidth, P::OutputSpinGramVector + pair,
@@ -2188,10 +2200,11 @@ __global__ __launch_bounds__(kWarpSize) void forward_readout_kernel(
       float value = 0.0f;
 #pragma unroll
       for (int component = 0; component < 5; ++component) {
-        value =
-            fmaf(spin_tensor_value<Channels, Lmax>(moments, component, row),
-                 spin_tensor_value<Channels, Lmax>(moments, component, column),
-                 value);
+        value = fmaf(spin_tensor_value<Channels, Lmax, SpinMode>(
+                         moments, component, row),
+                     spin_tensor_value<Channels, Lmax, SpinMode>(
+                         moments, component, column),
+                     value);
       }
       store_descriptor(args.descriptor, args.output_mean, args.output_inv_std,
                        node, P::OutputWidth, P::OutputSpinGramTensor + thread,
@@ -2207,7 +2220,8 @@ __global__ __launch_bounds__(kWarpSize) void forward_readout_kernel(
 #pragma unroll
       for (int component = 0; component < 5; ++component) {
         value =
-            fmaf(spin_tensor_value<Channels, Lmax>(moments, component, probe),
+            fmaf(spin_tensor_value<Channels, Lmax, SpinMode>(moments, component,
+                                                             probe),
                  moments[P::TensorOffset + component * P::C2 + channel], value);
       }
       store_descriptor(args.descriptor, args.output_mean, args.output_inv_std,
@@ -2233,14 +2247,14 @@ __global__ __launch_bounds__(kWarpSize) void forward_readout_kernel(
 // Their gradients need only Q0^2, Q1^2, and the symmetrized Q0 Q1 product, so
 // evaluating this closed form inside the node backward avoids a second probe
 // projection and the associated global gradient checkpoint.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __device__ __forceinline__ void add_bis222_probe_gradient(
     int lane,
     long node,
     const Arguments& args,
     const float* __restrict__ probes,
     float (&d_tensor)[5]) {
-  using P = Profile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   float packed_0[5];
   float packed_1[5];
 #pragma unroll
@@ -2307,11 +2321,11 @@ __device__ __forceinline__ void add_bis222_probe_gradient(
 // Index of one coupling operand among the targets of the coupling VJP: the
 // probe layout for degrees one and two, followed by the single-channel high
 // degrees in the order of the moment layout.
-template <int Channels, int Lmax, bool HasSpin>
+template <int Channels, int Lmax, int SpinMode>
 __device__ __forceinline__ int coupling_target(int degree,
                                                int component,
                                                int rank_index) {
-  using P = Profile<Channels, Lmax, HasSpin>;
+  using P = Profile<Channels, Lmax, SpinMode>;
   if (degree == 1) {
     return component * P::K1 + rank_index;
   }
@@ -2329,7 +2343,7 @@ __device__ __forceinline__ int coupling_target(int degree,
 // the result is deterministic while no lane walks more than its share of the
 // pairs. Equal degrees occupy several operand slots of one record and receive
 // one contribution per slot.
-template <int Channels, int Lmax, bool HasSpin, int NodeLanes>
+template <int Channels, int Lmax, int SpinMode, int NodeLanes>
 __device__ __forceinline__ void coupling_gradient(
     int lane,
     long node,
@@ -2338,7 +2352,7 @@ __device__ __forceinline__ void coupling_gradient(
     const float* __restrict__ moments,
     float* __restrict__ rows,
     float* __restrict__ total) {
-  using P = Profile<Channels, Lmax, HasSpin, NodeLanes>;
+  using P = Profile<Channels, Lmax, SpinMode, NodeLanes>;
   constexpr int Width = P::NodeWidth;
   constexpr int Targets = P::ProbeWidth + P::HighCount;
   float* row = rows + lane * Targets;
@@ -2380,7 +2394,7 @@ __device__ __forceinline__ void coupling_gradient(
       }
 #pragma unroll
       for (int slot = 0; slot < 3; ++slot) {
-        row[coupling_target<Channels, Lmax, HasSpin>(
+        row[coupling_target<Channels, Lmax, SpinMode>(
             degrees[slot], component[slot], indices[slot])] +=
             weight * operand[(slot + 1) % 3] * operand[(slot + 2) % 3];
       }
@@ -2405,11 +2419,11 @@ __device__ __forceinline__ void coupling_gradient(
 // Four independent lane groups share one warp. An incomplete final block
 // aliases inactive groups to the last valid node so every thread reaches each
 // block-wide barrier; stores from those groups are suppressed.
-template <int Channels, int Lmax, bool HasSpin, int NodeLanes>
+template <int Channels, int Lmax, int SpinMode, int NodeLanes>
 __global__ __launch_bounds__(
-    Profile<Channels, Lmax, HasSpin, NodeLanes>::Threads,
+    Profile<Channels, Lmax, SpinMode, NodeLanes>::Threads,
     2) void node_backward_kernel(Arguments args) {
-  using P = Profile<Channels, Lmax, HasSpin, NodeLanes>;
+  using P = Profile<Channels, Lmax, SpinMode, NodeLanes>;
   const int thread = threadIdx.x;
   const int group = thread / P::NodeWidth;
   const int lane = thread & (P::NodeWidth - 1);
@@ -2503,16 +2517,21 @@ __global__ __launch_bounds__(
   // Sparse-coupling VJP of the node, one private accumulation row per lane
   // and the folded total per node group.
   constexpr int CouplingTargets = P::ProbeWidth + P::HighCount;
+  constexpr bool ReuseCouplingRows = SpinMode && Lmax >= 3;
+  constexpr int PrivateCouplingWidth = P::NodeWidth * CouplingTargets;
+  constexpr int CouplingScratchWidth =
+      ReuseCouplingRows && P::MomentWidth > PrivateCouplingWidth
+          ? P::MomentWidth
+          : PrivateCouplingWidth;
   __shared__ float
-      coupling_rows[Lmax >= 3 ? P::NodeGroups * P::NodeWidth * CouplingTargets
-                              : 1];
+      coupling_rows[Lmax >= 3 ? P::NodeGroups * CouplingScratchWidth : 1];
   __shared__ float
       coupling_storage[Lmax >= 3 ? P::NodeGroups * CouplingTargets : 1];
   const float* coupling = coupling_storage + group * CouplingTargets;
   if constexpr (Lmax >= 3) {
-    coupling_gradient<Channels, Lmax, HasSpin, NodeLanes>(
+    coupling_gradient<Channels, Lmax, SpinMode, NodeLanes>(
         lane, node, args, probes, moments,
-        coupling_rows + group * P::NodeWidth * CouplingTargets,
+        coupling_rows + group * CouplingScratchWidth,
         coupling_storage + group * CouplingTargets);
   }
 
@@ -2591,7 +2610,7 @@ __global__ __launch_bounds__(
 
   if (lane < P::K2) {
     float d_tensor[5] = {};
-    add_bis222_probe_gradient<Channels, Lmax, HasSpin>(
+    add_bis222_probe_gradient<Channels, Lmax, SpinMode>(
         lane, node, args, probes + 3 * P::K1, d_tensor);
     for (int output = lane; output < P::Bis112; output += P::K2) {
       int first, second;
@@ -2731,8 +2750,14 @@ __global__ __launch_bounds__(
   }
   __syncthreads();
 
-  __shared__ float d_moments_storage[P::NodeGroups * P::MomentWidth];
-  float* d_moments = d_moments_storage + group * P::MomentWidth;
+  // The barrier in coupling_gradient ends the private rows' lifetime.
+  // Native moment cotangents reuse those rows; the folded coupling totals
+  // remain in coupling_storage through the high-degree moment VJP.
+  __shared__ float
+      d_moments_storage[ReuseCouplingRows ? 1 : P::NodeGroups * P::MomentWidth];
+  float* d_moments = ReuseCouplingRows
+                         ? coupling_rows + group * CouplingScratchWidth
+                         : d_moments_storage + group * P::MomentWidth;
   for (int channel = lane; channel < Channels; channel += P::NodeWidth) {
     d_moments[P::ScalarOffset + channel] =
         load_output_gradient(args.descriptor_gradient, args.output_inv_std,
@@ -2755,8 +2780,8 @@ __global__ __launch_bounds__(
     // The spin cross Gram contracts the spin quadrupoles against the
     // unaligned degree-two moments, so its cotangent joins this channel here
     // rather than passing through the alignment transpose above.
-    float cross[HasSpin ? 2 : 1];
-    if constexpr (HasSpin) {
+    float cross[P::HasOrbit ? 2 : 1];
+    if constexpr (P::HasOrbit) {
 #pragma unroll
       for (int probe = 0; probe < 2; ++probe) {
         cross[probe] = load_output_gradient(
@@ -2773,13 +2798,13 @@ __global__ __launch_bounds__(
                                                     output, lane),
                      value);
       }
-      if constexpr (HasSpin) {
+      if constexpr (P::HasOrbit) {
 #pragma unroll
         for (int probe = 0; probe < 2; ++probe) {
-          value =
-              fmaf(cross[probe],
-                   spin_tensor_value<Channels, Lmax>(moments, component, probe),
-                   value);
+          value = fmaf(cross[probe],
+                       spin_tensor_value<Channels, Lmax, SpinMode>(
+                           moments, component, probe),
+                       value);
         }
       }
       d_moments[P::TensorOffset + component * P::C2 + lane] = value;
@@ -2804,7 +2829,7 @@ __global__ __launch_bounds__(
   }
 
   // === Spin readout VJP and on-site magnetic gradient ===
-  if constexpr (HasSpin) {
+  if constexpr (SpinMode) {
     float onsite_vector[3] = {0.0f, 0.0f, 0.0f};
     float onsite_tensor[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     for (int channel = lane; channel < P::SpinVectorWidth;
@@ -2822,7 +2847,8 @@ __global__ __launch_bounds__(
         for (int component = 0; component < 3; ++component) {
           gradient[component] =
               fmaf(upstream,
-                   spin_vector_value<Channels, Lmax>(moments, component, other),
+                   spin_vector_value<Channels, Lmax, SpinMode>(
+                       moments, component, other),
                    gradient[component]);
         }
       }
@@ -2835,8 +2861,9 @@ __global__ __launch_bounds__(
           onsite_vector[component] = gradient[component];
           d_moments[P::SpinOnsiteVector + component] = 0.0f;
         } else {
-          d_moments[spin_vector_offset<Channels, Lmax>(component, channel)] =
-              gradient[component];
+          const int coordinate =
+              spin_vector_offset<Channels, Lmax, SpinMode>(component, channel);
+          d_moments[coordinate] = gradient[component];
         }
       }
     }
@@ -2857,11 +2884,12 @@ __global__ __launch_bounds__(
         for (int component = 0; component < 5; ++component) {
           gradient[component] =
               fmaf(upstream,
-                   spin_tensor_value<Channels, Lmax>(moments, component, other),
+                   spin_tensor_value<Channels, Lmax, SpinMode>(
+                       moments, component, other),
                    gradient[component]);
         }
       }
-      for (int channel = 0; channel < P::C2; ++channel) {
+      for (int channel = 0; channel < (P::HasOrbit ? P::C2 : 0); ++channel) {
         const float upstream = load_output_gradient(
             args.descriptor_gradient, args.output_inv_std, node, P::OutputWidth,
             P::OutputSpinCross + lane * P::C2 + channel);
@@ -2965,7 +2993,7 @@ __global__ __launch_bounds__(
 
 /// Zero the stored cotangents of an edge that contributes nothing. A backward
 /// that assembles the force itself may skip either store.
-template <bool HasSpin>
+template <int SpinMode>
 __device__ __forceinline__ void clear_edge_cotangents(const Arguments& args,
                                                       long edge) {
   if (args.edge_gradient != nullptr) {
@@ -2973,7 +3001,7 @@ __device__ __forceinline__ void clear_edge_cotangents(const Arguments& args,
     args.edge_gradient[edge * 3 + 1] = 0.0f;
     args.edge_gradient[edge * 3 + 2] = 0.0f;
   }
-  if constexpr (HasSpin) {
+  if constexpr (SpinMode) {
     if (args.edge_spin_gradient != nullptr) {
       args.edge_spin_gradient[edge * 3 + 0] = 0.0f;
       args.edge_spin_gradient[edge * 3 + 1] = 0.0f;
@@ -2985,7 +3013,7 @@ __device__ __forceinline__ void clear_edge_cotangents(const Arguments& args,
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
           bool Canonical,
           typename index_t,
@@ -2996,10 +3024,10 @@ __global__ __launch_bounds__(
     Warps * Split * kWarpSize,
     (slots_types(Fold)
          ? slot_resident_warps<HasModes, windowed<Warps>() ? Warps : 0>()
-         : edge_resident_blocks<Channels, Lmax, HasModes, HasSpin, true>()) /
+         : edge_resident_blocks<Channels, Lmax, HasModes, SpinMode, true>()) /
         (Warps * Split)) void edge_backward_kernel(Arguments args) {
-  using P = Profile<Channels, Lmax, HasSpin>;
-  enter_edge_scan<Channels, Lmax, HasModes, HasSpin, Canonical, true, Fold>(
+  using P = Profile<Channels, Lmax, SpinMode>;
+  enter_edge_scan<Channels, Lmax, HasModes, SpinMode, Canonical, true, Fold>(
       args);
   constexpr bool SlotScan = slots_types(Fold);
   constexpr int EdgeWidth = P::BackwardEdgeWidth;
@@ -3036,12 +3064,6 @@ __global__ __launch_bounds__(
       static_cast<const index_t*>(args.destination_order);
   const int center_type =
       static_cast<int>(args.atype[args.node_begin + row_node]);
-  // The centre half of every pair length scale is a node constant, like the
-  // centre type it follows, and so is the length from which the window of no
-  // pair of the row needs resolving.
-  const float center_radius =
-      Bridged ? __ldg(args.contact_radius + center_type) : 0.0f;
-  const float bound = Bridged ? window_bound(args, center_radius) : 0.0f;
   const long begin = args.destination_row_ptr[row_node];
   const long end = active ? args.destination_row_ptr[row_node + 1] : begin;
   const int radial_modes = HasModes ? args.radial_modes : 0;
@@ -3074,9 +3096,10 @@ __global__ __launch_bounds__(
   // The reduced spin cotangent is a node constant that every edge rereads and
   // that every lane of a group needs in full, so it is staged in shared
   // memory for the same reason as the scalar cotangent above.
-  __shared__ float spin_gradient_storage[Warps][HasSpin ? P::SpinEdgeWidth : 1];
+  __shared__ float spin_gradient_storage[Warps]
+                                        [SpinMode ? P::SpinEdgeWidth : 1];
   float* const spin_gradient = spin_gradient_storage[warp];
-  if constexpr (HasSpin) {
+  if constexpr (SpinMode) {
     for (int coordinate = part * kWarpSize + thread;
          coordinate < P::SpinEdgeWidth; coordinate += Split * kWarpSize) {
       spin_gradient[coordinate] = __ldg(args.moment_gradient + gradient_offset +
@@ -3153,7 +3176,8 @@ __global__ __launch_bounds__(
   // cotangents: the FiLM scale multiplies the channel cotangents, and each
   // extra feature receives the coefficient-weighted sums of the channel
   // cotangents, held by the lane that owns the feature in `extra`.
-  constexpr bool Foldable = foldable<Channels, HasSpin, Canonical>();
+  constexpr bool Foldable =
+      foldable<Channels, Canonical>() && (!SpinMode || Fold == Scan::LowRank);
   constexpr int ExtraFeatures = (HasModes ? kFoldedModes : 0) + 1;
   constexpr int ExtraTiles = (ExtraFeatures + EdgeWidth - 1) / EdgeWidth;
   float extra[ExtraTiles][9] = {};
@@ -3165,7 +3189,7 @@ __global__ __launch_bounds__(
   // A slotted scan reads the cotangents of the mode profiles and of the basis
   // functions of the slot of the source type of every edge.
   static_assert(
-      !SlotScan || slottable<Channels, HasModes, HasSpin, Canonical>(),
+      !SlotScan || slottable<Channels, HasModes, SpinMode, Canonical>(),
       "a slotted scan serves a profile that slots");
   constexpr bool SlotModes = SlotScan && HasModes;
   constexpr bool SlotBasis = slots_basis(Fold);
@@ -3177,7 +3201,7 @@ __global__ __launch_bounds__(
   // to twelve floats, so that two `float4` loads and one float read it. A
   // spin-free profile keeps them in registers, in the slot tiles of
   // `slot_extra`.
-  constexpr bool SharedSlots = SlotModes && HasSpin;
+  constexpr bool SharedSlots = SlotModes && SpinMode;
   constexpr int CotangentStride = 12;
   constexpr int SlotTiles =
       SlotModes && !SharedSlots ? slot_tiles<EdgeWidth, Slots>() : 1;
@@ -3440,7 +3464,7 @@ __global__ __launch_bounds__(
     const long edge = edge_at_position<Canonical>(position, destination_order);
     if (args.edge_mask != nullptr && !args.edge_mask[edge]) {
       if (thread == leader) {
-        clear_edge_cotangents<HasSpin>(args, edge);
+        clear_edge_cotangents<SpinMode>(args, edge);
       }
       return;
     }
@@ -3450,15 +3474,13 @@ __global__ __launch_bounds__(
       if (center_type >= args.type_count - 1 ||
           source_type >= args.type_count - 1) {
         if (thread == leader) {
-          clear_edge_cotangents<HasSpin>(args, edge);
+          clear_edge_cotangents<SpinMode>(args, edge);
         }
         return;
       }
     }
-    const EdgeGeometry geometry = load_geometry<Bridged>(
-        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
-        args.inverse_f_width, center_radius, bound, args.contact_radius,
-        args.eps, args.edge_vec, args.source_gate);
+    const EdgeGeometry geometry =
+        load_geometry<Bridged>(args, edge, source, source_type, center_type);
     const TableLocation location = locate_table<Canonical>(
         geometry.seen, args.table_stride, args.table_max, args.interval_count);
     // The pair term depends on the geometry alone, so it starts here and runs
@@ -3469,10 +3491,12 @@ __global__ __launch_bounds__(
       const long pair_row = static_cast<long>(center_type) * args.type_count +
                             geometry.source_type;
       const PairTerm term =
-          pair_term<EdgeWidth>(args.pair_table + pair_row * 8, base_channel,
-                               geometry.radius, geometry.inverse_radius);
+          pair_term<EdgeWidth>(args.pair_table + pair_row * kPairRow,
+                               base_channel, geometry.squared_distance);
       pair_energy = fmaf(0.5f, term.energy, pair_energy);
-      pair_slope = term.slope;
+      // The scan projects radial cotangents along displacement /
+      // geometry.radius.
+      pair_slope = term.gradient_scale * geometry.radius;
     }
     const TableRow row =
         reads_low_rank(Kind)
@@ -3524,7 +3548,7 @@ __global__ __launch_bounds__(
     [[maybe_unused]] float bond_alignment = 0.0f;
     [[maybe_unused]] float spin_cotangent[3] = {0.0f, 0.0f, 0.0f};
     [[maybe_unused]] const float2* spin_row = nullptr;
-    if constexpr (HasSpin) {
+    if constexpr (SpinMode) {
       const SpinTypeWeights weights =
           load_spin_type(args.spin_type, geometry.source_type);
       load_conditioned_spin(args.spin, weights.scale, geometry.source,
@@ -3558,6 +3582,118 @@ __global__ __launch_bounds__(
     [[maybe_unused]] float leading_payload = 0.0f;
     [[maybe_unused]] float leading_value = 0.0f;
     [[maybe_unused]] float leading_slope = 0.0f;
+    const auto accumulate_spin_vjp = [&](int channel, int tile, float2 radial) {
+      if constexpr (SpinMode) {
+        if (channel < P::Cs) {
+          const float2 spin_film = __ldg(spin_row + tile * EdgeWidth);
+          const float profile = fmaf(spin_film.x, radial.x, spin_film.y);
+          const float envelope_squared = envelope * envelope;
+          const float weight = profile * envelope_squared;
+          const float magnitude_gradient =
+              spin_gradient[SpinMagnitudeSlot + channel];
+          // The two degree-one cotangents are read once and used by the
+          // amplitude, the magnetic and the angular accumulations below.
+          float vector_gradient[3];
+          [[maybe_unused]] float bond_gradient[3] = {};
+#pragma unroll
+          for (int component = 0; component < 3; ++component) {
+            vector_gradient[component] =
+                spin_gradient[SpinVectorSlot + component * P::Cs + channel];
+            if constexpr (P::HasOrbit) {
+              bond_gradient[component] =
+                  spin_gradient[SpinBondSlot + component * P::Cs + channel];
+            }
+          }
+          // Component of the bond cotangent along the bond. The
+          // bond-projected family is `P = w (s . u) u`, so this one dot
+          // product carries all three of its VJPs: `dP/dw` contracts to
+          // `(s . u) (dP . u)`, `dP/ds` to `w (dP . u) u`, and the direction
+          // term below reuses it once more.
+          float bond_projection = 0.0f;
+          if constexpr (P::HasOrbit) {
+#pragma unroll
+            for (int component = 0; component < 3; ++component) {
+              bond_projection = fmaf(bond_gradient[component],
+                                     basis[1 + component], bond_projection);
+            }
+          }
+          float sigma = fmaf(
+              magnitude_gradient, neighbor_magnitude,
+              spin_gradient[SpinCoordinationSlot + channel] * neighbor_gate);
+          if constexpr (P::HasOrbit) {
+            sigma = fmaf(bond_alignment, bond_projection, sigma);
+          }
+#pragma unroll
+          for (int component = 0; component < 3; ++component) {
+            sigma = fmaf(vector_gradient[component], neighbor_spin[component],
+                         sigma);
+          }
+          // Magnetic cotangent of the source moment. The coordination family
+          // reads the type gate rather than the moment, so it contributes
+          // nothing here.
+          const float linear = 2.0f * weight * magnitude_gradient;
+          [[maybe_unused]] const float projected = weight * bond_projection;
+#pragma unroll
+          for (int component = 0; component < 3; ++component) {
+            if constexpr (P::HasOrbit) {
+              spin_cotangent[component] =
+                  fmaf(linear, neighbor_spin[component],
+                       fmaf(projected, basis[1 + component],
+                            fmaf(weight, vector_gradient[component],
+                                 spin_cotangent[component])));
+            } else {
+              spin_cotangent[component] =
+                  fmaf(linear, neighbor_spin[component],
+                       fmaf(weight, vector_gradient[component],
+                            spin_cotangent[component]));
+            }
+          }
+          // Angular cotangent of the bond-projected family. Differentiating
+          // `(s . u) u` with respect to `u` at fixed `s` gives the rank-one
+          // sum `s (dP . u) + (s . u) dP`, which the transverse projection in
+          // `basis_vjp` turns into the coordinate gradient. Every other spin
+          // family is independent of the direction and contributes nothing.
+          if constexpr (P::HasOrbit) {
+            const float aligned_weight = weight * bond_alignment;
+#pragma unroll
+            for (int component = 0; component < 3; ++component) {
+              direction_gradient[component] =
+                  fmaf(projected, neighbor_spin[component],
+                       fmaf(aligned_weight, bond_gradient[component],
+                            direction_gradient[component]));
+            }
+          }
+          if (channel == 0) {
+            // The single neighbour quadrupole rides the leading spin channel.
+            // Both of its contributions are formed here rather than hoisted,
+            // so its five cotangent components never stay live across the
+            // channel loop.
+#pragma unroll
+            for (int component = 0; component < 5; ++component) {
+              sigma = fmaf(
+                  spin_gradient[SpinTensorSlot + component],
+                  spin_quadrupole_component(neighbor_spin[0], neighbor_spin[1],
+                                            neighbor_spin[2], component),
+                  sigma);
+            }
+            float quadrupole[3];
+            spin_quadrupole_vjp(spin_gradient + SpinTensorSlot, weight,
+                                neighbor_spin, quadrupole);
+#pragma unroll
+            for (int component = 0; component < 3; ++component) {
+              spin_cotangent[component] += quadrupole[component];
+            }
+          }
+          // w = chi^2 (gamma g + beta): the distance enters through the table
+          // and through the envelope, and `sigma` is the cotangent of that
+          // shared amplitude over all five families.
+          radial_gradient = fmaf(envelope_squared * sigma,
+                                 spin_film.x * radial.y, radial_gradient);
+          envelope_gradient =
+              fmaf(2.0f * envelope * profile, sigma, envelope_gradient);
+        }
+      }
+    };
     if constexpr (Folded) {
       // The pair coefficients live in the folded cotangents, so a channel
       // contributes through its bare radial feature, and every extra feature
@@ -3607,6 +3743,7 @@ __global__ __launch_bounds__(
                                           d_basis[4 + component]);
           }
         }
+        accumulate_spin_vjp(channel, tile, radial);
         if (tile == 0) {
           leading = radial.x;
           leading_slope = radial.y;
@@ -3745,101 +3882,7 @@ __global__ __launch_bounds__(
                      d_basis[4 + component]);
           }
         }
-        if constexpr (HasSpin) {
-          if (channel < P::Cs) {
-            const float2 spin_film = __ldg(spin_row + tile * EdgeWidth);
-            const float profile = fmaf(spin_film.x, radial.x, spin_film.y);
-            const float envelope_squared = envelope * envelope;
-            const float weight = profile * envelope_squared;
-            const float magnitude_gradient =
-                spin_gradient[SpinMagnitudeSlot + channel];
-            // The two degree-one cotangents are read once and used by the
-            // amplitude, the magnetic and the angular accumulations below.
-            float vector_gradient[3];
-            float bond_gradient[3];
-#pragma unroll
-            for (int component = 0; component < 3; ++component) {
-              vector_gradient[component] =
-                  spin_gradient[SpinVectorSlot + component * P::Cs + channel];
-              bond_gradient[component] =
-                  spin_gradient[SpinBondSlot + component * P::Cs + channel];
-            }
-            // Component of the bond cotangent along the bond. The
-            // bond-projected family is `P = w (s . u) u`, so this one dot
-            // product carries all three of its VJPs: `dP/dw` contracts to
-            // `(s . u) (dP . u)`, `dP/ds` to `w (dP . u) u`, and the direction
-            // term below reuses it once more.
-            float bond_projection = 0.0f;
-#pragma unroll
-            for (int component = 0; component < 3; ++component) {
-              bond_projection = fmaf(bond_gradient[component],
-                                     basis[1 + component], bond_projection);
-            }
-            float sigma = fmaf(
-                magnitude_gradient, neighbor_magnitude,
-                spin_gradient[SpinCoordinationSlot + channel] * neighbor_gate);
-            sigma = fmaf(bond_alignment, bond_projection, sigma);
-#pragma unroll
-            for (int component = 0; component < 3; ++component) {
-              sigma = fmaf(vector_gradient[component], neighbor_spin[component],
-                           sigma);
-            }
-            // Magnetic cotangent of the source moment. The coordination family
-            // reads the type gate rather than the moment, so it contributes
-            // nothing here.
-            const float linear = 2.0f * weight * magnitude_gradient;
-            const float projected = weight * bond_projection;
-#pragma unroll
-            for (int component = 0; component < 3; ++component) {
-              spin_cotangent[component] =
-                  fmaf(linear, neighbor_spin[component],
-                       fmaf(projected, basis[1 + component],
-                            fmaf(weight, vector_gradient[component],
-                                 spin_cotangent[component])));
-            }
-            // Angular cotangent of the bond-projected family. Differentiating
-            // `(s . u) u` with respect to `u` at fixed `s` gives the rank-one
-            // sum `s (dP . u) + (s . u) dP`, which the transverse projection in
-            // `basis_vjp` turns into the coordinate gradient. Every other spin
-            // family is independent of the direction and contributes nothing.
-            const float aligned_weight = weight * bond_alignment;
-#pragma unroll
-            for (int component = 0; component < 3; ++component) {
-              direction_gradient[component] =
-                  fmaf(projected, neighbor_spin[component],
-                       fmaf(aligned_weight, bond_gradient[component],
-                            direction_gradient[component]));
-            }
-            if (channel == 0) {
-              // The single neighbour quadrupole rides the leading spin channel.
-              // Both of its contributions are formed here rather than hoisted,
-              // so its five cotangent components never stay live across the
-              // channel loop.
-#pragma unroll
-              for (int component = 0; component < 5; ++component) {
-                sigma = fmaf(spin_gradient[SpinTensorSlot + component],
-                             spin_quadrupole_component(
-                                 neighbor_spin[0], neighbor_spin[1],
-                                 neighbor_spin[2], component),
-                             sigma);
-              }
-              float quadrupole[3];
-              spin_quadrupole_vjp(spin_gradient + SpinTensorSlot, weight,
-                                  neighbor_spin, quadrupole);
-#pragma unroll
-              for (int component = 0; component < 3; ++component) {
-                spin_cotangent[component] += quadrupole[component];
-              }
-            }
-            // w = chi^2 (gamma g + beta): the distance enters through the table
-            // and through the envelope, and `sigma` is the cotangent of that
-            // shared amplitude over all five families.
-            radial_gradient = fmaf(envelope_squared * sigma,
-                                   spin_film.x * radial.y, radial_gradient);
-            envelope_gradient =
-                fmaf(2.0f * envelope * profile, sigma, envelope_gradient);
-          }
-        }
+        accumulate_spin_vjp(channel, tile, radial);
         if constexpr (Lmax >= 3) {
           if (channel == 0) {
             leading_payload = angular_payload;
@@ -3983,28 +4026,13 @@ __global__ __launch_bounds__(
           fmaf(4.0f * squared * envelope, angular_mass_gradient,
                fmaf(2.0f * envelope, scalar_mass_gradient, envelope_gradient));
     }
-    // The table terms above differentiate the length the table reads; the
-    // pair potential acts on the true length and joins after the chain rule.
+    // The table and envelope terms above differentiate the length they read;
+    // the pair potential acts on the true length and joins after the chain
+    // rule.
     radial_gradient =
-        radial_chain<Bridged>(geometry, args, center_radius, bound,
-                              radial_gradient, envelope_gradient);
+        radial_chain(geometry, args.rcut, radial_gradient, envelope_gradient);
     if constexpr (Bridged) {
       radial_gradient = fmaf(pair_weight, pair_slope, radial_gradient);
-      // Under a source gate the envelope of an edge enters the gate of every
-      // other edge of its source, so its cotangent times the envelope joins
-      // the totals of a source with a pair inside its window, from which
-      // gate_closure_kernel forms the slope of the switches of that source.
-      if (args.gate_sums != nullptr) {
-        const float sum = subwarp_allsum<EdgeWidth>(envelope_gradient, mask) *
-                          geometry.envelope;
-        if (thread == leader &&
-            has_window_pair(args.source_gate[geometry.source])) {
-          if (args.force != nullptr) {
-            check_force_range(sum, args.force + geometry.source * kForceWords);
-          }
-          atomicAdd(args.gate_sums + geometry.source, fixed_point(sum));
-        }
-      }
     }
 
     // The basis VJP is linear in the radial and angular cotangents, so
@@ -4049,7 +4077,7 @@ __global__ __launch_bounds__(
         }
       }
     }
-    if constexpr (HasSpin) {
+    if constexpr (SpinMode) {
       // The magnetic cotangent belongs to the source node, which this
       // destination-major scan does not own. It is either emitted per edge
       // and reduced onto sources by the shared edge assembly, or added onto
@@ -4264,19 +4292,23 @@ template <class Family,
           bool Backward,
           int Channels,
           int Lmax,
-          bool HasSpin,
+          int SpinMode,
           bool Canonical,
           typename index_t>
 void launch_edge_scans(const Arguments& args, cudaStream_t stream) {
-  dispatch_fold<Channels, Lmax, HasSpin, Canonical>(args, [&](auto fold) {
+  dispatch_fold<Channels, Lmax, SpinMode, Canonical>(args, [&](auto fold) {
     constexpr Scan Fold = decltype(fold)::value;
     constexpr int Warps =
-        coscheduled_warps<Channels, Lmax, HasSpin, Canonical, Backward>();
+        coscheduled_warps<Channels, Lmax, SpinMode, Canonical, Backward>();
     if (!launch_coscheduled_scans<Family, Warps, Fold>(args, stream)) {
-      launch_row_scans<Family, HasSpin ? kSlotRows : 1, Fold, Canonical,
+      launch_row_scans<Family, SpinMode ? kSlotRows : 1, Fold, Canonical,
                        index_t>(args, stream);
     }
-    Family::template launch_slots<Fold>(args, stream);
+    // Native bases expand one ordered pair per node. Their multi-type scans
+    // retain the raw table rather than duplicating the larger expansion in
+    // every type slot.
+    constexpr Scan SlotFold = SpinMode ? Scan::Direct : Fold;
+    Family::template launch_slots<SlotFold>(args, stream);
   });
 }
 
@@ -4303,7 +4335,7 @@ template <class Family,
           bool Backward,
           int Channels,
           int Lmax,
-          bool HasSpin,
+          int SpinMode,
           bool Canonical,
           typename index_t,
           Scan Slotted>
@@ -4311,7 +4343,7 @@ void launch_slot_scans(const Arguments& args, cudaStream_t stream) {
   if (args.type_present == nullptr) {
     return;
   }
-  constexpr int Warps = slot_coscheduled_warps<Channels, Lmax, HasSpin,
+  constexpr int Warps = slot_coscheduled_warps<Channels, Lmax, SpinMode,
                                                Backward, type_slots(Slotted)>();
   if (!launch_coscheduled_scans<Family, Warps, Slotted>(args, stream)) {
     launch_row_scans<Family, kSlotRows, Slotted, Canonical, index_t>(args,
@@ -4322,7 +4354,7 @@ void launch_slot_scans(const Arguments& args, cudaStream_t stream) {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
           bool Canonical,
           typename index_t>
@@ -4331,7 +4363,7 @@ struct ForwardLauncher {
   static constexpr auto kernel = forward_kernel<Channels,
                                                 Lmax,
                                                 HasModes,
-                                                HasSpin,
+                                                SpinMode,
                                                 Bridged,
                                                 Canonical,
                                                 index_t,
@@ -4343,25 +4375,25 @@ struct ForwardLauncher {
   /// scan is `Fold` (see `runs_slotted`).
   template <Scan Fold>
   static void launch_slots(const Arguments& args, cudaStream_t stream) {
-    if constexpr (runs_slotted<Channels, HasModes, HasSpin, Canonical, false,
+    if constexpr (runs_slotted<Channels, HasModes, SpinMode, Canonical, false,
                                Fold, 4>()) {
-      launch_slot_scans<ForwardLauncher, false, Channels, Lmax, HasSpin,
+      launch_slot_scans<ForwardLauncher, false, Channels, Lmax, SpinMode,
                         Canonical, index_t, slotted_scan<Fold, 4>()>(args,
                                                                      stream);
     }
-    if constexpr (runs_slotted<Channels, HasModes, HasSpin, Canonical, false,
+    if constexpr (runs_slotted<Channels, HasModes, SpinMode, Canonical, false,
                                Fold, 8>()) {
-      launch_slot_scans<ForwardLauncher, false, Channels, Lmax, HasSpin,
+      launch_slot_scans<ForwardLauncher, false, Channels, Lmax, SpinMode,
                         Canonical, index_t, slotted_scan<Fold, 8>()>(args,
                                                                      stream);
     }
   }
 
   static void run(const Arguments& args, cudaStream_t stream) {
-    using P = Profile<Channels, Lmax, HasSpin>;
-    launch_edge_scans<ForwardLauncher, false, Channels, Lmax, HasSpin,
+    using P = Profile<Channels, Lmax, SpinMode>;
+    launch_edge_scans<ForwardLauncher, false, Channels, Lmax, SpinMode,
                       Canonical, index_t>(args, stream);
-    forward_readout_kernel<Channels, Lmax, HasSpin>
+    forward_readout_kernel<Channels, Lmax, SpinMode>
         <<<static_cast<int>(args.node_count), P::Threads, 0, stream>>>(args);
   }
 };
@@ -4369,7 +4401,7 @@ struct ForwardLauncher {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
           bool Canonical,
           typename index_t>
@@ -4392,20 +4424,20 @@ struct BackwardLauncher {
   static bool prefer_wide_nodes() {
     static DeviceMemo preferences;
     return preferences.get([](int device) {
-      using Narrow = Profile<Channels, Lmax, HasSpin, kNodeLanesNarrow>;
-      using Wide = Profile<Channels, Lmax, HasSpin, kNodeLanesWide>;
+      using Narrow = Profile<Channels, Lmax, SpinMode, kNodeLanesNarrow>;
+      using Wide = Profile<Channels, Lmax, SpinMode, kNodeLanesWide>;
       int narrow_blocks = 0;
       int wide_blocks = 0;
       check_query(
           cudaOccupancyMaxActiveBlocksPerMultiprocessor(
               &narrow_blocks,
-              node_backward_kernel<Channels, Lmax, HasSpin, kNodeLanesNarrow>,
+              node_backward_kernel<Channels, Lmax, SpinMode, kNodeLanesNarrow>,
               Narrow::Threads, 0),
           "the occupancy query of the node backward");
       check_query(
           cudaOccupancyMaxActiveBlocksPerMultiprocessor(
               &wide_blocks,
-              node_backward_kernel<Channels, Lmax, HasSpin, kNodeLanesWide>,
+              node_backward_kernel<Channels, Lmax, SpinMode, kNodeLanesWide>,
               Wide::Threads, 0),
           "the occupancy query of the node backward");
       int threads_per_sm = 0;
@@ -4424,7 +4456,7 @@ struct BackwardLauncher {
   static constexpr auto kernel = edge_backward_kernel<Channels,
                                                       Lmax,
                                                       HasModes,
-                                                      HasSpin,
+                                                      SpinMode,
                                                       Bridged,
                                                       Canonical,
                                                       index_t,
@@ -4436,15 +4468,15 @@ struct BackwardLauncher {
   /// scan is `Fold` (see `runs_slotted`).
   template <Scan Fold>
   static void launch_slots(const Arguments& args, cudaStream_t stream) {
-    if constexpr (runs_slotted<Channels, HasModes, HasSpin, Canonical, true,
+    if constexpr (runs_slotted<Channels, HasModes, SpinMode, Canonical, true,
                                Fold, 4>()) {
-      launch_slot_scans<BackwardLauncher, true, Channels, Lmax, HasSpin,
+      launch_slot_scans<BackwardLauncher, true, Channels, Lmax, SpinMode,
                         Canonical, index_t, slotted_scan<Fold, 4>()>(args,
                                                                      stream);
     }
-    if constexpr (runs_slotted<Channels, HasModes, HasSpin, Canonical, true,
+    if constexpr (runs_slotted<Channels, HasModes, SpinMode, Canonical, true,
                                Fold, 8>()) {
-      launch_slot_scans<BackwardLauncher, true, Channels, Lmax, HasSpin,
+      launch_slot_scans<BackwardLauncher, true, Channels, Lmax, SpinMode,
                         Canonical, index_t, slotted_scan<Fold, 8>()>(args,
                                                                      stream);
     }
@@ -4452,11 +4484,11 @@ struct BackwardLauncher {
 
   template <int NodeLanes>
   static void launch_node_backward(const Arguments& args, cudaStream_t stream) {
-    using NodeProfile = Profile<Channels, Lmax, HasSpin, NodeLanes>;
+    using NodeProfile = Profile<Channels, Lmax, SpinMode, NodeLanes>;
     const int node_blocks =
         static_cast<int>((args.node_count + NodeProfile::NodeGroups - 1) /
                          NodeProfile::NodeGroups);
-    node_backward_kernel<Channels, Lmax, HasSpin, NodeLanes>
+    node_backward_kernel<Channels, Lmax, SpinMode, NodeLanes>
         <<<node_blocks, NodeProfile::Threads, 0, stream>>>(args);
   }
 
@@ -4476,7 +4508,7 @@ struct BackwardLauncher {
 
   /// The edge recomputation scans from the moment gradient of every node.
   static void run_edges(const Arguments& args, cudaStream_t stream) {
-    launch_edge_scans<BackwardLauncher, true, Channels, Lmax, HasSpin,
+    launch_edge_scans<BackwardLauncher, true, Channels, Lmax, SpinMode,
                       Canonical, index_t>(args, stream);
     // The reserved edge slots beyond the physical count are only known on the
     // device, so the grid is sized from the storage bound and the surplus
@@ -4492,7 +4524,7 @@ struct BackwardLauncher {
               args.node_count, args.edge_count,
               static_cast<const index_t*>(args.destination_order),
               args.destination_row_ptr, args.edge_gradient,
-              HasSpin ? args.edge_spin_gradient : nullptr);
+              SpinMode ? args.edge_spin_gradient : nullptr);
     }
   }
 };
@@ -4503,25 +4535,25 @@ struct BackwardLauncher {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
-          template <int, int, bool, bool, bool, bool, typename> class L>
+          template <int, int, bool, int, bool, bool, typename> class L>
 void dispatch_topology(const Arguments& args, cudaStream_t stream) {
   const bool wide = args.index_kind == IndexKind::Bits64;
   if (args.canonical) {
     if (wide) {
-      L<Channels, Lmax, HasModes, HasSpin, Bridged, true, long>::run(args,
-                                                                     stream);
+      L<Channels, Lmax, HasModes, SpinMode, Bridged, true, long>::run(args,
+                                                                      stream);
     } else {
-      L<Channels, Lmax, HasModes, HasSpin, Bridged, true, std::uint32_t>::run(
+      L<Channels, Lmax, HasModes, SpinMode, Bridged, true, std::uint32_t>::run(
           args, stream);
     }
   } else {
     if (wide) {
-      L<Channels, Lmax, HasModes, HasSpin, Bridged, false, long>::run(args,
-                                                                      stream);
+      L<Channels, Lmax, HasModes, SpinMode, Bridged, false, long>::run(args,
+                                                                       stream);
     } else {
-      L<Channels, Lmax, HasModes, HasSpin, Bridged, false, std::uint32_t>::run(
+      L<Channels, Lmax, HasModes, SpinMode, Bridged, false, std::uint32_t>::run(
           args, stream);
     }
   }
@@ -4534,31 +4566,34 @@ void dispatch_topology(const Arguments& args, cudaStream_t stream) {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
-          template <int, int, bool, bool, bool, bool, typename> class L>
+          int SpinMode,
+          template <int, int, bool, int, bool, bool, typename> class L>
 void dispatch_bridging(const Arguments& args, cudaStream_t stream) {
   if (args.bridged) {
-    dispatch_topology<Channels, Lmax, HasModes, HasSpin, true, L>(args, stream);
-  } else {
-    dispatch_topology<Channels, Lmax, HasModes, HasSpin, false, L>(args,
+    dispatch_topology<Channels, Lmax, HasModes, SpinMode, true, L>(args,
                                                                    stream);
+  } else {
+    dispatch_topology<Channels, Lmax, HasModes, SpinMode, false, L>(args,
+                                                                    stream);
   }
 }
 
 // Native spin is a compile-time specialization for the same reason as the
 // mode residual: a spinless descriptor must not carry the spin accumulators,
 // the staged spin cotangent, or the wider moment state of one that has them.
-// The neighbour spin width is derived from the degree profile, so presence is
-// the whole choice and the instantiation matrix only doubles.
+// The symmetry mode selects the orbit or exchange layout of the same scans
+// and readout; the spin channel width follows from the degree profile.
 template <int Channels,
           int Lmax,
           bool HasModes,
-          template <int, int, bool, bool, bool, bool, typename> class L>
+          template <int, int, bool, int, bool, bool, typename> class L>
 void dispatch_spin(const Arguments& args, cudaStream_t stream) {
-  if (args.has_spin) {
-    dispatch_bridging<Channels, Lmax, HasModes, true, L>(args, stream);
+  if (args.spin_mode == 2) {
+    dispatch_bridging<Channels, Lmax, HasModes, 2, L>(args, stream);
+  } else if (args.spin_mode == 1) {
+    dispatch_bridging<Channels, Lmax, HasModes, 1, L>(args, stream);
   } else {
-    dispatch_bridging<Channels, Lmax, HasModes, false, L>(args, stream);
+    dispatch_bridging<Channels, Lmax, HasModes, 0, L>(args, stream);
   }
 }
 
@@ -4567,7 +4602,7 @@ void dispatch_spin(const Arguments& args, cudaStream_t stream) {
 // vector temporaries and the shared profile cache of one that has them.
 template <int Channels,
           int Lmax,
-          template <int, int, bool, bool, bool, bool, typename> class L>
+          template <int, int, bool, int, bool, bool, typename> class L>
 void dispatch_modes(const Arguments& args, cudaStream_t stream) {
   if (args.radial_modes > 0) {
     dispatch_spin<Channels, Lmax, true, L>(args, stream);
@@ -4591,14 +4626,14 @@ void launch_backward(const Arguments& arguments, cudaStream_t stream) {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
           bool Canonical,
           typename index_t>
 struct ReadoutLauncher {
   static void run(const Arguments& args, cudaStream_t stream) {
-    using P = Profile<Channels, Lmax, HasSpin>;
-    forward_readout_kernel<Channels, Lmax, HasSpin>
+    using P = Profile<Channels, Lmax, SpinMode>;
+    forward_readout_kernel<Channels, Lmax, SpinMode>
         <<<static_cast<int>(args.node_count), P::Threads, 0, stream>>>(args);
   }
 };
@@ -4606,13 +4641,13 @@ struct ReadoutLauncher {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
           bool Canonical,
           typename index_t>
 struct NodeBackwardLauncher {
   static void run(const Arguments& args, cudaStream_t stream) {
-    BackwardLauncher<Channels, Lmax, HasModes, HasSpin, Bridged, Canonical,
+    BackwardLauncher<Channels, Lmax, HasModes, SpinMode, Bridged, Canonical,
                      index_t>::run_nodes(args, stream);
   }
 };
@@ -4620,13 +4655,13 @@ struct NodeBackwardLauncher {
 template <int Channels,
           int Lmax,
           bool HasModes,
-          bool HasSpin,
+          int SpinMode,
           bool Bridged,
           bool Canonical,
           typename index_t>
 struct EdgeBackwardLauncher {
   static void run(const Arguments& args, cudaStream_t stream) {
-    BackwardLauncher<Channels, Lmax, HasModes, HasSpin, Bridged, Canonical,
+    BackwardLauncher<Channels, Lmax, HasModes, SpinMode, Bridged, Canonical,
                      index_t>::run_edges(args, stream);
   }
 };

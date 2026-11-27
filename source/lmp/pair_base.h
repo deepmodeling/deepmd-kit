@@ -22,18 +22,16 @@ namespace deepmd_compat = deepmd;
 #endif
 namespace deepmd_compat = deepmd::hpp;
 #endif
-#include <fstream>
 #include <iostream>
 #include <map>
+
+#include "model_deviation.h"
 #define FLOAT_PREC double
 
 namespace LAMMPS_NS {
 class PairDeepBaseModel : public Pair {
  public:
-  PairDeepBaseModel(class LAMMPS*,
-                    const char*,
-                    deepmd_compat::DeepBaseModel&,
-                    deepmd_compat::DeepBaseModelDevi&);
+  PairDeepBaseModel(class LAMMPS*, const char*, deepmd_compat::DeepBaseModel&);
   virtual ~PairDeepBaseModel() override;
   void* extract(const char*, int&) override;
   void init_style() override;
@@ -52,39 +50,22 @@ class PairDeepBaseModel : public Pair {
   double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
 
  protected:
-  // Bound (not copied) to the derived class's own model members. The derived
-  // members are still under construction when this base constructor runs, so
-  // copying them would read uninitialized state; a reference only records the
-  // address and resolves to the fully constructed model by first use. Used for
-  // the model summary and, in the C++ API build, the fully device-resident
-  // inference entry (see pair_deepmd_kokkos).
+  // Bound (not copied) to the derived class's own model member, the first
+  // model of the ensemble. The derived members are still under construction
+  // when this base constructor runs, so copying them would read uninitialized
+  // state; a reference only records the address and resolves to the fully
+  // constructed model by first use. Used for the model summary.
   deepmd_compat::DeepBaseModel& deep_base;
-  deepmd_compat::DeepBaseModelDevi& deep_base_model_devi;
   virtual void allocate();
-  // The model-deviation gather arrays are owned by this pair style.  Keep
-  // their allocation in one place so repeated LAMMPS initialization cannot
-  // overwrite a live pointer and leak the previous allocation.
-  void ensure_model_deviation_buffers();
-  void destroy_model_deviation_buffers();
   double** scale;
-  unsigned numb_models;
   double cutoff;
   int numb_types;
   int numb_types_spin;
-  std::vector<std::vector<double> > all_force;
-  std::ofstream fp;
-  int out_freq;
-  std::string out_file;
+  // Options, outputs and file of the deviation of the ensemble of models.
+  ModelDeviation model_deviation;
   int dim_fparam;
   int dim_aparam;
   int dim_chg_spin;
-  int out_each;
-  int out_rel;
-  int out_rel_v;
-  int stdf_comm_buff_size;
-  bool single_model;
-  bool multi_models_mod_devi;
-  bool multi_models_no_mod_devi;
   bool is_restart;
   std::vector<double> virtual_len;
   std::vector<double> spin_norm;
@@ -94,8 +75,6 @@ class PairDeepBaseModel : public Pair {
   std::vector<double> fparam;
   std::vector<double> aparam;
   std::vector<double> charge_spin;
-  double eps;
-  double eps_v;
 
   void make_fparam_from_compute(std::vector<double>& fparam);
   bool do_compute_fparam;
@@ -120,9 +99,6 @@ class PairDeepBaseModel : public Pair {
   void make_ttm_aparam(std::vector<double>& dparam);
   bool do_ttm;
   std::string ttm_fix_id;
-  int *counts, *displacements;
-  tagint *tagsend, *tagrecv;
-  double *stdfsend, *stdfrecv;
   std::vector<int> type_idx_map;
 };
 
@@ -131,10 +107,5 @@ class PairDeepBaseModel : public Pair {
 void make_uniform_aparam(std::vector<double>& daparam,
                          const std::vector<double>& aparam,
                          const int& nlocal);
-void ana_st(double& max,
-            double& min,
-            double& sum,
-            const std::vector<double>& vec,
-            const int& nloc);
 
 #endif

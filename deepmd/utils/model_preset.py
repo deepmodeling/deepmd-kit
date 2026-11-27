@@ -9,12 +9,13 @@ explicitly next to the preset take precedence: ``type`` and ``type_map`` as a
 whole, ``descriptor`` and ``fitting_net`` key by key, so a cutoff radius or a
 fitting width can be overridden, and options that are not part of an
 architecture (``use_amp``, ``seed``, ``sel``, charge and spin conditioning,
-...) are supplied alongside the preset.
+...) are supplied alongside the preset, unless a family makes one of them
+part of its architecture.
 
 Preset tables in :mod:`deepmd.utils.model_preset_data` are organised per
 family. Shared descriptor and fitting options are written once, every grade
-lists its scaling knobs, and every version defines its descriptor options
-and available grades.
+lists its scaling knobs, and every version defines its descriptor and fitting
+options and available grades.
 
 In the multi-task layout a preset next to ``model_dict`` is the base of every
 branch and of the ``shared_dict`` entries the branches reference as

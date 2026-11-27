@@ -406,6 +406,60 @@ def build_m_major_l_index(lmax: int, mmax: int) -> np.ndarray:
     return np.array(degrees, dtype=np.int64)
 
 
+def expand_degree_axis(
+    values: Any,
+    lmax: int,
+    mmax: int | None,
+    *,
+    axis: int,
+    scalar: bool = True,
+) -> Any:
+    """Broadcast degree features into the packed coefficient layout.
+
+    Parameters
+    ----------
+    values : Array
+        Features whose selected axis contains consecutive degrees, with
+        shape (..., lmax + 1, ...) if ``scalar`` and (..., lmax, ...) otherwise.
+    lmax : int
+        Maximum degree.
+    mmax : int or None
+        Maximum order in the reduced m-major layout. ``None`` selects the
+        full l-major layout, repeating each degree over its 2l+1 orders.
+    axis : int
+        Degree axis in ``values``.
+    scalar : bool, default True
+        Whether the input and output contain the l=0 component.
+
+    Returns
+    -------
+    Array
+        Features expanded along the coefficient axis. Contiguous slices and
+        broadcasts express the repeated blocks directly, so their adjoints
+        reduce those blocks without indexed scatter operations.
+    """
+    xp = array_api_compat.array_namespace(values)
+    first_degree = 0 if scalar else 1
+
+    def degree_slice(start: int, stop: int) -> Any:
+        key = [slice(None)] * values.ndim
+        key[axis] = slice(start - first_degree, stop - first_degree)
+        return values[tuple(key)]
+
+    if mmax is not None:
+        blocks = [values]
+        for order in range(1, mmax + 1):
+            block = degree_slice(order, lmax + 1)
+            blocks.extend((block, block))
+    else:
+        blocks = []
+        for degree in range(first_degree, lmax + 1):
+            shape = list(values.shape)
+            shape[axis] = 2 * degree + 1
+            blocks.append(xp.broadcast_to(degree_slice(degree, degree + 1), shape))
+    return xp.concat(blocks, axis=axis) if blocks else values
+
+
 def build_rotate_inv_rescale(
     lmax: int,
     mmax: int,

@@ -108,8 +108,6 @@ _DPA4C_BRIDGED_CONFIG = {
     **_DPA4C_CONFIG,
     "atom_exclude_types": [2],
     "bridging_method": "zbl",
-    "bridging_r_inner": 0.5,
-    "bridging_r_outer": 0.8,
 }
 
 # Two frames of a water-like box. The second frame pads its last slot with a
@@ -531,7 +529,7 @@ class TestDPA4CEmbedding:
             bridged, self.bridged_params, os.path.join(tmp_path, "bridged.pt")
         )
         # A jittered cubic lattice holding every type, whose pairs all lie
-        # beyond the bridging window.
+        # beyond the data edges of the contact clamp.
         grid = np.stack(np.meshgrid(*(np.arange(2),) * 3, indexing="ij"), axis=-1)
         jitter = np.random.default_rng(1).uniform(-0.3, 0.3, (8, 3))
         self.coord = ((grid.reshape(8, 3) + 0.5) * 3.0 + jitter).reshape(1, 8, 3)
@@ -578,9 +576,10 @@ class TestDPA4CEmbedding:
     def test_bridged_model_takes_the_learned_child(self) -> None:
         """A bridged composition reports the embeddings of its learned child.
 
-        Beyond the bridging window the learned child evaluates the plain
-        model, so the per-atom embeddings agree, and the atom type the
-        composition excludes leaves the structural feature only.
+        At and beyond its data edges the contact clamp of the learned child
+        is the identity, so the child evaluates the plain model and the
+        per-atom embeddings agree, and the atom type the composition excludes
+        leaves the structural feature only.
         """
         plain = DeepPot(self.plain_path).eval_embedding(
             self.coord, self.cell, self.atype, dtype="fp64"
@@ -701,7 +700,7 @@ def test_multiblock_canonical_metadata_keeps_the_embedding_graph_generic(
     # Canonical archive metadata is sufficient to exercise the CPU embedding
     # path: no compiled energy/force entry point is called by this API.
     dp.deep_eval.metadata.update(
-        lower_input_kind="dpa4c_canonical", has_message_passing=True
+        lower_input_kind="dpa_canonical", has_message_passing=True
     )
     actual = dp.eval_embedding(_COORDS[:1], _CELLS[:1], _ATYPES[0])
     # The fp32 graph reductions need not be bitwise repeatable on CUDA.

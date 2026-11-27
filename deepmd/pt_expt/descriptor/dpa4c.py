@@ -15,10 +15,8 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingClamp as BridgingClampDP
 from deepmd.dpmodel.descriptor.dpa4c import DescrptDPA4C as DescrptDPA4CDP
 from deepmd.pt_expt.common import (
-    register_dpmodel_mapping,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -28,6 +26,9 @@ from deepmd.pt_expt.kernels.utils import (
     fused_energy_force_enabled,
     fused_operators_enabled,
     use_amp_infer,
+)
+from deepmd.pt_expt.utils.canonical_graph import (
+    BorderPlan,
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
@@ -84,21 +85,6 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
     return module
 
 
-# The distance clamp of the bridging window is parameter-free (the two window
-# fractions only, no serialize()) and belongs to DPA4C alone; rebuild it fresh
-# from the stored constructor arguments.
-@torch_module
-class BridgingClamp(BridgingClampDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-register_dpmodel_mapping(
-    BridgingClampDP,
-    lambda v: BridgingClamp(v.f_inner, v.f_outer),
-)
-
-
 @BaseDescriptor.register("dpa4c")
 @torch_module
 class DescrptDPA4C(DescrptDPA4CDP):
@@ -119,11 +105,6 @@ class DescrptDPA4C(DescrptDPA4CDP):
     """
 
     _update_sel_cls = UpdateSel
-
-    #: The per-element length scales of the bridging window follow from
-    #: ``type_map``, which the constructor resolves on every load, so the
-    #: buffer they land in stays out of the state dict.
-    CONFIG_DERIVED_ARRAYS = ("contact_radius",)
 
     def adam_route_patterns(self) -> list[str]:
         """
@@ -158,6 +139,26 @@ class DescrptDPA4C(DescrptDPA4CDP):
         # once, so a traced graph cannot depend on a later mutation.
         self.use_amp_infer = use_amp_infer()
         self._apply_autocast_policy()
+        self.register_load_state_dict_post_hook(self._refresh_contact_edges)
+
+    def _refresh_contact_edges(
+        self, module: torch.nn.Module, incompatible_keys: Any
+    ) -> None:
+        """Refresh the frozen copy of the contact edges once a state load ends.
+
+        The clamp loads after the tensors of its parent, so the copy of its edges
+        that the kernels read is rebuilt after the whole subtree is loaded.
+        """
+        if not self.compress:
+            return
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+            contact_edges_input,
+        )
+
+        with torch.inference_mode(False), torch.no_grad():
+            self._store_compression_buffer(
+                "contact_edges", contact_edges_input(self), persistent=False
+            )
 
     def _load_from_state_dict(
         self,
@@ -363,14 +364,16 @@ class DescrptDPA4C(DescrptDPA4CDP):
     # === Backend primitives ===
 
     def exchange_ghost_rows(
-        self, values: torch.Tensor, comm_dict: dict[str, torch.Tensor]
+        self,
+        values: torch.Tensor,
+        comm_dict: dict[str, torch.Tensor] | BorderPlan,
     ) -> torch.Tensor:
-        """Refresh the ghost rows of a node feature through ``border_op``.
+        """Refresh the ghost rows of a node feature from their owner ranks.
 
         The copy from owner to ghost is exact: a ghost is a translated image of
         its owner, every rank describes the equivariant features in the same
-        Cartesian frame, and a translation leaves them unchanged.
-        ``border_op`` has a registered backward, which reverse-communicates the
+        Cartesian frame, and a translation leaves them unchanged. Both
+        exchanges have a registered backward, which reverse-communicates the
         cotangent of the ghost rows to their owners.
 
         Parameters
@@ -378,61 +381,30 @@ class DescrptDPA4C(DescrptDPA4CDP):
         values
             Node features with shape ``(N, W)``, the owned rows leading.
         comm_dict
-            Border-exchange tensors of the domain decomposition.
+            Border plan that a lower carrying the exchange in its main program
+            takes, or the ``border_op`` tensors of the domain decomposition.
 
         Returns
         -------
         torch.Tensor
             ``values`` with every ghost row replaced by its owner's row.
         """
-        # border_op exchanges whole rows by raw pointer arithmetic, so the
+        # Both exchanges move whole rows by raw pointer arithmetic, so the
         # buffer must be contiguous.
+        values = values.contiguous()
+        if isinstance(comm_dict, BorderPlan):
+            return comm_dict.exchange(values)
         return torch.ops.deepmd_export.border_op(
             comm_dict["send_list"],
             comm_dict["send_proc"],
             comm_dict["recv_proc"],
             comm_dict["send_num"],
             comm_dict["recv_num"],
-            values.contiguous(),
+            values,
             comm_dict["communicator"],
             comm_dict["nlocal"],
             comm_dict["nghost"],
         )
-
-    def complete_node_partials(
-        self, partials: torch.Tensor, comm_dict: dict[str, torch.Tensor]
-    ) -> torch.Tensor:
-        """Sum ghost partials into their owners, then broadcast the totals back.
-
-        ``border_op_backward`` accumulates each ghost row into its owner
-        across ranks; ``border_op`` refills the ghost rows with the completed
-        owner values. The two ops are transposes of one another and both
-        carry autograd, so the gradient of the source gate crosses ranks.
-
-        Parameters
-        ----------
-        partials
-            Per-node partial sums with shape ``(N, W)``.
-        comm_dict
-            Border-exchange tensors of the domain decomposition.
-
-        Returns
-        -------
-        torch.Tensor
-            Completed sums on every owned and ghost row.
-        """
-        arguments = (
-            comm_dict["send_list"],
-            comm_dict["send_proc"],
-            comm_dict["recv_proc"],
-            comm_dict["send_num"],
-            comm_dict["recv_num"],
-        )
-        tail = (comm_dict["communicator"], comm_dict["nlocal"], comm_dict["nghost"])
-        completed = torch.ops.deepmd_export.border_op_backward(
-            *arguments, partials.contiguous(), *tail
-        )
-        return torch.ops.deepmd_export.border_op(*arguments, completed, *tail)
 
     def gather_rows(
         self,
@@ -516,9 +488,11 @@ class DescrptDPA4C(DescrptDPA4CDP):
         shared_level
             Sharing level. Only level zero is supported.
         model_prob
-            Model sampling probability accepted by the common ABI; unused.
+            Model sampling probability accepted by the common ABI; it weights
+            the envelope mass this replica measured in the merged floor.
         resume
-            Checkpoint-restoration flag accepted by the common ABI; unused.
+            Checkpoint-restoration flag accepted by the common ABI; a resumed
+            model already carries the merged mass.
 
         Raises
         ------
@@ -575,40 +549,30 @@ class DescrptDPA4C(DescrptDPA4CDP):
         layout keeps ``int32``; every other artifact is the ``float32`` the
         kernel consumes.
 
-        The operator scalars are that metadata followed by the two fractions of
-        the bridging window, from which the kernels resolve the switch on the
-        edge envelope and the clamped length the table reads after scaling
-        them by the length scale of each pair. The fractions are descriptor
-        configuration rather than table metadata, and equal fractions denote a
-        descriptor without a window.
-
-        The per-element length scales those fractions are measured against join
-        the artifacts in the same ``float32`` layout, so that an operator call
-        hands the kernels a frozen table instead of recasting one. They follow
-        ``type_map``, which the constructor resolves on every load, so the
+        The operator scalars are that metadata followed by the inner fraction of
+        the contact clamp, which is zero for a descriptor without one. The data
+        edges of the clamp join the artifacts as one ``float32`` entry per
+        ordered type pair, empty without a clamp, so that an operator call hands
+        the kernels a frozen table instead of recasting one. They are runtime
+        state of the descriptor rather than weights of the snapshot, so the
         buffer they land in stays out of the state dict.
         """
         from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
-            contact_radius_input,
+            contact_edges_input,
         )
 
         device = self.stddev.device
         info = torch.as_tensor(artifacts["info"])
-        window = (
-            (0.0, 0.0)
-            if self.bridging_switch is None
-            else (self.bridging_f_inner, self.bridging_f_outer)
-        )
         self._compression_scalars = (
             *(float(value) for value in info.detach().cpu().tolist()),
-            *window,
+            0.0 if self.contact_clamp is None else float(self.contact_clamp.inner),
         )
         for name in self._COMPRESSION_BUFFER_NAMES:
             dtype = self._COMPRESSION_BUFFER_DTYPES.get(name, torch.float32)
             value = artifacts[name].to(device=device, dtype=dtype).contiguous()
             self._store_compression_buffer(name, value)
         self._store_compression_buffer(
-            "contact_radius", contact_radius_input(self), persistent=False
+            "contact_edges", contact_edges_input(self), persistent=False
         )
         self.compress = True
 
@@ -806,8 +770,9 @@ class DescrptDPA4C(DescrptDPA4CDP):
         Returns ``None`` when the model or graph cannot use the level-two CUDA
         path, allowing the caller to retain the generic autograd lower. The
         trailing output is the magnetic force, empty for a spin-free model.
-        ``pair_table`` carries the analytical pair potential of a bridged
-        model, which the backward edge scan evaluates alongside the descriptor.
+        ``pair_table`` carries the truncated analytical pair potential of a
+        bridged model, which the backward edge scan evaluates alongside the
+        descriptor.
         """
         if (
             self.training

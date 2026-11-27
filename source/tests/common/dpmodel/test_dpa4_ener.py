@@ -35,17 +35,9 @@ def make_inputs(nf=2, nloc=5, dim=12, ntypes=2, seed=0):
 
 
 class TestGuards:
-    def test_dim_case_embd_not_implemented(self) -> None:
-        with pytest.raises(NotImplementedError, match="dim_case_embd"):
-            make_fitting(dim_case_embd=2)
-
-    def test_case_film_embd_not_implemented(self) -> None:
-        with pytest.raises(NotImplementedError, match="case_film_embd"):
-            make_fitting(case_film_embd=True)
-
-    def test_glu_net_case_film_not_implemented(self) -> None:
-        with pytest.raises(NotImplementedError, match="case_film_embd"):
-            GLUFittingNet(8, 1, [16], dim_case_embd=2, case_film_embd=True)
+    def test_case_film_without_case_dimension_is_inactive(self) -> None:
+        fitting = make_fitting(case_film_embd=True)
+        assert not fitting.case_film_embd
 
     def test_negative_neuron_raises(self) -> None:
         with pytest.raises(ValueError, match="neuron"):
@@ -97,6 +89,78 @@ class TestAutoNeuron:
 
 
 class TestRoundtrip:
+    @pytest.mark.parametrize("trainable", [False, True, [True, False], [False, True]])
+    def test_glu_trainability_roundtrip(self, trainable: bool | list[bool]) -> None:
+        """The serialized GLU policy controls every affine map."""
+        net = GLUFittingNet(2, 1, [3], trainable=trainable, seed=3)
+        expected = all(trainable) if isinstance(trainable, list) else trainable
+        record = net.serialize()
+        assert record["trainable"] is expected
+        restored = GLUFittingNet.deserialize(record)
+        assert all(
+            layer.trainable is expected
+            for layer in [*restored.hidden_layers, restored.output_layer]
+        )
+
+    def test_standalone_legacy_glu_defaults_to_trainable(self) -> None:
+        """A standalone legacy record has no outer freeze policy to inherit."""
+        record = GLUFittingNet(2, 1, [3], trainable=False, seed=3).serialize()
+        record.pop("trainable")
+        restored = GLUFittingNet.deserialize(record)
+        assert restored.trainable
+
+    @pytest.mark.parametrize("mixed_types", [False, True])
+    def test_legacy_collection_inherits_freezing_without_mutating_record(
+        self,
+        mixed_types: bool,
+    ) -> None:
+        fitting = make_fitting(trainable=[True, False], mixed_types=mixed_types)
+        record = fitting.serialize()
+        for network in record["nets"]["networks"]:
+            network.pop("trainable")
+        restored = SeZMEnergyFittingNet.deserialize(record)
+        assert all(not network.trainable for network in restored.nets.networks)
+        assert all("trainable" not in network for network in record["nets"]["networks"])
+
+    @pytest.mark.parametrize("film", [False, True])
+    def test_case_embedding_roundtrip(self, film: bool) -> None:
+        fitting = make_fitting(dim_case_embd=2, case_film_embd=film)
+        fitting.set_case_embd(1)
+        descriptor, atype = make_inputs()
+        if film:
+            # The projectors start at zero, where the modulation is the
+            # identity; random projectors make the round trip carry them.
+            plain = fitting(descriptor, atype)["energy"]
+            random = np.random.default_rng(19)
+            for weight in fitting.nets[()].case_film.projectors:
+                weight[:] = random.normal(size=weight.shape)
+            assert np.abs(fitting(descriptor, atype)["energy"] - plain).max() > 1e-6
+        restored = SeZMEnergyFittingNet.deserialize(fitting.serialize())
+        np.testing.assert_array_equal(
+            fitting(descriptor, atype)["energy"],
+            restored(descriptor, atype)["energy"],
+        )
+
+    @pytest.mark.parametrize("film", [False, True])
+    @pytest.mark.parametrize("neuron", [[], [8], [8, 4]])
+    def test_fold_case_embedding_preserves_outputs(
+        self, film: bool, neuron: list[int]
+    ) -> None:
+        fitting = make_fitting(dim_case_embd=2, case_film_embd=film, neuron=neuron)
+        fitting.set_case_embd(1)
+        if film:
+            random = np.random.default_rng(17)
+            for weight in fitting.nets[()].case_film.projectors:
+                weight[:] = random.normal(size=weight.shape)
+        descriptor, atype = make_inputs()
+        expected = fitting(descriptor, atype)["energy"]
+        fitting.fold_case_embedding()
+        assert fitting.dim_case_embd == 0
+        restored = SeZMEnergyFittingNet.deserialize(fitting.serialize())
+        np.testing.assert_allclose(
+            restored(descriptor, atype)["energy"], expected, rtol=1e-12, atol=1e-12
+        )
+
     @pytest.mark.parametrize("bias_out", [False, True])  # output-layer bias
     @pytest.mark.parametrize("resnet_dt", [False, True])  # serialized flag only
     @pytest.mark.parametrize(

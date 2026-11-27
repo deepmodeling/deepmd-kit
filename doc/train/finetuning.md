@@ -68,10 +68,10 @@ $ dp --pt train input.json --finetune pretrained.pt
 ```
 
 In this case, it is important to note that the fitting net weights, except the energy bias, will be automatically set to those in the pre-trained model. This default setting is consistent with the implementations in TensorFlow.
-If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--model-branch` parameter to "RANDOM":
+If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--task` parameter (aliases: `--head`, `--model-branch`) to "RANDOM":
 
 ```bash
-$ dp --pt train input.json --finetune pretrained.pt --model-branch RANDOM
+$ dp --pt train input.json --finetune pretrained.pt --task RANDOM
 ```
 
 The model section in input.json **must be the same as that in the pretrained model**,
@@ -91,6 +91,10 @@ The model section will be overwritten (except the `type_map` subsection) by that
         "fitting_net" : {}
     }
 ```
+
+With or without `--use-pretrain-script`, a descriptor with `add_chg_spin_ebd`
+uses the `default_chg_spin` set in input.json; an unset one takes the value of
+the pretrained model.
 
 #### Initializing native spin from a spin-free checkpoint
 
@@ -122,7 +126,7 @@ For fine-tuning using this multitask pre-trained model (`multitask_pretrained.pt
 one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask_pretrained.pt` for fine-tuning with the following command:
 
 ```bash
-$ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHOOSEN_BRANCH
+$ dp --pt train input.json --finetune multitask_pretrained.pt --task CHOOSEN_BRANCH
 ```
 
 > [!NOTE]
@@ -133,7 +137,7 @@ $ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHO
 > ```
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
-If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
+If `--task` is not set or set to "RANDOM", a randomly initialized fitting net will be used.
 
 ### Multi-task fine-tuning
 
@@ -233,10 +237,10 @@ $ dp --pd train input.json --finetune pretrained.pd
 ```
 
 In this case, it is important to note that the fitting net weights, except the energy bias, will be automatically set to those in the pre-trained model. This default setting is consistent with the implementations in TensorFlow.
-If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--model-branch` parameter to "RANDOM":
+If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--task` parameter (aliases: `--head`, `--model-branch`) to "RANDOM":
 
 ```bash
-$ dp --pd train input.json --finetune pretrained.pd --model-branch RANDOM
+$ dp --pd train input.json --finetune pretrained.pd --task RANDOM
 ```
 
 The model section in input.json **must be the same as that in the pretrained model**.
@@ -266,7 +270,7 @@ For fine-tuning using this multitask pre-trained model (`multitask_pretrained.pd
 one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask_pretrained.pd` for fine-tuning with the following command:
 
 ```bash
-$ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHOOSEN_BRANCH
+$ dp --pd train input.json --finetune multitask_pretrained.pd --task CHOOSEN_BRANCH
 ```
 
 > [!NOTE]
@@ -277,7 +281,7 @@ $ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHO
 > ```
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
-If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
+If `--task` is not set or set to "RANDOM", a randomly initialized fitting net will be used.
 
 ## TensorFlow 2 Implementation {{ tensorflow_icon }}
 
@@ -292,7 +296,7 @@ The pre-trained model is a `.tf2` training checkpoint directory (or its
 checkpoint prefix). A frozen `.savedmodeltf` export cannot be fine-tuned,
 because it does not carry the structured variable metadata required to restore
 the model. The same command-line options as the legacy TensorFlow backend apply:
-`--model-branch` selects a branch in a multi-task pre-trained model, and
+`--task` (aliases: `--head`, `--model-branch`) selects a branch in a multi-task pre-trained model, and
 `--use-pretrain-script` copies the descriptor/fitting parameters from the
 pre-trained model.
 
@@ -314,3 +318,62 @@ regular PyTorch-Exportable training. `--use-pretrain-script` requires the
 pre-trained model to embed full model parameters: a `.pte` file frozen with
 older code that lacks `model_def_script` must be re-frozen before it can be
 used with that option.
+
+### Continuing a single-task model in a multi-task fine-tuning
+
+Set `model.task` in the input of a single-task model to name its task. When
+that model is the pretrained model of a multi-task fine-tuning, the branch of
+`model_dict` whose key is that name continues it, and every other branch can
+start from it by setting `finetune_head` to the name. The new model does not
+need a branch with that name. Without `model.task` the task is named
+`Default`.
+
+### New tasks of an MoE model
+
+A branch whose key is no pretrained task and that sets no `finetune_head`, or
+sets it to `RANDOM`, is a new task. In an
+[MoE model](../model/dpa4.md#mixture-of-experts-moe), a new task starts from
+the weights shared by the pretrained tasks, with no weights of a task of its
+own yet. An MoE fitting network (`fitting_net.moe`) is shared by the tasks, so
+the new task takes it from the pretrained model; a fitting network without MoE
+is initialized anew, as for any new branch.
+
+The elements with weights of their own are those of the pretrained model, so
+`moe.element` of the fine-tuned model names the same elements in the same
+order.
+
+### Adding MoE to a model trained without it
+
+A model trained without MoE, or a model merged from an MoE model, has no
+weights of a task or of an element. Writing a `moe` section in the input of a
+fine-tuning or an initialization adds them, and every one of them starts at
+zero, so the training begins at the model it started from:
+
+```json
+{
+  "model": {
+    "preset": "dpa4.5-mini-v20261111",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "moe": {}
+    },
+    "fitting_net": {
+      "moe": {}
+    }
+  }
+}
+```
+
+The same holds for a model that already has MoE: adding `element` or more
+experts gives the new weights the same zero start. Wherever both models have a
+weight of the same name, the expert count and the elements have to agree,
+since MoE adds weights to a model and never removes them.
+
+`--init-model` takes a checkpoint without MoE as the start of an MoE model,
+which keeps the function of the checkpoint at the first step. `--finetune`
+does the same and adjusts the output bias to the new data. With
+`--use-pretrain-script`, a `moe` section written in the input is kept when the
+pretrained model has none; a pretrained model that has MoE keeps its own.

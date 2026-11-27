@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // C++ model-level pair-exclusion seam for the native-spin graph route
-// (DeepSpinPTExpt).  Twin of test_deeppot_dpa1_pairexcl_ptexpt.cc, which
+// (NativeSpinPTExpt).  Twin of test_deeppot_dpa1_pairexcl_ptexpt.cc, which
 // covers the non-spin DeepPotPTExpt seam.
 //
 // Model-level exclusion is a BUILD-time transform owned by the neighbor-graph
 // construction (decision #18/A4): the exported .pt2 lower consumes a
 // pre-excluded ``edge_mask`` and never re-applies it, so every external feeder
-// must fold it in.  ``DeepSpinPTExpt`` therefore parses ``pair_exclude_types``
-// from metadata once in ``init`` and calls ``applyPairExclusion`` in BOTH
-// graph branches (cached-nlist and standalone) -- these tests are what proves
-// those calls are load-bearing.
+// must fold it in.  ``NativeSpinPTExpt`` therefore parses
+// ``pair_exclude_types`` from metadata once in ``init`` and calls
+// ``applyPairExclusion`` in ``run_graph_payload``, which BOTH graph branches
+// (cached-nlist and standalone) enter -- these tests are what proves that
+// call is load-bearing.
 //
 // The fixture (source/tests/infer/gen_dpa4_spin.py) is deliberately
 // anti-vacuous: ``deeppot_dpa4_spin_pairexcl.pt2`` carries
@@ -34,7 +35,7 @@
 #include <vector>
 
 #include "DeepSpin.h"
-#include "DeepSpinPTExpt.h"
+#include "NativeSpinPTExpt.h"
 #include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
@@ -89,7 +90,7 @@ class TestInferDeepSpinDpa4PairExclPtExpt : public ::testing::Test {
   deepmd::DeepSpin dp_base;
 
   void SetUp() override {
-#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_NATIVE_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     std::ifstream excl_file(kExclModel);
@@ -128,8 +129,8 @@ class TestInferDeepSpinDpa4PairExclPtExpt : public ::testing::Test {
 
 TYPED_TEST_SUITE(TestInferDeepSpinDpa4PairExclPtExpt, ValueTypes);
 
-// Standalone branch: DeepSpinPTExpt::compute -> buildGraphTensors ->
-// applyPairExclusion.
+// Standalone branch: NativeSpinPTExpt::compute_frame -> buildGraphTensors
+// -> run_graph_payload -> applyPairExclusion.
 TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
@@ -150,7 +151,7 @@ TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, cpu_build_nlist) {
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON)
-      << "model-level pair_exclude_types is dropped on the DeepSpinPTExpt "
+      << "model-level pair_exclude_types is dropped on the NativeSpinPTExpt "
          "standalone graph seam";
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
@@ -162,8 +163,8 @@ TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, cpu_build_nlist) {
   }
 }
 
-// Cached-nlist (LAMMPS) branch: DeepSpinPTExpt::compute_inner ->
-// compactEdgeTensors -> applyPairExclusion.
+// Cached-nlist (LAMMPS) branch: NativeSpinPTExpt::compute ->
+// compactEdgeTensors -> run_graph_payload -> applyPairExclusion.
 TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, cpu_lmp_nlist) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
@@ -192,7 +193,7 @@ TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, cpu_lmp_nlist) {
                         0, inlist, 0);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON)
-      << "model-level pair_exclude_types is dropped on the DeepSpinPTExpt "
+      << "model-level pair_exclude_types is dropped on the NativeSpinPTExpt "
          "cached-nlist graph seam";
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);

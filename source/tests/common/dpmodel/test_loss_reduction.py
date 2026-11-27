@@ -61,8 +61,8 @@ class TestMaskedAtomMean:
     def test_torch_autograd_and_matches_numpy(self) -> None:
         elem_np = np.random.default_rng(1).random((2, 4, 3))
         maskf_np = np.array([[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0]])
-        elem = torch.tensor(elem_np, requires_grad=True)
-        maskf = torch.tensor(maskf_np)
+        elem = torch.tensor(elem_np, requires_grad=True, device="cpu")
+        maskf = torch.tensor(maskf_np, device="cpu")
         out = masked_atom_mean(elem, maskf, 3)
         out.backward()
         assert elem.grad is not None
@@ -82,8 +82,8 @@ class TestMaskedAtomMean:
     def test_all_padding_batch_torch_grad_is_not_nan(self) -> None:
         # the guard must keep both the value and the autograd gradient finite
         elem_np = np.random.default_rng(4).random((2, 4, 3))
-        elem = torch.tensor(elem_np, requires_grad=True)
-        maskf = torch.zeros((2, 4), dtype=torch.float64)
+        elem = torch.tensor(elem_np, requires_grad=True, device="cpu")
+        maskf = torch.zeros((2, 4), dtype=torch.float64, device="cpu")
         out = masked_atom_mean(elem, maskf, 3)
         out.backward()
         assert torch.isfinite(out).item()
@@ -105,13 +105,13 @@ class TestPerFrameComponentMean:
 
     def test_torch_bit_identical(self) -> None:
         err_np = np.random.default_rng(3).random((3, 9))
-        got = per_frame_component_mean(torch.tensor(err_np))
-        ref = torch.mean(torch.tensor(err_np).reshape(3, -1), dim=-1)
+        got = per_frame_component_mean(torch.tensor(err_np, device="cpu"))
+        ref = torch.mean(torch.tensor(err_np, device="cpu").reshape(3, -1), dim=-1)
         assert torch.equal(got, ref)
 
     def test_torch_autograd(self) -> None:
         err_np = np.random.default_rng(4).random((3, 9))
-        err = torch.tensor(err_np, requires_grad=True)
+        err = torch.tensor(err_np, requires_grad=True, device="cpu")
         out = per_frame_component_mean(err)
         out.sum().backward()
         assert err.grad is not None
@@ -130,6 +130,6 @@ class TestMaskedAtomNum:
 
     def test_torch_bit_identical_float32(self) -> None:
         mask_np = np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
-        got = masked_atom_num(torch.tensor(mask_np), 3, torch.float32)
-        ref = torch.tensor(mask_np).sum(-1).float().mean()
+        got = masked_atom_num(torch.tensor(mask_np, device="cpu"), 3, torch.float32)
+        ref = torch.tensor(mask_np, device="cpu").sum(-1).float().mean()
         assert got.item() == ref.item()

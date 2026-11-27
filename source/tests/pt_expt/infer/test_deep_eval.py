@@ -1291,6 +1291,60 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
             )
 
 
+@unittest.skipUnless(torch.cuda.is_available(), "requires a visible CUDA device")
+class TestDeepEvalCpuPackageOnCuda(unittest.TestCase):
+    """A ``.pt2`` compiled for the CPU runs on the CPU beside a CUDA device."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        ds = DescrptSeA(4.0, 0.5, [8, 6])
+        ft = EnergyFittingNet(
+            2, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=GLOBAL_SEED
+        )
+        cls.model = EnergyModel(ds, ft, type_map=["foo", "bar"]).to(torch.float64)
+        cls.model.eval()
+        model_data = {"model": cls.model.serialize()}
+        cls.pt2 = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.pt2.close()
+        cls.pte = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.pte.close()
+        # Freezing compiles for the device of the environment, here the CPU.
+        torch.set_default_device(None)
+        try:
+            with mock.patch("deepmd.pt_expt.utils.env.DEVICE", torch.device("cpu")):
+                deserialize_to_file(cls.pt2.name, model_data, do_atomic_virial=True)
+        finally:
+            torch.set_default_device("cuda:9999999")
+        deserialize_to_file(cls.pte.name, model_data, do_atomic_virial=True)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.unlink(cls.pt2.name)
+        os.unlink(cls.pte.name)
+
+    def test_eval_matches_reference(self) -> None:
+        """The CPU package evaluates as the exported program on the CUDA device."""
+        dp = DeepPot(self.pt2.name)
+        self.assertEqual(dp.deep_eval._device.type, "cpu")
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coords = rng.random((1, 5, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        reference = DeepPot(self.pte.name)
+        actual = dp.eval(coords, cells, atom_types, atomic=True)
+        expected = reference.eval(coords, cells, atom_types, atomic=True)
+        for value, ref in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, ref, rtol=1e-10, atol=1e-10)
+        # The deserialized model, which the introspection routes evaluate,
+        # follows the package to the CPU.
+        np.testing.assert_allclose(
+            dp.eval_descriptor(coords, cells, atom_types),
+            reference.eval_descriptor(coords, cells, atom_types),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+
+
 class TestDeepEvalEnerDefaultFparam(unittest.TestCase):
     """Test .pte inference with default fparam (non-spin model)."""
 
@@ -2696,7 +2750,7 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
 class TestCanonicalChargeStateRoutes(TestCompressedChargeStateRoutes):
     """Canonical archives retain charge folding and both graph input paths."""
 
-    lower_kind = "dpa4c_canonical"
+    lower_kind = "dpa_canonical"
 
     def test_canonical_inputs_match_eager(self) -> None:
         from deepmd.pt.utils.nv_nlist import (

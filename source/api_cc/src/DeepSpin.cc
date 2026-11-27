@@ -514,6 +514,10 @@ void DeepSpinBackend::compute_canonical_graph_gpu(
 
 bool DeepSpinBackend::uses_canonical_graph_inference() const { return false; }
 
+bool DeepSpinBackend::canonical_graph_requires_source_csr() const {
+  return false;
+}
+
 bool DeepSpinBackend::canonical_graph_requires_halo() const { return false; }
 
 bool DeepSpinBackend::uses_native_spin_scheme() const { return false; }
@@ -551,6 +555,10 @@ void DeepSpin::compute_canonical_graph_gpu(
 
 bool DeepSpin::uses_canonical_graph_inference() const {
   return dp->uses_canonical_graph_inference();
+}
+
+bool DeepSpin::canonical_graph_requires_source_csr() const {
+  return dp->canonical_graph_requires_source_csr();
 }
 
 bool DeepSpin::canonical_graph_requires_halo() const {

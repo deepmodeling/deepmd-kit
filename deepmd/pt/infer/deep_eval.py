@@ -50,6 +50,7 @@ from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
 from deepmd.pt.model.model import (
+    SeZMNativeSpinModel,
     get_model,
 )
 from deepmd.pt.model.model.transform_output import (
@@ -90,6 +91,9 @@ from deepmd.utils.econf_embd import (
 )
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
+)
+from deepmd.utils.pt_checkpoint import (
+    select_checkpoint_head,
 )
 
 if TYPE_CHECKING:
@@ -215,14 +219,8 @@ class DeepEval(DeepEvalBackend):
                 )
                 head = model_alias_dict[head]
 
-                self.input_param = self.input_param["model_dict"][head]
-                state_dict_head = {"_extra_state": state_dict["_extra_state"]}
-                for item in state_dict:
-                    if f"model.{head}." in item:
-                        state_dict_head[
-                            item.replace(f"model.{head}.", "model.Default.")
-                        ] = state_dict[item].clone()
-                state_dict = state_dict_head
+                state_dict = select_checkpoint_head(state_dict, head)
+                self.input_param = state_dict["_extra_state"]["model_params"]
             model = get_model(self.input_param).to(DEVICE)
             disable_jit = no_jit or _is_sezm_model_params(self.input_param)
             if not self.input_param.get("hessian_mode") and not disable_jit:
@@ -230,6 +228,16 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
             if missing:
+                if isinstance(model, SeZMNativeSpinModel):
+                    missing_weights = set(missing).intersection(
+                        name for name, _ in self.dp.named_parameters()
+                    )
+                    if missing_weights:
+                        raise ValueError(
+                            "Cannot evaluate a native-spin DPA4 checkpoint with missing "
+                            f"weights: {', '.join(sorted(missing_weights))}. Models trained "
+                            "with the previous native-spin architecture require retraining."
+                        )
                 log.warning(
                     "Checkpoint loaded with missing keys (likely from an older "
                     "version): %s",

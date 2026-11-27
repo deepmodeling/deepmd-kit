@@ -14,6 +14,7 @@ from deepmd.main import (
     main,
 )
 from deepmd.pt_expt.entrypoints.main import (
+    _update_changed_model_tensors,
     get_trainer,
 )
 from deepmd.pt_expt.model.get_model import (
@@ -27,6 +28,9 @@ from deepmd.pt_expt.train.wrapper import (
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,
+)
+from deepmd.pt_expt.utils.multi_task import (
+    preprocess_shared_params,
 )
 from deepmd.pt_expt.utils.stat import (
     make_stat_input,
@@ -125,6 +129,35 @@ def _make_config(data_dir: str) -> dict:
             "save_freq": 1,
         },
     }
+
+
+def _make_multitask_config(data_dir: str) -> dict:
+    """Split the single-task config into two branches that share its descriptor."""
+    config = _make_config(data_dir)
+    model = config.pop("model")
+    loss = config.pop("loss")
+    training = config["training"]
+    data = {key: training.pop(key) for key in ("training_data", "validation_data")}
+    branches = ("model_1", "model_2")
+    config["model"] = {
+        "shared_dict": {
+            "type_map": model["type_map"],
+            "descriptor": model["descriptor"],
+        },
+        "model_dict": {
+            branch: {
+                "type_map": "type_map",
+                "descriptor": "descriptor",
+                "fitting_net": deepcopy(model["fitting_net"]),
+                "data_stat_nbatch": 1,
+            }
+            for branch in branches
+        },
+    }
+    config["loss_dict"] = {branch: deepcopy(loss) for branch in branches}
+    training["model_prob"] = dict.fromkeys(branches, 1.0)
+    training["data_dict"] = {branch: deepcopy(data) for branch in branches}
+    return config
 
 
 def _make_subset_dataset(src_system: str, dst_system: str, n_frames: int) -> None:
@@ -605,6 +638,121 @@ class TestChangeBiasFittingStats(unittest.TestCase):
         )
 
         fitting_net.compute_input_stats.assert_not_called()
+
+
+class TestChangeBiasMultiTask(unittest.TestCase):
+    """Test dp change-bias on one branch of a multi-task checkpoint."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        full_data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(full_data_dir):
+            raise unittest.SkipTest(f"Example data not found: {full_data_dir}")
+        cls.tmpdir = tempfile.mkdtemp()
+        cls.old_cwd = os.getcwd()
+        data_dir = os.path.join(cls.tmpdir, "data")
+        _make_subset_dataset(
+            src_system=os.path.join(full_data_dir, "data_0"),
+            dst_system=os.path.join(data_dir, "data_0"),
+            n_frames=5,
+        )
+        cls.data_file = os.path.join(data_dir, "data_0")
+        os.chdir(cls.tmpdir)
+
+        config = _make_multitask_config(data_dir)
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+        config["training"]["save_ckpt"] = "model.ckpt"
+        get_trainer(deepcopy(config), shared_links=shared_links).run()
+        cls.model_path = os.path.join(cls.tmpdir, "model.ckpt.pt")
+        cls.state = cls._load_state(cls.model_path)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.chdir(cls.old_cwd)
+        shutil.rmtree(cls.tmpdir)
+
+    @staticmethod
+    def _load_state(path: str) -> dict:
+        return torch.load(path, map_location=DEVICE, weights_only=True)["model"]
+
+    @staticmethod
+    def _shared_storage(state: dict) -> list[list[str]]:
+        """The groups of tensors of a state that share their storage."""
+        groups: dict[int, list[str]] = {}
+        for key, value in state.items():
+            if torch.is_tensor(value):
+                groups.setdefault(value.untyped_storage().data_ptr(), []).append(key)
+        return sorted(sorted(keys) for keys in groups.values() if len(keys) > 1)
+
+    def _changed(self, output_path: str) -> dict[str, torch.Tensor]:
+        """The tensors that a changed checkpoint does not share with the input."""
+        updated = self._load_state(output_path)
+        self.assertEqual(set(updated), set(self.state))
+        self.assertEqual(updated["_extra_state"], self.state["_extra_state"])
+        # The branches keep the tensors they share.
+        shared = self._shared_storage(self.state)
+        self.assertTrue(shared)
+        self.assertEqual(self._shared_storage(updated), shared)
+        return {
+            key: value
+            for key, value in updated.items()
+            if key != "_extra_state" and not torch.equal(value, self.state[key])
+        }
+
+    def test_user_defined_bias_changes_one_branch(self) -> None:
+        output_path = os.path.join(self.tmpdir, "model_user_bias.pt")
+        user_bias = [0.1, 3.2]
+        run_dp(
+            f"dp --pt-expt change-bias {self.model_path} --task model_1 "
+            f"-b {' '.join(str(v) for v in user_bias)} -o {output_path}"
+        )
+        changed = self._changed(output_path)
+        self.assertEqual(list(changed), ["model.model_1.atomic_model.out_bias"])
+        np.testing.assert_allclose(
+            to_numpy(changed["model.model_1.atomic_model.out_bias"]).reshape(-1),
+            user_bias,
+        )
+
+    def test_data_changes_one_branch(self) -> None:
+        output_path = os.path.join(self.tmpdir, "model_data_bias.pt")
+        # ``--model-branch`` and ``--head`` are aliases of ``--task``.
+        run_dp(
+            f"dp --pt-expt change-bias {self.model_path} --model-branch model_2 "
+            f"-s {self.data_file} -o {output_path}"
+        )
+        changed = self._changed(output_path)
+        self.assertIn("model.model_2.atomic_model.out_bias", changed)
+        for key in changed:
+            self.assertTrue(key.startswith("model.model_2.atomic_model.out_"), key)
+
+    def test_branch_is_required(self) -> None:
+        output_path = os.path.join(self.tmpdir, "model_refused.pt")
+        for branch in ("", "--head model_3 "):
+            with self.assertRaisesRegex(ValueError, "--task"):
+                run_dp(
+                    f"dp --pt-expt change-bias {self.model_path} {branch}"
+                    f"-b 0.1 3.2 -o {output_path}"
+                )
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "a second device is needed")
+class TestChangeBiasAcrossDevices(unittest.TestCase):
+    def test_changed_tensors_reach_a_checkpoint_on_another_device(self) -> None:
+        """A model may hold tensors on another device than its checkpoint."""
+        checkpoint = {
+            "bias": torch.zeros(2, device="cuda"),
+            "flag": torch.ones(1, device="cuda"),
+        }
+        bias = checkpoint["bias"]
+        _update_changed_model_tensors(
+            checkpoint, {"bias": torch.tensor([1.0, 2.0]), "flag": torch.ones(1)}
+        )
+        # The changed tensor is updated in place, on the device of the checkpoint.
+        self.assertIs(checkpoint["bias"], bias)
+        torch.testing.assert_close(bias.cpu(), torch.tensor([1.0, 2.0]))
+        self.assertEqual(checkpoint["flag"].device.type, "cuda")
 
 
 if __name__ == "__main__":
