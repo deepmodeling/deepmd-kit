@@ -911,6 +911,8 @@ def sweep_rotate_fwd(
             CW=c_wide,
             BC=triton.next_power_of_2(c_wide),
             RANK=1,
+            # sweep the dense layout; the banded form shares this entry
+            PACKED=False,
             num_warps=warps,
             num_stages=stages,
         )
@@ -1013,6 +1015,8 @@ def sweep_rotate_bwd(
             CP=triton.next_power_of_2(c_wide),
             RANK=1,
             BLOCK_E=block_e,
+            # sweep the dense layout; the banded form shares this entry
+            PACKED=False,
             num_warps=warps,
             num_stages=stages,
         )
@@ -2043,6 +2047,9 @@ def sweep_fp16x3(
         x_fp32_speed, z_fp32_speed, u_fp32_speed = _mixing_stack_op(
             u0, alpha, w0_all, w1_all, gw_all, lmax, cf, True
         )
+        # the fp16x3 operator returns (x_local, z_all); its backward
+        # computes the input gradient from grad_out and the saved z_all
+        # without the fp32 path's separately returned identity input
         x_fp16_speed, z_fp16_speed = _mixing_stack_fp16x3_op(
             u0, alpha, w0_all, w1_all, gw_all, lmax, cf, True
         )

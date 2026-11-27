@@ -50,6 +50,9 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.pt.model.descriptor.sezm import (
+    DescrptSeZM,
+)
 from deepmd.pt.model.descriptor.sezm_nn.embedding import (
     GeometricInitialEmbedding,
 )
@@ -861,6 +864,18 @@ def _kernel_level_defaults(target_device: torch.device) -> Iterator[None]:
                 os.environ[name] = value
 
 
+def _freeze_parameters_for_export(model: torch.nn.Module) -> None:
+    """Clear every parameter's requires-grad flag for the export trace.
+
+    An exported artifact treats parameters as constants; the frozen state
+    also opens the inference contracts that gate on it (the packed-Wigner
+    admission among them).  The rebuilt freeze model is export-only, so no
+    restore is needed.
+    """
+    for param in model.parameters():
+        param.requires_grad_(False)
+
+
 def freeze_sezm_to_pt2(
     ckpt_path: str,
     out_path: str,
@@ -948,6 +963,7 @@ def _freeze_sezm_to_pt2(
             "training alone and is not exported."
         )
     model.eval()
+    _freeze_parameters_for_export(model)
     # The vacuum reference is resolved on the target device, folded into the
     # fitting bias or stored as a per-type table, so the exported graph
     # carries no reference atoms.
@@ -957,7 +973,8 @@ def _freeze_sezm_to_pt2(
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
-    # contraction, while CUDA targets also bake the fused GIE scatter.
+    # contraction, while CUDA targets also bake the fused GIE scatter and the
+    # banded Wigner storage.
     force_block_diag = target_device.type != "cpu"
     force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
@@ -965,6 +982,8 @@ def _freeze_sezm_to_pt2(
             module._force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
             module._force_fused_scatter = force_fused_scatter
+        if isinstance(module, DescrptSeZM):
+            module._force_packed_wigner = force_fused_scatter
 
     # Sweep any Triton launch-table keys this checkpoint needs that are not
     # covered for the local GPU, so the traced graph bakes tuned launches.

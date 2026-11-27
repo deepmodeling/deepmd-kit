@@ -557,6 +557,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         CW: tl.constexpr,  # true C_wide; BC = next_power_of_2(CW) lanes with mask
         BC: tl.constexpr,
         RANK: tl.constexpr,
+        PACKED: tl.constexpr,
     ):
         """One program per edge, channels vectorized.
 
@@ -579,7 +580,13 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         cmask = chan < CW
         src = tl.load(src_ptr + edge).to(tl.int64)
         x_base = x_ptr + src * x_sn
-        d_base = w_ptr + edge * w_se
+        # PACKED: wigner holds the (E, 3*D-2) structural band (flash packed
+        # convention); the band slots replace the dense (row, column) offsets.
+        # A dense surface is addressed through its own strides.
+        if PACKED:
+            d_base = w_ptr + edge * (3 * DIM - 2)
+        else:
+            d_base = w_ptr + edge * w_se
 
         # === Phase 1. Rotate to the local frame (registers) ===
         xrows = ()
@@ -596,12 +603,24 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             acc0 = tl.zeros((BC,), dtype=tl.float32)
             accm = tl.zeros((BC,), dtype=tl.float32)
             accp = tl.zeros((BC,), dtype=tl.float32)
+            # The band slots are contiguous; a dense surface steps through
+            # its column stride.
+            if PACKED:
+                off0, offm, offp = base, DIM + base - 1, 2 * DIM + base - 2
+                sk = 1
+            else:
+                off0, offm, offp = (
+                    r0 * w_sr + base * w_sk,
+                    (r0 - 1) * w_sr + base * w_sk,
+                    (r0 + 1) * w_sr + base * w_sk,
+                )
+                sk = w_sk
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[l * l + j]
-                acc0 += tl.load(d_base + r0 * w_sr + (base + j) * w_sk) * xv
+                acc0 += tl.load(d_base + off0 + j * sk) * xv
                 if l >= 1:
-                    accm += tl.load(d_base + (r0 - 1) * w_sr + (base + j) * w_sk) * xv
-                    accp += tl.load(d_base + (r0 + 1) * w_sr + (base + j) * w_sk) * xv
+                    accm += tl.load(d_base + offm + j * sk) * xv
+                    accp += tl.load(d_base + offp + j * sk) * xv
             rows0 = rows0 + (acc0,)
             if l >= 1:
                 rows_m = rows_m + (accm,)
@@ -695,6 +714,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         CW: tl.constexpr,
         BC: tl.constexpr,
         RANK: tl.constexpr,
+        PACKED: tl.constexpr,
     ):
         """Backward of the fused front end (one program per edge).
 
@@ -721,7 +741,10 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                 tl.load(cb_ptr + r * CW + chan, mask=cmask, other=0.0).to(tl.float32),
             )
         x_base = x_ptr + src * x_sn
-        d_base = w_ptr + edge * w_se
+        if PACKED:
+            d_base = w_ptr + edge * (3 * DIM - 2)
+        else:
+            d_base = w_ptr + edge * w_se
         if RANK == 0:
             kc_base = kc_ptr + edge * NS0 * CW
             gkc_base = gkc_ptr + edge * NS0 * CW
@@ -745,12 +768,24 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             acc0 = tl.zeros((BC,), dtype=tl.float32)
             accm = tl.zeros((BC,), dtype=tl.float32)
             accp = tl.zeros((BC,), dtype=tl.float32)
+            # The band slots are contiguous; a dense surface steps through
+            # its column stride.
+            if PACKED:
+                off0, offm, offp = base, DIM + base - 1, 2 * DIM + base - 2
+                sk = 1
+            else:
+                off0, offm, offp = (
+                    r0 * w_sr + base * w_sk,
+                    (r0 - 1) * w_sr + base * w_sk,
+                    (r0 + 1) * w_sr + base * w_sk,
+                )
+                sk = w_sk
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[l * l + j]
-                acc0 += tl.load(d_base + r0 * w_sr + (base + j) * w_sk) * xv
+                acc0 += tl.load(d_base + off0 + j * sk) * xv
                 if l >= 1:
-                    accm += tl.load(d_base + (r0 - 1) * w_sr + (base + j) * w_sk) * xv
-                    accp += tl.load(d_base + (r0 + 1) * w_sr + (base + j) * w_sk) * xv
+                    accm += tl.load(d_base + offm + j * sk) * xv
+                    accp += tl.load(d_base + offp + j * sk) * xv
             rows0 = rows0 + (acc0,)
             if l >= 1:
                 rows_m = rows_m + (accm,)
@@ -802,7 +837,10 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                         )
 
         # === Phase 2. Rotation backward with g_local formed on the fly ===
-        gd_base = gw_ptr + edge * gw_se
+        if PACKED:
+            gd_base = gw_ptr + edge * (3 * DIM - 2)
+        else:
+            gd_base = gw_ptr + edge * gw_se
         for l in tl.static_range(L + 1):
             base = l * l
             r0 = base + l
@@ -844,16 +882,30 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                         gp += keff * gy[NS0 + L + o]
             for j in tl.static_range(2 * l + 1):
                 col = base + j
+                if PACKED:
+                    a0, am, ap = col, DIM + col - 1, 2 * DIM + col - 2
+                    ga0, gam, gap = a0, am, ap
+                else:
+                    a0, am, ap = (
+                        r0 * w_sr + col * w_sk,
+                        (r0 - 1) * w_sr + col * w_sk,
+                        (r0 + 1) * w_sr + col * w_sk,
+                    )
+                    ga0, gam, gap = (
+                        r0 * gw_sr + col * gw_sk,
+                        (r0 - 1) * gw_sr + col * gw_sk,
+                        (r0 + 1) * gw_sr + col * gw_sk,
+                    )
                 xv = xrows[l * l + j]
-                w0 = tl.load(d_base + r0 * w_sr + col * w_sk)
+                w0 = tl.load(d_base + a0)
                 gx_row = w0 * g0
-                tl.store(gd_base + r0 * gw_sr + col * gw_sk, tl.sum(g0 * xv))
+                tl.store(gd_base + ga0, tl.sum(g0 * xv))
                 if l >= 1:
-                    wmv = tl.load(d_base + (r0 - 1) * w_sr + col * w_sk)
-                    wpv = tl.load(d_base + (r0 + 1) * w_sr + col * w_sk)
+                    wmv = tl.load(d_base + am)
+                    wpv = tl.load(d_base + ap)
                     gx_row += wmv * gm + wpv * gp
-                    tl.store(gd_base + (r0 - 1) * gw_sr + col * gw_sk, tl.sum(gm * xv))
-                    tl.store(gd_base + (r0 + 1) * gw_sr + col * gw_sk, tl.sum(gp * xv))
+                    tl.store(gd_base + gam, tl.sum(gm * xv))
+                    tl.store(gd_base + gap, tl.sum(gp * xv))
                 tl.store(
                     gxe_ptr + edge * DIM * CW + col * CW + chan, gx_row, mask=cmask
                 )
@@ -884,6 +936,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         CP: tl.constexpr,  # next power of two >= CW (vector lane count)
         RANK: tl.constexpr,
         BLOCK_E: tl.constexpr,
+        PACKED: tl.constexpr,
     ):
         """Edge-block variant of the rotate+mix backward.
 
@@ -927,8 +980,12 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
 
         src = tl.load(src_ptr + eq, mask=e_mask, other=0).to(tl.int64)
         x_base = x_ptr + (src * x_sn)[:, None]
-        d_base = w_ptr + eq * w_se
-        gd_base = gw_ptr + eq * gw_se
+        if PACKED:
+            d_base = w_ptr + eq * (3 * DIM - 2)
+            gd_base = gw_ptr + eq * (3 * DIM - 2)
+        else:
+            d_base = w_ptr + eq * w_se
+            gd_base = gw_ptr + eq * gw_se
         gxe_base = gxe_ptr + (eq * DIM * CW)[:, None]
         if RANK == 0:
             kc_base = kc_ptr + (eq * NS0 * CW)[:, None]
@@ -971,23 +1028,25 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             xl0 = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
             xlm = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
             xlp = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+            # The band slots are contiguous; a dense surface steps through
+            # its column stride.
+            if PACKED:
+                off0, offm, offp = base, DIM + base - 1, 2 * DIM + base - 2
+                sk = 1
+            else:
+                off0, offm, offp = (
+                    r0 * w_sr + base * w_sk,
+                    (r0 - 1) * w_sr + base * w_sk,
+                    (r0 + 1) * w_sr + base * w_sk,
+                )
+                sk = w_sk
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[j]
-                w0 = tl.load(
-                    d_base + r0 * w_sr + (base + j) * w_sk, mask=e_mask, other=0.0
-                )
+                w0 = tl.load(d_base + off0 + j * sk, mask=e_mask, other=0.0)
                 xl0 += w0[:, None] * xv
                 if l >= 1:
-                    wm = tl.load(
-                        d_base + (r0 - 1) * w_sr + (base + j) * w_sk,
-                        mask=e_mask,
-                        other=0.0,
-                    )
-                    wp = tl.load(
-                        d_base + (r0 + 1) * w_sr + (base + j) * w_sk,
-                        mask=e_mask,
-                        other=0.0,
-                    )
+                    wm = tl.load(d_base + offm + j * sk, mask=e_mask, other=0.0)
+                    wp = tl.load(d_base + offp + j * sk, mask=e_mask, other=0.0)
                     xlm += wm[:, None] * xv
                     xlp += wp[:, None] * xv
 
@@ -1040,32 +1099,30 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             # Rotation backward: node gradient rows and Wigner gradients.
             for j in tl.static_range(2 * l + 1):
                 col = base + j
+                if PACKED:
+                    a0, am, ap = col, DIM + col - 1, 2 * DIM + col - 2
+                    ga0, gam, gap = a0, am, ap
+                else:
+                    a0, am, ap = (
+                        r0 * w_sr + col * w_sk,
+                        (r0 - 1) * w_sr + col * w_sk,
+                        (r0 + 1) * w_sr + col * w_sk,
+                    )
+                    ga0, gam, gap = (
+                        r0 * gw_sr + col * gw_sk,
+                        (r0 - 1) * gw_sr + col * gw_sk,
+                        (r0 + 1) * gw_sr + col * gw_sk,
+                    )
                 xv = xrows[j]
-                w0 = tl.load(d_base + r0 * w_sr + col * w_sk, mask=e_mask, other=0.0)
+                w0 = tl.load(d_base + a0, mask=e_mask, other=0.0)
                 gx_row = w0[:, None] * g0
-                tl.store(
-                    gd_base + r0 * gw_sr + col * gw_sk,
-                    tl.sum(g0 * xv, axis=1),
-                    mask=e_mask,
-                )
+                tl.store(gd_base + ga0, tl.sum(g0 * xv, axis=1), mask=e_mask)
                 if l >= 1:
-                    wm = tl.load(
-                        d_base + (r0 - 1) * w_sr + col * w_sk, mask=e_mask, other=0.0
-                    )
-                    wp = tl.load(
-                        d_base + (r0 + 1) * w_sr + col * w_sk, mask=e_mask, other=0.0
-                    )
+                    wm = tl.load(d_base + am, mask=e_mask, other=0.0)
+                    wp = tl.load(d_base + ap, mask=e_mask, other=0.0)
                     gx_row += wm[:, None] * gm + wp[:, None] * gp
-                    tl.store(
-                        gd_base + (r0 - 1) * gw_sr + col * gw_sk,
-                        tl.sum(gm * xv, axis=1),
-                        mask=e_mask,
-                    )
-                    tl.store(
-                        gd_base + (r0 + 1) * gw_sr + col * gw_sk,
-                        tl.sum(gp * xv, axis=1),
-                        mask=e_mask,
-                    )
+                    tl.store(gd_base + gam, tl.sum(gm * xv, axis=1), mask=e_mask)
+                    tl.store(gd_base + gap, tl.sum(gp * xv, axis=1), mask=e_mask)
                 tl.store(gxe_base + col * CW + chan[None, :], gx_row, mask=em)
 
     @triton.jit
@@ -2540,6 +2597,17 @@ def _launch_stack_point_backward(
 # ======================================================================
 # Operator implementations (Triton on CUDA fp32, eager reference otherwise)
 # ======================================================================
+def _wigner_kernel_strides(wigner: Tensor, packed: bool) -> tuple[int, ...]:
+    """Edge, row and column strides of a Wigner operand for the kernels.
+
+    The band is 2-D and the packed kernels address it by band slot, so its
+    row and column strides are compiled out; zeros keep the argument list.
+    """
+    if packed:
+        return wigner.stride(0), 0, 0
+    return wigner.stride()
+
+
 def _rotate_mix_impl(
     x: Tensor,
     src: Tensor,
@@ -2555,7 +2623,13 @@ def _rotate_mix_impl(
     # The source CSR view rides through the forward untouched so the autograd
     # context can hand it to the backward's segment reduction.
     del src_order, src_rowptr
+    packed = wigner.dim() == 2
     if not _use_triton(x):
+        if packed:
+            raise RuntimeError(
+                "the banded Wigner layout requires the Triton rotate-mix kernels "
+                "on CUDA operands; run the inference levels on a CUDA device"
+            )
         return _rotate_mix_reference(x, src, wigner, kc, cb, lmax, n_focus, rank)
     n_edge = src.shape[0]
     c_wide = int(x.shape[2])
@@ -2575,12 +2649,13 @@ def _rotate_mix_impl(
         n_edge,
         x.stride(0),
         x.stride(1),
-        *wigner.stride(),
+        *_wigner_kernel_strides(wigner, packed),
         L=int(lmax),
         CF=focus_dim,
         CW=c_wide,
         BC=triton.next_power_of_2(c_wide),
         RANK=int(rank),
+        PACKED=packed,
         num_warps=warps,
         num_stages=stages,
     )
@@ -2598,7 +2673,13 @@ def _rotate_mix_bwd_impl(
     n_focus: int,
     rank: int,
 ) -> tuple[Tensor, Tensor, Tensor]:
+    packed = wigner.dim() == 2
     if not _use_triton(x):
+        if packed:
+            raise RuntimeError(
+                "the banded Wigner layout requires the Triton rotate-mix kernels "
+                "on CUDA operands; run the inference levels on a CUDA device"
+            )
         return _rotate_mix_backward_reference(
             grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
         )
@@ -2632,14 +2713,15 @@ def _rotate_mix_bwd_impl(
             n_edge,
             x.stride(0),
             x.stride(1),
-            *wigner.stride(),
-            *grad_wigner.stride(),
+            *_wigner_kernel_strides(wigner, packed),
+            *_wigner_kernel_strides(grad_wigner, packed),
             L=int(lmax),
             CF=c_wide // int(n_focus),
             CW=c_wide,
             CP=triton.next_power_of_2(c_wide),
             RANK=int(rank),
             BLOCK_E=block_e,
+            PACKED=packed,
             num_warps=warps,
             num_stages=stages,
         )
@@ -2658,13 +2740,14 @@ def _rotate_mix_bwd_impl(
         n_edge,
         x.stride(0),
         x.stride(1),
-        *wigner.stride(),
-        *grad_wigner.stride(),
+        *_wigner_kernel_strides(wigner, packed),
+        *_wigner_kernel_strides(grad_wigner, packed),
         L=int(lmax),
         CF=c_wide // int(n_focus),
         CW=c_wide,
         BC=triton.next_power_of_2(c_wide),
         RANK=int(rank),
+        PACKED=packed,
         num_warps=warps,
         num_stages=stages,
     )
@@ -5133,6 +5216,14 @@ _mixing_stack_op.register_autograd(
 _mixing_stack_op.register_autocast("cuda", torch.bfloat16)
 
 
+def _packed_d(edge_cache) -> Tensor:
+    """Return the banded Wigner storage when present, else the dense surface."""
+    band = getattr(edge_cache, "D_packed", None)
+    if band is not None:
+        return band
+    return edge_cache.D_full
+
+
 class _TritonRotateMix:
     """Per-convolution entry running rotate-to-local + degree mixing fused.
 
@@ -5201,7 +5292,7 @@ class _TritonRotateMix:
             src,
             src_order,
             src_rowptr,
-            edge_cache.D_full,
+            _packed_d(edge_cache),
             kc.contiguous(),
             cb.contiguous(),
             conv.lmax,
@@ -5438,7 +5529,7 @@ class _TritonSO2ValuePath:
             src,
             src_order,
             src_rowptr,
-            edge_cache.D_full,
+            _packed_d(edge_cache),
             kc.contiguous(),
             cb.contiguous(),
             conv.lmax,
