@@ -304,6 +304,7 @@ class SeZMInteractionBlock(nn.Module):
         lmax: int,
         node_lmax: int | None = None,
         mmax: int | None = None,
+        parity: bool = False,
         kmax: int = 1,
         channels: int,
         n_focus: int = 1,
@@ -357,6 +358,7 @@ class SeZMInteractionBlock(nn.Module):
     ) -> None:
         super().__init__()
         self.trainable = bool(trainable)
+        self.parity = bool(parity)
         self.lmax = int(lmax)
         self.node_lmax = self.lmax if node_lmax is None else int(node_lmax)
         if self.node_lmax < self.lmax:
@@ -486,6 +488,7 @@ class SeZMInteractionBlock(nn.Module):
             self.post_so2_norm = nn.Identity()
 
         self.so2_conv = SO2Convolution(
+            parity=self.parity,
             lmax=self.lmax,
             mmax=self.mmax,
             kmax=self.kmax,
@@ -560,6 +563,7 @@ class SeZMInteractionBlock(nn.Module):
 
             ffns.append(
                 EquivariantFFN(
+                    parity=self.parity,
                     lmax=self.node_lmax,
                     channels=self.channels,
                     hidden_channels=ffn_neurons,
@@ -1046,6 +1050,7 @@ class SeZMInteractionBlock(nn.Module):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "node_lmax": self.node_lmax,
                 "mmax": self.mmax,
                 "kmax": self.kmax,

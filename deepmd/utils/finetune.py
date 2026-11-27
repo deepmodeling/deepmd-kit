@@ -15,11 +15,12 @@ from deepmd.utils.model_branch_dict import (
 )
 from deepmd.utils.spin import (
     normalize_spin_use_spin,
+    parse_spin_scheme,
 )
 
 log = logging.getLogger(__name__)
 
-_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable"})
+_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable", "moe"})
 _MISSING = object()
 _MAX_DESCRIPTOR_CONFIG_DIFFS = 20
 _MAX_CONFIG_VALUE_LENGTH = 200
@@ -51,6 +52,19 @@ def _infer_synthetic_type_count(descriptor: Mapping[str, Any]) -> int:
     return type_count
 
 
+def _infer_synthetic_type_map(descriptor: Mapping[str, Any]) -> list[str]:
+    """Infer a type map for descriptor-only normalization.
+
+    The elements that the descriptor names (``moe.element``) are types of its
+    model; placeholder names fill the map up to the inferred type count.
+    """
+    moe = descriptor.get("moe")
+    element = moe.get("element") if isinstance(moe, Mapping) else None
+    named = [str(name) for name in element] if isinstance(element, list) else []
+    filler = _infer_synthetic_type_count(descriptor) - len(named)
+    return [*named, *(f"Type{ii}" for ii in range(max(filler, 0)))]
+
+
 def _normalize_descriptor_for_compare(
     descriptor: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -63,9 +77,7 @@ def _normalize_descriptor_for_compare(
         "model": {
             "descriptor": deepcopy(dict(descriptor)),
             "fitting_net": {"neuron": [240, 240, 240]},
-            "type_map": [
-                f"Type{ii}" for ii in range(_infer_synthetic_type_count(descriptor))
-            ],
+            "type_map": _infer_synthetic_type_map(descriptor),
         },
         "training": {"training_data": {"systems": ["fake"]}, "numb_steps": 100},
     }
@@ -207,7 +219,7 @@ def _native_spin_types(
     spin_config = model_config.get("spin")
     if (
         not isinstance(spin_config, Mapping)
-        or str(spin_config.get("scheme", "deepspin")).lower() != "native"
+        or parse_spin_scheme(spin_config.get("scheme", "deepspin")) is None
     ):
         return None
 
@@ -257,6 +269,28 @@ def _learned_model_config(
     candidates = model["models"] if model.get("type") == "linear_ener" else (model,)
     learned = [candidate for candidate in candidates if "descriptor" in candidate]
     return learned[0] if len(learned) == 1 else None
+
+
+def _inherit_default_chg_spin(
+    target: dict[str, Any], pretrained: Mapping[str, Any]
+) -> None:
+    """Take the pretrained default charge/spin condition unless the target sets one.
+
+    Only a target descriptor with the charge/spin embedding takes it; every
+    descriptor with ``add_chg_spin_ebd`` also accepts ``default_chg_spin``.
+    """
+    target_learned = _learned_model_config(target)
+    source_learned = _learned_model_config(pretrained)
+    if target_learned is None or source_learned is None:
+        return
+    default = source_learned["descriptor"].get("default_chg_spin")
+    descriptor = target_learned["descriptor"]
+    if (
+        default is not None
+        and descriptor.get("add_chg_spin_ebd")
+        and descriptor.get("default_chg_spin") is None
+    ):
+        descriptor["default_chg_spin"] = list(default)
 
 
 def _inherit_native_spin_fitting_widths(
@@ -441,6 +475,13 @@ class FinetuneRuleBuilder:
         """Whether the pretrained model params are multi-task."""
         return "model_dict" in self.pretrained_model_params
 
+    @property
+    def pretrained_task(self) -> str | None:
+        """Name of the task of a single-task pretrained model, if it has one."""
+        if self.pretrained_is_multitask:
+            return None
+        return self.pretrained_model_params.get("task")
+
     def build(self) -> tuple[dict[str, Any], dict[str, FinetuneRuleItem]]:
         """Return updated target model config and fine-tuning rules."""
         model_config = deepcopy(self.target_model_config)
@@ -509,10 +550,12 @@ class FinetuneRuleBuilder:
         model_branch_chosen = self.default_branch
 
         if not self.pretrained_is_multitask:
-            if model_branch_from not in ("", self.default_branch, "RANDOM"):
+            names = self._pretrained_keys()
+            if model_branch_from not in ("", "RANDOM", *names):
+                expected = " or ".join(map(repr, names))
                 raise ValueError(
                     "Single-task pretrained models only provide the "
-                    f"{self.default_branch!r} branch, got {model_branch_from!r}."
+                    f"{expected} branch, got {model_branch_from!r}."
                 )
             single_config_chosen = deepcopy(self.pretrained_model_params)
             if model_branch_from == "RANDOM":
@@ -559,6 +602,8 @@ class FinetuneRuleBuilder:
                 model_branch_chosen=model_branch_chosen,
                 random_fitting=new_fitting,
             )
+        else:
+            _inherit_default_chg_spin(single_config, single_config_chosen)
         if convert_to_native_spin and not new_fitting:
             _inherit_native_spin_fitting_widths(single_config, single_config_chosen)
         return single_config, finetune_rule
@@ -586,9 +631,29 @@ class FinetuneRuleBuilder:
             "descriptor": single_config.get("descriptor", {}).get("trainable", True),
             "fitting_net": single_config.get("fitting_net", {}).get("trainable", True),
         }
+        default_chg_spin = single_config.get("descriptor", {}).get("default_chg_spin")
+        target_moe = {
+            region: single_config.get(region, {}).get("moe")
+            for region in ("descriptor", "fitting_net")
+        }
         single_config["descriptor"] = deepcopy(pretrained_config["descriptor"])
+        if default_chg_spin is not None:
+            single_config["descriptor"]["default_chg_spin"] = default_chg_spin
+        # MoE adds weights to a model, so an input may add it to a pretrained
+        # model that has none; a pretrained model with MoE keeps its own, which
+        # carries the increments it trained.
+        for region, moe in target_moe.items():
+            if moe is not None and single_config[region].get("moe") is None:
+                single_config[region]["moe"] = deepcopy(moe)
         if not random_fitting:
             single_config["fitting_net"] = deepcopy(pretrained_config["fitting_net"])
+            if (
+                target_moe["fitting_net"] is not None
+                and single_config["fitting_net"].get("moe") is None
+            ):
+                single_config["fitting_net"]["moe"] = deepcopy(
+                    target_moe["fitting_net"]
+                )
             # A long-range module reads the descriptor beside the fitting and
             # is carried over with it; the trainability set in the input
             # applies to its parts as to the descriptor and the fitting.
@@ -615,7 +680,8 @@ class FinetuneRuleBuilder:
     def _pretrained_keys(self) -> list[str]:
         if self.pretrained_is_multitask:
             return list(self.pretrained_model_params["model_dict"])
-        return [self.default_branch]
+        task = self.pretrained_task
+        return [self.default_branch] if task is None else [self.default_branch, task]
 
     def _pretrained_aliases(self) -> dict[str, str]:
         if self.pretrained_is_multitask:
@@ -623,7 +689,11 @@ class FinetuneRuleBuilder:
                 self.pretrained_model_params["model_dict"]
             )
             return dict(model_alias_dict)
-        return {self.default_branch: self.default_branch}
+        aliases = {self.default_branch: self.default_branch}
+        task = self.pretrained_task
+        if task is not None:
+            aliases[task] = self.default_branch
+        return aliases
 
 
 def get_finetune_rule_single(

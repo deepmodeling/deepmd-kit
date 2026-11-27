@@ -229,12 +229,14 @@ def test_empty_and_masked_edges_preserve_conditions(kind) -> None:
         )
         actual = model.descriptor.call_graph(graph, atype, **conditions)[0]
         np.testing.assert_allclose(actual, expected, atol=1e-12)
-    # The reference is the learned, ground-state-conditioned value, not zero
-    # or a default-condition shortcut, even when no real edges exist.
+    # The reference is the stored condition of each type, not zero and not
+    # the descriptor default, even when no real edges exist.
     for name in conditions:
         other = {**conditions, name: np.zeros_like(conditions[name])}
         if name == "charge_spin":
-            other[name][:, 1] = 1.0
+            # a charged, higher-multiplicity state differs from the stored one
+            other[name][:, 0] = 1.0
+            other[name][:, 1] = 2.0
         actual = model.descriptor.call_graph(dense_graph, atype, **other)[0]
         assert np.max(np.abs(actual - expected)) > 1e-7, name
 

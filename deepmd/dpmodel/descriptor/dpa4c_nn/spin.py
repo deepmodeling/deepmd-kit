@@ -18,7 +18,9 @@ enforces and one new rule: **only contractions of even total spin order may be
 emitted**. The channel families below are laid out so that this rule is
 realized by the block structure itself rather than by a per-entry filter.
 
-Five families are accumulated.
+The default ``orbit`` mode accumulates five families. ``exchange`` omits
+``P`` and the spin/geometric quadrupole cross Gram; its contractions are
+invariant under independent rotations of the moments and the geometry.
 
 ============  ============  ==============  ====================================
 Family        :math:`\ell`  :math:`\sigma`  Content
@@ -50,10 +52,17 @@ anisotropy), and ``M0``/``Mw`` emitted directly. The cross Gram of the vector
 block against the geometric degree-one moments has odd spin order and is
 deliberately absent.
 
-Antisymmetric spin bilinears, and with them the Dzyaloshinskii-Moriya
-interaction, remain unreachable at every order: the readout contracts channels
-only through symmetric Grams and symmetric Gaunt couplings, so no
-antisymmetric pairing of two moments is ever formed.
+The ``P`` Gram contains collective antisymmetric exchange as well. Its
+neighbour-pair term is proportional to
+:math:`(\mathbf s_j\cdot\mathbf u_j)(\mathbf s_k\cdot\mathbf u_k)
+(\mathbf u_j\cdot\mathbf u_k)`. The antisymmetric part of its spin
+bilinear matrix is
+:math:`\tfrac12(\mathbf u_j\cdot\mathbf u_k)
+(\mathbf u_j\times\mathbf u_k)\cdot(\mathbf s_j\times\mathbf s_k)`,
+a geometry-dependent Dzyaloshinskii-Moriya form. Its coefficient is constrained
+by the shared projected-spin channels; there is no independent general
+antisymmetric exchange tensor. ``exchange`` omits this family and is invariant
+under independent spin-space rotations.
 
 ``Mw`` is the one family that does not read the spin *value*: it is the
 radially weighted count of neighbours that carry a magnetic degree of freedom
@@ -198,6 +207,9 @@ class SpinChannels(NativeOP):
         supported configuration: it contributes an identical zero and keeps the
         full set of spin parameters, which is what a spin-free pretrain needs in
         order to declare its magnetic types at fine-tune time.
+    spin_mode
+        ``exchange`` keeps independent spin-space rotations; ``orbit`` also
+        couples the moments to the bond directions and geometric quadrupoles.
     precision
         Parameter precision.
     trainable
@@ -219,6 +231,7 @@ class SpinChannels(NativeOP):
         degree_channels: Sequence[int],
         use_spin: Sequence[bool],
         *,
+        spin_mode: str = "orbit",
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
         seed: int | list[int] | None = None,
@@ -227,6 +240,11 @@ class SpinChannels(NativeOP):
             raise ValueError(
                 f"`use_spin` must contain {int(ntypes)} entries, got {len(use_spin)}"
             )
+        if spin_mode not in ("exchange", "orbit"):
+            raise ValueError(
+                f"Unknown spin_mode {spin_mode!r}; expected exchange or orbit"
+            )
+        self.spin_mode = spin_mode
         self.ntypes = int(ntypes)
         self.degree_channels = [int(width) for width in degree_channels]
         self.use_spin = [bool(flag) for flag in use_spin]
@@ -307,36 +325,25 @@ class SpinChannels(NativeOP):
         """
         xp = array_api_compat.array_namespace(spin_moments)
         magnitude, coordination, vector, quadrupole = self.split(spin_moments, xp)
-        return xp.concat(
-            [
-                _half_gram(
-                    vector,
-                    self.vector_gram_index,
-                    self.vector_gram_scale,
-                    xp,
-                ),
-                _half_gram(
-                    quadrupole,
-                    self.quadrupole_gram_index,
-                    self.quadrupole_gram_scale,
-                    xp,
-                ),
-                # Cross Gram against the geometric degree-two moments. Both
-                # factors have even spin order, so the product is admissible;
-                # with a unit direction it evaluates to the single-ion
-                # anisotropy sum over neighbours.
+        parts = [
+            _half_gram(vector, self.vector_gram_index, self.vector_gram_scale, xp),
+            _half_gram(
+                quadrupole, self.quadrupole_gram_index, self.quadrupole_gram_scale, xp
+            ),
+        ]
+        if self.spin_mode == "orbit":
+            # Both quadrupoles have even spin order. Their cross Gram carries
+            # the single-ion anisotropy relative to the geometric environment.
+            parts.append(
                 xp.reshape(
                     xp.matmul(xp.permute_dims(quadrupole, (0, 2, 1)), degree_two),
                     (
                         spin_moments.shape[0],
                         self.quadrupole_width * self.degree_channels[2],
                     ),
-                ),
-                magnitude,
-                coordination,
-            ],
-            axis=-1,
-        )
+                )
+            )
+        return xp.concat([*parts, magnitude, coordination], axis=-1)
 
     def split(self, spin_moments: Array, xp: Any) -> tuple[Array, Array, Array, Array]:
         """Split the flat spin moments into their five families.
@@ -356,8 +363,8 @@ class SpinChannels(NativeOP):
             Magnetic effective coordination with shape ``(N, spin_channels)``.
         vector
             Joint degree-one spin block with shape ``(N, 3, vector_width)``,
-            holding the on-site moment, the ``V`` channels and the ``P``
-            channels in that order.
+            holding the on-site moment and the ``V`` channels, followed by
+            the ``P`` channels in ``orbit`` mode.
         quadrupole
             Degree-two spin block with shape ``(N, 5, quadrupole_width)``.
         """
@@ -374,11 +381,12 @@ class SpinChannels(NativeOP):
             (nodes, 3, channels),
         )
         offset += 3 * channels
+        bond_channels = channels if self.spin_mode == "orbit" else 0
         neighbor_bond = xp.reshape(
-            spin_moments[:, offset : offset + 3 * channels],
-            (nodes, 3, channels),
+            spin_moments[:, offset : offset + 3 * bond_channels],
+            (nodes, 3, bond_channels),
         )
-        offset += 3 * channels
+        offset += 3 * bond_channels
         neighbor_tensor = xp.reshape(
             spin_moments[:, offset : offset + 5 * neighbor_quadrupole],
             (nodes, 5, neighbor_quadrupole),
@@ -552,36 +560,36 @@ class SpinChannels(NativeOP):
         )[:, None]  # (E, 1)
 
         magnitude = xp.sum(neighbor_spin * neighbor_spin, axis=-1, keepdims=True)
-        # Component of the neighbour moment along the bond, carried back as a
-        # vector so that the block Gram turns it into the bond-resolved
-        # invariants. The masked envelope already zeroes excluded edges, so the
-        # unmasked direction cannot leak through the amplitude.
-        bond_spin = direction * xp.sum(
-            neighbor_spin * direction,
-            axis=-1,
-            keepdims=True,
-        )  # (E, 3)
-        quadrupole = build_angular_basis(neighbor_spin, 2)[:, 4:9]  # (E, 5)
-        return xp.concat(
-            [
-                spin_amplitude * magnitude,
-                spin_amplitude * neighbor_gate,
-                xp.reshape(
-                    neighbor_spin[:, :, None] * spin_amplitude[:, None, :],
-                    (-1, 3 * channels),
-                ),
+        parts = [
+            spin_amplitude * magnitude,
+            spin_amplitude * neighbor_gate,
+            xp.reshape(
+                neighbor_spin[:, :, None] * spin_amplitude[:, None, :],
+                (-1, 3 * channels),
+            ),
+        ]
+        if self.spin_mode == "orbit":
+            # The projected moment has axial parity because both direction
+            # factors change sign under inversion. The envelope zeroes
+            # excluded edges before their payload reaches the reduction.
+            bond_spin = direction * xp.sum(
+                neighbor_spin * direction, axis=-1, keepdims=True
+            )
+            parts.append(
                 xp.reshape(
                     bond_spin[:, :, None] * spin_amplitude[:, None, :],
                     (-1, 3 * channels),
-                ),
-                xp.reshape(
-                    quadrupole[:, :, None]
-                    * spin_amplitude[:, None, :NEIGHBOR_QUADRUPOLE_CHANNELS],
-                    (-1, 5 * NEIGHBOR_QUADRUPOLE_CHANNELS),
-                ),
-            ],
-            axis=-1,
+                )
+            )
+        quadrupole = build_angular_basis(neighbor_spin, 2)[:, 4:9]
+        parts.append(
+            xp.reshape(
+                quadrupole[:, :, None]
+                * spin_amplitude[:, None, :NEIGHBOR_QUADRUPOLE_CHANNELS],
+                (-1, 5 * NEIGHBOR_QUADRUPOLE_CHANNELS),
+            )
         )
+        return xp.concat(parts, axis=-1)
 
     @property
     def vector_width(self) -> int:
@@ -589,7 +597,8 @@ class SpinChannels(NativeOP):
 
         The block holds the on-site moment, the :math:`C_s` isotropic
         neighbour channels ``V`` and the :math:`C_s` bond-projected neighbour
-        channels ``P``. ``P`` is given the full spin width rather than a
+        channels ``P`` in ``orbit`` mode. ``exchange`` omits ``P``.
+        ``P`` is given the full spin width rather than a
         narrower one because the readout is linear in the emitted Gram
         entries: the effective radial profile of an interaction is the span of
         the channel amplitudes the fitting network mixes, so a narrower ``P``
@@ -599,7 +608,7 @@ class SpinChannels(NativeOP):
         through its cross Gram. Reusing the leading :math:`C_s` amplitudes
         costs no extra radial evaluation.
         """
-        return 1 + 2 * self.spin_channels
+        return 1 + self.spin_channels * (2 if self.spin_mode == "orbit" else 1)
 
     @property
     def quadrupole_width(self) -> int:
@@ -612,11 +621,11 @@ class SpinChannels(NativeOP):
 
         The layout is ``[M0, Mw, V_neighbor, P_neighbor, Q_neighbor]`` with
         the harmonic component as the outer axis of each non-scalar family,
-        matching the geometric moment convention.
+        matching the geometric moment convention. ``exchange`` omits ``P_neighbor``.
         """
         return (
             2 * self.spin_channels
-            + 6 * self.spin_channels
+            + 3 * self.spin_channels * (2 if self.spin_mode == "orbit" else 1)
             + 5 * NEIGHBOR_QUADRUPOLE_CHANNELS
         )
 
@@ -637,12 +646,17 @@ class SpinChannels(NativeOP):
         -------
         int
             Upper triangles of the two spin Grams, the full cross Gram against
-            the geometric degree-two moments, and the two scalar families.
+            the geometric degree-two moments in ``orbit`` mode, and the two
+            scalar families.
         """
         return (
             int(self.vector_gram_index.shape[0])
             + int(self.quadrupole_gram_index.shape[0])
-            + self.quadrupole_width * self.degree_channels[2]
+            + (
+                self.quadrupole_width * self.degree_channels[2]
+                if self.spin_mode == "orbit"
+                else 0
+            )
             + 2 * self.spin_channels
         )
 
@@ -661,6 +675,7 @@ class SpinChannels(NativeOP):
             "ntypes": self.ntypes,
             "degree_channels": list(self.degree_channels),
             "use_spin": list(self.use_spin),
+            "spin_mode": self.spin_mode,
             "precision": self.precision,
             "trainable": self.trainable,
             "@variables": {

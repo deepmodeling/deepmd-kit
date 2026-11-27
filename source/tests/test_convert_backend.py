@@ -53,7 +53,7 @@ def test_convert_backend_uses_auto_for_unannotated_source(
 
 @pytest.mark.parametrize(
     "lower_input_kind",
-    ["nlist", "graph", "dpa1_canonical", "dpa4c_canonical", "edge_vec"],
+    ["nlist", "graph", "dpa_canonical", "edge_vec"],
 )
 def test_convert_backend_preserves_explicit_lower_kind(
     monkeypatch: pytest.MonkeyPatch,

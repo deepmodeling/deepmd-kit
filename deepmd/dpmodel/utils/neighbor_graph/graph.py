@@ -195,8 +195,9 @@ def pad_and_guard_angles(
 def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     """Node->frame map for a flat node axis: ``repeat(arange(nf), n_node)``.
 
-    Implemented via ``searchsorted(cumulative_sum(n_node), arange(N), side="right")``
-    -- the same primitives used in ``edge_force_virial`` for per-frame virial.
+    Uses ``searchsorted(cumulative_sum(n_node), arange(N), side="right")``
+    or JAX's fixed-output-length ``repeat``. The JAX form supports symbolic
+    frame and node dimensions during StableHLO export.
 
     Parameters
     ----------
@@ -222,6 +223,15 @@ def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     dev = array_api_compat.device(n_node)
     if n_total is None:
         n_total = int(xp.sum(n_node))
+    if array_api_compat.is_jax_array(n_node):
+        # A fixed output length makes repeat traceable with symbolic frame
+        # and node axes. Its padding convention assigns remaining slots to
+        # the final frame, matching the compact-prefix contract below.
+        return xp.repeat(
+            xp.arange(n_node.shape[0], dtype=xp.int64, device=dev),
+            n_node,
+            total_repeat_length=n_total,
+        )
     idx = xp.arange(n_total, dtype=n_node.dtype, device=dev)
     boundaries = xp.cumulative_sum(n_node)  # (nf,) upper bounds, exclusive
     frame_id = xp.astype(xp.searchsorted(boundaries, idx, side="right"), xp.int64)

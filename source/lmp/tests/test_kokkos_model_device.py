@@ -3,7 +3,6 @@
 
 import json
 import os
-import shutil
 import subprocess
 import zipfile
 from pathlib import (
@@ -33,10 +32,12 @@ def test_explicit_cuda_device(tmp_path: Path, style: str, filename: str) -> None
         if require_two:
             pytest.fail("two visible CUDA devices are required")
         pytest.skip("requires two visible CUDA devices")
-    executable = shutil.which("lmp")
+    executable = Path(os.environ["DEEPMD_KOKKOS_LMP"])
     infer = Path(__file__).resolve().parents[2] / "tests/infer"
     model = infer / filename
-    assert executable, "Kokkos LAMMPS executable is required"
+    assert executable.is_absolute() and executable.is_file(), (
+        "Kokkos LAMMPS executable is required"
+    )
     assert model.is_file(), model
     with zipfile.ZipFile(model) as archive:
         species = json.loads(archive.read("model/extra/metadata.json"))["type_map"][0]

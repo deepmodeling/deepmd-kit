@@ -40,9 +40,6 @@ from deepmd.pt_expt.utils import (
     env,
     serialization,
 )
-from deepmd.utils.vacuum_reference import (
-    reference_charge_spin,
-)
 
 from .test_calculator import (
     _config,
@@ -100,7 +97,14 @@ def test_freeze_compression_changes_snapshot_before_export(
     config = _config("dpa4c")
     config["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[1, 2])
     config["fitting_net"]["vacuum_ref"] = True
-    config["preset_out_bias"] = {"energy": {"O": 0.0, "H": 0.0}}
+    # The preset names the neutral ground state of both elements, which is
+    # another condition than the deployment state of the model.
+    config["preset_out_bias"] = {
+        "energy": {
+            "O": {"value": 0.0, "charge": 0, "multiplicity": 3},
+            "H": {"value": 0.0, "charge": 0, "multiplicity": 2},
+        }
+    }
     checkpoint = _write_checkpoint(tmp_path / "model.pt", "dpa4c", config=config)
     original = checkpoint.read_bytes()
     reference = get_model(config).eval()
@@ -120,7 +124,9 @@ def test_freeze_compression_changes_snapshot_before_export(
             coord,
             atype,
             None,
-            charge_spin=torch.as_tensor(reference_charge_spin(config["type_map"])),
+            charge_spin=torch.as_tensor(
+                reference.atomic_model.vacuum_charge_spin.cpu()
+            ),
         )["energy"]
         .detach()
         .numpy()
@@ -132,7 +138,7 @@ def test_freeze_compression_changes_snapshot_before_export(
         .numpy()
         .reshape(2, 1)
     )
-    # The deployment state must differ from the neutral isolated-atom reference.
+    # The deployment state must differ from the reference of the preset.
     assert np.max(np.abs(deployment - neutral)) > 1e-5
     enable_compression = type(reference).enable_compression
 
@@ -173,7 +179,8 @@ def test_freeze_compression_changes_snapshot_before_export(
         atol=1e-7,
     )
     assert captured["options"]["with_comm"] is False
-    assert captured["options"]["lower_kind"] == ("auto" if compress else "graph")
+    # a .pt2 archive of a graph model selects its lower schema at export
+    assert captured["options"]["lower_kind"] == "auto"
     assert checkpoint.read_bytes() == original
 
 

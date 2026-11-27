@@ -122,13 +122,16 @@ PY
 
 # For the dedicated two-GPU run, launch this script with
 # CUDA_VISIBLE_DEVICES=0,1 DEEPMD_KOKKOS_TWO_GPUS_REQUIRED=1.
+export DEEPMD_KOKKOS_LMP="${LAMMPS_BUILD_DIR}/lmp"
 # Keep each invocation and each pytest process separate, including failures.
 mkdir -p "${BUILD_ROOT}/test-reports"
 TEST_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")
-PATH="${LAMMPS_BUILD_DIR}:$PATH" DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
+DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
+	"${REPO_ROOT}/source/lmp/tests/test_lammps_kokkos_atom_energy.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_kokkos_model_device.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_multiblock_kokkos.py" \
+	"${REPO_ROOT}/source/lmp/tests/test_lammps_model_devi_canonical.py" \
 	--junitxml="${TEST_REPORT_DIR}/spin.xml"
 # The compressed long-range fixtures come from gen_dpa4c_long_range.py of
 # test_cc_local.sh; the MPI runner of the test launches mpirun from PATH, which

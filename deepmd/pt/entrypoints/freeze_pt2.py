@@ -30,9 +30,6 @@ import logging
 import os
 import tempfile
 import zipfile
-from copy import (
-    deepcopy,
-)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -84,6 +81,9 @@ from deepmd.utils.bridging import (
 )
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
+)
+from deepmd.utils.pt_checkpoint import (
+    select_checkpoint_head,
 )
 
 log = logging.getLogger(__name__)
@@ -225,17 +225,8 @@ def _select_model_head(
             f"No head or alias named {head!r} in model. Available heads are: {model_keys}."
         )
 
-    branch = model_alias_dict[head]
-    branch_params = deepcopy(params["model_dict"][branch])
-    branch_state: dict[str, Any] = {
-        "_extra_state": deepcopy(state_dict.get("_extra_state", {})),
-    }
-    branch_state["_extra_state"]["model_params"] = branch_params
-    prefix = f"model.{branch}."
-    for key, value in state_dict.items():
-        if key.startswith(prefix):
-            branch_state[key.replace(prefix, "model.Default.")] = value
-    return branch_state, branch_params
+    branch_state = select_checkpoint_head(state_dict, model_alias_dict[head])
+    return branch_state, branch_state["_extra_state"]["model_params"]
 
 
 def _to_py_list(value: Any) -> Any:
@@ -1045,10 +1036,9 @@ def _freeze_sezm_to_pt2(
 
     # Second artifact: the LAMMPS multi-rank with-comm graph. It threads the
     # eight border_op communication tensors so cross-rank ghost features are
-    # exchanged between interaction blocks. Bridging models take this path: they
-    # report supports_edge_parallel()=True since the Source Freeze Propagation
-    # gate's per-node partials are completed across ranks by
-    # DescrptSeZM._gate_partial_exchange (issue #5906).
+    # exchanged between interaction blocks. Bridged models take this path as
+    # well: the contact clamp acts on each edge alone and the analytical term
+    # reads the extended types, so neither needs a cross-rank exchange.
     has_comm_artifact = (
         with_comm
         and model.export_lower_input_kind() == "edge_vec"

@@ -2329,6 +2329,15 @@ bool DP_DeepSpinUsesCanonicalGraphInference(DP_DeepSpin* dp) {
   }
 }
 
+bool DP_DeepSpinCanonicalGraphRequiresSourceCSR(DP_DeepSpin* dp) {
+  try {
+    return dp->dp.canonical_graph_requires_source_csr();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
 bool DP_DeepSpinCanonicalGraphRequiresHalo(DP_DeepSpin* dp) {
   try {
     return dp->dp.canonical_graph_requires_halo();

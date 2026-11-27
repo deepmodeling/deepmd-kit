@@ -45,12 +45,12 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
     def test_frozen_model_folds_the_reference(self) -> None:
         self.check_frozen_model(numb_fparam=0)
 
-    def test_frozen_bridged_model_keeps_the_readout_reference(self) -> None:
-        """The readout gate of a bridged model fades to the bias the fold moved.
+    def test_frozen_bridged_model_folds_the_reference(self) -> None:
+        """A bridged model folds the reference like a plain one.
 
-        A pair inside the bridging window keeps the gate open in part, so the
-        frozen archive reproduces the eager energies only if the gate reads
-        the isolated-atom output rather than the folded bias.
+        A Ni-Ni pair inside the range of the analytical term and below the
+        frozen radius of its contact clamp makes the frozen archive evaluate
+        both bridging pieces beside the folded bias.
         """
         self.check_frozen_model(numb_fparam=0, bridged=True)
 
@@ -113,7 +113,7 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
         atype = np.array([0, 1, 0, 1, 0], dtype=np.int32)
         coord = rng.random((1, natoms, 3)) * box_edge * 0.4 + box_edge * 0.3
         if bridged:
-            # a Ni-Ni pair inside its window, where the readout gate is partly open
+            # a Ni-Ni pair inside the range of the analytical term
             coord[0, 2] = coord[0, 0] + np.array([1.0, 0.0, 0.0])
         eager = (
             model.forward(

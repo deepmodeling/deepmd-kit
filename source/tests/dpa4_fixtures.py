@@ -11,6 +11,53 @@ outside pytest's package machinery.
 import numpy as np
 
 
+def four_atom_spin_inputs() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return coordinates, types, spins and complete non-self neighbour rows.
+
+    Coordinates and spins have shape (1, 4, 3), types have shape (1, 4),
+    and neighbour indices have shape (1, 4, 3). Floating arrays use float64;
+    integer arrays use int64. Type 0 carries active magnetic moments.
+    """
+    coord = np.array(
+        [[[0.0, 0.0, 0.0], [1.2, 0.3, 0.2], [-0.2, 1.5, 0.4], [0.1, -0.4, 1.3]]],
+        dtype=np.float64,
+    )
+    atype = np.array([[0, 0, 1, 0]], dtype=np.int64)
+    spin = np.array(
+        [[[0.5, 0.3, -0.2], [-0.4, 0.7, 0.2], [0.1, 0.2, 0.3], [0.3, -0.7, 0.9]]],
+        dtype=np.float64,
+    )
+    nlist = np.array([[[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]]], dtype=np.int64)
+    return coord, atype, spin, nlist
+
+
+def tetrahedral_spin_configurations() -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray
+]:
+    """Return a tetrahedral star and two zero-total-moment configurations.
+
+    The coordinates have shape (1, 5, 3), in angstrom. The centre has type 1
+    and its four neighbours have type 0, with types of shape (1, 5). A cutoff
+    of 4 angstrom includes the centre-neighbour bonds of length 3 angstrom
+    and excludes the neighbour-neighbour bonds. The two spin arrays have
+    shape (1, 5, 3), with a non-magnetic centre and unit neighbour moments.
+    Their neighbour quadrupole sums have squared norms 4 and 16.
+    """
+    vertices = np.array(
+        [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]],
+        dtype=np.float64,
+    )
+    coord = np.concatenate([np.zeros((1, 3)), np.sqrt(3.0) * vertices])[None]
+    atype = np.array([[1, 0, 0, 0, 0]], dtype=np.int64)
+    spin_a = np.array(
+        [[[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]]],
+        dtype=np.float64,
+    )
+    spin_b = spin_a.copy()
+    spin_b[0, 3:] = [[1, 0, 0], [-1, 0, 0]]
+    return coord, atype, spin_a, spin_b
+
+
 def jitter_zero_arrays(node, rng: np.random.Generator):
     """Return a copy of a serialized tree with every zero float array jittered.
 

@@ -79,10 +79,10 @@ def pair_margin_frame_mask(
     """
     Return the valid-frame mask of the pair-clearance filter.
 
-    The derived field holds each frame's margin against the thresholds its atom
-    pairs carry, so a frame is kept when that margin reaches one, whatever
-    length scale sized them. The registered filter radius is already
-    spent on that margin and takes no part in this comparison.
+    The derived field holds each frame's minimum pair distance relative to the
+    registered filter distance, so a frame is kept when that margin reaches one.
+    The filter distance is already spent on that margin and takes no part in
+    this comparison.
 
     Parameters
     ----------

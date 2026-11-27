@@ -66,14 +66,23 @@ def soft_saturate(value: Any, knee: float) -> Any:
     :math:`x_0`; its slope decays as :math:`|x|^{-3}` far beyond it.
     """
     xp = array_api_compat.array_namespace(value)
-    scale = xp.maximum(
-        xp.abs(value),
-        xp.asarray(knee, dtype=value.dtype, device=array_api_compat.device(value)),
+    knee_scalar = xp.full(
+        (), knee, dtype=value.dtype, device=array_api_compat.device(value)
+    )
+    # Rescale by max(|x|, x_0) so squaring stays finite in half precision.
+    # Selecting the sign branches directly with ``where`` avoids ``abs`` and
+    # ``maximum``, whose symbolic first derivative in PyTorch (``aten.sgn``)
+    # queries concrete tensor sizes during second-order backward and
+    # specializes dynamic node and edge axes.
+    scale = xp.where(
+        value >= knee_scalar,
+        value,
+        xp.where(value <= -knee_scalar, -value, knee_scalar),
     )
     scaled_value = value / scale
-    scaled_knee = knee / scale
+    scaled_knee = knee_scalar / scale
     return (
-        knee
+        knee_scalar
         * scaled_value
         / xp.sqrt(scaled_value * scaled_value + scaled_knee * scaled_knee)
     )
@@ -131,9 +140,7 @@ class BlockAttention(NativeOP):
 
     Every output map starts at zero, so a block starts as the identity, and
     every term vanishes with the C³ envelope :math:`\chi_k` of the block at
-    its cutoff. Under zone bridging the first-block envelope :math:`\chi_{ij}`
-    carries the source gate, which removes a frozen atom from the numerator
-    and the denominator of the softmax alike. Source features are formed per
+    its cutoff. Source features are formed per
     node by :meth:`source_features` and center features by
     :meth:`center_features`; a distributed caller refreshes the ghost rows of
     the source features in between.
@@ -354,8 +361,7 @@ class BlockAttention(NativeOP):
             Cartesian harmonics of the edge directions with shape
             ``(E, (lmax + 1) ** 2)``.
         envelope
-            Masked C³ envelope of the first block with shape ``(E,)``,
-            including the bridging switch and the source gate.
+            Masked C³ envelope of the first block with shape ``(E,)``.
         block_envelope
             C³ envelope at the cutoff of this block with shape ``(E,)``.
         src, dst

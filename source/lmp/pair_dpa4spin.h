@@ -28,10 +28,12 @@ namespace deepmd_compat = deepmd;
 namespace deepmd_compat = deepmd::hpp;
 #endif
 
+#include <deque>
 #include <string>
 #include <vector>
 
 #include "comm_brick.h"
+#include "model_deviation.h"
 #include "pair.h"
 
 namespace LAMMPS_NS {
@@ -54,10 +56,11 @@ class CommBrickDPA4Spin : public CommBrick {
 // ghost) force and magnetic force, both of which the spin atom style folds
 // onto their owners through its reverse communication.
 //
-// The style evaluates exactly one artifact and passes no frame or atomic
-// parameters, so a model that requires one must carry its default. A charge
-// state, being fixed for the whole run, is named once on the pair_style line
-// and handed to the model there.
+// The first model drives the dynamics; the further models of an ensemble are
+// evaluated on the same neighbor list at the steps that write the model
+// deviation. The style passes no frame or atomic parameters, so a model that
+// requires one must carry its default. A charge state, being fixed for the
+// whole run, is named once on the pair_style line and handed to every model.
 //
 // The device-resident variant is ``dpa4spin/kk``; it needs the compact
 // canonical artifact and evaluates it without the per-step host marshaling.
@@ -66,10 +69,11 @@ class PairDPA4Spin : public Pair {
   PairDPA4Spin(class LAMMPS*);
   ~PairDPA4Spin() override;
 
-  // Load the artifact named by ``pair_style dpa4spin <model>
-  // [charge_spin <v1> ... <vN>] [magnetic_force precession|cartesian]`` and
-  // fix the optional charge state and magnetic-force convention the keywords
-  // name. ``magnetic_force`` defaults to precession.
+  // Load the artifacts named by ``pair_style dpa4spin <model> [<model> ...]
+  // [charge_spin <v1> ... <vN>] [out_freq <n>] [out_file <file>] [atomic]
+  // [relative <level>] [relative_v <level>]`` and fix the optional charge
+  // state the keyword names. The first model drives the dynamics; several
+  // models form an ensemble whose deviation the remaining keywords configure.
   void settings(int, char**) override;
   // Resolve the LAMMPS atom types onto the element list of the model.
   void coeff(int, char**) override;
@@ -80,6 +84,14 @@ class PairDPA4Spin : public Pair {
   double init_one(int, int) override;
   void compute(int, int) override;
   void* extract(const char*, int&) override;
+  // Reverse communication of the outputs of the models of an ensemble at the
+  // steps that write the model deviation.
+  int pack_reverse_comm(int, int, double*) override;
+  void unpack_reverse_comm(int, int*, double*) override;
+  // A restart stores no state of the style; reading one marks the run as its
+  // continuation.
+  void write_restart(FILE*) override {}
+  void read_restart(FILE*) override { is_restart = true; }
 
  protected:
   virtual int model_device() { return get_node_rank(); }
@@ -89,8 +101,15 @@ class PairDPA4Spin : public Pair {
   // Rank within the shared-memory domain, which selects the accelerator the
   // model binds to.
   int get_node_rank() const;
+  // Fold the stored rows of the ghost atoms onto their owners and write the
+  // model deviation of the current step.
+  void write_model_deviation();
 
+  // The first model of the ensemble, which drives the dynamics, and the
+  // others, evaluated at the steps that write the model deviation.
   deepmd_compat::DeepSpin deep_spin;
+  std::deque<deepmd_compat::DeepSpin> ensemble;
+  ModelDeviation model_deviation;
   // Per-type-pair prefactor applied to every model output; ``fix adapt``
   // reaches it through extract().
   double** scale;
@@ -101,10 +120,8 @@ class PairDPA4Spin : public Pair {
   std::vector<int> type_idx_map;
   // LAMMPS unit system relative to the eV / Angstrom system of the model.
   double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
-  // Convention in atom->fm: 0 = precession (|m|/hbar scaling), 1 = Cartesian
-  // (-dE/dS, including at zero moment). An int for the scalar Pair::extract
-  // API.
-  int fm_cartesian_force;
+  // The run continues a restart, whose model-deviation file it appends to.
+  bool is_restart;
 
  private:
   CommBrickDPA4Spin* commdata_;

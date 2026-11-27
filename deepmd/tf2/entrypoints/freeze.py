@@ -57,8 +57,8 @@ def select_model_branch(
 
     if head in (None, ""):
         raise ValueError(
-            "Multi-task TF2 checkpoints require --head/--model-branch to select "
-            "which model branch to freeze."
+            "Multi-task TF2 checkpoints require --task to select which model "
+            "branch to freeze."
         )
     model_alias_dict, _ = get_model_dict(model_def_script["model_dict"])
     if head not in model_alias_dict:

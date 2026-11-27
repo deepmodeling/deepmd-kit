@@ -50,7 +50,7 @@ def _capture_pt2_levels(monkeypatch, data, *, lower_kind="nlist"):
     return captured
 
 
-def test_dpa4_uses_pt_freeze_defaults_and_restores_environment(monkeypatch) -> None:
+def test_dpa4_uses_freeze_defaults_and_restores_environment(monkeypatch) -> None:
     _clear_infer_levels(monkeypatch)
 
     captured = _capture_pt2_levels(
@@ -66,7 +66,7 @@ def test_dpa4_uses_pt_freeze_defaults_and_restores_environment(monkeypatch) -> N
 
     assert captured == {
         "triton": "2",
-        "cuda": "1",
+        "cuda": "2",
         "cutile": "0",
         "cute": "0",
     }
