@@ -11,6 +11,7 @@ from __future__ import (
     annotations,
 )
 
+import functools
 import logging
 import math
 from collections.abc import (
@@ -123,8 +124,17 @@ class EdgeFeatureCache(NamedTuple):
     D_packed: torch.Tensor | None = None
 
 
-_warned_packed_inert = False
 log = logging.getLogger(__name__)
+
+
+@functools.cache
+def _warn_packed_inert() -> None:
+    """Say once that the band was admitted but the calculator cannot build it."""
+    log.warning(
+        "The blocks admit the banded Wigner layout, but the resolved "
+        "Wigner calculator cannot produce it (an unsupported degree); "
+        "building dense Wigner surfaces."
+    )
 
 
 def cached_edge_csr(
@@ -547,18 +557,11 @@ def _build_edge_wigner(
         # per-optimization opt-in.
         return None, None, edge_quat, calc.forward_band_fused(edge_quat)
     if packed_wigner:
-        global _warned_packed_inert
-        if not _warned_packed_inert:
-            # The admission gate said yes but the resolved calculator cannot
-            # produce the band -- typically the ladder degree exceeds the
-            # band support.  Dense surfaces are built instead; say so once
-            # instead of leaving the band silently unbuilt.
-            _warned_packed_inert = True
-            log.warning(
-                "The blocks admit the banded Wigner layout, but the "
-                "resolved Wigner calculator cannot produce it (an "
-                "unsupported degree); building dense Wigner surfaces."
-            )
+        # The admission gate said yes but the resolved calculator cannot
+        # produce the band -- typically the ladder degree exceeds the
+        # band support.  Dense surfaces are built instead; say so once
+        # instead of leaving the band silently unbuilt.
+        _warn_packed_inert()
     D_full, Dt_full = wigner_calc(edge_quat)
     return D_full, Dt_full, edge_quat, None
 

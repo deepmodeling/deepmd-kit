@@ -3245,10 +3245,6 @@ class TestSeZMWignerBandOp(unittest.TestCase):
 
     def test_packed_flag_warns_once_when_the_calculator_cannot_band(self):
         """An admitted-but-unbuildable band says so instead of silence."""
-        from unittest import (
-            mock,
-        )
-
         import deepmd.pt.model.descriptor.sezm_nn.edge_cache as ec
 
         edge_vec = torch.tensor(
@@ -3278,13 +3274,17 @@ class TestSeZMWignerBandOp(unittest.TestCase):
                 packed_wigner=True,
             )
 
-        with mock.patch.object(ec, "_warned_packed_inert", False):
+        # Start from "not warned yet" and leave it that way for later tests.
+        ec._warn_packed_inert.cache_clear()
+        try:
             with self.assertLogs(
                 "deepmd.pt.model.descriptor.sezm_nn.edge_cache", level="WARNING"
             ) as logged:
                 run()
-            # second call stays silent: the warning fires once
-            run()
+                # second call stays silent: the warning fires once
+                run()
+        finally:
+            ec._warn_packed_inert.cache_clear()
         self.assertEqual(len(logged.records), 1)
         self.assertIn("cannot produce it", logged.records[0].getMessage())
 
