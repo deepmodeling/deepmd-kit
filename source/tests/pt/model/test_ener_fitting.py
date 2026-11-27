@@ -186,3 +186,8 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ft2 = InvarFitting.deserialize(ft0.serialize())
             in_dim = ft2.dim_descrpt + ft2.numb_fparam
             assert ft2.filter_layers[0].in_dim == in_dim
+
+    def test_moe_is_refused(self) -> None:
+        """MoE belongs to the PyTorch Exportable backend."""
+        with self.assertRaisesRegex(NotImplementedError, "pt-expt"):
+            InvarFitting("foo", self.nt, 8, 1, mixed_types=True, moe={})

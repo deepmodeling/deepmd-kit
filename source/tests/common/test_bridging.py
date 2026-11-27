@@ -13,17 +13,25 @@ from pathlib import (
     Path,
 )
 
-import numpy as np
 import pytest
+from dargs.dargs import (
+    ArgumentKeyError,
+)
 
-from deepmd.dpmodel.descriptor.dpa4_nn import (
-    BridgingSwitch,
+from deepmd.utils.argcheck import (
+    normalize,
 )
 from deepmd.utils.bridging import (
-    DEFAULT_FRACTION_INNER,
-    DEFAULT_FRACTION_OUTER,
+    DEFAULT_CLAMP,
+    DEFAULT_SUPPORT,
+    DEFAULT_TRUNCATION,
+    drop_retired_descriptor_options,
+    drop_retired_window_options,
     expand_bridging_method,
-    resolve_bridging_window,
+    resolve_bridging_options,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
 )
 from deepmd.utils.data import (
     min_pair_dist_requirement,
@@ -37,8 +45,9 @@ def _flag_config() -> dict:
         "descriptor": {"type": "dpa4", "rcut": 4.0, "sel": 8},
         "fitting_net": {"type": "dpa4_ener", "neuron": [8, 8]},
         "bridging_method": "ZBL",
-        "bridging_r_inner": 0.8,
-        "bridging_r_outer": 1.2,
+        "bridging_truncation": 1.05,
+        "bridging_clamp": 0.7,
+        "bridging_support": 2,
     }
 
 
@@ -72,51 +81,116 @@ def test_expansion_shape() -> None:
     assert inner == {
         "type": "inner_potential",
         "mode": "ZBL",
-        "fraction_inner": 0.26,
-        "fraction_outer": 0.80,
-        "r_inner": 0.8,
-        "r_outer": 1.2,
+        "truncation": 1.05,
+        "clamp": 0.7,
+        "support": 2,
     }
     # the flag keys must not leak into the canonical config
     for key in (
         "bridging_method",
-        "bridging_fraction_inner",
-        "bridging_fraction_outer",
-        "bridging_r_inner",
-        "bridging_r_outer",
+        "bridging_truncation",
+        "bridging_clamp",
+        "bridging_support",
     ):
         assert key not in out
         assert key not in learned
 
 
-def test_window_defaults_to_the_covalent_rule() -> None:
-    """Without explicit radii the window is a fraction of each pair's own size."""
+def test_options_default_to_the_shared_constants() -> None:
     data = _flag_config()
-    del data["bridging_r_inner"]
-    del data["bridging_r_outer"]
+    del data["bridging_truncation"]
+    del data["bridging_clamp"]
+    del data["bridging_support"]
     inner = expand_bridging_method(data)["models"][1]
-    assert inner["r_inner"] is None
-    assert inner["r_outer"] is None
-    assert resolve_bridging_window(inner) == {
-        "inner_clamp_f_inner": 0.26,
-        "inner_clamp_f_outer": 0.80,
-        "inner_clamp_scale": "covalent",
+    assert inner["truncation"] == DEFAULT_TRUNCATION
+    assert inner["clamp"] == DEFAULT_CLAMP
+    assert inner["support"] == DEFAULT_SUPPORT == 3
+    assert resolve_bridging_options({"type": "inner_potential"}) == {
+        "truncation": DEFAULT_TRUNCATION,
+        "clamp": DEFAULT_CLAMP,
+        "support": DEFAULT_SUPPORT,
     }
 
 
-def test_explicit_radii_override_the_covalent_rule() -> None:
-    """Radii in Å apply the same window to every pair, through a unit scale."""
-    inner = expand_bridging_method(_flag_config())["models"][1]
-    assert resolve_bridging_window(inner) == {
-        "inner_clamp_f_inner": 0.8,
-        "inner_clamp_f_outer": 1.2,
-        "inner_clamp_scale": "absolute",
-    }
+def test_a_null_clamp_leaves_the_learned_part_unclamped() -> None:
+    data = _flag_config()
+    data["bridging_clamp"] = None
+    inner = expand_bridging_method(data)["models"][1]
+    assert resolve_bridging_options(inner)["clamp"] is None
 
 
-def test_half_a_window_is_rejected() -> None:
-    with pytest.raises(ValueError, match="both `r_inner` and `r_outer`"):
-        resolve_bridging_window({"r_outer": 1.2})
+@pytest.mark.parametrize(
+    "window",
+    [
+        {
+            "inner_clamp_f_inner": None,
+            "inner_clamp_f_outer": None,
+            "inner_clamp_scale": "covalent",
+        },
+        {"inner_clamp_r_inner": None, "inner_clamp_r_outer": None},
+    ],
+)
+def test_a_descriptor_record_drops_the_retired_window(window: dict) -> None:
+    config = {"rcut": 4.0, **window}
+    drop_retired_descriptor_options(config)
+    assert config == {"rcut": 4.0}
+
+
+@pytest.mark.parametrize("setting", ["inner_clamp_f_inner", "inner_clamp_r_inner"])
+def test_active_descriptor_window_requires_retraining(setting: str) -> None:
+    config = {setting: 0.0}
+    with pytest.raises(ValueError, match="requires retraining"):
+        drop_retired_descriptor_options(config)
+    assert config == {setting: 0.0}
+
+
+_RETIRED_MODEL_WINDOW = {
+    "bridging_fraction_inner": 0.26,
+    "bridging_fraction_outer": 0.8,
+    "bridging_r_inner": None,
+    "bridging_r_outer": None,
+}
+
+
+def test_an_unbridged_section_drops_the_retired_window() -> None:
+    data = {**_flag_config(), "bridging_method": "none", **_RETIRED_MODEL_WINDOW}
+    ref = copy.deepcopy(data)
+    out = drop_retired_window_options(data)
+    assert out == {k: v for k, v in ref.items() if k not in _RETIRED_MODEL_WINDOW}
+    assert data == ref
+
+
+def test_a_bridged_section_keeps_the_retired_window_for_the_argument_check() -> None:
+    data = {**_flag_config(), **_RETIRED_MODEL_WINDOW}
+    assert drop_retired_window_options(data) is data
+
+
+def test_every_branch_of_a_multi_task_section_is_filtered_on_its_own() -> None:
+    plain = {"type": "dpa4", "bridging_method": "None", **_RETIRED_MODEL_WINDOW}
+    bridged = {**_flag_config(), **_RETIRED_MODEL_WINDOW}
+    out = drop_retired_window_options({"model_dict": {"a": plain, "b": bridged}})
+    assert not set(_RETIRED_MODEL_WINDOW) & set(out["model_dict"]["a"])
+    assert out["model_dict"]["b"] is bridged
+    assert plain["bridging_fraction_inner"] == 0.26
+
+
+def test_the_children_of_an_unbridged_composition_are_filtered() -> None:
+    child = {"type": "dpa4", "bridging_method": "None", **_RETIRED_MODEL_WINDOW}
+    sibling = {"type": "dpa4", "bridging_method": "None"}
+    composition = {"type": "linear_ener", "models": [child, sibling]}
+    out = drop_retired_window_options(composition)
+    assert not set(_RETIRED_MODEL_WINDOW) & set(out["models"][0])
+    assert out["models"][1] == sibling
+    assert child["bridging_fraction_inner"] == 0.26
+
+
+def test_the_children_of_a_bridged_composition_are_left_for_the_argument_check() -> (
+    None
+):
+    learned = {"type": "dpa4", "bridging_method": "None", **_RETIRED_MODEL_WINDOW}
+    inner = {"type": "inner_potential", "mode": "ZBL"}
+    composition = {"type": "linear_ener", "models": [learned, inner]}
+    assert drop_retired_window_options(composition) == composition
 
 
 def test_input_is_not_mutated() -> None:
@@ -390,9 +464,8 @@ def test_routing_resolves_argcheck_default_conflicts() -> None:
         )
 
 
-# The frame filter of a bridged model is the midpoint of its window, so the two
-# decisions it rests on -- which models count as bridged, and which radius the
-# window yields -- are pinned here against the shipped examples.
+# A bridged model trains on every frame of its data: the contact clamp is the
+# identity on all of them, so no frame filter derives from the bridging term.
 
 _EXAMPLES = Path(__file__).parent.parent.parent.parent / "examples" / "water"
 _BRIDGED_INPUTS = (
@@ -402,65 +475,39 @@ _BRIDGED_INPUTS = (
 
 
 @pytest.mark.parametrize("path", _BRIDGED_INPUTS, ids=lambda p: p.parent.name)
-def test_a_shipped_bridged_example_derives_its_own_filter(path) -> None:
-    """Every learned family the composition accepts owns a frame filter."""
+def test_a_shipped_bridged_example_expands_with_the_defaults(path) -> None:
     config = json.loads(path.read_text())
-    training_data = config["training"]["training_data"]
-    assert "min_pair_dist" not in training_data, (
-        "a bridged model derives the filter from its window, so the input must "
-        "not carry a second copy of it"
-    )
-    requirement = min_pair_dist_requirement(config["model"], 0.0)
+    assert "min_pair_dist" not in config["training"]["training_data"]
+    inner = expand_bridging_method(config["model"])["models"][1]
+    assert resolve_bridging_options(inner) == {
+        "truncation": DEFAULT_TRUNCATION,
+        "clamp": DEFAULT_CLAMP,
+        "support": DEFAULT_SUPPORT,
+    }
+
+
+def _normalized_model(config: dict) -> dict:
+    return normalize(update_deepmd_input(config, warning=False))["model"]
+
+
+def test_an_unbridged_input_with_the_retired_window_still_normalizes() -> None:
+    """The model section stored by an earlier release still holds the window."""
+    config = json.loads((_EXAMPLES / "dpa4" / "input.json").read_text())
+    config["model"].update(_RETIRED_MODEL_WINDOW)
+    assert not set(_RETIRED_MODEL_WINDOW) & set(_normalized_model(config))
+
+
+def test_a_bridged_input_with_the_retired_window_fails_at_normalization() -> None:
+    config = json.loads(_BRIDGED_INPUTS[0].read_text())
+    config["model"].update(_RETIRED_MODEL_WINDOW)
+    with pytest.raises(ArgumentKeyError, match="bridging_fraction_inner"):
+        _normalized_model(config)
+
+
+def test_min_pair_dist_is_a_distance_in_angstrom() -> None:
+    assert min_pair_dist_requirement(0.0) is None
+    requirement = min_pair_dist_requirement(0.5)
     assert requirement is not None
     assert requirement.key == "pair_margin"
-    assert requirement.default == pytest.approx(
-        0.5 * (DEFAULT_FRACTION_INNER + DEFAULT_FRACTION_OUTER)
-    )
-    assert requirement.length_scale == "covalent"
-
-
-@pytest.mark.parametrize("path", _BRIDGED_INPUTS, ids=lambda p: p.parent.name)
-def test_a_shipped_bridged_example_refuses_an_explicit_filter(path) -> None:
-    config = json.loads(path.read_text())
-    with pytest.raises(ValueError, match="must not be set on a bridged model"):
-        min_pair_dist_requirement(config["model"], 0.5)
-
-
-def test_an_explicit_window_filters_at_its_midpoint() -> None:
-    """Radii given in Å yield a filter in Å, halfway between the two."""
-    requirement = min_pair_dist_requirement(_flag_config(), 0.0)
-    assert requirement is not None
-    assert requirement.default == pytest.approx(1.0)
-    assert requirement.length_scale == "absolute"
-
-
-@pytest.mark.parametrize(
-    "fractions",
-    [(DEFAULT_FRACTION_INNER, DEFAULT_FRACTION_OUTER), (0.1, 0.9), (0.5, 0.8)],
-)
-def test_the_bridging_switch_is_half_open_at_the_filter_radius(fractions) -> None:
-    """The filter keeps exactly the pairs whose learned amplitude is at least one half."""
-    f_inner, f_outer = fractions
-    config = _flag_config()
-    del config["bridging_r_inner"], config["bridging_r_outer"]
-    config["bridging_fraction_inner"] = f_inner
-    config["bridging_fraction_outer"] = f_outer
-    requirement = min_pair_dist_requirement(config, 0.0)
-    assert requirement is not None
-    contact = np.array([1.7])
-    opening = BridgingSwitch(f_inner, f_outer).call(
-        requirement.default * contact, contact
-    )
-    np.testing.assert_allclose(opening, 0.5, rtol=0.0, atol=1.0e-14)
-
-
-def test_an_unbridged_model_without_a_floor_registers_no_filter() -> None:
-    """Whether the filter runs and whether it is registered is one decision."""
-    config = _flag_config()
-    for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
-        del config[key]
-    assert min_pair_dist_requirement(config, 0.0) is None
-    requirement = min_pair_dist_requirement(config, 0.5)
-    assert requirement is not None
     assert requirement.default == 0.5
-    assert requirement.length_scale == "absolute"
+    assert requirement.source_policy == "derived"

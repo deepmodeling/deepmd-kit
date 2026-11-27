@@ -501,6 +501,9 @@ class DeepPotPTExpt : public DeepPotBackend {
   // the source CSR an input of every evaluation rather than of the per-atom
   // virial alone.
   bool canonical_requires_source_csr_ = false;
+  // Whether the compact lower reads the reverse of every edge, which a
+  // single-domain neighbor list then has to hold.
+  bool canonical_requires_reciprocal_ = false;
   // Two-entry source CSR placeholders that decline the per-atom virial.
   at::Tensor source_row_placeholder_;
   at::Tensor source_order_placeholder_;
@@ -524,6 +527,10 @@ class DeepPotPTExpt : public DeepPotBackend {
   // The cell input of the device-resident evaluations of a model with a
   // long-range module, in pinned memory that a replay reads again.
   std::unique_ptr<deepmd::ptexpt::PinnedCell> long_range_cell_;
+  // The charge/spin condition of the device-resident evaluations of a compact
+  // lower that reads it as an input, on the model device, which a replay reads
+  // again and ``set_charge_spin`` rewrites in place; undefined otherwise.
+  torch::Tensor canonical_charge_spin_;
   // The mesh size of the cell of the last device-resident evaluation of a
   // model with a long-range module, zero for a non-periodic frame, and the
   // evaluations since it last changed, counted up to the number of calls for
@@ -531,8 +538,8 @@ class DeepPotPTExpt : public DeepPotBackend {
   std::optional<std::array<std::int64_t, 3> > long_range_mesh_;
   std::int64_t long_range_mesh_calls_ = 0;
   // CUDA-graph replay of repeated device-resident canonical evaluations,
-  // declared after the loader and the cell so that the graph is released
-  // before the constants and the cell it reads.
+  // declared after the loader, the cell and the condition so that the graph
+  // is released before the constants, the cell and the condition it reads.
   std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
   // Serializes the runs of the model, which runs on a single-threaded runner,
   // the device-resident entry points, whose replay of canonical evaluations
@@ -700,6 +707,9 @@ class DeepPotPTExpt : public DeepPotBackend {
   /**
    * @brief Run a compact canonical ``.pt2`` artifact.
    *
+   * @param[in] charge_spin The charge/spin condition, shape ``(1,
+   * dim_chg_spin)`` float64 on the model device, appended after the graph for
+   * a model that reads it as an input and ignored otherwise.
    * @param[in] coord Node positions, shape ``(N, 3)`` float64, appended for a
    * model with a long-range module and ignored otherwise.
    * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of the
@@ -723,6 +733,7 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& destination_row_ptr,
       const torch::Tensor& source_row_ptr,
       const torch::Tensor& source_order,
+      const torch::Tensor& charge_spin,
       const torch::Tensor& coord,
       const void* world,
       const torch::Tensor& cell,

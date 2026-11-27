@@ -143,7 +143,7 @@ def _read_metadata(pt2_path: str) -> dict:
 
 @pytest.mark.parametrize(
     "lower_input_kind",
-    ["nlist", "graph", "dpa1_canonical", "dpa4c_canonical", "edge_vec"],
+    ["nlist", "graph", "dpa_canonical", "edge_vec"],
 )
 def test_pt2_serialization_preserves_lower_input_kind(
     tmp_path, lower_input_kind: str
@@ -164,7 +164,7 @@ def test_pt2_serialization_preserves_lower_input_kind(
 
 @pytest.mark.parametrize(
     "lower_input_kind",
-    ["nlist", "graph", "dpa1_canonical", "dpa4c_canonical", "edge_vec"],
+    ["nlist", "graph", "dpa_canonical", "edge_vec"],
 )
 def test_pte_serialization_preserves_lower_input_kind(
     tmp_path, monkeypatch: pytest.MonkeyPatch, lower_input_kind: str

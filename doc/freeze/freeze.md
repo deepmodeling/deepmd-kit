@@ -25,7 +25,7 @@ When `-c` names a checkpoint prefix, the backend also checks the corresponding
 path with `.tf2` appended, so the example reads `model.ckpt.tf2` and writes the
 TensorFlow SavedModel to `model.savedmodeltf`. If `-c` is omitted, it defaults
 to the current directory. For a multi-task checkpoint, select a branch with
-`--head CHOSEN_BRANCH`. SavedModel export requires graph-traceable model code;
+`--task CHOSEN_BRANCH` (aliases: `--head`, `--model-branch`). SavedModel export requires graph-traceable model code;
 descriptor-specific export requirements are documented on the corresponding
 model pages.
 :::
@@ -38,11 +38,11 @@ dp --pt freeze -o model.pth
 
 in the folder where the model is trained. The output model is called `model.pth`.
 
-In [multi-task mode](../train/multi-task-training), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
+In [multi-task mode](../train/multi-task-training), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--task` (aliases: `--head`, `--model-branch`)
 to specify which model branch you want to freeze:
 
 ```bash
-dp --pt freeze -o model_branch1.pth --head CHOSEN_BRANCH
+dp --pt freeze -o model_branch1.pth --task CHOSEN_BRANCH
 ```
 
 The output model is called `model_branch1.pth`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.
@@ -59,7 +59,7 @@ the graph lower form. A suffixless output lets DeePMD-kit select the matching
 extension. `--lower-kind graph` requires a graph-eligible model. Conversely, a
 graph-capable DPA model may override a requested `nlist` lower with the graph
 form and emit a warning. In multi-task mode, select a model branch with
-`--head CHOSEN_BRANCH`.
+`--task CHOSEN_BRANCH` (aliases: `--head`, `--model-branch`).
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
@@ -70,11 +70,11 @@ dp --pd freeze -o model
 
 in the folder where the model is trained. The output model is called `model.json` and `model.pdiparams`.
 
-In [multi-task mode](../train/multi-task-training.md), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
+In [multi-task mode](../train/multi-task-training.md), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--task` (aliases: `--head`, `--model-branch`)
 to specify which model branch you want to freeze:
 
 ```bash
-dp --pd freeze -o model_branch1 --head CHOSEN_BRANCH
+dp --pd freeze -o model_branch1 --task CHOSEN_BRANCH
 ```
 
 The output model is called `model_branch1.json`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.

@@ -15,9 +15,6 @@ from contextlib import (
 from copy import (
     deepcopy,
 )
-from pathlib import (
-    Path,
-)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -25,35 +22,31 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.train.ema import (
+    EMA_CHECKPOINT_KEY,
+    EMA_DECAY_KEY,
+    EMA_MODEL_STATE_KEY,
+    EMA_VALIDATION_STATE_KEY,
+    get_ema_checkpoint_prefix,
+    get_ema_validation_log_path,
+)
+
 if TYPE_CHECKING:
     from collections.abc import (
         Iterator,
     )
 
-EMA_CHECKPOINT_KEY = "ema"
-EMA_DECAY_KEY = "decay"
-EMA_MODEL_STATE_KEY = "model"
-EMA_VALIDATION_STATE_KEY = "validation_state"
-
 log = logging.getLogger(__name__)
 
-
-def _append_suffix(path_like: str | Path, suffix: str) -> Path:
-    """Append a suffix before the final file suffix when present."""
-    path = Path(path_like)
-    if path.suffix:
-        return path.with_name(f"{path.stem}{suffix}{path.suffix}")
-    return path.with_name(f"{path.name}{suffix}")
-
-
-def get_ema_checkpoint_prefix(save_ckpt: str | Path) -> str:
-    """Derive the EMA checkpoint prefix from the regular checkpoint prefix."""
-    return str(_append_suffix(save_ckpt, "_ema"))
-
-
-def get_ema_validation_log_path(full_val_file: str | Path) -> Path:
-    """Derive the EMA validation log path from the regular validation log path."""
-    return _append_suffix(full_val_file, "_ema")
+__all__ = [
+    "EMA_CHECKPOINT_KEY",
+    "EMA_DECAY_KEY",
+    "EMA_MODEL_STATE_KEY",
+    "EMA_VALIDATION_STATE_KEY",
+    "ModelEMA",
+    "get_ema_checkpoint_prefix",
+    "get_ema_validation_log_path",
+]
 
 
 def _foreach_compatible(shadow: torch.Tensor, param: torch.Tensor) -> bool:

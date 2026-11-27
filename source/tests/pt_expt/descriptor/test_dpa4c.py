@@ -28,23 +28,24 @@ from deepmd.pt_expt.utils import (
     env,
 )
 
+# Data edge in Å that every pair of types takes in the descriptors of the
+# contract tests that carry a contact clamp, and the inner fraction of that
+# clamp. With the five-atom test cluster of ``TestDPA4C.setup_method`` they put
+# four bonds in the frozen zone, four in the transition zone and two beyond the
+# data edge.
+CLAMP_EDGE = 1.8
+CLAMP = {"contact_clamp": 0.75, "type_map": ["O", "H"]}
+
 # Structural variants exercised by the backend-agnostic contracts. They span
-# both angular profiles and both radial function classes, one bridging window
-# whose transition zone holds several pairs of the test cluster, and two and
-# three message-passing blocks with and without that window.
+# both angular profiles and both radial function classes, one contact clamp
+# whose three zones hold bonds of the test cluster, and two and three
+# message-passing blocks with and without that clamp.
 STRUCTURES = [
     {"channels": 16, "lmax": 2, "radial_modes": 0},
     {"channels": 32, "lmax": 4, "radial_modes": 0},
     {"channels": 32, "lmax": 2, "radial_modes": 3},
     {"channels": 16, "lmax": 3, "radial_modes": 3},
-    {
-        "channels": 16,
-        "lmax": 3,
-        "radial_modes": 3,
-        "inner_clamp_f_inner": 1.0,
-        "inner_clamp_f_outer": 1.25,
-        "inner_clamp_scale": "absolute",
-    },
+    {"channels": 16, "lmax": 3, "radial_modes": 3, **CLAMP},
     {"channels": 16, "lmax": 3, "radial_modes": 3, "rcut": [3.0, 2.5], "n_blocks": 2},
     {
         "channels": 16,
@@ -52,9 +53,7 @@ STRUCTURES = [
         "radial_modes": 3,
         "rcut": [3.0, 2.5],
         "n_blocks": 2,
-        "inner_clamp_f_inner": 1.0,
-        "inner_clamp_f_outer": 1.25,
-        "inner_clamp_scale": "absolute",
+        **CLAMP,
     },
     {
         "channels": 16,
@@ -128,7 +127,10 @@ class TestDPA4C:
 
         The default precision is double, which the numerical contracts need.
         Mixed-precision tests must override it, because CUDA autocast ignores
-        double operands and would otherwise leave the region untouched.
+        double operands and would otherwise leave the region untouched. A
+        descriptor with a contact clamp takes ``CLAMP_EDGE`` as the data edge of
+        every pair, and applies the clamp in evaluation mode only, as the
+        clamp is the identity in training.
         """
         descriptor = DescrptDPA4C(
             ntypes=2,
@@ -142,6 +144,8 @@ class TestDPA4C:
                 **structure,
             },
         ).to(env.DEVICE)
+        if descriptor.contact_clamp is not None:
+            descriptor.contact_clamp.edges.fill_(CLAMP_EDGE)
         # The output maps of the further blocks start at zero, which makes
         # every block the identity, so the contracts would not reach them.
         # Every zero map is drawn at random to exercise the blocks.
@@ -223,8 +227,9 @@ class TestDPA4C:
         self,
         descriptor: DescrptDPA4C,
         distance: float,
+        order: int = 3,
     ) -> list[torch.Tensor]:
-        """Return the value and first three radial derivatives of the probe."""
+        """Return radial derivatives from the value through the requested order."""
         radius = torch.tensor(
             distance,
             dtype=torch.float64,
@@ -232,7 +237,7 @@ class TestDPA4C:
             requires_grad=True,
         )
         derivatives = [self._dimer_probe(descriptor, radius)]
-        for _ in range(3):
+        for _ in range(order):
             derivatives.append(
                 torch.autograd.grad(
                     derivatives[-1],
@@ -249,7 +254,7 @@ class TestDPA4C:
         self,
         structure: dict[str, int],
     ) -> None:
-        descriptor = self.build(**structure)
+        descriptor = self.build(**structure).eval()
         coord_ext, atype_ext, mapping, nlist = self._inputs(self.coord)
         result = descriptor(coord_ext, atype_ext, nlist, mapping=mapping)[0]
         reference = DPDescrptDPA4C.deserialize(descriptor.serialize())(
@@ -471,7 +476,7 @@ class TestDPA4C:
 
     @pytest.mark.parametrize("structure", STRUCTURES)
     def test_force_loss_double_backward(self, structure: dict[str, int]) -> None:
-        descriptor = self.build(**structure)
+        descriptor = self.build(**structure).eval()
         coord = self.coord.detach().clone().requires_grad_(True)
         output = self._evaluate(descriptor, coord)
         (force_gradient,) = torch.autograd.grad(
@@ -628,53 +633,53 @@ class TestDPA4C:
             rtol=0.0,
         )
 
-    def test_bridging_window_is_c3_continuous(self) -> None:
-        window = {
-            "inner_clamp_f_inner": 0.5,
-            "inner_clamp_f_outer": 0.8,
-            "inner_clamp_scale": "absolute",
-        }
-        descriptor = self.build(channels=16, lmax=4, **window).eval()
+    def test_contact_clamp_is_c4_continuous(self) -> None:
+        # The data edge of the dimer is 0.8 Å and the clamp freezes the
+        # separation at and below 0.5 Å. The septic smootherstep that is the
+        # slope of the read separation has a triple zero at both ends, so the
+        # separation is C^4 at the edge, where it joins the plain descriptor,
+        # and flat to the same order at the inner radius, where the probe
+        # joins a constant. Probe either side close enough to distinguish
+        # the limiting fourth derivative from a finite jump.
+        descriptor = self.build(channels=16, lmax=4, **CLAMP | {"contact_clamp": 0.625})
+        descriptor.contact_clamp.edges.fill_(0.8)
+        descriptor.eval()
         plain = self.build(channels=16, lmax=4).eval()
-        # The septic switch meets both radii with three vanishing derivatives:
-        # at the inner radius the probe joins the constant of the removed
-        # edge, at the outer radius it joins the plain descriptor. The
-        # regularized distance exceeds the separation by 1e-14 Å, which the
-        # fourth derivative of the switch turns into the tolerance below.
-        inner = self._dimer_derivatives(descriptor, 0.5)
-        for order in (1, 2, 3):
-            torch.testing.assert_close(
-                inner[order],
-                torch.zeros_like(inner[order]),
-                atol=1e-8,
-                rtol=0.0,
-            )
-        outer = self._dimer_derivatives(descriptor, 0.8)
-        reference = self._dimer_derivatives(plain, 0.8)
-        assert reference[3].abs() > 1e-3
-        for order in range(4):
-            torch.testing.assert_close(
-                outer[order],
-                reference[order],
-                atol=1e-8,
-                rtol=0.0,
-            )
+        for offset in (-1e-11, 1e-11):
+            inner = self._dimer_derivatives(descriptor, 0.5 + offset, order=4)
+            for order, value in enumerate(inner[1:], start=1):
+                torch.testing.assert_close(
+                    value,
+                    torch.zeros_like(value),
+                    atol=1e-6 if order == 4 else 1e-8,
+                    rtol=0,
+                )
+            outer = self._dimer_derivatives(descriptor, 0.8 + offset, order=4)
+            reference = self._dimer_derivatives(plain, 0.8 + offset, order=4)
+            assert reference[3].abs() > 1e-3
+            for order, (value, target) in enumerate(zip(outer, reference, strict=True)):
+                torch.testing.assert_close(
+                    value, target, atol=1e-6 if order == 4 else 1e-8, rtol=0
+                )
 
-    def test_frozen_edge_matches_removed_topology(self) -> None:
-        descriptor = self.build(
-            inner_clamp_f_inner=0.5,
-            inner_clamp_f_outer=0.8,
-            inner_clamp_scale="absolute",
-        ).eval()
+    def test_frozen_bond_reads_one_separation(self) -> None:
+        descriptor = self.build(**CLAMP | {"contact_clamp": 0.625})
+        descriptor.contact_clamp.edges.fill_(0.8)
+        descriptor.eval()
         plain = self.build().eval()
-        radius = torch.tensor(0.5, dtype=torch.float64, device=env.DEVICE)
-        removed = self._dimer_probe(descriptor, radius, active=False)
-        # The plain descriptor must see the pair, or the comparison is vacuous.
-        assert (self._dimer_probe(plain, radius) - removed).abs() > 1e-3
+        near = torch.tensor(0.2, dtype=torch.float64, device=env.DEVICE)
+        far = torch.tensor(0.5, dtype=torch.float64, device=env.DEVICE)
+        # The plain descriptor must see the difference, or the comparison is
+        # vacuous.
+        assert (
+            self._dimer_probe(plain, near) - self._dimer_probe(plain, far)
+        ).abs() > 1e-3
+        # The bond keeps its direction, which the regularization moves by
+        # 1e-14 between the two lengths.
         torch.testing.assert_close(
-            self._dimer_probe(descriptor, radius, active=True),
-            removed,
-            atol=0.0,
+            self._dimer_probe(descriptor, near),
+            self._dimer_probe(descriptor, far),
+            atol=1e-12,
             rtol=0.0,
         )
 
@@ -982,3 +987,157 @@ class TestDPA4CSpin:
             2,
         )
         assert single.compress_spin_type.shape == (single.ntypes + 1, 4)
+
+
+def test_exchange_mode_spin_rotation_and_magnetic_gradient() -> None:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+
+    descriptor = DescrptDPA4C(
+        rcut=3.0,
+        ntypes=1,
+        channels=8,
+        lmax=2,
+        n_radial=4,
+        precision="float64",
+        seed=23,
+        use_spin=[True],
+        spin_mode="exchange",
+    ).to(env.DEVICE)
+    with torch.no_grad():
+        descriptor.spin.spin_gate.fill_(1.0)
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.0, 0.2, 0.3], [0.1, 1.1, -0.4]]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    atype = torch.zeros((1, 3), dtype=torch.int64, device=env.DEVICE)
+    graph = build_neighbor_graph(coord, atype, None, descriptor.get_rcut())
+    spin = torch.tensor(
+        [[0.3, 0.4, 0.5], [-0.5, 0.1, 0.6], [0.2, -0.3, 0.1]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+        requires_grad=True,
+    )
+    rotation = torch.tensor(
+        [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    output = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    gradient = torch.autograd.grad(output.sum(), spin)[0]
+    rotated_spin = (spin.detach() @ rotation.T).requires_grad_()
+    rotated = descriptor.call_graph(graph, atype.reshape(-1), spin=rotated_spin)[0]
+    rotated_gradient = torch.autograd.grad(rotated.sum(), rotated_spin)[0]
+    torch.testing.assert_close(rotated, output, atol=1e-12, rtol=1e-12)
+    torch.testing.assert_close(
+        rotated_gradient, gradient @ rotation.T, atol=1e-12, rtol=1e-12
+    )
+    assert gradient.abs().max() > 1e-8
+
+
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+def test_tetrahedral_spin_quadrupole_distinguishes_zero_total_moments(
+    spin_mode: str,
+) -> None:
+    """Neighbour quadrupoles distinguish equal-magnitude compensated moments."""
+    from deepmd.dpmodel.model.base_model import (
+        BaseModel,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+    from deepmd.pt_expt.model import (
+        get_model,
+    )
+
+    from ...dpa4_fixtures import (
+        tetrahedral_spin_configurations,
+    )
+
+    coord, atype, spin_a, spin_b = tetrahedral_spin_configurations()
+    model = (
+        get_model(
+            {
+                "type_map": ["Fe", "C"],
+                "descriptor": {
+                    "type": "dpa4c",
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "lmax": 2,
+                    "n_radial": 4,
+                    "precision": "float64",
+                    "seed": 17,
+                },
+                "fitting_net": {
+                    "type": "ener",
+                    "neuron": [8],
+                    "precision": "float64",
+                    "seed": 19,
+                },
+                "spin": {"scheme": f"native:{spin_mode}", "use_spin": [True, False]},
+            }
+        )
+        .to("cpu")
+        .eval()
+    )
+    generator = torch.Generator().manual_seed(37)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.1
+                * torch.randn(
+                    parameter.shape,
+                    generator=generator,
+                    dtype=parameter.dtype,
+                )
+            )
+        model.atomic_model.descriptor.spin.spin_gate.fill_(1.0)
+    portable = BaseModel.deserialize(model.serialize())
+    descriptor = model.atomic_model.descriptor
+    portable_descriptor = portable.atomic_model.descriptor
+    torch_coord = torch.from_numpy(coord)
+    torch_atype = torch.from_numpy(atype)
+    graph = build_neighbor_graph(coord, atype, None, 4.0)
+    torch_graph = build_neighbor_graph(torch_coord, torch_atype, None, 4.0)
+    assert np.count_nonzero(graph.edge_mask) == 8
+
+    outputs = []
+    energies = []
+    for spin in (spin_a, spin_b):
+        output = portable_descriptor.call_graph(
+            graph,
+            atype.reshape(-1),
+            spin=spin.reshape(-1, 3),
+        )[0]
+        torch_spin = torch.from_numpy(spin)
+        torch_output = descriptor.call_graph(
+            torch_graph,
+            torch_atype.reshape(-1),
+            spin=torch_spin.reshape(-1, 3),
+        )[0]
+        np.testing.assert_allclose(torch_output.detach().numpy(), output, atol=1e-12)
+        energy = portable.call(coord, atype, spin)["energy"]
+        torch_energy = model(torch_coord, torch_atype, spin=torch_spin)["energy"]
+        np.testing.assert_allclose(torch_energy.detach().numpy(), energy, atol=1e-12)
+        outputs.append(output)
+        energies.append(energy)
+
+    # The retained neighbour self-Gram follows the on-site/neighbour cross
+    # Gram. Its equal radial weights give 4 rho^2 and 16 rho^2, respectively.
+    quadrupole_self = (
+        descriptor.readout.get_dim_out()
+        + descriptor.spin.vector_gram_index.shape[0]
+        + 1
+    )
+    assert outputs[0][0, quadrupole_self] > 1e-8
+    np.testing.assert_allclose(
+        outputs[1][0, quadrupole_self],
+        4.0 * outputs[0][0, quadrupole_self],
+        atol=1e-12,
+        rtol=1e-12,
+    )
+    assert np.max(np.abs(outputs[0][0] - outputs[1][0])) > 1e-8
+    np.testing.assert_allclose(outputs[0][1:], outputs[1][1:], atol=1e-12, rtol=0)
+    assert np.max(np.abs(energies[0] - energies[1])) > 1e-8

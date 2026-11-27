@@ -165,6 +165,10 @@ class SO2Linear(nn.Module):
     presented as ``(F, D_m*Cin, D_m*Cout)`` (a transient view, never a stored
     parameter) and each block contracts with no transpose of the edge axis.
 
+    ``parity=True`` restricts local maps to the reflection-preserving
+    operators required by the native-spin descriptor. The default keeps
+    the unconstrained SO(3) parameterization.
+
     Parameters
     ----------
     lmax
@@ -193,6 +197,7 @@ class SO2Linear(nn.Module):
         *,
         lmax: int,
         mmax: int | None = None,
+        parity: bool = False,
         in_channels: int,
         out_channels: int,
         n_focus: int = 1,
@@ -202,6 +207,7 @@ class SO2Linear(nn.Module):
         trainable: bool,
     ) -> None:
         super().__init__()
+        self.parity = bool(parity)
         self.lmax = int(lmax)
         self.mmax = int(self.lmax if mmax is None else mmax)
         if self.mmax < 0:
@@ -313,11 +319,13 @@ class SO2Linear(nn.Module):
         #   The factor of 2 comes from storing W_u and W_v concatenated along the
         #   output axis. _build_so2_weight() splits them and fills the 2x2 block.
         #   Scaling by 1/sqrt(2) compensates for the doubled parameter count.
+        #   Reflection-preserving layers store only W_u: W_v couples opposite
+        #   reflection parities within each real +/-m pair and is absent.
         self.weight_m: nn.ParameterList = nn.ParameterList()
         for m in range(1, self.mmax + 1):
             num_l = self.lmax - m + 1
             num_in = num_l * self.in_channels
-            num_out = 2 * num_l * self.out_channels
+            num_out = (1 if self.parity else 2) * num_l * self.out_channels
             weight = nn.Parameter(
                 torch.empty(
                     num_in,
@@ -333,7 +341,8 @@ class SO2Linear(nn.Module):
                     child_seed(seed, 2000 + m * 100 + focus_idx),
                 )
             # Apply scaling for SO(2) equivariance
-            weight.data.mul_(1.0 / math.sqrt(2.0))
+            if not self.parity:
+                weight.data.mul_(1.0 / math.sqrt(2.0))
             self.weight_m.append(weight)
 
         for p in self.parameters():
@@ -532,9 +541,9 @@ class SO2Linear(nn.Module):
             ni0, ni1, pi0, pi1, no0, no1, po0, po1 = self._block_slices[m_idx]
             ib = ni1 - ni0  # in_block size
             ob = no1 - no0  # out_block size
-            w = w.view(ib, self.n_focus, 2 * ob)
+            w = w.view(ib, self.n_focus, (1 if self.parity else 2) * ob)
             w_u = w[:, :, :ob]  # (in_blk, F, out_blk)
-            w_v = w[:, :, ob:]  # (in_blk, F, out_blk)
+            w_v = torch.zeros_like(w_u) if self.parity else w[:, :, ob:]
             # Fill the 2x2 coupling:
             #   Row = input (neg/pos), Col = output (neg/pos).
             #   [ W_u^T, -W_v^T ]^T  =>  row=neg_in: W_u to neg_out, W_v to pos_out
@@ -595,6 +604,7 @@ class SO2Linear(nn.Module):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "mmax": self.mmax,
                 "in_channels": self.in_channels,
                 "out_channels": self.out_channels,
@@ -918,6 +928,10 @@ class SO2Convolution(nn.Module):
     only mix the channel axis for each `(l, m)` coefficient and never mix
     coefficient indices across `(l, m)`.
 
+    ``parity=True`` restricts local maps to the reflection-preserving
+    operators required by the native-spin descriptor. The default keeps
+    the unconstrained SO(3) parameterization.
+
     Parameters
     ----------
     lmax
@@ -1052,6 +1066,7 @@ class SO2Convolution(nn.Module):
         *,
         lmax: int,
         mmax: int | None = None,
+        parity: bool = False,
         kmax: int = 1,
         channels: int,
         n_focus: int = 1,
@@ -1089,6 +1104,7 @@ class SO2Convolution(nn.Module):
     ) -> None:
         super().__init__()
         self.trainable = bool(trainable)
+        self.parity = bool(parity)
         self.lmax = int(lmax)
         self.mmax = int(self.lmax if mmax is None else mmax)
         if self.mmax < 0:
@@ -1192,6 +1208,7 @@ class SO2Convolution(nn.Module):
             self._node_cartesian_symmetric,
             self._node_cartesian_layers,
         ) = _parse_node_cartesian(self.node_cartesian)
+        self._node_cartesian_symmetric |= self.parity
         if self.edge_cartesian:
             if self.lmax not in (1, 2):
                 raise ValueError("`edge_cartesian` requires lmax in {1, 2}")
@@ -1259,6 +1276,7 @@ class SO2Convolution(nn.Module):
         # === Step 2. Edge mixing core: SO(2) rotation stack or Cartesian product ===
         if self.edge_cartesian:
             self.edge_cartesian_tp = EdgeCartesianTensorProduct(
+                parity=self.parity,
                 lmax=self.lmax,
                 focus_dim=self.so2_focus_dim,
                 n_focus=self.n_focus,
@@ -1499,6 +1517,7 @@ class SO2Convolution(nn.Module):
         if self.node_wise_s2 or self.node_wise_so3:
             if self.node_wise_so3:
                 self.node_wise_grid_product = SO3GridNet(
+                    parity=self.parity,
                     lmax=self.lmax,
                     mmax=self.mmax,
                     kmax=self.kmax,
@@ -1517,6 +1536,7 @@ class SO2Convolution(nn.Module):
                 )
             else:
                 self.node_wise_grid_product = S2GridNet(
+                    parity=self.parity,
                     lmax=self.lmax,
                     mmax=self.mmax,
                     channels=self.so2_focus_dim,
@@ -1538,6 +1558,7 @@ class SO2Convolution(nn.Module):
         if self.message_node_s2 or self.message_node_so3:
             if self.message_node_so3:
                 self.message_node_grid_product = SO3GridNet(
+                    parity=self.parity,
                     lmax=self.lmax,
                     kmax=self.kmax,
                     channels=self.so2_focus_dim,
@@ -1555,6 +1576,7 @@ class SO2Convolution(nn.Module):
                 )
             else:
                 self.message_node_grid_product = S2GridNet(
+                    parity=self.parity,
                     lmax=self.lmax,
                     mmax=self.lmax,
                     channels=self.so2_focus_dim,
@@ -1838,9 +1860,7 @@ class SO2Convolution(nn.Module):
         Reduce the edge messages with the scalar envelope weight.
 
         The attention-free path: an envelope-weighted scatter add followed by the
-        degree normalization. In bridging mode the envelope already carries the
-        Source Freeze Propagation Gate, so a muted source drops out of both the
-        sum and the normalization.
+        degree normalization.
 
         Parameters
         ----------
@@ -2156,11 +2176,8 @@ class SO2Convolution(nn.Module):
         Build envelope-gated attention weights from the scalar channels.
 
         The envelope enters both the numerator and the denominator of the
-        softmax. In bridging mode it carries the Source Freeze Propagation
-        Gate, so a muted source (``eta_src = 0``) drops out of the
-        destination's normalization entirely, which the frozen-zone invariance
-        requires: post-multiplying the weights alone would still leak the muted
-        source through the shared denominator.
+        softmax, so an edge at the cutoff drops out of the destination's
+        normalization entirely.
 
         Parameters
         ----------
@@ -2910,6 +2927,7 @@ class SO2Convolution(nn.Module):
         self.so2_linears = nn.ModuleList(
             [
                 SO2Linear(
+                    parity=self.parity,
                     lmax=self.lmax,
                     mmax=self.mmax,
                     in_channels=self.so2_focus_dim,
@@ -2960,6 +2978,7 @@ class SO2Convolution(nn.Module):
             elif self.s2_activation:
                 non_linearities.append(
                     S2GridNet(
+                        parity=self.parity,
                         lmax=self.lmax,
                         mmax=self.mmax,
                         channels=self.so2_focus_dim,
@@ -3039,6 +3058,7 @@ class SO2Convolution(nn.Module):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "mmax": self.mmax,
                 "kmax": self.kmax,
                 "channels": self.channels,

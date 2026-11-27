@@ -9,9 +9,16 @@ from typing import (
 import numpy as np
 import orbax.checkpoint as ocp
 
+from deepmd.backend.backend import (
+    Backend,
+)
 from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
     save_dp_model,
+)
+from deepmd.jax.common import (
+    replace_by_pure_dict,
+    to_pure_dict,
 )
 from deepmd.jax.env import (
     jax,
@@ -23,15 +30,27 @@ from deepmd.jax.model.model import (
     BaseModel,
     get_model,
 )
+from deepmd.jax.utils.checkpoint_state import (
+    _convert_str_to_int_key,
+    pack_checkpoint_state,
+    read_checkpoint_state,
+    restore_checkpoint_state,
+)
+from deepmd.jax.utils.precision import (
+    MatmulPrecisionPolicy,
+)
 
 
-def _convert_str_to_int_key(item: dict) -> None:
-    """Convert Orbax-restored numeric index keys from strings back to ints."""
-    for key, value in item.copy().items():
-        if isinstance(value, dict):
-            _convert_str_to_int_key(value)
-        if isinstance(key, str) and key.isdigit():
-            item[int(key)] = item.pop(key)
+def resolve_checkpoint_path(model_file: str | Path) -> Path:
+    """Resolve a checkpoint directory, symlink, or stable checkpoint pointer."""
+    path = Path(model_file)
+    pointer = path / "checkpoint" if path.is_dir() else path
+    if pointer.is_file() and pointer.name == "checkpoint":
+        target = pointer.read_text().strip()
+        if not target:
+            raise ValueError(f"Checkpoint pointer {pointer} is empty.")
+        path = pointer.parent / target
+    return path.resolve()
 
 
 def _normalize_restored_state_keys(
@@ -145,7 +164,15 @@ def _set_model_min_nbor_dist_from_data(model: BaseModel, data: dict) -> None:
     min_nbor_dist = _to_optional_float(data.get("min_nbor_dist"))
     if min_nbor_dist is None:
         min_nbor_dist = _to_optional_float(
+            data.get("@variables", {}).get("min_nbor_dist")
+        )
+    if min_nbor_dist is None:
+        min_nbor_dist = _to_optional_float(
             data.get("constants", {}).get("min_nbor_dist")
+        )
+    if min_nbor_dist is None:
+        min_nbor_dist = _to_optional_float(
+            data.get("model_def_script", {}).get("_min_nbor_dist")
         )
     if min_nbor_dist is not None:
         model.min_nbor_dist = min_nbor_dist
@@ -197,7 +224,28 @@ def _prepare_hessian_model_def_script(
     return model_def_script, hessian
 
 
-def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> None:
+def _validate_lower_kind(model: BaseModel, lower_kind: str) -> None:
+    """Require graph-source semantics to remain graph-native after conversion."""
+    if lower_kind == "edge_vec":
+        lower_kind = "graph"
+    if lower_kind not in ("auto", "nlist", "graph"):
+        raise ValueError(f"Unsupported JAX lower input kind {lower_kind!r}.")
+    if lower_kind == "graph" and not model.uses_full_neighbor_list():
+        raise ValueError("This JAX model cannot preserve a full-neighbor graph lower.")
+    if lower_kind == "nlist" and model.uses_full_neighbor_list():
+        raise ValueError(
+            "A graph-native JAX model cannot preserve a bounded neighbor-list "
+            "source; convert the graph checkpoint instead."
+        )
+
+
+def deserialize_to_file(
+    model_file: str,
+    data: dict,
+    hessian: bool = False,
+    *,
+    lower_kind: str = "auto",
+) -> None:
     """Deserialize the dictionary to a model file.
 
     Parameters
@@ -208,6 +256,9 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
         The dictionary to be deserialized.
     hessian : bool, default=False
         Whether to include the Hessian in the model outputs.
+    lower_kind : str, default="auto"
+        Source neighbor execution semantics: graph-native models retain every
+        neighbor, while bounded neighbor-list models retain their selection.
     """
     if model_file.endswith(".jax"):
         model_def_script, hessian = _prepare_hessian_model_def_script(
@@ -217,43 +268,58 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
         min_nbor_dist = _to_optional_float(data.get("min_nbor_dist"))
         if min_nbor_dist is None:
             min_nbor_dist = _to_optional_float(
+                data.get("@variables", {}).get("min_nbor_dist")
+            )
+        if min_nbor_dist is None:
+            min_nbor_dist = _to_optional_float(
                 data.get("constants", {}).get("min_nbor_dist")
             )
         if min_nbor_dist is not None:
             model_def_script["_min_nbor_dist"] = min_nbor_dist
+        if "training" in data:
+            model_def_script["current_step"] = int(data["training"].get("step", 0))
         if "model_dict" in model_def_script:
             models = {
                 model_key: BaseModel.deserialize(data["model"]["model_dict"][model_key])
                 for model_key in model_def_script["model_dict"]
             }
+            for model in models.values():
+                _validate_lower_kind(model, lower_kind)
             if hessian:
                 for model in models.values():
                     model.enable_hessian()
             state = {
                 "models": {
-                    model_key: nnx.split(model)[1].to_pure_dict()
+                    model_key: to_pure_dict(nnx.split(model)[1])
                     for model_key, model in models.items()
                 }
             }
         else:
             model = BaseModel.deserialize(data["model"])
+            _validate_lower_kind(model, lower_kind)
             if hessian:
                 model.enable_hessian()
             _, state = nnx.split(model)
-            state = state.to_pure_dict()
+            state = to_pure_dict(state)
+        checkpoint_items = {
+            "state": ocp.args.StandardSave(pack_checkpoint_state(state)),
+            "model_def_script": ocp.args.JsonSave(model_def_script),
+        }
+        if "training" in data:
+            checkpoint_items["portable_training_state"] = ocp.args.PyTreeSave(
+                data["training"]
+            )
         with ocp.Checkpointer(
-            ocp.CompositeCheckpointHandler("state", "model_def_script")
+            ocp.CompositeCheckpointHandler(*checkpoint_items)
         ) as checkpointer:
             checkpointer.save(
                 Path(model_file).absolute(),
-                ocp.args.Composite(
-                    state=ocp.args.StandardSave(state),
-                    model_def_script=ocp.args.JsonSave(model_def_script),
-                ),
+                ocp.args.Composite(**checkpoint_items),
             )
     elif model_file.endswith(".hlo"):
         _check_compressed_hlo_exportable(data)
         model = BaseModel.deserialize(data["model"])
+        _validate_lower_kind(model, lower_kind)
         _set_model_min_nbor_dist_from_data(model, data)
         model_def_script, hessian = _prepare_hessian_model_def_script(
             data["model_def_script"],
@@ -263,7 +329,12 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
             model.enable_hessian()
         call_lower = model.call_common_lower
 
-        nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
+        full_neighbor_list = model.uses_full_neighbor_list()
+        is_spin = model.has_spin()
+        dim_chg_spin = model.get_dim_chg_spin()
+        conditioned = is_spin or dim_chg_spin > 0
+        nf, nloc, nghost, nnei = jax_export.symbolic_shape("nf, nloc, nghost, nnei")
+        precision_policy = MatmulPrecisionPolicy()
 
         def exported_whether_do_atomic_virial(
             do_atomic_virial: bool, has_ghost_atoms: bool
@@ -275,28 +346,41 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
                 mapping: jnp.ndarray,
                 fparam: jnp.ndarray,
                 aparam: jnp.ndarray,
+                *conditioning: jnp.ndarray | None,
             ) -> dict[str, jnp.ndarray]:
-                return call_lower(
-                    coord,
-                    atype,
-                    nlist,
-                    mapping,
-                    fparam,
-                    aparam,
-                    do_atomic_virial=do_atomic_virial,
-                )
+                model_kwargs = {}
+                if conditioned:
+                    spin, charge_spin = conditioning
+                    if is_spin:
+                        model_kwargs["spin"] = spin
+                    if dim_chg_spin:
+                        model_kwargs["charge_spin"] = charge_spin
+                with precision_policy.applied(training=False):
+                    return call_lower(
+                        coord,
+                        atype,
+                        nlist,
+                        mapping,
+                        fparam,
+                        aparam,
+                        do_atomic_virial=do_atomic_virial,
+                        **model_kwargs,
+                    )
 
             if has_ghost_atoms:
                 nghost_ = nghost
             else:
                 nghost_ = 0
 
-            return jax_export.export(jax.jit(call_lower_with_fixed_do_atomic_virial))(
+            arguments = [
                 jax.ShapeDtypeStruct(
                     (nf, nloc + nghost_, 3), jnp.float64
                 ),  # extended_coord
                 jax.ShapeDtypeStruct((nf, nloc + nghost_), jnp.int32),  # extended_atype
-                jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),  # nlist
+                jax.ShapeDtypeStruct(
+                    (nf, nloc, nnei if full_neighbor_list else model.get_nnei()),
+                    jnp.int64,
+                ),  # nlist
                 jax.ShapeDtypeStruct((nf, nloc + nghost_), jnp.int64),  # mapping
                 jax.ShapeDtypeStruct((nf, model.get_dim_fparam()), jnp.float64)
                 if model.get_dim_fparam()
@@ -304,6 +388,20 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
                 jax.ShapeDtypeStruct((nf, nloc, model.get_dim_aparam()), jnp.float64)
                 if model.get_dim_aparam()
                 else None,  # aparam
+            ]
+            if conditioned:
+                arguments.extend(
+                    [
+                        jax.ShapeDtypeStruct((nf, nloc + nghost_, 3), jnp.float64)
+                        if is_spin
+                        else None,
+                        jax.ShapeDtypeStruct((nf, dim_chg_spin), jnp.float64)
+                        if dim_chg_spin
+                        else None,
+                    ]
+                )
+            return jax_export.export(jax.jit(call_lower_with_fixed_do_atomic_virial))(
+                *arguments
             )
 
         exported = exported_whether_do_atomic_virial(
@@ -356,9 +454,20 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
             "var_name": model.get_var_name(),
             "task_dim": model.get_task_dim() if is_property_model else None,
             "intensive": model.get_intensive() if is_property_model else False,
+            "is_spin": is_spin,
+            "dim_chg_spin": dim_chg_spin,
+            "default_chg_spin": model.get_default_chg_spin(),
+            "full_neighbor_list": full_neighbor_list,
         }
         save_dp_model(filename=model_file, model_dict=data)
     elif model_file.endswith(".savedmodel"):
+        model = BaseModel.deserialize(data["model"])
+        if model.uses_full_neighbor_list() or model.has_spin():
+            raise NotImplementedError(
+                "JAX SavedModel export cannot preserve full-neighbor graph or "
+                "native-spin model semantics. Export .jax or .hlo for native "
+                "JAX inference, or convert to PyTorch for PT2 deployment."
+            )
         # Keep the historical JAX/JAX2TF meaning of ".savedmodel": this
         # exporter must lower the JAX model through jax2tf and preserve
         # XlaCallModule ops in the SavedModel. The TF2 eager SavedModel
@@ -372,32 +481,31 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
         raise ValueError("Unsupported file extension")
 
 
-def serialize_from_file(model_file: str) -> dict:
+def serialize_from_file(model_file: str, *, training: bool = True) -> dict:
     """Serialize the model file to a dictionary.
 
     Parameters
     ----------
     model_file : str
         The model file to be serialized.
+    training : bool, default=True
+        Include the optimizer and EMA states of a ``.jax`` checkpoint under
+        ``training``, as backend conversion and restarts require. Evaluation
+        and model initialization read the model alone.
 
     Returns
     -------
     dict
         The serialized model data.
     """
+    model_file = str(resolve_checkpoint_path(model_file))
     if model_file.endswith(".jax"):
-        with ocp.Checkpointer(
-            ocp.CompositeCheckpointHandler("state", "model_def_script")
-        ) as checkpointer:
-            data = checkpointer.restore(
-                Path(model_file).absolute(),
-                ocp.args.Composite(
-                    state=ocp.args.StandardRestore(),
-                    model_def_script=ocp.args.JsonRestore(),
-                ),
+        checkpoint_path = Path(model_file).absolute()
+        with ocp.Checkpointer(ocp.JsonCheckpointHandler()) as checkpointer:
+            model_def_script = checkpointer.restore(
+                checkpoint_path / "model_def_script",
             )
-        state = data.state
-        model_def_script = data.model_def_script
+        state = read_checkpoint_state(checkpoint_path / "state")
         _normalize_restored_state_keys(state, model_def_script)
         min_nbor_dist = None
 
@@ -405,17 +513,26 @@ def serialize_from_file(model_file: str) -> dict:
             abstract_model = get_model(model_params)
             _restore_compression_slots_from_state(abstract_model, model_state)
             graphdef, abstract_state = nnx.split(abstract_model)
-            abstract_state.replace_by_pure_dict(model_state)
+            model_state = restore_checkpoint_state(
+                model_state, to_pure_dict(abstract_state)
+            )
+            replace_by_pure_dict(abstract_state, model_state)
             return nnx.merge(graphdef, abstract_state)
 
+        full_neighbor_models = []
+        models = {}
         if "model_dict" in model_def_script:
             state_by_model = state.get("models", state)
             model_dict = {"model_dict": {}}
             for model_key, model_params in model_def_script["model_dict"].items():
                 model = restore_model(model_params, state_by_model[model_key])
+                models[model_key] = model
+                full_neighbor_models.append(model.uses_full_neighbor_list())
                 model_dict["model_dict"][model_key] = model.serialize()
         else:
             model = restore_model(model_def_script, state)
+            models["Default"] = model
+            full_neighbor_models.append(model.uses_full_neighbor_list())
             model_dict = model.serialize()
             min_nbor_dist = _to_optional_float(model.get_min_nbor_dist())
             if min_nbor_dist is None:
@@ -427,17 +544,54 @@ def serialize_from_file(model_file: str) -> dict:
             "jax_version": jax.__version__,
             "model": model_dict,
             "model_def_script": model_def_script,
-            "lower_input_kind": "nlist",
+            "lower_input_kind": (
+                "graph"
+                if full_neighbor_models and all(full_neighbor_models)
+                else "nlist"
+            ),
             "@variables": {},
         }
         if min_nbor_dist is not None:
             data["min_nbor_dist"] = min_nbor_dist
+        if not training:
+            return data
+        if (checkpoint_path / "portable_training_state").is_dir():
+            data["training"] = read_checkpoint_state(
+                checkpoint_path / "portable_training_state"
+            )
+        elif (checkpoint_path / "training_metadata").is_dir() and (
+            checkpoint_path / "training_state"
+        ).is_dir():
+            from deepmd.jax.utils.checkpoint import (
+                export_checkpoint_training,
+            )
+            from deepmd.jax.utils.multi_task import (
+                share_jax_model_params,
+            )
+
+            with ocp.Checkpointer(ocp.JsonCheckpointHandler()) as checkpointer:
+                metadata = checkpointer.restore(checkpoint_path / "training_metadata")
+            if metadata.get("shared_links"):
+                share_jax_model_params(
+                    models,
+                    metadata["shared_links"],
+                    model_key_prob_map=dict.fromkeys(models, 1.0),
+                    resume=True,
+                )
+            data["training"] = export_checkpoint_training(
+                models,
+                checkpoint_path,
+                metadata,
+                step=int(model_def_script.get("current_step", 0)),
+            )
         return data
     elif model_file.endswith(".hlo"):
         data = load_dp_model(model_file)
-        data.pop("constants")
+        constants = data.pop("constants")
         data["@variables"].pop("stablehlo")
-        data["lower_input_kind"] = "nlist"
+        data["lower_input_kind"] = (
+            "graph" if constants.get("full_neighbor_list", False) else "nlist"
+        )
         return data
     elif model_file.endswith(".savedmodel"):
         raise ValueError(
@@ -445,7 +599,6 @@ def serialize_from_file(model_file: str) -> dict:
             "Use DeepEval.serialize() for a structure-only model tree."
         )
     else:
-        raise ValueError(
-            "JAX backend only supports lossless file serialization for .jax "
-            "directory and .hlo."
-        )
+        # Fine-tuning and initialization read the models of every backend;
+        # the JAX suffixes are handled above.
+        return Backend.detect_backend_by_model(model_file)().serialize_hook(model_file)

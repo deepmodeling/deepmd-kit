@@ -4,7 +4,7 @@
 
 Unlike ``gen_dpa4c_spin.py``, this archive carries no fparam, aparam, or
 charge/spin condition so ``pair_style dpa4spin`` can load it without extra
-keywords. Used by ``source/lmp/tests/test_dpa4spin_magnetic_force_convention.py``.
+keywords. Used by ``source/lmp/tests/test_dpa4spin_magnetic_force.py``.
 """
 
 from __future__ import (

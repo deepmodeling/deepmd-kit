@@ -5,6 +5,7 @@ from __future__ import (
     annotations,
 )
 
+import math
 from typing import (
     TYPE_CHECKING,
 )
@@ -41,7 +42,7 @@ def resolve_block_cutoffs(rcut: float | Sequence[float], n_blocks: int) -> list[
     ------
     ValueError
         If ``n_blocks`` is not a positive integer, if a sequence does not hold
-        exactly ``n_blocks`` entries, or if a cutoff is not positive.
+        exactly ``n_blocks`` entries, or if a cutoff is not finite and positive.
     """
     if isinstance(n_blocks, bool) or int(n_blocks) != n_blocks or n_blocks < 1:
         raise ValueError(f"`n_blocks` must be a positive integer, got {n_blocks!r}")
@@ -55,6 +56,8 @@ def resolve_block_cutoffs(rcut: float | Sequence[float], n_blocks: int) -> list[
                 f"`rcut` lists {len(cutoffs)} cutoff(s), but `n_blocks` is "
                 f"{n_blocks}; give one cutoff per block or a single cutoff for all"
             )
-    if not all(radius > 0.0 for radius in cutoffs):
-        raise ValueError(f"Every cutoff in `rcut` must be positive, got {rcut!r}")
+    if any(not math.isfinite(radius) or radius <= 0.0 for radius in cutoffs):
+        raise ValueError(
+            f"Every cutoff in `rcut` must be finite and positive, got {rcut!r}"
+        )
     return cutoffs
