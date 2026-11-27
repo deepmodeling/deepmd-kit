@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Numerical contract of the compressed DPA4C CUDA mega kernel."""
 
+import copy
 import dataclasses
 import functools
 import json
@@ -42,7 +43,7 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     _table_lookup,
     build_compression_artifacts,
     build_radial_table,
-    contact_radius_input,
+    contact_edges_input,
     descriptor_profile,
     dpa4c_graph_compress_energy_force,
     ensure_registered,
@@ -60,21 +61,23 @@ _GPU = pytest.mark.skipif(
 )
 
 
-#: Element symbols of the two test types. They fix the covalent radii, whose
-#: pairwise sums give the three distinct length scales the window is measured
-#: against, so a kernel that gathered the wrong radius would misplace it.
+#: Element symbols of the two test types.
 _TYPE_MAP = ["O", "H"]
 
 #: Element symbols of the systems of up to nine types, whose first two are
-#: those of `_TYPE_MAP`. The bridging window `_WINDOW` of every pair of the
-#: first eight stays inside the 3 Å cutoff of the descriptors; that of argon,
-#: the ninth, does not.
+#: those of `_TYPE_MAP`.
 _WIDE_TYPE_MAP = ["O", "H", "C", "N", "B", "F", "Ne", "He", "Ar"]
 
-#: A bridging window wide enough that the random test cluster populates its
-#: frozen zone, its transition zone and the plain zone beyond it. The bounds
-#: are fractions of each pair's own length scale, not distances in Å.
-_WINDOW = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.6}
+#: Inner fraction of the contact clamp of the bridged test descriptors.
+_CLAMP = {"contact_clamp": 0.6}
+
+#: Data edge in Å of a pair of the test types, from the radius of the larger
+#: and the smaller of its two types. The edges are wide enough that the random
+#: test cluster populates the frozen zone, the transition zone and the plain
+#: zone of the clamp of every pair, and they differ between pairs, so a kernel
+#: that gathered the edge of the wrong pair would misplace its window.
+_EDGE_BASE = 2.0
+_EDGE_STEP = 0.4
 
 #: Factor on the mode-mixing columns of the output layer of the pair encoder of
 #: every test descriptor (see `_strengthen_mode_mixing`).
@@ -87,7 +90,7 @@ def _strengthen_mode_mixing(descriptor: DescrptDPA4C) -> None:
     The output layer of a fresh pair encoder gives mixing coefficients of
     order 1e-4, against FiLM scales of order one, so the mixing of a wrong
     slot, mode or source type stays below the tolerance of several
-    comparisons, those inside a bridging window among them. Scaling the mixing
+    comparisons, those inside a contact clamp window among them. Scaling the mixing
     columns ``[2C, 2C + C R)`` of that layer by ``_MIXING_GAIN`` gives the
     coefficients of the profiles of 32 channels and more a mean magnitude of
     0.06 to 0.31 and none above 0.89; those of the profiles of 8 and 16
@@ -100,13 +103,32 @@ def _strengthen_mode_mixing(descriptor: DescrptDPA4C) -> None:
         film.network.layers[-1].w[:, mixing] *= _MIXING_GAIN
 
 
+def _set_contact_edges(descriptor: DescrptDPA4C) -> None:
+    """Replace the data edges of the clamp of a descriptor by distinct ones.
+
+    The edges are a runtime buffer of the clamp, updated in place during
+    training; the test cluster is random, so its shortest contacts are not the
+    covalent bond lengths a fresh clamp starts from. The edge of the pair of
+    types ``a <= b`` is ``_EDGE_BASE + _EDGE_STEP * ((a + b) % 3) / 2``, which
+    differs between the pairs of up to three types and is symmetric.
+    """
+    edges = descriptor.contact_clamp.edges
+    ntypes = edges.shape[0] - 1
+    with torch.no_grad():
+        for center in range(ntypes):
+            for neighbor in range(ntypes):
+                edges[center, neighbor] = (
+                    _EDGE_BASE + _EDGE_STEP * ((center + neighbor) % 3) / 2
+                )
+
+
 def _build_descriptor(
     channels: int,
     lmax: int = 2,
     radial_modes: int = 0,
     rcut: float = 3.0,
     type_map: Sequence[str] = tuple(_TYPE_MAP),
-    **window: float,
+    **clamp: float,
 ) -> DescrptDPA4C:
     """Return an fp32 descriptor on the GPU whose mode mixing is strengthened."""
     descriptor = (
@@ -120,25 +142,40 @@ def _build_descriptor(
             precision="float32",
             seed=17,
             type_map=list(type_map),
-            **window,
+            **clamp,
         )
         .cuda()
         .eval()
     )
+    if descriptor.contact_clamp is not None:
+        _set_contact_edges(descriptor)
     _strengthen_mode_mixing(descriptor)
     return descriptor
 
 
-def _reduced_distance(
+def _contact_zones(
     descriptor: DescrptDPA4C,
     graph: Any,
     atype: torch.Tensor,
-) -> torch.Tensor:
-    """Return the valid edge distances in units of each pair's length scale."""
+) -> tuple[int, int, int]:
+    """Count the valid edges frozen, in transition and beyond the data edge.
+
+    Returns
+    -------
+    tuple[int, int, int]
+        The number of valid edges at or below ``a e``, between ``a e`` and
+        ``e``, and at or beyond ``e``, for the data edge ``e`` of each pair.
+    """
     source, destination = graph.edge_index[0], graph.edge_index[1]
-    distance = graph.edge_vec.norm(dim=-1, keepdim=True)
-    contact = descriptor.pair_contact(atype[destination], atype[source], distance.dtype)
-    return (distance / contact)[graph.edge_mask, 0]
+    distance = graph.edge_vec.norm(dim=-1)
+    edge = descriptor.contact_clamp.edges.to(distance.dtype)[
+        atype[destination], atype[source]
+    ]
+    valid = graph.edge_mask
+    frozen = (distance <= descriptor.contact_clamp.inner * edge) & valid
+    plain = (distance >= edge) & valid
+    transition = valid & ~frozen & ~plain
+    return int(frozen.sum()), int(transition.sum()), int(plain.sum())
 
 
 def _build_graph(
@@ -155,18 +192,51 @@ def _build_graph(
     The atoms of each frame are uniform in a cube of ``side`` Å, and atom ``i``
     carries type ``types[i % len(types)]``.
     """
-    generator = torch.Generator(device="cuda").manual_seed(23)
+    template = _graph_template(
+        descriptor.rcut,
+        canonical,
+        node_count,
+        single_type,
+        side,
+        frames,
+        tuple(types),
+        torch.device("cuda", torch.cuda.current_device()),
+    )
+    # Every caller owns its tensors: gradient leaves, masks, CSR buffers and
+    # atom types may be changed without contaminating another parameter case.
+    return copy.deepcopy(template)
+
+
+@functools.lru_cache(maxsize=1)
+def _graph_template(
+    rcut: float,
+    canonical: bool,
+    node_count: int,
+    single_type: bool,
+    side: float,
+    frames: int,
+    types: tuple[int, ...],
+    device: torch.device,
+):
+    """Build the last geometry once, independent of descriptor channels.
+
+    Large slotted/tiling cases repeatedly use the same geometry across channel,
+    degree and compression variants. The dense neighbor search is quadratic
+    in node count; cloning its compact result is linear in the edge count.
+    Keep only one template so the CUDA matrix cannot accumulate GPU graphs.
+    """
+    generator = torch.Generator(device=device).manual_seed(23)
     coordinate = torch.rand(
         frames,
         node_count,
         3,
         dtype=torch.float32,
-        device="cuda",
+        device=device,
         generator=generator,
     )
     coordinate = coordinate * side
-    pattern = torch.as_tensor(list(types), device="cuda")
-    atype = pattern[torch.arange(node_count, device="cuda") % len(types)].repeat(
+    pattern = torch.as_tensor(list(types), device=device)
+    atype = pattern[torch.arange(node_count, device=device) % len(types)].repeat(
         frames, 1
     )
     if single_type:
@@ -174,7 +244,7 @@ def _build_graph(
     coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
         coordinate,
         atype,
-        descriptor.rcut,
+        rcut,
         [48],
         mixed_types=True,
         box=None,
@@ -191,6 +261,13 @@ def _build_graph(
         canonicalize=canonical,
     )
     return graph, flat_type
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _release_graph_template():
+    """Release the one cached GPU graph when this module finishes."""
+    yield
+    _graph_template.cache_clear()
 
 
 def _arguments(
@@ -221,12 +298,11 @@ def _arguments(
         artifacts["spin_type"][:0],
         artifacts["spin_pair"],
         artifacts["spin_type"],
-        contact_radius_input(descriptor),
+        contact_edges_input(descriptor),
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *(float(value) for value in artifacts["info"]),
-        descriptor.bridging_f_inner or 0.0,
-        descriptor.bridging_f_outer or 0.0,
+        0.0 if descriptor.contact_clamp is None else descriptor.contact_clamp.inner,
     )
 
 
@@ -402,19 +478,17 @@ def test_wide_backward_is_deterministic(channels: int) -> None:
 
 
 @_GPU
-@pytest.mark.parametrize("window", [{}, _WINDOW], ids=["plain", "bridged"])
+@pytest.mark.parametrize("clamp", [{}, _CLAMP], ids=["plain", "bridged"])
 @pytest.mark.parametrize("channels", [8, 16, 32, 64, 128])
 def test_compressed_matches_uncompressed_descriptor(
     channels: int,
-    window: dict[str, float],
+    clamp: dict[str, float],
 ) -> None:
-    descriptor = _build_descriptor(channels, **window)
+    descriptor = _build_descriptor(channels, **clamp)
     graph, atype = _build_graph(descriptor, canonical=False)
-    if window:
-        reduced = _reduced_distance(descriptor, graph, atype)
-        inner, outer = window.values()
-        assert (reduced < inner).any() and (reduced > outer).any()
-        assert ((reduced > inner) & (reduced < outer)).sum() > 8
+    if clamp:
+        frozen, transition, plain = _contact_zones(descriptor, graph, atype)
+        assert frozen > 8 and transition > 8 and plain > 8
     arguments = _arguments(descriptor, graph, atype)
     compressed, _state = torch.ops.deepmd.dpa4c_graph_compress(
         graph.edge_vec,
@@ -746,24 +820,24 @@ def test_compression_rejects_float64_descriptor() -> None:
 @pytest.mark.parametrize("lmax", [2, 3, 4])
 @pytest.mark.parametrize("radial_modes", [0, 2, 4, 8])
 @pytest.mark.parametrize("canonical", [False, True])
-@pytest.mark.parametrize("windowed", [False, True])
+@pytest.mark.parametrize("clamped", [False, True])
 def test_supported_surface_parity(
     channels: int,
     lmax: int,
     radial_modes: int,
     canonical: bool,
-    windowed: bool,
+    clamped: bool,
 ) -> None:
     """Cover the complete compiled surface against the portable equations.
 
     Each scalar width owns a distinct lane mapping and each angular degree a
     distinct instantiation, so the cross product is the contract the operator
-    advertises rather than a sample of it. A bridging window selects the
-    bridged specialization of every profile. The tolerances follow the
+    advertises rather than a sample of it. A contact clamp selects the bridged
+    specialization of every profile. The tolerances follow the
     magnitude of each output (`_assert_close_at_scale`).
     """
     descriptor = _build_descriptor(
-        channels, lmax, radial_modes, **(_WINDOW if windowed else {})
+        channels, lmax, radial_modes, **(_CLAMP if clamped else {})
     )
     graph, atype = _build_graph(descriptor, canonical)
     arguments = _arguments(descriptor, graph, atype)
@@ -788,15 +862,16 @@ def test_supported_surface_parity(
         (reference_value * cotangent).sum(),
         reference_edge,
     )
-    # Inside the window the switch is steep, and the float32 reference then
-    # carries a rounding error of its own that exceeds the plain tolerance.
-    atol, rtol = (1e-4, 5e-4) if windowed else (8e-6, 1e-4)
+    # Inside the clamp window the separation has a steep slope, and the float32
+    # reference then carries a rounding error of its own that exceeds the plain
+    # tolerance.
+    atol, rtol = (1e-4, 5e-4) if clamped else (8e-6, 1e-4)
     _assert_close_at_scale(gradient, reference_gradient, atol=atol, rtol=rtol)
 
 
 @_GPU
 @pytest.mark.parametrize(
-    ("channels", "lmax", "radial_modes", "type_count", "windowed", "low_rank"),
+    ("channels", "lmax", "radial_modes", "type_count", "clamped", "low_rank"),
     [
         *(
             (channels, lmax, radial_modes, 2, False, False)
@@ -805,18 +880,18 @@ def test_supported_surface_parity(
             for radial_modes in (2, 4)
         ),
         *(
-            (channels, 3, 4, type_count, windowed, False)
+            (channels, 3, 4, type_count, clamped, False)
             for channels in (64, 128)
             for type_count in (3, 4, 5, 8, 9)
-            for windowed in (False, True)
-            if type_count < 9 or not windowed
+            for clamped in (False, True)
+            if type_count < 9 or not clamped
         ),
         (64, 3, 4, 2, True, False),
         (128, 3, 4, 2, True, False),
         (64, 4, 4, 3, False, False),
         (64, 4, 4, 6, True, False),
         *(
-            (channels, lmax, radial_modes, type_count, windowed, True)
+            (channels, lmax, radial_modes, type_count, clamped, True)
             for channels, lmax, radial_modes in (
                 (64, 2, 0),
                 (64, 3, 0),
@@ -825,8 +900,8 @@ def test_supported_surface_parity(
                 (128, 3, 4),
             )
             for type_count in (2, 4, 5, 8, 9)
-            for windowed in (False, True)
-            if type_count < 9 or not windowed
+            for clamped in (False, True)
+            if type_count < 9 or not clamped
         ),
     ],
 )
@@ -836,7 +911,7 @@ def test_slotted_scans_match_the_portable_equations(
     lmax: int,
     radial_modes: int,
     type_count: int,
-    windowed: bool,
+    clamped: bool,
     low_rank: bool,
     system: str,
 ) -> None:
@@ -850,7 +925,7 @@ def test_slotted_scans_match_the_portable_equations(
     types scans every edge pairwise. Scalar-only channels confined to the span
     of 32 functions make the compression adopt the low-rank table, every
     function of which then carries a share of the channels, and which the
-    portable equations do not read. A bridging window selects the bridged
+    portable equations do not read. A contact clamp selects the bridged
     specialization. The graph carries 64-bit indices, whose rows always take a
     warp each; a co-scheduled system holds four waves of single 24-row blocks
     per multiprocessor, twice as many as the profiles that co-schedule need.
@@ -869,7 +944,7 @@ def test_slotted_scans_match_the_portable_equations(
         lmax,
         radial_modes,
         type_map=_WIDE_TYPE_MAP[:type_count],
-        **(_WINDOW if windowed else {}),
+        **(_CLAMP if clamped else {}),
     )
     if low_rank:
         _restrict_scalar_rank(descriptor, rank=32)
@@ -902,19 +977,20 @@ def test_slotted_scans_match_the_portable_equations(
         (reference_value * cotangent).sum(),
         reference_edge,
     )
-    # Inside the window the switch is steep, and the float32 reference then
-    # carries a rounding error of its own that exceeds the plain tolerance.
-    atol, rtol = (1e-4, 5e-4) if windowed else (8e-6, 1e-4)
+    # Inside the clamp window the separation has a steep slope, and the float32
+    # reference then carries a rounding error of its own that exceeds the plain
+    # tolerance.
+    atol, rtol = (1e-4, 5e-4) if clamped else (8e-6, 1e-4)
     _assert_close_at_scale(gradient, reference_gradient, atol=atol, rtol=rtol)
 
 
 @_GPU
 @pytest.mark.parametrize("type_count", [3, 6])
-@pytest.mark.parametrize("windowed", [False, True])
+@pytest.mark.parametrize("clamped", [False, True])
 @pytest.mark.parametrize("perturbation", ["source", "mode"])
 def test_wrong_mode_mixing_fails_the_comparisons(
     type_count: int,
-    windowed: bool,
+    clamped: bool,
     perturbation: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -927,7 +1003,7 @@ def test_wrong_mode_mixing_fails_the_comparisons(
     that the scans of four slots serve and on one of six that those of eight
     slots serve. Its descriptor and its coordinate gradient fail the
     comparisons of `test_slotted_scans_match_the_portable_equations`, at the
-    wider tolerances of a bridging window, and its forces that of
+    wider tolerances of a contact clamp, and its forces that of
     `_check_canonical_against_reference` without a pair potential, which that
     check also makes for a bridged descriptor: with the strengthened mixing of
     the test descriptors (`_strengthen_mode_mixing`), such an error exceeds the
@@ -938,7 +1014,7 @@ def test_wrong_mode_mixing_fails_the_comparisons(
         3,
         4,
         type_map=_WIDE_TYPE_MAP[:type_count],
-        **(_WINDOW if windowed else {}),
+        **(_CLAMP if clamped else {}),
     )
     graph, atype = _build_graph(descriptor, canonical=True, types=range(type_count))
     arguments = _arguments(descriptor, graph, atype)
@@ -1045,7 +1121,7 @@ def test_fused_slotted_scans_match_the_reference(
         lmax,
         radial_modes,
         type_map=_WIDE_TYPE_MAP[:8],
-        **(_WINDOW if bridged else {}),
+        **(_CLAMP if bridged else {}),
     )
     if low_rank:
         _restrict_scalar_rank(descriptor, rank=32)
@@ -1252,7 +1328,10 @@ def _row_split_sweep_in_process(
     and with atoms that cycle through ``types`` of a descriptor of nine types,
     run until every edge scan takes one warp per row. A positive ``rank``
     confines the scalar-only channels to the span of that many functions, so
-    that the compression adopts the low-rank table. Returns, per system, its
+    that the compression adopts the low-rank table. A native-spin profile with
+    a low-rank basis carries one of more functions than the radial network of
+    these descriptors spans, so its compression adopts the table at any rank.
+    Returns, per system, its
     atom count and the sorted direction, scan and warps per row of every edge
     scan that ran (see `_edge_scans`).
     """
@@ -1266,7 +1345,8 @@ def _row_split_sweep_in_process(
     if rank:
         _restrict_scalar_rank(descriptor, rank=rank)
     artifacts = build_compression_artifacts(descriptor)
-    assert (artifacts["basis_table"].numel() > 0) is bool(rank)
+    native_basis = spin and descriptor_profile(channels, lmax, has_spin=True).basis
+    assert (artifacts["basis_table"].numel() > 0) is bool(rank or native_basis)
     descriptor._set_compression(artifacts)
     sweep = []
     for node_count in _SWEEP_NODE_COUNTS:
@@ -1700,18 +1780,10 @@ def test_compressed_cutoff_matches_removed_topology(channels: int) -> None:
 
 
 @_GPU
-@pytest.mark.parametrize("frozen_by", ["mask", "window"])
 @pytest.mark.parametrize("channels", [8, 64, 128])
-def test_in_row_mask_matches_removed_edge(channels: int, frozen_by: str) -> None:
-    """An edge switched off in its row equals an edge absent from the graph.
-
-    The mask and the bridging window are the two ways a row may hold an edge
-    that contributes nothing; the second edge lies inside the frozen zone of
-    the window and is switched off by either.
-    """
-    descriptor = _build_descriptor(
-        channels, **(_WINDOW if frozen_by == "window" else {})
-    )
+def test_in_row_mask_matches_removed_edge(channels: int) -> None:
+    """An edge switched off in its row equals an edge absent from the graph."""
+    descriptor = _build_descriptor(channels)
     edge_index = torch.tensor(
         [[1, 0], [0, 1]],
         dtype=torch.long,
@@ -1737,9 +1809,7 @@ def test_in_row_mask_matches_removed_edge(channels: int, frozen_by: str) -> None
     )
     masked_graph = dataclasses.replace(
         graph,
-        edge_mask=torch.tensor(
-            [True, frozen_by == "window"], dtype=torch.bool, device="cuda"
-        ),
+        edge_mask=torch.tensor([True, False], dtype=torch.bool, device="cuda"),
     )
     masked_edge = edge_vec.detach().clone().requires_grad_(True)
     masked, _masked_state = torch.ops.deepmd.dpa4c_graph_compress(
@@ -1775,8 +1845,7 @@ def test_in_row_mask_matches_removed_edge(channels: int, frozen_by: str) -> None
         removed_edge,
     )
 
-    if frozen_by == "mask":
-        assert not torch.allclose(full, masked)
+    assert not torch.allclose(full, masked)
     torch.testing.assert_close(masked, removed, atol=2e-6, rtol=2e-6)
     torch.testing.assert_close(
         masked_gradient[:1],
@@ -1794,15 +1863,71 @@ def test_in_row_mask_matches_removed_edge(channels: int, frozen_by: str) -> None
 
 
 @_GPU
+@pytest.mark.parametrize("canonical", [False, True])
+@pytest.mark.parametrize("channels", [8, 64, 128])
+def test_frozen_edge_does_not_read_its_length(channels: int, canonical: bool) -> None:
+    """A bond below ``a e`` is read at one separation whatever its length.
+
+    The contact clamp freezes the separation that the radial table and the
+    envelope read at ``(1 + a) e / 2`` for every bond at or below ``a e``, so
+    scaling such a bond leaves the descriptor unchanged and the gradient along
+    the bond vanishes, while the gradient across it, through the direction the
+    bond keeps, does not. The center holds a second bond outside the window,
+    which makes the angle between the bonds, and hence the direction of the
+    first, matter.
+    """
+    descriptor = _build_descriptor(channels, **_CLAMP)
+    frozen_below = descriptor.contact_clamp.inner * float(
+        descriptor.contact_clamp.edges[0, 0]
+    )
+    frozen = torch.tensor([[0.6, -0.48, 0.64]], dtype=torch.float32, device="cuda")
+    fixed = torch.tensor([[-1.6, 0.7, 1.2]], dtype=torch.float32, device="cuda")
+    assert fixed.norm() > descriptor.contact_clamp.edges[0, 0]
+    assert fixed.norm() < descriptor.rcut
+    edge_index = torch.tensor([[1, 2], [0, 0]], dtype=torch.long, device="cuda")
+    atype = torch.zeros(3, dtype=torch.long, device="cuda")
+
+    def evaluate(length: float) -> tuple[torch.Tensor, torch.Tensor]:
+        edge_vec = torch.cat([length * frozen, fixed])
+        graph = NeighborGraph(
+            n_node=torch.tensor([3], dtype=torch.long, device="cuda"),
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=torch.ones(2, dtype=torch.bool, device="cuda"),
+        )
+        graph = attach_edge_csr(graph, 3, canonicalize=canonical)
+        arguments = _arguments(descriptor, graph, atype)
+        output, state = torch.ops.deepmd.dpa4c_graph_compress(
+            graph.edge_vec, *arguments
+        )
+        cotangent = torch.linspace(
+            -0.7, 1.3, output.numel(), dtype=output.dtype, device=output.device
+        ).reshape_as(output)
+        gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
+        # The row of the frozen bond, whose source is node 1, in either order.
+        return output, gradient[graph.edge_index[0] == 1][0]
+
+    # The lengths lie below ``a e``, so both bonds are frozen at one separation.
+    near, near_gradient = evaluate(0.5 * frozen_below)
+    far, far_gradient = evaluate(0.9 * frozen_below)
+    torch.testing.assert_close(near, far, atol=2e-6, rtol=2e-6)
+    for gradient in (near_gradient, far_gradient):
+        along = (gradient * frozen[0]).sum()
+        across = (gradient - along * frozen[0]).norm()
+        assert along.abs() < 1e-5 * across
+        assert across > 1e-4
+
+
+@_GPU
 @pytest.mark.parametrize("mode", ["zbl", "nlh"])
-@pytest.mark.parametrize("windowed", [True, False])
+@pytest.mark.parametrize("clamped", [True, False])
 @pytest.mark.parametrize("canonical", [False, True])
 @pytest.mark.parametrize("channels", [8, 32, 128])
 @pytest.mark.parametrize(("lmax", "radial_modes"), [(2, 0), (3, 4), (4, 2)])
 def test_pair_potential_matches_the_portable_term(
     channels: int,
     canonical: bool,
-    windowed: bool,
+    clamped: bool,
     lmax: int,
     radial_modes: int,
     mode: str,
@@ -1813,23 +1938,24 @@ def test_pair_potential_matches_the_portable_term(
     then the pair slope alone, weighted by the energy cotangent of the
     destination, and the scan returns the pair energy of every node. The three
     widths cover the two-, four- and eight-lane splits of the four series
-    terms. Without a window the pair table alone selects the bridged backward,
-    behind a plain forward. Both supported modes ride the kernel, which reads
-    the coefficients of whichever potential filled the table; their decay rates
-    differ by three orders of magnitude, so the single-precision table has to
-    carry either.
+    terms. Without a contact clamp the pair table alone selects the bridged
+    backward, behind a plain forward. Both supported modes ride the kernel,
+    which reads the coefficients of whichever potential filled the table; their
+    decay rates differ by three orders of magnitude, so the single-precision
+    table has to carry either. The end radii of the pairs lie inside the test
+    cluster, which holds bonds on both sides of the truncation.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
         InnerPotential,
     )
 
     descriptor = _build_descriptor(
-        channels, lmax, radial_modes, **(_WINDOW if windowed else {})
+        channels, lmax, radial_modes, **(_CLAMP if clamped else {})
     )
     graph, atype = _build_graph(descriptor, canonical=canonical)
     arguments = _arguments(descriptor, graph, atype)
     output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
-    potential = InnerPotential(type_map=["O", "H"], mode=mode)
+    potential = InnerPotential(type_map=["O", "H"], mode=mode, precision="float32")
     pair_table = torch.as_tensor(potential.pair_table, device="cuda")
     # Ghost nodes carry no energy, so their cotangent vanishes.
     seed = (torch.arange(atype.shape[0], device="cuda") % 3 != 0).to(torch.float64)
@@ -1847,7 +1973,12 @@ def test_pair_potential_matches_the_portable_term(
         edge, graph.edge_index, atype, graph.edge_mask, atype.shape[0]
     )[0]
     (reference_gradient,) = torch.autograd.grad((reference[:, 0] * seed).sum(), edge)
-    assert reference.max() > 10.0
+    assert reference.max() > 1.0
+    source, destination = graph.edge_index[0], graph.edge_index[1]
+    end = pair_table[atype[destination] * 3 + atype[source], 8]
+    length = graph.edge_vec.norm(dim=-1)
+    assert ((length < end) & graph.edge_mask).sum() > 8
+    assert ((length >= end) & graph.edge_mask).sum() > 8
     torch.testing.assert_close(pair_energy, reference, atol=3e-5, rtol=3e-5)
     torch.testing.assert_close(
         edge_gradient.double(), reference_gradient, atol=3e-5, rtol=3e-5
@@ -1861,7 +1992,7 @@ def test_pair_potential_matches_the_portable_term(
     assert torch.count_nonzero(plain_gradient).item() == 0
 
     # A pair term without energy cotangent leaves the descriptor gradient of
-    # the plain backward. Without a window that gradient comes from the plain
+    # the plain backward. Without a clamp that gradient comes from the plain
     # specialization, which the compiler schedules and contracts independently
     # of the bridged one, so the two agree to single-precision rounding, far
     # below any slope of the pair term.
@@ -1887,7 +2018,7 @@ def test_pair_potential_matches_the_portable_term(
 @pytest.mark.parametrize("channels", [8, 32])
 @pytest.mark.parametrize("bridged", [False, True])
 def test_padding_type_edge_has_zero_gradient(channels: int, bridged: bool) -> None:
-    descriptor = _build_descriptor(channels, **(_WINDOW if bridged else {}))
+    descriptor = _build_descriptor(channels, **(_CLAMP if bridged else {}))
     edge_vec = torch.tensor(
         [[1.0, 0.2, -0.1]],
         dtype=torch.float32,
@@ -1937,21 +2068,32 @@ def test_int32_edge_indices() -> None:
 
 
 @_GPU
-@pytest.mark.parametrize("windowed", [False, True])
+@pytest.mark.parametrize("clamped", [False, True])
 @pytest.mark.parametrize("channels", [8, 64, 128])
 @pytest.mark.parametrize("index_dtype", [torch.int64, torch.uint32])
+@pytest.mark.parametrize("spin_mode", [None, "orbit", "exchange"])
 def test_compact_canonical_parity(
     channels: int,
     index_dtype: torch.dtype,
-    windowed: bool,
+    clamped: bool,
+    spin_mode: str | None,
 ) -> None:
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         ensure_registered as ensure_canonical_registered,
     )
 
-    descriptor = _build_descriptor(channels, **(_WINDOW if windowed else {}))
+    descriptor = (
+        _build_descriptor(channels, **(_CLAMP if clamped else {}))
+        if spin_mode is None
+        else _build_spin_descriptor(
+            channels, spin_mode=spin_mode, **(_CLAMP if clamped else {})
+        )
+    )
     graph, atype = _build_graph(descriptor, canonical=True)
     arguments = _arguments(descriptor, graph, atype)
+    if spin_mode is not None:
+        moment = torch.randn(atype.shape[0], 3, device="cuda")
+        arguments = _with_spin(arguments, moment)
     ensure_canonical_registered()
     generic_output, generic_state = torch.ops.deepmd.dpa4c_graph_compress(
         graph.edge_vec,
@@ -2121,10 +2263,17 @@ class _ExportModule(torch.nn.Module):
 
 
 @_GPU
-def test_torch_export() -> None:
-    descriptor = _build_descriptor(8)
+@pytest.mark.parametrize("spin_mode", [None, "orbit", "exchange"])
+def test_torch_export(spin_mode: str | None) -> None:
+    descriptor = (
+        _build_descriptor(8)
+        if spin_mode is None
+        else _build_spin_descriptor(8, spin_mode=spin_mode)
+    )
     graph, atype = _build_graph(descriptor, canonical=False)
     arguments = _arguments(descriptor, graph, atype)
+    if spin_mode is not None:
+        arguments = _with_spin(arguments, torch.randn(atype.shape[0], 3, device="cuda"))
     module = _ExportModule().cuda().eval()
     exported = torch.export.export(
         module,
@@ -2310,8 +2459,8 @@ def test_fused_canonical_cpu_reference_matches_the_kernel(
     takes the multi-frame path of the operator, its frame lookup and its
     segment sums, with the last ``halo`` nodes of each frame unowned.
     """
-    window = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.3} if bridged else {}
-    descriptor = _build_descriptor(8, **window)
+    clamp = _CLAMP if bridged else {}
+    descriptor = _build_descriptor(8, **clamp)
     descriptor._set_compression(build_compression_artifacts(descriptor))
     _check_canonical_against_reference(
         descriptor,
@@ -2350,8 +2499,8 @@ def test_single_type_canonical_matches_the_reference(
     folded cotangents instead of to every edge. Eight modes exceed what the
     folded scans carry and pin the unfolded path of the same system.
     """
-    window = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.3} if bridged else {}
-    descriptor = _build_descriptor(channels, lmax, radial_modes, **window)
+    clamp = _CLAMP if bridged else {}
+    descriptor = _build_descriptor(channels, lmax, radial_modes, **clamp)
     descriptor._set_compression(build_compression_artifacts(descriptor))
     _check_canonical_against_reference(descriptor, bridged, monkeypatch)
 
@@ -2381,9 +2530,11 @@ def test_single_type_systems_take_the_folded_scans(
     differ from the pairwise and the slotted ones in the last bits. Eight
     modes exceed what the folded and the slotted scans carry: that profile
     scans pairwise either way, and its forces agree bit for bit. A
-    spin-conditioned profile has no single-type scan and scans both systems
-    alike, pairwise or slotted, and its forces and magnetic forces agree bit
-    for bit; its atoms are of type 0, which carries the spin branch.
+    spin-conditioned profile folds a single-type system only on its low-rank
+    table, which its compression adopts at 128 channels; otherwise it scans
+    both systems alike, pairwise or slotted, and its forces and magnetic
+    forces agree bit for bit. Its atoms are of type 0, which carries the spin
+    branch.
     """
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         dpa4c_canonical_compress_energy_force,
@@ -2394,7 +2545,8 @@ def test_single_type_systems_take_the_folded_scans(
 
     build = _build_spin_descriptor if spin else _build_descriptor
     descriptor = build(channels, lmax, radial_modes)
-    descriptor._set_compression(build_compression_artifacts(descriptor))
+    artifacts = build_compression_artifacts(descriptor)
+    descriptor._set_compression(artifacts)
     neighbor_graph, atype = _build_graph(
         descriptor, canonical=True, node_count=40, single_type=True
     )
@@ -2442,10 +2594,17 @@ def test_single_type_systems_take_the_folded_scans(
     )
     assert not paired[2][nodes:].any()
     assert not single[2][nodes:].any()
-    folded = folds and not spin
+    folded = folds and (not spin or artifacts["basis_table"].numel() > 0)
     assert torch.equal(paired[2][:nodes], single[2][:nodes]) is not folded
     if spin:
-        assert torch.equal(paired[5][:nodes], single[5][:nodes])
+        magnetic_scale = max(single[5].abs().max().item(), 1.0)
+        torch.testing.assert_close(
+            paired[5][:nodes],
+            single[5][:nodes],
+            atol=2e-5 * magnetic_scale,
+            rtol=2e-5,
+        )
+        assert torch.equal(paired[5][:nodes], single[5][:nodes]) is not folded
 
 
 @_GPU
@@ -2453,22 +2612,26 @@ def test_single_type_systems_take_the_folded_scans(
     ("channels", "lmax", "radial_modes", "bridged"),
     [(32, 2, 0, False), (64, 2, 0, True), (64, 3, 4, False), (128, 3, 4, True)],
 )
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_single_type_spin_canonical_matches_the_reference(
     channels: int,
     lmax: int,
     radial_modes: int,
     bridged: bool,
     monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
 ) -> None:
     """A single-type spin system matches the CPU reference of the fused operator.
 
-    A spin-conditioned descriptor has no single-type scan: its single-type
-    system takes the slotted scans of a profile with radial modes, and the
-    pairwise scans of any other; energy, force, virial and magnetic force
+    A certified native basis serves a single-type system through its folded
+    geometry scan. Without a basis, radial-mode profiles use mode slots and
+    the other profiles scan pairwise; energy, force, virial and magnetic force
     follow the reference.
     """
-    window = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.3} if bridged else {}
-    descriptor = _build_spin_descriptor(channels, lmax, radial_modes, **window)
+    clamp = _CLAMP if bridged else {}
+    descriptor = _build_spin_descriptor(
+        channels, lmax, radial_modes, spin_mode=spin_mode, **clamp
+    )
     descriptor._set_compression(build_compression_artifacts(descriptor))
     _check_canonical_against_reference(descriptor, bridged, monkeypatch)
 
@@ -2494,8 +2657,8 @@ def test_low_rank_table_matches_the_reference(
     ones, so their forces differ from those of the same descriptor without the
     basis in the last bits, which shows that they ran.
     """
-    window = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.3} if bridged else {}
-    descriptor = _build_descriptor(channels, lmax, radial_modes, **window)
+    clamp = _CLAMP if bridged else {}
+    descriptor = _build_descriptor(channels, lmax, radial_modes, **clamp)
     _restrict_scalar_rank(descriptor, rank=8)
     artifacts = build_compression_artifacts(descriptor)
     first = descriptor_profile(channels, lmax).degree_channels[1]
@@ -2529,9 +2692,7 @@ def test_canonical_halo_nodes_match_the_reference(
     the source CSR of a caller that declines the per-atom virial leave that
     output zero.
     """
-    descriptor = _build_descriptor(
-        64, 3, 4, inner_clamp_f_inner=0.9, inner_clamp_f_outer=1.3
-    )
+    descriptor = _build_descriptor(64, 3, 4, **_CLAMP)
     descriptor._set_compression(build_compression_artifacts(descriptor))
     kernel = _check_canonical_against_reference(
         descriptor,
@@ -2965,12 +3126,14 @@ def _fused_arguments(
     atom_bias: torch.Tensor,
     spin: torch.Tensor | None = None,
     pair_table: torch.Tensor | None = None,
+    border: Any = None,
 ) -> list[Any]:
     """Return the arguments with which the fused wrapper calls the operator.
 
     The call is recorded rather than evaluated. The CPU reference of the
     operator is registered first, so that the arguments can be evaluated on
-    either device.
+    either device. ``border`` is the border plan of a node set with halo rows,
+    which a descriptor of several blocks reads.
     """
     from deepmd.pt_expt.kernels.dpa4c import (
         canonical,
@@ -2985,7 +3148,14 @@ def _fused_arguments(
             lambda *arguments: calls.append(list(arguments)),
         )
         canonical.dpa4c_canonical_compress_energy_force(
-            descriptor, fitting, graph, atype, atom_bias, spin, pair_table
+            descriptor,
+            fitting,
+            graph,
+            atype,
+            atom_bias,
+            spin,
+            pair_table,
+            border=border,
         )
     (arguments,) = calls
     return arguments
@@ -3054,7 +3224,8 @@ def _check_canonical_against_reference(
     fitting = _energy_fitting(descriptor)
     pair_table = (
         torch.as_tensor(
-            InnerPotential(descriptor.get_type_map()).pair_table, device="cuda"
+            InnerPotential(descriptor.get_type_map(), precision="float32").pair_table,
+            device="cuda",
         )
         if bridged
         else None
@@ -3090,7 +3261,8 @@ def _build_spin_descriptor(
     device: str = "cuda",
     type_map: Sequence[str] = tuple(_TYPE_MAP),
     rcut: float = 3.0,
-    **window: float,
+    spin_mode: str = "orbit",
+    **clamp: float,
 ) -> DescrptDPA4C:
     """Return a spin-conditioned descriptor with a non-unit reference moment.
 
@@ -3114,11 +3286,14 @@ def _build_spin_descriptor(
             seed=17,
             type_map=list(type_map),
             use_spin=[True] + [False] * (len(type_map) - 1),
-            **window,
+            spin_mode=spin_mode,
+            **clamp,
         )
         .to(device)
         .eval()
     )
+    if descriptor.contact_clamp is not None:
+        _set_contact_edges(descriptor)
     descriptor.spin.set_spin_reference(np.array([1.7] + [1.0] * len(type_map)))
     with torch.no_grad():
         descriptor.spin.spin_gate.fill_(1.0)
@@ -3149,9 +3324,10 @@ def _empty_graph(device: str) -> tuple[NeighborGraph, torch.Tensor]:
     )
 
 
-def test_empty_native_spin_cpu_profile_preserves_spin_contract() -> None:
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_empty_native_spin_cpu_profile_preserves_spin_contract(spin_mode: str) -> None:
     """The CPU reference keeps the native-spin state width at zero nodes."""
-    descriptor = _build_spin_descriptor(8, device="cpu")
+    descriptor = _build_spin_descriptor(8, device="cpu", spin_mode=spin_mode)
     graph, atype = _empty_graph("cpu")
     arguments = _with_spin(
         _arguments(descriptor, graph, atype),
@@ -3160,15 +3336,18 @@ def test_empty_native_spin_cpu_profile_preserves_spin_contract() -> None:
 
     output, state = _reference_forward(graph.edge_vec, *arguments)
 
-    profile = descriptor_profile(8, 2, True)
+    profile = descriptor_profile(8, 2, True, spin_mode)
     assert output.shape == (0, profile.output_width)
     assert state.shape == (0, profile.state_width)
 
 
 @_GPU
-def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_empty_native_spin_cuda_backward_preserves_spin_contract(
+    spin_mode: str,
+) -> None:
     """The CUDA backward distinguishes present spin from its empty axis."""
-    descriptor = _build_spin_descriptor(8)
+    descriptor = _build_spin_descriptor(8, spin_mode=spin_mode)
     graph, atype = _empty_graph("cuda")
     arguments = _with_spin(
         _arguments(descriptor, graph, atype),
@@ -3178,6 +3357,10 @@ def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
         graph.edge_vec,
         *arguments,
     )
+
+    profile = descriptor_profile(8, 2, True, spin_mode)
+    assert output.shape == (0, profile.output_width)
+    assert state.shape == (0, profile.state_width)
 
     edge_gradient, spin_gradient, edge_spin_gradient = _descriptor_backward(
         torch.empty_like(output),
@@ -3196,14 +3379,16 @@ def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
     ("channels", "lmax", "radial_modes"),
     [(8, 2, 0), (16, 2, 0), (32, 2, 4), (64, 3, 0), (128, 3, 8), (32, 4, 0)],
 )
-@pytest.mark.parametrize("windowed", [False, True])
+@pytest.mark.parametrize("clamped", [False, True])
 @pytest.mark.parametrize("single_type", [False, True])
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_spin_compressed_matches_portable(
     monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
     channels: int,
     lmax: int,
     radial_modes: int,
-    windowed: bool,
+    clamped: bool,
     single_type: bool,
 ) -> None:
     """Descriptor, coordinate gradient and magnetic force all match.
@@ -3219,7 +3404,11 @@ def test_spin_compressed_matches_portable(
     types.
     """
     descriptor = _build_spin_descriptor(
-        channels, lmax, radial_modes, **(_WINDOW if windowed else {})
+        channels,
+        lmax,
+        radial_modes,
+        spin_mode=spin_mode,
+        **(_CLAMP if clamped else {}),
     )
     assert mega_eligible(descriptor)
     graph, atype = _build_graph(descriptor, canonical=True)
@@ -3264,9 +3453,9 @@ def test_spin_compressed_matches_portable(
     _assert_dispatched(actual[0], reference[0])
     # Tabulation error reaches the gradients through the table derivative, so
     # they carry the wider tolerance the geometric backward already uses, and
-    # the steep switch inside a bridging window widens it as in the surface
+    # the steep slope inside the clamp window widens it as in the surface
     # test.
-    gradient = (1e-4, 5e-4) if windowed else (8e-6, 1e-4)
+    gradient = (1e-4, 5e-4) if clamped else (8e-6, 1e-4)
     tolerances = ((3e-5, 3e-5), gradient, gradient)
     for (atol, rtol), value, expected in zip(
         tolerances, actual, reference, strict=True
@@ -3276,7 +3465,7 @@ def test_spin_compressed_matches_portable(
 
 @_GPU
 @pytest.mark.parametrize(
-    ("channels", "lmax", "radial_modes", "type_count", "windowed"),
+    ("channels", "lmax", "radial_modes", "type_count", "clamped"),
     [
         (64, 3, 4, 1, False),
         (64, 3, 4, 3, False),
@@ -3298,14 +3487,16 @@ def test_spin_compressed_matches_portable(
     ],
 )
 @pytest.mark.parametrize("system", ["unsplit", "coscheduled"])
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_spin_slotted_scans_match_the_portable_equations(
     monkeypatch: pytest.MonkeyPatch,
     channels: int,
     lmax: int,
     radial_modes: int,
     type_count: int,
-    windowed: bool,
+    clamped: bool,
     system: str,
+    spin_mode: str,
 ) -> None:
     """The slotted spin scans follow the portable equations.
 
@@ -3332,7 +3523,8 @@ def test_spin_slotted_scans_match_the_portable_equations(
         lmax,
         radial_modes,
         type_map=_WIDE_TYPE_MAP[: max(type_count, 4)],
-        **(_WINDOW if windowed else {}),
+        spin_mode=spin_mode,
+        **(_CLAMP if clamped else {}),
     )
     graph, atype = _build_graph(
         descriptor,
@@ -3363,7 +3555,7 @@ def test_spin_slotted_scans_match_the_portable_equations(
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     actual = run()
     _assert_dispatched(actual[0], reference[0])
-    gradient = (1e-4, 5e-4) if windowed else (8e-6, 1e-4)
+    gradient = (1e-4, 5e-4) if clamped else (8e-6, 1e-4)
     tolerances = ((3e-5, 3e-5), gradient, gradient)
     for (atol, rtol), value, expected in zip(
         tolerances, actual, reference, strict=True
@@ -3475,8 +3667,10 @@ def test_spin_systems_of_a_few_types_take_the_slotted_scans(
 
 @_GPU
 @pytest.mark.parametrize("family", ["neighbour", "onsite"])
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
 def test_spin_magnetic_force_splits_into_onsite_and_neighbour(
     monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
     family: str,
 ) -> None:
     """Each half of the magnetic force is correct on its own.
@@ -3486,7 +3680,7 @@ def test_spin_magnetic_force_splits_into_onsite_and_neighbour(
     independently. Silencing one at a time keeps a fault in either from being
     masked by the other's magnitude.
     """
-    descriptor = _build_spin_descriptor(16)
+    descriptor = _build_spin_descriptor(16, spin_mode=spin_mode)
     with torch.no_grad():
         if family == "neighbour":
             descriptor.spin.adam_spin_vector_weight.zero_()
@@ -3606,7 +3800,10 @@ def test_backward_operator_satisfies_its_schema(
     arguments = _arguments(descriptor, graph, atype)
     pair = (
         (
-            torch.as_tensor(InnerPotential(["O", "H"]).pair_table, device="cuda"),
+            torch.as_tensor(
+                InnerPotential(["O", "H"], precision="float32").pair_table,
+                device="cuda",
+            ),
             torch.ones(atype.shape[0], dtype=torch.float64, device="cuda"),
         )
         if bridged
@@ -4044,14 +4241,19 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
         fitting_routes._ROUTE_TABLES[(fingerprint, key)] = tuple(table)
         exported, _metadata, _model_json, _output_keys = _trace_and_export(
             {"model": model.serialize()},
-            lower_kind="dpa4c_canonical",
+            lower_kind="dpa_canonical",
             do_atomic_virial=True,
         )
-        # The table is the last argument of the schema; a call that leaves it
-        # to its default of no table records one argument fewer.
+        # The table is the ``fitting_routes`` argument of the schema; a call
+        # that leaves it to its default of no table records none.
         schema = torch.ops.deepmd.dpa4c_canonical_compress_energy_force.default._schema
+        position = [argument.name for argument in schema.arguments].index(
+            "fitting_routes"
+        )
         literals = [
-            node.args[-1] if len(node.args) == len(schema.arguments) else None
+            node.args[position]
+            if len(node.args) > position
+            else node.kwargs.get("fitting_routes")
             for node in exported.graph_module.graph.nodes
             if "dpa4c_canonical_compress_energy_force" in str(node.target)
         ]
@@ -4060,7 +4262,7 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
             archive,
             {"model": model.serialize()},
             do_atomic_virial=True,
-            lower_kind="dpa4c_canonical",
+            lower_kind="dpa_canonical",
             with_comm=False,
         )
         runner = aoti_load_package(archive)
@@ -4172,6 +4374,7 @@ def test_a_measured_table_names_only_its_departures_from_the_rules() -> None:
         types.SimpleNamespace(device=device, winner=winner), ws, largest
     )
     probes = {1, *(size + d for size in (*bands, start, end) for d in (0, 1))}
+    expected_choices = []
     for node_count in sorted(size for size in probes if size <= largest):
         rule = int(torch.ops.deepmd.graph_fitting_route_rule(ws, node_count))
         fastest = winner(node_count, rule, [])
@@ -4181,8 +4384,11 @@ def test_a_measured_table_names_only_its_departures_from_the_rules() -> None:
             if node_count <= bound
         )
         expected = fitting_routes.RULES if fastest == rule else fastest
+        if not expected_choices or expected_choices[-1] != expected:
+            expected_choices.append(expected)
         assert recorded == expected, node_count
-    assert fitting_routes.PER_LAYER in choices
+    # A device that already routes every run per layer has no departure.
+    assert choices == expected_choices
 
 
 def _route_stand_in(
@@ -4740,6 +4946,60 @@ def test_two_routes_besides_the_rules_are_decided_on_trains(
 
 
 @_GPU
+def test_the_route_tuner_times_the_first_block_of_several() -> None:
+    """The tuner times the routes of a model of two blocks on the operator of its first block.
+
+    The routes of a network change no further message-passing block, so the
+    bench evaluates a copy of the descriptor without its further blocks, whose
+    operator it captures, and the descriptor of the model keeps its blocks.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+
+    model = (
+        get_model(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "dpa4c",
+                    "rcut": [4.0, 3.0],
+                    "n_blocks": 2,
+                    "channels": 8,
+                    "lmax": 2,
+                    "n_radial": 8,
+                    "precision": "float32",
+                    "seed": 3,
+                },
+                "fitting_net": {
+                    "type": "ener",
+                    "neuron": [64, 64],
+                    "activation_function": "silu",
+                    "precision": "float32",
+                    "resnet_dt": False,
+                    "seed": 3,
+                },
+            }
+        )
+        .to("cpu")
+        .eval()
+    )
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    device = torch.device("cuda", torch.cuda.current_device())
+    fitting = model.atomic_model.fused_decomposition()[0].fitting_net
+    bench = fitting_routes._Bench(
+        model, device, 512, fitting, fitting.bias_atom_e[:, 0]
+    )
+    assert not bench.descriptor.has_message_passing()
+    assert model.get_descriptor().has_message_passing()
+    graphs = bench._capture(bench._inputs(512), [fitting_routes.RULES], 0)
+    assert list(graphs) == [fitting_routes.RULES]
+
+
+@_GPU
 def test_the_route_tuner_measures_a_table_that_changes_no_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4767,6 +5027,22 @@ def test_the_route_tuner_measures_a_table_that_changes_no_output(
     device = torch.device("cuda", torch.cuda.current_device())
     model = _route_model()
     fitting_routes.tune_fitting_routes(model, 0, device)
+    learned = model.atomic_model.fused_decomposition()[0]
+    fitting = learned.fitting_net.to(device).eval()
+    weights = list(fitting_operator_arguments(fitting).weights)
+    if not any(
+        torch.ops.deepmd.graph_fitting_route_choices(
+            device.index, weights[0].shape[1], nodes
+        )
+        for nodes in (1, 16384)
+    ):
+        assert not tables
+        assert all(
+            torch.ops.deepmd.graph_fitting_route_rule(weights, nodes)
+            == fitting_routes.PER_LAYER
+            for nodes in (1, 16384)
+        )
+        return
     (table,) = tables.values()
     table = list(table)
     fingerprint = list(fitting_routes._fingerprint(device))
@@ -4777,10 +5053,7 @@ def test_the_route_tuner_measures_a_table_that_changes_no_output(
     choices = table[header + intervals :]
     assert len(choices) == intervals
     assert bounds == sorted(set(bounds)) and all(0 < b < 16384 for b in bounds)
-    learned = model.atomic_model.fused_decomposition()[0]
     descriptor = learned.descriptor.to(device).eval()
-    fitting = learned.fitting_net.to(device).eval()
-    weights = list(fitting_operator_arguments(fitting).weights)
     bias = fitting.bias_atom_e[:, 0]
     for node_count, choice in zip([*bounds, 16384], choices, strict=True):
         if choice != fitting_routes.RULES:
@@ -4798,3 +5071,709 @@ def test_the_route_tuner_measures_a_table_that_changes_no_output(
         )
         for expected, actual in zip(rules, routed, strict=True):
             assert torch.equal(expected, actual), node_count
+
+
+# === Descriptors of several message-passing blocks ===
+#
+# The further blocks run in the canonical fused operator. Their output maps
+# start at zero, which makes a fresh block the identity, so every comparison
+# below draws those maps at random first (`_activate_blocks`).
+
+
+def _activate_blocks(descriptor: DescrptDPA4C) -> None:
+    """Draw every zero-initialized map and the field gains of the further blocks."""
+    generator = np.random.default_rng(97)
+    with torch.no_grad():
+        for block in descriptor.attentions:
+            for module in block.modules():
+                weight = getattr(module, "w", None)
+                if (
+                    isinstance(weight, torch.Tensor)
+                    and weight.ndim == 2
+                    and not weight.any()
+                ):
+                    weight.copy_(
+                        torch.as_tensor(
+                            generator.normal(size=tuple(weight.shape)),
+                            dtype=weight.dtype,
+                        )
+                    )
+            gain = block.adam_field_gain
+            gain.copy_(
+                torch.as_tensor(
+                    generator.normal(size=tuple(gain.shape)), dtype=gain.dtype
+                )
+            )
+
+
+def _build_block_descriptor(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: Sequence[float],
+    spin_mode: str | None = None,
+    **clamp: float,
+) -> DescrptDPA4C:
+    """Return an fp32 descriptor of ``len(rcut)`` blocks with active further blocks.
+
+    Block ``k`` reads the edges within ``rcut[k]``. A spin-conditioned
+    descriptor is prepared as in `_build_spin_descriptor`, and ``clamp``
+    holds the contact clamp of a bridged one. The descriptor is not
+    compressed.
+    """
+    builder = _build_spin_descriptor if spin_mode is not None else _build_descriptor
+    spin_arguments = {} if spin_mode is None else {"spin_mode": spin_mode}
+    descriptor = builder(
+        channels,
+        lmax,
+        radial_modes,
+        rcut=list(rcut),
+        n_blocks=len(rcut),
+        **spin_arguments,
+        **clamp,
+    )
+    _activate_blocks(descriptor)
+    return descriptor
+
+
+def _canonical_cluster(
+    descriptor: DescrptDPA4C, node_count: int = 40, side: float = 5.0
+) -> tuple[Any, Any, torch.Tensor]:
+    """Return the neighbor graph, the compact canonical graph and the types of a cluster."""
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    neighbor_graph, atype = _build_graph(
+        descriptor, canonical=True, node_count=node_count, side=side
+    )
+    graph = canonical_graph_from_neighbor_graph(
+        dataclasses.replace(neighbor_graph, n_local=neighbor_graph.n_node)
+    )
+    return neighbor_graph, graph, atype
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes", "rcut"),
+    [
+        (8, 2, 0, (3.0, 3.0)),
+        (32, 2, 0, (3.0, 2.5)),
+        (64, 2, 0, (3.0, 3.0)),
+        (64, 3, 4, (3.0, 2.5)),
+        (128, 3, 4, (3.0, 2.5)),
+        (16, 4, 2, (3.0, 2.5, 2.0)),
+    ],
+)
+@pytest.mark.parametrize("clamped", [False, True])
+def test_further_blocks_match_the_uncompressed_model(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: tuple[float, ...],
+    clamped: bool,
+) -> None:
+    """The fused operator of several blocks reproduces the uncompressed model.
+
+    The energy, the forces, the virial and the per-atom virial of the
+    compressed descriptor and the fused fitting are compared with those of the
+    uncompressed descriptor and fitting differentiated by autograd. The record
+    of every further block is packed from the trained maps, so the comparison
+    covers the packing as well as the kernels; and the further blocks must
+    change the energy by a hundred times the tolerance, which a descriptor of
+    fresh blocks would not. A contact clamp makes every block read the
+    separation of a close pair at its clamped value, since the states that the
+    further blocks pass on are built from the first block; the cluster holds
+    pairs in the frozen zone, in the transition zone and beyond the data edge,
+    and the per-atom virial, which the model attributes to the source of every
+    edge, pins the attribution of the forces of the further blocks.
+    """
+    from deepmd.pt_expt.kernels.dpa4c import (
+        canonical,
+    )
+    from deepmd.pt_expt.kernels.edge_force_virial import (
+        edge_force_virial,
+    )
+
+    clamp = _CLAMP if clamped else {}
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, rcut, **clamp)
+    neighbor_graph, graph, atype = _canonical_cluster(descriptor)
+    if clamped:
+        frozen, transition, plain = _contact_zones(descriptor, neighbor_graph, atype)
+        assert frozen > 8 and transition > 8 and plain > 8
+    fitting = _energy_fitting(descriptor)
+
+    def uncompressed(model: DescrptDPA4C) -> tuple[torch.Tensor, ...]:
+        edge_vec = neighbor_graph.edge_vec.detach().clone().requires_grad_(True)
+        node_descriptor, _ = model.call_graph(
+            dataclasses.replace(neighbor_graph, edge_vec=edge_vec),
+            atype,
+            type_embedding=model.type_embedding.call(),
+        )
+        atom_energy = fitting.call_graph(node_descriptor, atype)[fitting.var_name]
+        (edge_gradient,) = torch.autograd.grad(atom_energy.sum(), edge_vec)
+        force, atom_virial, virial, _ = edge_force_virial(
+            edge_gradient,
+            edge_vec.detach(),
+            neighbor_graph.edge_index,
+            neighbor_graph.edge_mask,
+            neighbor_graph.destination_order,
+            neighbor_graph.destination_row_ptr,
+            neighbor_graph.source_order,
+            neighbor_graph.source_row_ptr,
+            neighbor_graph.n_node,
+            edge_vec.new_empty(0),
+            atype.shape[0],
+            True,
+        )
+        return atom_energy.detach().sum().double(), force, virial, atom_virial
+
+    energy, force, virial, atom_virial = uncompressed(descriptor)
+    # Fresh further blocks are the identity, so this descriptor evaluates the
+    # first block alone.
+    first_block = _build_descriptor(
+        channels, lmax, radial_modes, rcut=list(rcut), n_blocks=len(rcut), **clamp
+    )
+    first_energy = uncompressed(first_block)[0]
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fused = canonical.dpa4c_canonical_compress_energy_force(
+        descriptor, fitting, graph, atype, fitting.bias_atom_e[:, 0]
+    )
+    energy_tolerance = 1e-5 * max(energy.abs().item(), 1.0)
+    force_scale = max(force.abs().max().item(), 1.0)
+    assert (energy - first_energy).abs().item() > 100 * energy_tolerance
+    torch.testing.assert_close(
+        fused[0].reshape(()), energy, atol=energy_tolerance, rtol=0
+    )
+    torch.testing.assert_close(
+        fused[2].reshape(-1, 3).float(),
+        force,
+        atol=2e-4 * force_scale,
+        rtol=0,
+    )
+    torch.testing.assert_close(
+        fused[3].reshape(3, 3).float(),
+        virial.reshape(3, 3),
+        atol=2e-4 * max(virial.abs().max().item(), 1.0),
+        rtol=0,
+    )
+    torch.testing.assert_close(
+        fused[4].float(),
+        atom_virial,
+        atol=2e-4 * max(atom_virial.abs().max().item(), 1.0),
+        rtol=0,
+    )
+
+
+@_GPU
+@pytest.mark.parametrize(("channels", "lmax", "radial_modes"), [(32, 2, 0), (64, 3, 4)])
+def test_further_block_scans_take_their_rows_from_the_graph(
+    channels: int, lmax: int, radial_modes: int
+) -> None:
+    """Guard slots of the edge storage leave every output of a model of two blocks unchanged.
+
+    A block of an edge scan of a further block takes its number of rows from
+    the edges of the graph of the block, which set how full its panels are,
+    and the summation order of every row follows from that number. The grid of
+    the launch provides for the rows that the edge storage implies, which holds
+    at least as many slots; guard slots past the graph can make it provide for
+    fewer rows per block, and so for more blocks, which retire past the rows of
+    the scan. Clusters of 500 to 1,500 atoms, whose blocks fill a wave of the
+    device or a few, take their rows from the fill of their panels; each
+    evaluates on its own edge storage and on one of ten times as many slots,
+    and every output of the two agrees bit for bit.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, (3.0, 2.5))
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    for node_count in (500, 1000, 1500):
+        _, graph, atype = _canonical_cluster(
+            descriptor,
+            node_count=node_count,
+            side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+        )
+        storage = graph.source.shape[0]
+        outputs = [
+            dpa4c_canonical_compress_energy_force(
+                descriptor, fitting, edges, atype, fitting.bias_atom_e[:, 0]
+            )
+            for edges in (graph, _padded_storage(graph, 9 * storage))
+        ]
+        for index, (compact, padded) in enumerate(zip(*outputs, strict=True)):
+            assert torch.equal(compact, padded), (node_count, index)
+
+
+@_GPU
+@pytest.mark.parametrize(("channels", "lmax", "radial_modes"), [(32, 2, 0), (64, 3, 4)])
+def test_further_block_scans_tile_like_the_whole_system(
+    channels: int, lmax: int, radial_modes: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Node tiles of a multiple of four rows change no output of a model of two blocks.
+
+    Every run of a tiled system takes the rows per block that the edges of the
+    whole system set, and a run that starts at a multiple of four rows groups
+    its rows into blocks as the whole system does, so the panels of every
+    block, and the summation order of every row, stay those of the untiled
+    system. A cluster of 1,000 atoms, whose scans take two or four rows per
+    block, evaluates untiled and in runs of 16, 256 and 600 rows, which start
+    past the first row of the graph, and every output agrees bit for bit.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+
+    descriptor = _build_block_descriptor(channels, lmax, radial_modes, (3.0, 2.5))
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    node_count = 1000
+    _, graph, atype = _canonical_cluster(
+        descriptor,
+        node_count=node_count,
+        side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+    )
+
+    def run() -> tuple[torch.Tensor, ...]:
+        return dpa4c_canonical_compress_energy_force(
+            descriptor, fitting, graph, atype, fitting.bias_atom_e[:, 0]
+        )
+
+    monkeypatch.setenv("DP_NODE_TILE", "0")
+    reference = run()
+    for tile in (16, 256, 600):
+        monkeypatch.setenv("DP_NODE_TILE", str(tile))
+        for index, (actual, expected) in enumerate(zip(run(), reference, strict=True)):
+            assert torch.equal(actual, expected), (tile, index)
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes", "rcut", "spin_mode", "clamped"),
+    [
+        (8, 2, 0, (3.0, 3.0), None, False),
+        (16, 3, 4, (3.0, 2.5), None, False),
+        (32, 2, 0, (3.0, 2.5), None, False),
+        (64, 2, 0, (3.0, 3.0), None, False),
+        (64, 3, 4, (3.0, 2.5), None, False),
+        (128, 3, 4, (3.0, 2.5), None, False),
+        (16, 4, 2, (3.0, 2.5, 2.0), None, False),
+        (32, 2, 0, (3.0, 2.6), "orbit", False),
+        (8, 2, 0, (3.0, 3.0), None, True),
+        (64, 3, 4, (3.0, 2.5), None, True),
+        (16, 4, 2, (3.0, 2.5, 2.0), None, True),
+        (32, 2, 0, (3.0, 2.6), "orbit", True),
+        (32, 2, 0, (3.0, 2.6), "exchange", False),
+        (64, 3, 4, (3.0, 2.5), "exchange", True),
+        (16, 4, 2, (3.0, 2.5, 2.0), "exchange", False),
+        (128, 3, 4, (3.0, 2.6, 2.2), "orbit", False),
+        (128, 3, 4, (3.0, 2.6, 2.2), "exchange", True),
+    ],
+)
+def test_further_blocks_match_the_reference(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: tuple[float, ...],
+    spin_mode: str | None,
+    clamped: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CUDA scans of the further blocks follow the CPU reference.
+
+    The profiles cover every panel geometry of the further-block scans and a
+    descriptor of three blocks with decreasing cutoffs; a spin-conditioned
+    descriptor carries the magnetic force of its first block through the
+    further ones. A contact clamp makes every block read the clamped
+    separation of a close pair, with and without the analytical pair
+    potential.
+    """
+    descriptor = _build_block_descriptor(
+        channels, lmax, radial_modes, rcut, spin_mode, **(_CLAMP if clamped else {})
+    )
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    _check_canonical_against_reference(
+        descriptor,
+        clamped,
+        monkeypatch,
+        single_type=False,
+    )
+
+
+def _fold_halo(outputs: Sequence[torch.Tensor], owner: torch.Tensor, owned: int):
+    """Fold the forces and per-atom virials of halo rows onto their owners."""
+    energy, atom_energy, force, virial, atom_virial, force_mag, mask = outputs
+    index = owner.to(force.device)
+    folded_force = force.new_zeros(owned, 3).index_add_(0, index, force)
+    folded_virial = atom_virial.new_zeros(owned, 3, 3).index_add_(0, index, atom_virial)
+    folded_mag = force_mag
+    if force_mag.numel():
+        folded_mag = force_mag.new_zeros(owned, 3).index_add_(0, index, force_mag)
+    return (
+        energy,
+        atom_energy[:owned],
+        folded_force,
+        virial,
+        folded_virial,
+        folded_mag,
+        mask[:owned],
+    )
+
+
+def _assert_outputs_close(
+    actual: Sequence[torch.Tensor], expected: Sequence[torch.Tensor]
+) -> None:
+    """Compare operator outputs at the tolerance of the canonical parity tests."""
+    for value, reference in zip(actual, expected, strict=True):
+        reference = reference.cpu()
+        scale = max(reference.abs().max().item(), 1.0) if reference.numel() else 1.0
+        torch.testing.assert_close(
+            value.cpu().to(reference.dtype), reference, atol=2e-5 * scale, rtol=2e-5
+        )
+
+
+def _frame_graph(
+    points: torch.Tensor,
+    owned: int,
+    rcut: float,
+    owner: torch.Tensor | None = None,
+) -> Any:
+    """Return the compact canonical graph of the rows of the first ``owned`` atoms.
+
+    Every atom within ``rcut`` of an owned atom is the source of one of its
+    edges. The node set holds every atom, the rows of the others without
+    edges, or, given the ``owner`` of every atom, the owned atoms alone, every
+    edge then leading from the owner of its source.
+    """
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    distance = torch.cdist(
+        points[:owned], points, compute_mode="donot_use_mm_for_euclid_dist"
+    )
+    destination, source = torch.nonzero(
+        (distance < rcut) & (distance > 1e-8), as_tuple=True
+    )
+    edge_vec = (points[source] - points[destination]).to(torch.float32)
+    node_count = points.shape[0]
+    if owner is not None:
+        source = owner[source]
+        node_count = owned
+    graph = NeighborGraph(
+        n_node=torch.tensor([node_count], device=points.device),
+        edge_index=torch.stack((source, destination)),
+        edge_vec=edge_vec,
+        edge_mask=torch.ones(source.shape[0], dtype=torch.bool, device=points.device),
+        n_local=torch.tensor([owned], device=points.device),
+    )
+    return canonical_graph_from_neighbor_graph(
+        attach_edge_csr(graph, node_count, canonicalize=True)
+    )
+
+
+def _border_images(
+    points: np.ndarray, side: float, cut: float
+) -> tuple[np.ndarray, np.ndarray, list[list[int]], list[int]]:
+    """Emulate the border swaps of one process of a LAMMPS brick decomposition.
+
+    Every dimension takes two swaps, as in LAMMPS: the atoms within ``cut`` of
+    the lower face travel as images beyond the upper face, then those within
+    ``cut`` of the upper face as images below the lower face. Both swaps of a
+    dimension choose among the atoms present before its first swap, owned or
+    received in an earlier dimension. Returns the coordinates of every atom,
+    owned first, the owner of every atom, the swap table and the send list.
+    """
+    images = list(points)
+    owner = list(range(len(points)))
+    swaps = []
+    send = []
+    for dimension in range(3):
+        present = len(images)
+        for shift in (side, -side):
+            chosen = [
+                i
+                for i in range(present)
+                if (
+                    images[i][dimension] < cut
+                    if shift > 0
+                    else images[i][dimension] >= side - cut
+                )
+            ]
+            first = len(images)
+            for i in chosen:
+                image = images[i].copy()
+                image[dimension] += shift
+                images.append(image)
+                owner.append(owner[i])
+            swaps.append([0, 0, len(chosen), len(chosen), first])
+            send.extend(chosen)
+    return np.array(images), np.array(owner), swaps, send
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes", "rcut", "spin_mode"),
+    [
+        (32, 2, 0, (3.0, 3.0), None),
+        (64, 3, 4, (3.0, 2.5), None),
+        (32, 2, 0, (3.0, 2.6), "orbit"),
+    ],
+)
+@pytest.mark.parametrize("swaps", ["self", "lammps", "lammps-crossing"])
+@pytest.mark.parametrize("clamped", [False, True])
+def test_halo_rows_match_the_folded_frame(
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+    rcut: tuple[float, ...],
+    spin_mode: str | None,
+    swaps: str,
+    clamped: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A node set with halo rows and its border plan matches the folded frame.
+
+    The owned atoms of a periodic frame keep complete rows, and every periodic
+    image within reach becomes a halo row without edges, which the border plan
+    refreshes from its owner before every further block: by one self swap of
+    all images, or by the six swaps of one process of a LAMMPS brick
+    decomposition, whose later swaps forward images received by earlier ones.
+    The forces of the halo rows, folded onto their owners, and every other
+    output match those of the folded frame, in which every edge leads from the
+    owner itself, on the device and in the CPU reference. Under a contact
+    clamp every edge reads the clamped separation of its pair, including the
+    edges between an owner and an image across a face of the frame.
+
+    A plan that names a communicator crosses processes, and the operator then
+    scans the rows whose edges read no halo row while it exchanges the halo
+    rows, and the other rows after the exchange. An operator library without
+    MPI copies the rows of the self swaps of such a plan on the device, which
+    the crossing case takes; the CPU reference serves single-process plans
+    alone.
+    """
+    from deepmd.pt_expt.utils.canonical_graph import (
+        BorderPlan,
+    )
+
+    crossing = swaps == "lammps-crossing"
+    if crossing and bool(torch.ops.deepmd.enable_mpi()):
+        pytest.skip("an operator library with MPI reads the communicator")
+    owned, side = 48, 7.0
+    descriptor = _build_block_descriptor(
+        channels, lmax, radial_modes, rcut, spin_mode, **(_CLAMP if clamped else {})
+    )
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = _energy_fitting(descriptor)
+    generator = torch.Generator(device="cuda").manual_seed(41)
+    local = side * torch.rand(
+        owned, 3, dtype=torch.float64, device="cuda", generator=generator
+    )
+    local_type = torch.arange(owned, device="cuda") % 2
+    cut = max(rcut)
+    if swaps == "self":
+        shifts = torch.cartesian_prod(*[torch.tensor([-1.0, 0.0, 1.0])] * 3)
+        shifts = side * shifts[shifts.abs().sum(-1) > 0].to(local)
+        images = (local[None] + shifts[:, None]).reshape(-1, 3)
+        near = (
+            torch.cdist(images, local, compute_mode="donot_use_mm_for_euclid_dist")
+            .amin(-1)
+            .lt(cut)
+        )
+        points = torch.cat((local, images[near]))
+        local_index = torch.arange(owned, device="cuda")
+        owner = torch.cat((local_index, local_index.repeat(shifts.shape[0])[near]))
+        halo = points.shape[0] - owned
+        plan = BorderPlan(
+            send_nodes=owner[owned:].to(torch.int32).contiguous(),
+            swaps=torch.tensor([[0, 0, halo, halo, owned]], dtype=torch.int32),
+            communicator=torch.zeros(1, dtype=torch.int64),
+        )
+    else:
+        images, owner_array, table, send = _border_images(
+            local.cpu().numpy(), side, cut + 0.5
+        )
+        points = torch.as_tensor(images, device="cuda")
+        owner = torch.as_tensor(owner_array, device="cuda")
+        # A placeholder address names a communicator, which an operator
+        # library without MPI never reads.
+        plan = BorderPlan(
+            send_nodes=torch.tensor(send, dtype=torch.int32, device="cuda"),
+            swaps=torch.tensor(table, dtype=torch.int32),
+            communicator=torch.full((1,), int(crossing), dtype=torch.int64),
+        )
+    assert points.shape[0] > owned
+    moment = halo_moment = None
+    if spin_mode is not None:
+        moment = torch.randn(owned, 3, device="cuda", generator=generator)
+        halo_moment = moment[owner]
+    operator = torch.ops.deepmd.dpa4c_canonical_compress_energy_force
+    reference = operator(
+        *_fused_arguments(
+            monkeypatch,
+            descriptor,
+            fitting,
+            _frame_graph(points, owned, cut, owner),
+            local_type,
+            fitting.bias_atom_e[:, 0],
+            moment,
+        )
+    )
+    arguments = _fused_arguments(
+        monkeypatch,
+        descriptor,
+        fitting,
+        _frame_graph(points, owned, cut),
+        local_type[owner],
+        fitting.bias_atom_e[:, 0],
+        halo_moment,
+        border=plan,
+    )
+    _assert_outputs_close(_fold_halo(operator(*arguments), owner, owned), reference)
+    if not crossing:
+        _assert_outputs_close(
+            _fold_halo(operator(*[_to_cpu(a) for a in arguments]), owner, owned),
+            reference,
+        )
+
+
+@_GPU
+def test_exchange_spin_rotates_independently_and_matches_finite_difference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exchange invariants and their VJP respect independent spin rotations."""
+    descriptor = _build_spin_descriptor(32, spin_mode="exchange")
+    graph, atype = _build_graph(descriptor, canonical=True)
+    generator = torch.Generator(device="cuda").manual_seed(111)
+    spin = torch.randn(atype.shape[0], 3, generator=generator, device="cuda")
+    rotation, _ = torch.linalg.qr(torch.randn(3, 3, generator=generator, device="cuda"))
+    descriptor.enable_compression(0.5)
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+
+    profile = descriptor_profile(32, 2, True, "exchange")
+
+    def evaluate(moment: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        moment = moment.detach().requires_grad_(True)
+        output, _ = descriptor.call_graph(graph, atype, spin=moment)
+        return output, torch.autograd.grad(
+            output[:, profile.spin_slice].double().sum(), moment
+        )[0]
+
+    output, gradient = evaluate(spin)
+    rotated_output, rotated_gradient = evaluate(spin @ rotation)
+    torch.testing.assert_close(rotated_output, output, atol=3e-5, rtol=3e-5)
+    torch.testing.assert_close(
+        rotated_gradient, gradient @ rotation, atol=3e-5, rtol=1e-4
+    )
+    direction = torch.randn(spin.shape, generator=generator, device="cuda")
+    direction /= torch.linalg.vector_norm(direction)
+    step = 2e-3
+    plus = evaluate(spin + step * direction)[0][:, profile.spin_slice].double().sum()
+    minus = evaluate(spin - step * direction)[0][:, profile.spin_slice].double().sum()
+    torch.testing.assert_close(
+        (plus - minus) / (2 * step),
+        (gradient.double() * direction).sum(),
+        atol=2e-3,
+        rtol=2e-3,
+    )
+
+
+@_GPU
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+@pytest.mark.parametrize("single_type", [False, True])
+@pytest.mark.parametrize("with_basis", [False, True])
+def test_native_certified_basis_preserves_descriptor_and_vjp(
+    monkeypatch: pytest.MonkeyPatch,
+    spin_mode: str,
+    single_type: bool,
+    with_basis: bool,
+) -> None:
+    """Certified native geometry and its raw-table route retain the same VJP."""
+    descriptor = _build_spin_descriptor(128, 3, 4, spin_mode=spin_mode)
+    _restrict_scalar_rank(descriptor, rank=8)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    if single_type:
+        atype = torch.zeros_like(atype)
+    generator = torch.Generator(device="cuda").manual_seed(11)
+    spin = torch.randn(atype.shape[0], 3, generator=generator, device="cuda")
+
+    def evaluate() -> tuple[torch.Tensor, ...]:
+        moment = spin.detach().clone().requires_grad_(True)
+        edge = graph.edge_vec.detach().clone().requires_grad_(True)
+        output, _ = descriptor.call_graph(
+            dataclasses.replace(graph, edge_vec=edge), atype, spin=moment
+        )
+        cotangent = torch.linspace(
+            -0.7, 1.3, output.numel(), dtype=output.dtype, device=output.device
+        ).reshape_as(output)
+        gradients = torch.autograd.grad((output * cotangent).sum(), (edge, moment))
+        return output, *gradients
+
+    expected = evaluate()
+    descriptor.enable_compression(0.5)
+    assert descriptor.compress_basis_matrix.shape == (64, 112)
+    if not with_basis:
+        empty = descriptor.compress_basis_table.new_empty(0)
+        descriptor._store_compression_buffer("basis_table", empty)
+        descriptor._store_compression_buffer("basis_matrix", empty.clone())
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    actual = evaluate()
+    _assert_dispatched(actual[0], expected[0])
+    for value, reference, (atol, rtol) in zip(
+        actual, expected, [(3e-5, 3e-5), (8e-6, 1e-4), (8e-6, 1e-4)], strict=True
+    ):
+        _assert_close_at_scale(value, reference, atol=atol, rtol=rtol)
+
+
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_native_basis_rejects_independent_radial_channels(spin_mode: str) -> None:
+    """A native basis rejects a scalar family with more independent functions."""
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        build_low_rank_table,
+    )
+
+    descriptor = _build_spin_descriptor(128, 3, device="cpu", spin_mode=spin_mode)
+    assert descriptor_profile(128, 3, True, spin_mode).basis == 64
+    stride = 0.002
+    radius = torch.arange(1501, dtype=torch.float64)[:, None] * stride
+    frequency = torch.arange(1, 129, dtype=torch.float64)[None, :] * (
+        2 * math.pi / descriptor.rcut
+    )
+    values = torch.sin(radius * frequency)
+    first = frequency * torch.cos(radius * frequency)
+    second = -frequency * frequency * values
+    table, matrix = build_low_rank_table(
+        descriptor, stride, knots=(values, first, second)
+    )
+    assert table.numel() == matrix.numel() == 0
+
+
+@_GPU
+def test_compressed_operator_reads_the_measured_density_floor() -> None:
+    """The frozen floor is the option times the mass the descriptor measured."""
+    descriptor = _build_descriptor(8, density_floor=8.0)
+    with torch.no_grad():
+        descriptor.envelope_mass.fill_(3.0)
+    graph, atype = _build_graph(descriptor, canonical=False)
+    arguments = _arguments(descriptor, graph, atype)
+    # The operator scalars close with the floor, the inner clamp fraction
+    # following it, so the mass reaches the kernel through the artifacts.
+    assert arguments[-2] == 24.0
+    compressed, _state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec,
+        *arguments,
+    )
+    reference, _ = descriptor.call_graph(
+        graph,
+        atype,
+        type_embedding=descriptor.type_embedding.call(),
+    )
+    torch.testing.assert_close(compressed, reference, atol=3e-5, rtol=3e-5)
+    # A descriptor that silently kept the default floor would disagree.
+    plain, _state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec,
+        *(*arguments[:-2], float(descriptor._DEGREE_NORM_FLOOR), arguments[-1]),
+    )
+    assert (compressed - plain).abs().max() > 1.0e-3

@@ -12,8 +12,8 @@
 //     reduction accumulates in registers and the operator contains no atomic.
 //
 // The re-layout lives here rather than in the compression artifact because
-// one artifact has to serve both devices, and the transposed copy is built
-// once per model load.
+// one artifact has to serve both devices, and the transposed copy is built by
+// the first call that reads a set of tables and reused by every later one.
 
 #pragma once
 
@@ -27,7 +27,11 @@
 #include <malloc.h>
 #endif
 
+#include "pair_potential.h"
+
 namespace deepmd_dpa4c_cpu {
+
+using deepmd_dpa4c::kPairRow;
 
 /// Allocator placing a buffer on a cache-line boundary.
 ///
@@ -188,10 +192,10 @@ struct Arguments {
   const float* coupling_value;    ///< Gaunt values and probe scales.
   const float* output_mean;       ///< `(D,)` calibration shift.
   const float* output_inv_std;    ///< `(D,)` calibration scale.
-  /// Per-element length scale in Å with one entry per type-table row,
-  /// including the padding row. The sum of the two entries of a pair is the
-  /// distance the window fractions are measured against.
-  const float* contact_radius;
+  /// Data edge in Å of every ordered type pair, row `center * type_count +
+  /// neighbor` of the type table including the padding row, or null without a
+  /// contact clamp.
+  const float* contact_edges;
 
   float* descriptor;  ///< `(N, D)` output.
   float* state;       ///< `(N, S + 2)` saved state.
@@ -209,21 +213,16 @@ struct Arguments {
   float eps;
   float degree_floor;
 
-  /// Inner bridging switch of the edge envelope: the two dimensionless
-  /// fractions of a pair's own length scale that bound its window and the
-  /// reciprocal of their difference. A bridged launch without a window keeps
-  /// the outer fraction at zero, which no edge lies below.
-  float f_inner;
-  float f_outer;
-  float inverse_f_width;
+  /// Inner fraction \f$a\f$ of the contact clamp, in (0, 1): the separation a
+  /// pair is read at is frozen at and below \f$a\f$ times its data edge.
+  float contact_inner;
 
   /// Analytical pair potential, present together or not at all and read by
-  /// the backward only. `pair_table` holds, per ordered type pair, the four
-  /// amplitudes and the four decay rates of the screened Coulomb series
-  /// \f$V(r)=r^{-1}\sum_k A_k e^{-c_k r}\f$; `pair_seed` is the energy
-  /// cotangent of each node and `pair_energy` the fp64 node energies onto
-  /// which the scan adds \f$V/2\f$ per edge.
-  const float* pair_table;  ///< `((T + 1)^2, 8)` or null.
+  /// the backward only. Each table row defines a truncated screened potential.
+  /// `pair_seed` is the energy cotangent of each node and
+  /// `pair_energy` the fp64 node energies onto which the scan adds
+  /// \f$\phi/2\f$ per edge.
+  const float* pair_table;  ///< `((T + 1)^2, kPairRow)` or null.
   const double* pair_seed;  ///< `(N,)`.
   double* pair_energy;      ///< `(N,)`.
 };

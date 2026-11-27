@@ -23,6 +23,13 @@ from deepmd.backend.backend import (
 from deepmd.pretrained.registry import (
     available_model_names,
 )
+from deepmd.skills import (
+    add_parser,
+)
+from deepmd.skills import run as run_skills
+from deepmd.skills import (
+    workflow_help,
+)
 
 try:
     from deepmd._version import version as __version__
@@ -156,6 +163,7 @@ def main_parser() -> argparse.ArgumentParser:
         )
 
     subparsers = parser.add_subparsers(title="Valid subcommands", dest="command")
+    add_parser(subparsers)
 
     # * logging options parser *********************************************************
     # with use of the parent argument this options will be added to every parser
@@ -289,10 +297,13 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_train.add_argument(
         # -m has been used by mpi-log
+        "--task",
+        "--head",
         "--model-branch",
+        dest="model_branch",
         type=str,
         default="",
-        help="(Supported backend: PyTorch) Model branch chosen for fine-tuning if multi-task. If not specified, it will re-init the fitting net.",
+        help="(Supported backend: PyTorch) Task (aliases: head, model branch) chosen for fine-tuning if multi-task. If not specified, it will re-init the fitting net.",
     )
     parser_train.add_argument(
         "--force-load",
@@ -344,11 +355,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="(Supported backend: TensorFlow) the name of weight file (.npy), if set, save the model's weight into the file",
     )
     parser_frz.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to freeze if in multi-task mode.",
+        help="(Supported backends: PyTorch, JAX) Task (aliases: head, model branch) to freeze if in multi-task mode.",
     )
     parser_frz.add_argument(
         "--hessian",
@@ -358,16 +371,19 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_frz.add_argument(
         "--lower-kind",
-        default="nlist",
+        default="auto",
         type=str,
-        choices=["nlist", "graph"],
+        choices=["auto", "nlist", "graph"],
         help="(Supported backend: PyTorch Exportable) Lower-level export form of the "
-        "frozen .pt2: 'nlist' (dense neighbor-list lower) or 'graph' "
-        "(NeighborGraph edge-list lower, which selects the C++ graph inference "
-        "path). Only consulted for models that cannot use the graph lower: a "
-        "graph-capable model (DPA1/DPA2/DPA4, and every DPA model in future) "
-        "always freezes to 'graph', since the dense lower is deprecated in this "
-        "backend -- requesting 'nlist' for one logs a warning and is overridden.",
+        "frozen model: 'auto' (default) selects the graph lower for a "
+        "graph-capable model (DPA1/DPA2/DPA4, and every DPA model in future) and "
+        "the dense neighbor-list lower otherwise; 'nlist' (dense neighbor-list "
+        "lower) or 'graph' (NeighborGraph edge-list lower, which selects the C++ "
+        "graph inference path) request one. The dense lower is deprecated for a "
+        "graph-capable model, so requesting 'nlist' for one logs a warning and "
+        "is overridden. On a CUDA device, the graph lower of a single-precision "
+        "DPA4 model takes the compact canonical schema that the LAMMPS Kokkos "
+        "pair styles evaluate.",
     )
     parser_frz.add_argument(
         "--compress",
@@ -431,6 +447,11 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
     parser_tst.add_argument(
+        "--symm-virial",
+        action="store_true",
+        help="Compare symmetric virials and stresses for energy and spin-energy models.",
+    )
+    parser_tst.add_argument(
         "-S",
         "--set-prefix",
         action=DeprecateAction,
@@ -468,11 +489,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)",
     )
     parser_tst.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to test if in multi-task mode.",
+        help="(Supported backend: PyTorch) Task (aliases: head, model branch) to test if in multi-task mode.",
     )
 
     # * eval_desc script ***************************************************************
@@ -525,11 +548,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Output dtype for descriptors. `native` keeps the model output precision (default).",
     )
     parser_eval_desc.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+        help="(Supported backend: PyTorch) Task (aliases: head, model branch) to use if in multi-task mode.",
     )
 
     # * embedding script *************************************************************
@@ -550,9 +575,10 @@ def main_parser() -> argparse.ArgumentParser:
         "--model",
         default="model.ckpt.pt",
         type=str,
-        help="(Supported backend: PyTorch) Energy model to import: a training "
-        "checkpoint (suffix .pt) or a frozen model (suffix .pth). SeZM/DPA4 "
-        "only supports the .pt checkpoint; the frozen .pt2 package is not supported.",
+        help="(Supported backend: PyTorch, PyTorch Exportable) Model to import: "
+        "a training checkpoint (suffix .pt), or a frozen model written by "
+        "`dp --pt freeze` (suffix .pth) or `dp --pt-expt freeze` (suffix .pt2 or "
+        ".pte).",
     )
     parser_embedding_subgroup = parser_embedding.add_mutually_exclusive_group()
     parser_embedding_subgroup.add_argument(
@@ -585,11 +611,14 @@ def main_parser() -> argparse.ArgumentParser:
         help="Output dtype for embeddings. `native` keeps the model output precision.",
     )
     parser_embedding.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+        help="(Supported backend: PyTorch, PyTorch Exportable) Task (aliases: "
+        "head, model branch) to use if in multi-task mode.",
     )
 
     # * compress model *****************************************************************
@@ -676,11 +705,22 @@ def main_parser() -> argparse.ArgumentParser:
         help="The training script of the input frozen model",
     )
     parser_compress.add_argument(
+        "--recompute-min-nbor-dist",
+        action="store_true",
+        help="(Supported backend: PyTorch Exportable) Ignore the minimal neighbor "
+        "distance saved in the model and recompute it from the training data. "
+        "Requires -t,--training-script. Only applies to models whose compression "
+        "consumes the statistic; it is ignored for a model that tabulates over an "
+        "analytically bounded domain",
+    )
+    parser_compress.add_argument(
+        "--task",
         "--head",
         "--model-branch",
+        dest="head",
         default=None,
         type=str,
-        help="Task head (alias: model branch) to compress if in multi-task mode.",
+        help="Task (aliases: head, model branch) to compress if in multi-task mode.",
     )
 
     # * print docs script **************************************************************
@@ -920,10 +960,68 @@ def main_parser() -> argparse.ArgumentParser:
         help="The model after changing bias.",
     )
     parser_change_bias.add_argument(
+        "--task",
+        "--head",
         "--model-branch",
+        dest="model_branch",
         type=str,
         default=None,
-        help="Model branch chosen for changing bias if multi-task model.",
+        help="Task (aliases: head, model branch) chosen for changing bias if multi-task model.",
+    )
+
+    # * merge an MoE model ****************************************************************
+    parser_moe_merge = subparsers.add_parser(
+        "moe-merge",
+        parents=[parser_log],
+        help="(Supported backend: PyTorch Exportable) Merge the experts of an MoE "
+        "model for one scenario.",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp --pt-expt moe-merge model.ckpt.pt -o plain.pt
+            dp --pt-expt moe-merge model.ckpt.pt --elements H C N O -o merged.pt
+            dp --pt-expt moe-merge model.ckpt.pt --elements all --charge-spin 0 1 -o merged.pt
+            dp --pt-expt moe-merge model.ckpt.pt --task water -o plain.pt
+        """
+        ),
+    )
+    parser_moe_merge.add_argument(
+        "INPUT", help="The training checkpoint of the MoE model"
+    )
+    parser_moe_merge.add_argument(
+        "--elements",
+        nargs="+",
+        default=None,
+        help="Elements that keep weights of their own in the merged model, or "
+        "`all` alone for every element that has them. The other elements use "
+        "the weights shared by all elements. Default: no element, which gives "
+        "a model without MoE.",
+    )
+    parser_moe_merge.add_argument(
+        "--charge-spin",
+        nargs=2,
+        type=float,
+        default=None,
+        help="Frame charge and spin multiplicity of the scenario, for a model "
+        "whose router reads them. Default: the default of the model.",
+    )
+    parser_moe_merge.add_argument(
+        "--task",
+        "--head",
+        "--model-branch",
+        dest="head",
+        default=None,
+        type=str,
+        help="Task (aliases: head, model branch) to merge if multi-task; it is "
+        "the task of the merged model.",
+    )
+    parser_moe_merge.add_argument(
+        "-o",
+        "--output",
+        default="merged.pt",
+        type=str,
+        help="The checkpoint of the merged model, which holds its weights.",
     )
 
     # --version
@@ -1086,6 +1184,10 @@ def main_parser() -> argparse.ArgumentParser:
         help="Optional cache directory for pretrained model files",
     )
 
+    parser.epilog += "\nDiscover bundled workflow guides: dp skills list."
+    guidance = workflow_help("deepmd-train")
+    if guidance:
+        parser_train.epilog = (parser_train.epilog or "") + "\n" + guidance
     return parser
 
 
@@ -1113,7 +1215,7 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         parser.error("freeze --compress requires --pt-expt (PyTorch Exportable)")
     if parsed_args.command is None:
         parser.print_help()
-    else:
+    elif parsed_args.command != "skills":
         parsed_args.log_level = get_ll(parsed_args.log_level)
 
     return parsed_args
@@ -1134,6 +1236,10 @@ def main(args: list[str] | None = None) -> None:
         if no command was input
     """
     args = parse_args(args=args)
+
+    if args.command == "skills":
+        run_skills(args)
+        return
 
     if args.backend not in BACKEND_TABLE:
         raise ValueError(f"Unknown backend {args.backend}")
@@ -1160,6 +1266,7 @@ def main(args: list[str] | None = None) -> None:
         "convert-from",
         "train-nvnmd",
         "change-bias",
+        "moe-merge",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

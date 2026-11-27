@@ -12,6 +12,13 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.utils.multi_task import (
+    sanitize_shared_links,
+)
+from deepmd.pt_expt.utils.contact_clamp import (
+    require_checkpoint_contact_records,
+)
+
 if torch.__version__.startswith("2"):
     import torch._dynamo
 
@@ -34,7 +41,9 @@ class ModelWrapper(torch.nn.Module):
         - config: The Dict-like configuration with training options.
         """
         super().__init__()
+        self.register_load_state_dict_pre_hook(require_checkpoint_contact_records)
         self.model_params = model_params if model_params is not None else {}
+        self.shared_links = sanitize_shared_links(shared_links)
         self.train_infos = {
             "lr": 0,
             "step": 0,
@@ -80,6 +89,7 @@ class ModelWrapper(torch.nn.Module):
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         supported_types = ["descriptor", "fitting_net"]
+        self.shared_links = sanitize_shared_links(shared_links)
         for shared_item in shared_links:
             class_name = shared_links[shared_item]["type"]
             shared_base = shared_links[shared_item]["links"][0]
@@ -187,8 +197,11 @@ class ModelWrapper(torch.nn.Module):
             "do_atomic_virial": do_atomic_virial,
             "fparam": fparam,
             "aparam": aparam,
-            "charge_spin": charge_spin,
         }
+        # Keep older scripted model signatures usable when this optional
+        # input is absent; explicitly supplied values must still be forwarded.
+        if charge_spin is not None:
+            input_dict["charge_spin"] = charge_spin
         has_spin = getattr(self.model[task_key], "has_spin", False)
         if callable(has_spin):
             has_spin = has_spin()
@@ -263,10 +276,19 @@ class ModelWrapper(torch.nn.Module):
     def set_extra_state(self, state: dict) -> None:
         self.model_params = state["model_params"]
         self.train_infos = state["train_infos"]
+        if state.get("shared_links"):
+            self.share_params(
+                state["shared_links"],
+                dict.fromkeys(self.model, 1.0),
+                data_stat_protect=1e-2,
+                resume=True,
+            )
 
     def get_extra_state(self) -> dict:
         state = {
             "model_params": self.model_params,
             "train_infos": self.train_infos,
         }
+        if self.shared_links:
+            state["shared_links"] = self.shared_links
         return state

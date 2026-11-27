@@ -2,6 +2,8 @@
 #ifdef BUILD_TENSORFLOW
 #include "DeepTensorTF.h"
 
+#include "device.h"
+
 using namespace deepmd;
 using namespace tensorflow;
 

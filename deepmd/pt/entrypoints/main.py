@@ -25,6 +25,9 @@ from deepmd.common import (
     expand_sys_str,
     j_loader,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    validate_task_sampling_backend,
+)
 from deepmd.env import (
     GLOBAL_CONFIG,
 )
@@ -86,9 +89,6 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
-)
-from deepmd.utils.data import (
-    min_pair_dist_requirement,
 )
 from deepmd.utils.data_group import (
     GroupedDataset,
@@ -152,6 +152,7 @@ def get_trainer(
     shared_links: dict[str, Any] | None = None,
     finetune_links: dict[str, Any] | None = None,
 ) -> training.Trainer:
+    validate_task_sampling_backend(config.get("training", {}), "pt")
     multi_task = "model_dict" in config.get("model", {})
 
     def prepare_trainer_input_single(
@@ -310,6 +311,7 @@ def train(
     if is_node_main_process():
         SummaryPrinter()()
     config = j_loader(input_file)
+    validate_task_sampling_backend(config.get("training", {}), "pt")
     config["model"] = expand_model_preset(config["model"])
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pt"):
@@ -556,23 +558,12 @@ def change_bias(
         )
         data_requirement = mock_loss.label_requirement
         data_requirement += training.get_additional_data_requirement(model_to_change)
-        # A bridged model draws its statistics under the frame filter of its
-        # window, as training does; no other filter applies here.
-        pair_filter = min_pair_dist_requirement(
-            model_params
-            if not multi_task
-            else model_params["model_dict"][model_branch],
-            0.0,
-        )
-        if pair_filter is not None:
-            data_requirement.append(pair_filter)
         data_single.add_data_requirement(data_requirement)
         nbatches = numb_batch if numb_batch != 0 else float("inf")
         sampled_data = make_stat_input(
             data_single.systems,
             data_single.dataloaders,
             nbatches,
-            min_pair_dist=0.0 if pair_filter is None else float(pair_filter.default),
         )
         updated_model = training.model_change_out_bias(
             model_to_change,

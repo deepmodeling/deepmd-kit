@@ -30,6 +30,11 @@ from .test_permutation import (
 
 class JITTest:
     def test_jit(self) -> None:
+        # Sample multiple batches without repeating statistics for this smoke test.
+        self.config["model"]["data_stat_nbatch"] = 2
+        # One update is enough to exercise checkpoint loading before scripting.
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
         model = torch.jit.script(inference.Tester("./model.pt").model)
@@ -56,8 +61,6 @@ class TestEnergyModelSeA(unittest.TestCase, JITTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
 
     def tearDown(self) -> None:
         JITTest.tearDown(self)
@@ -72,8 +75,6 @@ class TestDOSModelSeA(unittest.TestCase, JITTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dos)
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
 
     def tearDown(self) -> None:
         JITTest.tearDown(self)
@@ -88,8 +89,6 @@ class TestEnergyModelDPA1(unittest.TestCase, JITTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa1)
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
 
     def tearDown(self) -> None:
         JITTest.tearDown(self)
@@ -104,8 +103,6 @@ class TestEnergyModelDPA2(unittest.TestCase, JITTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa2)
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
 
     def tearDown(self) -> None:
         JITTest.tearDown(self)
@@ -120,25 +117,6 @@ class TestEnergyModelHybrid(unittest.TestCase, JITTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_hybrid)
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
-
-    def tearDown(self) -> None:
-        JITTest.tearDown(self)
-
-
-class TestEnergyModelHybrid2(unittest.TestCase, JITTest):
-    def setUp(self) -> None:
-        input_json = str(Path(__file__).parent / "water/se_atten.json")
-        with open(input_json) as f:
-            self.config = json.load(f)
-        data_file = [str(Path(__file__).parent / "water/data/data_0")]
-        self.config["training"]["training_data"]["systems"] = data_file
-        self.config["training"]["validation_data"]["systems"] = data_file
-        self.config["model"] = deepcopy(model_hybrid)
-        # self.config["model"]["descriptor"]["hybrid_mode"] = "sequential"
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
 
     def tearDown(self) -> None:
         JITTest.tearDown(self)
@@ -159,8 +137,6 @@ class TestEnergyModelDPA2IntRcut(unittest.TestCase, JITTest):
         self.config["model"]["descriptor"]["repinit"]["rcut_smth"] = int(
             self.config["model"]["descriptor"]["repinit"]["rcut_smth"]
         )
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
 
     def tearDown(self) -> None:
         JITTest.tearDown(self)

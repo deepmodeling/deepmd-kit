@@ -21,7 +21,7 @@ env:
 jobs:
   test_python:
     name: Test Python on CUDA (${{ matrix.shard }})
-    runs-on: gpu
+    runs-on: [self-hosted, gpu, linux-x64]
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +65,23 @@ jobs:
         # if: false # skip as we use nvidia image
       - run: python -m pip install -U uv
       - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_gpu --group pin_pytorch_gpu --group pin_jax_gpu
+      - &check-cuda-device
+        name: Verify the CUDA test device before building DeePMD
+        env:
+          CUDA_VISIBLE_DEVICES: 0
+        run: |
+          python - <<'PY'
+          import torch
+
+          major, minor = torch.cuda.get_device_capability()
+          name = torch.cuda.get_device_name()
+          print(f"{name}: SM{major}{minor}; PyTorch {torch.__version__}: {torch.cuda.get_arch_list()}", flush=True)
+          if major < 7:
+              raise SystemExit(f"The CUDA tests require an Inductor-capable GPU (SM70 or newer); the runner provided {name} (SM{major}{minor}).")
+          # Device discovery alone does not execute a kernel from the installed wheel.
+          torch.ones(1, device="cuda").add_(1)
+          torch.cuda.synchronize()
+          PY
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
@@ -73,7 +90,7 @@ jobs:
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
         env:
           DP_VARIANT: cuda
-          DP_ENABLE_NATIVE_OPTIMIZATION: 1
+          DP_ENABLE_NATIVE_OPTIMIZATION: "0"
           DP_ENABLE_PYTORCH: 1
           # The float64 DPA4 training kernels serve the consistency tests only.
           CMAKE_ARGS: -DDEEPMD_ENABLE_DPA4_FP64=ON
@@ -81,7 +98,11 @@ jobs:
       - name: Verify float64 CUDA kernels are enabled
         run: |
           python -c "import torch; import deepmd.pt.cxx_op; from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import op_available, float64_available; assert torch.cuda.is_available(); assert op_available(); assert float64_available() is True"
-      - run: python -m pytest ${{ matrix.pytest-args }} --ignore=source/tests/pd
+      - name: Test Python
+        run: >-
+          python -m pytest ${{ matrix.pytest-args }} --ignore=source/tests/pd
+          --junitxml=test-reports/python-${{ matrix.shard }}.xml
+          -o junit_duration_report=total
         env:
           NUM_WORKERS: 0
           CUDA_VISIBLE_DEVICES: 0
@@ -89,10 +110,19 @@ jobs:
           XLA_PYTHON_CLIENT_PREALLOCATE: false
           XLA_PYTHON_CLIENT_ALLOCATOR: platform
           FLAGS_use_stride_compute_kernel: 0
+      - name: Upload Python test reports
+        if: ${{ always() && hashFiles('test-reports/python-*.xml') != '' }}
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: python-cuda-${{ matrix.shard }}
+          path: test-reports/python-*.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   test_cc:
     name: Test ${{ matrix.name }} on CUDA
-    runs-on: gpu
+    runs-on: [self-hosted, gpu, linux-x64]
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +160,7 @@ jobs:
         # if: false # skip as we use nvidia image
       - run: python -m pip install -U uv
       - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_gpu --group pin_pytorch_gpu --group pin_jax_gpu
+      - *check-cuda-device
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
@@ -146,7 +177,7 @@ jobs:
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
         env:
           DP_VARIANT: cuda
-          DP_ENABLE_NATIVE_OPTIMIZATION: 1
+          DP_ENABLE_NATIVE_OPTIMIZATION: "0"
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
       - name: Verify the two-rank MPI runtime
@@ -198,6 +229,7 @@ jobs:
           source/install/test_cc_local.sh --build-only
           source/install/test_cc_local.sh --models-only=kokkos
         env:
+          LAMMPS_VERSION: patch_4Jul2026
           CMAKE_GENERATOR: Ninja
           DP_VARIANT: cuda
           ENABLE_PADDLE: FALSE
@@ -222,8 +254,8 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
           export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-          python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
-          python -m pytest source/ipi/tests
+          source/install/pytest_with_junit.sh lammps python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
+          source/install/pytest_with_junit.sh ipi python -m pytest source/ipi/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -232,6 +264,19 @@ jobs:
           DPA4SPIN_LMP_REQUIRED: 1
           CUDA_VISIBLE_DEVICES: 0
           ENABLE_PADDLE: 0
+      - name: Upload C++ test reports
+        if: ${{ always() && hashFiles('source/build_tests/generator-reports/**', 'source/build_tests/gtest-reports/**', 'source/build_tests/pytest-reports/**', 'source/build_lammps_kokkos/test-reports/**') != '' }}
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: cpp-cuda-${{ matrix.suite }}
+          path: |
+            source/build_tests/generator-reports/**
+            source/build_tests/gtest-reports/**
+            source/build_tests/pytest-reports/**
+            source/build_lammps_kokkos/test-reports/**
+          if-no-files-found: ignore
+          retention-days: 14
   pass:
     name: Pass testing on CUDA
     needs: [test_python, test_cc]

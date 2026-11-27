@@ -6,10 +6,16 @@ convention and the pt-state_dict-key serialization contract.
 """
 
 import math
+from collections.abc import (
+    Sequence,
+)
 from typing import (
     Any,
     ClassVar,
 )
+
+import array_api_compat
+import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
@@ -17,9 +23,17 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_matmul,
 )
 from deepmd.dpmodel.common import (
+    PRECISION_DICT,
     to_numpy_array,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    ExpertContainer,
+    ExpertWeights,
+    linear_with_experts,
+    map_args,
 )
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
@@ -37,7 +51,141 @@ from .invar_fitting import (
 )
 
 
-class GLUFittingNet(NativeOP):
+class CaseFiLMConditioner(NativeOP):
+    """Generate per-case scales and shifts for the fitting features."""
+
+    PARAMETER_ATTRIBUTES: ClassVar[tuple[str, ...]] = (
+        "adam_case_film_scale_strength_log",
+        "adam_case_film_shift_strength_log",
+    )
+    PARAMETER_LIST_ATTRIBUTES: ClassVar[tuple[str, ...]] = ("projectors",)
+
+    def __init__(
+        self,
+        *,
+        dim_case_embd: int,
+        dim_descrpt: int,
+        target_dims: list[int],
+        activation_function: str,
+        precision: str,
+        seed: int | list[int] | None,
+        trainable: bool,
+    ) -> None:
+        self.dim_case_embd = dim_case_embd
+        self.dim_descrpt = dim_descrpt
+        self.target_dims = list(target_dims)
+        self.activation_function = activation_function
+        self.precision = precision
+        self.trainable = trainable
+        self.code_dim = 4 * dim_descrpt
+        hidden_dim = 32 * math.ceil(4 * dim_case_embd / 32)
+        self.case_layer1 = NativeLayer(
+            dim_case_embd,
+            hidden_dim,
+            bias=False,
+            use_timestep=False,
+            activation_function=activation_function,
+            resnet=False,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
+        )
+        self.case_layer2 = NativeLayer(
+            hidden_dim,
+            self.code_dim,
+            bias=False,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            precision=precision,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
+        )
+        dtype = PRECISION_DICT[precision]
+        self.projectors = [
+            np.zeros((self.code_dim, 2 * target_dim), dtype=dtype)
+            for target_dim in target_dims
+        ]
+        self.adam_case_film_scale_strength_log = np.full(
+            len(target_dims), math.log(0.01), dtype=dtype
+        )
+        self.adam_case_film_shift_strength_log = np.full(
+            len(target_dims), math.log(0.01), dtype=dtype
+        )
+
+    def encode(self, case_embd: Array) -> Array:
+        """Encode one case vector with shape (K,) into shape (1, 4*dim_descrpt)."""
+        xp = array_api_compat.array_namespace(case_embd)
+        code = xp.reshape(case_embd, (1, self.dim_case_embd))
+        return self.case_layer2(self.case_layer1(code))
+
+    call = encode
+
+    def apply(self, xx: Array, case_code: Array, target_idx: int) -> Array:
+        """Modulate one feature target without changing its leading axes."""
+        xp = array_api_compat.array_namespace(xx, case_code)
+        film = xp_matmul(case_code, self.projectors[target_idx])
+        dim = self.target_dims[target_idx]
+        shape = (1,) * (xx.ndim - 1) + (dim,)
+        gamma = xp.reshape(film[..., :dim], shape)
+        beta = xp.reshape(film[..., dim:], shape)
+        scale = xp.exp(self.adam_case_film_scale_strength_log[target_idx])
+        shift = xp.exp(self.adam_case_film_shift_strength_log[target_idx])
+        return xx * (1.0 + scale * xp.tanh(gamma)) + shift * xp.tanh(beta)
+
+    def variables(self) -> dict[str, np.ndarray]:
+        """Return weights under the PyTorch conditioner state-dict keys."""
+        return {
+            "case_layer1.matrix": to_numpy_array(self.case_layer1.w),
+            "case_layer2.matrix": to_numpy_array(self.case_layer2.w),
+            "adam_case_film_scale_strength_log": to_numpy_array(
+                self.adam_case_film_scale_strength_log
+            ),
+            "adam_case_film_shift_strength_log": to_numpy_array(
+                self.adam_case_film_shift_strength_log
+            ),
+            **{
+                f"projectors.{i}": to_numpy_array(weight)
+                for i, weight in enumerate(self.projectors)
+            },
+        }
+
+    def set_variables(self, variables: dict[str, Array]) -> None:
+        """Restore weights without altering the target configuration."""
+        self.case_layer1["matrix"] = variables["case_layer1.matrix"]
+        self.case_layer2["matrix"] = variables["case_layer2.matrix"]
+        self.adam_case_film_scale_strength_log = variables[
+            "adam_case_film_scale_strength_log"
+        ]
+        self.adam_case_film_shift_strength_log = variables[
+            "adam_case_film_shift_strength_log"
+        ]
+        self.projectors = [
+            variables[f"projectors.{index}"] for index in range(len(self.projectors))
+        ]
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "dim_case_embd": self.dim_case_embd,
+            "dim_descrpt": self.dim_descrpt,
+            "target_dims": self.target_dims,
+            "activation_function": self.activation_function,
+            "precision": self.precision,
+            "seed": None,
+            "trainable": self.trainable,
+            "@variables": self.variables(),
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> "CaseFiLMConditioner":
+        data = data.copy()
+        variables = data.pop("@variables")
+        obj = cls(**data)
+        obj.set_variables(variables)
+        return obj
+
+
+class GLUFittingNet(ExpertContainer, NativeOP):
     r"""
     GLU-based fitting network for SeZM.
 
@@ -76,15 +224,20 @@ class GLUFittingNet(NativeOP):
     seed
         Random seed.
     trainable
-        Whether parameters are trainable.
+        Whether the complete network is trainable. A list is combined with
+        ``all`` to match the PyTorch SeZM fitting contract.
     descriptor_dim
-        Descriptor feature width. Kept for serialization compatibility
-        with the case-FiLM path (not implemented here).
+        Descriptor feature width, excluding frame and atomic parameters.
     dim_case_embd
         Case one-hot width.
     case_film_embd
         Whether to use case FiLM instead of input concatenation.
-        Not implemented in the dpmodel backend.
+    experts
+        Number of experts and of element increments ``(n_experts, n_elements)``
+        of every layer (see
+        :class:`~deepmd.dpmodel.utils.expert_linear.ExpertWeights`); None
+        builds plain layers. The network is then one unit of a route, whose
+        caller enters the route and passes the rows of the layout.
     """
 
     def __init__(
@@ -101,15 +254,13 @@ class GLUFittingNet(NativeOP):
         descriptor_dim: int | None = None,
         dim_case_embd: int = 0,
         case_film_embd: bool = False,
+        experts: Sequence[int] | None = None,
     ) -> None:
-        if case_film_embd and int(dim_case_embd) > 0:
-            raise NotImplementedError(
-                "case_film_embd is not implemented in the dpmodel backend"
-            )
         if neuron is None:
             neuron = []
         if isinstance(trainable, list):
             trainable = all(trainable)
+        self.trainable = bool(trainable)
         self.in_dim = int(in_dim)
         self.out_dim = int(out_dim)
         self.neuron = [int(nn_dim) for nn_dim in neuron]
@@ -122,6 +273,7 @@ class GLUFittingNet(NativeOP):
         )
         self.dim_case_embd = int(dim_case_embd)
         self.case_film_embd = bool(case_film_embd and self.dim_case_embd > 0)
+        self.experts = None if experts is None else [int(n) for n in experts]
 
         # === Step 1. Build GLU hidden layers ===
         # Each hidden layer is a linear map to 2*hidden_dim, split into
@@ -130,7 +282,9 @@ class GLUFittingNet(NativeOP):
         dim_in = self.in_dim
         for layer_idx, hidden_dim in enumerate(self.neuron):
             hidden_layers.append(
-                NativeLayer(
+                linear_with_experts(
+                    NativeLayer,
+                    self.experts,
                     dim_in,
                     2 * hidden_dim,
                     bias=True,
@@ -145,8 +299,25 @@ class GLUFittingNet(NativeOP):
             dim_in = hidden_dim
         self.hidden_layers = hidden_layers
 
-        # === Step 2. Build output projection ===
-        self.output_layer = NativeLayer(
+        # === Step 2. Build optional case FiLM conditioner ===
+        self.case_film = (
+            CaseFiLMConditioner(
+                dim_case_embd=self.dim_case_embd,
+                dim_descrpt=self.descriptor_dim,
+                target_dims=[self.descriptor_dim, *self.neuron],
+                activation_function=self.activation_function,
+                precision=self.precision,
+                seed=child_seed(seed, len(self.neuron)),
+                trainable=trainable,
+            )
+            if self.case_film_embd
+            else None
+        )
+
+        # === Step 3. Build output projection ===
+        self.output_layer = linear_with_experts(
+            NativeLayer,
+            self.experts,
             dim_in,
             self.out_dim,
             bias=self.bias_out,
@@ -158,32 +329,72 @@ class GLUFittingNet(NativeOP):
             trainable=trainable,
         )
 
-    def call_until_last(self, xx: Array) -> Array:
-        """Return activations before the output projection."""
+    def _expert_members(self) -> list[str]:
+        return ["hidden_layers", "output_layer"]
+
+    def call_until_last(
+        self, xx: Array, case_embd: Array | None = None, route: Any = None
+    ) -> Array:
+        """Return activations before the output projection.
+
+        ``route`` holds the rows of ``xx`` for a network with ``experts``.
+        """
+        case_code = None
+        if self.case_film_embd:
+            assert self.case_film is not None and case_embd is not None
+            xp = array_api_compat.array_namespace(xx)
+            case_code = self.case_film.encode(case_embd)
+            descriptor = self.case_film.apply(
+                xx[..., : self.descriptor_dim], case_code, 0
+            )
+            xx = xp.concat([descriptor, xx[..., self.descriptor_dim :]], axis=-1)
         act = get_activation_fn(self.activation_function)
-        for hidden_dim, layer in zip(self.neuron, self.hidden_layers, strict=True):
-            yy = layer(xx)
+        for index, (hidden_dim, layer) in enumerate(
+            zip(self.neuron, self.hidden_layers, strict=True)
+        ):
+            yy = layer(xx, *map_args(route, index))
             val, gate = yy[..., :hidden_dim], yy[..., hidden_dim:]
             xx = val * act(gate)
+            if case_code is not None:
+                xx = self.case_film.apply(xx, case_code, index + 1)
         return xx
 
-    def call(self, xx: Array) -> Array:
+    def call_last(self, xx: Array, route: Any = None) -> Array:
+        """Project the activations of :meth:`call_until_last` to the output."""
+        return self.output_layer(xx, *map_args(route, -1))
+
+    def call(
+        self, xx: Array, case_embd: Array | None = None, route: Any = None
+    ) -> Array:
         """Forward pass for the GLU fitting net."""
-        return self.output_layer(self.call_until_last(xx))
+        return self.call_last(self.call_until_last(xx, case_embd, route), route)
+
+    def _named_layers(self) -> dict[str, Any]:
+        """The layers keyed by the prefix of their variables."""
+        layers = {
+            f"hidden_layers.{index}.linear": layer
+            for index, layer in enumerate(self.hidden_layers)
+        }
+        layers["output_layer"] = self.output_layer
+        return layers
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the network to a dict (pt state_dict key contract)."""
         variables: dict[str, Any] = {}
-        for layer_idx, layer in enumerate(self.hidden_layers):
-            variables[f"hidden_layers.{layer_idx}.linear.matrix"] = to_numpy_array(
-                layer.w
+        for prefix, layer in self._named_layers().items():
+            variables[f"{prefix}.matrix"] = to_numpy_array(layer.w)
+            if layer.b is not None:
+                variables[f"{prefix}.bias"] = to_numpy_array(layer.b)
+            if isinstance(layer, ExpertWeights):
+                for name, value in layer._expert_variables().items():
+                    variables[f"{prefix}.{name}"] = value
+        if self.case_film is not None:
+            variables.update(
+                {
+                    f"case_film.{key}": value
+                    for key, value in self.case_film.variables().items()
+                }
             )
-            variables[f"hidden_layers.{layer_idx}.linear.bias"] = to_numpy_array(
-                layer.b
-            )
-        variables["output_layer.matrix"] = to_numpy_array(self.output_layer.w)
-        if self.bias_out:
-            variables["output_layer.bias"] = to_numpy_array(self.output_layer.b)
         return {
             "@class": "GLUFittingNet",
             "@version": 1,
@@ -194,9 +405,12 @@ class GLUFittingNet(NativeOP):
             "resnet_dt": self.resnet_dt,
             "precision": self.precision,
             "bias_out": self.bias_out,
+            "trainable": self.trainable,
             "descriptor_dim": self.descriptor_dim,
             "dim_case_embd": self.dim_case_embd,
             "case_film_embd": self.case_film_embd,
+            # A plain network keeps the record of the network without experts.
+            **({} if self.experts is None else {"experts": self.experts}),
             "@variables": variables,
         }
 
@@ -208,12 +422,21 @@ class GLUFittingNet(NativeOP):
         data.pop("@class", None)
         variables = data.pop("@variables", {})
         obj = cls(**data)
-        for layer_idx, layer in enumerate(obj.hidden_layers):
-            layer["matrix"] = variables[f"hidden_layers.{layer_idx}.linear.matrix"]
-            layer["bias"] = variables[f"hidden_layers.{layer_idx}.linear.bias"]
-        obj.output_layer["matrix"] = variables["output_layer.matrix"]
-        if obj.bias_out:
-            obj.output_layer["bias"] = variables["output_layer.bias"]
+        for prefix, layer in obj._named_layers().items():
+            layer["matrix"] = variables[f"{prefix}.matrix"]
+            if layer.b is not None:
+                layer["bias"] = variables[f"{prefix}.bias"]
+            if isinstance(layer, ExpertWeights):
+                for name in layer._expert_variables():
+                    setattr(layer, name, variables[f"{prefix}.{name}"])
+        if obj.case_film is not None:
+            obj.case_film.set_variables(
+                {
+                    key.removeprefix("case_film."): value
+                    for key, value in variables.items()
+                    if key.startswith("case_film.")
+                }
+            )
         return obj
 
 
@@ -325,6 +548,30 @@ class SeZMNetworkCollection:
         return cls(**data)
 
 
+def _with_default_trainable(
+    networks: dict[str, Any],
+    trainable: bool | list[bool],
+) -> dict[str, Any]:
+    """Inherit outer trainability for legacy GLU records without that field."""
+    return {
+        **networks,
+        "networks": [
+            {"trainable": trainable, **network} if network is not None else None
+            for network in networks["networks"]
+        ],
+    }
+
+
+def _set_trainable_metadata(module: Any, trainable: bool) -> None:
+    """Align an existing module declaration with a whole-module runtime policy."""
+    if hasattr(module, "trainable"):
+        module.trainable = (
+            [trainable] * len(module.trainable)
+            if isinstance(module.trainable, list)
+            else trainable
+        )
+
+
 def _resolve_auto_neuron(
     neuron: list[int] | None,
     *,
@@ -359,7 +606,8 @@ class SeZMEnergyFittingNet(InvarFitting):
     SeZM energy fitting with GLU hidden layers.
 
     This uses the same configuration keys as the standard energy fitting
-    but replaces hidden MLP layers with GLU blocks.
+    but replaces hidden MLP layers with GLU blocks. A ``trainable`` list is
+    combined with ``all``, matching the PyTorch whole-network freeze contract.
     """
 
     def __init__(
@@ -382,14 +630,6 @@ class SeZMEnergyFittingNet(InvarFitting):
         default_fparam: list | None = None,
         **kwargs: Any,
     ) -> None:
-        if int(dim_case_embd) > 0:
-            raise NotImplementedError(
-                "dim_case_embd > 0 is not implemented in the dpmodel backend"
-            )
-        if case_film_embd:
-            raise NotImplementedError(
-                "case_film_embd is not implemented in the dpmodel backend"
-            )
         neuron = _resolve_auto_neuron(
             neuron,
             dim_descrpt=dim_descrpt,
@@ -454,10 +694,181 @@ class SeZMEnergyFittingNet(InvarFitting):
                     descriptor_dim=self.dim_descrpt,
                     dim_case_embd=self.dim_case_embd,
                     case_film_embd=self.case_film_embd,
+                    experts=self._expert_counts(),
                 )
                 for idx in range(n_networks)
             ],
         )
+        self._init_experts(self.seed)
+
+    def _call_common(
+        self,
+        descriptor: Array,
+        atype: Array,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        vacuum_descriptor: Array | None = None,
+        return_middle_output: bool = False,
+        condition: Any = None,
+    ) -> dict[str, Array]:
+        if not self.case_film_embd:
+            return super()._call_common(
+                descriptor,
+                atype,
+                gr,
+                g2,
+                h2,
+                fparam,
+                aparam,
+                vacuum_descriptor=vacuum_descriptor,
+                return_middle_output=return_middle_output,
+                condition=condition,
+            )
+        return self._call_case_film(
+            descriptor,
+            atype,
+            fparam,
+            aparam,
+            vacuum_descriptor=vacuum_descriptor,
+            return_middle_output=return_middle_output,
+        )
+
+    def _call_case_film(
+        self,
+        descriptor: Array,
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        vacuum_descriptor: Array | None = None,
+        return_middle_output: bool = False,
+    ) -> dict[str, Array]:
+        """Evaluate the case-modulated readout with common vacuum conditioning."""
+        xp = array_api_compat.array_namespace(descriptor, atype)
+        nf, nloc, nd = descriptor.shape
+        if nd != self.dim_descrpt:
+            raise ValueError(f"Expected descriptor width {self.dim_descrpt}, got {nd}.")
+        cond = self.conditioning_columns(
+            descriptor, fparam, aparam, include_case_embedding=False
+        )
+        xx = descriptor
+        xx_zeros = (
+            xp.zeros_like(descriptor)
+            if self.remove_vaccum_contribution is not None
+            else None
+        )
+        if cond is not None:
+            xx = xp.concat([xx, cond], axis=-1)
+            if xx_zeros is not None:
+                xx_zeros = xp.concat([xx_zeros, cond], axis=-1)
+        xx_vac = self.vacuum_input(
+            vacuum_descriptor, atype, cond, include_case_embedding=False
+        )
+        fitting = self.nets[()]
+        hidden = fitting.call_until_last(xx, self.case_embd)
+        atom_property = fitting.call_last(hidden)
+        results = {}
+        if return_middle_output or self.eval_return_middle_output:
+            results["middle_output"] = hidden
+        if xx_zeros is not None:
+            atom_property -= fitting(xx_zeros, self.case_embd)
+        if xx_vac is not None:
+            atom_property -= self.vacuum_output(fitting(xx_vac, self.case_embd), atype)
+        bias = xp.asarray(
+            self.bias_atom_e,
+            dtype=atom_property.dtype,
+            device=array_api_compat.device(atom_property),
+        )
+        outs = atom_property + xp.reshape(
+            xp.take(bias, xp.reshape(atype, (-1,)), axis=0),
+            (nf, nloc, self.dim_out),
+        )
+        mask = xp.astype(self.emask.build_type_exclude_mask(atype), xp.bool)
+        results[self.var_name] = xp.where(mask[..., None], outs, xp.zeros_like(outs))
+        return results
+
+    def vacuum_property(self, vacuum_descriptor: Array | None) -> Array:
+        if not self.case_film_embd:
+            return super().vacuum_property(vacuum_descriptor)
+        if vacuum_descriptor is None:
+            vacuum_descriptor = self.vacuum_table
+        if vacuum_descriptor is None:
+            raise ValueError("vacuum_ref requires the descriptor of every atom type.")
+        xp = array_api_compat.array_namespace(vacuum_descriptor)
+        atype = xp.arange(
+            self.ntypes,
+            dtype=xp.int64,
+            device=array_api_compat.device(vacuum_descriptor),
+        )
+        xx_vac = self.vacuum_input(
+            vacuum_descriptor, atype, None, include_case_embedding=False
+        )
+        return self.nets[()](xx_vac, self.case_embd)
+
+    def fold_case_embedding(self) -> None:
+        """Absorb a deployed case into the GLU affine maps.
+
+        A fixed FiLM target is an affine map of its features. For a following
+        linear layer, ``(x * scale + shift) @ W + b`` equals
+        ``x @ (scale[:, None] * W) + shift @ W + b``. Input FiLM modifies
+        only descriptor columns, leaving frame and atomic parameters intact.
+        """
+        if not self.dim_case_embd:
+            return
+        if self.case_film_embd and self.eval_return_middle_output:
+            return
+        case = to_numpy_array(self.case_embd)
+        n_networks = self.ntypes if not self.mixed_types else 1
+        for index in range(n_networks):
+            net = self.nets[index]
+            layers = [*net.hidden_layers, net.output_layer]
+            if self.case_film_embd:
+                conditioner = net.case_film
+                code = to_numpy_array(conditioner.encode(self.case_embd))
+                scale_strength = np.exp(
+                    to_numpy_array(conditioner.adam_case_film_scale_strength_log)
+                )
+                shift_strength = np.exp(
+                    to_numpy_array(conditioner.adam_case_film_shift_strength_log)
+                )
+                for target_idx, layer in enumerate(layers):
+                    width = conditioner.target_dims[target_idx]
+                    film = code @ to_numpy_array(conditioner.projectors[target_idx])
+                    scale = 1.0 + scale_strength[target_idx] * np.tanh(film[0, :width])
+                    shift = shift_strength[target_idx] * np.tanh(film[0, width:])
+                    weight = to_numpy_array(layer.w).copy()
+                    bias = (
+                        np.zeros(weight.shape[1], dtype=weight.dtype)
+                        if layer.b is None
+                        else to_numpy_array(layer.b).copy()
+                    )
+                    bias += shift @ weight[:width]
+                    weight[:width] *= scale[:, None]
+                    layer["matrix"], layer["bias"] = weight, bias
+                net.case_film = None
+                net.case_film_embd = False
+                net.bias_out = True
+            else:
+                layer = layers[0]
+                weight = to_numpy_array(layer.w)
+                kept = weight.shape[0] - self.dim_case_embd
+                bias = (
+                    np.zeros(weight.shape[1], dtype=weight.dtype)
+                    if layer.b is None
+                    else to_numpy_array(layer.b)
+                )
+                layer["matrix"] = weight[:kept].copy()
+                layer["bias"] = bias + case @ weight[kept:]
+                net.in_dim = kept
+                if not net.hidden_layers:
+                    net.bias_out = True
+            net.dim_case_embd = 0
+        self.bias_out = all(self.nets[index].bias_out for index in range(n_networks))
+        self.case_film_embd = False
+        self.dim_case_embd = 0
+        self.case_embd = None
 
     @classmethod
     def deserialize(cls, data: dict) -> "SeZMEnergyFittingNet":
@@ -470,9 +881,12 @@ class SeZMEnergyFittingNet(InvarFitting):
         data.pop("var_name")
         data.pop("dim_out")
         obj = cls(**data)
+        obj.nets = SeZMNetworkCollection.deserialize(
+            _with_default_trainable(nets, obj.trainable)
+        )
+        variables = obj._load_task_and_router(variables)
         for kk in variables.keys():
             obj[kk] = variables[kk]
-        obj.nets = SeZMNetworkCollection.deserialize(nets)
         return obj
 
     def serialize(self) -> dict:

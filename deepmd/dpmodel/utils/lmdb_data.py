@@ -41,6 +41,7 @@ from pathlib import (
 from typing import (
     Any,
     cast,
+    overload,
 )
 
 import lmdb
@@ -118,7 +119,7 @@ PHANTOM_ATOM_TYPE = -1
 # authoritative ``atomic`` flag; these two sets cover the fields that exist
 # without one.
 _STRUCTURAL_PER_ATOM_KEYS = frozenset({"coord", "atype"})
-_OPTIONAL_PER_ATOM_KEYS = frozenset({"aparam", "spin"})
+_OPTIONAL_PER_ATOM_KEYS = frozenset({"aparam", "force", "spin"})
 
 # Frame-level fields that a decoded frame may carry without a registered
 # requirement. They anchor the shape-based fallback below, which classifies any
@@ -709,8 +710,8 @@ class LmdbDecodeConfig:
     dataset
         Dataset identifier used in frame-level diagnostics.
     type_map
-        Element symbols of the model types, from which a derived field sizes
-        the per-type length scale it measures against.
+        Names of the model types, quoted in diagnostics of source types the
+        model does not define.
     frame_transform
         Optional callable applied to every decoded frame, as
         ``transform(frame, frame_index)``. Self-supervised objectives corrupt
@@ -900,7 +901,7 @@ def _resolve_derived_batch(
     requirement : Any
         Its data requirement.
     config : LmdbDecodeConfig
-        Decoder state, which fixes the field dtype and the pair length scale.
+        Decoder state, which fixes the field dtype and the number of types.
     layout : BatchLayout
         Where each frame's per-atom rows are, which tells a ragged batch from
         a rectangular one.
@@ -940,10 +941,9 @@ def _derived_half_thresholds(
     Parameters
     ----------
     requirement : Any
-        The data requirement, whose default carries the filter radius and
-        whose length scale names the per-element radii it multiplies.
+        The data requirement, whose default carries the filter distance in Å.
     config : LmdbDecodeConfig
-        Decoder state, which carries the model type map.
+        Decoder state, which carries the number of model types.
 
     Returns
     -------
@@ -953,8 +953,6 @@ def _derived_half_thresholds(
     """
     return requirement_half_thresholds(
         float(_requirement_value(requirement, "default", 0.0)),
-        str(_requirement_value(requirement, "length_scale", "absolute")),
-        None if config.type_map is None else tuple(config.type_map),
         config.ntypes,
     )
 
@@ -1965,7 +1963,7 @@ class LmdbBatchIterator:
         reader, sampler = self._reader, self._sampler
         if not isinstance(sampler, (LmdbBatchSampler, DistributedLmdbBatchSampler)):
             raise TypeError("LMDB progress requires an LMDB batch sampler")
-        return {
+        config = {
             "path": reader.lmdb_path,
             "transaction": reader._transaction().id(),
             "nframes": len(reader),
@@ -1988,16 +1986,20 @@ class LmdbBatchIterator:
                 msgpack.packb(sampler._block_targets, use_bin_type=True)
             ).hexdigest(),
         }
+        if sampler._pad_to_multiple != 1:
+            config["pad_to_multiple"] = sampler._pad_to_multiple
+        return config
 
     def _check_restore_config(
         self, config: dict[str, Any], *, final: bool = True
     ) -> None:
         """Reject changed sampling, deferring trainer-selected configuration."""
         current = self._sampling_config()
-        for key in current:
+        # Optional entries, such as the device padding, appear on either side.
+        for key in sorted(current.keys() | config.keys()):
             if not final and key in {"ragged", "availability_keys"}:
                 continue
-            if config.get(key) != current[key]:
+            if config.get(key) != current.get(key):
                 raise ValueError(f"LMDB data progress is incompatible: {key} changed")
 
     def state_dict(self) -> dict[str, Any]:
@@ -2676,9 +2678,12 @@ class LmdbDataReader:
     def per_atom_strides(self, index: int = 0) -> dict[str, int]:
         """Return the leading-axis entries per atom of each per-atom field.
 
-        Every frame of one LMDB exposes the same fields, so the classification
-        is a property of the dataset and its registered requirements rather
-        than of a batch, and is resolved from a selected frame once.
+        Registered fields determine their atom axis. For an undeclared field,
+        the leading axis is compared with the atom count on the selected frame
+        and on a representative record of every other atom-count group that
+        carries it. Missing optional fields do not settle the classification.
+        These probes read raw field shapes, without validating, transforming,
+        or deriving labels in records outside the selected batch.
 
         Parameters
         ----------
@@ -2693,9 +2698,38 @@ class LmdbDataReader:
         """
         if self._per_atom_strides is None:
             frame = self[index]
-            self._per_atom_strides = per_atom_strides(
-                frame, resolve_per_atom_keys(frame, self._decode_config)
+            keys = set(resolve_per_atom_keys(frame, self._decode_config))
+            inferred = keys - (
+                _STRUCTURAL_PER_ATOM_KEYS
+                | _OPTIONAL_PER_ATOM_KEYS
+                | self._decode_config.data_requirements.keys()
             )
+            for nloc, indices in self._nloc_groups.items():
+                if nloc == self._frame_nlocs[index] or not inferred:
+                    continue
+                pending = inferred.copy()
+                for other in indices:
+                    key = format(
+                        int(self._retained_keys[other]), self._frame_fmt
+                    ).encode()
+                    raw = self._transaction().get(key)
+                    if raw is None:
+                        raise IndexError(f"Frame {key.decode()} not found in LMDB")
+                    record = _remap_keys(_decode_frame(raw, copy_arrays=False))
+                    present = pending & record.keys()
+                    for field in present:
+                        value = record[field]
+                        if not (
+                            isinstance(value, np.ndarray)
+                            and value.ndim >= 1
+                            and value.shape[0] == nloc
+                        ):
+                            keys.remove(field)
+                            inferred.remove(field)
+                    pending -= present
+                    if not pending:
+                        break
+            self._per_atom_strides = per_atom_strides(frame, keys)
         return self._per_atom_strides
 
     def decode_batch(
@@ -3313,7 +3347,7 @@ def _resample_indices_by_blocks(
     lookup: np.ndarray,
     group_targets: list[int],
     rng: np.random.Generator,
-) -> list[int]:
+) -> np.ndarray:
     """Resample a homogeneous group's frames to its exact block targets.
 
     Targets are allocated globally by :func:`_allocate_group_block_targets`.
@@ -3335,8 +3369,8 @@ def _resample_indices_by_blocks(
 
     Returns
     -------
-    list[int]
-        Resampled indices.
+    np.ndarray
+        Resampled indices with dtype int64.
     """
     idx_arr = np.asarray(indices, dtype=np.int64)
     idx_blks = resolve_frame_blocks(idx_arr, frame_system_ids, lookup)
@@ -3376,8 +3410,8 @@ def _resample_indices_by_blocks(
                 sampled_parts.append(sampled)
 
     if sampled_parts:
-        return np.concatenate(sampled_parts).tolist()
-    return []
+        return np.concatenate(sampled_parts)
+    return np.empty(0, dtype=np.int64)
 
 
 def collect_lmdb_sampling_groups(
@@ -3590,17 +3624,19 @@ def _allocate_group_block_targets(
 
 def _chop_same_nloc(
     reader: "LmdbDataReader", indices: Sequence[int]
-) -> list[list[int]]:
+) -> list[np.ndarray]:
     """Split one homogeneous group into fixed-size batches."""
     batch_size = reader.get_batch_size_for_nloc(int(reader.frame_nlocs[indices[0]]))
-    index_list = np.asarray(indices).tolist()
+    index_array = np.asarray(indices, dtype=np.int64)
     return [
-        index_list[start : start + batch_size]
-        for start in range(0, len(index_list), batch_size)
+        index_array[start : start + batch_size]
+        for start in range(0, len(index_array), batch_size)
     ]
 
 
-def _chop_mixed_nloc(reader: "LmdbDataReader", indices: list[int]) -> list[list[int]]:
+def _chop_mixed_nloc(
+    reader: "LmdbDataReader", indices: Sequence[int]
+) -> list[np.ndarray]:
     """Split one group into batches under an atom-axis budget.
 
     ``mix:N`` budgets the length of a batch's atom axis, and the layout the
@@ -3651,13 +3687,13 @@ def _chop_mixed_nloc(reader: "LmdbDataReader", indices: list[int]) -> list[list[
     ----------
     reader : LmdbDataReader
         Provides the per-frame atom counts, the atom budget and the layout.
-    indices : list[int]
+    indices : Sequence[int]
         Dataset indices of one group.
 
     Returns
     -------
-    list[list[int]]
-        Batches whose union is ``indices``.
+    list[np.ndarray]
+        Batch slices sharing one contiguous index array.
     """
     budget = reader.atom_budget
     if budget is None:
@@ -3667,25 +3703,84 @@ def _chop_mixed_nloc(reader: "LmdbDataReader", indices: list[int]) -> list[list[
     # Gathered, not widened: the atom counts are one entry per frame, so a
     # dtype conversion here would copy the whole dataset for one group.
     nloc_array = reader.frame_nlocs[index_array]
-    if not reader.ragged_batches:
-        order = np.argsort(nloc_array, kind="stable")
-        index_array, nloc_array = index_array[order], nloc_array[order]
+    batches: list[np.ndarray] = []
+    if reader.ragged_batches:
+        # Prefix sums make each greedy boundary a binary search instead of a
+        # Python operation for every frame. An oversized frame advances the
+        # boundary by one and remains a batch of its own.
+        prefix = np.empty(len(nloc_array) + 1, dtype=np.int64)
+        prefix[0] = 0
+        np.cumsum(nloc_array, dtype=np.int64, out=prefix[1:])
+        start = 0
+        while start < len(index_array):
+            stop = max(
+                start + 1,
+                int(np.searchsorted(prefix, prefix[start] + budget, side="right")) - 1,
+            )
+            batches.append(index_array[start:stop])
+            start = stop
+        return batches
 
-    batches: list[list[int]] = []
+    order = np.argsort(nloc_array, kind="stable")
+    index_array, nloc_array = index_array[order], nloc_array[order]
     batch_start = 0
-    real_atoms = 0
     for position, nloc in enumerate(nloc_array.tolist()):
         count = position - batch_start + 1
         # Length of the atom axis this run would occupy once decoded. Under the
         # rectangular layout the ascending sort makes the current frame the
         # widest, so it alone sets the padded width.
-        axis = real_atoms + nloc if reader.ragged_batches else count * nloc
-        if count > 1 and axis > budget:
-            batches.append(index_array[batch_start:position].tolist())
-            batch_start, real_atoms = position, 0
-        real_atoms += nloc
-    batches.append(index_array[batch_start:].tolist())
+        if count > 1 and count * nloc > budget:
+            batches.append(index_array[batch_start:position])
+            batch_start = position
+    batches.append(index_array[batch_start:])
     return batches
+
+
+class _LmdbBatchPlan(Sequence[list[int]]):
+    """Indexed batch views without retaining Python objects for every frame.
+
+    The integer payload is held by NumPy arrays. A batch becomes a Python list
+    only when accessed or yielded, keeping the decoder and PyTorch sampler
+    contracts while avoiding an epoch-sized cyclic-GC traversal. Slices and
+    distributed selections share the same arrays and only select batch IDs.
+    """
+
+    def __init__(
+        self,
+        batches: Sequence[np.ndarray],
+        order: np.ndarray | None = None,
+    ) -> None:
+        self._batches = tuple(batches)
+        self._order = (
+            np.arange(len(self._batches), dtype=np.int64) if order is None else order
+        )
+
+    def __len__(self) -> int:
+        return len(self._order)
+
+    @overload
+    def __getitem__(self, index: int) -> list[int]: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> "_LmdbBatchPlan": ...
+
+    def __getitem__(self, index: int | slice) -> "list[int] | _LmdbBatchPlan":
+        if isinstance(index, slice):
+            return self.take(index)
+        return self._batches[int(self._order[index])].tolist()
+
+    def __iter__(self) -> Iterator[list[int]]:
+        for index in self._order:
+            yield self._batches[int(index)].tolist()
+
+    def frame_counts(self) -> np.ndarray:
+        """Return ordered frame counts without materializing frame-index lists."""
+        counts = np.fromiter((len(batch) for batch in self._batches), dtype=np.float64)
+        return counts[self._order]
+
+    def take(self, index: np.ndarray | slice) -> "_LmdbBatchPlan":
+        """Select batch IDs without materializing their frame indices."""
+        return _LmdbBatchPlan(self._batches, self._order[index])
 
 
 def _build_all_batches(
@@ -3693,7 +3788,7 @@ def _build_all_batches(
     shuffle: bool,
     rng: np.random.Generator,
     block_targets: list[tuple[list[int], int]] | None = None,
-) -> list[list[int]]:
+) -> _LmdbBatchPlan:
     """Build the batches of one pass over the dataset.
 
     Groups are chopped into batches, then interleaved round-robin so that
@@ -3715,14 +3810,14 @@ def _build_all_batches(
 
     Returns
     -------
-    list[list[int]]
-        Dataset indices grouped into batches.
+    _LmdbBatchPlan
+        An indexed pass yielding one list of dataset indices per batch.
     """
     groups = _collect_batch_groups(reader)
     chop = _chop_mixed_nloc if reader.mixed_nloc else _chop_same_nloc
 
     # Build per-group batches
-    group_batches: list[list[list[int]]] = []
+    group_batches: list[list[np.ndarray]] = []
 
     # Pre-compute expensive objects once (avoids O(N) work per nloc group)
     sid_arr: np.ndarray | None = None
@@ -3754,7 +3849,7 @@ def _build_all_batches(
         group_batches.append(chop(reader, indices) if len(indices) else [])
 
     # Interleave groups round-robin
-    all_batches: list[list[int]] = []
+    all_batches: list[np.ndarray] = []
     max_len = max(len(gb) for gb in group_batches) if group_batches else 0
     for i in range(max_len):
         for gb in group_batches:
@@ -3765,7 +3860,7 @@ def _build_all_batches(
     if shuffle:
         rng.shuffle(all_batches)
 
-    return all_batches
+    return _LmdbBatchPlan(all_batches)
 
 
 class LmdbBatchSampler:
@@ -3800,6 +3895,9 @@ class LmdbBatchSampler:
         Random seed for reproducibility.
     block_targets : list[tuple[list[int], int]] or None
         Per-block resampling targets from compute_block_targets.
+    pad_to_multiple : int, default=1
+        Repeat the first batches after shuffling until the pass length is a
+        multiple of this value. Consecutive groups then stay within one epoch.
     """
 
     def __init__(
@@ -3808,7 +3906,10 @@ class LmdbBatchSampler:
         shuffle: bool = True,
         seed: int | None = None,
         block_targets: list[tuple[list[int], int]] | None = None,
+        pad_to_multiple: int = 1,
     ) -> None:
+        if pad_to_multiple < 1:
+            raise ValueError("pad_to_multiple must be a positive integer")
         self._reader = reader
         self._shuffle = shuffle
         self._configured_seed = seed
@@ -3817,18 +3918,20 @@ class LmdbBatchSampler:
         self._seed = int(np.random.SeedSequence().entropy) if seed is None else seed
         self._epoch = 0
         self._block_targets = block_targets
-        self._batches: list[list[int]] | None = None
+        self._pad_to_multiple = pad_to_multiple
+        self._batches: _LmdbBatchPlan | None = None
         self._batch_frame_counts: np.ndarray | None = None
         self._data_requirements_revision = -1
         self._ragged_batches: bool | None = None
 
-    def batches(self) -> list[list[int]]:
-        """Return the batch list of the pending pass, building it if needed.
+    def batches(self) -> _LmdbBatchPlan:
+        """Return the indexed batches of the pending pass, building it if needed.
 
         Returns
         -------
-        list[list[int]]
-            Dataset indices grouped into batches.
+        Sequence[list[int]]
+            Dataset indices grouped into batches. Each batch is materialized
+            on access; changing that list does not alter the cached pass.
         """
         revision = self._reader.data_requirements_revision
         ragged = self._reader.mixed_nloc and self._reader.ragged_batches
@@ -3843,6 +3946,14 @@ class LmdbBatchSampler:
                 np.random.default_rng(self._seed + self._epoch),
                 self._block_targets,
             )
+            if self._batches and len(self._batches) % self._pad_to_multiple:
+                count = len(self._batches)
+                padded = (
+                    (count + self._pad_to_multiple - 1) // self._pad_to_multiple
+                ) * self._pad_to_multiple
+                self._batches = self._batches.take(
+                    np.arange(padded, dtype=np.int64) % count
+                )
             self._data_requirements_revision = revision
             self._ragged_batches = ragged
             self._batch_frame_counts = None
@@ -3880,9 +3991,7 @@ class LmdbBatchSampler:
         """Return the number of frames in each pending optimizer batch."""
         batches = self.batches()
         if self._batch_frame_counts is None:
-            self._batch_frame_counts = np.fromiter(
-                (len(batch) for batch in batches), dtype=np.float64
-            )
+            self._batch_frame_counts = batches.frame_counts()
         return self._batch_frame_counts
 
     @property
@@ -3903,7 +4012,8 @@ class DistributedLmdbBatchSampler:
     ``seed + epoch``). The list is padded deterministically when its length is
     not divisible by the number of ranks, then each rank takes a strided
     subset via :meth:`_partition_batches`. This keeps every rank on the same
-    sampler epoch while duplicating at most ``world_size - 1`` batches.
+    sampler epoch while duplicating at most ``world_size - 1`` batches when
+    ``pad_to_multiple=1``. Larger multiples pad complete groups on every rank.
 
     Override :meth:`_partition_batches` for custom load-balancing strategies.
     The default uses strided partitioning which gives good nloc diversity per
@@ -3923,6 +4033,9 @@ class DistributedLmdbBatchSampler:
         Base seed for deterministic RNG. All ranks must use the same seed.
     block_targets : list[tuple[list[int], int]] or None
         Per-block resampling targets from compute_block_targets.
+    pad_to_multiple : int, default=1
+        Ensure each rank has this multiple of batches per pass by repeating
+        batches from the beginning of the shared shuffled order.
     """
 
     def __init__(
@@ -3933,7 +4046,10 @@ class DistributedLmdbBatchSampler:
         shuffle: bool = True,
         seed: int | None = None,
         block_targets: list[tuple[list[int], int]] | None = None,
+        pad_to_multiple: int = 1,
     ) -> None:
+        if pad_to_multiple < 1:
+            raise ValueError("pad_to_multiple must be a positive integer")
         self._reader = reader
         self._rank = rank
         self._world_size = world_size
@@ -3942,6 +4058,7 @@ class DistributedLmdbBatchSampler:
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
+        self._pad_to_multiple = pad_to_multiple
         self._global: LmdbBatchSampler | None = None
         self._batch_frame_counts: np.ndarray | None = None
 
@@ -3961,8 +4078,8 @@ class DistributedLmdbBatchSampler:
             self._epoch = epoch
             self._global = None
 
-    def _global_batches(self) -> list[list[int]]:
-        """Return the batch list every rank builds identically."""
+    def _global_batches(self) -> _LmdbBatchPlan:
+        """Return the compact batch plan every rank builds identically."""
         if self._global is None:
             self._global = LmdbBatchSampler(
                 self._reader,
@@ -3980,7 +4097,7 @@ class DistributedLmdbBatchSampler:
         """Yield this rank's partition of the global batch list."""
         yield from self._partition_batches(self._global_batches())
 
-    def _partition_batches(self, all_batches: list[list[int]]) -> list[list[int]]:
+    def _partition_batches(self, all_batches: _LmdbBatchPlan) -> _LmdbBatchPlan:
         """Partition global batches to this rank.
 
         The default pads the global list to a multiple of ``world_size`` and
@@ -3995,17 +4112,14 @@ class DistributedLmdbBatchSampler:
         padded cost of each batch).
         """
         if not all_batches:
-            return []
-        batches_per_rank = (len(all_batches) + self._world_size - 1) // self._world_size
+            return all_batches
+        group_size = self._world_size * self._pad_to_multiple
+        batches_per_rank = (
+            (len(all_batches) + group_size - 1) // group_size
+        ) * self._pad_to_multiple
         total_size = batches_per_rank * self._world_size
-        padding_size = total_size - len(all_batches)
-        if padding_size:
-            repetitions = (padding_size + len(all_batches) - 1) // len(all_batches)
-            all_batches = [
-                *all_batches,
-                *(all_batches * repetitions)[:padding_size],
-            ]
-        return all_batches[self._rank :: self._world_size]
+        selected = np.arange(self._rank, total_size, self._world_size, dtype=np.int64)
+        return all_batches.take(selected % len(all_batches))
 
     def __len__(self) -> int:
         """Number of batches for this rank."""

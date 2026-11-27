@@ -12,13 +12,12 @@
 // Before this test the combination had NO coverage below the pt_expt Python
 // layer, and its only export-seam test skips when CI=true.
 //
-// Single-rank only by construction: bridging enables the descriptor's Source
-// Freeze Propagation Gate, whose per-node eta folds a node's full
-// outgoing-edge set, and edges exist only for owned centres -- so
-// source/tests/infer/gen_dpa4_spin_zbl.py asserts has_comm_artifact=false AND
-// that no nested forward_lower_with_comm.pt2 exists.  Multi-rank is therefore
-// out of scope here; under mpirun the C++ dispatch fails fast (asserted from
-// the LAMMPS side, source/lmp/tests/test_lammps_dpa4_zbl_pt2.py).
+// The learned child exchanges its ghost features between blocks through the
+// halo exchange that the graph lower carries in its main program, so the
+// archive holds a single artifact (asserted by
+// source/tests/infer/gen_dpa4_spin_zbl.py).  The cases here run on one
+// process; the multi-rank parity is asserted from the LAMMPS side
+// (source/lmp/tests/test_lammps_dpa4_spin_zbl_pt2.py).
 //
 // The references come from the Python DeepEval of the SAME archive
 // (gen_dpa4_spin_zbl.py), which the generator in turn holds to its eager
@@ -34,9 +33,9 @@
 #include <vector>
 
 #include "DeepSpin.h"
-// Defines BUILD_PT_EXPT_SPIN (via its __has_include probe for the inductor
-// headers), which the SetUp guards below read.
-#include "DeepSpinPTExpt.h"
+// Defines BUILD_PT_EXPT_NATIVE_SPIN (via its __has_include probe for the
+// inductor headers), which the SetUp guards below read.
+#include "NativeSpinPTExpt.h"
 // Defines BUILD_PT_EXPT, same probe.  Without these includes the guards see
 // the macros undefined and every case GTEST_SKIPs with "PyTorch support is
 // not enabled" -- silently, which is how the ZBL suite first ran as 8 skips
@@ -48,8 +47,8 @@
 #if defined(BUILD_PYTORCH) && !defined(BUILD_PT_EXPT)
 #error "BUILD_PT_EXPT undefined: DeepPotPTExpt.h must be included."
 #endif
-#if defined(BUILD_PYTORCH) && !defined(BUILD_PT_EXPT_SPIN)
-#error "BUILD_PT_EXPT_SPIN undefined: DeepSpinPTExpt.h must be included."
+#if defined(BUILD_PYTORCH) && !defined(BUILD_PT_EXPT_NATIVE_SPIN)
+#error "BUILD_PT_EXPT_NATIVE_SPIN undefined: include NativeSpinPTExpt.h."
 #endif
 
 #include "expected_ref.h"
@@ -92,8 +91,9 @@ class TestInferDeepSpinDpa4ZblPtExpt : public ::testing::Test {
  protected:
   // 6-atom system (3 Ni, spin-active; 3 O, non-magnetic) -- verbatim from
   // gen_dpa4_spin_zbl.py's _COORDS/_CELL/_SPINS/_ATYPES.  Atoms 0 and 1 sit
-  // 0.9 A apart, inside bridging_r_outer, and are BOTH spin-carrying Ni, so
-  // the analytical and spin channels act on the same atoms.
+  // 0.9 A apart, inside the range of the truncated ZBL term, and are BOTH
+  // spin-carrying Ni, so the analytical and spin channels act on the same
+  // atoms.
   std::vector<VALUETYPE> coord = {1.0, 1.0, 1.0, 1.9, 1.0, 1.0, 1.3, 1.8, 1.0,
                                   0.4, 1.2, 1.6, 3.6, 2.0, 1.3, 3.4, 0.7, 1.7};
   std::vector<VALUETYPE> spin = {0.11,  0.05,  -0.02, -0.07, 0.09,  0.03,
@@ -114,7 +114,7 @@ class TestInferDeepSpinDpa4ZblPtExpt : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_NATIVE_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     std::ifstream model_file(kModelPath);
@@ -163,7 +163,7 @@ TYPED_TEST(TestInferDeepSpinDpa4ZblPtExpt, type_map) {
   EXPECT_EQ(type_map, "Ni O");
 }
 
-// Standalone path (no InputNlist): exercises DeepSpinPTExpt::compute's
+// Standalone path (no InputNlist): exercises NativeSpinPTExpt::compute_frame's
 // buildGraphTensors branch on a linear composition.
 TYPED_TEST(TestInferDeepSpinDpa4ZblPtExpt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
@@ -300,7 +300,7 @@ class TestInferDeepSpinDpa4ZblPtExptNopbc : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_NATIVE_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     std::ifstream model_file(kModelPath);
@@ -415,7 +415,7 @@ TYPED_TEST(TestInferDeepSpinDpa4ZblPtExptNopbc, cpu_build_nlist_atomic) {
   }
 }
 
-// LAMMPS path (explicit InputNlist, nghost=0): exercises DeepSpinPTExpt's
+// LAMMPS path (explicit InputNlist, nghost=0): exercises NativeSpinPTExpt's
 // graph branch under the LAMMPS-nlist overload.  Gas-phase system, so it is
 // compared against the NoPBC reference.
 TYPED_TEST(TestInferDeepSpinDpa4ZblPtExptNopbc, cpu_lmp_nlist) {

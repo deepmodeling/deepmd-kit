@@ -79,7 +79,9 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 # which can be read by the build backend.
 [tool.deepmd_build_backend.optional-dependencies]
 test = [
+    # Build-option tests import the backend outside its isolated build environment.
     "dependency_groups",
+    'tomli >= 1.1.0 ; python_version < "3.11"',
     "dpdata>=0.2.7",
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # fixed in 3.23.0
@@ -156,6 +158,8 @@ jax = [
     'flax>=0.10.0;python_version>="3.10"',
     'orbax-checkpoint;python_version>="3.10"',
     'orbax-checkpoint;python_version>="3.10"',
+    "vesin>=0.6",
+    "flatbuffers>=24.3.25",
     # The pinning of ml_dtypes may conflict with TF
     # 'jax-ai-stack;python_version>="3.10"',
 ]
@@ -199,6 +203,8 @@ pin_jax_cpu = [
 ]
 pin_jax_gpu = [
   "jax[cuda12]==0.5.0;python_version>='3.10'",
+  # Orbax 0.11.24 saves arrays using jax.monitoring.record_scalar, absent in 0.5.0.
+  "orbax-checkpoint==0.11.23;python_version>='3.10'",
 ]
 
 [tool.setuptools_scm]
@@ -208,6 +214,7 @@ minimum-version = "1.0"
 cmake.source-dir = "source"
 sdist.include = [
     "/deepmd/_version.py",
+    "/skills/**",
 ]
 sdist.exclude = [
     "/source/tests",
@@ -220,10 +227,8 @@ sdist.exclude = [
     "/data",
     "/.github",
 ]
-wheel.packages = [
-    "deepmd",
-    "dpa_adapt",
-]
+wheel.packages = ["deepmd", "dpa_adapt"]
+wheel.force-include = {"skills" = "deepmd/_skills"}
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
 
@@ -268,6 +273,9 @@ test-command = [
     "python -m deepmd -h",
     """python -c "import deepmd.tf;import deepmd.pt;import deepmd.pd" """,
     "dp -h",
+    # Wheel tests run in an installed environment: validate forced-in guide files.
+    "dp skills list",
+    "dp skills read deepmd-train",
     "dp_ipi",
     "pytest {project}/source/tests/common/test_lammps.py"
 ]
@@ -327,6 +335,8 @@ test-extras = ["cpu", "torch", "paddle"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
+    "dp skills list",
+    "dp skills read deepmd-train",
 ]
 [tool.cibuildwheel.windows.environment]
 PIP_PREFER_BINARY = "1"

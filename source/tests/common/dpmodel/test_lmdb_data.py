@@ -177,10 +177,12 @@ def _create_mix_probe_lmdb(path: str) -> str:
     """Create an LMDB whose frame-level fields collide in shape with the atom axis.
 
     Frames alternate between 2 and 9 atoms and carry a two-component
-    ``fparam`` alongside a nine-component ``virials``. A padding rule that
+    ``fparam`` alongside a nine-component ``virials``, and a two-component
+    ``homo_energy`` that no requirement declares. A padding rule that
     guessed the atom axis from a leading dimension would misclassify
-    ``fparam`` on the 2-atom frames and ``virials`` on the 9-atom ones, so this
-    fixture pins the classification down to the exact ambiguous shapes.
+    ``fparam`` and ``homo_energy`` on the 2-atom frames and ``virials`` on the
+    9-atom ones, so this fixture pins the classification down to the exact
+    ambiguous shapes.
     """
     nlocs = [2, 9, 2, 9, 2, 9]
     rng = np.random.RandomState(7)
@@ -201,6 +203,11 @@ def _create_mix_probe_lmdb(path: str) -> str:
                 "data": rng.randn(9).astype(np.float64).tobytes(),
             }
             frame["fparam"] = {
+                "type": "<f8",
+                "shape": (2,),
+                "data": rng.randn(2).astype(np.float64).tobytes(),
+            }
+            frame["homo_energy"] = {
                 "type": "<f8",
                 "shape": (2,),
                 "data": rng.randn(2).astype(np.float64).tobytes(),
@@ -1394,6 +1401,39 @@ class TestMixedNloc(unittest.TestCase):
         sampler = LmdbBatchSampler(reader, shuffle=False)
         self.assertEqual(len(sampler), len(list(sampler)))
 
+    def test_sampler_cache_retains_no_per_frame_python_lists(self) -> None:
+        """A cached pass exposes list batches without an epoch-sized GC traversal."""
+        nframes = 10_000
+        indices = np.arange(nframes, dtype=np.int64)
+        reader = SimpleNamespace(
+            data_requirements_revision=0,
+            mixed_nloc=False,
+            nloc_groups={2: indices},
+            frame_nlocs=np.full(nframes, 2, dtype=np.int32),
+            frame_system_ids=None,
+            availability_groups=lambda group: [group],
+            get_batch_size_for_nloc=lambda _nloc: 100,
+        )
+        batches = LmdbBatchSampler(reader, shuffle=True, seed=42).batches()
+
+        def retained_sequence_slots(value: object) -> int:
+            if isinstance(value, (list, tuple)):
+                return len(value) + sum(retained_sequence_slots(item) for item in value)
+            if isinstance(value, dict):
+                return sum(retained_sequence_slots(item) for item in value.values())
+            if not isinstance(value, np.ndarray) and hasattr(value, "__dict__"):
+                return retained_sequence_slots(vars(value))
+            return 0
+
+        self.assertLessEqual(retained_sequence_slots(batches), 2 * len(batches))
+        yielded = list(batches)
+        self.assertTrue(all(isinstance(batch, list) for batch in yielded))
+        self.assertTrue(all(type(index) is int for batch in yielded for index in batch))
+        self.assertEqual(
+            sorted(index for batch in yielded for index in batch), list(range(nframes))
+        )
+        self.assertEqual(list(batches[::3]), yielded[::3])
+
     def test_mix_batches_span_several_nlocs(self):
         """``mix:N`` puts frames of different atom counts in one batch.
 
@@ -1554,6 +1594,41 @@ class TestMixedNloc(unittest.TestCase):
         self.assertEqual(batch["coord"].shape, (2, 9, 3))
         np.testing.assert_array_equal(batch["fparam"][0], reader[0]["fparam"])
         np.testing.assert_array_equal(batch["virial"][0], reader[0]["virial"])
+
+    def test_unregistered_frame_field_is_not_padded(self):
+        """A field of length two is frame-level even when a 2-atom frame leads.
+
+        No requirement names ``homo_energy``, so only its shape classifies it,
+        and the leading 2-atom frame alone would read it as per-atom. A batch
+        of 9-atom frames would then try to pad it to nine rows.
+        """
+        path = _create_mix_probe_lmdb(f"{self._tmpdir.name}/unregistered.lmdb")
+        reader = LmdbDataReader(path, self._type_map, batch_size="mix:36")
+        self.assertNotIn("homo_energy", reader.per_atom_strides(0))
+        batch = reader.decode_batch([1, 3])
+        self.assertEqual(batch["homo_energy"].shape, (2, 2))
+        np.testing.assert_array_equal(batch["homo_energy"][1], reader[3]["homo_energy"])
+
+    def test_stride_probe_ignores_unrelated_validation_and_missing_fields(self):
+        path = _create_mix_probe_lmdb(f"{self._tmpdir.name}/probe_missing.lmdb")
+        with lmdb.open(path) as database:
+            with database.begin(write=True) as transaction:
+                key = format(1, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                del frame["energies"], frame["homo_energy"]
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        reader = LmdbDataReader(path, self._type_map, batch_size="mix:36")
+        reader.add_data_requirement(
+            [DataRequirementItem("energy", 1, atomic=False, must=True)]
+        )
+        self.assertNotIn("homo_energy", reader.per_atom_strides(0))
+        batch = reader.decode_batch([3, 5])
+        self.assertEqual(batch["homo_energy"].shape, (2, 2))
+        # Dataset-level classification also applies to a same-size ragged batch.
+        ragged = reader.decode_batch([0, 2], ragged=True)
+        self.assertEqual(ragged["homo_energy"].shape, (2, 2))
+        with self.assertRaisesRegex(RuntimeError, "energy"):
+            reader.decode_batch([1])
 
     def test_mix_tracks_the_atom_proportional_weighting(self):
         """Packing to a budget must not distort how much each frame counts.
@@ -3167,9 +3242,7 @@ class TestDerivedMinPairDist(unittest.TestCase):
     """A batch derives `pair_margin` as the frames of that batch carry it."""
 
     @staticmethod
-    def _requirement(
-        fraction: float, length_scale: str = "absolute"
-    ) -> list[DataRequirementItem]:
+    def _requirement(min_dist: float) -> list[DataRequirementItem]:
         return [
             DataRequirementItem(
                 "pair_margin",
@@ -3177,29 +3250,15 @@ class TestDerivedMinPairDist(unittest.TestCase):
                 atomic=False,
                 must=False,
                 high_prec=False,
-                default=fraction,
+                default=min_dist,
                 source_policy="derived",
-                length_scale=length_scale,
             )
         ]
 
-    def _margins(self, fraction: float, length_scale: str = "absolute") -> np.ndarray:
+    def _margins(self, min_dist: float) -> np.ndarray:
         reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
-        reader.add_data_requirement(self._requirement(fraction, length_scale))
+        reader.add_data_requirement(self._requirement(min_dist))
         return reader.decode_batch(list(range(6)))["pair_margin"].reshape(-1)
-
-    def _frame_margins(
-        self, fraction: float, length_scale: str = "absolute"
-    ) -> np.ndarray:
-        """Margins of the frame read path, which visits every pair.
-
-        The batch read bounds its scan at a margin of one, so a frame that
-        clears its window carries a value it reaches rather than its exact
-        margin; the frame read path has no such bound.
-        """
-        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
-        reader.add_data_requirement(self._requirement(fraction, length_scale))
-        return np.concatenate([reader[index]["pair_margin"] for index in range(6)])
 
     def setUp(self) -> None:
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -3233,19 +3292,19 @@ class TestDerivedMinPairDist(unittest.TestCase):
         )
 
     def test_a_threshold_keeps_the_side_of_every_frame(self) -> None:
-        """The window each frame is judged against is its own radius."""
+        """A frame is judged against the filter distance as a plain floor."""
         wide = 10.0
         distances = self._margins(wide) * wide
-        fraction = float(np.median(distances))
-        margins = self._margins(fraction)
+        threshold = float(np.median(distances))
+        margins = self._margins(threshold)
         self.assertTrue((margins < 1.0).any() and (margins >= 1.0).any())
-        np.testing.assert_array_equal(margins < 1.0, distances < fraction)
+        np.testing.assert_array_equal(margins < 1.0, distances < threshold)
 
-    def test_a_covalent_window_sizes_each_pair_by_its_elements(self) -> None:
-        """Oxygen and hydrogen carry different windows on the same geometry."""
+    def test_a_frame_margin_matches_the_direct_scan(self) -> None:
+        """The frame read path measures every pair against the filter distance."""
         reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
-        reader.add_data_requirement(self._requirement(0.5, "covalent"))
-        half = pair_half_thresholds(0.5, "covalent", ["O", "H"])
+        reader.add_data_requirement(self._requirement(0.5))
+        half = pair_half_thresholds(0.5, 2)
         for index in range(6):
             frame = reader[index]
             box = None if not frame["box"].any() else frame["box"]
@@ -3258,15 +3317,6 @@ class TestDerivedMinPairDist(unittest.TestCase):
                 ],
                 rtol=1e-12,
             )
-        # Half of the Pyykko single-bond radii puts the three pair thresholds
-        # at 0.63 Å for O-O, 0.475 Å for O-H and 0.32 Å for H-H, and an
-        # absolute window is one threshold for all three: no radius reproduces
-        # the covalent margins, which stay between the two extreme ones.
-        covalent = self._frame_margins(0.5, "covalent")
-        for threshold in (0.32, 0.475, 0.63):
-            self.assertFalse(np.allclose(covalent, self._frame_margins(threshold)))
-        self.assertTrue((covalent >= self._frame_margins(0.63)).all())
-        self.assertTrue((covalent <= self._frame_margins(0.32)).all())
 
 
 if __name__ == "__main__":

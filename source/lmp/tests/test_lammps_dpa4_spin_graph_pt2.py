@@ -6,11 +6,12 @@ Unlike the virtual-atom ``spin_ener`` scheme exercised by
 ``test_lammps_spin_pt2.py``, native-spin DPA4 has NO dense/nlist lower at
 all -- spin rides the NeighborGraph lower exclusively (see
 ``deepmd/pt_expt/model/dpa4_native_spin_model.py``'s module docstring and
-``source/tests/infer/gen_dpa4_spin.py``). The fixture also carries the
-nested with-comm AOTI artifact, so multi-rank LAMMPS drives a real
-domain-decomposed run through ``DeepSpinPTExpt::run_model_graph_with_comm``:
-per-block ghost FEATURE refresh via ``border_op``, ghost SPINS via the
-LAMMPS ``sp`` forward-comm (see ``source/api_cc/src/DeepSpinPTExpt.cc``).
+``source/tests/infer/gen_dpa4_spin.py``). Its graph lower carries the halo
+exchange of the further message-passing blocks in its main program, so
+multi-rank LAMMPS drives a real domain-decomposed run through
+``NativeSpinPTExpt`` with ``pair_style deepspin`` and ``dpa4spin`` alike:
+per-block ghost FEATURE refresh through the border plan, ghost SPINS via the
+LAMMPS ``sp`` forward-comm (see ``source/api_cc/src/NativeSpinPTExpt.cc``).
 
 Reference (energy / force / force_mag / virial) values are computed LIVE at
 test-setup time via ``deepmd.infer.DeepPot.eval`` on
@@ -74,23 +75,23 @@ data_file = Path(__file__).parent / "data_dpa4_spin_graph_pt2.lmp"
 # Wide-box, 3-way x-split variant for the OWNED-EMPTY-rank MPI corner
 # (``processors 3 1 1``), adapted from ``test_lammps_dpa4_graph_pt2.py``'s
 # ``data_file_empty_rank`` construction to this file's 4-atom spin system
-# (issue #5906 Task 12b) -- with one load-bearing difference.  The DeepSpin
-# phantom path (PR #5485, ``DeepSpinPTExpt.cc``) engages when a rank owns
-# ZERO local atoms but still holds ghosts (``nloc_real == 0 &&
-# nall_real > 0``); a GENUINELY empty rank (zero owned AND zero ghost) is
-# instead rejected by the same collective fail-fast preflight as the energy
-# route (``DeepSpinPTExpt.cc``'s "zero owned+ghost atoms" throw), so the
-# genuinely-empty construction of the energy twin cannot exercise the
-# phantom logic.  This fixture therefore shifts the Ni pair to
-# x ~= 26.8/26.1, within DPA4's ghost cutoff (rcut(4.0)+skin(2.0)=6.0) of
-# the x=30 slab boundary of a [0, 90] box.  With 3 even x-slabs of width
-# 30: rank 0 owns [0, 30) (all 4 atoms), rank 1 ([30, 60)) owns NOTHING but
-# receives ghosts of the two Ni atoms (3.2 and 3.9 from its lower
-# boundary), and rank 2 ([60, 90)) owns nothing but receives periodic
-# ghosts of the x < 6 O atoms (x=3.51 and x=4.27, wrapped around the box's
-# x=90/x=0 seam) -- BOTH atom-less ranks carry ghosts, so both take the
-# phantom path and none trips the genuinely-empty fail-fast.  The shifted
-# coordinates (``coord_empty_rank``) are defined below, after ``coord``.
+# (issue #5906 Task 12b) -- with one load-bearing difference.  A rank that
+# owns ZERO local atoms but still holds ghosts (``nloc == 0 &&
+# nall_real > 0``) runs the graph lower on its ghost nodes with no edges and
+# takes part in the halo exchange of every further block; a GENUINELY empty
+# rank (zero owned AND zero ghost) skips the model, which its peers survive
+# because every swap with it carries zero rows and posts no message.  The
+# genuinely-empty construction of the energy twin therefore cannot exercise
+# a rank whose model runs without owned atoms.  This fixture shifts the Ni
+# pair to x ~= 26.8/26.1, within DPA4's ghost cutoff
+# (rcut(4.0)+skin(2.0)=6.0) of the x=30 slab boundary of a [0, 90] box.
+# With 3 even x-slabs of width 30: rank 0 owns [0, 30) (all 4 atoms), rank
+# 1 ([30, 60)) owns NOTHING but receives ghosts of the two Ni atoms (3.2 and
+# 3.9 from its lower boundary), and rank 2 ([60, 90)) owns nothing but
+# receives periodic ghosts of the x < 6 O atoms (x=3.51 and x=4.27, wrapped
+# around the box's x=90/x=0 seam) -- BOTH atom-less ranks carry ghosts, so
+# both run the model without owned atoms.  The shifted coordinates
+# (``coord_empty_rank``) are defined below, after ``coord``.
 data_file_empty_rank = Path(__file__).parent / "data_dpa4_spin_graph_pt2_empty_rank.lmp"
 # The MPI runner is graph-spin-specific (no aparam / no NULL-type
 # extras, unlike run_mpi_pair_deepmd_spin_dpa3_pt2.py's virtual-atom-scheme
@@ -159,10 +160,15 @@ def test_pair_deepspin_virial(lammps) -> None:
     check_single_rank_virial(lammps, pb_file, expected)
 
 
-def _run_mpi(data_path: Path, nprocs: int, processors: str) -> dict:
+def _run_mpi(data_path: Path, nprocs: int, processors: str, pair_style: str) -> dict:
     """This module's binding of the shared runner (archive + runner fixed)."""
     return run_mpi_spin_runner(
-        mpi_runner, pb_file, data_path, nprocs=nprocs, processors=processors
+        mpi_runner,
+        pb_file,
+        data_path,
+        nprocs=nprocs,
+        processors=processors,
+        extra_args=["--pair-style", pair_style],
     )
 
 
@@ -172,23 +178,20 @@ def _run_mpi(data_path: Path, nprocs: int, processors: str) -> dict:
 @pytest.mark.skipif(
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
-def test_pair_deepspin_mpi_matches_single_rank() -> None:
+@pytest.mark.parametrize("pair_style", ["deepspin", "dpa4spin"])
+def test_pair_deepspin_mpi_matches_single_rank(pair_style: str) -> None:
     """A 2-rank MPI run must reproduce the 1-rank result on the SAME archive.
 
-    The native-spin DPA4 graph ``.pt2`` now carries the nested with-comm
-    artifact, so ``DeepSpinPTExpt::compute_inner`` drives a real
-    domain-decomposed run through ``run_model_graph_with_comm``: the
-    per-block ghost FEATURE refresh rides ``border_op`` while ghost SPINS
-    arrive via the LAMMPS ``sp`` forward-comm.  Both the conservative force
-    and the MAGNETIC force must be rank-count invariant -- force_mag is the
-    output that only exists on this route, so comparing it is what proves
-    the spin leaf survived the with-comm lower.
-
-    Replaces the previous fail-fast test, which asserted the C++ throw that
-    existed only while native spin was excluded from the with-comm export.
+    The graph lower of the native-spin DPA4 ``.pt2`` refreshes the ghost
+    FEATURES of every further block through the border plan its main
+    program takes, while ghost SPINS arrive via the LAMMPS ``sp``
+    forward-comm.  Both the conservative force and the MAGNETIC force must
+    be rank-count invariant -- force_mag is the output that only exists on
+    this route, so comparing it is what proves the spin leaf survived the
+    exchange -- through either pair style.
     """
-    single = _run_mpi(data_file, 1, "1 1 1")
-    multi = _run_mpi(data_file, 2, "2 1 1")
+    single = _run_mpi(data_file, 1, "1 1 1", pair_style)
+    multi = _run_mpi(data_file, 2, "2 1 1", pair_style)
     assert_mpi_matches_single_rank(single, multi)
 
 
@@ -198,23 +201,18 @@ def test_pair_deepspin_mpi_matches_single_rank() -> None:
 @pytest.mark.skipif(
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
-def test_pair_deepspin_mpi_empty_rank_phantom_pads_and_matches() -> None:
+@pytest.mark.parametrize("pair_style", ["deepspin", "dpa4spin"])
+def test_pair_deepspin_mpi_empty_rank_matches(pair_style: str) -> None:
     """A rank that owns ZERO local atoms (but holds ghosts) must SUCCEED
-    through the DeepSpin phantom path -- the first coverage of that path
     (issue #5906 Task 12b).
 
-    This is the deliberate divergence from the energy route: where
-    ``DeepPotPTExpt`` has no owned-empty special case,
-    ``DeepSpinPTExpt::compute_inner`` phantom-pads the owned-empty rank
-    route-agnostically -- it prepends 2 phantom atoms with an empty nlist
-    row (contributing exactly zero energy/force/virial), because the
-    inductor specialization assumes ``nloc >= 2`` (PR #5485).  A crash,
-    fail-fast exit, or hang here would therefore be a real regression of
-    the phantom logic, not the expected behaviour.  (A GENUINELY empty
-    rank -- zero owned AND zero ghost -- is a different corner: it is
-    rejected by the same collective "zero owned+ghost atoms" preflight as
-    the energy route, because the phantom path requires ``nall_real > 0``;
-    see the fixture comment.)
+    Such a rank runs the graph lower on its ghost nodes alone: the neighbor
+    list has no rows, so the graph has no edges and the rank contributes
+    exactly zero energy, force and virial, while it still joins the halo
+    exchange that the further blocks of its peers drive.  A crash, fail-fast
+    exit or hang here would be a regression.  (A GENUINELY empty rank --
+    zero owned AND zero ghost -- skips the model instead; see the fixture
+    comment.)
 
     ``data_file_empty_rank`` (3-way x-split, ``processors 3 1 1``) was
     verified (see the module-level comment above the fixture) to put BOTH
@@ -222,8 +220,9 @@ def test_pair_deepspin_mpi_empty_rank_phantom_pads_and_matches() -> None:
     the SAME wide-box data file is the same-archive reference.  Energy,
     conservative force AND magnetic force must all be rank-count invariant
     at the file's MPI tolerances -- force_mag only exists on this route, so
-    comparing it is what proves the spin leaf survives phantom padding.
+    comparing it is what proves the spin leaf survives a rank without owned
+    atoms.
     """
-    single = _run_mpi(data_file_empty_rank, 1, "1 1 1")
-    multi = _run_mpi(data_file_empty_rank, 3, "3 1 1")
+    single = _run_mpi(data_file_empty_rank, 1, "1 1 1", pair_style)
+    multi = _run_mpi(data_file_empty_rank, 3, "3 1 1", pair_style)
     assert_mpi_matches_single_rank(single, multi)

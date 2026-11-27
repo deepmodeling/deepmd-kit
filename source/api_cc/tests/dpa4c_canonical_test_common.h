@@ -1,26 +1,28 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Cases of the device-resident entry point of the compressed DPA4C archives
-// frozen with the compact canonical lower
-// (source/tests/infer/gen_dpa4c_canonical.py): an energy model, evaluated
-// through a DeepPot interface, and a native-spin model, evaluated through a
-// DeepSpin interface. The C++ suite instantiates them for deepmd::DeepPot and
-// deepmd::DeepSpin, the C suite for deepmd::hpp::DeepPot and
-// deepmd::hpp::DeepSpin and so for DP_DPA4ComputeCanonicalGraphGPU and
-// DP_DPA4SpinComputeCanonicalGraphGPU. The including file provides
-// _build_nlist through the test_utils.h of its suite.
+// Cases of the device-resident entry point of the archives frozen with the
+// compact canonical lower (source/tests/infer/gen_dpa4c_canonical.py), whose
+// models the fused operators of a compressed DPA4C or the graph forward of a
+// DPA4 evaluate: an energy model, evaluated through a DeepPot interface, and
+// a native-spin model, evaluated through a DeepSpin interface. The C++ suite
+// instantiates them for deepmd::DeepPot and deepmd::DeepSpin, the C suite for
+// deepmd::hpp::DeepPot and deepmd::hpp::DeepSpin and so for
+// DP_DPA4ComputeCanonicalGraphGPU and DP_DPA4SpinComputeCanonicalGraphGPU.
+// The including file provides _build_nlist through the test_utils.h of its
+// suite.
 //
 // compute_canonical_graph_gpu evaluates a graph whose buffers, like its
 // outputs, reside on the model device. The cases hand it the graph that the
 // host entry points build from the same coordinates, so the two entry points
-// evaluate one program on equal inputs and agree exactly. The graph of one
-// rank has no halo nodes, so the repeated evaluations of a case run eagerly,
-// are captured into a CUDA graph and are replayed. Every evaluation writes
-// into outputs reset to NaN, and no case may fall back from the replay to
-// eager evaluation, so the cases check the results of the replay itself: on
-// the current stream and on a caller's stream, without the optional outputs
-// and inputs, after its inputs change in place, across a change of its key,
-// while another thread holds a capture of its own open, and under a charge
-// state applied at run time. A graph with halo nodes, which domain
+// evaluate one program on equal inputs and agree exactly, or up to rounding
+// for a program whose additions accumulate in a varying order. The graph of
+// one rank has no halo nodes, so the repeated evaluations of a case run
+// eagerly, are captured into a CUDA graph and are replayed. Every evaluation
+// writes into outputs reset to NaN, and no case may fall back from the replay
+// to eager evaluation, so the cases check the results of the replay itself:
+// on the current stream and on a caller's stream, without the optional
+// outputs and inputs, after its inputs change in place, across a change of
+// its key, while another thread holds a capture of its own open, and under a
+// charge state applied at run time. A graph with halo nodes, which domain
 // decomposition hands over, is evaluated eagerly instead.
 //
 // The cases form a typed test suite in this namespace, which each suite
@@ -63,8 +65,9 @@ namespace dpa4c_canonical {
 // The charge state applied at run time; the archives are frozen with another.
 const std::vector<double> kOtherChargeSpin = {1.0, 2.0};
 
-// The fixtures are fp32 inside; the references come from the Python
-// inference of the same archives on graphs of another edge order.
+// Tolerance relative to the largest magnitude of an output. The fixtures are
+// fp32 inside; the references come from the Python inference of the same
+// archives on graphs of another edge order.
 constexpr double kReferenceTolerance = 1e-5;
 
 // Uniform strain of the system between two evaluations of one graph. Every
@@ -82,11 +85,15 @@ constexpr std::int64_t kHoldCycles = std::int64_t{1} << 27;
 // then on.
 constexpr const char* kCaptureWarning = "could not capture the evaluation";
 
-/// The energy model, evaluated through the DeepPot interface ``DP``.
+/// The energy model, evaluated through the DeepPot interface ``DP``. The
+/// fused DPA4C operators read the source CSR for the per-atom virial alone
+/// and reproduce an evaluation bitwise.
 template <class DP>
 struct Potential {
   using Evaluator = DP;
   static constexpr bool kSpin = false;
+  static constexpr bool kSourceCsrOptional = true;
+  static constexpr bool kReproducible = true;
   static constexpr const char* kName = "Potential";
   static constexpr const char* kModelPath =
       "../../tests/infer/deeppot_dpa4c_canonical.pt2";
@@ -99,11 +106,57 @@ template <class DS>
 struct Spin {
   using Evaluator = DS;
   static constexpr bool kSpin = true;
+  static constexpr bool kSourceCsrOptional = true;
+  static constexpr bool kReproducible = true;
   static constexpr const char* kName = "Spin";
   static constexpr const char* kModelPath =
       "../../tests/infer/deeppot_dpa4c_canonical_spin.pt2";
   static constexpr const char* kRefPath =
       "../../tests/infer/deeppot_dpa4c_canonical_spin.expected";
+};
+
+/// Two-block counterparts whose intermediate features require halo exchange.
+template <class DP>
+struct MultiblockPotential : Potential<DP> {
+  static constexpr const char* kModelPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_multiblock.pt2";
+  static constexpr const char* kRefPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_multiblock.expected";
+};
+
+template <class DS>
+struct MultiblockSpin : Spin<DS> {
+  static constexpr const char* kModelPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_spin_multiblock.pt2";
+  static constexpr const char* kRefPath =
+      "../../tests/infer/deeppot_dpa4c_canonical_spin_multiblock.expected";
+};
+
+/// DPA4 counterparts of two blocks, whose graph forward evaluates the compact
+/// canonical graph: it reads the charge/spin condition as an input, the
+/// features of halo nodes through the border plan, and the source CSR for
+/// every force. Its scatter additions accumulate in an order that varies
+/// between evaluations, so two evaluations of one graph agree up to rounding.
+template <class DP>
+struct Dpa4Potential : Potential<DP> {
+  static constexpr bool kSourceCsrOptional = false;
+  static constexpr bool kReproducible = false;
+  static constexpr const char* kName = "Dpa4Potential";
+  static constexpr const char* kModelPath =
+      "../../tests/infer/deeppot_dpa4_canonical.pt2";
+  static constexpr const char* kRefPath =
+      "../../tests/infer/deeppot_dpa4_canonical.expected";
+};
+
+template <class DS>
+struct Dpa4Spin : Spin<DS> {
+  static constexpr bool kSourceCsrOptional = false;
+  static constexpr bool kReproducible = false;
+  static constexpr const char* kName = "Dpa4Spin";
+  static constexpr const char* kModelPath =
+      "../../tests/infer/deeppot_dpa4_canonical_spin.pt2";
+  static constexpr const char* kRefPath =
+      "../../tests/infer/deeppot_dpa4_canonical_spin.expected";
 };
 
 /// Names the instantiations of the cases by their model.
@@ -348,47 +401,62 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
 
   /// Agreement of the host entry points with the references of a section.
   void expect_reference(const Results& results, const std::string& section) {
-    EXPECT_LT(max_difference(results.atom_energy,
-                             ref.get<double>(section, "expected_e")),
-              kReferenceTolerance)
-        << section;
-    EXPECT_LT(
-        max_difference(results.force, ref.get<double>(section, "expected_f")),
-        kReferenceTolerance)
-        << section;
-    EXPECT_LT(max_difference(results.virial,
-                             ref.get<double>(section, "expected_tot_v")),
-              kReferenceTolerance)
-        << section;
-    EXPECT_LT(max_difference(results.atom_virial,
-                             ref.get<double>(section, "expected_atom_v")),
-              kReferenceTolerance)
-        << section;
+    const auto expect_close = [&](const std::vector<double>& actual,
+                                  const char* key) {
+      const std::vector<double> expected = ref.get<double>(section, key);
+      EXPECT_LT(max_difference(actual, expected),
+                kReferenceTolerance * largest(expected))
+          << section << ": " << key;
+    };
+    expect_close(results.atom_energy, "expected_e");
+    expect_close(results.force, "expected_f");
+    expect_close(results.virial, "expected_tot_v");
+    expect_close(results.atom_virial, "expected_atom_v");
     if constexpr (Case::kSpin) {
-      EXPECT_LT(max_difference(results.force_mag,
-                               ref.get<double>(section, "expected_fm")),
-                kReferenceTolerance)
-          << section;
+      expect_close(results.force_mag, "expected_fm");
     }
   }
 
-  /// Exact agreement of an evaluation with the host entry points over the
-  /// outputs it was asked for. NaN, the value of an unwritten output, never
-  /// agrees.
-  static void expect_equal(const Results& actual,
-                           const Results& expected,
-                           const std::string& what) {
-    EXPECT_EQ(actual.atom_energy, expected.atom_energy)
-        << what << ": atom energy";
-    EXPECT_EQ(actual.force, expected.force) << what << ": force";
-    EXPECT_EQ(actual.force_mag, expected.force_mag)
-        << what << ": magnetic force";
+  /// Agreement of an evaluation with the host entry points over the outputs
+  /// it was asked for: exact for an archive that reproduces its evaluations,
+  /// and up to the rounding of the summation order otherwise. NaN, the value
+  /// of an unwritten output, never agrees.
+  static void expect_agreement(const Results& actual,
+                               const Results& expected,
+                               const std::string& what) {
+    const double tolerance = Case::kReproducible ? 0.0 : kReferenceTolerance;
+    const auto expect_close = [&](const std::vector<double>& actual_values,
+                                  const std::vector<double>& expected_values,
+                                  const char* output) {
+      EXPECT_LE(max_difference(actual_values, expected_values),
+                tolerance * largest(expected_values))
+          << what << ": " << output;
+    };
+    expect_close(actual.atom_energy, expected.atom_energy, "atom energy");
+    expect_close(actual.force, expected.force, "force");
+    expect_close(actual.force_mag, expected.force_mag, "magnetic force");
     if (!actual.virial.empty()) {
-      EXPECT_EQ(actual.virial, expected.virial) << what << ": virial";
+      expect_close(actual.virial, expected.virial, "virial");
     }
     if (!actual.atom_virial.empty()) {
-      EXPECT_EQ(actual.atom_virial, expected.atom_virial)
-          << what << ": atom virial";
+      expect_close(actual.atom_virial, expected.atom_virial, "atom virial");
+    }
+  }
+
+  /// Compare an extended graph after folding ghost forces onto their owners.
+  void expect_folded(const Results& actual, const std::vector<int>& owner) {
+    EXPECT_LT(max_difference(actual.atom_energy, host.atom_energy),
+              kReferenceTolerance * largest(host.atom_energy));
+    EXPECT_LT(max_difference(fold_onto_owners(actual.force, owner, natoms),
+                             host.force),
+              kReferenceTolerance * largest(host.force));
+    EXPECT_LT(max_difference(actual.virial, host.virial),
+              kReferenceTolerance * largest(host.virial));
+    if constexpr (Case::kSpin) {
+      EXPECT_LT(
+          max_difference(fold_onto_owners(actual.force_mag, owner, natoms),
+                         host.force_mag),
+          kReferenceTolerance * largest(host.force_mag));
     }
   }
 
@@ -510,7 +578,8 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
   /// declined.
   void run_device_entry(void* stream,
                         const bool source_csr = true,
-                        const bool virial = true) {
+                        const bool virial = true,
+                        const DP_HaloExchange* halo = nullptr) {
     double* const atom_energy = out_atom_energy.data_ptr<double>();
     double* const force = out_force.data_ptr<double>();
     double* const total_virial =
@@ -531,14 +600,15 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
           atom_energy, force, out_force_mag.data_ptr<double>(), total_virial,
           atom_virial, atype, source, deepmd::canonical_index_width(nodes),
           edge_vec, destination_row_ptr, source_row_ptr, source_order,
-          graph_spin.data_ptr<float>(), natoms, nodes, edge_storage, stream);
+          graph_spin.data_ptr<float>(), /*world=*/nullptr, halo, natoms, nodes,
+          edge_storage, stream);
     } else {
       dp.compute_canonical_graph_gpu(
           atom_energy, force, total_virial, atom_virial, atype, source,
           deepmd::canonical_index_width(nodes), edge_vec, destination_row_ptr,
           source_row_ptr, source_order,
-          /*d_coord=*/nullptr, /*world=*/nullptr, /*box=*/nullptr, natoms,
-          nodes, edge_storage, stream);
+          /*d_coord=*/nullptr, /*world=*/nullptr, halo,
+          /*box=*/nullptr, natoms, nodes, edge_storage, stream);
     }
   }
 
@@ -566,11 +636,47 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
     return results;
   }
 
-  /// Evaluate the graph on the current stream.
-  Results evaluate(const bool source_csr = true, const bool virial = true) {
+  /// Evaluate the graph on the current stream, with the halo exchange
+  /// ``halo`` of a graph with halo nodes.
+  Results evaluate(const bool source_csr = true,
+                   const bool virial = true,
+                   const DP_HaloExchange* halo = nullptr) {
     reset_outputs();
-    run_device_entry(nullptr, source_csr, virial);
+    run_device_entry(nullptr, source_csr, virial, halo);
     return read_back(source_csr, virial);
+  }
+
+  /// The halo exchange of an unfolded graph within this rank: one swap that
+  /// fills every halo node, after the owned ones, from the node of its owner.
+  /// ``plan`` points into the instance, which must outlive its use.
+  struct SelfExchange {
+    int rank = 0;
+    int halo_nodes = 0;
+    int first = 0;
+    torch::Tensor send_list;
+
+    DP_HaloExchange plan() const {
+      return {1,
+              &rank,
+              &rank,
+              &halo_nodes,
+              &halo_nodes,
+              &first,
+              send_list.data_ptr<int>()};
+    }
+  };
+
+  /// The self exchange of the halo nodes of ``graph``, the graph in use.
+  SelfExchange self_exchange(const Graph& graph) const {
+    SelfExchange exchange;
+    exchange.halo_nodes = nodes - natoms;
+    exchange.first = natoms;
+    const std::vector<int> owners(graph.owner.begin() + natoms,
+                                  graph.owner.end());
+    exchange.send_list =
+        torch::tensor(owners, torch::TensorOptions().dtype(torch::kInt32))
+            .to(graph_atype.device());
+    return exchange;
   }
 #endif
 };
@@ -586,8 +692,8 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, device_entry_matches_host_entry) {
   // The first call runs eagerly, the second captures and replays, the third
   // replays.
   for (int call = 0; call < 3; ++call) {
-    this->expect_equal(this->evaluate(), this->host,
-                       "call " + std::to_string(call));
+    this->expect_agreement(this->evaluate(), this->host,
+                           "call " + std::to_string(call));
   }
 }
 
@@ -608,8 +714,9 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
     }
     this->run_device_entry(stream.stream());
     const c10::cuda::CUDAStreamGuard guard(stream);
-    this->expect_equal(this->read_back(), this->host,
-                       "call " + std::to_string(call) + " on a caller stream");
+    this->expect_agreement(
+        this->read_back(), this->host,
+        "call " + std::to_string(call) + " on a caller stream");
   }
 #else
   GTEST_SKIP() << "Skip because deepmd-kit was built without the CUDA stream "
@@ -617,22 +724,28 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
 #endif
 }
 
-TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, the_source_csr_is_optional) {
-  if constexpr (!TypeParam::kSpin) {
-    ASSERT_FALSE(this->dp.canonical_graph_requires_source_csr());
-  }
-  for (int call = 0; call < 3; ++call) {
-    this->expect_equal(
-        this->evaluate(/*source_csr=*/false), this->host,
-        "call " + std::to_string(call) + " without the source CSR");
+TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
+             the_source_csr_follows_the_archive) {
+  // An archive whose force assembly walks the source CSR refuses a call
+  // without it; any other evaluates such a call alike.
+  ASSERT_EQ(this->dp.canonical_graph_requires_source_csr(),
+            !TypeParam::kSourceCsrOptional);
+  if constexpr (!TypeParam::kSourceCsrOptional) {
+    EXPECT_THROW(this->evaluate(/*source_csr=*/false), std::exception);
+  } else {
+    for (int call = 0; call < 3; ++call) {
+      this->expect_agreement(
+          this->evaluate(/*source_csr=*/false), this->host,
+          "call " + std::to_string(call) + " without the source CSR");
+    }
   }
 }
 
 TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, the_virial_is_optional) {
   for (int call = 0; call < 3; ++call) {
-    this->expect_equal(this->evaluate(/*source_csr=*/true, /*virial=*/false),
-                       this->host,
-                       "call " + std::to_string(call) + " without the virial");
+    this->expect_agreement(
+        this->evaluate(/*source_csr=*/true, /*virial=*/false), this->host,
+        "call " + std::to_string(call) + " without the virial");
   }
 }
 
@@ -663,8 +776,8 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
 
   // The first call runs eagerly, the second captures and replays.
   for (int call = 0; call < 2; ++call) {
-    this->expect_equal(this->evaluate(), this->host,
-                       "call " + std::to_string(call));
+    this->expect_agreement(this->evaluate(), this->host,
+                           "call " + std::to_string(call));
   }
   Results previous = this->host;
   for (std::size_t step = 0; step < steps.size(); ++step) {
@@ -678,9 +791,9 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
     ASSERT_GT(change, 1e-6) << "step " << step;
     ASSERT_NO_FATAL_FAILURE(this->rewrite_in_place(steps[step]));
     for (int call = 0; call < 2; ++call) {
-      this->expect_equal(this->evaluate(), expected,
-                         "replay " + std::to_string(call) + " after step " +
-                             std::to_string(step));
+      this->expect_agreement(this->evaluate(), expected,
+                             "replay " + std::to_string(call) + " after step " +
+                                 std::to_string(step));
     }
     previous = expected;
   }
@@ -692,8 +805,8 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_new_key_releases_the_replay) {
   // eagerly, are captured and are replayed in turn, as they are again once
   // the first outputs return.
   for (int call = 0; call < 2; ++call) {
-    this->expect_equal(this->evaluate(), this->host,
-                       "call " + std::to_string(call));
+    this->expect_agreement(this->evaluate(), this->host,
+                           "call " + std::to_string(call));
   }
   const std::vector<torch::Tensor> first = {
       this->out_atom_energy, this->out_force, this->out_force_mag,
@@ -701,8 +814,9 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_new_key_releases_the_replay) {
   this->allocate_outputs();
   ASSERT_NE(this->out_force.data_ptr(), first[1].data_ptr());
   for (int call = 0; call < 3; ++call) {
-    this->expect_equal(this->evaluate(), this->host,
-                       "call " + std::to_string(call) + " on other outputs");
+    this->expect_agreement(
+        this->evaluate(), this->host,
+        "call " + std::to_string(call) + " on other outputs");
   }
   this->out_atom_energy = first[0];
   this->out_force = first[1];
@@ -710,7 +824,7 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_new_key_releases_the_replay) {
   this->out_virial = first[3];
   this->out_atom_virial = first[4];
   for (int call = 0; call < 3; ++call) {
-    this->expect_equal(
+    this->expect_agreement(
         this->evaluate(), this->host,
         "call " + std::to_string(call) + " back on the first outputs");
   }
@@ -724,34 +838,26 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
   // neighbor rebuild, so it is evaluated eagerly. Its rows are those of the
   // folded graph, so its energies, folded forces and virial agree with the
   // host entry points up to the summation order of the run, which the node
-  // count of the graph configures.
+  // count of the graph configures. An archive whose blocks read features of
+  // halo nodes refreshes them through the swaps of the self exchange.
   const auto graph = this->build_graph(this->system, /*fold=*/false);
   this->use_graph(graph);
   ASSERT_GT(this->nodes, this->natoms);
   this->allocate_outputs();
-  const Results& host = this->host;
+  const auto exchange = this->self_exchange(graph);
+  const DP_HaloExchange plan = exchange.plan();
+  const bool exchanges = this->dp.canonical_graph_requires_halo();
   for (int call = 0; call < 2; ++call) {
-    const Results halo = this->evaluate();
-    const std::string what = "call " + std::to_string(call);
-    EXPECT_LT(max_difference(halo.atom_energy, host.atom_energy),
-              kReferenceTolerance * largest(host.atom_energy))
-        << what << ": atom energy";
-    EXPECT_LT(
-        max_difference(fold_onto_owners(halo.force, graph.owner, this->natoms),
-                       host.force),
-        kReferenceTolerance * largest(host.force))
-        << what << ": force";
-    EXPECT_LT(max_difference(halo.virial, host.virial),
-              kReferenceTolerance * largest(host.virial))
-        << what << ": virial";
-    if constexpr (TypeParam::kSpin) {
-      EXPECT_LT(max_difference(
-                    fold_onto_owners(halo.force_mag, graph.owner, this->natoms),
-                    host.force_mag),
-                kReferenceTolerance * largest(host.force_mag))
-          << what << ": magnetic force";
-    }
+    SCOPED_TRACE("call " + std::to_string(call));
+    this->expect_folded(this->evaluate(true, true, exchanges ? &plan : nullptr),
+                        graph.owner);
   }
+  // A failed C API call stores its error on the handle, so rejection is
+  // checked after the successful evaluations of that handle: the halo
+  // exchange is refused by an archive without one and required by one with.
+  EXPECT_THROW(
+      this->run_device_entry(nullptr, true, true, exchanges ? nullptr : &plan),
+      std::exception);
 }
 
 TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_capture_elsewhere_stays_valid) {
@@ -761,17 +867,20 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_capture_elsewhere_stays_valid) {
   // without a caller's stream. Neither waits for the whole device, which is
   // invalid while a capture is under way and would invalidate that capture.
   for (int call = 0; call < 2; ++call) {
-    this->expect_equal(this->evaluate(), this->host,
-                       "call " + std::to_string(call));
+    this->expect_agreement(this->evaluate(), this->host,
+                           "call " + std::to_string(call));
   }
   const auto halo = this->build_graph(this->system, /*fold=*/false);
   torch::cuda::synchronize();
   CaptureElsewhere capture;
-  this->expect_equal(this->evaluate(), this->host,
-                     "a replay while another thread captures");
+  this->expect_agreement(this->evaluate(), this->host,
+                         "a replay while another thread captures");
   this->use_graph(halo);
   this->allocate_outputs();
-  const Results eager = this->evaluate();
+  const auto exchange = this->self_exchange(halo);
+  const DP_HaloExchange plan = exchange.plan();
+  const Results eager = this->evaluate(
+      true, true, this->dp.canonical_graph_requires_halo() ? &plan : nullptr);
   EXPECT_EQ(capture.close(), cudaSuccess)
       << "an evaluation invalidated the capture of another thread";
   EXPECT_LT(
@@ -799,13 +908,14 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt, a_charge_state_reaches_the_replay) {
   this->expect_reference(other_host, "other_state");
 
   for (int call = 0; call < 3; ++call) {
-    this->expect_equal(this->evaluate(), this->host,
-                       "call " + std::to_string(call) + " before the state");
+    this->expect_agreement(
+        this->evaluate(), this->host,
+        "call " + std::to_string(call) + " before the state");
   }
   this->dp.set_charge_spin(kOtherChargeSpin);
   for (int call = 0; call < 3; ++call) {
-    this->expect_equal(this->evaluate(), other_host,
-                       "call " + std::to_string(call) + " after the state");
+    this->expect_agreement(this->evaluate(), other_host,
+                           "call " + std::to_string(call) + " after the state");
   }
 }
 
@@ -813,7 +923,7 @@ REGISTER_TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalPtExpt,
                             host_entry_matches_reference,
                             device_entry_matches_host_entry,
                             a_caller_stream_orders_the_evaluation,
-                            the_source_csr_is_optional,
+                            the_source_csr_follows_the_archive,
                             the_virial_is_optional,
                             a_replay_reads_the_inputs_in_place,
                             a_new_key_releases_the_replay,
@@ -824,6 +934,36 @@ REGISTER_TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalPtExpt,
 REGISTER_TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalPtExpt,
                             host_entry_matches_reference);
 #endif
+
+template <class Case>
+class TestInferDpa4cCanonicalHalo : public TestInferDpa4cCanonicalPtExpt<Case> {
+};
+
+TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalHalo);
+
+TYPED_TEST_P(TestInferDpa4cCanonicalHalo,
+             self_exchange_matches_complete_graph) {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+  ASSERT_TRUE(this->dp.canonical_graph_requires_halo());
+  this->expect_reference(this->host, "default_state");
+  const auto graph = this->build_graph(this->system, /*fold=*/false);
+  this->use_graph(graph);
+  ASSERT_GT(this->nodes, this->natoms);
+  this->allocate_outputs();
+  const auto exchange = this->self_exchange(graph);
+  const DP_HaloExchange plan = exchange.plan();
+  for (int call = 0; call < 2; ++call) {
+    SCOPED_TRACE("call " + std::to_string(call));
+    this->expect_folded(this->evaluate(true, true, &plan), graph.owner);
+  }
+  // A failed C API call stores its error on the handle, so rejection is
+  // checked after the successful evaluations of that handle.
+  EXPECT_THROW(this->run_device_entry(nullptr), std::exception);
+#endif
+}
+
+REGISTER_TYPED_TEST_SUITE_P(TestInferDpa4cCanonicalHalo,
+                            self_exchange_matches_complete_graph);
 
 }  // namespace dpa4c_canonical
 }  // namespace deepmd_test

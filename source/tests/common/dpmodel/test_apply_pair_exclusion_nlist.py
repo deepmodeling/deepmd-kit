@@ -253,8 +253,10 @@ def test_vesin_neighbor_list_pair_excl_equals_seam() -> None:
     if not is_vesin_torch_available():
         pytest.skip("vesin.torch not installed")
 
-    coord = torch.tensor([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]], dtype=torch.float64)
-    atype = torch.tensor([[0, 1]], dtype=torch.int64)
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]], dtype=torch.float64, device="cpu"
+    )
+    atype = torch.tensor([[0, 1]], dtype=torch.int64, device="cpu")
     rcut = 1.5
     sel = [4]
     excl = PairExcludeMask(2, [(0, 1)])
@@ -292,8 +294,8 @@ def test_nv_nlist_edges_pair_excl_raises():
         NvNeighborList,
     )
 
-    coord = torch.zeros((1, 4, 3), dtype=torch.float64)
-    atype = torch.zeros((1, 4), dtype=torch.int64)
+    coord = torch.zeros((1, 4, 3), dtype=torch.float64, device="cpu")
+    atype = torch.zeros((1, 4), dtype=torch.int64, device="cpu")
     pe = PairExcludeMask(2, [(0, 1)])
     nl = NvNeighborList()
     with pytest.raises(NotImplementedError, match="return_mode='edges'"):

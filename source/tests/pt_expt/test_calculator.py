@@ -503,7 +503,7 @@ def test_automatic_freeze_reuses_kernel_policy(
             neighbor_skin=0.75,
         )
 
-    expected = override or ("1", "2")
+    expected = override or ("2" if kind == "dpa4" else "1", "2")
     if kind == "dpa4c":
         expected = ("2", None if override is None else override[1])
     assert captured == {"levels": expected, "with_comm": False}

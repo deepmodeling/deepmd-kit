@@ -237,6 +237,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return any(model.has_message_passing() for model in self.models)
 
+    def observe_contacts(self, graph: Any, atype: Array) -> None:
+        """Every child records the contacts of the shared graph."""
+        for model in self.models:
+            model.observe_contacts(graph, atype)
+
     def has_message_passing_across_ranks(self) -> bool:
         """ANY child needing the exchange makes the composition need it."""
         return any(m.has_message_passing_across_ranks() for m in self.models)
@@ -261,6 +266,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def supports_graph_export(self) -> bool:
         """All children trace into one artifact; each must be exportable."""
         return all(m.supports_graph_export() for m in self.models)
+
+    def supports_canonical_graph(self) -> bool:
+        """All children read one graph without pair exclusion; each must serve it."""
+        return self.pair_excl is None and all(
+            m.supports_canonical_graph() for m in self.models
+        )
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
@@ -371,6 +382,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         neighbor-statistics pass for the whole composition.
         """
         return any(m.compression_needs_min_nbor_dist() for m in self.models)
+
+    def requires_full_neighbor_list(self) -> bool:
+        """Retain every neighbor if any child requires the complete graph."""
+        return any(model.requires_full_neighbor_list() for model in self.models)
 
     def uses_graph_lower(self) -> bool:
         """Graph-capable iff EVERY child supports the graph lower.
@@ -526,11 +541,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         import array_api_compat
 
-        if not self._graph_mapping_is_identity:
-            raise NotImplementedError(
-                "the graph route supports children sharing the parent "
-                "type_map only (no atype remapping)"
-            )
+        self._check_graph_mapping()
         nmodels = len(self.models)
         if self.weights == "sum":
             weights = [1.0] * nmodels
@@ -561,6 +572,80 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             contrib = ret["energy"] * ww
             energy = contrib if energy is None else energy + contrib
         return {"energy": xp.astype(energy, graph.edge_vec.dtype)}
+
+    def forward_embedding_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        node_mask: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Embeddings of the first descriptor-fitting child of the composition.
+
+        A composition such as a bridged DPA4 or DPA4C model holds one learned
+        descriptor-fitting child beside analytical terms. Its embeddings are
+        those of that child, which evaluates them on the same graph and counts
+        the nodes under the masks of both the composition and the child.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free).
+        atype
+            flat local atom types, clamped to valid types. N
+        node_mask
+            flat mask of the nodes the composition counts. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level conditioning, forwarded to the child.
+
+        Returns
+        -------
+        dict[str, Array]
+            The embeddings of the child, see
+            :meth:`~deepmd.dpmodel.atomic_model.base_atomic_model.BaseAtomicModel.forward_common_embedding_graph`.
+
+        Raises
+        ------
+        NotImplementedError
+            For children with remapped type maps, or when no child is a
+            descriptor-fitting model.
+        """
+        self._check_graph_mapping()
+        for model in self.models:
+            if isinstance(model, DPAtomicModel):
+                return model.forward_common_embedding_graph(
+                    graph,
+                    atype,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                    node_mask=node_mask,
+                )
+        raise NotImplementedError(
+            "this linear model has no descriptor-fitting child, so it provides "
+            "no embedding."
+        )
+
+    def _check_graph_mapping(self) -> None:
+        """Require the children to share the type map of the composition.
+
+        Raises
+        ------
+        NotImplementedError
+            If a child remaps the atom types, which the graph route does not
+            support.
+        """
+        if not self._graph_mapping_is_identity:
+            raise NotImplementedError(
+                "the graph route supports children sharing the parent "
+                "type_map only (no atype remapping)"
+            )
 
     def forward_atomic(
         self,
@@ -698,6 +783,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
+    def _deserialize_child(cls, data: dict) -> BaseAtomicModel:
+        """Restore a child through the backend atomic-model registry."""
+        return BaseAtomicModel.get_class_by_type(data["type"]).deserialize(data)
+
+    @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 3, 2)
@@ -705,10 +795,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         data.pop("type", None)
         if "weights" not in data:
             data["weights"] = "mean"
-        models = [
-            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
-            for model in data["models"]
-        ]
+        models = [cls._deserialize_child(model) for model in data["models"]]
         data["models"] = models
         return super().deserialize(data)
 
@@ -852,9 +939,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         stay omitted, letting each child apply its own default, rather than
         silently broadcasting one child's value to the others.
 
-        Children that do not consume the input (dimension 0, e.g. an
-        analytical bridging term) are excluded by the caller, so a learned
-        model composed with ZBL still inherits the learned default.
+        Children without the conditioning (e.g. an analytical bridging term)
+        are excluded by the caller, so a learned model composed with ZBL still
+        inherits the learned default.
         """
         if not actives or not all(has(m) for m in actives):
             return False, None
@@ -865,8 +952,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return True, get(actives[0])
 
     def _chg_spin_consumers(self) -> list:
-        """Children that actually consume ``charge_spin``."""
-        return [m for m in self.models if m.get_dim_chg_spin() > 0]
+        """Children conditioned on ``charge_spin``.
+
+        A compressed child carries its condition folded into frozen tables and
+        reads no input, yet it keeps the default that those tables hold.
+        """
+        return [m for m in self.models if m.has_chg_spin_ebd()]
 
     def _fparam_consumers(self) -> list:
         """Children that actually consume ``fparam``."""
@@ -975,10 +1066,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     def deserialize(cls, data: Any) -> "DPZBLLinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
-        models = [
-            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
-            for model in data["models"]
-        ]
+        models = [cls._deserialize_child(model) for model in data["models"]]
         data["dp_model"], data["zbl_model"] = models[0], models[1]
         data.pop("@class", None)
         data.pop("type", None)

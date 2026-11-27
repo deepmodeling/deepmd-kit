@@ -3,6 +3,7 @@
 #include "DataModifierTF.h"
 
 #include "common.h"
+#include "device.h"
 
 using namespace deepmd;
 using namespace tensorflow;

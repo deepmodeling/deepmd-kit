@@ -44,6 +44,21 @@ class TestAtomExcludeMask(unittest.TestCase):
         mask = des(to_torch_tensor(atype))
         np.testing.assert_equal(to_numpy_array(mask), expected_mask)
 
+    def test_masks_move_with_the_module(self) -> None:
+        """The masks follow ``module.to`` and stay out of the state dict."""
+        for des in (
+            AtomExcludeMask(3, exclude_types=[0, 2]),
+            PairExcludeMask(3, exclude_types=[(0, 1)]),
+        ):
+            self.assertEqual(des.type_mask.device.type, env.DEVICE.type)
+            des.to("cpu")
+            self.assertEqual(des.type_mask.device.type, "cpu")
+            self.assertEqual(des.state_dict(), {})
+            # a re-initialization replaces the mask in place
+            des.reinit(3, [])
+            self.assertEqual(des.state_dict(), {})
+            self.assertTrue(bool(des.type_mask.all()))
+
 
 # to be merged with the tf test case
 class TestPairExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):

@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate deeppot_dpa4.pth and deeppot_dpa4.pt2 test models.
+"""Generate the DPA4 test archives and verify them against eager PyTorch.
 
 Creates a DPA4/SeZM model from a pt_expt config, serializes, and exports
-to both .pt2 (pt_expt / AOTInductor) and .pth (pt) from the same weights.
+to both .pt2 (pt_expt / AOTInductor) and .pt (eager pt) from the same weights.
 Also writes a sidecar reference file (PBC and NoPbc per-atom energy/force/
 virial) consumed by the C++ tests.
 """
 
 import copy
 import os
+import shutil
 import sys
+from tempfile import (
+    TemporaryDirectory,
+)
 
 import numpy as np
 
@@ -25,8 +29,6 @@ from gen_common import (
 
 
 def main():
-    import torch
-
     from deepmd.pt_expt.model.get_model import (
         get_model,
     )
@@ -68,34 +70,28 @@ def main():
     model.to("cpu")
     model.eval()
 
-    # ---- 2b. Activate the zero-initialised residual branches ----
-    # DPA4/SeZM follows the standard residual-network convention of
-    # ZERO-initialising the output projection of every residual branch
-    # (``*.so3_linear_2.weight``, ``post_focus_mix.weight``,
-    # ``env_seed_embedding.output_proj.w``) and the final descriptor output
-    # projection (``output_ffn.so3_linear_2.weight``).  At random init these
-    # branches therefore contribute EXACTLY zero, so a freshly built DPA4
-    # collapses to a type-embedding-only descriptor: the per-atom energy is a
-    # pure per-type constant and every force/virial is identically zero,
-    # regardless of geometry.  Such a fixture exercises none of the
-    # force/virial code paths and would make the C++ inference test vacuous.
-    #
-    # A trained model has non-zero weights in these branches, so to obtain a
-    # representative (geometry-dependent, non-zero-force) reference we fill the
-    # all-zero parameters with small deterministic pseudo-random values.  This
-    # is the minimal change that makes the descriptor coordinate-dependent
-    # while leaving the rest of the random init untouched.  (Unlike DPA3,
-    # whose random init already yields non-zero forces, DPA4 needs this step.)
-    generator = torch.Generator().manual_seed(20240614)
-    with torch.no_grad():
-        for _name, param in model.named_parameters():
-            if float(param.detach().abs().max()) == 0.0:
-                param.copy_(
-                    0.1
-                    * torch.randn(param.shape, dtype=param.dtype, generator=generator)
-                )
+    # ---- 2b. Activate zero-initialized parameters and output biases ----
+    # Keep the graph fixture's original serialized-array perturbation. In
+    # addition to the residual branches, this makes the model out_bias and
+    # fitting bias_atom_e nonzero; perturbing only named_parameters would
+    # silently lose that graph coverage. Dense and graph exports share these
+    # weights, so the dense archive can serve as the independent graph oracle.
+    def _jitter_zero_arrays(node, rng: np.random.Generator):
+        # Pure rebuild, matching source/tests/dpa4_fixtures.py.
+        if isinstance(node, dict):
+            return {k: _jitter_zero_arrays(v, rng) for k, v in node.items()}
+        if isinstance(node, list):
+            return [_jitter_zero_arrays(v, rng) for v in node]
+        if (
+            isinstance(node, np.ndarray)
+            and node.dtype.kind == "f"
+            and node.size > 0
+            and np.all(node == 0.0)
+        ):
+            return rng.normal(0.0, 0.05, size=node.shape).astype(node.dtype)
+        return node
 
-    model_dict = model.serialize()
+    model_dict = _jitter_zero_arrays(model.serialize(), np.random.default_rng(20240615))
 
     data = {
         "model": model_dict,
@@ -105,7 +101,7 @@ def main():
         "version": "3.0.0",
     }
 
-    # ---- 3. Export to .pt2 and .pth ----
+    # ---- 3. Export the dense archive ----
     from deepmd.pt.utils.serialization import (
         deserialize_to_file as pt_deserialize_to_file,
     )
@@ -127,15 +123,6 @@ def main():
     pt_expt_deserialize_to_file(
         pt2_path, copy.deepcopy(data), do_atomic_virial=True, lower_kind="nlist"
     )
-
-    pth_path = os.path.join(base_dir, "deeppot_dpa4.pth")
-    print(f"Exporting to {pth_path} ...")  # noqa: T201
-    try:
-        pt_deserialize_to_file(pth_path, copy.deepcopy(data))
-    except RuntimeError as e:
-        # Custom ops may not be available in all build environments;
-        # .pth generation is not critical.
-        print(f"WARNING: .pth export failed ({e}), skipping.")  # noqa: T201
 
     print("Export done.")  # noqa: T201
 
@@ -199,46 +186,18 @@ def main():
     )
     print(f"Wrote {ref_path}")  # noqa: T201
 
-    # ---- 6. Verify .pth gives same results ----
-    if os.path.exists(pth_path):
-        dp_pth = DeepPot(pth_path)
-        e_pth, f_pth, v_pth, ae_pth, av_pth = dp_pth.eval(
-            coord, box, atype, atomic=True
-        )
-        # PBC parity assertions
-        pbc_e_diff = abs(e1[0, 0] - e_pth[0, 0])
-        pbc_f_diff = np.max(np.abs(f1 - f_pth))
-        pbc_v_diff = np.max(np.abs(v1 - v_pth))
-        print(f"\n// .pth PBC total energy: {e_pth[0, 0]:.18e}")  # noqa: T201
-        print(f"// .pth vs .pt2 energy diff: {pbc_e_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 force max diff: {pbc_f_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 virial max diff: {pbc_v_diff:.2e}")  # noqa: T201
-        tol = 1e-10
-        assert pbc_e_diff < tol, f"PBC energy parity failed: diff={pbc_e_diff:.2e}"
-        assert pbc_f_diff < tol, f"PBC force parity failed: diff={pbc_f_diff:.2e}"
-        # NOTE: ``v1``/``v_pth`` are the *global* virials (3rd return value).
-        # The per-atom virial distribution legitimately differs between pt's
-        # edge-force scatter and pt_expt's generic assembly (#5518); only the
-        # global virial (their sum) is a physical observable, so we assert on
-        # the global virial here.
-        assert pbc_v_diff < tol, f"PBC virial parity failed: diff={pbc_v_diff:.2e}"
-
-        e_pth_np, f_pth_np, v_pth_np, ae_pth_np, av_pth_np = dp_pth.eval(
-            coord, None, atype, atomic=True
-        )
-        # NoPbc parity assertions
-        np_e_diff = abs(e_np[0, 0] - e_pth_np[0, 0])
-        np_f_diff = np.max(np.abs(f_np - f_pth_np))
-        np_v_diff = np.max(np.abs(v_np - v_pth_np))
-        print(f"// .pth NoPbc total energy: {e_pth_np[0, 0]:.18e}")  # noqa: T201
-        print(f"// .pth vs .pt2 NoPbc energy diff: {np_e_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 NoPbc force diff: {np_f_diff:.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 NoPbc virial diff: {np_v_diff:.2e}")  # noqa: T201
-        assert np_e_diff < tol, f"NoPbc energy parity failed: diff={np_e_diff:.2e}"
-        assert np_f_diff < tol, f"NoPbc force parity failed: diff={np_f_diff:.2e}"
-        assert np_v_diff < tol, f"NoPbc virial parity failed: diff={np_v_diff:.2e}"
-    else:
-        print("\n// Skipping .pth verification (file not generated).")  # noqa: T201
+    # The edge-force scatter and the dense lower can assign different virials
+    # to individual atoms. The total energy, forces and total virial agree.
+    with TemporaryDirectory() as tmp:
+        pt_path = os.path.join(tmp, "deeppot_dpa4.pt")
+        pt_deserialize_to_file(pt_path, copy.deepcopy(data))
+        eager = DeepPot(pt_path)
+        for cell, expected in ((box, (e1, f1, v1)), (None, (e_np, f_np, v_np))):
+            observed = eager.eval(coord, cell, atype, atomic=True)[:3]
+            for result, reference in zip(observed, expected, strict=True):
+                assert np.isfinite(reference).all()
+                np.testing.assert_allclose(result, reference, atol=1e-10, rtol=0.0)
+        eager.close()
 
     # ============================================================
     # Section B: graph .pt2 export (jittered weights, non-vacuous)
@@ -293,52 +252,13 @@ def main():
 
     print("\n---- Building graph DPA4 (jittered weights) ----")  # noqa: T201
 
-    # ---- B.1  Build a fresh DPA4 model; jitter zero-init residuals ----
-    # A freshly built DPA4 zero-initializes several residual output
-    # projections (see step 2b above and the ``jitter_zero_arrays``
-    # docstring in source/tests/dpa4_fixtures.py), so its output is
-    # architecturally edge-independent until those branches are perturbed
-    # away from exactly zero. Section A already does this via in-place
-    # torch-parameter replacement (step 2b); this section instead follows
-    # the dict-level ``jitter_zero_arrays`` pattern used by
-    # test_dpa4_call_graph.py / test_dpa4_graph_lower.py, for consistency
-    # with the rest of the DPA4 graph test suite. Inlined here (rather than
-    # imported from source/tests/dpa4_fixtures.py) because gen_dpa4.py is a
-    # standalone script run outside pytest's package machinery -- importing
-    # a source/tests/... module from it would need ad hoc sys.path /
-    # package surgery for no real benefit.
-    # Mirror of source/tests/dpa4_fixtures.py:jitter_zero_arrays -- keep in sync.
-    def _jitter_zero_arrays(node, rng: np.random.Generator):
-        # Mirror of source/tests/dpa4_fixtures.py:jitter_zero_arrays -- keep in
-        # sync. PURE rebuild (returns a new tree, does not mutate ``node``) to
-        # avoid CodeQL's py/modification-of-default-value dataflow; behavior
-        # (RNG draws, shapes, dtype) is bit-identical.
-        if isinstance(node, dict):
-            return {k: _jitter_zero_arrays(v, rng) for k, v in node.items()}
-        if isinstance(node, list):
-            return [_jitter_zero_arrays(v, rng) for v in node]
-        if (
-            isinstance(node, np.ndarray)
-            and node.dtype.kind == "f"
-            and node.size > 0
-            and np.all(node == 0.0)
-        ):
-            return rng.normal(0.0, 0.05, size=node.shape).astype(node.dtype)
-        return node
-
-    model_g = get_model(copy.deepcopy(config))
-    model_g.to("cpu")
-    model_g.eval()
-    model_dict_g = model_g.serialize()
-    model_dict_g = _jitter_zero_arrays(model_dict_g, np.random.default_rng(20240615))
-
-    data_g = {
-        "model": copy.deepcopy(model_dict_g),
-        "model_def_script": config,
-        "backend": "dpmodel",
-        "software": "deepmd-kit",
-        "version": "3.0.0",
-    }
+    # ---- B.1  Reuse the non-vacuous weights from Section A ----
+    # Both lowers support the same DPA4 configuration. Section A already
+    # uses the original graph fixture's perturbed parameters and biases, so
+    # rebuilding that model would require another identical dense AOT compile.
+    # Keep the dense and graph artifacts on the same serialized weights;
+    # their different lowers remain independent numerical cross-checks.
+    data_g = copy.deepcopy(data)
 
     # ---- B.2  Independent cross-check via nlist .pt2 (dense-quartet) ----
     # Like gen_dpa2.py's Section B.2: deeppot_dpa4_graph.expected is NOT
@@ -355,13 +275,11 @@ def main():
     # graph parity test, both exercised on the SAME jittered weights as the
     # graph model, so at non-binding sel the two paths must agree.
     nlist_ref_pt2 = os.path.join(base_dir, "deeppot_dpa4_graph_nlist_ref.pt2")
-    print(f"Exporting reference nlist .pt2 to {nlist_ref_pt2} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(
-        nlist_ref_pt2,
-        copy.deepcopy(data_g),
-        do_atomic_virial=True,
-        lower_kind="nlist",  # independent: dense nlist, NOT graph
-    )
+    # The reference has exactly Section A's weights and lower. Preserve its
+    # established filename for C++/LAMMPS/Python consumers without compiling
+    # the same dense artifact again. Reload the copy below to keep the
+    # persisted-reference check independent of the in-process evaluator.
+    shutil.copyfile(pt2_path, nlist_ref_pt2)
     dp_nlist_ref = DeepPot(nlist_ref_pt2)
 
     # PBC reference from nlist path

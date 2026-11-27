@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import re
 from types import (
     SimpleNamespace,
 )
@@ -8,6 +9,7 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.pt_expt.kernels.dpa4c import canonical as dpa4c_canonical
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -21,6 +23,7 @@ from deepmd.pt_expt.utils.serialization import (
     _resolve_lower_kind,
     _trace_and_export,
     build_synthetic_graph_inputs,
+    compressed_export_unsupported_reason,
 )
 
 #: The compact canonical ABI and the fused spin backward are CUDA-only routes,
@@ -69,6 +72,35 @@ def _compressed_config(channels: int = 8) -> dict:
     # only reachable without it.
     fitting["resnet_dt"] = False
     return config
+
+
+def test_multiblock_communication_is_specific_to_the_lower() -> None:
+    """Canonical halo exchange belongs to its main ABI, not a sibling archive."""
+    from deepmd.pt_expt.utils.serialization import (
+        _collect_metadata,
+        _needs_with_comm_artifact,
+    )
+
+    config = _compressed_config()
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config)
+    assert model.atomic_model.has_message_passing_across_ranks()
+    for kind, needs_sibling in (
+        ("graph", True),
+        ("nlist", False),
+        ("dpa_canonical", False),
+    ):
+        assert _needs_with_comm_artifact(model, kind) is needs_sibling
+        metadata = _collect_metadata(model, lower_kind=kind)
+        assert metadata["has_message_passing"] is True
+        assert metadata["has_comm_artifact"] is needs_sibling
+        if not needs_sibling:
+            with pytest.raises(ValueError, match=r"with_comm_dict.*lower"):
+                _trace_and_export(
+                    {"model": model.serialize()},
+                    lower_kind=kind,
+                    with_comm_dict=True,
+                )
 
 
 def _run_graph(
@@ -366,8 +398,141 @@ def test_compiled_lower_accepts_a_compacted_node_axis(vacuum_ref: bool) -> None:
                 torch.testing.assert_close(actual, reference)
 
 
-def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
-    """A referenced task cannot supply the compiled graph of a plain task."""
+def test_multiblock_compiled_lower_keeps_node_and_edge_axes_dynamic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-block DPA4C force-loss compilation must not specialize ``N`` or ``E``.
+
+    ``BlockAttention`` applies ``soft_saturate`` on both the node and edge
+    axes; any operation whose second-order backward queries concrete tensor
+    sizes turns those symbolic axes into per-batch constants and triggers a
+    full recompilation whenever ``N`` or ``E`` changes.
+    """
+    from torch._dynamo.testing import (
+        CompileCounterWithBackend,
+    )
+
+    from deepmd.pt_expt.train.training import (
+        _CompiledModel,
+        _detect_task_buffers,
+        _get_model_structure_key,
+    )
+
+    torch.manual_seed(7)
+    config = {
+        "type_map": ["Fe", "C"],
+        "spin": {
+            "scheme": "native",
+            "use_spin": ["Fe"],
+        },
+        "bridging_method": "zbl",
+        "preset_out_bias": {
+            "energy": {
+                "Fe": {"value": -3405.0, "spin": 3.7},
+                "C": {"value": -156.0, "spin": 1.7},
+            }
+        },
+        "descriptor": {
+            "type": "dpa4c",
+            "rcut": 4.5,
+            "channels": 8,
+            "lmax": 2,
+            "n_radial": 4,
+            "n_blocks": 2,
+            "precision": "float64",
+            "seed": 17,
+        },
+        "fitting_net": {
+            "type": "ener",
+            "neuron": [8, 8],
+            "activation_function": "silu",
+            "vacuum_ref": True,
+            "precision": "float64",
+            "seed": 19,
+        },
+    }
+    model = get_model(config).to(env.DEVICE).train()
+    task_buffers = _detect_task_buffers(model, [model])
+    compiled = _CompiledModel(
+        model,
+        _get_model_structure_key(model),
+        task_buf_order=tuple(task_buffers),
+        task_buffers=task_buffers,
+    ).train()
+
+    backend = CompileCounterWithBackend("aot_eager")
+    orig_compile = torch.compile
+    monkeypatch.setattr(
+        torch,
+        "compile",
+        lambda fn, **kw: orig_compile(
+            fn, backend=backend, dynamic=kw.get("dynamic", True)
+        ),
+    )
+
+    torch._dynamo.reset()
+    parameters = tuple(p for p in model.parameters() if p.requires_grad)
+    rng = np.random.default_rng(13)
+    # Frame counts avoid small structural widths (1, 2, 3, 4, 8) so the first
+    # call hits no duck-shape coincidence with static feature dimensions.
+    compile_counts = []
+    for nframes, nloc, cell in ((5, 4, 3.2), (7, 5, 3.4), (11, 6, 3.6)):
+        coord = torch.tensor(
+            rng.uniform(0.0, cell, (nframes, nloc, 3)),
+            dtype=torch.float64,
+            device=env.DEVICE,
+        )
+        atype = torch.tensor(
+            rng.integers(0, 2, (nframes, nloc)),
+            dtype=torch.long,
+            device=env.DEVICE,
+        )
+        box = torch.tensor(
+            np.tile((np.eye(3) * cell).reshape(1, 9), (nframes, 1)),
+            dtype=torch.float64,
+            device=env.DEVICE,
+        )
+        spin = torch.tensor(
+            rng.normal(0.0, 1.0, (nframes, nloc, 3)),
+            dtype=torch.float64,
+            device=env.DEVICE,
+        )
+
+        expected = model(coord, atype, box=box, spin=spin)
+        got = compiled(coord, atype, box=box, spin=spin)
+        for key in ("energy", "force", "force_mag", "virial"):
+            torch.testing.assert_close(got[key], expected[key])
+
+        expected_loss = (
+            expected["energy"].square().sum()
+            + expected["force"].square().sum()
+            + expected["force_mag"].square().sum()
+        )
+        got_loss = (
+            got["energy"].square().sum()
+            + got["force"].square().sum()
+            + got["force_mag"].square().sum()
+        )
+        expected_grads = torch.autograd.grad(
+            expected_loss, parameters, allow_unused=True
+        )
+        got_grads = torch.autograd.grad(got_loss, parameters, allow_unused=True)
+        for actual, reference in zip(got_grads, expected_grads, strict=True):
+            if reference is None:
+                assert actual is None
+            else:
+                torch.testing.assert_close(actual, reference)
+
+        compile_counts.append(backend.frame_count)
+
+    assert compile_counts[0] > 0
+    assert len(set(compile_counts)) == 1
+    torch._dynamo.reset()
+
+
+@pytest.mark.parametrize("task_state", ["vacuum_reference", "contact_edges"])
+def test_shared_weights_preserve_task_local_compiled_outputs(task_state: str) -> None:
+    """Sharing weights preserves each task's own energy, force and virial."""
     from deepmd.pt_expt.train.training import (
         _CompiledModel,
         _detect_task_buffers,
@@ -375,10 +540,13 @@ def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
     )
 
     models = []
-    for has_preset in (True, False):
+    for task in range(2):
+        has_preset = task_state == "vacuum_reference" and task == 0
         config = _config()
         config["type_map"] = ["O", "H"]
         config["descriptor"].update({"channels": 8, "lmax": 2})
+        if task_state == "contact_edges":
+            config["descriptor"]["contact_clamp"] = 0.75
         config["fitting_net"].update(
             {"neuron": [8, 8], "dim_case_embd": 2, "vacuum_ref": True}
         )
@@ -395,14 +563,26 @@ def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
             )
         models.append(model)
 
+    if task_state == "contact_edges":
+        # Only the second task has observed three shorter O-H contacts.
+        clamp = models[1].get_descriptor().contact_clamp
+        types = torch.zeros(3, dtype=torch.long, device=env.DEVICE)
+        clamp.observe(
+            torch.tensor([0.21, 0.22, 0.23], dtype=torch.float64, device=env.DEVICE),
+            types,
+            types + 1,
+            types == 0,
+            torch.arange(3, device=env.DEVICE),
+        )
     coord = torch.tensor(
-        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        [[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [0.0, 1.0, 0.0]],
         dtype=torch.float64,
         device=env.DEVICE,
     )
     atype = torch.tensor([0, 1, 1], device=env.DEVICE)
     n_node = torch.tensor([3], device=env.DEVICE)
     shared_graphs = {}
+    reference_energies = []
     for model in models:
         key = _get_model_structure_key(model)
         group = [other for other in models if _get_model_structure_key(other) == key]
@@ -415,9 +595,11 @@ def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
             compiled_by_structure=shared_graphs,
         )
         expected = model.forward_ragged(coord, atype, n_node)
+        reference_energies.append(expected["energy"].detach())
         actual = compiled.forward_ragged(coord, atype, n_node)
         for name in ("energy", "force", "virial"):
             torch.testing.assert_close(actual[name], expected[name])
+    assert not torch.allclose(*reference_energies)
 
 
 def test_vacuum_descriptor_never_materializes_the_neighbor_capacity(
@@ -616,11 +798,12 @@ def test_compact_canonical_graph_export(
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     exported, metadata, _model_json, _output_keys = _trace_and_export(
         {"model": model.serialize()},
-        lower_kind="dpa4c_canonical",
+        lower_kind="dpa_canonical",
         do_atomic_virial=True,
     )
     assert isinstance(exported, torch.export.ExportedProgram)
-    assert metadata["lower_input_kind"] == "dpa4c_canonical"
+    assert metadata["lower_input_kind"] == "dpa_canonical"
+    assert metadata["canonical_evaluator"] == "dpa4c"
     assert metadata["graph_edge_dtype"] == "float32"
     assert metadata["canonical_index_dtype"] == "auto"
     assert metadata["canonical_index_storage"] == "byte_words"
@@ -648,7 +831,7 @@ def test_compact_canonical_export_accepts_source_csr_placeholders(
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     exported, _metadata, _model_json, _output_keys = _trace_and_export(
         {"model": model.serialize()},
-        lower_kind="dpa4c_canonical",
+        lower_kind="dpa_canonical",
         do_atomic_virial=True,
     )
     # Storage past the real edges holds guard rows, so a generous edge axis
@@ -669,6 +852,123 @@ def test_compact_canonical_export_accepts_source_csr_placeholders(
     for key, value in complete.items():
         if key != "atom_virial":
             assert torch.equal(declined[key], value), key
+
+
+@_GPU
+def test_a_multi_block_export_reads_its_border_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The compact lower of further message-passing blocks reads its border plan.
+
+    The communicator and the border plan follow the graph by name, since their
+    positions are those of the long-range inputs of the energy lower; a program
+    that took them for long-range inputs would ignore the halo rows of a
+    decomposed frame and give wrong energies on several ranks. Each of them
+    must reach the fused operator, and the metadata must announce the message
+    passing, from which the C++ interface decides to pass a border plan, and
+    the reverse edges that the fused operator of several blocks reads.
+    """
+    monkeypatch.setenv("DP_CUDA_INFER", "2")
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config).to("cpu").eval()
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    exported, metadata, _model_json, _output_keys = _trace_and_export(
+        {"model": model.serialize()},
+        lower_kind="dpa_canonical",
+        do_atomic_virial=True,
+    )
+    assert metadata["has_message_passing"]
+    assert metadata["canonical_requires_reciprocal"]
+    user_inputs = exported.graph_signature.user_inputs
+    placeholders = {
+        node.name: node
+        for node in exported.graph_module.graph.nodes
+        if node.op == "placeholder"
+    }
+    for name, expected in zip(
+        user_inputs[-3:], ("communicator", "halo_send", "halo_swaps"), strict=True
+    ):
+        assert name.startswith(expected), user_inputs
+        assert any(
+            user.target
+            is torch.ops.deepmd.dpa4c_canonical_compress_energy_force.default
+            for user in placeholders[name].users
+        ), name
+
+
+@pytest.mark.parametrize(
+    ("change", "condition"),
+    [
+        ({"pair_exclude_types": [[0, 1]]}, "pair_exclude_types"),
+        ({"fitting_net": {"resnet_dt": True}}, "energy fitting"),
+    ],
+)
+def test_a_multi_block_model_the_canonical_operators_cannot_serve_is_refused(
+    monkeypatch: pytest.MonkeyPatch, change: dict, condition: str
+) -> None:
+    """A compressed model of several blocks is refused rather than evaluated uncompressed.
+
+    The operators of a generic lower evaluate one block, so a compressed model
+    of several blocks that the compact canonical operators of a CUDA target do
+    not serve, here one that excludes a type pair or whose energy fitting
+    takes a timestep per layer, would evaluate its descriptor through the
+    uncompressed equations there. The automatic selection of the lower
+    reports the failing condition instead, and a freeze learns it from the
+    uncompressed model. The judgment reads the configuration alone, so the
+    test targets CUDA on any device.
+    """
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    for key, value in change.items():
+        if isinstance(value, dict):
+            config[key].update(value)
+        else:
+            config[key] = value
+    model = get_model(config).to("cpu").eval()
+    pattern = f"compact canonical.*{condition}"
+    assert re.search(pattern, compressed_export_unsupported_reason(model) or "")
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    with pytest.raises(ValueError, match=pattern):
+        _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto")
+
+
+def test_compression_preflight_checks_canonical_operator_availability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    monkeypatch.setattr(dpa4c_canonical, "op_available", lambda: False)
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    model = get_model(config).to("cpu").eval()
+    assert (
+        "lacks the compact canonical operators"
+        in compressed_export_unsupported_reason(model)
+    )
+    model.get_descriptor().enable_compression(0.5)
+    assert dpa4c_canonical.canonical_model_eligible(model)
+
+
+def test_a_freeze_judges_a_case_embedding_as_the_export_folds_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model of several blocks with a case embedding deploys compressed.
+
+    The export folds the case embedding of a deployed branch into the first
+    layer of its fitting, which the fused fitting kernels then reproduce, so
+    the judgment of a freeze before compression folds it too, on a copy that
+    leaves the model unchanged.
+    """
+    monkeypatch.setattr(dpa4c_canonical, "backend_device_type", lambda: "cuda")
+    monkeypatch.setattr(dpa4c_canonical, "op_available", lambda: True)
+    config = _compressed_config(8)
+    config["descriptor"]["n_blocks"] = 2
+    config["fitting_net"]["dim_case_embd"] = 2
+    model = get_model(config).to("cpu").eval()
+    model.set_case_embd(1)
+    assert compressed_export_unsupported_reason(model) is None
+    assert model.get_fitting_net().dim_case_embd == 2
 
 
 @_GPU
@@ -711,7 +1011,7 @@ def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     model = get_model(_compressed_config(channels)).to("cpu").eval()
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     data = {"model": model.serialize()}
-    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
+    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa_canonical"
 
 
 def test_a_case_embedding_reaches_the_fused_fitting_operator(
@@ -765,10 +1065,10 @@ def test_a_case_embedding_deploys_on_the_compact_canonical_lower(
     model.get_fitting_net().set_case_embd(1)
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
     data = {"model": model.serialize()}
-    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
+    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa_canonical"
     exported, _metadata, _model_json, _output_keys = _trace_and_export(
         data,
-        lower_kind="dpa4c_canonical",
+        lower_kind="dpa_canonical",
         do_atomic_virial=True,
     )
 
@@ -911,7 +1211,7 @@ def test_a_baked_charge_state_reaches_the_compact_canonical_lower() -> None:
     descriptor.enable_compression(min_nbor_dist=0.5)
     assert model.get_dim_chg_spin() == 0
     assert _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto") == (
-        "dpa4c_canonical"
+        "dpa_canonical"
     )
 
 

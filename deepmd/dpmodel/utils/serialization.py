@@ -79,6 +79,55 @@ def _copy_model_containers(model_obj: Any) -> Any:
     return model_obj
 
 
+def array_to_record(value: Any) -> Any:
+    """Encode an array variable of a model dict as a text-serializable record.
+
+    The record keeps the shape beside the nested lists, which do not carry the
+    trailing dimensions of an empty array.
+
+    Parameters
+    ----------
+    value : Any
+        A variable of a model dict.
+
+    Returns
+    -------
+    Any
+        The record of an array; any other variable unchanged.
+    """
+    if not isinstance(value, np.ndarray):
+        return value
+    return {
+        "@class": "np.ndarray",
+        "@is_variable": True,
+        "@version": 1,
+        "dtype": value.dtype.name,
+        "shape": list(value.shape),
+        "value": value.tolist(),
+    }
+
+
+def record_to_array(value: Any) -> Any:
+    """Decode a record of :func:`array_to_record`.
+
+    A record that names no shape takes the shape of its nested lists.
+
+    Parameters
+    ----------
+    value : Any
+        A variable of a model dict.
+
+    Returns
+    -------
+    Any
+        The array of a record; any other variable unchanged.
+    """
+    if not (isinstance(value, dict) and value.get("@class") == "np.ndarray"):
+        return value
+    array = np.asarray(value["value"], dtype=np.dtype(value["dtype"]))
+    return array.reshape(value.get("shape", array.shape))
+
+
 class Counter:
     """A callable counter.
 
@@ -100,7 +149,7 @@ class Counter:
 
 
 def save_dp_model(filename: str, model_dict: dict) -> None:
-    """Save a DP model to a file in the native format.
+    """Save an inference model in the native HDF5 or YAML format.
 
     Parameters
     ----------
@@ -108,11 +157,14 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
         The filename to save to.
     model_dict : dict
         The model dict to save. The caller retains ownership, and this function does
-        not modify it.
+        not modify it. Portable ``training`` records are omitted: optimizer and
+        EMA state belong to backend training checkpoints, not inference models.
     """
     # Give traversal an independent container tree while retaining references to
     # potentially large or non-copyable variable objects.
-    model_dict = _copy_model_containers(model_dict)
+    model_dict = _copy_model_containers(
+        {key: value for key, value in model_dict.items() if key != "training"}
+    )
     filename_extension = Path(filename).suffix
     extra_dict = {
         "software": "deepmd-kit",
@@ -135,20 +187,7 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
             }
             f.attrs["json"] = json.dumps(save_dict, separators=(",", ":"))
     elif filename_extension in {".yaml", ".yml"}:
-        model_dict = traverse_model_dict(
-            model_dict,
-            lambda x: (
-                {
-                    "@class": "np.ndarray",
-                    "@is_variable": True,
-                    "@version": 1,
-                    "dtype": x.dtype.name,
-                    "value": x.tolist(),
-                }
-                if isinstance(x, np.ndarray)
-                else x
-            ),
-        )
+        model_dict = traverse_model_dict(model_dict, array_to_record)
         with open(filename, "w") as f:
             yaml.safe_dump(
                 {
@@ -180,20 +219,9 @@ def load_dp_model(filename: str) -> dict:
             model_dict = json.loads(f.attrs["json"])
             model_dict = traverse_model_dict(model_dict, lambda x: f[x][()].copy())
     elif filename_extension in {".yaml", ".yml"}:
-
-        def convert_numpy_ndarray(x: Any) -> Any:
-            if isinstance(x, dict) and x.get("@class") == "np.ndarray":
-                dtype = np.dtype(x["dtype"])
-                value = np.asarray(x["value"], dtype=dtype)
-                return value
-            return x
-
         with open(filename) as f:
             model_dict = yaml.safe_load(f)
-            model_dict = traverse_model_dict(
-                model_dict,
-                convert_numpy_ndarray,
-            )
+            model_dict = traverse_model_dict(model_dict, record_to_array)
     else:
         raise ValueError(f"Unknown filename extension: {filename_extension}")
     return model_dict

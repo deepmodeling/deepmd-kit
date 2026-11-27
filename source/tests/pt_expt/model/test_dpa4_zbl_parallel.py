@@ -1,18 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Issue #5906 Task 2: SFPG completion across ranks, eager self-comm rung.
+"""Multi-rank layout of a bridged DPA4 composition, eager self-comm rung.
 
 Reference = the folded single-rank graph forward (periodic carry-all graph,
-src folded onto owners, gate complete by construction). Candidate = the
-UNFOLDED extended-layout forward (owners + ghost images, edges restricted to
-owned destinations -- the LAMMPS layout) with a 1-swap self-send comm_dict.
+sources folded onto owners). Candidate = the UNFOLDED extended-layout forward
+(owners + ghost images, edges restricted to owned destinations -- the LAMMPS
+layout) with a one-swap self-send ``comm_dict`` that refreshes the ghost rows
+of every block from their owners. The composition adds an analytical pair term
+and the contact clamp of the learned descriptor to the learned energy; both act
+on one edge at a time, so neither needs an exchange of its own and the two
+layouts must agree to round-off.
 
 Geometry is the load-bearing part: the cell places a close pair ACROSS the
-periodic x boundary so the close contact's src is a ghost image row and its
-``log w``/``zero_count`` partial lives on a different row than the owner --
-without that, every edge contributes ``log w = 0`` and the exchange is
-untestable (the issue's vacuous-test warning). Parametrized over a
-hard-freeze pair (r < r_inner, exercises the ``zero_count`` channel) and a
-transition-zone pair (r_inner < r < r_outer, exercises ``log_eta``).
+periodic x boundary, so the source of its edges is a ghost image row, and
+places an oxygen pair inside the transition zone of its contact clamp. The gap
+of the straddling pair is parametrized over a separation in the frozen zone of
+the Ni-Ni clamp and one in its transition zone.
 """
 
 import copy
@@ -23,6 +25,8 @@ import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
+    attach_edge_csr,
     build_neighbor_graph,
 )
 from deepmd.dpmodel.utils.nlist import (
@@ -35,6 +39,9 @@ from deepmd.pt_expt.descriptor.dpa4 import (
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
+from deepmd.pt_expt.utils.canonical_graph import (
+    BorderPlan,
+)
 from deepmd.pt_expt.utils.comm import (
     ensure_comm_registered,
 )
@@ -46,8 +53,14 @@ from .test_zbl_bridging import (
     ZBL_CONFIG,
 )
 
-# bridging window of ZBL_CONFIG: r_inner=0.8, r_outer=1.2 (Angstrom)
 _L = 6.0  # cubic box edge; > rcut so self-images never bond
+# Ni-Ni data edge at its covalent start, 2.2 Å, with the default inner clamp
+# fraction 0.75: separations up to 1.65 Å read as one frozen separation and
+# those up to 2.2 Å lie in the transition zone.
+_GAPS = [
+    0.4,  # frozen zone of the Ni-Ni clamp
+    1.9,  # transition zone of the Ni-Ni clamp
+]
 
 
 def _close_pair_coords(gap: float) -> np.ndarray:
@@ -55,9 +68,9 @@ def _close_pair_coords(gap: float) -> np.ndarray:
 
     Atom 0 sits at ``x = gap/2`` and atom 1 at ``x = L - gap/2``, so their
     minimum-image distance is exactly ``gap``. Atoms 2/3 give the
-    descriptor a normal environment (their 1.118 A contact sits inside the
-    transition zone but does NOT straddle the boundary -- its partial is
-    rank-local and pins the no-exchange-needed case alongside).
+    descriptor a normal environment (their 1.118 A contact lies in the
+    transition zone of the O-O clamp but does NOT straddle the boundary, so
+    it pins the case that needs no image alongside).
     """
     half = gap / 2.0
     return np.array(
@@ -103,8 +116,8 @@ def _make_bridged_model():
 
     A fresh DPA4 is architecturally edge-independent (zero-init residual
     projections -- see ``jitter_zero_arrays``), so an un-jittered model
-    makes BOTH the parity and the ablation vacuous: the SFPG gate would
-    multiply edge messages that never reach the output.
+    makes BOTH the parity and the ablation vacuous: the ghost-row exchange
+    would refresh features that never reach the output.
     """
     model = get_model(copy.deepcopy(ZBL_CONFIG))
     learned = model.atomic_model.models[0]
@@ -213,13 +226,7 @@ class TestBridgedGraphSelfComm:
         f_ext = -out["energy_derv_r"].detach().numpy().reshape(-1, 3)
         return e, _fold_forces(f_ext, mapping)
 
-    @pytest.mark.parametrize(
-        "gap",
-        [
-            0.4,  # r < r_inner=0.8: hard freeze, exercises the zero_count channel
-            1.0,  # r_inner < r < r_outer=1.2: exercises the log_eta channel
-        ],
-    )
+    @pytest.mark.parametrize("gap", _GAPS)  # separation of the straddling pair
     def test_self_comm_matches_folded_reference(self, gap: float) -> None:
         coord = _close_pair_coords(gap)
         e_ref, f_ref = self._run_folded(coord)
@@ -227,26 +234,16 @@ class TestBridgedGraphSelfComm:
         np.testing.assert_allclose(e_par, e_ref, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(f_par, f_ref, rtol=1e-12, atol=1e-12)
 
-    @pytest.mark.parametrize(
-        "gap",
-        [
-            0.4,  # zero_count channel: ablation loses the hard freeze
-            1.0,  # log_eta channel: ablation loses the transition attenuation
-        ],
-    )
+    @pytest.mark.parametrize("gap", _GAPS)  # separation of the straddling pair
     def test_ablation_identity_exchange_diverges(
         self, gap: float, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Negative contract: with the exchange stubbed to identity the
-        parity BREAKS -- proves the geometry actually exercises the gate.
+        """Negative contract: with the ghost-row exchange stubbed to identity
+        the parity BREAKS -- proves the geometry actually exercises it.
         """
-        from deepmd.pt_expt.descriptor import dpa4 as pe_dpa4
+        from deepmd.pt_expt.descriptor.dpa4_nn import block as pe_block
 
-        monkeypatch.setattr(
-            pe_dpa4.DescrptDPA4,
-            "_gate_partial_exchange",
-            lambda self, partials, comm_dict: partials,
-        )
+        monkeypatch.setattr(pe_block, "exchange_ghost_features", lambda x, comm_dict: x)
         coord = _close_pair_coords(gap)
         e_ref, _ = self._run_folded(coord)
         e_par, _ = self._run_self_comm(coord)
@@ -254,7 +251,7 @@ class TestBridgedGraphSelfComm:
 
 
 class TestBridgedGraphWithCommExport:
-    """Issue #5906 Task 2: the bridged composition's with-comm export rungs."""
+    """The with-comm export rungs of the bridged composition."""
 
     @pytest.fixture(autouse=True)
     def _setup(self):
@@ -290,19 +287,27 @@ class TestBridgedGraphWithCommExport:
         )
 
     def test_freeze_embeds_with_comm_artifact(self, tmp_path) -> None:
-        """Freezing the bridged model to a graph ``.pt2`` embeds the nested
-        with-comm artifact (mirrors the plain-DPA4 embed test).
-        """
+        """Default public freeze embeds the bridged with-comm graph artifact."""
         import json
         import zipfile
 
-        from deepmd.pt_expt.utils.serialization import (
-            deserialize_to_file,
+        from deepmd.pt_expt.entrypoints.main import (
+            freeze,
+        )
+        from deepmd.pt_expt.train.wrapper import (
+            ModelWrapper,
         )
 
-        data = {"model": self.model.serialize()}
-        p = str(tmp_path / "m_dpa4_zbl_graph.pt2")
-        deserialize_to_file(p, copy.deepcopy(data), lower_kind="graph")
+        wrapper = ModelWrapper(self.model, model_params=copy.deepcopy(ZBL_CONFIG))
+        checkpoint = tmp_path / "model.pt"
+        torch.save({"model": wrapper.state_dict()}, checkpoint)
+
+        # Cover checkpoint loading, default graph routing, and real AOTI
+        # packaging together instead of compiling again in the route test.
+        output = tmp_path / "m_dpa4_zbl_graph"
+        freeze(model=str(checkpoint), output=str(output))
+        p = output.with_suffix(".pt2")
+        assert p.exists(), "default suffix must follow the resolved graph kind"
         with zipfile.ZipFile(p, "r") as zf:
             names = zf.namelist()
             meta = json.loads(zf.read("model/extra/metadata.json"))
@@ -327,16 +332,16 @@ def _make_bridged_spin_model():
 
 
 class TestBridgedSpinGraphSelfComm:
-    """Issue #5906 Task 3: native spin + ZBL, same ladder as the non-spin
-    class. The gate exchange sits below the spin wrapper
-    (``NativeSpinEnergyModel`` re-classes the SAME composed atomic model),
-    so no spin-specific production change is expected -- these tests pin
-    that the machinery composes.
+    """Native spin + ZBL, the same ladder as the non-spin class. The ghost-row
+    exchange sits below the spin wrapper (``NativeSpinEnergyModel`` re-classes
+    the SAME composed atomic model), so these tests pin that the machinery
+    composes. The exchange runs through the border plan that the graph lower
+    of a native-spin model takes, here one self swap from the owners onto the
+    ghost rows.
     """
 
     @pytest.fixture(autouse=True)
     def _setup(self):
-        ensure_comm_registered()
         self.model = _make_bridged_spin_model()
 
     def _spins(self, n: int) -> np.ndarray:
@@ -363,19 +368,26 @@ class TestBridgedSpinGraphSelfComm:
         fm = -out["energy_derv_r_mag"].detach().numpy().reshape(-1, 3)
         return e, f, fm
 
-    def _run_self_comm(self, coord: np.ndarray):
+    def _unfolded_frame(self, coord: np.ndarray):
+        """Return the unfolded graph inputs, the extended spins, the self-swap
+        plan that copies every owner onto its ghost rows, and the mapping.
+        """
         ext_coord, ext_atype, nlist, mapping = _extended_quartet(coord)
         gi = _unfolded_graph_inputs(ext_coord, ext_atype, nlist)
-        nall = ext_coord.shape[1]
+        nghost = ext_coord.shape[1] - 4
         # ghost spins mirror their owners (LAMMPS forwards ``sp``)
         spin_ext = torch.tensor(self._spins(4)[mapping[0]], dtype=torch.float64)
-        keepalive: list = []
-        comm_dict = _build_self_comm_dict(
-            nloc=4,
-            nghost=nall - 4,
-            sendlist_indices=mapping[0, 4:].astype(np.int32),
-            keepalive=keepalive,
+        # swap columns: send rank, receive rank, send count, receive count,
+        # first receiving row
+        plan = BorderPlan(
+            send_nodes=torch.as_tensor(mapping[0, 4:], dtype=torch.int32),
+            swaps=torch.tensor([[0, 0, nghost, nghost, 4]], dtype=torch.int32),
+            communicator=torch.zeros(1, dtype=torch.int64),
         )
+        return gi, spin_ext, plan, mapping
+
+    def _run_self_comm(self, coord: np.ndarray):
+        gi, spin_ext, plan, mapping = self._unfolded_frame(coord)
         out = self.model.forward_common_lower_graph(
             gi["atype"],
             gi["n_node"],
@@ -384,7 +396,7 @@ class TestBridgedSpinGraphSelfComm:
             gi["edge_vec"],
             gi["edge_mask"],
             spin=spin_ext,
-            comm_dict=comm_dict,
+            comm_dict=plan,
         )
         e = out["energy_redu"].detach().numpy().reshape(-1)
         f = _fold_forces(-out["energy_derv_r"].detach().numpy().reshape(-1, 3), mapping)
@@ -393,23 +405,66 @@ class TestBridgedSpinGraphSelfComm:
         )
         return e, f, fm
 
-    @pytest.mark.parametrize(
-        "gap",
-        [
-            0.4,  # zero_count channel across the boundary
-            1.0,  # log_eta channel across the boundary
-        ],
-    )
-    def test_self_comm_matches_folded_reference(self, gap: float) -> None:
+    def _run_traced_lower(self, coord: np.ndarray):
+        """Evaluate the traced graph lower, plan inputs included, as exported."""
+        gi, spin_ext, plan, mapping = self._unfolded_frame(coord)
+        graph = attach_edge_csr(
+            NeighborGraph(
+                n_node=gi["n_node"],
+                edge_index=gi["edge_index"],
+                edge_vec=gi["edge_vec"],
+                edge_mask=gi["edge_mask"],
+                n_local=gi["n_local"],
+            ),
+            gi["atype"].shape[0],
+            canonicalize=True,
+        )
+        inputs = (
+            gi["atype"],
+            graph.n_node,
+            graph.n_local,
+            graph.edge_index,
+            graph.edge_vec,
+            graph.edge_mask,
+            graph.destination_order,
+            graph.destination_row_ptr,
+            graph.source_order,
+            graph.source_row_ptr,
+            spin_ext,
+            None,
+            None,
+            None,
+            plan.communicator,
+            plan.send_nodes,
+            plan.swaps,
+        )
+        traced = self.model.forward_lower_graph_exportable(
+            *inputs,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        out = traced(*inputs)
+        e = out["energy"].detach().numpy().reshape(-1)
+        f = _fold_forces(-out["force"].detach().numpy().reshape(-1, 3), mapping)
+        fm = _fold_forces(-out["force_mag"].detach().numpy().reshape(-1, 3), mapping)
+        return e, f, fm
+
+    @pytest.mark.parametrize("gap", _GAPS)  # separation of the straddling pair
+    @pytest.mark.parametrize("route", ["eager", "traced"])
+    def test_self_comm_matches_folded_reference(self, gap: float, route: str) -> None:
         coord = _close_pair_coords(gap)
         e_ref, f_ref, fm_ref = self._run_folded(coord)
-        e_par, f_par, fm_par = self._run_self_comm(coord)
+        run = self._run_traced_lower if route == "traced" else self._run_self_comm
+        e_par, f_par, fm_par = run(coord)
         np.testing.assert_allclose(e_par, e_ref, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(f_par, f_ref, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(fm_par, fm_ref, rtol=1e-12, atol=1e-12)
 
-    def test_freeze_embeds_with_comm_artifact(self, tmp_path) -> None:
-        """Freezing the bridged spin model embeds the nested artifact."""
+    def test_freeze_exchanges_in_main_program(self, tmp_path) -> None:
+        """The graph lower of the bridged spin model carries the ghost-row
+        exchange in its main program, so the archive has no with-comm artifact.
+        """
         import json
         import zipfile
 
@@ -423,5 +478,6 @@ class TestBridgedSpinGraphSelfComm:
         with zipfile.ZipFile(p, "r") as zf:
             names = zf.namelist()
             meta = json.loads(zf.read("model/extra/metadata.json"))
-        assert "model/extra/forward_lower_with_comm.pt2" in names
-        assert meta["has_comm_artifact"] is True
+        assert "model/extra/forward_lower_with_comm.pt2" not in names
+        assert meta["has_comm_artifact"] is False
+        assert meta["has_message_passing"] is True

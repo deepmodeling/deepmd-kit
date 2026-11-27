@@ -7,6 +7,7 @@ See issue #2982 for more information.
 import itertools
 from collections.abc import (
     Callable,
+    Sequence,
 )
 from typing import (
     Any,
@@ -31,6 +32,11 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
+)
+from deepmd.dpmodel.utils.expert_linear import (
+    EXPERT_VARIANTS,
+    ExpertContainer,
+    ExpertWeights,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -301,7 +307,6 @@ class NativeLayer(NativeOP):
         if self.w is None or self.activation_function is None:
             raise ValueError("w, b, and activation_function must be set")
         xp = array_api_compat.array_namespace(x)
-        fn = get_activation_fn(self.activation_function)
         device = array_api_compat.device(x)
         w = xp.asarray(self.w[...], device=device)
         y = (
@@ -309,6 +314,25 @@ class NativeLayer(NativeOP):
             if self.b is not None
             else xp.matmul(x, w)
         )
+        return self._activate(x, y)
+
+    def _activate(self, x: Array, y: Array) -> Array:
+        r"""Apply the activation, timestep, and residual operations to the affine output.
+
+        Parameters
+        ----------
+        x : Array
+            The input of the layer.
+        y : Array
+            The affine output :math:`\mathbf x\mathbf W+\mathbf b`.
+
+        Returns
+        -------
+        Array
+            The output of the layer.
+        """
+        xp = array_api_compat.array_namespace(x)
+        fn = get_activation_fn(self.activation_function)
         if y.dtype != x.dtype:
             # workaround for bfloat16
             # https://github.com/jax-ml/ml_dtypes/issues/235
@@ -711,6 +735,22 @@ def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
                 if ii < len(self.layers) - 1:
                     x = layer(x)
             return x
+
+        def call_last(self, x):  # noqa: ANN001, ANN202
+            """Return the output of the last layer.
+
+            Parameters
+            ----------
+            x : Array
+                The output before last layer, as returned by
+                :meth:`call_until_last`.
+
+            Returns
+            -------
+            np.ndarray
+                The output of the network.
+            """
+            return self.layers[-1](x)
 
         def clear(self) -> None:
             """Clear the network parameters to zero."""
@@ -1172,6 +1212,198 @@ class FittingNet(EmbeddingNet):
         return obj
 
 
+class ExpertLayer(ExpertWeights, NativeLayer):
+    """
+    Expert variant of :class:`~deepmd.dpmodel.utils.network.NativeLayer`.
+
+    The affine map of the layer takes the weight of every row (see
+    :class:`ExpertWeights`); the activation, the timestep and the residual
+    connection are those of the plain layer (:meth:`NativeLayer._activate`).
+
+    Parameters
+    ----------
+    num_in
+        Input width.
+    num_out
+        Output width.
+    n_experts
+        Number of experts mixed by the router.
+    n_elements
+        Number of element increments.
+    **kwargs
+        Further arguments of the plain layer.
+    """
+
+    PLAIN = NativeLayer
+
+    def __init__(
+        self,
+        num_in: int,
+        num_out: int,
+        *,
+        n_experts: int = 0,
+        n_elements: int = 0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            n_experts=n_experts,
+            n_elements=n_elements,
+            num_in=num_in,
+            num_out=num_out,
+            **kwargs,
+        )
+
+    @classmethod
+    def from_plain(
+        cls, layer: NativeLayer, n_experts: int, n_elements: int
+    ) -> "ExpertLayer":
+        """Expert layer with the weights of a plain layer and zero MoE weights."""
+        data = layer.serialize()
+        data.update(
+            {"@class": cls.__name__, "n_experts": n_experts, "n_elements": n_elements}
+        )
+        return cls.deserialize(data)
+
+    def _plain_weight(self) -> Any:
+        return self.w
+
+    def _plain_bias(self) -> Any:
+        return self.b
+
+    def call(self, x: Any, weights: Any) -> Any:
+        """
+        Evaluate the layer with the weight of every row.
+
+        Parameters
+        ----------
+        x
+            Input with shape (R, ..., num_in), whose rows are those of the
+            layout of the weights.
+        weights
+            Weight and bias of this layer for every chunk of rows (see
+            :class:`~deepmd.dpmodel.utils.expert_linear.ChunkWeights`).
+
+        Returns
+        -------
+        Array
+            Output with shape (R, ..., num_out).
+        """
+        return self._activate(x, self._affine(x, weights))
+
+    def _variable_names(self) -> dict[str, str]:
+        return {"weight": "w", "bias": "b"}
+
+    @staticmethod
+    def _record_config(data: dict[str, Any]) -> dict[str, Any]:
+        # The record of a layer holds its configuration at the top level.
+        return data
+
+
+EXPERT_VARIANTS[NativeLayer] = ExpertLayer
+
+
+class ExpertFittingNet(ExpertContainer, FittingNet):
+    """
+    Fitting network of expert layers.
+
+    The network is one unit of a route (see
+    :class:`~deepmd.dpmodel.utils.expert_route.UnitRoute`): its caller enters
+    the route and passes the rows of the layout to the forward methods, which
+    hand every layer its weights of the route.
+
+    Parameters
+    ----------
+    *args, **kwargs
+        Arguments of :class:`FittingNet`.
+    experts
+        Number of experts and of element increments ``(n_experts, n_elements)``
+        of every layer.
+    """
+
+    def __init__(self, *args: Any, experts: Sequence[int], **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.experts = [int(n) for n in experts]
+        # Every layer becomes the expert variant of its own class, in the
+        # container the plain network keeps its layers in.
+        self.layers = type(self.layers)(
+            [
+                EXPERT_VARIANTS[type(layer)].from_plain(layer, *self.experts)
+                for layer in self.layers
+            ]
+        )
+
+    def _expert_members(self) -> list[str]:
+        return ["layers"]
+
+    def call(self, x: Array, route: Any) -> Array:
+        """
+        Forward pass with the weights of a route.
+
+        Parameters
+        ----------
+        x : Array
+            The input, whose rows are those of the layout of the route.
+        route : UnitRoute
+            The weights of the layers.
+
+        Returns
+        -------
+        Array
+            The output.
+        """
+        return self.call_last(self.call_until_last(x, route), route)
+
+    def call_until_last(self, x: Array, route: Any) -> Array:
+        """
+        Return the output before the last layer.
+
+        Parameters
+        ----------
+        x : Array
+            The input, whose rows are those of the layout of the route.
+        route : UnitRoute
+            The weights of the layers.
+
+        Returns
+        -------
+        Array
+            The output before the last layer.
+        """
+        for index in range(len(self.layers) - 1):
+            x = self.layers[index](x, route.map(index))
+        return x
+
+    def call_last(self, x: Array, route: Any) -> Array:
+        """
+        Return the output of the last layer.
+
+        Parameters
+        ----------
+        x : Array
+            The output before the last layer, as returned by
+            :meth:`call_until_last`.
+        route : UnitRoute
+            The weights of the layers.
+
+        Returns
+        -------
+        Array
+            The output of the network.
+        """
+        return self.layers[-1](x, route.map(len(self.layers) - 1))
+
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
+
+        A network whose layers were merged into plain layers serializes as
+        the plain fitting network.
+        """
+        data = super().serialize()
+        if self.experts is not None:
+            data.update({"@class": "ExpertFittingNetwork", "experts": self.experts})
+        return data
+
+
 class NetworkCollection:
     """A collection of networks for multiple elements.
 
@@ -1195,6 +1427,7 @@ class NetworkCollection:
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
+        "expert_fitting_network": ExpertFittingNet,
     }
 
     def __init__(

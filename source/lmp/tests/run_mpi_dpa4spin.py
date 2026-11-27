@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Run native-spin conventions through a real host or CUDA Kokkos plugin.
+"""Run the native-spin pair style through a real host or CUDA Kokkos plugin.
 
 Each MPI process uses the same GPU, so two-rank coverage needs only one device.
 Host-staged communication deliberately does not require CUDA-aware MPI.
@@ -39,10 +39,12 @@ def _pair_pointer(lmp, name, pointer_type):
     return pointer
 
 
-def _snapshot(lmp, virial=False):
+def _snapshot(lmp: lammps, virial: bool = False) -> dict:
+    """Collect atom-ID-ordered outputs at the current timestep."""
+
     # gather() returns atom-ID order, including contributions reverse-communicated
     # from ghost nodes. All ranks must participate in these collective calls.
-    def gather(name, count):
+    def gather(name: str, count: int) -> list[list[float]]:
         return np.array(lmp.gather(name, 1, count)).reshape(-1, count).tolist()
 
     # The pressure compute restricted to the pair reports the global pair
@@ -51,6 +53,7 @@ def _snapshot(lmp, virial=False):
     pressure = lmp.extract_compute("pvirial", LMP_STYLE_GLOBAL, LMP_TYPE_VECTOR)
     volume = lmp.get_thermo("vol") / lmp.extract_global("nktv2p")
     snapshot = {
+        "step": int(lmp.get_thermo("step")),
         "ids": list(lmp.gather_atoms("id", 0, 1)),
         "force": gather("f", 3),
         "magnetic_force": gather("c_fmprop", 3),
@@ -88,15 +91,17 @@ def _cmdargs(kokkos):
     return cmdargs
 
 
-def _run(lmp, args, selection, overlay=False):
+def _run(lmp: lammps, args: argparse.Namespace, overlay: bool = False) -> dict:
     comm = MPI.COMM_WORLD
     assert lmp.get_mpi_comm().size == args.ranks
     pair = "dpa4spin/kk" if args.kokkos else "dpa4spin"
     atom = "spin/kk" if args.kokkos else "spin"
     integrator = "verlet/kk" if args.kokkos else "verlet"
+    # The generic host fix marks all atom arrays as host-modified, including
+    # magnetic-force DualViews. Kokkos NVE modifies only positions and velocities.
+    nve_style = "nve/kk" if args.kokkos else "nve"
     assert lmp.has_style("pair", pair), f"Missing plugin pair style {pair}"
-    pair_args = "" if selection == "default" else f" magnetic_force {selection}"
-    substyle = f"{pair} {args.model.resolve()}{pair_args}"
+    substyle = f"{pair} {args.model.resolve()}"
     if overlay:
         style = "hybrid/overlay/kk" if args.kokkos else "hybrid/overlay"
         pair_command = f"pair_style {style} {substyle} {substyle}"
@@ -121,13 +126,15 @@ def _run(lmp, args, selection, overlay=False):
         "compute fmprop all property/atom fmx fmy fmz",
         "compute spprop all property/atom spx spy spz sp",
         "compute pvirial all pressure NULL pair",
+        *(
+            ("neigh_modify every 2 delay 0 check no", f"fix integrate all {nve_style}")
+            if args.cadence
+            else ()
+        ),
         "run 0",
     ):
         lmp.command(command)
-    assert lmp.extract_pair_dimension("fm_cartesian_force") == 0
-    flag = _pair_pointer(lmp, "fm_cartesian_force", ctypes.POINTER(ctypes.c_int))[0]
     result = {
-        "convention": flag,
         "pair_style": lmp.extract_global("pair_style"),
         "run_style_active": lmp.eval(f"is_active(run_style,{integrator})"),
         "atom_style": lmp.extract_global("atom_style"),
@@ -140,6 +147,17 @@ def _run(lmp, args, selection, overlay=False):
     }
     assert result["pair_style"] == style
     assert result["atom_style"] == atom
+    if args.cadence:
+        result["neighbor_ages"] = [lmp.extract_setting("neigh_ago")]
+        result["local_count_history"] = [result["local_counts"]]
+        for _ in range(3):
+            lmp.command("run 1 pre no post no")
+            result["snapshots"].append(_snapshot(lmp))
+            result["neighbor_ages"].append(lmp.extract_setting("neigh_ago"))
+            result["local_count_history"].append(
+                comm.allgather(lmp.extract_setting("nlocal"))
+            )
+        return result
     # Repeated computes expose stale ghost magnetic-force accumulation.
     for _ in range(2):
         lmp.command("run 0")
@@ -169,6 +187,12 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--kokkos", action="store_true")
     parser.add_argument("--ranks", type=int, default=1)
+    parser.add_argument(
+        "--cadence",
+        action="store_true",
+        help="Run only the plain pair style over three steps with a two-step "
+        "neighbor cadence.",
+    )
     args = parser.parse_args()
     assert MPI.COMM_WORLD.size == args.ranks, (
         f"Expected {args.ranks} MPI ranks, got {MPI.COMM_WORLD.size}: "
@@ -177,17 +201,10 @@ def main():
     results = {}
     library = None
     try:
-        for selection, overlay in (
-            ("default", False),
-            ("precession", False),
-            ("cartesian", False),
-            ("precession", True),
-            ("cartesian", True),
-        ):
+        for overlay in (False,) if args.cadence else (False, True):
             with lammps(cmdargs=_cmdargs(args.kokkos), comm=MPI.COMM_WORLD) as lmp:
                 library = lmp.lib
-                key = f"overlay_{selection}" if overlay else selection
-                results[key] = _run(lmp, args, selection, overlay)
+                results["overlay" if overlay else "pair"] = _run(lmp, args, overlay)
         if MPI.COMM_WORLD.rank == 0:
             args.output.write_text(json.dumps(results))
     finally:

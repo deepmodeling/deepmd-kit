@@ -14,6 +14,8 @@
 
 #include <cstdint>
 
+#include "pair_potential.h"
+
 namespace deepmd_dpa4c {
 
 constexpr int kWarpSize = 32;
@@ -41,11 +43,13 @@ constexpr int kFoldedModes = 4;
 /// 64-bit fixed point, and the pair energy fp64.
 struct Arguments {
   long node_count = 0;
-  // Node count of the whole system, from which the edge scans choose their
-  // row split and their co-scheduled blocks, both of which change the
-  // summation order of a row, so that every run of a tiled system takes the
-  // schedule of the whole system.
+  // Rows of the whole system that the operator evaluates -- every node, or the
+  // owned nodes of a node set with halo rows -- from which the edge scans
+  // choose their row split and their co-scheduled blocks, both of which change
+  // the summation order of a row, so that every run of a tiled system takes
+  // the schedule of the whole system.
   long system_node_count = 0;
+  // Slots of the edge storage, at least the edges of every row.
   long edge_count = 0;
   int lmax = 2;
   int interval_count = 0;
@@ -76,21 +80,18 @@ struct Arguments {
   float rcut = 0.0f;
   float eps = 0.0f;
   float degree_floor = 0.0f;
-  // Inner bridging switch of the edge envelope, as the two dimensionless
-  // fractions of a pair's own length scale that bound its window and the
-  // reciprocal of their difference. A bridged launch without a window keeps
-  // the outer fraction at zero, which no edge lies below.
-  float f_inner = 0.0f;
-  float f_outer = 0.0f;
-  float inverse_f_width = 0.0f;
-  // Whether the launch belongs to a zone-bridging composition, that is whether
-  // it carries a bridging window or an analytical pair potential. Only the
-  // bridged specializations evaluate either.
+  // Inner fraction `a` of the contact clamp, in (0, 1): the separation a
+  // pair is read at is frozen at and below `a` times its data edge
+  // (`contact_edges`). Zero without a clamp.
+  float contact_inner = 0.0f;
+  // Whether the launch belongs to a bridged model, that is whether it carries
+  // a contact clamp or an analytical pair potential. Only the bridged
+  // specializations evaluate either.
   bool bridged = false;
   bool canonical = false;
-  // Whether the native spin branch is active. The neighbour spin width is
-  // derived from the degree profile, so presence is the whole runtime choice.
-  bool has_spin = false;
+  // Native-spin symmetry: zero without spin, one for orbit, two for exchange.
+  // The channel width follows the degree profile.
+  std::uint8_t spin_mode = 0;
   IndexKind index_kind = IndexKind::Bits64;
 
   const void* edge_index = nullptr;
@@ -118,25 +119,18 @@ struct Arguments {
   const float* coupling_value = nullptr;
   const float* output_mean = nullptr;
   const float* output_inv_std = nullptr;
-  // Per-element length scale in Å, indexed by atom type over the whole type
-  // table including the padding row. The sum of the two entries of a pair is
-  // the distance the window fractions are measured against. Read by the
-  // bridged specializations only.
-  const float* contact_radius = nullptr;
+  // Data edge of every ordered type pair in Å, the shortest separation that the
+  // configured number of training frames reach, in row
+  // `center * type_count + neighbor` over the whole type table including the
+  // padding row. Null without a contact clamp.
+  // Read by the bridged specializations only.
+  const float* contact_edges = nullptr;
   const float* descriptor_gradient = nullptr;
   const float* state = nullptr;
   // Device word that stays zero while every node of the system carries the
   // type of node zero. A canonical launch of such a system scans the bare
   // radial features; null disables that scan.
   const int* type_mismatch = nullptr;
-  // Largest length-scale radius among the node types of the system, written
-  // on the device by the scan of the node types that precedes the edge kernels
-  // of a canonical launch, or null. No bond of a row lies inside a bridging
-  // window once it is at least `f_outer` times the sum of the centre radius
-  // and this radius long, so the edge scans resolve the window of a pair only
-  // for the shorter bonds of the row.
-  const float* largest_radius = nullptr;
-
   // === Native spin ===
   // Present together or not at all. ``spin`` is indexed by absolute node id,
   // like ``atype``, because neighbour lookups address it with source indices.
@@ -151,11 +145,10 @@ struct Arguments {
   // === Analytical pair potential ===
   // Present together or not at all, and read by the edge backward only, which
   // is the one scan that sees an edge together with the energy cotangent of
-  // its destination. ``pair_table`` holds, per ordered type pair, the four
-  // amplitudes and the four decay rates of the screened Coulomb series
-  // V(r) = (1/r) sum_k A_k exp(-c_k r). ``pair_seed`` is that cotangent and
-  // ``pair_energy`` the fp64 node energies onto which the scan adds V/2 per
-  // edge. Both are node indexed and offset by the caller, like ``descriptor``.
+  // its destination. Each table row defines a truncated screened potential.
+  // ``pair_seed`` is that cotangent and ``pair_energy`` the fp64 node energies
+  // onto which the scan adds phi/2 per edge. Both are node indexed and offset
+  // by the caller, like ``descriptor``.
   const float* pair_table = nullptr;
   const double* pair_seed = nullptr;
   double* pair_energy = nullptr;
@@ -163,6 +156,10 @@ struct Arguments {
   float* descriptor = nullptr;
   float* state_out = nullptr;
   float* moment_gradient = nullptr;
+  // Divisor columns of the descriptor, two per node and offset by the caller
+  // like ``descriptor``, which a readout launched apart from the scan that
+  // emits them copies (FirstStage::Readout); null for every other launch.
+  const float* divisors = nullptr;
   // Per-edge energy cotangent. A null pointer skips the store, which a
   // backward that assembles the force itself only needs for the per-atom
   // virial.
@@ -273,8 +270,11 @@ constexpr int degree_two_width(int channels) {
 // Narrower profiles have too few scalar-only channels for an expansion
 // to save reads. The compression adopts the basis only when it reproduces the
 // channels of the descriptor at hand, so a model of higher rank keeps the
-// direct scan.
-constexpr int low_rank_basis(int channels) {
+// direct scan. The wider native basis serves single-type geometry alone.
+constexpr int low_rank_basis(int channels, int spin_mode = 0) {
+  if (spin_mode) {
+    return channels == 128 ? 64 : 0;
+  }
   return channels == 64 || channels == 128 ? 32 : 0;
 }
 
@@ -324,22 +324,13 @@ constexpr int bispectrum_prefix(int lmax, int k1, int k2, int a, int b, int c) {
 // Degree triples that the sparse coupling artifact must describe, that is
 // every allowed triple except the two the kernel contracts in closed form.
 constexpr int coupling_record_count(int lmax) {
-  int total = 0;
-  for (int l1 = 1; l1 <= lmax; ++l1) {
-    for (int l2 = l1; l2 <= lmax; ++l2) {
-      for (int l3 = l2; l3 <= lmax; ++l3) {
-        if (l3 > l1 + l2 || (l1 + l2 + l3) % 2 != 0) {
-          continue;
-        }
-        if ((l1 == 1 && l2 == 1 && l3 == 2) ||
-            (l1 == 2 && l2 == 2 && l3 == 2)) {
-          continue;
-        }
-        ++total;
-      }
-    }
+  if (lmax < 2) {
+    return 0;
   }
-  return total;
+  if (lmax % 2 == 0) {
+    return ((lmax * lmax * lmax) + (9 * lmax * lmax) + (2 * lmax) - 48) / 24;
+  }
+  return ((lmax * lmax * lmax) + (9 * lmax * lmax) - lmax - 57) / 24;
 }
 
 // Number of lanes that cooperate on one edge. A warp therefore keeps
@@ -450,41 +441,43 @@ struct Lockstep {
 /// rows of one block.
 constexpr float kLockstepWindow = 4.0f;
 
-// ``HasSpin`` is deliberately without a default. It changes the moment
+// ``SpinMode`` is zero without spin, one for orbit and two for exchange.
+// It is deliberately without a default because it changes the moment
 // layout and the descriptor width, so an instantiation that omits it would
 // silently read a spin-free layout out of a spin-conditioned buffer.
 // ``NodeLanes`` overrides the node-group width; zero selects the narrow
 // candidate. Only the node kernels instantiate the override, so the edge
 // kernels and every existing use of ``Profile`` are unaffected.
-template <int Channels, int Lmax, bool HasSpin, int NodeLanes = 0>
+template <int Channels, int Lmax, int SpinMode, int NodeLanes = 0>
 struct Profile {
+  static constexpr bool HasOrbit = SpinMode == 1;
   static constexpr int C0 = Channels;
   static constexpr int C1 = degree_one_width(Channels);
   static constexpr int C2 = degree_two_width(Channels);
   static constexpr int K1 = C2;
   static constexpr int K2 = 2;
-  // Width of the low-rank expansion of the scalar-only channels, zero for a
-  // profile whose single-type scan reads the channels directly. The spin
-  // branch never folds, so a spin-conditioned profile carries none.
-  static constexpr int Basis = HasSpin ? 0 : low_rank_basis(Channels);
+  // Capacity of the certified scalar-only expansion. Native channels stay
+  // in the degree-one prefix and retain their edge-local amplitudes.
+  static constexpr int Basis = low_rank_basis(Channels, SpinMode);
 
   // === Native spin widths ===
-  // The neighbour spin width is derived from the degree-two width, so the
-  // presence of the branch is the only new compile-time degree of freedom and
-  // the instantiation matrix doubles rather than growing by a factor of four.
-  static constexpr int Cs = HasSpin ? C2 : 0;
+  // The neighbour spin width follows the degree-two width. Exchange omits
+  // the bond-projected vector family and the geometric quadrupole cross Gram.
+  static constexpr int Cs = SpinMode ? C2 : 0;
   // Reduced families: neighbour moment magnitude, magnetic coordination, the
   // isotropic neighbour spin vector, the bond-projected neighbour spin vector,
   // and the single neighbour spin quadrupole.
-  static constexpr int SpinEdgeWidth = HasSpin ? 8 * Cs + 5 : 0;
+  static constexpr int SpinEdgeWidth =
+      SpinMode ? (HasOrbit ? 8 : 5) * Cs + 5 : 0;
   // Node-local on-site vector and quadrupole, written outside the division.
-  static constexpr int SpinNodeWidth = HasSpin ? 8 : 0;
+  static constexpr int SpinNodeWidth = SpinMode ? 8 : 0;
   static constexpr int SpinMomentWidth = SpinEdgeWidth + SpinNodeWidth;
   // Channel width of the joint degree-one spin block: the on-site moment, the
   // isotropic neighbour channels and the bond-projected neighbour channels.
   // The two neighbour families share one grading, so one Gram over the joint
   // block emits every admissible degree-one spin invariant.
-  static constexpr int SpinVectorWidth = HasSpin ? 1 + 2 * Cs : 0;
+  static constexpr int SpinVectorWidth =
+      SpinMode ? 1 + (HasOrbit ? 2 : 1) * Cs : 0;
 
   // Flat moment layout: degree zero, degree one, degree two, the
   // single-channel high degrees in increasing order, then the spin families.
@@ -496,13 +489,13 @@ struct Profile {
   static constexpr int High4 = Lmax >= 4 ? 9 : 0;
   static constexpr int HighCount = High3 + High4;
   static constexpr int SpinOffset = HighOffset + HighCount;
-  static constexpr int SpinMagnitude = SpinOffset;               // Cs
-  static constexpr int SpinCoordination = SpinMagnitude + Cs;    // Cs
-  static constexpr int SpinVector = SpinCoordination + Cs;       // 3 * Cs
-  static constexpr int SpinBond = SpinVector + 3 * Cs;           // 3 * Cs
-  static constexpr int SpinTensor = SpinBond + 3 * Cs;           // 5
-  static constexpr int SpinOnsiteVector = SpinTensor + 5;        // 3
-  static constexpr int SpinOnsiteTensor = SpinOnsiteVector + 3;  // 5
+  static constexpr int SpinMagnitude = SpinOffset;             // Cs
+  static constexpr int SpinCoordination = SpinMagnitude + Cs;  // Cs
+  static constexpr int SpinVector = SpinCoordination + Cs;     // 3 * Cs
+  static constexpr int SpinBond = SpinVector + 3 * Cs;         // 3 * Cs
+  static constexpr int SpinTensor = SpinBond + (HasOrbit ? 3 * Cs : 0);  // 5
+  static constexpr int SpinOnsiteVector = SpinTensor + 5;                // 3
+  static constexpr int SpinOnsiteTensor = SpinOnsiteVector + 3;          // 5
   static constexpr int MomentWidth = SpinOffset + SpinMomentWidth;
   static constexpr int StateWidth = MomentWidth + 2;
 
@@ -532,9 +525,9 @@ struct Profile {
   // on-site self-term, which the identity |B_2(s)|^2 = |s|^4 makes a per-type
   // constant times the square of the vector block's on-site self-term.
   static constexpr int SpinGramVector =
-      HasSpin ? triangular(SpinVectorWidth) : 0;
-  static constexpr int SpinGramTensor = HasSpin ? 2 : 0;
-  static constexpr int SpinCross = HasSpin ? 2 * C2 : 0;
+      SpinMode ? triangular(SpinVectorWidth) : 0;
+  static constexpr int SpinGramTensor = SpinMode ? 2 : 0;
+  static constexpr int SpinCross = HasOrbit ? 2 * C2 : 0;
   static constexpr int SpinDim =
       SpinGramVector + SpinGramTensor + SpinCross + 2 * Cs;
   static constexpr int OutputSpinGramVector = OutputQuartic + Quartic;
@@ -555,9 +548,9 @@ struct Profile {
   // measured widening lost more to the reduced edge concurrency than it
   // recovered in register pressure.
   static constexpr int ForwardEdgeWidth =
-      HasSpin ? EdgeMap<Channels>::SpinForward : EdgeMap<Channels>::Forward;
+      SpinMode ? EdgeMap<Channels>::SpinForward : EdgeMap<Channels>::Forward;
   static constexpr int BackwardEdgeWidth =
-      HasSpin ? EdgeMap<Channels>::SpinBackward : EdgeMap<Channels>::Backward;
+      SpinMode ? EdgeMap<Channels>::SpinBackward : EdgeMap<Channels>::Backward;
   static constexpr int NodeWidth =
       NodeLanes != 0 ? NodeLanes : kNodeLanesNarrow;
   static constexpr int NodeGroups = kWarpSize / NodeWidth;
@@ -572,7 +565,7 @@ struct Profile {
 /// the cost of occupancy. Zero sets no budget and leaves the register count to
 /// the compiler. The comments below count one-warp blocks, which a
 /// multiprocessor holds as many of as its block limit allows.
-template <int Channels, int Lmax, bool HasModes, bool HasSpin, bool Backward>
+template <int Channels, int Lmax, bool HasModes, int SpinMode, bool Backward>
 constexpr int edge_resident_blocks() {
 #if defined(__CUDA_ARCH__) && \
     (__CUDA_ARCH__ == 890 || (__CUDA_ARCH__ >= 1200 && __CUDA_ARCH__ < 1300))
@@ -592,7 +585,7 @@ constexpr int edge_resident_blocks() {
   // others, whose geometric state at degree three or whose spin payload on
   // lanes that own few channels exceeds eighty registers, run fastest on the
   // compiler's own count.
-  if (HasSpin) {
+  if (SpinMode) {
     return Lmax == 2 && (!Backward || Channels >= 64) ? 24 : 0;
   }
   return HasModes && Channels >= 64 ? 24 : 0;
@@ -625,7 +618,7 @@ constexpr int edge_resident_blocks() {
   // three serve the generic graph path and the LAMMPS systems of more than
   // eight node types; unmeasured on 7.0, they keep the thirty-two blocks of the
   // architectures without a branch of their own.
-  if (HasSpin) {
+  if (SpinMode) {
     return Lmax == 2 ? (!Backward || Channels >= 64 ? 24 : 0) : 32;
   }
   return 24;
@@ -647,7 +640,7 @@ constexpr int edge_resident_blocks() {
   // at twenty-four blocks. The degree-three spin kernels keep thirty-two
   // blocks; a system of at most eight types scans them slotted, so no
   // production path has measured them.
-  if (HasSpin) {
+  if (SpinMode) {
     return Lmax == 2 ? (Backward ? 0 : 24) : 32;
   }
   return Backward && Channels == 8 ? 24 : 32;

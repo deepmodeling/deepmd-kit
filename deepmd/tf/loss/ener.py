@@ -45,6 +45,16 @@ def custom_huber_loss(
     return tf.reduce_mean(loss)
 
 
+def _validate_energy_loss_options(loss_func: str, symm_virial: bool) -> None:
+    """Reject comparison modes that the TensorFlow 1 energy losses do not implement."""
+    if loss_func != "mse":
+        raise NotImplementedError(
+            f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+        )
+    if symm_virial:
+        raise NotImplementedError("TensorFlow 1 does not support symm_virial=True.")
+
+
 class EnerStdLoss(Loss):
     r"""Standard loss function for DP models.
 
@@ -108,6 +118,8 @@ class EnerStdLoss(Loss):
         normalized by 1/N before applying the Huber loss, so ``intensive_ener_virial`` may not
         change behavior in that path. The default is false for backward compatibility
         with models trained using deepmd-kit <= 3.1.3.
+    symm_virial : bool
+        Must be false. This backend compares the full virial tensor.
     **kwargs
         Other keyword arguments.
     """
@@ -135,12 +147,10 @@ class EnerStdLoss(Loss):
         loss_func: str = "mse",
         f_use_norm: bool = False,
         intensive_ener_virial: bool = False,
+        symm_virial: bool = False,
         **kwargs: Any,
     ) -> None:
-        if loss_func != "mse":
-            raise NotImplementedError(
-                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
-            )
+        _validate_energy_loss_options(loss_func, symm_virial)
         self.loss_func = loss_func
         self.f_use_norm = f_use_norm
         if self.f_use_norm:
@@ -633,11 +643,9 @@ class EnerSpinLoss(Loss):
         use_spin: list | None = None,
         loss_func: str = "mse",
         intensive_ener_virial: bool = False,
+        symm_virial: bool = False,
     ) -> None:
-        if loss_func != "mse":
-            raise NotImplementedError(
-                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
-            )
+        _validate_energy_loss_options(loss_func, symm_virial)
         self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e

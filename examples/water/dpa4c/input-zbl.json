@@ -13,7 +13,7 @@
     "fitting_net": {
       "seed": 42
     },
-    "_comment_bridging": "ZBL acts on every pair inside rcut. A pair closer than the inner radius of the window leaves the DPA4C descriptor and interacts through ZBL alone; the pair enters the descriptor smoothly up to the outer radius. Both radii are fractions of the covalent bond length of the element pair they apply to, so one setting covers every combination in the type map.",
+    "_comment_bridging": "ZBL ends at 1.1 times the covalent bond length of each element pair and is added to the learned energy. Below the data edge of a pair, the third smallest of the shortest separations that the training frames hold for it with repeated values counted once, the descriptor reads a separation that moves smoothly to a bounded value at 0.75 times the edge; at and below that point ZBL alone carries the repulsion of the closer pair.",
     "bridging_method": "zbl"
   },
   "learning_rate": {
@@ -49,7 +49,6 @@
         "../data/data_1",
         "../data/data_2"
       ],
-      "_comment_min_pair_dist": "A bridged model derives its own frame filter from the bridging window, so `min_pair_dist` must not be set here.",
       "batch_size": 1
     },
     "validation_data": {

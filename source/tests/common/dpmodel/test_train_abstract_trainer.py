@@ -414,3 +414,44 @@ def test_multitask_training_uses_single_task_as_collection_item(
     lcurve_text = lcurve.read_text()
     assert "rmse_val_task_a" in lcurve_text
     assert "rmse_trn_task_b" in lcurve_text
+
+
+def test_symmetric_virial_uses_learning_curve_column_names(tmp_path: Path) -> None:
+    from deepmd.dpmodel.loss.ener import (
+        EnergyLoss,
+    )
+
+    class VirialTrainer(DummyTrainer):
+        def evaluate_training(
+            self, task: TrainingTask, step: int, step_result: TrainStepResult | None
+        ) -> dict[str, float]:
+            return {"rmse": 1.0, "rmse_v": 2.0}
+
+    rows = []
+    for enabled in (False, True):
+        path = tmp_path / f"curve_{enabled}.out"
+        trainer = VirialTrainer(TrainerConfig(num_steps=1, disp_file=str(path)))
+        trainer.losses = {"Default": EnergyLoss(1.0, symm_virial=enabled)}
+        trainer.run(TrainingTaskCollection.single(DummyData([1.0])))
+        content = path.read_text()
+        assert "symm_v=" not in content
+        header = next(
+            line for line in content.splitlines() if line.startswith("# step")
+        )
+        name = "rmse_symm_v_trn" if enabled else "rmse_v_trn"
+        assert header.split() == ["#", "step", "rmse_trn", name, "lr"]
+        rows.append([line for line in content.splitlines() if not line.startswith("#")])
+    assert rows[0] == rows[1]
+
+
+def test_symmetric_virial_display_is_task_specific() -> None:
+    writer = LearningCurveWriter(["a", "b"], symm_virial_tasks=["a"])
+    values = {"a": {"rmse": 1.0, "mae_v": 2.0}, "b": {"rmse": 3.0, "mae_v": 4.0}}
+    header = writer.format_header(values, values)
+    assert "mae_symm_v_val_a" in header
+    assert "mae_symm_v_trn_a" in header
+    assert "mae_v_val_b" in header
+    assert "mae_v_trn_b" in header
+    assert list(values["a"]) == ["rmse", "mae_v"]
+    single = LearningCurveWriter(["a"], symm_virial_tasks=["a"])
+    assert "mae_symm_v_trn" in single.format_header(values["a"], values["a"])

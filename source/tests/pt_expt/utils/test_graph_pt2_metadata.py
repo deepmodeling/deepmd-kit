@@ -143,7 +143,7 @@ def _read_metadata(pt2_path: str) -> dict:
 
 @pytest.mark.parametrize(
     "lower_input_kind",
-    ["nlist", "graph", "dpa1_canonical", "dpa4c_canonical", "edge_vec"],
+    ["nlist", "graph", "dpa_canonical", "edge_vec"],
 )
 def test_pt2_serialization_preserves_lower_input_kind(
     tmp_path, lower_input_kind: str
@@ -164,7 +164,7 @@ def test_pt2_serialization_preserves_lower_input_kind(
 
 @pytest.mark.parametrize(
     "lower_input_kind",
-    ["nlist", "graph", "dpa1_canonical", "dpa4c_canonical", "edge_vec"],
+    ["nlist", "graph", "dpa_canonical", "edge_vec"],
 )
 def test_pte_serialization_preserves_lower_input_kind(
     tmp_path, monkeypatch: pytest.MonkeyPatch, lower_input_kind: str
@@ -237,6 +237,22 @@ def test_pte_serialization_legacy_lower_input_kind_fallback(
 @pytest.fixture(scope="module")
 def dpa1_dpmodel_data() -> dict:
     return _build_dpa1_data()
+
+
+@pytest.fixture(scope="module")
+def dpa1_dense_pt2(dpa1_dpmodel_data, tmp_path_factory) -> str:
+    """Compile the read-only dense artifact once for its metadata consumers.
+
+    CI groups module-level tests from this file on the same shard, so both
+    consumers share the artifact without changing their independent checks.
+    """
+    model_file = str(tmp_path_factory.mktemp("dpa1_dense") / "m_dense.pt2")
+    deserialize_to_file(
+        model_file,
+        copy.deepcopy(dpa1_dpmodel_data),
+        do_atomic_virial=True,
+    )
+    return model_file
 
 
 def test_convert_regular_pt_dpa1_preserves_dense_semantics(tmp_path) -> None:
@@ -481,23 +497,16 @@ def test_compressed_graph_uses_compute_precision_edge_geometry(
     assert _supports_graph_export(_Model()) is (statistics_dtype == torch.float32)
 
 
-def test_dense_pt2_has_lower_input_kind_nlist(dpa1_dpmodel_data) -> None:
+def test_dense_pt2_has_lower_input_kind_nlist(dpa1_dense_pt2) -> None:
     """Default (``lower_kind="nlist"``) -> metadata ``lower_input_kind == "nlist"``."""
-    with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "m_dense.pt2")
-        deserialize_to_file(
-            p,
-            copy.deepcopy(dpa1_dpmodel_data),
-            do_atomic_virial=True,
-        )
-        meta = _read_metadata(p)
+    meta = _read_metadata(dpa1_dense_pt2)
     assert meta["lower_input_kind"] == "nlist"
     assert meta["graph_edge_dtype"] == "float64"
     # edge_capacity is a graph-only artifact constant; the dense path omits it.
     assert "edge_capacity" not in meta
 
 
-def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> None:
+def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dense_pt2) -> None:
     """A non-default ``neighbor_graph_method`` on a NLIST-form artifact raises.
 
     The knob is consumed only by the artifacts whose inputs the evaluator
@@ -510,17 +519,10 @@ def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> 
         DeepPot,
     )
 
-    with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "m_dense.pt2")
-        deserialize_to_file(
-            p,
-            copy.deepcopy(dpa1_dpmodel_data),
-            do_atomic_virial=True,
-        )
-        with pytest.raises(ValueError, match="use nlist_backend"):
-            DeepPot(p, neighbor_graph_method="vesin")
-        # The default remains valid for nlist-form artifacts.
-        DeepPot(p)
+    with pytest.raises(ValueError, match="use nlist_backend"):
+        DeepPot(dpa1_dense_pt2, neighbor_graph_method="vesin")
+    # The default remains valid for nlist-form artifacts.
+    DeepPot(dpa1_dense_pt2)
 
 
 @pytest.mark.parametrize(

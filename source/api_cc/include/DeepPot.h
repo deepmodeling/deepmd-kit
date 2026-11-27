@@ -436,6 +436,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
       const std::int64_t* d_source_order,
       const double* d_coord,
       void* world,
+      const DP_HaloExchange* halo,
       const double* box,
       const std::int64_t nloc,
       const std::int64_t nall_nodes,
@@ -445,6 +446,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
   virtual bool uses_fp32_edge_vectors() const;
   virtual bool uses_canonical_graph_inference() const;
   virtual bool canonical_graph_requires_source_csr() const;
+  virtual bool canonical_graph_requires_halo() const;
   virtual bool has_long_range() const;
 };
 
@@ -913,6 +915,16 @@ class DeepPot : public DeepBaseModel {
   bool canonical_graph_requires_source_csr() const;
 
   /**
+   * @brief Whether a compact canonical evaluation of a node set with halo
+   * nodes requires its halo exchange.
+   *
+   * A model with further message-passing blocks reads features of the sources
+   * of its edges, which compute_canonical_graph_gpu() refreshes on the halo
+   * nodes from their owners through the halo exchange of the node set.
+   */
+  bool canonical_graph_requires_halo() const;
+
+  /**
    * @brief Whether the model carries a long-range module.
    *
    * Such a module sums its interaction over every pair of atoms of the
@@ -956,8 +968,24 @@ class DeepPot : public DeepBaseModel {
    * the communicator, reads the positions of the nodes each rank owns, and
    * is evaluated on every rank at every step, a rank without nodes included
    * (``nall_nodes``, ``nloc`` and ``edge_storage`` zero), whose buffers
-   * sized by the nodes or by the edge storage may then be null. Every other
-   * model ignores it.
+   * sized by the nodes or by the edge storage may then be null. A model with
+   * further message-passing blocks (canonical_graph_requires_halo())
+   * exchanges the features of halo nodes through it with the ranks of
+   * ``halo``. Every other model ignores it.
+   * @param[in] halo The halo exchange of the node set, in host memory with
+   * its send list on the model device, or null for a node set without halo
+   * nodes. A model with further message-passing blocks reads features of the
+   * sources of its edges, so a node set with halo nodes requires it: the
+   * model refreshes the halo nodes from their owners before every block that
+   * reads them and evaluates the owned nodes alone, that is the energies of
+   * the owned nodes, the virial of the edges they own and the force of these
+   * edges on both of their nodes, so that the forces on the halo nodes are
+   * the contributions of this rank, which the caller folds onto their
+   * owners. Every rank of the decomposition then calls the model at every
+   * step, a rank without owned nodes included, and the messages travel on
+   * ``world``. Such a node set is evaluated without replay, and the host
+   * waits for the stream once before every swap with another rank. Every
+   * other model rejects a halo exchange.
    * @param[in] box The cell of a periodic system in host memory, nine values
    * in the length unit of the model, row-major with the lattice vectors as
    * rows, or null for a non-periodic system. A model with a long-range
@@ -1006,6 +1034,7 @@ class DeepPot : public DeepBaseModel {
                                    const std::int64_t* d_source_order,
                                    const double* d_coord,
                                    void* world,
+                                   const DP_HaloExchange* halo,
                                    const double* box,
                                    const std::int64_t nloc,
                                    const std::int64_t nall_nodes,

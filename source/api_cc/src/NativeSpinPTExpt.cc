@@ -242,35 +242,6 @@ torch::Tensor make_aparam_tensor(const std::vector<double>& aparam,
   return deepmd::extend_graph_aparam(owned, node_count, nloc, dim_aparam);
 }
 
-/**
- * @brief Build the charge/spin input of the conditional graph tail.
- *
- * The artifact consumes the condition in double precision, shaped
- * ``(1, dim_chg_spin)``. A zero width means the forward has no such slot --
- * either because the model carries no condition at all, or because
- * compression moved it into frozen tables -- so the returned tensor is
- * undefined and never marshalled.
- */
-torch::Tensor make_chg_spin_tensor(const std::vector<double>& charge_spin,
-                                   const int dim_chg_spin,
-                                   const torch::Device& device) {
-  if (dim_chg_spin == 0) {
-    return torch::Tensor();
-  }
-  if (static_cast<int>(charge_spin.size()) != dim_chg_spin) {
-    throw deepmd::deepmd_exception(
-        "the charge/spin condition holds " +
-        std::to_string(charge_spin.size()) +
-        " values but the model expects dim_chg_spin=" +
-        std::to_string(dim_chg_spin) + ".");
-  }
-  return torch::from_blob(const_cast<double*>(charge_spin.data()),
-                          {1, dim_chg_spin},
-                          torch::TensorOptions().dtype(torch::kFloat64))
-      .clone()
-      .to(device);
-}
-
 }  // namespace
 
 void NativeSpinPTExpt::translate_error(std::function<void()> f) {
@@ -322,7 +293,7 @@ void NativeSpinPTExpt::init(const std::string& model,
 
   const int gpu_num = torch::cuda::device_count();
   gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
-  gpu_enabled = torch::cuda::is_available();
+  gpu_enabled = ptexpt::package_runs_on_cuda(model);
   if (!gpu_enabled) {
     std::cout << "load model from: " << model << " to cpu" << std::endl;
   } else {
@@ -345,16 +316,13 @@ void NativeSpinPTExpt::init(const std::string& model,
           : std::string();
   if (lower_input_kind == "graph") {
     canonical_abi_ = false;
-  } else if (lower_input_kind == "dpa4c_canonical") {
+  } else if (lower_input_kind == ptexpt::kCanonicalLowerKind) {
     canonical_abi_ = true;
-  } else if (lower_input_kind == "dpa1_canonical") {
-    throw deepmd::deepmd_exception(
-        "the dpa1_canonical compact artifact has no moment slot; freeze a "
-        "native-spin model as 'graph' or 'dpa4c_canonical'.");
   } else {
     throw deepmd::deepmd_exception(
-        "a native-spin artifact must declare lower_input_kind 'graph' or "
-        "'dpa4c_canonical', but this archive declares '" +
+        std::string("a native-spin artifact must declare lower_input_kind "
+                    "'graph' or '") +
+        ptexpt::kCanonicalLowerKind + "', but this archive declares '" +
         lower_input_kind + "'.");
   }
 
@@ -398,18 +366,22 @@ void NativeSpinPTExpt::init(const std::string& model,
           "indices; "
           "re-freeze the model with the current DeePMD-kit version.");
     }
-    // The compact lower is traced with the nine graph and moment inputs
-    // alone, so a model declaring any conditioning width has no slot to
-    // receive it.
-    if (dfparam > 0 || daparam > 0 || dchgspin > 0) {
+    // The compact lower reads the charge/spin condition after the moment, and
+    // no frame or atomic parameter.
+    if (dfparam > 0 || daparam > 0) {
       throw deepmd::deepmd_exception(
-          "the compact canonical native-spin ABI has no fparam, aparam, or "
-          "charge/spin slot, "
-          "but this model declares dim_fparam=" +
+          "the compact canonical native-spin ABI has no fparam or aparam "
+          "slot, but this model declares dim_fparam=" +
           std::to_string(dfparam) + ", dim_aparam=" + std::to_string(daparam) +
-          ", dim_chg_spin=" + std::to_string(dchgspin) +
           "; freeze it with the graph lower instead.");
     }
+    // What the compact lower reads beyond the destination-major graph, as the
+    // archive records it: the source CSR on every call, and the reverse of
+    // every edge.
+    canonical_requires_source_csr_ =
+        metadata["canonical_requires_source_csr"].as_bool();
+    canonical_requires_reciprocal_ =
+        metadata["canonical_requires_reciprocal"].as_bool();
   }
   // The per-atom virial is a structural part of the host contract, whose paths
   // reduce it into the global virial; the device-resident entry point returns
@@ -482,10 +454,10 @@ void NativeSpinPTExpt::init(const std::string& model,
     }
   }
 
-  // Charge-state fold.  Unlike the with-comm artifact, a failure here is not
-  // a degraded mode to defer: the metadata field is the archive's claim that
-  // the fold ships with it, so an archive that declares the constants but
-  // cannot supply the fold is malformed.
+  // Charge-state fold.  A failure here is not a degraded mode to defer: the
+  // metadata field is the archive's claim that the fold ships with it, so an
+  // archive that declares the constants but cannot supply the fold is
+  // malformed.
   charge_state_fold_ = deepmd::ptexpt::ChargeStateFold::load(
       model, metadata, gpu_enabled, gpu_id);
   if (charge_state_fold_) {
@@ -508,6 +480,15 @@ void NativeSpinPTExpt::init(const std::string& model,
     chg_spin_table_ranges_ =
         read_chg_spin_table_ranges(metadata, settable_chgspin);
     check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
+  }
+  // The compact lower of a model that reads its charge/spin condition as an
+  // input takes it from memory of the model, which a replay reads again and
+  // ``set_charge_spin`` rewrites in place.
+  if (canonical_abi_ && dchgspin > 0) {
+    canonical_charge_spin_ = ptexpt::make_chg_spin_tensor(
+        default_chg_spin_, dchgspin,
+        gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
+                    : torch::Device(torch::kCPU));
   }
 
   int num_intra_nthreads, num_inter_nthreads;
@@ -568,6 +549,19 @@ void NativeSpinPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
       }
     });
   }
+  if (canonical_charge_spin_.defined()) {
+    const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
+    translate_error([&] {
+      // Evaluations still in flight, and a captured evaluation, read the
+      // condition in place, so it changes once the device has finished them;
+      // the copy from host memory returns once the condition is written.
+      if (gpu_enabled) {
+        ptexpt::synchronize_device(gpu_id);
+      }
+      canonical_charge_spin_.copy_(ptexpt::make_chg_spin_tensor(
+          charge_spin, dchgspin, torch::Device(torch::kCPU)));
+    });
+  }
   default_chg_spin_.swap(next_charge_spin);
 }
 
@@ -582,14 +576,34 @@ void NativeSpinPTExpt::get_type_map(std::string& type_map_str) {
 }
 
 std::vector<torch::Tensor> NativeSpinPTExpt::run_model_canonical(
-    const CanonicalGraphTensorPack& graph, const torch::Tensor& spin) {
+    const CanonicalGraphTensorPack& graph,
+    const torch::Tensor& spin,
+    const torch::Tensor& charge_spin,
+    const void* world,
+    const ptexpt::HaloTensors& halo) {
   // The moment shares the float32 precision of the compact geometry; the cast
   // is a no-op for a caller that already holds a float32 tensor.
+  std::vector<torch::Tensor> inputs = {graph.atype,
+                                       graph.n_node,
+                                       graph.n_local,
+                                       canonicalIndexBytes(graph.source),
+                                       graph.edge_vec,
+                                       graph.destination_row_ptr,
+                                       graph.source_row_ptr,
+                                       graph.source_order,
+                                       spin.to(torch::kFloat32)};
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
+  }
+  if (canonical_graph_requires_halo()) {
+    inputs.push_back(torch::full(
+        {1}, static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(world)),
+        torch::TensorOptions().dtype(torch::kInt64)));
+    inputs.push_back(halo.send_nodes);
+    inputs.push_back(halo.swaps);
+  }
   const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
-  return loader->run({graph.atype, graph.n_node, graph.n_local,
-                      canonicalIndexBytes(graph.source), graph.edge_vec,
-                      graph.destination_row_ptr, graph.source_row_ptr,
-                      graph.source_order, spin.to(torch::kFloat32)});
+  return loader->run(inputs);
 }
 
 std::vector<torch::Tensor> NativeSpinPTExpt::run_model_graph(
@@ -597,7 +611,9 @@ std::vector<torch::Tensor> NativeSpinPTExpt::run_model_graph(
     const torch::Tensor& spin,
     const torch::Tensor& fparam,
     const torch::Tensor& aparam,
-    const torch::Tensor& charge_spin) {
+    const torch::Tensor& charge_spin,
+    const void* world,
+    const ptexpt::HaloTensors& halo) {
   deepmd::check_graph_aparam_flat(aparam, daparam,
                                   "NativeSpinPTExpt::run_model_graph");
   std::vector<torch::Tensor> inputs = {
@@ -621,6 +637,13 @@ std::vector<torch::Tensor> NativeSpinPTExpt::run_model_graph(
   if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
+  if (has_message_passing_) {
+    inputs.push_back(torch::full(
+        {1}, static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(world)),
+        torch::TensorOptions().dtype(torch::kInt64)));
+    inputs.push_back(halo.send_nodes);
+    inputs.push_back(halo.swaps);
+  }
   const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
   return loader->run(inputs);
 }
@@ -632,32 +655,38 @@ std::map<std::string, torch::Tensor> NativeSpinPTExpt::run_graph_payload(
     const torch::Tensor& spin,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam,
-    const std::vector<double>& charge_spin) {
+    const std::vector<double>& charge_spin,
+    const void* world,
+    const ptexpt::HaloTensors* halo) {
   graph.edge_mask =
       deepmd::applyPairExclusion(graph.edge_index, graph.edge_mask, graph.atype,
                                  pair_exclude_table_, ntypes);
   canonicalizeGraphPayload(graph, node_count);
   std::map<std::string, torch::Tensor> output_map;
+  const torch::Device device = graph.atype.device();
+  // A lower that reads the condition as an ordinary input lets a call name the
+  // state it wants; the state in force stands in for a call that names none.
+  const std::vector<double>& served =
+      charge_spin.empty() ? default_chg_spin_ : charge_spin;
   if (canonical_abi_) {
-    extract_outputs(output_map,
-                    run_model_canonical(compactCanonicalGraph(graph), spin));
+    extract_outputs(
+        output_map,
+        run_model_canonical(
+            compactCanonicalGraph(graph), spin,
+            ptexpt::make_chg_spin_tensor(served, dchgspin, device), world,
+            halo != nullptr ? *halo : ptexpt::empty_halo(device)));
     // The compact lower reports the per-atom virial with the fitting axis
     // still in place; the graph lower already drops it.
     deepmd::flatten_canonical_atom_virial(output_map);
   } else {
-    const torch::Device device = graph.atype.device();
-    // This lower reads the condition as an ordinary input, so a call may name
-    // the state it wants; the state the model was frozen with stands in for a
-    // call that names none.
-    const std::vector<double>& served =
-        charge_spin.empty() ? default_chg_spin_ : charge_spin;
     extract_outputs(
         output_map,
         run_model_graph(
             graph, spin,
             make_fparam_tensor(fparam, default_fparam_, dfparam, device),
             make_aparam_tensor(aparam, daparam, node_count, nloc, device),
-            make_chg_spin_tensor(served, dchgspin, device)));
+            ptexpt::make_chg_spin_tensor(served, dchgspin, device), world,
+            halo != nullptr ? *halo : ptexpt::empty_halo(device)));
   }
   return output_map;
 }
@@ -732,17 +761,12 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
         "through the LAMMPS atom map; add 'atom_modify map yes' to the input, "
         "or populate InputNlist.mapping before calling compute().");
   }
-  // A ghost node of the extended graph carries no owner on this rank, so a
-  // descriptor that reads intermediate features of neighbouring nodes has no
-  // source for them and would silently evaluate a truncated environment. The
-  // backend factory normally keeps such an archive with ``DeepSpinPTExpt``,
-  // which owns the with-comm route, so this guard stands for a caller that
-  // constructs this class directly.
-  if (multi_rank && has_message_passing_) {
+  if (multi_rank && has_message_passing_ && lmp_list.world == nullptr) {
     throw deepmd::deepmd_exception(
-        "this native-spin artifact reads intermediate features of "
-        "neighbouring nodes, which domain decomposition cannot supply for a "
-        "ghost node; run it on a single MPI rank.");
+        "a model with further message-passing blocks exchanges the features "
+        "of ghost atoms between the ranks of a decomposed system through "
+        "their communicator, but the neighbor list carries none "
+        "(InputNlist::world).");
   }
 
   if (nall_real == 0) {
@@ -809,6 +833,10 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
         /*fold_to_local=*/!multi_rank);
     edge_index_tensor = topology.edge_index;
     edge_index_ext_tensor = topology.edge_index_ext;
+    if (canonical_requires_reciprocal_ && !multi_rank) {
+      ptexpt::check_reciprocal_nlist(nlist_data.jlist, nlist_data.ilist,
+                                     mapping_, dcoord, nloc, nall_real);
+    }
   }
 
   const std::int64_t node_count = multi_rank ? nall_real : nloc;
@@ -823,10 +851,18 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
   graph.edge_index = edges.edge_index;
   graph.edge_vec = edges.edge_vec;
   graph.edge_mask = edges.edge_mask;
+  // Further message-passing blocks refresh the features of the ghost nodes
+  // of an extended node set from their owners through the swaps of the
+  // neighbor list; a folded node set holds no ghost nodes.
+  const bool exchange = multi_rank && has_message_passing_;
+  const ptexpt::HaloTensors halo =
+      exchange ? ptexpt::halo_tensors(lmp_list, fwd_map, nloc, device)
+               : ptexpt::empty_halo(device);
   std::map<std::string, torch::Tensor> output_map = run_graph_payload(
       graph, node_count, nloc, spin_Tensor.slice(0, 0, node_count),
       std::vector<double>(fparam.begin(), fparam.end()),
-      std::vector<double>(aparam_real.begin(), aparam_real.end()), charge_spin);
+      std::vector<double>(aparam_real.begin(), aparam_real.end()), charge_spin,
+      exchange ? lmp_list.world : nullptr, &halo);
 
   // The forward emits flat per-node public keys; rewrite them into the dense
   // internal-key layout the extraction below reads. The extended node set
@@ -1378,6 +1414,8 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
     const std::int64_t* d_source_row_ptr,
     const std::int64_t* d_source_order,
     const float* d_spin,
+    void* world,
+    const DP_HaloExchange* halo,
     const std::int64_t nloc,
     const std::int64_t nall_nodes,
     const std::int64_t edge_storage,
@@ -1387,6 +1425,23 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
         "device-resident inference consumes the compact canonical graph; this "
         "archive declares the NeighborGraph lower, which the host entry "
         "points serve.");
+  }
+  // Further message-passing blocks read features of the sources of their
+  // edges, which the halo nodes of a node set receive from their owners
+  // through its halo exchange; every other model reads none.
+  const bool reads_halo = canonical_graph_requires_halo();
+  if (halo != nullptr && !reads_halo) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: a halo exchange was given, but the "
+        "model has no further message-passing blocks that read it.");
+  }
+  if (reads_halo && halo == nullptr && nall_nodes > nloc) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: a model with further message-passing "
+        "blocks reads features of the halo nodes from their owners, so a node "
+        "set with " +
+        std::to_string(nall_nodes - nloc) +
+        " halo nodes requires its halo exchange.");
   }
   if (!gpu_enabled) {
     throw deepmd::deepmd_exception(
@@ -1410,10 +1465,11 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
       d_source_row_ptr != nullptr && d_source_order != nullptr;
   if (!has_source_csr &&
       (d_source_row_ptr != nullptr || d_source_order != nullptr ||
-       d_atom_virial != nullptr)) {
+       d_atom_virial != nullptr || canonical_requires_source_csr_)) {
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu: the source CSR may be omitted only as "
-        "a pair and without a per-atom virial.");
+        "a pair, without a per-atom virial, and only for an artifact that "
+        "assembles the force without it.");
   }
 
   translate_error([&] {
@@ -1474,7 +1530,12 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
       inputs.n_node = torch::full({1}, nall_nodes, opt_i64);
       inputs.n_local = torch::full({1}, nloc, opt_i64);
       std::map<std::string, torch::Tensor> output;
-      extract_outputs(output, run_model_canonical(inputs, spin));
+      extract_outputs(
+          output, run_model_canonical(
+                      inputs, spin, canonical_charge_spin_, world,
+                      halo != nullptr ? ptexpt::halo_tensors(*halo, device,
+                                                             nloc, nall_nodes)
+                                      : ptexpt::empty_halo(device)));
       auto atom_energy = output["atom_energy"]
                              .reshape({nall_nodes})
                              .slice(0, 0, nloc)
@@ -1482,9 +1543,9 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
       auto force = output["force"].reshape({nall_nodes, 3}).contiguous();
       auto force_mag =
           output["force_mag"].reshape({nall_nodes, 3}).contiguous();
-      // The DPA4C operator, the only one behind this path, returns the force,
-      // the magnetic force, the virial and the atomic energy in fp64, which
-      // ptexpt::copy_results writes into the outputs.
+      // ptexpt::copy_results writes the force, the magnetic force, the virial
+      // and the atomic energy into the fp64 outputs, converting each result
+      // of another precision.
       std::vector<torch::Tensor> targets = {
           torch::from_blob(d_force, {nall_nodes, 3}, opt_f64),
           torch::from_blob(d_force_mag, {nall_nodes, 3}, opt_f64)};
@@ -1505,8 +1566,9 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
     };
     // A graph without halo nodes keeps its extents from step to step, so its
     // evaluation is replayed; a domain's halo changes its extent at every
-    // neighbor rebuild, so a graph with halo nodes is evaluated eagerly.
-    if (nloc != nall_nodes) {
+    // neighbor rebuild, so a graph with halo nodes is evaluated eagerly, as is
+    // one whose halo exchange communicates between the kernels.
+    if (nloc != nall_nodes || halo != nullptr) {
       evaluate();
     } else {
       if (!canonical_replay_) {
@@ -1531,6 +1593,14 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
 
 bool NativeSpinPTExpt::uses_canonical_graph_inference() const {
   return canonical_abi_;
+}
+
+bool NativeSpinPTExpt::canonical_graph_requires_source_csr() const {
+  return canonical_requires_source_csr_;
+}
+
+bool NativeSpinPTExpt::canonical_graph_requires_halo() const {
+  return canonical_abi_ && has_message_passing_;
 }
 
 // The archive reaches this class only through the scheme dispatch, which

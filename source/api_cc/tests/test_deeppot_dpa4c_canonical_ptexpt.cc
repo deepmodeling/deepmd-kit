@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// The device-resident entry points of the compressed DPA4C archives frozen
-// with the compact canonical lower, through deepmd::DeepPot and
-// deepmd::DeepSpin (see dpa4c_canonical_test_common.h for the cases).
+// The device-resident entry points of the archives frozen with the compact
+// canonical lower, through deepmd::DeepPot and deepmd::DeepSpin (see
+// dpa4c_canonical_test_common.h for the cases).
 #include <gtest/gtest.h>
 
 #include "DeepPot.h"
@@ -13,11 +13,20 @@
 namespace deepmd_test {
 namespace dpa4c_canonical {
 
-using Models =
-    ::testing::Types<Potential<deepmd::DeepPot>, Spin<deepmd::DeepSpin>>;
+using Models = ::testing::Types<Potential<deepmd::DeepPot>,
+                                Spin<deepmd::DeepSpin>,
+                                Dpa4Potential<deepmd::DeepPot>,
+                                Dpa4Spin<deepmd::DeepSpin>>;
 INSTANTIATE_TYPED_TEST_SUITE_P(CXX,
                                TestInferDpa4cCanonicalPtExpt,
                                Models,
+                               CaseNames);
+
+using HaloModels = ::testing::Types<MultiblockPotential<deepmd::DeepPot>,
+                                    MultiblockSpin<deepmd::DeepSpin>>;
+INSTANTIATE_TYPED_TEST_SUITE_P(CXX,
+                               TestInferDpa4cCanonicalHalo,
+                               HaloModels,
                                CaseNames);
 
 }  // namespace dpa4c_canonical

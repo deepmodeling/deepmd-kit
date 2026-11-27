@@ -301,11 +301,15 @@ class DeepSpinBackend : public DeepBaseModelBackend {
       const std::int64_t* d_source_row_ptr,
       const std::int64_t* d_source_order,
       const float* d_spin,
+      void* world,
+      const DP_HaloExchange* halo,
       const std::int64_t nloc,
       const std::int64_t nall_nodes,
       const std::int64_t edge_storage,
       void* stream);
   virtual bool uses_canonical_graph_inference() const;
+  virtual bool canonical_graph_requires_source_csr() const;
+  virtual bool canonical_graph_requires_halo() const;
 
   /**
    * @brief Whether the backend serves the loaded artifact under the native
@@ -618,6 +622,21 @@ class DeepSpin : public DeepBaseModel {
   bool uses_canonical_graph_inference() const;
 
   /**
+   * @brief Whether every compact canonical evaluation reads the source CSR,
+   * rather than only an evaluation that requests the per-atom virial, as
+   * DeepPot::canonical_graph_requires_source_csr reports for a model without
+   * spin.
+   */
+  bool canonical_graph_requires_source_csr() const;
+
+  /**
+   * @brief Whether a compact canonical evaluation of a node set with halo
+   * nodes requires its halo exchange, as DeepPot::canonical_graph_requires_halo
+   * reports for a model without spin.
+   */
+  bool canonical_graph_requires_halo() const;
+
+  /**
    * @brief Whether the loaded artifact is served under the native spin
    * scheme rather than the virtual-atom scheme.
    */
@@ -652,6 +671,13 @@ class DeepSpin : public DeepBaseModel {
    * @param[in] d_source_order Source-grouped edge positions, [edge_storage].
    * @param[in] d_spin Per-node magnetic moment, [nall_nodes * 3] row-major;
    *ghost rows carry their owner's moment.
+   * @param[in] world Pointer to the MPI communicator of the caller (an
+   *``MPI_Comm``) when the system spans several ranks, or null on a single
+   *rank, with the semantics of DeepPot::compute_canonical_graph_gpu.
+   * @param[in] halo The halo exchange of the node set, or null for a node set
+   *without halo nodes, with the semantics of
+   *DeepPot::compute_canonical_graph_gpu; canonical_graph_requires_halo()
+   *reports whether the model reads it.
    * @param[in] nloc Number of local atoms.
    * @param[in] nall_nodes Graph node count (local + ghost).
    * @param[in] edge_storage Allocated edge capacity.
@@ -672,6 +698,8 @@ class DeepSpin : public DeepBaseModel {
                                    const std::int64_t* d_source_row_ptr,
                                    const std::int64_t* d_source_order,
                                    const float* d_spin,
+                                   void* world,
+                                   const DP_HaloExchange* halo,
                                    const std::int64_t nloc,
                                    const std::int64_t nall_nodes,
                                    const std::int64_t edge_storage,
