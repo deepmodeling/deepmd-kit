@@ -9,6 +9,7 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
+    Any,
     ClassVar,
     NamedTuple,
 )
@@ -31,6 +32,9 @@ from deepmd.utils.eval_metrics import (
     compute_energy_type_metrics,
     compute_error_stat,
     compute_weighted_error_stat,
+)
+from deepmd.utils.loss import (
+    symmetrize_virial,
 )
 
 if TYPE_CHECKING:
@@ -162,6 +166,7 @@ def _write_energy_test_details(
     reference_virial: np.ndarray | None,
     prediction_virial: np.ndarray | None,
     out_put_spin: bool,
+    symm_virial: bool = False,
     reference_stress: np.ndarray | None = None,
     prediction_stress: np.ndarray | None = None,
     reference_force_real: np.ndarray | None = None,
@@ -172,6 +177,8 @@ def _write_energy_test_details(
     prediction_hessian: np.ndarray | None = None,
 ) -> None:
     """Write energy-type detail outputs after arrays have been aligned."""
+    if symm_virial:
+        system = f"symm_v=1\n{system}"
     pe = np.concatenate(
         (
             np.reshape(reference_energy, [-1, 1]),
@@ -392,6 +399,10 @@ class EnerTester(ModelTester):
     #: A spin model reports a real and a magnetic force instead.
     reports_plain_force: ClassVar[bool] = True
 
+    def __init__(self, dp: Any, *, atomic: bool, symm_virial: bool = False) -> None:
+        super().__init__(dp, atomic=atomic)
+        self.symm_virial = symm_virial
+
     def add_data_requirements(self, data: DeepmdData) -> None:
         """Declare the labels an energy test consumes."""
         dp = self.dp
@@ -481,6 +492,11 @@ class EnerTester(ModelTester):
         energy = ret[0].reshape([nframes, 1])
         force = ret[1].reshape([nframes, -1])
         virial = ret[2].reshape([nframes, 9])
+        if self.symm_virial:
+            virial = symmetrize_virial(virial)
+            test_data = dict(test_data)
+            if "virial" in test_data:
+                test_data["virial"] = symmetrize_virial(test_data["virial"])
         optional_outputs = _split_optional_ener_outputs(
             ret,
             has_atom_ener=self.atomic,
@@ -589,6 +605,7 @@ class EnerTester(ModelTester):
             _write_energy_test_details(
                 detail_path=context.detail_path,
                 system=context.system,
+                symm_virial=self.symm_virial,
                 natoms=natoms,
                 append_detail=context.append_detail,
                 reference_energy=test_data["energy"],
@@ -676,10 +693,8 @@ class EnerTester(ModelTester):
 class SpinEnerTester(EnerTester):
     """Test a spin energy model, whose force splits into real and magnetic.
 
-    Everything else an energy model reports carries over unchanged: the
-    magnetic degrees of freedom enter the virial only through the virtual
-    atoms, whose displacement the model removes again, so the virial is with
-    respect to the real atomic positions as for any other energy model.
+    Energy and virial comparisons use the energy tester. Magnetic force
+    alignment accounts for native and virtual-atom spin representations.
     """
 
     reports_plain_force = False

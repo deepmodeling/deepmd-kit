@@ -36,7 +36,7 @@ def enable_compression(
     training_script: str | None = None,
 ) -> None:
     """Compress a JAX ``.jax``/``.hlo`` model."""
-    data = serialize_from_file(input_file)
+    data = serialize_from_file(input_file, training=False)
     model = BaseModel.deserialize(data["model"])
 
     metadata_sources = [data]

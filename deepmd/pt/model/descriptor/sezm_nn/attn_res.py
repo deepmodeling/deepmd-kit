@@ -161,7 +161,9 @@ class DepthAttnRes(nn.Module):
         source0 = sources[0]
         if len(sources) == 1:
             return source0
-        batch_size = int(source0.shape[0])
+        # The node count is kept as a size, not converted to a Python integer,
+        # so that a traced graph serves every batch.
+        batch_size = source0.shape[0]
         value_dtype = source0.dtype
 
         # === Step 1. Build the query vector ===
@@ -182,16 +184,14 @@ class DepthAttnRes(nn.Module):
         alpha = torch.softmax(logits, dim=1)  # (B, S)
 
         # === Step 3. Broadcast scalar weights to equivariant values ===
-        value_stack = torch.stack(
-            [source.to(dtype=self.dtype) for source in sources],
-            dim=1,
-        )
-        alpha = alpha.reshape(
-            batch_size,
-            source_count,
-            *([1] * (value_stack.ndim - 2)),
-        )
-        aggregated = (alpha * value_stack).sum(dim=1)
+        # The weighted sum runs over the sources one by one, so no stacked copy
+        # of the equivariant values is formed and the backward pass keeps the
+        # sources themselves, whose strides do not depend on the batch.
+        broadcast = (batch_size, *([1] * (source0.ndim - 1)))
+        aggregated = alpha[:, 0].reshape(broadcast) * source0.to(dtype=self.dtype)
+        for index in range(1, source_count):
+            value = sources[index].to(dtype=self.dtype)
+            aggregated = aggregated + alpha[:, index].reshape(broadcast) * value
         return aggregated.to(dtype=value_dtype)
 
     def serialize(self) -> dict[str, Any]:

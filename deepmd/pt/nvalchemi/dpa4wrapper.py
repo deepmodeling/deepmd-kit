@@ -582,6 +582,9 @@ class DPA4Wrapper(nn.Module, BaseModelMixin):
         from deepmd.pt.train.wrapper import (
             ModelWrapper,
         )
+        from deepmd.utils.pt_checkpoint import (
+            select_checkpoint_head,
+        )
 
         state_dict = torch.load(checkpoint_path, map_location=device, weights_only=True)
         if "model" in state_dict:
@@ -599,14 +602,8 @@ class DPA4Wrapper(nn.Module, BaseModelMixin):
                     f"Unknown head {head!r} for this multi-task checkpoint. "
                     f"Available heads: {list(model_params['model_dict'])}."
                 )
-            model_params = model_params["model_dict"][head]
-            head_state = {"_extra_state": state_dict["_extra_state"]}
-            for key, value in state_dict.items():
-                if f"model.{head}." in key:
-                    head_state[key.replace(f"model.{head}.", "model.Default.")] = (
-                        value.clone()
-                    )
-            state_dict = head_state
+            state_dict = select_checkpoint_head(state_dict, head)
+            model_params = state_dict["_extra_state"]["model_params"]
 
         model_params.pop("hessian_mode", None)
         model = get_model(model_params).to(device)

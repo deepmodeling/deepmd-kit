@@ -2,13 +2,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Generate the native-spin DPA4C graph-route .pt2 test model.
 
-Two classes serve the native spin scheme, and the archive decides which:
-``NativeSpinPTExpt`` takes those that carry no nested with-comm artifact,
-everything else stays with ``DeepSpinPTExpt``. DPA4's graph lower exchanges
-per-layer ghost features across ranks and so always ships that artifact,
-which leaves DPA4C -- whose compact descriptor keeps its messaging local --
-as the family that reaches ``NativeSpinPTExpt``. Without a fixture from this
-family the class has no end-to-end C++ coverage at all.
+``NativeSpinPTExpt`` serves every archive of the native spin scheme. This
+fixture brings the DPA4C family to it, beside the DPA4 fixtures, through
+the standalone entry point of the C++ suite.
 
 The model carries frame and atomic parameters and a charge state on top of
 native spin, so that one archive reaches every input the standalone entry
@@ -159,12 +155,11 @@ def _check_metadata(pt2_path: str) -> None:
         )
     )
     assert md["spin_scheme"] == "native"
-    # The dispatch in DeepPotPTExptPlugin.cc reads exactly these two fields,
-    # and a with-comm artifact would divert the archive to DeepSpinPTExpt,
-    # leaving NativeSpinPTExpt untested by everything built on this fixture.
+    # The dispatch in DeepPotPTExptPlugin.cc reads the scheme, and a
+    # native-spin lower carries any ghost-feature exchange in its main
+    # program, so the archive holds a single artifact.
     assert md.get("has_comm_artifact") is False, (
-        "this archive must carry no with-comm artifact, or it is served by "
-        "DeepSpinPTExpt and the fixture covers the wrong class"
+        "a native-spin archive carries no with-comm artifact"
     )
     assert md["lower_input_kind"] == "graph"
     assert md["dim_fparam"] == 2

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import math
 from collections.abc import (
     Mapping,
     Sequence,
@@ -13,20 +14,34 @@ from deepmd.dpmodel.common import (
     NativeOP,
 )
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
+from deepmd.dpmodel.descriptor.dpa4_nn.activation import (
+    GatedActivation as GatedActivationDP,
+)
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as RadialMLPDP
+from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as SO2ConvolutionDP
 from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as SO2LinearDP
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
+)
+from deepmd.dpmodel.train.inference import (
+    infer_amp_enabled,
+)
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
+)
+from deepmd.dpmodel.utils.network import (
+    softplus_t,
 )
 from deepmd.jax.common import (
     ArrayAPIVariable,
     flax_module,
     register_dpmodel_mapping,
+    set_variable_value,
     to_jax_array,
     try_convert_module,
 )
@@ -34,11 +49,96 @@ from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.jax.env import (
+    jax,
     jnp,
     nnx,
 )
 from deepmd.jax.utils.network import (
     ArrayAPIParam,
+)
+from deepmd.jax.utils.precision import (
+    autocast_matmul,
+)
+
+
+@jax.custom_jvp
+def _sigmoid_gate(values: jax.Array, logits: jax.Array) -> tuple[jax.Array, jax.Array]:
+    """Return gated values and the sigmoid state used by their derivatives."""
+    weights = jax.nn.sigmoid(logits)
+    return values * weights, weights
+
+
+@_sigmoid_gate.defjvp
+def _sigmoid_gate_jvp(
+    primals: tuple[jax.Array, jax.Array],
+    tangents: tuple[jax.Array, jax.Array],
+) -> tuple[tuple[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]:
+    values, logits = primals
+    values_dot, logits_dot = tangents
+    output, weights = _sigmoid_gate(values, logits)
+    # For y = x * sigmoid(z), dy = sigmoid(z) * dx + y * (1-sigmoid(z)) * dz.
+    # Expressing the tangent through y reuses the output activation instead
+    # of retaining another edge-sized value array for higher-order derivatives.
+    factor = (1.0 - weights) * logits_dot
+    return (output, weights), (
+        weights * values_dot + output * factor,
+        weights * factor,
+    )
+
+
+@flax_module
+class GatedActivation(GatedActivationDP):
+    def _apply_vector_gate(
+        self, values: jax.Array, logits: jax.Array, dtype: Any
+    ) -> jax.Array:
+        if values.dtype == logits.dtype == dtype and dtype in (
+            jnp.float32,
+            jnp.float64,
+        ):
+            return _sigmoid_gate(values, self._expand_gates(logits))[0]
+        return super()._apply_vector_gate(values, logits, dtype)
+
+
+register_dpmodel_mapping(
+    GatedActivationDP, lambda value: GatedActivation.deserialize(value.serialize())
+)
+
+
+@flax_module
+class SO2Convolution(SO2ConvolutionDP):
+    def _attention_softmax(
+        self, attn_logits: jax.Array, edge_cache: Any, n_nodes: int
+    ) -> jax.Array:
+        """Normalize edge and null masses with a constant stabilization shift."""
+        shape = attn_logits.shape
+        n_edge, n_channel = shape[0], math.prod(shape[1:])
+        dtype = jnp.dtype(self.compute_precision)
+        logits = attn_logits.astype(dtype).reshape(n_edge, n_channel)
+        envelope = edge_cache.edge_env.astype(dtype).reshape(n_edge)
+        dst = edge_cache.dst.astype(jnp.int64)
+
+        # === Step 1. Physical edge and null log masses ===
+        active = envelope > 0.0
+        log_weight = 2.0 * jnp.log(jnp.where(active, envelope, jnp.ones_like(envelope)))
+        if edge_cache.edge_mask is not None:
+            active = active & (edge_cache.edge_mask.reshape(n_edge) > 0.0)
+        effective = jnp.where(active[:, None], logits + log_weight[:, None], -jnp.inf)
+        null_mass = softplus_t(self.adamw_attn_z_bias_raw[...].astype(dtype)) + self.eps
+        null_logit = jnp.log(null_mass.reshape(1, n_channel))
+
+        # === Step 2. Destination normalization in a shared shifted frame ===
+        zeros = jnp.zeros((n_nodes, n_channel), dtype=dtype)
+        maximum = (zeros + null_logit).at[dst].max(effective)
+        # The same shift multiplies every edge and the null mass. Its
+        # derivative cancels from their ratio, including higher derivatives.
+        maximum = jax.lax.stop_gradient(maximum)
+        numerator = jnp.exp(effective - jnp.take(maximum, dst, axis=0))
+        denominator = zeros.at[dst].add(numerator) + jnp.exp(null_logit - maximum)
+        return (numerator / jnp.take(denominator, dst, axis=0)).reshape(shape)
+
+
+register_dpmodel_mapping(
+    SO2ConvolutionDP, lambda value: SO2Convolution.deserialize(value.serialize())
 )
 
 
@@ -125,8 +225,6 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
         "focus_compete_bias",
     ),
     "SeZMTypeEmbedding": ("adam_type_embedding",),
-    "SpinEmbedding": ("adam_spin_vec_weight", "adam_spin_nbr_weight"),
-    "EnvironmentInitialEmbedding": ("spin_scale",),
     "DepthAttnRes": ("adamw_pseudo_query",),
     "S2GridNet": ("residual_scale",),
     "SO3GridNet": ("residual_scale",),
@@ -286,23 +384,96 @@ register_dpmodel_mapping(
 @flax_module
 class DescrptDPA4(DescrptDPA4DP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # The dpmodel implementation currently fixes gamma and performs no
-        # automatic mixed-precision policy under JAX. Reject explicit requests
-        # instead of silently accepting training options that have no effect.
-        if kwargs.get("random_gamma") is True:
-            raise NotImplementedError(
-                "DPA4 random_gamma=True is not supported in the JAX backend."
-            )
-        if kwargs.get("use_amp") is True:
-            raise NotImplementedError(
-                "DPA4 use_amp=True is not supported in the JAX backend."
-            )
-        kwargs.setdefault("random_gamma", False)
-        kwargs.setdefault("use_amp", False)
+        reject_moe(kwargs, "DPA4 descriptor")
         super().__init__(*args, **kwargs)
+        self.deterministic = True
+        rng_seed = int(np.random.SeedSequence(self.seed).generate_state(1)[0])
+        self.rotation_key = ArrayAPIVariable(jax.random.PRNGKey(rng_seed))
+        self.use_amp_infer = infer_amp_enabled()
         _promote_trainable_tree(self)
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA4":
+        from deepmd.jax.descriptor.lora import (
+            restore_lora_from_variables,
+        )
+
         obj = super().deserialize(data)
-        return _promote_trainable_tree(obj)
+        _promote_trainable_tree(obj)
+        restore_lora_from_variables(obj, data["@variables"])
+        return obj
+
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.jax.descriptor.lora import (
+            add_lora_scaling,
+        )
+
+        data = super().serialize()
+        add_lora_scaling(self, data["@variables"])
+        return data
+
+    def adam_route_patterns(self) -> list[str]:
+        """Route the sparsely sampled radial-input projections through AdamW."""
+        return [
+            "radial_embedding.net.0.",
+            "env_seed_embedding.rbf_proj_layer1.",
+        ]
+
+    def _in_training_mode(self) -> bool:
+        return not self.deterministic
+
+    def advance_random_state(self) -> None:
+        """Advance augmentation once before differentiating a training step.
+
+        All coordinate and parameter derivatives in that step read the same
+        key. Sampling therefore remains pure inside nested JAX transforms,
+        including differentiation through forces and Hessians.
+        """
+        if self.random_gamma and not self.deterministic:
+            set_variable_value(
+                self.rotation_key, jax.random.split(self.rotation_key[...])[0]
+            )
+
+    def _rotation_angles(self, edge_vec: jax.Array) -> jax.Array:
+        return jax.random.uniform(
+            self.rotation_key[...],
+            (edge_vec.shape[0],),
+            dtype=edge_vec.dtype,
+            maxval=2.0 * math.pi,
+        )
+
+    def _forward_blocks(
+        self,
+        x: jax.Array,
+        edge_cache: Any,
+        radial_feat_per_block: list[jax.Array],
+        comm_dict: dict[str, jax.Array] | None = None,
+        unit_routes: list[Any] | None = None,
+    ) -> jax.Array:
+        """Use BF16 multiplicands with FP32 training activations.
+
+        Master parameters retain their declared precision. Normalization
+        accumulates in its declared precision and restores the input dtype;
+        FP32 activations preserve precision through force-loss derivatives.
+        Residual addition follows its operand dtypes. Geometry, radial
+        features and the readout lie outside this region. Inference retains
+        its BF16 activation-storage policy when AMP inference is requested.
+        Float64 models retain float64 arithmetic in every stage.
+        """
+        enabled = self.use_amp_infer if self.deterministic else self.use_amp
+        if enabled and x.dtype == jnp.float32:
+            with autocast_matmul(fp32_output=not self.deterministic):
+                return super()._forward_blocks(
+                    x,
+                    edge_cache,
+                    radial_feat_per_block,
+                    comm_dict=comm_dict,
+                    unit_routes=unit_routes,
+                )
+        return super()._forward_blocks(
+            x,
+            edge_cache,
+            radial_feat_per_block,
+            comm_dict=comm_dict,
+            unit_routes=unit_routes,
+        )

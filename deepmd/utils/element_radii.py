@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Per-element length scales used to size pair-wise geometric windows."""
+"""Per-element covalent radii that set the length scale of each atom pair."""
 
 import numpy as np
 
@@ -23,18 +23,11 @@ COVALENT_RADII: tuple[float, ...] = (
 """Molecular single-bond covalent radii in Å, indexed by atomic number minus one.
 
 Pyykkö and Atsumi, *Chem. Eur. J.* **15**, 186 (2009), the one published set that
-covers all 118 elements. The sum of two of these radii estimates the length scale
-of the corresponding pair, which is what a window expressed as a fraction of the
-pair's own size is measured against.
+covers all 118 elements. The sum of two of these radii estimates the covalent
+bond length of the corresponding pair, the length scale that pair-wise lengths
+expressed as a fraction of the pair's own size are measured against.
 """
 # fmt: on
-
-UNIT_CONTACT_RADIUS = 0.5
-"""The per-element radius that turns every pair's length scale into exactly 1 Å.
-
-A window given directly in Å is the fractional rule measured in this unit, so the
-two forms share one implementation: the fractions then carry the radii themselves.
-"""
 
 _SYMBOL_TO_RADIUS: dict[str, float] = dict(
     zip(PERIODIC_TABLE, COVALENT_RADII, strict=True)
@@ -69,49 +62,3 @@ def covalent_radii_from_type_map(type_map: list[str]) -> np.ndarray:
     return np.asarray(
         [_SYMBOL_TO_RADIUS[symbol] for symbol in type_map], dtype=np.float64
     )
-
-
-def contact_radius_table(
-    ntypes: int, type_map: list[str] | None, scale: str
-) -> np.ndarray:
-    """
-    Tabulate the length scale each type contributes to a pair.
-
-    A pair-wise window is a fraction of ``table[a] + table[b]``. Under the
-    ``"covalent"`` scale that sum is the pair's covalent bond length, so one
-    pair of fractions describes every element combination; under ``"absolute"``
-    every element carries :data:`UNIT_CONTACT_RADIUS`, the sum is 1 Å, and the
-    fractions are the radii themselves in Å.
-
-    Parameters
-    ----------
-    ntypes : int
-        Number of real types.
-    type_map : list[str], optional
-        Element symbols of the types, required by the ``"covalent"`` scale.
-    scale : str
-        Either ``"covalent"`` or ``"absolute"``.
-
-    Returns
-    -------
-    np.ndarray
-        Radii in Å with shape ``(ntypes + 1,)``. The trailing entry belongs to
-        the padding type, whose edges are masked; it carries the unit radius so
-        the reduced distance of a padded edge stays finite.
-
-    Raises
-    ------
-    ValueError
-        If the scale is unknown, or the covalent scale is requested without a
-        type map of element symbols covering every type.
-    """
-    if scale not in ("covalent", "absolute"):
-        raise ValueError(f"`scale` must be 'covalent' or 'absolute', got {scale!r}.")
-    table = np.full(ntypes + 1, UNIT_CONTACT_RADIUS, dtype=np.float64)
-    if scale == "covalent":
-        if type_map is None or len(type_map) != ntypes:
-            raise ValueError(
-                f"A covalent window needs a `type_map` covering all {ntypes} types."
-            )
-        table[:ntypes] = covalent_radii_from_type_map(type_map)
-    return table

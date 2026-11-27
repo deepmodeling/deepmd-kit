@@ -72,6 +72,10 @@ from deepmd.pt_expt.utils import (
 from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
 )
+from ...dpa4_fixtures import (
+    four_atom_spin_inputs,
+    jitter_zero_arrays,
+)
 
 TRAIN_GATES = ("DP_TRITON_TRAIN", "DP_CUDA_TRAIN")
 INFER_GATES = ("DP_TRITON_INFER", "DP_CUDA_INFER", "DP_CUTILE_INFER", "DP_CUTE_INFER")
@@ -339,3 +343,69 @@ class TestDPA4TrainPathParity(TestCaseSingleFrameWithNlist):
             fused_objective, dense_objective, rtol=2e-5, atol=2e-6
         )
         np.testing.assert_allclose(fused_gradient, dense_gradient, rtol=2e-4, atol=2e-5)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.parametrize("spin_mode", ["orbit", "exchange"])
+def test_native_spin_magnetic_loss_matches_dense(
+    monkeypatch: pytest.MonkeyPatch, spin_mode: str
+) -> None:
+    """The fused training operators preserve the magnetic-loss second backward."""
+    if not cuda_value_available():
+        pytest.skip("the DPA4 CUDA training operators are unavailable")
+    _clear_gates(monkeypatch)
+    config = _make_descriptor(2, [16], 4.0).serialize()["config"]
+    config.update(use_spin=[True, False], spin_mode=spin_mode, use_amp=False)
+    descriptor = DescrptDPA4(**config)
+    data = descriptor.serialize()
+    data = jitter_zero_arrays(data, np.random.default_rng(319))
+    dense = DescrptDPA4.deserialize(data).cuda().train()
+    # Autocast is runtime policy and is not part of the portable record.
+    dense.use_amp = False
+    monkeypatch.setenv("DP_CUDA_TRAIN", "1")
+    monkeypatch.setenv("DP_TRITON_TRAIN", "1")
+    fused = DescrptDPA4.deserialize(data).cuda().train()
+    fused.use_amp = False
+    assert fused.blocks[0].so2_conv._cuda_value_train is not None
+    coord_array, atype_array, spin_array, nlist_array = four_atom_spin_inputs()
+    coord = torch.as_tensor(coord_array, dtype=torch.float32, device="cuda")
+    atype = torch.as_tensor(atype_array, device="cuda")
+    nlist = torch.as_tensor(nlist_array, device="cuda")
+    moment = torch.as_tensor(spin_array, dtype=torch.float32, device="cuda")
+
+    def evaluate(
+        model: DescrptDPA4,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | None]]:
+        spin = moment.detach().requires_grad_(True)
+        output = model(coord, atype, nlist, spin=spin)[0]
+        force = -torch.autograd.grad(output.sum(), spin, create_graph=True)[0]
+        (force - 0.2).square().sum().backward()
+        return force.detach(), {
+            name: None if parameter.grad is None else parameter.grad.detach().clone()
+            for name, parameter in model.named_parameters()
+        }
+
+    expected_force, expected_grad = evaluate(dense)
+    actual_force, actual_grad = evaluate(fused)
+    assert expected_force.abs().max() > 1e-6
+    torch.testing.assert_close(actual_force, expected_force, atol=3e-5, rtol=3e-4)
+    assert actual_grad.keys() == expected_grad.keys()
+    assert any(gradient is not None for gradient in expected_grad.values())
+    for gradients in (expected_grad, actual_grad):
+        spin_gradients = [
+            gradient
+            for name, gradient in gradients.items()
+            if "spin_output_proj" in name and gradient is not None
+        ]
+        assert spin_gradients
+        assert any(torch.count_nonzero(gradient) > 0 for gradient in spin_gradients)
+        assert all(
+            torch.isfinite(gradient).all()
+            for gradient in gradients.values()
+            if gradient is not None
+        )
+    for name, expected in expected_grad.items():
+        actual = actual_grad[name]
+        assert (actual is None) == (expected is None), name
+        if actual is not None:
+            torch.testing.assert_close(actual, expected, atol=4e-5, rtol=5e-4, msg=name)

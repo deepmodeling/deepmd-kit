@@ -226,8 +226,8 @@ def _border_op_backward_grad(
 
     ``border_op_backward`` is the exact transpose of ``border_op`` as a
     linear map over node rows, so its vector-Jacobian product IS
-    ``border_op``'s forward walk (issue #5906: this closes the autograd
-    loop for the SFPG completion so gate gradients cross ranks).
+    ``border_op``'s forward walk, which closes the autograd loop of a
+    per-node quantity completed across ranks.
     """
     (
         sendlist,

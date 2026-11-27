@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import dataclasses
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -44,6 +47,42 @@ from .model import (
 )
 
 DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(BaseModel,))
+
+
+def trace_named_lower(
+    lower: Callable[..., dict[str, torch.Tensor]],
+    inputs: dict[str, torch.Tensor],
+    **make_fx_kwargs: Any,
+) -> torch.fx.GraphModule:
+    """Trace a lower called with its inputs by keyword, keeping their names.
+
+    Parameters
+    ----------
+    lower
+        Function of the inputs, by keyword, returning the output dict.
+    inputs
+        Sample inputs by name, in the positional order of the traced module.
+    **make_fx_kwargs
+        Additional arguments passed to :func:`make_fx`.
+
+    Returns
+    -------
+    torch.fx.GraphModule
+        Module taking the inputs positionally, each named by its key, so that
+        a program exported from it names its inputs the same way.
+    """
+    names = tuple(inputs)
+
+    def fn(*values: torch.Tensor) -> dict[str, torch.Tensor]:
+        return lower(**dict(zip(names, values, strict=True)))
+
+    module = make_fx(fn, **make_fx_kwargs)(*inputs.values())
+    placeholders = [node for node in module.graph.nodes if node.op == "placeholder"]
+    for node, name in zip(placeholders, names, strict=True):
+        node._rename(name)
+        node.target = node.name
+    module.recompile()
+    return module
 
 
 @BaseModel.register("ener")
@@ -150,13 +189,20 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         *,
         do_atomic_virial: bool,
         spin: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         coord: torch.Tensor | None = None,
         communicator: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
         halo_send: torch.Tensor | None = None,
         halo_swaps: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Evaluate an eligible compressed canonical deployment graph.
+        """Evaluate a compact canonical deployment graph.
+
+        The evaluator that
+        :func:`~deepmd.pt_expt.model.graph_lower.canonical_lower_evaluator`
+        names serves the model: the fused operators of a compressed DPA1 or
+        DPA4C model, or the graph forward of the model itself on a
+        ``NeighborGraph`` view of the compact graph.
 
         Parameters
         ----------
@@ -187,6 +233,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         spin
             Per-node magnetic moments with shape ``(N, 3)`` for a native-spin
             model, or ``None``. Ghost rows carry their owner's moment.
+        charge_spin
+            The charge/spin condition of every frame with shape ``(nf,
+            dim_chg_spin)``, float64, for a model that reads it as an input
+            (``get_dim_chg_spin() > 0``); ``None`` otherwise.
         coord
             Node positions with shape ``(N, 3)`` in Å, float64, for a model
             with a long-range module; ``None`` otherwise.
@@ -215,23 +265,19 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Public energy-model outputs on the flat node axis.
         """
         from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
-            canonical_model_eligible as dpa1_canonical_eligible,
-        )
-        from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
             dpa1_canonical_compress_energy_force,
         )
         from deepmd.pt_expt.kernels.dpa4c.canonical import (
-            canonical_model_eligible as dpa4c_canonical_eligible,
-        )
-        from deepmd.pt_expt.kernels.dpa4c.canonical import (
-            canonical_model_unsupported_reason as dpa4c_canonical_unsupported,
-        )
-        from deepmd.pt_expt.kernels.dpa4c.canonical import (
+            canonical_model_unsupported_reason,
             dpa4c_canonical_compress_energy_force,
+        )
+        from deepmd.pt_expt.model.graph_lower import (
+            canonical_lower_evaluator,
         )
         from deepmd.pt_expt.utils.canonical_graph import (
             BorderPlan,
             CanonicalGraph,
+            neighbor_graph_from_canonical,
             validate_canonical_graph_shapes,
         )
 
@@ -239,11 +285,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             raise ValueError(
                 "the send list and the swap table of a border plan come together"
             )
-        reason = dpa4c_canonical_unsupported(self)
+        reason = canonical_model_unsupported_reason(self)
         if reason is not None:
             raise ValueError(reason)
-        use_dpa4c = dpa4c_canonical_eligible(self)
-        if not use_dpa4c and not dpa1_canonical_eligible(self):
+        evaluator = canonical_lower_evaluator(self)
+        if evaluator is None:
             raise ValueError("model is not eligible for compact canonical deployment")
         graph = CanonicalGraph(
             n_node=n_node,
@@ -255,10 +301,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             source_order=source_order,
         )
         validate_canonical_graph_shapes(graph, atype.shape[0])
-        learned, pair_potential = self.atomic_model.fused_decomposition()
-        descriptor = learned.descriptor
-        fitting = learned.fitting_net
-        atom_bias = fused_atom_bias(self.atomic_model, learned)
         border = (
             None
             if halo_send is None
@@ -268,6 +310,34 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 communicator=communicator,
             )
         )
+        if evaluator == "graph":
+            # The graph forward differentiates the energy with respect to the
+            # edge vectors and assembles the force over both CSR views.
+            view = neighbor_graph_from_canonical(graph, atype.shape[0])
+            model_ret = self.forward_common_lower_graph(
+                atype,
+                view.n_node,
+                view.n_local,
+                view.edge_index,
+                view.edge_vec,
+                view.edge_mask,
+                view.destination_order,
+                view.destination_row_ptr,
+                view.source_order,
+                view.source_row_ptr,
+                destination_sorted=True,
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
+                spin=spin,
+                comm_dict=border,
+            )
+            return self._translate_eager_call(
+                model_ret, atype, do_atomic_virial=do_atomic_virial
+            )
+        learned, pair_potential = self.atomic_model.fused_decomposition()
+        descriptor = learned.descriptor
+        fitting = learned.fitting_net
+        atom_bias = fused_atom_bias(self.atomic_model, learned)
 
         def fused_graph() -> CanonicalGraph:
             # A program without the per-atom virial declines it with the
@@ -345,7 +415,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                         do_atomic_virial,
                     )
                 )
-        elif use_dpa4c:
+        elif evaluator == "dpa4c":
             # The fused operator derives the ownership mask from the frame
             # counts itself, so nothing runs on the node axis around it. The
             # fitting-route table measured for the network on the backend
@@ -416,6 +486,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         destination_row_ptr: torch.Tensor,
         source_row_ptr: torch.Tensor,
         source_order: torch.Tensor,
+        charge_spin: torch.Tensor | None = None,
         coord: torch.Tensor | None = None,
         communicator: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
@@ -428,8 +499,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         """Trace the compact canonical deployment forward with ``make_fx``.
 
         The traced module takes the eight graph tensors, then the inputs that
-        the model reads in the order ``coord``, ``communicator``, ``box``,
-        ``halo_send``, ``halo_swaps``.
+        the model reads in the order ``charge_spin``, ``coord``,
+        ``communicator``, ``box``, ``halo_send``, ``halo_swaps``.
 
         Parameters
         ----------
@@ -437,6 +508,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Compact graph node and edge tensors.
         destination_row_ptr, source_row_ptr, source_order
             Compact dual-CSR topology.
+        charge_spin
+            For a model that reads its charge/spin condition as an input, a
+            sample condition with shape ``(nf, dim_chg_spin)``, float64;
+            ``None`` otherwise.
         coord, communicator, box
             For a model with a long-range module, sample node positions with
             shape ``(N, 3)``, float64, a sample communicator, an int64 CPU
@@ -455,8 +530,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         -------
         torch.nn.Module
             Traced compact deployment module of the eight graph inputs,
-            followed by those of ``coord``, ``communicator``, ``box``,
-            ``halo_send`` and ``halo_swaps`` that the model reads.
+            followed by those of ``charge_spin``, ``coord``,
+            ``communicator``, ``box``, ``halo_send`` and ``halo_swaps`` that
+            the model reads.
         """
         model = self
         has_long_range = coord is not None
@@ -473,141 +549,31 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 "together, and the communicator with either"
             )
 
-        def lower(
-            *graph: torch.Tensor, **inputs: torch.Tensor
-        ) -> dict[str, torch.Tensor]:
+        def lower(**inputs: torch.Tensor) -> dict[str, torch.Tensor]:
             return model.forward_lower_canonical_graph(
-                *graph, do_atomic_virial=do_atomic_virial, **inputs
+                **inputs, do_atomic_virial=do_atomic_virial
             )
 
-        # Every input of the traced module takes the name of a parameter of
-        # the traced function, so each combination of the inputs that the
-        # model reads after the graph has a function of its own.
-        def fn(
-            atype: torch.Tensor,
-            n_node: torch.Tensor,
-            n_local: torch.Tensor,
-            source: torch.Tensor,
-            edge_vec: torch.Tensor,
-            destination_row_ptr: torch.Tensor,
-            source_row_ptr: torch.Tensor,
-            source_order: torch.Tensor,
-        ) -> dict[str, torch.Tensor]:
-            return lower(
-                atype,
-                n_node,
-                n_local,
-                source,
-                edge_vec,
-                destination_row_ptr,
-                source_row_ptr,
-                source_order,
-            )
-
-        def fn_long_range(
-            atype: torch.Tensor,
-            n_node: torch.Tensor,
-            n_local: torch.Tensor,
-            source: torch.Tensor,
-            edge_vec: torch.Tensor,
-            destination_row_ptr: torch.Tensor,
-            source_row_ptr: torch.Tensor,
-            source_order: torch.Tensor,
-            coord: torch.Tensor,
-            communicator: torch.Tensor,
-            box: torch.Tensor,
-        ) -> dict[str, torch.Tensor]:
-            return lower(
-                atype,
-                n_node,
-                n_local,
-                source,
-                edge_vec,
-                destination_row_ptr,
-                source_row_ptr,
-                source_order,
-                coord=coord,
-                communicator=communicator,
-                box=box,
-            )
-
-        def fn_border(
-            atype: torch.Tensor,
-            n_node: torch.Tensor,
-            n_local: torch.Tensor,
-            source: torch.Tensor,
-            edge_vec: torch.Tensor,
-            destination_row_ptr: torch.Tensor,
-            source_row_ptr: torch.Tensor,
-            source_order: torch.Tensor,
-            communicator: torch.Tensor,
-            halo_send: torch.Tensor,
-            halo_swaps: torch.Tensor,
-        ) -> dict[str, torch.Tensor]:
-            return lower(
-                atype,
-                n_node,
-                n_local,
-                source,
-                edge_vec,
-                destination_row_ptr,
-                source_row_ptr,
-                source_order,
-                communicator=communicator,
-                halo_send=halo_send,
-                halo_swaps=halo_swaps,
-            )
-
-        def fn_long_range_border(
-            atype: torch.Tensor,
-            n_node: torch.Tensor,
-            n_local: torch.Tensor,
-            source: torch.Tensor,
-            edge_vec: torch.Tensor,
-            destination_row_ptr: torch.Tensor,
-            source_row_ptr: torch.Tensor,
-            source_order: torch.Tensor,
-            coord: torch.Tensor,
-            communicator: torch.Tensor,
-            box: torch.Tensor,
-            halo_send: torch.Tensor,
-            halo_swaps: torch.Tensor,
-        ) -> dict[str, torch.Tensor]:
-            return lower(
-                atype,
-                n_node,
-                n_local,
-                source,
-                edge_vec,
-                destination_row_ptr,
-                source_row_ptr,
-                source_order,
-                coord=coord,
-                communicator=communicator,
-                box=box,
-                halo_send=halo_send,
-                halo_swaps=halo_swaps,
-            )
-
-        traced = {
-            (False, False): fn,
-            (True, False): fn_long_range,
-            (False, True): fn_border,
-            (True, True): fn_long_range_border,
-        }[(has_long_range, has_border)]
-        # The inputs that the model reads after the graph, in the order of the
-        # compact lower.
-        trailing = (coord, communicator, box, halo_send, halo_swaps)
-        return make_fx(traced, **make_fx_kwargs)(
-            atype,
-            n_node,
-            n_local,
-            source,
-            edge_vec,
-            destination_row_ptr,
-            source_row_ptr,
-            source_order,
-            *(value for value in trailing if value is not None),
+        inputs = {
+            "atype": atype,
+            "n_node": n_node,
+            "n_local": n_local,
+            "source": source,
+            "edge_vec": edge_vec,
+            "destination_row_ptr": destination_row_ptr,
+            "source_row_ptr": source_row_ptr,
+            "source_order": source_order,
+            "charge_spin": charge_spin,
+            "coord": coord,
+            "communicator": communicator,
+            "box": box,
+            "halo_send": halo_send,
+            "halo_swaps": halo_swaps,
+        }
+        return trace_named_lower(
+            lower,
+            {name: value for name, value in inputs.items() if value is not None},
+            **make_fx_kwargs,
         )
 
     def forward(

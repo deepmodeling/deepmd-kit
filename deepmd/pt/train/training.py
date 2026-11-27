@@ -38,6 +38,9 @@ from deepmd.dpmodel.train import (
 from deepmd.dpmodel.train.data import (
     add_training_data_requirements,
 )
+from deepmd.dpmodel.utils.multi_task import (
+    get_case_embd_config,
+)
 from deepmd.loggers import (
     is_node_main_process,
 )
@@ -126,6 +129,9 @@ from deepmd.pt_expt.train.utils import (
 from deepmd.pt_expt.train.validation import (
     FullValidator,
     build_full_validators,
+)
+from deepmd.pt_expt.utils.contact_clamp import (
+    synchronize_contact_edges,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -467,7 +473,6 @@ class Trainer:
             filter_enabled = add_training_data_requirements(
                 training_data,
                 training_params["training_data"],
-                model_params,
                 data_requirement,
                 lambda data, requirements: data.add_data_requirement(requirements),
             )
@@ -529,7 +534,6 @@ class Trainer:
                 filter_enabled = add_training_data_requirements(
                     training_data[model_key],
                     training_params["data_dict"][model_key]["training_data"],
-                    model_params["model_dict"][model_key],
                     data_requirement,
                     lambda data, requirements: data.add_data_requirement(requirements),
                 )
@@ -682,7 +686,7 @@ class Trainer:
                     else None
                 )
                 optimizer_state_dict = (
-                    state_dict["optimizer"] if finetune_model is None else None
+                    state_dict.get("optimizer") if finetune_model is None else None
                 )
                 state_dict = state_dict["model"]
             self.start_step = (
@@ -814,6 +818,13 @@ class Trainer:
                                 if ".models.0." in new_key:
                                     new_key = new_key.replace(".models.0.", ".")
                                 elif ".models.1." in new_key:
+                                    use_random_initialization = True
+                                elif new_key.endswith(
+                                    (".contact_clamp.edges", ".contact_clamp.contacts")
+                                ):
+                                    # A bridged target fine-tuned from an
+                                    # unbridged source records its contacts
+                                    # and data edges from the covalent start.
                                     use_random_initialization = True
                                 else:
                                     raise KeyError(
@@ -1348,7 +1359,13 @@ class Trainer:
         self, optimizer_state_dict: dict[str, Any] | None
     ) -> None:
         """Load optimizer state for restart training when available."""
-        if optimizer_state_dict is None or not self.restart_training:
+        if not self.restart_training:
+            return
+        if optimizer_state_dict is None:
+            log.warning(
+                "The restart checkpoint has no optimizer state; optimizer "
+                "moments start at zero."
+            )
             return
         if self.sharding.shards_parameters:
             set_optimizer_state_dict(
@@ -1589,6 +1606,7 @@ class Trainer:
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
+            synchronize_contact_edges(self.wrapper)
             if self.model_ema is not None:
                 self.model_ema.update()
 
@@ -2191,11 +2209,8 @@ class Trainer:
         raise RuntimeError(
             "Unable to collect a globally valid training batch for task "
             f"{task_key!r} after {max_attempts} attempts: no frame keeps every "
-            "atom pair beyond the frame-filter radius. A bridged model filters at "
-            "the midpoint of its bridging window, so lower "
-            "`bridging_fraction_inner` or `bridging_fraction_outer` there, or "
-            "`training_data.min_pair_dist` on any other model, or clean the "
-            "dataset."
+            "atom pair beyond `training_data.min_pair_dist`; lower it or clean "
+            "the dataset."
         )
 
     def get_data(
@@ -2607,30 +2622,6 @@ def get_model_for_wrapper(
                 # only set case_embd when from scratch multitask training
                 _model[_model_key].set_case_embd(case_embd_index[_model_key])
     return _model
-
-
-def get_case_embd_config(_model_params: dict[str, Any]) -> tuple[bool, dict[str, int]]:
-    assert "model_dict" in _model_params, (
-        "Only support setting case embedding for multi-task model!"
-    )
-    model_keys = list(_model_params["model_dict"])
-    sorted_model_keys = sorted(model_keys)
-    numb_case_embd_list = [
-        _model_params["model_dict"][model_key]
-        .get("fitting_net", {})
-        .get("dim_case_embd", 0)
-        for model_key in sorted_model_keys
-    ]
-    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
-        raise ValueError(
-            f"All models must have the same dimension of case embedding, while the settings are: {numb_case_embd_list}"
-        )
-    if numb_case_embd_list[0] == 0:
-        return False, {}
-    case_embd_index = {
-        model_key: idx for idx, model_key in enumerate(sorted_model_keys)
-    }
-    return True, case_embd_index
 
 
 def model_change_out_bias(

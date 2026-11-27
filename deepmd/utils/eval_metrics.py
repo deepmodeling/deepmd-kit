@@ -13,6 +13,10 @@ from typing import (
 
 import numpy as np
 
+from deepmd.utils.loss import (
+    symmetrize_virial,
+)
+
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
@@ -44,6 +48,12 @@ DP_TEST_SPIN_WEIGHTED_METRIC_KEYS = {
 }
 DP_TEST_WEIGHTED_FORCE_METRIC_KEYS = ("mae_fw", "rmse_fw")
 DP_TEST_HESSIAN_METRIC_KEYS = ("mae_h", "rmse_h")
+
+
+def metric_family_label(family: str, *, symm_virial: bool = False) -> str:
+    """Return the display label of an energy-type metric family."""
+    label = family.upper()
+    return f"SYMM_{label}" if symm_virial and family in {"v", "s"} else label
 
 
 def mae(diff: np.ndarray) -> float:
@@ -197,8 +207,14 @@ def compute_energy_type_metrics(
     test_data: dict[str, np.ndarray],
     natoms: int,
     has_pbc: bool,
+    *,
+    symm_virial: bool = False,
 ) -> EnergyTypeEvalMetrics:
-    """Compute shared energy-type metrics for one evaluation dataset."""
+    """Compute shared energy-type metrics for one evaluation dataset.
+
+    ``symm_virial`` projects both virials before any second-rank metric,
+    including stress. The nine-component normalization is retained.
+    """
     energy = None
     energy_per_atom = None
     force = None
@@ -226,6 +242,9 @@ def compute_energy_type_metrics(
     if has_pbc and bool(test_data.get("find_virial", 0.0)):
         virial_prediction = prediction["virial"].reshape(-1, 9)
         virial_reference = test_data["virial"].reshape(-1, 9)
+        if symm_virial:
+            virial_prediction = symmetrize_virial(virial_prediction)
+            virial_reference = symmetrize_virial(virial_reference)
         virial = compute_error_stat(virial_prediction, virial_reference)
         virial_per_atom = compute_error_stat(
             virial_prediction, virial_reference, scale=1.0 / natoms
@@ -320,6 +339,8 @@ def compute_full_validation_energy_metrics(
     test_data: dict[str, np.ndarray],
     natoms: int,
     has_pbc: bool,
+    *,
+    symm_virial: bool = False,
 ) -> dict[str, tuple[float, float]]:
     """Compute energy-type full validation metrics for one system.
 
@@ -334,13 +355,17 @@ def compute_full_validation_energy_metrics(
         The number of atoms per frame, used for per-atom normalization.
     has_pbc : bool
         Whether the system is periodic, gating the second-rank metrics.
+    symm_virial : bool
+        Compare only the symmetric parts of the virial tensors.
 
     Returns
     -------
     dict[str, tuple[float, float]]
         Weighted-average-ready ``(value, weight)`` pairs keyed by metric.
     """
-    metrics = compute_energy_type_metrics(prediction, test_data, natoms, has_pbc)
+    metrics = compute_energy_type_metrics(
+        prediction, test_data, natoms, has_pbc, symm_virial=symm_virial
+    )
     return metrics.as_weighted_average_errors(FULL_VALIDATION_WEIGHTED_METRIC_KEYS)
 
 
@@ -349,6 +374,8 @@ def compute_full_validation_spin_metrics(
     test_data: dict[str, np.ndarray],
     natoms: int,
     has_pbc: bool,
+    *,
+    symm_virial: bool = False,
 ) -> dict[str, tuple[float, float]]:
     """Compute spin-energy full validation metrics for one system.
 
@@ -367,13 +394,17 @@ def compute_full_validation_spin_metrics(
         The number of atoms per frame, used for per-atom normalization.
     has_pbc : bool
         Whether the system is periodic, gating the second-rank metrics.
+    symm_virial : bool
+        Compare only the symmetric parts of the virial tensors.
 
     Returns
     -------
     dict[str, tuple[float, float]]
         Weighted-average-ready ``(value, weight)`` pairs keyed by metric.
     """
-    metrics = compute_energy_type_metrics(prediction, test_data, natoms, has_pbc)
+    metrics = compute_energy_type_metrics(
+        prediction, test_data, natoms, has_pbc, symm_virial=symm_virial
+    )
     errors = metrics.as_weighted_average_errors(
         SPIN_FULL_VALIDATION_WEIGHTED_METRIC_KEYS
     )
@@ -441,7 +472,7 @@ class FullValidationMetricProfile:
         One-line legend describing the metric columns.
     compute_system_metrics : Callable
         Routine computing weighted metric pairs for one system, with signature
-        ``(prediction, test_data, natoms, has_pbc) -> dict``.
+        ``(prediction, test_data, natoms, has_pbc, *, symm_virial=False) -> dict``.
     """
 
     name: str
@@ -449,7 +480,7 @@ class FullValidationMetricProfile:
     needs_spin: bool
     log_header_note: str
     compute_system_metrics: Callable[
-        [dict[str, np.ndarray], dict[str, np.ndarray], int, bool],
+        ...,
         dict[str, tuple[float, float]],
     ]
 
@@ -483,7 +514,9 @@ class FullValidationMetricProfile:
             for kind, _ in family.metrics()
         }
 
-    def columns(self, metric: str) -> tuple[tuple[str, str], ...]:
+    def columns(
+        self, metric: str, *, symm_virial: bool = False
+    ) -> tuple[tuple[str, str], ...]:
         """Return the ``val.log`` table layout for a selected metric.
 
         The table carries one column pair per trained quantity. Where several
@@ -508,7 +541,10 @@ class FullValidationMetricProfile:
             if family.prefactors not in shown or family.token == selected:
                 shown[family.prefactors] = family
         return tuple(
-            (f"{family.token.upper()}_{kind.upper()}", key)
+            (
+                f"{metric_family_label(family.token, symm_virial=symm_virial)}_{kind.upper()}",
+                key,
+            )
             for family in shown.values()
             for kind, key in family.metrics()
         )

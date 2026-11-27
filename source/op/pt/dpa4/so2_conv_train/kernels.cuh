@@ -86,6 +86,7 @@ __global__ void so2_value_fwd_kernel(
     int n_gated,
     bool apply_alpha,
     bool has_bias,
+    bool parity,
     typename acc_type<scalar_t>::type inv_tau,
     typename acc_type<scalar_t>::type label_smooth,
     typename acc_type<scalar_t>::type norm_eps) {
@@ -103,6 +104,7 @@ __global__ void so2_value_fwd_kernel(
   const int row_w = RED * cf;
   const int m0 = NS0 * cf;
   const int lg = L * cf;
+  const int m1 = parity ? lg : 2 * lg;
   const int frow = n_focus * row_w;
   // Tile-slot strides carry one word of padding: the row width is a
   // multiple of the bank count, so unpadded slots would land the TE-wide
@@ -314,8 +316,7 @@ __global__ void so2_value_fwd_kernel(
   acc_t* u_nxt = u_b;
   for (int layer = 0; layer < n_gated; ++layer) {
     const scalar_t* w0 = w0_all + (long)layer * n_focus * m0 * m0;
-    const scalar_t* w1 =
-        w1_all + (long)layer * n_focus * (row_w - m0) * (row_w - m0);
+    const scalar_t* w1 = w1_all + (long)layer * n_focus * m1 * m1;
     const scalar_t* gw = gw_all + (long)layer * n_focus * cf * lg;
     scalar_t* z_l = z_all + (long)layer * n_focus * n_edge * row_w;
 
@@ -399,9 +400,9 @@ __global__ void so2_value_fwd_kernel(
           }
         }
       } else {
-        const int m1 = row_w - m0;
         const scalar_t* w1f = w1 + (long)f * m1 * m1;
-        const int o1 = o - m0;
+        const int sign_offset = parity ? ((o - m0) / lg) * lg : 0;
+        const int o1 = (o - m0) % m1;
 #pragma unroll
         for (int e = 0; e < TE; ++e) {
           z[e] = 0;
@@ -411,7 +412,7 @@ __global__ void so2_value_fwd_kernel(
           const acc_t w = (acc_t)w1f[(long)i * m1 + o1];
 #pragma unroll
           for (int e = 0; e < TE; ++e) {
-            z[e] += u_cur[e * frow_p + f * row_w + m0 + i] * w;
+            z[e] += u_cur[e * frow_p + f * row_w + m0 + sign_offset + i] * w;
           }
         }
       }
@@ -445,9 +446,8 @@ __global__ void so2_value_fwd_kernel(
     const int o = col % row_w;
     const scalar_t* w0 =
         w0_all + (long)n_gated * n_focus * m0 * m0 + (long)f * m0 * m0;
-    const scalar_t* w1 = w1_all +
-                         (long)n_gated * n_focus * (row_w - m0) * (row_w - m0) +
-                         (long)f * (row_w - m0) * (row_w - m0);
+    const scalar_t* w1 =
+        w1_all + (long)n_gated * n_focus * m1 * m1 + (long)f * m1 * m1;
     acc_t z[TE];
 #pragma unroll
     for (int e = 0; e < TE; ++e) {
@@ -463,14 +463,14 @@ __global__ void so2_value_fwd_kernel(
         }
       }
     } else {
-      const int m1 = row_w - m0;
-      const int o1 = o - m0;
+      const int sign_offset = parity ? ((o - m0) / lg) * lg : 0;
+      const int o1 = (o - m0) % m1;
 #pragma unroll 4
       for (int i = 0; i < m1; ++i) {
         const acc_t w = (acc_t)w1[(long)i * m1 + o1];
 #pragma unroll
         for (int e = 0; e < TE; ++e) {
-          z[e] += u_cur[e * frow_p + f * row_w + m0 + i] * w;
+          z[e] += u_cur[e * frow_p + f * row_w + m0 + sign_offset + i] * w;
         }
       }
     }
@@ -520,6 +520,7 @@ cudaError_t launch_so2_value_fwd(const scalar_t* x,
                                  int n_gated,
                                  bool apply_alpha,
                                  bool has_bias,
+                                 bool parity,
                                  typename acc_type<scalar_t>::type inv_tau,
                                  typename acc_type<scalar_t>::type label_smooth,
                                  typename acc_type<scalar_t>::type norm_eps,
@@ -541,7 +542,8 @@ cudaError_t launch_so2_value_fwd(const scalar_t* x,
     kernel<<<n_blocks, kThreads, smem_bytes, stream>>>(
         x, src, wig, kc, cb, w_fc, fc_bias, norm_scale, w0_all, w1_all, gw_all,
         x_out, z_all, u_final, alpha_out, n_edge, x_sn, x_sd, cf, n_focus,
-        n_gated, apply_alpha, has_bias, inv_tau, label_smooth, norm_eps);
+        n_gated, apply_alpha, has_bias, parity, inv_tau, label_smooth,
+        norm_eps);
     return cudaSuccess;
   };
   auto by_te = [&](auto rc) -> cudaError_t {

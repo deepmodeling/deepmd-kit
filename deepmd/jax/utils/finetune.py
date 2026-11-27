@@ -18,9 +18,28 @@ from deepmd.utils.finetune import (
 )
 
 
+def merged_initialization_source(model: Any) -> Any:
+    """Expose a pretrained function as base weights without mutating its adapters.
+
+    Initialization and fine-tuning construct a fresh target parameterization.
+    Folding source adapters first preserves their complete contribution when
+    the target has no adapters or uses a different rank. Restart restores the
+    original adapter state directly and does not use this transformation.
+    """
+    from deepmd.jax.descriptor.lora import (
+        has_lora,
+        merge_lora_into_base,
+    )
+    from deepmd.jax.env import (
+        nnx,
+    )
+
+    return merge_lora_into_base(nnx.clone(model)) if has_lora(model) else model
+
+
 def _load_model_params(finetune_model: str) -> dict[str, Any]:
     """Extract model params from a JAX checkpoint."""
-    return serialize_from_file(finetune_model)["model_def_script"]
+    return serialize_from_file(finetune_model, training=False)["model_def_script"]
 
 
 def get_finetune_rules(

@@ -449,6 +449,15 @@ class TestSeZMBridgingFinetune(unittest.TestCase):
         for key in learned:
             if source_version is not None and key.endswith(".version_tensor"):
                 continue
+            if key not in pretrained:
+                # The contact clamp of a bridged target records its own
+                # training contacts, so it keeps its empty record and initial
+                # edges when the source carries none.
+                self.assertTrue(
+                    key.endswith((".contact_clamp.edges", ".contact_clamp.contacts")),
+                    key,
+                )
+                continue
             torch.testing.assert_close(
                 state[key],
                 pretrained[key],
@@ -458,16 +467,12 @@ class TestSeZMBridgingFinetune(unittest.TestCase):
 
     def test_finetune_plain_into_bridged(self) -> None:
         bridged = deepcopy(model_sezm)
-        bridged.update(
-            bridging_method="ZBL", bridging_r_inner=0.5, bridging_r_outer=0.8
-        )
+        bridged["bridging_method"] = "ZBL"
         self._finetune_across_bridging(model_sezm, bridged)
 
     def test_finetune_bridged_into_plain(self) -> None:
         bridged = deepcopy(model_sezm)
-        bridged.update(
-            bridging_method="ZBL", bridging_r_inner=0.5, bridging_r_outer=0.8
-        )
+        bridged["bridging_method"] = "ZBL"
         self._finetune_across_bridging(bridged, model_sezm)
 
     def test_legacy_plain_finetune_has_a_portable_bridged_record(self) -> None:
@@ -476,9 +481,7 @@ class TestSeZMBridgingFinetune(unittest.TestCase):
         from deepmd.pt_expt.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4PTExpt
 
         bridged = deepcopy(model_sezm)
-        bridged.update(
-            bridging_method="ZBL", bridging_r_inner=0.5, bridging_r_outer=0.8
-        )
+        bridged["bridging_method"] = "ZBL"
         model = self._finetune_across_bridging(model_sezm, bridged, source_version=1.2)
         model.eval()
         restored = type(model).deserialize(model.serialize()).to(env.DEVICE).eval()
@@ -488,7 +491,9 @@ class TestSeZMBridgingFinetune(unittest.TestCase):
         descriptor_record = model.get_descriptor().serialize()
         for descriptor_cls in (DescrptDPA4DP, DescrptDPA4PTExpt):
             converted = descriptor_cls.deserialize(deepcopy(descriptor_record))
-            self.assertEqual(converted.serialize()["@version"], 1.3)
+            self.assertEqual(
+                converted.serialize()["@version"], descriptor_cls.LATEST_VERSION
+            )
         inputs = {
             "coord": torch.tensor(
                 [[[0.0, 0.0, 0.0], [0.6, 0.0, 0.0], [2.0, 0.7, 0.0]]],

@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Device-resident border exchange (contract in border_exchange.h).
+// Border exchange of a domain-decomposed system (contract in
+// border_exchange.h), and the differentiable operators deepmd::border_exchange
+// and deepmd::border_exchange_backward built on it.
 //
-// The rows a swap sends are gathered on the device into one contiguous
-// buffer. With an MPI library that reads device memory they travel from that
-// buffer into the halo rows directly; otherwise they are staged through pinned
-// host buffers. A swap of rows of this rank copies them on the device.
+// The rows a swap sends are gathered into one contiguous buffer. Host rows,
+// and device rows with an MPI library that reads device memory, travel from
+// that buffer into the halo rows directly; other device rows are staged
+// through pinned host buffers. A swap of rows of this rank copies them in
+// place.
 
 #include "border_exchange.h"
 
+#ifdef DEEPMD_TORCH_HAS_CUDA
 #include <ATen/cuda/CUDAContext.h>
+#endif
 #include <ATen/ops/_assert_async.h>
 #include <c10/util/Exception.h>
+#include <torch/library.h>
 
 #include <algorithm>
 #include <limits>
@@ -40,6 +46,47 @@ Swap swap_at(const torch::Tensor& swaps, std::int64_t index) {
           row[kBorderReceiveCount], row[kBorderFirstReceive]};
 }
 
+void check_rows(const torch::Tensor& rows, const char* op) {
+  TORCH_CHECK(rows.dim() == 2 && rows.is_contiguous() &&
+                  (rows.scalar_type() == torch::kFloat32 ||
+                   rows.scalar_type() == torch::kFloat64) &&
+                  (rows.is_cuda() || rows.device().is_cpu()),
+              op,
+              ": the rows must be a contiguous float32 or float64 matrix on "
+              "the host or a CUDA device");
+}
+
+#ifdef USE_MPI
+/// Wait until the stream of device rows has written them, before MPI or a
+/// blocking copy reads them; host rows are complete already, and a library
+/// built without CUDA registers the host kernels alone.
+void complete(const torch::Tensor& rows) {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  if (rows.is_cuda()) {
+    at::cuda::getCurrentCUDAStream().synchronize();
+  }
+#else
+  (void)rows;
+#endif
+}
+
+/// The MPI type of one row of ``rows``.
+MPI_Datatype row_type_of(const torch::Tensor& rows) {
+  MPI_Datatype row_type = MPI_DATATYPE_NULL;
+  MPI_Type_contiguous(
+      static_cast<int>(rows.size(1)),
+      rows.scalar_type() == torch::kFloat64 ? MPI_DOUBLE : MPI_FLOAT,
+      &row_type);
+  MPI_Type_commit(&row_type);
+  return row_type;
+}
+
+/// Whether MPI reads and writes the memory of ``rows`` itself.
+bool mpi_reads(const torch::Tensor& rows) {
+  return !rows.is_cuda() || mpi_reads_device_memory();
+}
+#endif
+
 }  // namespace
 
 std::int64_t check_border_plan(const torch::Tensor& send_nodes,
@@ -54,12 +101,10 @@ std::int64_t check_border_plan(const torch::Tensor& send_nodes,
               ": the border swaps must be a contiguous int32 CPU tensor of "
               "shape (nswap, ",
               static_cast<int>(kBorderSwapColumns), ")");
-  TORCH_CHECK(send_nodes.is_cuda() && send_nodes.dim() == 1 &&
+  TORCH_CHECK(send_nodes.dim() == 1 &&
                   send_nodes.scalar_type() == torch::kInt32 &&
                   send_nodes.is_contiguous(),
-              op,
-              ": the border send list must be a contiguous int32 CUDA "
-              "vector");
+              op, ": the border send list must be a contiguous int32 vector");
   communicator_address(communicator, op);
   TORCH_CHECK(node_count <= std::numeric_limits<int>::max(), op,
               ": a border exchange addresses its rows with int32 indices, but "
@@ -108,10 +153,7 @@ void border_exchange(const torch::Tensor& rows,
   if (nswap == 0) {
     return;
   }
-  TORCH_CHECK(rows.is_cuda() && rows.dim() == 2 &&
-                  rows.scalar_type() == torch::kFloat32 && rows.is_contiguous(),
-              "border_exchange: the rows must be a contiguous float32 CUDA "
-              "matrix");
+  check_rows(rows, "border_exchange");
   const std::int64_t width = rows.size(1);
   const std::int64_t address =
       communicator_address(communicator, "border_exchange");
@@ -152,8 +194,7 @@ void border_exchange(const torch::Tensor& rows,
                 swap.send_rank, " or ", swap.receive_rank,
                 ", but no communicator was given");
     if (row_type == MPI_DATATYPE_NULL) {
-      MPI_Type_contiguous(static_cast<int>(width), MPI_FLOAT, &row_type);
-      MPI_Type_commit(&row_type);
+      row_type = row_type_of(rows);
     }
     TORCH_CHECK(swap.send_count <= std::numeric_limits<int>::max() &&
                     swap.receive_count <= std::numeric_limits<int>::max(),
@@ -164,18 +205,17 @@ void border_exchange(const torch::Tensor& rows,
     }
     MPI_Request requests[2];
     int pending = 0;
-    if (mpi_reads_device_memory()) {
-      // MPI reads the rows of the device once the stream has written them.
-      at::cuda::getCurrentCUDAStream().synchronize();
+    if (mpi_reads(rows)) {
+      complete(rows);
       if (swap.receive_count > 0) {
-        MPI_Irecv(receive_rows.data_ptr<float>(),
-                  static_cast<int>(swap.receive_count), row_type,
-                  swap.receive_rank, kBorderTag, comm, &requests[pending++]);
+        MPI_Irecv(receive_rows.data_ptr(), static_cast<int>(swap.receive_count),
+                  row_type, swap.receive_rank, kBorderTag, comm,
+                  &requests[pending++]);
       }
       if (swap.send_count > 0) {
-        MPI_Isend(send_rows.data_ptr<float>(),
-                  static_cast<int>(swap.send_count), row_type, swap.send_rank,
-                  kBorderTag, comm, &requests[pending++]);
+        MPI_Isend(send_rows.data_ptr(), static_cast<int>(swap.send_count),
+                  row_type, swap.send_rank, kBorderTag, comm,
+                  &requests[pending++]);
       }
       MPI_Waitall(pending, requests, MPI_STATUSES_IGNORE);
       continue;
@@ -193,21 +233,21 @@ void border_exchange(const torch::Tensor& rows,
       staged_send.copy_(send_rows);
     }
     if (swap.receive_count > 0) {
-      MPI_Irecv(staged_receive.data_ptr<float>(),
-                static_cast<int>(swap.receive_count), row_type,
-                swap.receive_rank, kBorderTag, comm, &requests[pending++]);
+      MPI_Irecv(staged_receive.data_ptr(), static_cast<int>(swap.receive_count),
+                row_type, swap.receive_rank, kBorderTag, comm,
+                &requests[pending++]);
     }
     if (swap.send_count > 0) {
-      MPI_Isend(staged_send.data_ptr<float>(),
-                static_cast<int>(swap.send_count), row_type, swap.send_rank,
-                kBorderTag, comm, &requests[pending++]);
+      MPI_Isend(staged_send.data_ptr(), static_cast<int>(swap.send_count),
+                row_type, swap.send_rank, kBorderTag, comm,
+                &requests[pending++]);
     }
     MPI_Waitall(pending, requests, MPI_STATUSES_IGNORE);
     if (swap.receive_count > 0) {
       receive_rows.copy_(staged_receive, /*non_blocking=*/true);
       // The pinned buffer is rewritten by the next swap, so its copy to the
       // device completes before the host reuses it.
-      at::cuda::getCurrentCUDAStream().synchronize();
+      complete(rows);
     }
 #else
     TORCH_CHECK(false, "border_exchange: swap ", s, " involves rank ",
@@ -230,10 +270,7 @@ void border_accumulate(const torch::Tensor& rows,
   if (nswap == 0) {
     return;
   }
-  TORCH_CHECK(rows.is_cuda() && rows.dim() == 2 &&
-                  rows.scalar_type() == torch::kFloat32 && rows.is_contiguous(),
-              "border_accumulate: the rows must be a contiguous float32 CUDA "
-              "matrix");
+  check_rows(rows, "border_accumulate");
   const std::int64_t width = rows.size(1);
   const std::int64_t address =
       communicator_address(communicator, "border_accumulate");
@@ -278,8 +315,7 @@ void border_accumulate(const torch::Tensor& rows,
                 swap.send_rank, " or ", swap.receive_rank,
                 ", but no communicator was given");
     if (row_type == MPI_DATATYPE_NULL) {
-      MPI_Type_contiguous(static_cast<int>(width), MPI_FLOAT, &row_type);
-      MPI_Type_commit(&row_type);
+      row_type = row_type_of(rows);
     }
     TORCH_CHECK(swap.send_count <= std::numeric_limits<int>::max() &&
                     swap.receive_count <= std::numeric_limits<int>::max(),
@@ -290,17 +326,17 @@ void border_accumulate(const torch::Tensor& rows,
     auto returned = packed.narrow(0, 0, swap.send_count);
     MPI_Request requests[2];
     int pending = 0;
-    if (mpi_reads_device_memory()) {
-      at::cuda::getCurrentCUDAStream().synchronize();
+    if (mpi_reads(rows)) {
+      complete(rows);
       if (swap.send_count > 0) {
-        MPI_Irecv(returned.data_ptr<float>(), static_cast<int>(swap.send_count),
+        MPI_Irecv(returned.data_ptr(), static_cast<int>(swap.send_count),
                   row_type, swap.send_rank, kBorderTag, comm,
                   &requests[pending++]);
       }
       if (swap.receive_count > 0) {
-        MPI_Isend(halo_rows.data_ptr<float>(),
-                  static_cast<int>(swap.receive_count), row_type,
-                  swap.receive_rank, kBorderTag, comm, &requests[pending++]);
+        MPI_Isend(halo_rows.data_ptr(), static_cast<int>(swap.receive_count),
+                  row_type, swap.receive_rank, kBorderTag, comm,
+                  &requests[pending++]);
       }
       MPI_Waitall(pending, requests, MPI_STATUSES_IGNORE);
     } else {
@@ -318,21 +354,21 @@ void border_accumulate(const torch::Tensor& rows,
         staged_send.copy_(halo_rows);
       }
       if (swap.send_count > 0) {
-        MPI_Irecv(staged_receive.data_ptr<float>(),
-                  static_cast<int>(swap.send_count), row_type, swap.send_rank,
-                  kBorderTag, comm, &requests[pending++]);
+        MPI_Irecv(staged_receive.data_ptr(), static_cast<int>(swap.send_count),
+                  row_type, swap.send_rank, kBorderTag, comm,
+                  &requests[pending++]);
       }
       if (swap.receive_count > 0) {
-        MPI_Isend(staged_send.data_ptr<float>(),
-                  static_cast<int>(swap.receive_count), row_type,
-                  swap.receive_rank, kBorderTag, comm, &requests[pending++]);
+        MPI_Isend(staged_send.data_ptr(), static_cast<int>(swap.receive_count),
+                  row_type, swap.receive_rank, kBorderTag, comm,
+                  &requests[pending++]);
       }
       MPI_Waitall(pending, requests, MPI_STATUSES_IGNORE);
       if (swap.send_count > 0) {
         returned.copy_(staged_receive, /*non_blocking=*/true);
         // The pinned buffer is rewritten by the next swap, so its copy to the
         // device completes before the host reuses it.
-        at::cuda::getCurrentCUDAStream().synchronize();
+        complete(rows);
       }
     }
     if (swap.send_count > 0) {
@@ -351,4 +387,68 @@ void border_accumulate(const torch::Tensor& rows,
 #endif
 }
 
+namespace {
+
+/// Check a border plan of ``rows`` and return its owned row count.
+std::int64_t plan_rows(const torch::Tensor& rows,
+                       const torch::Tensor& send_nodes,
+                       const torch::Tensor& swaps,
+                       const torch::Tensor& communicator,
+                       const char* op) {
+  TORCH_CHECK(rows.dim() == 2, op, ": the rows must form a matrix");
+  TORCH_CHECK(send_nodes.device() == rows.device(), op,
+              ": the border send list must be on the device of the rows");
+  return check_border_plan(send_nodes, swaps, communicator, rows.size(0), op);
+}
+
+/// The rows with every halo row replaced by the row of the atom it images.
+torch::Tensor border_exchange_op(const torch::Tensor& rows,
+                                 const torch::Tensor& send_nodes,
+                                 const torch::Tensor& swaps,
+                                 const torch::Tensor& communicator) {
+  plan_rows(rows, send_nodes, swaps, communicator, "border_exchange");
+  auto refreshed = rows.clone(at::MemoryFormat::Contiguous);
+  border_exchange(refreshed, send_nodes, swaps, communicator);
+  return refreshed;
+}
+
+/// The gradient of border_exchange_op: the gradient of every halo row added
+/// onto the row of the atom it images, and zero on the halo rows, whose input
+/// values the exchange overwrites.
+torch::Tensor border_exchange_backward_op(const torch::Tensor& gradient,
+                                          const torch::Tensor& send_nodes,
+                                          const torch::Tensor& swaps,
+                                          const torch::Tensor& communicator) {
+  const std::int64_t owned = plan_rows(
+      gradient, send_nodes, swaps, communicator, "border_exchange_backward");
+  auto accumulated = gradient.clone(at::MemoryFormat::Contiguous);
+  border_accumulate(accumulated, send_nodes, swaps, communicator);
+  accumulated.narrow(0, owned, accumulated.size(0) - owned).zero_();
+  return accumulated;
+}
+
+}  // namespace
 }  // namespace deepmd
+
+TORCH_LIBRARY_FRAGMENT(deepmd, m) {
+  m.def(
+      "border_exchange(Tensor rows, Tensor send_nodes, Tensor swaps, "
+      "Tensor communicator) -> Tensor");
+  m.def(
+      "border_exchange_backward(Tensor gradient, Tensor send_nodes, "
+      "Tensor swaps, Tensor communicator) -> Tensor");
+}
+
+TORCH_LIBRARY_IMPL(deepmd, CPU, m) {
+  m.impl("border_exchange", &deepmd::border_exchange_op);
+  m.impl("border_exchange_backward", &deepmd::border_exchange_backward_op);
+}
+
+// Device rows are ordered through the CUDA stream before MPI reads them, so
+// only a library built against a CUDA-enabled PyTorch serves them.
+#ifdef DEEPMD_TORCH_HAS_CUDA
+TORCH_LIBRARY_IMPL(deepmd, CUDA, m) {
+  m.impl("border_exchange", &deepmd::border_exchange_op);
+  m.impl("border_exchange_backward", &deepmd::border_exchange_backward_op);
+}
+#endif

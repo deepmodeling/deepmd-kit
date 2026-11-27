@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from collections.abc import (
     Callable,
+    Iterable,
+    Mapping,
+    Sequence,
 )
 from functools import (
     wraps,
@@ -34,7 +37,11 @@ from deepmd.jax.env import (
 )
 
 
-class ArrayAPIVariable(nnx.Variable):
+class ArrayAPIMixin:
+    """Expose the wrapped JAX array to backend-independent model code."""
+
+    value: Any
+
     def __array__(self, *args: Any, **kwargs: Any) -> np.ndarray:
         return self.value.__array__(*args, **kwargs)
 
@@ -46,6 +53,16 @@ class ArrayAPIVariable(nnx.Variable):
 
     def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack_device__(*args, **kwargs)
+
+    if not hasattr(nnx.Variable, "set_value"):
+        # Legacy NNX forwards indexed writes to the array itself. JAX arrays
+        # are immutable; the variable owns the result of the functional update.
+        def __setitem__(self, key: Any, value: Any) -> None:
+            self.value = self.value.at[key].set(value)
+
+
+class ArrayAPIVariable(ArrayAPIMixin, nnx.Variable):
+    """A non-parameter NNX variable exposing the array API."""
 
 
 @overload
@@ -72,6 +89,73 @@ def to_jax_array(array: np.ndarray | None) -> jnp.ndarray | None:
     if array is None:
         return None
     return jnp.array(array)
+
+
+def to_flat_state(state: nnx.State) -> Sequence[tuple[tuple[str | int, ...], Any]]:
+    """Flatten NNX state into path-variable pairs without changing its leaves."""
+    if hasattr(nnx, "to_flat_state"):
+        return nnx.to_flat_state(state)
+    return tuple(state.flat_state().items())
+
+
+def from_flat_state(
+    state: Mapping[tuple[str | int, ...], Any]
+    | Iterable[tuple[tuple[str | int, ...], Any]],
+) -> nnx.State:
+    """Reconstruct NNX state while preserving variable types and metadata."""
+    if hasattr(nnx, "from_flat_state"):
+        return nnx.from_flat_state(state)
+    return nnx.State.from_flat_path(state)
+
+
+def to_pure_dict(state: nnx.State) -> dict[str, Any]:
+    """Convert NNX state into nested dictionaries of its array values."""
+    if hasattr(nnx, "to_pure_dict"):
+        return nnx.to_pure_dict(state)
+    return state.to_pure_dict()
+
+
+def replace_by_pure_dict(state: nnx.State, pure_dict: Mapping[str, Any]) -> None:
+    """Replace the array values of NNX state by those of nested dictionaries."""
+    if hasattr(nnx, "replace_by_pure_dict"):
+        nnx.replace_by_pure_dict(state, pure_dict)
+    else:
+        state.replace_by_pure_dict(pure_dict)
+
+
+def iter_modules(module: nnx.Module) -> Iterable[tuple[tuple[Any, ...], nnx.Module]]:
+    """Iterate over a module and its submodules with their paths."""
+    if hasattr(nnx, "iter_modules"):
+        return nnx.iter_modules(module)
+    return module.iter_modules()
+
+
+def set_variable_value(variable: nnx.Variable, value: Any) -> None:
+    """Replace a variable's entire value without mutating its array storage."""
+    if hasattr(variable, "set_value"):
+        variable.set_value(value)
+    else:
+        variable.value = value
+
+
+def as_pure(tree: Any) -> Any:
+    """Replace NNX variables by their values while preserving pytree structure.
+
+    Older Flax versions represent split variables with ``VariableState``;
+    both those snapshots and live ``Variable`` objects carry the same value
+    contract. Recent versions provide the conversion directly, including
+    support for their array-reference variables.
+    """
+    if hasattr(nnx, "as_pure"):
+        return nnx.as_pure(tree)
+    variable_types = (nnx.Variable, nnx.VariableState)
+    return jax.tree.map(
+        lambda value: (
+            as_pure(value.value) if isinstance(value, variable_types) else value
+        ),
+        tree,
+        is_leaf=lambda value: isinstance(value, variable_types),
+    )
 
 
 _DPMODEL_TO_JAX: dict[type[Any], Callable[[Any], Any]] = {}
@@ -215,10 +299,7 @@ def dpmodel_setattr(obj: nnx.Module, name: str, value: Any) -> tuple[bool, Any]:
     if isinstance(current, nnx.Variable) and isinstance(value, (np.ndarray, jax.Array)):
         if isinstance(value, np.ndarray):
             value = to_jax_array(value)
-        if Version(flax_version) >= _FLAX_0_12:
-            current.set_value(value)
-        else:
-            current.value = value
+        set_variable_value(current, value)
         return True, current
 
     if (
