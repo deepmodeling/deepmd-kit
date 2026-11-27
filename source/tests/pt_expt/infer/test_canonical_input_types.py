@@ -56,11 +56,14 @@ def test_direct_canonical_only_transfers_consumed_types(dtype, case):
     before = np.asarray(atom_types).copy()
     evaluator = make_evaluator("vesin")
     transfers = []
+    masks = []
     original = torch.as_tensor
 
     def record(value, *args, **kwargs):
         if kwargs.get("dtype") == torch.int64:
             transfers.append(np.array(value, copy=True))
+        if kwargs.get("dtype") == torch.bool:
+            masks.append(np.array(value, copy=True))
         return original(value, *args, **kwargs)
 
     with (
@@ -74,14 +77,15 @@ def test_direct_canonical_only_transfers_consumed_types(dtype, case):
             np.zeros((1, n, 3)), atom_types, None, torch.device("cpu"), canonical=True
         )
     assert result is builder.return_value
+    assert not transfers
     if case in ("virtual", "virtual_cpu_tensor"):
-        assert len(transfers) == 1
-        np.testing.assert_array_equal(transfers[0], before)
+        assert len(masks) == 1
+        np.testing.assert_array_equal(masks[0], before >= 0)
         assert torch.equal(
             builder.call_args.kwargs["node_mask"], torch.tensor(before >= 0)
         )
     else:
-        assert not transfers
+        assert not masks
         assert builder.call_args.kwargs["node_mask"] is None
     np.testing.assert_array_equal(atom_types, before)
 
