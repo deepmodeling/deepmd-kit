@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
-import shutil
 import subprocess
 import zipfile
 from pathlib import (
@@ -15,8 +14,8 @@ import pytest
 def test_kokkos_pressure(tmp_path):
     if os.environ.get("DPA4SPIN_KOKKOS_REQUIRED") != "1":
         pytest.skip("requires CUDA Kokkos LAMMPS")
-    lmp = shutil.which("lmp")
-    assert lmp
+    lmp = Path(os.environ["DEEPMD_KOKKOS_LMP"])
+    assert lmp.is_absolute() and lmp.is_file(), lmp
     model = (
         Path(__file__).resolve().parents[2] / "tests/infer/deeppot_dpa4c_canonical.pt2"
     )

@@ -59,7 +59,7 @@ cmake -S "${LAMMPS_SOURCE_ROOT}/cmake" -B "${LAMMPS_BUILD_DIR}" \
 	-D FFT=KISS \
 	-D FFT_KOKKOS=KISS \
 	"${MPI_ARGS[@]}"
-cmake --build "${LAMMPS_BUILD_DIR}" --target lammps --parallel "${BUILD_JOBS}"
+cmake --build "${LAMMPS_BUILD_DIR}" --target lmp --parallel "${BUILD_JOBS}"
 
 cmake -S "${REPO_ROOT}/source" -B "${PLUGIN_BUILD_DIR}" \
 	-D CMAKE_BUILD_TYPE=Release \
@@ -123,7 +123,7 @@ PY
 # Keep each invocation and each pytest process separate, including failures.
 mkdir -p "${BUILD_ROOT}/test-reports"
 TEST_REPORT_DIR=$(mktemp -d "${BUILD_ROOT}/test-reports/run.XXXXXX")
-DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
+DEEPMD_KOKKOS_LMP="${LAMMPS_BUILD_DIR}/lmp" DPA4SPIN_KOKKOS_REQUIRED=1 python -m pytest -v -s \
 	"${REPO_ROOT}/source/lmp/tests/test_dpa4spin_kokkos_magnetic_force.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_kokkos_pressure.py" \
 	"${REPO_ROOT}/source/lmp/tests/test_lammps_dpa4c_multiblock_kokkos.py" \
