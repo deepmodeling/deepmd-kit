@@ -23,6 +23,9 @@ from deepmd.dpmodel.train import (
     make_task_maps,
     print_data_summaries,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    validate_task_sampling_backend,
+)
 from deepmd.tf2.env import (
     tf,
 )
@@ -87,6 +90,7 @@ class TF2TrainEntrypoint(AbstractTrainEntrypoint):
         config: dict[str, Any],
         options: TrainEntrypointOptions,
     ) -> None:
+        validate_task_sampling_backend(config.get("training", {}), "tf2")
         if options.init_frz_model:
             raise NotImplementedError(
                 "TF2 training does not support init_frz_model yet."

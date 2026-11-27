@@ -25,7 +25,7 @@ def _learned_part_path(model: torch.nn.Module) -> str | None:
     """Return the state-dict path of the learned descriptor-fitting part of a model.
 
     A plain model holds that part as its atomic model and a composition with
-    one learned sub-model, such as a zone-bridging one, as that sub-model, so
+    one learned sub-model, such as a bridged one, as that sub-model, so
     fine-tuning between the two transfers the part across the paths. A model
     without a single learned part returns ``None``.
     """

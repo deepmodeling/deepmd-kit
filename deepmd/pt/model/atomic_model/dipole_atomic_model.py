@@ -8,6 +8,9 @@ import torch
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
 )
+from deepmd.utils.preset_out_bias import (
+    preset_assigns,
+)
 
 from .dp_atomic_model import (
     DPAtomicModel,
@@ -23,11 +26,7 @@ class DPDipoleAtomicModel(DPAtomicModel):
                 "fitting must be an instance of DipoleFittingNet for DPDipoleAtomicModel"
             )
         super().__init__(descriptor, fitting, type_map, **kwargs)
-        if self.preset_out_bias is not None and any(
-            entry is not None
-            for entries in self.preset_out_bias.values()
-            for entry in entries
-        ):
+        if any(preset_assigns(self.preset_out_bias, key) for key in self.bias_keys):
             raise ValueError(
                 "Dipole models do not apply an output bias and cannot use "
                 "assigned preset_out_bias values."

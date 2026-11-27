@@ -6,10 +6,12 @@ types, typically their energy in vacuum. An assigned output is fixed by the
 preset alone: every type that occurs in the training data must be assigned,
 the assigned types take the preset value, and no statistics are computed for
 the output. A string entry names a bundled table of isolated-atom energies or
-the JSON file holding a table. The helpers of this module turn the configured
-form into the canonical per-type form stored on the atomic model, carry it
-through type-map changes, and expand it into the per-type rows written to the
-model.
+the JSON file holding a table. An entry of a table may also name the spin
+moment of the isolated atom its value belongs to, ``{"value": ..., "spin":
+...}``, which a native-spin model gives its reference atom of that type. The
+helpers of this module turn the configured form into the canonical per-type
+form stored on the atomic model, carry it through type-map changes, and
+expand it into the per-type rows written to the model.
 
 The canonical form holds nested Python lists rather than arrays: it is written
 to the serialized model as it is, and no array data lives on the atomic model
@@ -30,7 +32,99 @@ from typing import (
 
 import numpy as np
 
+from deepmd.utils.charge_state import (
+    validate_charge_state,
+)
+
 BUNDLED_TABLES_FILE = Path(__file__).with_name("preset_out_bias_tables.json")
+
+#: Key of the canonical form that holds, per type, the magnitude of the spin
+#: moment of the isolated atom the preset values belong to. The leading ``@``
+#: keeps it apart from every output name, by which the outputs are addressed.
+#: Its value has one entry per type like that of an output, so the per-type
+#: transformations of the canonical form carry it along.
+REFERENCE_SPIN_KEY = "@spin"
+
+#: Key of the canonical form that holds, per type, the charge and spin
+#: multiplicity of the isolated atom the preset values belong to, as
+#: ``[charge, multiplicity]``. It carries the atom-level condition of a table
+#: computed from one electronic state of every element, such as neutral
+#: ground-state atoms.
+REFERENCE_CHARGE_SPIN_KEY = "@charge_spin"
+
+_REFERENCE_KEYS = (REFERENCE_SPIN_KEY, REFERENCE_CHARGE_SPIN_KEY)
+
+
+def _split_entry(key: str, entry: Any) -> tuple[Any, float | None, list[float] | None]:
+    """Split a preset entry into its value and the conditions named with it.
+
+    Parameters
+    ----------
+    key
+        Output name of the entry, for diagnostics.
+    entry
+        A value, or a dict holding the value under ``value``, optionally the
+        magnitude of the spin moment under ``spin`` and optionally the charge
+        and spin multiplicity of the atom under ``charge`` and
+        ``multiplicity``.
+
+    Returns
+    -------
+    tuple[Any, float | None, list[float] | None]
+        The value, the moment and the charge/spin condition, None for those
+        the entry does not name.
+
+    Raises
+    ------
+    ValueError
+        If a dict entry holds no ``value``, holds another field, names a
+        moment that is not a finite non-negative number, or names only one of
+        ``charge`` and ``multiplicity`` or a condition no table represents.
+    """
+    if not isinstance(entry, dict):
+        return entry, None, None
+    if entry.get("value") is None or set(entry) - {
+        "value",
+        "spin",
+        "charge",
+        "multiplicity",
+    }:
+        raise ValueError(
+            f"preset_out_bias['{key}'] entry {entry!r} must hold 'value' and "
+            "optionally 'spin', 'charge' and 'multiplicity'"
+        )
+    charge, multiplicity = entry.get("charge"), entry.get("multiplicity")
+    if (charge is None) != (multiplicity is None):
+        raise ValueError(
+            f"preset_out_bias['{key}'] entry {entry!r} names only one of "
+            "'charge' and 'multiplicity'"
+        )
+    if isinstance(charge, bool) or isinstance(multiplicity, bool):
+        raise ValueError(
+            f"preset_out_bias['{key}'] entry {entry!r} names the charge and "
+            f"multiplicity {charge!r}, {multiplicity!r}; both are integers, not "
+            "booleans"
+        )
+    condition = (
+        None if charge is None else validate_charge_state([charge, multiplicity])
+    )
+    return entry["value"], _check_moment(entry.get("spin")), condition
+
+
+def _check_moment(moment: Any) -> float | None:
+    """Validate the magnitude of a spin moment, None for an absent one."""
+    if moment is None:
+        return None
+    if isinstance(moment, bool) or not isinstance(moment, (int, float)):
+        raise ValueError(
+            f"the spin moment of a preset entry must be a number, got {moment!r}"
+        )
+    if not np.isfinite(moment) or moment < 0:
+        raise ValueError(
+            "the spin moment of a preset entry is a finite non-negative "
+            f"magnitude, got {moment!r}"
+        )
+    return float(moment)
 
 
 def bundled_preset_out_bias_tables() -> dict[str, dict[str, Any]]:
@@ -97,7 +191,9 @@ def resolve_preset_out_bias_tables(model_config: dict[str, Any]) -> dict[str, An
     model_config
         A model configuration, or a multi-task configuration whose branches
         live under ``model_dict``; a preset next to ``model_dict`` is resolved
-        as well.
+        as well. A branch that names an entry of ``shared_dict`` as its
+        preset is left as it is: the multi-task preprocessing replaces the
+        name by the entry.
 
     Returns
     -------
@@ -107,7 +203,9 @@ def resolve_preset_out_bias_tables(model_config: dict[str, Any]) -> dict[str, An
         the configuration is self-contained.
     """
     preset = model_config.get("preset_out_bias")
-    if preset and any(isinstance(spec, str) for spec in preset.values()):
+    if isinstance(preset, dict) and any(
+        isinstance(spec, str) for spec in preset.values()
+    ):
         resolved = {
             key: load_preset_out_bias_table(spec) if isinstance(spec, str) else spec
             for key, spec in preset.items()
@@ -136,8 +234,12 @@ def normalize_preset_out_bias(
         leaves the type unassigned; a dict keyed by element name, whose
         elements outside ``type_map`` are ignored; or a string naming a bundled
         table or the path of a JSON file holding such a dict. An entry is a
-        number, or a nested list or array of the output shape. The normalized
-        form is accepted as well, so the function is idempotent.
+        number, a nested list or array of the output shape, or a dict holding
+        such a value under ``value``, optionally the magnitude of the spin
+        moment of the isolated atom the value belongs to under ``spin``, and
+        optionally that atom's condition under ``charge`` and
+        ``multiplicity``. The normalized form is accepted as well, so the
+        function is idempotent.
     type_map
         Element names of the model, indexed by type.
 
@@ -146,19 +248,47 @@ def normalize_preset_out_bias(
     dict[str, list[list | None]] or None
         For every output, one entry per type of ``type_map``: None for a type
         without preset, otherwise the preset as a nested list of floats with
-        at least one dimension. None if no preset is given.
+        at least one dimension. When an entry names a spin moment, the key
+        :data:`REFERENCE_SPIN_KEY` holds one magnitude per type, None for a
+        type that names none; when an entry names a charge/spin condition,
+        :data:`REFERENCE_CHARGE_SPIN_KEY` holds it per type the same way.
+        None if no preset is given.
 
     Raises
     ------
     ValueError
         If a value is neither a sequence with one entry per type, a dict, a
-        bundled table name nor a file path, or if an entry is not entirely
-        finite and numeric.
+        bundled table name nor a file path, if an entry is not entirely
+        finite and numeric, or if the entries of a type name different spin
+        moments or charge/spin conditions.
     """
     if preset_out_bias is None:
         return None
     normalized = {}
+    moments = [
+        _check_moment(moment)
+        for moment in preset_out_bias.get(REFERENCE_SPIN_KEY, [None] * len(type_map))
+    ]
+    if len(moments) != len(type_map):
+        raise ValueError(
+            f"preset_out_bias['{REFERENCE_SPIN_KEY}'] must hold one spin moment "
+            f"per type of the type_map ({len(type_map)}), got {len(moments)}"
+        )
+    conditions: list[list[float] | None] = [
+        None if condition is None else validate_charge_state(condition)
+        for condition in preset_out_bias.get(
+            REFERENCE_CHARGE_SPIN_KEY, [None] * len(type_map)
+        )
+    ]
+    if len(conditions) != len(type_map):
+        raise ValueError(
+            "preset_out_bias"
+            f"['{REFERENCE_CHARGE_SPIN_KEY}'] must hold one condition per type of "
+            f"the type_map ({len(type_map)}), got {len(conditions)}"
+        )
     for key, spec in preset_out_bias.items():
+        if key in _REFERENCE_KEYS:
+            continue
         if isinstance(spec, str):
             spec = load_preset_out_bias_table(spec)
         if isinstance(spec, dict):
@@ -172,7 +302,23 @@ def normalize_preset_out_bias(
                 f"a bundled table name or the path of a JSON file, got {spec!r}"
             )
         values = []
-        for entry in entries:
+        for index, entry in enumerate(entries):
+            entry, moment, condition = _split_entry(key, entry)
+            if moment is not None:
+                if moments[index] not in (None, moment):
+                    raise ValueError(
+                        f"the entries of type '{type_map[index]}' name the spin "
+                        f"moments {moments[index]} and {moment}"
+                    )
+                moments[index] = moment
+            if condition is not None:
+                if conditions[index] not in (None, condition):
+                    raise ValueError(
+                        f"the entries of type '{type_map[index]}' name the "
+                        f"charge/spin conditions {conditions[index]} and "
+                        f"{condition}"
+                    )
+                conditions[index] = condition
             if entry is None:
                 values.append(None)
                 continue
@@ -191,6 +337,10 @@ def normalize_preset_out_bias(
                 )
             values.append(value.tolist())
         normalized[key] = values
+    if any(moment is not None for moment in moments):
+        normalized[REFERENCE_SPIN_KEY] = moments
+    if any(condition is not None for condition in conditions):
+        normalized[REFERENCE_CHARGE_SPIN_KEY] = conditions
     return normalized
 
 
@@ -249,15 +399,14 @@ def check_preset_out_bias(
     """
     if preset_out_bias is None:
         return
-    unknown = sorted(set(preset_out_bias) - set(keys))
+    outputs = set(preset_out_bias) - set(_REFERENCE_KEYS)
+    unknown = sorted(outputs - set(keys))
     if unknown:
         raise ValueError(
             f"preset_out_bias names the outputs {unknown} which the model does "
             f"not produce; its outputs are {keys}"
         )
-    assigned = any(
-        entry is not None for entries in preset_out_bias.values() for entry in entries
-    )
+    assigned = any(preset_assigns(preset_out_bias, key) for key in outputs)
     if assigned and distinguish_types is False:
         raise ValueError(
             "preset_out_bias assigns the bias of individual atom types, but the "

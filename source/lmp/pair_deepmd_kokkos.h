@@ -1,24 +1,27 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // The device pair style is available when the LAMMPS Kokkos package is enabled.
+#ifdef PAIR_CLASS
+#ifdef LMP_KOKKOS
+// clang-format off
+PairStyle(deepmd/kk,PairDeepMDKokkos<LMPDeviceType>);
+PairStyle(deepmd/kk/device,PairDeepMDKokkos<LMPDeviceType>);
+PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
+// clang-format on
+#endif
+#else
+
 #ifdef LMP_KOKKOS
 
 #ifndef LAMMPS_VERSION_NUMBER
 #error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
 #endif
 
-#ifdef PAIR_CLASS
-// clang-format off
-PairStyle(deepmd/kk,PairDeepMDKokkos<LMPDeviceType>);
-PairStyle(deepmd/kk/device,PairDeepMDKokkos<LMPDeviceType>);
-PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
-// clang-format on
-#else
-
 #ifndef LMP_PAIR_DEEPMD_KOKKOS_H
 #define LMP_PAIR_DEEPMD_KOKKOS_H
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "compact_canonical_graph_kokkos.h"
 #include "kokkos_base.h"
@@ -53,25 +56,27 @@ using DeepMDKokkosCommBuffer = DAT::tdual_double_1d;
 // > 2 * cutoff along every periodic direction); domain decomposition uses the
 // extended local-plus-ghost node set and folds ghost forces onto their owners
 // through reverse communication.
+//
+// The further models of an ensemble evaluate the graph of the first one, at
+// the steps that write the model deviation, so they share its cutoff and its
+// input schema.
 template <class DeviceType>
 class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
  public:
   typedef DeviceType device_type;
-  typedef ArrayTypes<DeviceType> AT;
 
   PairDeepMDKokkos(class LAMMPS*);
-  ~PairDeepMDKokkos() override;
 
   void compute(int, int) override;
   void init_style() override;
   // Fold extended (ghost) node outputs onto their owners. The KOKKOS package
   // forces 'newton off' with a full neighbor list, disabling the integrator's
   // automatic reverse communication, so the extended multi-domain path drives
-  // it explicitly for force and centroid per-atom virial. The Kokkos
-  // overrides pack and unpack on the device, in the device path of the KOKKOS
-  // package and in the fold that replaces its host path
-  // (CompactCanonicalGhostFold); the plain overrides serve communication styles
-  // other than the Kokkos brick communication.
+  // it explicitly for the force, the centroid per-atom virial and the outputs
+  // of the models of an ensemble. The Kokkos overrides pack and unpack on the
+  // device, in the device path of the KOKKOS package and in the fold that
+  // replaces its host path (CompactCanonicalGhostFold); the plain overrides
+  // serve communication styles other than the Kokkos brick communication.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   int pack_reverse_comm_kokkos(int, int, DeepMDKokkosCommBuffer&) override;
@@ -87,6 +92,9 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // of the model, relative to the origin of the box for a model with a
   // long-range module; public for the same reason.
   const double* model_node_positions();
+  // Virial of the outputs of the model evaluated last, in its units, with
+  // shape (9); public for the same reason.
+  std::vector<double> output_virial();
 
  protected:
   // Model node set and, for a compact canonical artifact, the graph itself.
@@ -110,44 +118,35 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   Kokkos::View<double*, DeviceType> d_atom_energy;  // (nlocal)
   Kokkos::View<double*, DeviceType> d_out_force;    // (3 * nnode_model)
   Kokkos::View<double*, DeviceType> d_atom_virial;  // (9 * nnode_model)
-  // Virial of the whole compact canonical graph, which that artifact returns
-  // alongside the per-node outputs.
+  // Virial of the evaluation: the compact canonical artifact returns it for
+  // the whole graph alongside the per-node outputs, and output_virial() sums
+  // it from the per-node virial of the edge-input form.
   Kokkos::View<double[9], DeviceType> d_graph_virial;
-  DAT::tdual_double_1d
-      k_reverse_virial;  // (9 * nall), atom-order ghost contributions
-
-  // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
-  // downstream per-atom computes/dumps see it after the device-to-host sync).
-  // The transformed accumulator view was added in the 10Sep2025 release.
-#if LAMMPS_VERSION_NUMBER < 20250910
-  DAT::tdual_double_1d k_eatom;
-  typename AT::t_double_1d d_eatom;
-#else
-  DAT::ttransform_kkacc_1d k_eatom;
-  typename AT::t_kkacc_1d d_eatom;
-#endif
 
   int edge_capacity;     // allocated edges in d_edge_index / d_edge_vec
   bool edge_vec_fp32;    // model graph ABI consumes edge vectors in fp32
   bool canonical_graph;  // compact source-only graph artifact
-  // The canonical artifact reads the source CSR on every call, not only for
-  // the per-atom virial.
+  // A canonical model of the ensemble reads the source CSR on every call, not
+  // only for the per-atom virial.
   bool canonical_source_csr;
-  // The canonical artifact reads features of the ghost nodes of an extended
-  // node set from their owners through its halo exchange.
+  // A canonical model of the ensemble reads features of the ghost nodes of an
+  // extended node set from their owners through its halo exchange.
   bool canonical_halo;
   bool device_path_ok;     // resolved once in init_style
-  bool reverse_virial;     // reverse communication operates on centroid virial
   bool reverse_used_host;  // the host pack/unpack overrides ran
   // Device-packed fold that replaces the host reverse communication.
   CompactCanonicalGhostFold<DeviceType, DeepMDKokkosCommBuffer> ghost_fold;
   // Halo exchange of the extended node set for ``canonical_halo``.
   CompactCanonicalHalo<DeviceType> halo_exchange;
+
+  // Store the outputs of the model evaluated last as those of model
+  // ``model`` of the ensemble.
+  void store_outputs(int model);
 };
 
 }  // namespace LAMMPS_NS
 
 #endif
-#endif
-
 #endif  // LMP_KOKKOS
+
+#endif

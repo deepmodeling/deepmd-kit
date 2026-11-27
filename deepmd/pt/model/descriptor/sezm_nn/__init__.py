@@ -36,7 +36,6 @@ from .edge_cache import (
     build_edge_cache,
     build_edge_cache_from_edges,
     build_edge_type_feat,
-    compute_source_gates,
     edge_cache_to_dtype,
 )
 from .embedding import (
@@ -96,9 +95,7 @@ from .projection import (
     resolve_so3_grid,
 )
 from .radial import (
-    BridgingSwitch,
     C3CutoffEnvelope,
-    InnerClamp,
     RadialBasis,
     RadialMLP,
 )
@@ -136,7 +133,6 @@ __all__ = [
     "LEBEDEV_PRECISION_TO_NPOINTS",
     "BaseGridNet",
     "BaseGridProjector",
-    "BridgingSwitch",
     "C3CutoffEnvelope",
     "ChannelLinear",
     "ChargeSpinEmbedding",
@@ -153,7 +149,6 @@ __all__ = [
     "GeometricInitialEmbedding",
     "GridBranch",
     "GridMLP",
-    "InnerClamp",
     "LoRASO2",
     "LoRASO3",
     "NodeCartesianTensorProduct",
@@ -190,7 +185,6 @@ __all__ = [
     "build_m_major_l_index",
     "build_merged_state_dict",
     "build_rotate_inv_rescale",
-    "compute_source_gates",
     "edge_cache_to_dtype",
     "fold_lora_state_dict_keys",
     "get_promoted_dtype",

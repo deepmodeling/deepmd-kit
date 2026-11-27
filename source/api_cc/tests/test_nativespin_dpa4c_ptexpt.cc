@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Test C++ inference for the native-spin DPA4C archive, the family the
-// backend dispatch routes to NativeSpinPTExpt: it declares spin_scheme
-// "native" and, unlike DPA4's graph lower, ships no with-comm artifact (see
-// source/tests/infer/gen_dpa4c_spin.py and DeepPotPTExptPlugin.cc).
+// Test C++ inference for the native-spin DPA4C archive, which the backend
+// dispatch routes to NativeSpinPTExpt as it does every archive that declares
+// spin_scheme "native" (see source/tests/infer/gen_dpa4c_spin.py and
+// DeepPotPTExptPlugin.cc).
 //
 // The cases here pin how the standalone entry point divides its inputs among
 // frames, which is the whole of what distinguishes a multi-frame call from a

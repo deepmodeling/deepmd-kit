@@ -2,9 +2,16 @@
 """DPA4 spin construction contracts for the PyTorch backend."""
 
 import copy
+from pathlib import (
+    Path,
+)
 
 import pytest
+import torch
 
+from deepmd.infer import (
+    DeepPot,
+)
 from deepmd.pt.model.model import (
     get_model,
     get_standard_model,
@@ -17,6 +24,9 @@ from deepmd.pt.model.model.sezm_native_spin_model import (
 )
 from deepmd.pt.model.model.spin_model import (
     SpinEnergyModel,
+)
+from deepmd.pt.train.wrapper import (
+    ModelWrapper,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -63,11 +73,16 @@ def test_standard_spin_requires_compatible_backbone(
         get_model(config)
 
 
-def test_native_spin_construction() -> None:
+def _native_config() -> dict:
     config = _config()
     config["spin"] = {"use_spin": [True, False], "scheme": "native"}
     config["type"] = "dpa4"
     config["fitting_net"]["type"] = "dpa4_ener"
+    return config
+
+
+def test_native_spin_construction() -> None:
+    config = _native_config()
     original = copy.deepcopy(config)
     model = get_model(config)
     assert isinstance(model, SeZMNativeSpinModel)
@@ -75,6 +90,27 @@ def test_native_spin_construction() -> None:
     assert model.get_sel() == [config["descriptor"]["sel"]]
     assert model.get_nnei() == config["descriptor"]["sel"]
     assert config == original
+
+
+def test_native_spin_checkpoint_requires_its_learned_weights(tmp_path: Path) -> None:
+    config = _native_config()
+    config["descriptor"]["mmax"] = 0
+    state = ModelWrapper(get_model(config), model_params=config).state_dict()
+    checkpoint = tmp_path / "native.pt"
+    torch.save({"model": state}, checkpoint)
+    DeepPot(str(checkpoint)).close()
+
+    # At mmax=0 the retained SO(2) weights have the same shapes across the two
+    # architectures; only the missing spin projections prevent restoration.
+    prefix = "model.Default.atomic_model.descriptor."
+    state[prefix + "version_tensor"].fill_(1.3)
+    del state[prefix + "spin_embedding.pair_layer.matrix"]
+    del state[prefix + "env_seed_embedding.spin_output_proj.matrix"]
+    torch.save({"model": state}, checkpoint)
+    with pytest.raises(
+        ValueError, match=r"spin_embedding\.pair_layer\.matrix.*retraining"
+    ):
+        DeepPot(str(checkpoint))
 
 
 @pytest.mark.parametrize(

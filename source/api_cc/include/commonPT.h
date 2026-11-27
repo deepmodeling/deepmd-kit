@@ -657,7 +657,8 @@ inline void canonicalizeGraphPayload(GraphTensorPack& pack,
  *   including the real halo types). In the multi-rank
  *   case ``edge_index`` indexes the extended atoms directly, so ghost reaction
  *   forces land on the ghost rows and are folded to their owners by LAMMPS
- *   reverse-comm (no with-comm artifact / no border_op — dpa1 is non-MP).
+ *   reverse-comm; a message-passing model refreshes the ghost-node features
+ *   inside the program it runs on these tensors.
  */
 template <typename VALUETYPE>
 inline GraphTensorPack buildGraphTensors(
@@ -737,8 +738,8 @@ inline GraphTensorPack buildGraphTensors(
  * used to be absorbed by broadcasting ``copy_`` (silent result corruption
  * for daparam > 1).
  *
- * Shared by ``DeepPotPTExpt`` and ``DeepSpinPTExpt``: both graph routes carry
- * aparam on the same flat node axis.
+ * Shared by ``DeepPotPTExpt`` and ``NativeSpinPTExpt``: both graph routes
+ * carry aparam on the same flat node axis.
  */
 inline at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
                                       std::int64_t n_node_count,
@@ -996,7 +997,7 @@ inline void flatten_canonical_atom_virial(
 
 /**
  * @brief Remap NeighborGraph (graph-schema) native-spin public outputs onto
- *        the dense internal-key layout ``DeepSpinPTExpt::compute`` consumes.
+ *        the dense internal-key layout ``NativeSpinPTExpt`` consumes.
  *
  * The single-rank native-spin graph forward is LOCAL-only and additionally
  * emits ``force_mag`` (N, 3): per-node
@@ -1008,8 +1009,8 @@ inline void flatten_canonical_atom_virial(
  * ``remap_graph_outputs_to_dense_keys`` and additionally zero-pads
  * ``force_mag`` up to ``nall`` exactly like ``force`` (ghost rows already
  * folded onto their local owners via ``edge_index``), writing it to
- * ``energy_derv_r_mag`` -- the key ``DeepSpinPTExpt::compute`` reads for
- * every other lower schema (dense nlist / edge_vec).
+ * ``energy_derv_r_mag`` -- the key from which ``NativeSpinPTExpt`` reads
+ * the magnetic force.
  *
  * **Single-rank only** (``fold_to_local=true``, so ``N == nloc``).  The
  * multi-rank sibling is
@@ -1049,13 +1050,14 @@ inline void remap_graph_spin_outputs_to_dense_keys(
  * reverse-comm — exactly as the dense path returns its extended force.  No
  * zero-padding (unlike the single-rank helper).
  *
- * Shared by both multi-rank graph routes: non-message-passing models (dpa1)
+ * Shared by every multi-rank graph route: non-message-passing models (dpa1)
  * run this on the plain extended-region artifact (no comm), while
- * message-passing models (DPA2/DPA3) run it on the with-comm artifact's
- * output -- ``border_op`` inside that artifact fills ghost-node embeddings
- * in-place before the model reduces energy/force/virial, so by the time
- * outputs reach this function the two cases are indistinguishable: it is
- * the ``atom_energy[0:nloc]``-only reduction below that matters either way.
+ * message-passing models run it on the output of a program that fills the
+ * ghost-node embeddings before the model reduces energy/force/virial: the
+ * with-comm artifact of an energy model (``border_op``) or the main program
+ * of a native-spin model (its border plan). By the time outputs reach this
+ * function the cases are indistinguishable: it is the
+ * ``atom_energy[0:nloc]``-only reduction below that matters either way.
  *
  * Key differences from the single-rank helper:
  *   - ``energy_redu`` = sum of the LOCAL atom energies

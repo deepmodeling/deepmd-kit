@@ -3,11 +3,13 @@ import os
 import unittest
 
 import numpy as np
+import pytest
 
 from deepmd.utils.spin import (
     Spin,
     env_protection_descriptors,
     normalize_spin_use_spin,
+    parse_spin_scheme,
 )
 
 CUR_DIR = os.path.dirname(__file__)
@@ -244,3 +246,22 @@ class SpinTest(unittest.TestCase):
             self.spin_3.get_pair_exclude_types(),
             self.spin_3_float.get_pair_exclude_types(),
         )
+
+
+@pytest.mark.parametrize(
+    "scheme,mode",
+    [
+        ("deepspin", None),
+        ("native", "orbit"),
+        ("native:orbit", "orbit"),
+        ("native:exchange", "exchange"),
+    ],
+)
+def test_native_spin_scheme_mode(scheme: str, mode: str | None) -> None:
+    assert parse_spin_scheme(scheme) == mode
+
+
+@pytest.mark.parametrize("scheme", ["native:", "native:unknown", "native:orbit:extra"])
+def test_invalid_native_spin_scheme(scheme: str) -> None:
+    with pytest.raises(ValueError, match="Unknown spin scheme"):
+        parse_spin_scheme(scheme)

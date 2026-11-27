@@ -1,8 +1,9 @@
 # Install LAMMPS
 
 An AI agent can build LAMMPS with the DeePMD-kit module and Kokkos. DPA4/SeZM
-and DPA4C use `pair_style deepmd/kk`; compressed native-spin DPA4C models use
-`pair_style dpa4spin/kk`. See [Install with an AI agent](install-with-agent.md).
+and DPA4C use `pair_style deepmd/kk`; native-spin DPA4 and compressed
+native-spin DPA4C models use `pair_style dpa4spin/kk`. See
+[Install with an AI agent](install-with-agent.md).
 
 There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library.
 

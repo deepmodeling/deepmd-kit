@@ -165,6 +165,8 @@ class ChargeStateFold:
         Parsed archive metadata.
     target : AOTICompiledModel
         The lower whose constants carry the condition.
+    device : torch.device
+        The device both lowers run on.
 
     Attributes
     ----------
@@ -183,6 +185,7 @@ class ChargeStateFold:
         model_file: str,
         metadata: dict[str, Any],
         target: AOTICompiledModel,
+        device: torch.device,
     ) -> None:
         import tempfile
         import zipfile
@@ -223,6 +226,7 @@ class ChargeStateFold:
         self._archive.flush()
         self._runner = aoti_load_package(self._archive.name)
         self._target = target
+        self._device = device
         self._applied: tuple[float, ...] | None = None
 
     @classmethod
@@ -231,6 +235,7 @@ class ChargeStateFold:
         model_file: str,
         metadata: dict[str, Any],
         target: AOTICompiledModel,
+        device: torch.device,
     ) -> ChargeStateFold | None:
         """Load the rebuild an archive declares, if it declares one.
 
@@ -246,6 +251,8 @@ class ChargeStateFold:
             Parsed archive metadata.
         target : AOTICompiledModel
             The lower whose constants carry the condition.
+        device : torch.device
+            The device both lowers run on.
 
         Returns
         -------
@@ -254,7 +261,7 @@ class ChargeStateFold:
         """
         if "charge_state_constants" not in metadata:
             return None
-        return cls(model_file, metadata, target)
+        return cls(model_file, metadata, target, device)
 
     def apply(self, charge_spin: tuple[float, ...]) -> None:
         """Rebuild the tables for a condition and write them over the constants.
@@ -276,16 +283,12 @@ class ChargeStateFold:
             If the rebuild returns a different number of tables than the
             archive names constants.
         """
-        from deepmd.pt_expt.utils.env import (
-            DEVICE,
-        )
-
         if charge_spin == self._applied:
             return
         # The rebuild consumes the condition in the (1, width) float32 layout
         # the inference lower would receive.
         tables = self._runner(
-            torch.tensor([charge_spin], dtype=torch.float32, device=DEVICE)
+            torch.tensor([charge_spin], dtype=torch.float32, device=self._device)
         )
         if len(tables) != len(self._constants):
             raise RuntimeError(

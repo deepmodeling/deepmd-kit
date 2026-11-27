@@ -382,6 +382,25 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="model-devi", mapping=ARGS)
 
+    def test_parser_task_aliases(self) -> None:
+        """``--task``, ``--head`` and ``--model-branch`` name the same task."""
+        commands = {
+            "train": (["INPUT"], "model_branch"),
+            "freeze": ([], "head"),
+            "test": ([], "head"),
+            "eval-desc": ([], "head"),
+            "embed": ([], "head"),
+            "compress": ([], "head"),
+            "change-bias": (["INPUT"], "model_branch"),
+            "moe-merge": (["INPUT"], "head"),
+        }
+        for command, (argv, attribute) in commands.items():
+            for option in ("--task", "--head", "--model-branch"):
+                namespace = parse_args([command, *argv, option, "TASK"])
+                self.assertEqual(
+                    getattr(namespace, attribute), "TASK", msg=f"{command} {option}"
+                )
+
     def test_get_log_level(self) -> None:
         MAPPING = {
             "DEBUG": 10,

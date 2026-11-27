@@ -54,6 +54,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
     xp_einsum,
+    xp_matmul,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -167,7 +168,7 @@ class LoRASO3(SO3Linear):
         A_by_l = xp_asarray_nodetach(xp, self.A_by_l[...], device=device)
         # einsum "lor,lri->lio" as a per-l batched matmul (B @ A) then transpose:
         # (L, F*Cout, R) @ (L, R, Cin) -> (L, F*Cout, Cin) -> (L, Cin, F*Cout)
-        return xp.permute_dims(xp.matmul(B_by_l, A_by_l), (0, 2, 1)) * self.scaling
+        return xp.permute_dims(xp_matmul(B_by_l, A_by_l), (0, 2, 1)) * self.scaling
 
     def call(self, x: Array) -> Array:
         """
@@ -197,8 +198,32 @@ class LoRASO3(SO3Linear):
                 (self.n_focus, self.out_channels),
             )
             out = xp.concat(
-                [out[:, :1, :, :] + bias[None, None, ...], out[:, 1:, :, :]], axis=1
+                [
+                    xp.astype(out[:, :1, :, :] + bias[None, None, ...], out.dtype),
+                    out[:, 1:, :, :],
+                ],
+                axis=1,
             )
+        return out
+
+    def call_scalar(self, x: Array) -> Array:
+        """Project the scalar coefficient with the degree-zero adapter weight."""
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        a = xp_asarray_nodetach(xp, self.A_by_l[0, ...], device=device)
+        b = xp_asarray_nodetach(xp, self.B_by_l[0, ...], device=device)
+        delta = xp.permute_dims(xp_matmul(b, a), (1, 0)) * self.scaling
+        weight = xp.reshape(
+            xp_asarray_nodetach(xp, self.weight[0, ...], device=device) + delta,
+            (self.in_channels, self.n_focus, self.out_channels),
+        )
+        out = xp_einsum("ndfi,ifo->ndfo", x[:, :1], weight)
+        if self.mlp_bias:
+            bias = xp.reshape(
+                xp_asarray_nodetach(xp, self.bias[...], device=device),
+                (self.n_focus, self.out_channels),
+            )
+            out = out + bias[None, None]
         return out
 
     def merge_into_base(self) -> SO3Linear:
@@ -260,16 +285,18 @@ class LoRASO2(SO2Linear):
     Per-``|m|``-group LoRA adapter for ``SO2Linear``.
 
     ``weight_m0`` (``(num_in_m0, F*num_out_m0)``) and each
-    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)``) get an independent 2D
+    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)`` for SO(2), or
+    ``(num_in_m, F*num_out_m)`` with reflection parity) get an independent 2D
     LoRA pair ``A``/``B``.  SO(2) equivariance is preserved because the
     ``|m|>0`` 2x2 complex block ``[[W_u, -W_v], [W_v, W_u]]`` stays intact
     when ``ΔW_m`` is absorbed into the concatenated ``[W_u | W_v]`` layout
     before ``_build_so2_weight`` splits it (the shared input basis ``A``
     splits naturally into ``ΔW_u = B_u A`` and ``ΔW_v = B_v A``).
 
-    The base ``call`` logic is inherited unchanged; only ``_build_so2_weight``
-    is overridden to fold the LoRA delta into each base block prior to
-    assembling the block-diagonal weight.  The ``ΔW_m`` construction does not
+    The base ``call`` logic is inherited unchanged; only ``_order_weights``
+    is overridden to fold the LoRA delta into each base block, so the
+    block-diagonal assembly and the parity path both apply the adapted map.
+    The ``ΔW_m`` construction does not
     depend on the edge count ``E``, so the forward FLOPs remain identical to
     the base.
 
@@ -289,6 +316,7 @@ class LoRASO2(SO2Linear):
         *,
         lmax: int,
         mmax: int | None = None,
+        parity: bool = False,
         in_channels: int,
         out_channels: int,
         n_focus: int = 1,
@@ -304,6 +332,7 @@ class LoRASO2(SO2Linear):
         super().__init__(
             lmax=lmax,
             mmax=mmax,
+            parity=parity,
             in_channels=in_channels,
             out_channels=out_channels,
             n_focus=n_focus,
@@ -348,68 +377,38 @@ class LoRASO2(SO2Linear):
         # einsum "ri,or->io" as a matmul (B @ A) then transpose:
         # (F*num_out_m0, R) @ (R, num_in_m0) -> (F*num_out_m0, num_in_m0)
         #   -> (num_in_m0, F*num_out_m0)
-        return xp.permute_dims(xp.matmul(B_m0, A_m0), (1, 0)) * self.scaling
+        return xp.permute_dims(xp_matmul(B_m0, A_m0), (1, 0)) * self.scaling
 
     def _compute_delta_m(self, m_idx: int, xp: Any, device: Any) -> Array:
         """Return ``ΔW_m[m_idx]`` with the same shape as ``weight_m[m_idx]``."""
         A_m = xp_asarray_nodetach(xp, self.A_m[m_idx][...], device=device)
         B_m = xp_asarray_nodetach(xp, self.B_m[m_idx][...], device=device)
-        return xp.permute_dims(xp.matmul(B_m, A_m), (1, 0)) * self.scaling
+        return xp.permute_dims(xp_matmul(B_m, A_m), (1, 0)) * self.scaling
 
-    def _build_so2_weight(self, xp: Any, device: Any) -> Array:
-        """Assemble the block-diagonal weight with LoRA delta folded in."""
-        out_total = self.reduced_dim * self.out_channels
-        num_in_m0 = (self.lmax + 1) * self.in_channels
-        num_out_m0 = (self.lmax + 1) * self.out_channels
+    def _order_weights(
+        self, xp: Any = None, device: Any = None
+    ) -> tuple[Array, list[Array]]:
+        """Return the base weights of every order with the LoRA deltas folded in.
 
-        # m=0 block: fold ΔW_m0 into the base weight before the view.
-        weight_m0 = xp.reshape(
-            xp_asarray_nodetach(xp, self.weight_m0[...], device=device)
-            + self._compute_delta_m0(xp, device),
-            (num_in_m0, self.n_focus, num_out_m0),
-        )
-        row_blocks = [
-            xp.concat(
-                [
-                    weight_m0,
-                    xp.zeros(
-                        (self._m0_in, self.n_focus, out_total - self._m0_out),
-                        dtype=weight_m0.dtype,
-                        device=device,
-                    ),
-                ],
-                axis=2,
-            )
+        The deltas enter the concatenated ``[W_u | W_v]`` layout (or ``W_u``
+        alone with reflection parity) before any reader splits it, so the dense
+        assembly and the parity path both apply the adapted map.
+        """
+        if xp is None:
+            xp = array_api_compat.array_namespace(self.weight_m0[...])
+            device = array_api_compat.device(self.weight_m0[...])
+        weight_m0, weights_m = super()._order_weights(xp, device)
+        return weight_m0 + self._compute_delta_m0(xp, device), [
+            weight + self._compute_delta_m(m_idx, xp, device)
+            for m_idx, weight in enumerate(weights_m)
         ]
-
-        # |m|>0 blocks: same 2x2 coupling assembly as the base, but with
-        # ΔW_m folded into the concatenated [W_u | W_v] layout first.
-        for m_idx, w in enumerate(self.weight_m):
-            ni0, ni1, pi0, pi1, no0, no1, po0, po1 = self._block_slices[m_idx]
-            ib = ni1 - ni0
-            ob = no1 - no0
-            w = xp.reshape(
-                xp_asarray_nodetach(xp, w[...], device=device)
-                + self._compute_delta_m(m_idx, xp, device),
-                (ib, self.n_focus, 2 * ob),
-            )
-            w_u = w[:, :, :ob]
-            w_v = w[:, :, ob:]
-            left_pad = xp.zeros((ib, self.n_focus, no0), dtype=w.dtype, device=device)
-            right_pad = xp.zeros(
-                (ib, self.n_focus, out_total - po1), dtype=w.dtype, device=device
-            )
-            neg_row = xp.concat([left_pad, w_u, w_v, right_pad], axis=2)
-            pos_row = xp.concat([left_pad, -w_v, w_u, right_pad], axis=2)
-            row_blocks.append(neg_row)
-            row_blocks.append(pos_row)
-        return xp.concat(row_blocks, axis=0)
 
     def merge_into_base(self) -> SO2Linear:
         """Build a plain ``SO2Linear`` whose weights have absorbed every LoRA delta."""
         base = SO2Linear(
             lmax=self.lmax,
             mmax=self.mmax,
+            parity=self.parity,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
             n_focus=self.n_focus,

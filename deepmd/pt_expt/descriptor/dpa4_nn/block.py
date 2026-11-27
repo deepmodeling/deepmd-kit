@@ -32,6 +32,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.block import (
 from deepmd.pt_expt.common import (
     torch_module,
 )
+from deepmd.pt_expt.utils.canonical_graph import (
+    BorderPlan,
+)
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
@@ -44,15 +47,19 @@ _TRUTHY = {"1", "true", "yes", "on"}
 
 def exchange_ghost_features(
     x: torch.Tensor,
-    comm_dict: dict[str, torch.Tensor],
+    comm_dict: dict[str, torch.Tensor] | BorderPlan,
 ) -> torch.Tensor:
-    """Refresh ghost-node rows from their owner ranks via ``border_op``.
+    """Refresh ghost-node rows from their owner ranks.
 
     Port of the pt-native SeZM exchange (``sezm_nn/block.py``): the node
     multipole tensor is flattened to ``(nall, D*1*C)`` rows and exchanged
     whole-row; SO(3) coefficients live in the shared global frame, so the
-    owner-to-ghost copy is exact and equivariant. ``border_op`` carries a
-    registered backward for gradient reverse-communication.
+    owner-to-ghost copy is exact and equivariant. The border plan of a lower
+    that carries the exchange in its main program, the compact canonical
+    lower or the graph lower of a native-spin model, refreshes the rows on
+    the device of the features; the tensors of the with-comm graph lower
+    drive ``border_op`` with its host send lists. Both carry a registered
+    backward for gradient reverse-communication.
 
     Parameters
     ----------
@@ -60,8 +67,10 @@ def exchange_ghost_features(
         Extended node features with shape ``(nall, D, 1, C)`` in block
         precision. Owned rows lead; ghost rows are overwritten.
     comm_dict
-        Border-exchange tensors ``send_list``, ``send_proc``, ``recv_proc``,
-        ``send_num``, ``recv_num``, ``communicator``, ``nlocal``, ``nghost``.
+        The border plan of a lower that carries the exchange in its main
+        program, or the border-exchange tensors ``send_list``,
+        ``send_proc``, ``recv_proc``, ``send_num``, ``recv_num``,
+        ``communicator``, ``nlocal``, ``nghost``.
 
     Returns
     -------
@@ -74,9 +83,11 @@ def exchange_ghost_features(
         When ``comm_dict`` carries ``has_spin`` — spin models do not route
         the DPA4 graph lower.
     """
+    n_nodes, ebed_dim, n_focus, channels = x.shape
+    if isinstance(comm_dict, BorderPlan):
+        return comm_dict.exchange(x.reshape(n_nodes, -1)).reshape(x.shape)
     if "has_spin" in comm_dict:
         raise NotImplementedError("spin models do not route the DPA4 graph lower")
-    n_nodes, ebed_dim, n_focus, channels = x.shape
     # border_op exchanges whole rows by raw pointer arithmetic, so the
     # buffer must be contiguous; a strided view would corrupt the exchange.
     g1 = x.reshape(n_nodes, ebed_dim * n_focus * channels).contiguous()
@@ -127,7 +138,7 @@ class SeZMInteractionBlock(SeZMInteractionBlockDP):
         x: torch.Tensor,
         edge_cache: EdgeCache,
         radial_feat: torch.Tensor,
-        comm_dict: dict[str, torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | BorderPlan | None = None,
     ) -> torch.Tensor:
         if comm_dict is not None:
             x = exchange_ghost_features(x, comm_dict)
@@ -150,12 +161,17 @@ class SeZMInteractionBlock(SeZMInteractionBlockDP):
             )
         return self._run_so2_unit_impl(x, edge_cache, radial_feat)
 
-    def _run_ffn_unit(self, x: torch.Tensor, unit_idx: int) -> torch.Tensor:
+    def _run_ffn_unit(
+        self,
+        x: torch.Tensor,
+        unit_idx: int,
+        route: Any = None,
+    ) -> torch.Tensor:
         if self._use_infer_activation_checkpoint(x):
             return checkpoint(
-                lambda x_: self._run_ffn_unit_impl(x_, unit_idx),
+                lambda x_: self._run_ffn_unit_impl(x_, unit_idx, route),
                 x,
                 use_reentrant=False,
                 preserve_rng_state=True,
             )
-        return self._run_ffn_unit_impl(x, unit_idx)
+        return self._run_ffn_unit_impl(x, unit_idx, route)
