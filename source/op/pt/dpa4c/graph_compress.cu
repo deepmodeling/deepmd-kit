@@ -2805,6 +2805,9 @@ dpa4c_canonical_compress_energy_force(
       has_spin ? torch::empty({node_count, kForceWords}, i64) : torch::Tensor();
   auto edge_gradient =
       atom_virial ? torch::empty_like(edge_vec_float) : torch::Tensor();
+  if (atom_virial && owned == 0) {
+    edge_gradient.zero_();
+  }
   const int blocks_of_epilogue = epilogue_blocks(node_count);
   auto words =
       torch::zeros({static_cast<long>(sizeof(EvaluationWords) / sizeof(int))},

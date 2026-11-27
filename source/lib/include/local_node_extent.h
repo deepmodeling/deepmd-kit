@@ -16,9 +16,11 @@ class LocalNodeExtent {
   static std::int64_t lookup(const void* counts, std::int64_t fallback);
 
  private:
-  const void* counts_;
-  std::int64_t rows_;
-  const LocalNodeExtent* previous_;
-  static thread_local const LocalNodeExtent* current_;
+  struct Bound {
+    const void* counts;
+    std::int64_t rows;
+  };
+  const Bound previous_;
+  static thread_local Bound current_;
 };
 }  // namespace deepmd

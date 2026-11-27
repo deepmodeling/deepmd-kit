@@ -870,6 +870,11 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
     const int full = this->natoms;
     const auto large = eager(full);
     const auto small = eager(full - 1);
+    const auto empty = eager(0);
+    ASSERT_FALSE(empty.atom_virial.empty());
+    for (const double value : empty.atom_virial) {
+      EXPECT_DOUBLE_EQ(value, 0.0);
+    }
     ASSERT_GT(max_difference(small.force, large.force), 1e-8);
     static thread_local int replays;
     replays = 0;
