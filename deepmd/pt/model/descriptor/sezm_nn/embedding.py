@@ -42,6 +42,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    triton_infer_level,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -209,7 +210,21 @@ class GeometricInitialEmbedding(nn.Module):
         # ``None`` keeps the runtime ``zonal_coupling.is_cuda`` dispatch; the
         # freeze pins it to the AOTI target because tracing always runs on CPU.
         self._force_fused_scatter: bool | None = None
-        if cuda_infer_level() >= 1 and self.dtype is torch.float32:
+        # When this applies. The operator serves the fused-GIE contract of
+        # the cumulative inference levels; it is bound when either level is
+        # up (CUDA level >= 1 or Triton level >= 1) and this embedding is
+        # float32. What a forward then takes:
+        # - a build that compiled ``deepmd::dpa4_zonal_scatter`` selects it
+        #   (eval forward, CUDA operands), ahead of the Triton kernel of
+        #   the same contract when the Triton level is the one that is up;
+        # - a build without the operator keeps the PyTorch ``index_add_``
+        #   composition below at every level, so the levels only steer
+        #   speed and never correctness;
+        # - the pt_expt embedding keeps its own rule (CUDA level >= 1).
+        # There is no standalone per-operator opt-in.
+        if (
+            cuda_infer_level() >= 1 or triton_infer_level() >= 1
+        ) and self.dtype is torch.float32:
             from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
                 op_available,
                 supported,
