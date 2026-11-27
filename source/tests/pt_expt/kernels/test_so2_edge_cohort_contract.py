@@ -88,17 +88,17 @@ def test_device_dispatch_keeps_sm80_native(monkeypatch, capability):
     calls = []
 
     def device_capability(device):
-        assert device == torch.device("cuda:1")
+        assert device == torch.device("cuda:0")
         return capability
 
     monkeypatch.setattr(torch.cuda, "get_device_capability", device_capability)
     with FakeTensorMode():
-        u = torch.empty(2, 37, 320, device="cuda:1")
-        alpha = torch.empty(37, 2, device="cuda:1")
-        z = torch.empty(2, 2, 37, 320, device="cuda:1")
-        w0 = torch.empty(3, 2, 128, 128, device="cuda:1")
-        w1 = torch.empty(3, 2, 192, 192, device="cuda:1")
-        gw = torch.empty(2, 2, 32, 96, device="cuda:1")
+        u = torch.empty(2, 37, 320, device="cuda:0")
+        alpha = torch.empty(37, 2, device="cuda:0")
+        z = torch.empty(2, 2, 37, 320, device="cuda:0")
+        w0 = torch.empty(3, 2, 128, 128, device="cuda:0")
+        w1 = torch.empty(3, 2, 192, 192, device="cuda:0")
+        gw = torch.empty(2, 2, 32, 96, device="cuda:0")
         ctx = SimpleNamespace(
             saved_tensors=(u, alpha, u, z, u, w0, w1, gw),
             needs_input_grad=(True, True, False, False, False, False, False, False),
@@ -119,7 +119,7 @@ def test_device_dispatch_keeps_sm80_native(monkeypatch, capability):
         monkeypatch.setattr(ecs, "cohort_backward", cohort)
         with torch.no_grad():
             result = sv._mixing_stack_backward(
-                ctx, torch.empty(37, 2, 320, device="cuda:1"), None, None
+                ctx, torch.empty(37, 2, 320, device="cuda:0"), None, None
             )
         assert result[0].shape == u.shape
         assert result[1].shape == alpha.shape
