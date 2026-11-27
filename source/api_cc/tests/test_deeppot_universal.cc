@@ -2023,6 +2023,87 @@ TEST_P(FParamAParamDeepPotTest, JAXRejectsMissingRequiredFParam) {
                deepmd::deepmd_exception);
 }
 
+TEST_P(FParamAParamDeepPotTest, JAXBroadcastsSingleFrameAParam) {
+  if (GetParam().backend != Backend::JAX) {
+    GTEST_SKIP() << "This regression targets the JAX C++ aparam layout.";
+  }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
+  const int nframes = 2;
+  const std::vector<double> coord =
+      repeat_values(deepmd_test::deeppot_coord(), nframes);
+  const std::vector<double> box =
+      repeat_values(deepmd_test::deeppot_box(), nframes);
+  const std::vector<int>& atype = deepmd_test::fparam_aparam_atype();
+  const std::vector<double>& fparam = deepmd_test::fparam_value();
+  // natoms * dim_aparam values are shared by all frames.
+  const std::vector<double>& aparam = deepmd_test::aparam_value();
+
+  std::vector<double> energy, force, virial;
+  dp.compute(energy, force, virial, coord, atype, box, fparam, aparam);
+  expect_reference_frames(energy, force, virial, *ref, GetParam().double_tol,
+                          nframes);
+
+  const std::vector<double> short_aparam(aparam.begin(), aparam.end() - 1);
+  EXPECT_THROW(dp.compute(energy, force, virial, coord, atype, box, fparam,
+                          short_aparam),
+               deepmd::deepmd_exception);
+}
+
+TEST_P(FParamAParamDeepPotTest, JAXZeroesReusedOutputsWithoutRealAtoms) {
+  if (GetParam().backend != Backend::JAX) {
+    GTEST_SKIP() << "This regression targets the JAX C++ empty-system path.";
+  }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
+  const std::vector<double>& coord = deepmd_test::deeppot_coord();
+  const std::vector<double>& box = deepmd_test::deeppot_box();
+  // Every atom is virtual, so there are no real atoms to evaluate.
+  const std::vector<int> atype(deepmd_test::fparam_aparam_atype().size(), -1);
+  const int natoms = static_cast<int>(atype.size());
+
+  // Output vectors reused from a previous step must be overwritten.
+  std::vector<double> energy(1, 42.0);
+  std::vector<double> force(natoms * 3, 42.0);
+  std::vector<double> virial(9, 42.0);
+  std::vector<double> atomic_energy(natoms, 42.0);
+  std::vector<double> atomic_virial(natoms * 9, 42.0);
+  dp.compute(energy, force, virial, atomic_energy, atomic_virial, coord, atype,
+             box, deepmd_test::fparam_value(), deepmd_test::aparam_value());
+
+  for (const auto* values :
+       {&energy, &force, &virial, &atomic_energy, &atomic_virial}) {
+    for (const double value : *values) {
+      EXPECT_EQ(value, 0.0);
+    }
+  }
+}
+
+TEST_P(FParamAParamDeepPotTest, JAXGrowsSmallNallPadding) {
+  if (GetParam().backend != Backend::JAX) {
+    GTEST_SKIP() << "This regression targets JAX XLA shape padding.";
+  }
+  ASSERT_NO_FATAL_FAILURE(InitModel());
+  // Prime the padding cache with a ghost-free nlist: nall == nloc == 6, so
+  // the cached padding is int(6 * 1.05) == 6.
+  const std::vector<int>& atype = deepmd_test::fparam_aparam_atype();
+  const int natoms = static_cast<int>(atype.size());
+  std::vector<std::vector<int>> nlist_data = make_full_nlist_data(natoms);
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, ilist.data(), numneigh.data(),
+                            firstneigh.data());
+  convert_nlist(inlist, nlist_data);
+  double energy = 0.0;
+  std::vector<double> force, virial;
+  dp.compute(energy, force, virial, deepmd_test::deeppot_coord(), atype,
+             std::vector<double>{}, 0, inlist, 0, deepmd_test::fparam_value(),
+             deepmd_test::aparam_value());
+
+  // Same nloc with ghost atoms: growing the small cached padding used to loop
+  // forever because int(n * 1.05) == n for n < 20.
+  check_fparam_lmp_nlist<double>(dp, *ref, GetParam().double_tol,
+                                 deepmd_test::fparam_value(), false);
+}
+
 TEST_P(FParamAParamDeepPotTest, ComputeDouble) {
   ASSERT_NO_FATAL_FAILURE(InitModel());
   check_fparam_compute_atomic<double>(dp, *ref, GetParam().double_tol,

@@ -7,7 +7,6 @@
 #include <tensorflow/c/eager/c_api.h>
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -592,6 +591,39 @@ inline std::vector<double> make_fparam_input(
       std::to_string(nframes) + " frames).");
 }
 
+// aparam may hold nloc * daparam values (shared by all frames) or
+// nframes * nloc * daparam values. Return the per-frame layout, or throw
+// on any other size instead of reading past the end of the buffer.
+template <typename VALUETYPE>
+inline std::vector<VALUETYPE> make_aparam_input(
+    const std::vector<VALUETYPE>& aparam,
+    const int daparam,
+    const int nframes,
+    const int nloc) {
+  if (daparam == 0) {
+    return aparam;
+  }
+  const size_t frame_size = static_cast<size_t>(nloc) * daparam;
+  const size_t expected = static_cast<size_t>(nframes) * frame_size;
+  if (aparam.size() == expected) {
+    return aparam;
+  }
+  if (aparam.size() == frame_size) {
+    std::vector<VALUETYPE> result(expected);
+    for (int ff = 0; ff < nframes; ++ff) {
+      std::copy(aparam.begin(), aparam.end(),
+                result.begin() + static_cast<size_t>(ff) * frame_size);
+    }
+    return result;
+  }
+  throw deepmd::deepmd_exception(
+      "aparam has " + std::to_string(aparam.size()) +
+      " values but the model expects nloc * dim_aparam=" +
+      std::to_string(frame_size) + " (per frame) or " +
+      std::to_string(expected) + " (for " + std::to_string(nframes) +
+      " frames).");
+}
+
 template <typename T>
 inline void tensor_to_vector(std::vector<T>& result,
                              TFE_TensorHandle* retval,
@@ -635,25 +667,9 @@ void deepmd::DeepPotJAX::init(const std::string& model,
     get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
     // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
     // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L364-L379
-    // The following is an equivalent of setting this in Python:
-    // config = tf.ConfigProto( allow_soft_placement = True )
-    // config.gpu_options.allow_growth = True
-    // config.gpu_options.per_process_gpu_memory_fraction = percentage
-    // Create a byte-array for the serialized ProtoConfig, set the mandatory
-    // bytes (first three and last four)
-    std::array<std::uint8_t, 19> config = {
-        {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
-         static_cast<std::uint8_t>(num_inter_nthreads), 0x32, 0xb, 0x9, 0xFF,
-         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
-
-    // Convert the desired percentage into a byte-array.
-    double gpu_memory_fraction = 0.9;
-    auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
-
-    // Put it to the config byte-array, from 7 to 14:
-    for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
-      config[i + 7] = bytes[i];
-    }
+    // See serialize_jax_session_config for the equivalent Python config.
+    const std::vector<std::uint8_t> config = serialize_jax_session_config(
+        num_intra_nthreads, num_inter_nthreads, 0.9);
 
     TF_SetConfig(sessionopts, config.data(), config.size(), status);
     check_status(status);
@@ -863,18 +879,21 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   int nframes = nall > 0 ? (dcoord.size() / 3 / nall) : 1;
   int nghost = 0;
 
+  const std::vector<VALUETYPE> aparam_in =
+      make_aparam_input(aparam_, daparam, nframes, nall - nghost);
   select_real_atoms_coord(coord, atype, aparam, nghost_real, fwd_map, bkw_map,
-                          nall_real, nloc_real, dcoord, datype, aparam_, nghost,
-                          ntypes, nframes, daparam, nall, false);
+                          nall_real, nloc_real, dcoord, datype, aparam_in,
+                          nghost, ntypes, nframes, daparam, nall, false);
 
   if (nloc_real == 0) {
     // no real atoms, fill 0 for all outputs
     // this can prevent a Xla error
-    ener.resize(nframes, 0.0);
-    force_.resize(static_cast<size_t>(nframes) * nall * 3, 0.0);
-    virial.resize(static_cast<size_t>(nframes) * 9, 0.0);
-    atom_energy_.resize(static_cast<size_t>(nframes) * nall, 0.0);
-    atom_virial_.resize(static_cast<size_t>(nframes) * nall * 9, 0.0);
+    // use assign rather than resize: callers may pass reused vectors
+    ener.assign(nframes, 0.0);
+    force_.assign(static_cast<size_t>(nframes) * nall * 3, 0.0);
+    virial.assign(static_cast<size_t>(nframes) * 9, 0.0);
+    atom_energy_.assign(static_cast<size_t>(nframes) * nall, 0.0);
+    atom_virial_.assign(static_cast<size_t>(nframes) * nall * 9, 0.0);
     return;
   }
 
@@ -1029,18 +1048,21 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   // nlist passed to the model
   int nframes = 1;
 
+  const std::vector<VALUETYPE> aparam_in =
+      make_aparam_input(aparam_, daparam, nframes, nall - nghost);
   select_real_atoms_coord(coord, atype, aparam, nghost_real, fwd_map, bkw_map,
-                          nall_real, nloc_real, dcoord, datype, aparam_, nghost,
-                          ntypes, nframes, daparam, nall, false);
+                          nall_real, nloc_real, dcoord, datype, aparam_in,
+                          nghost, ntypes, nframes, daparam, nall, false);
 
   if (nloc_real == 0) {
     // no real atoms, fill 0 for all outputs
     // this can prevent a Xla error
-    ener.resize(nframes, 0.0);
-    force_.resize(static_cast<size_t>(nframes) * nall * 3, 0.0);
-    virial.resize(static_cast<size_t>(nframes) * 9, 0.0);
-    atom_energy_.resize(static_cast<size_t>(nframes) * nall, 0.0);
-    atom_virial_.resize(static_cast<size_t>(nframes) * nall * 9, 0.0);
+    // use assign rather than resize: callers may pass reused vectors
+    ener.assign(nframes, 0.0);
+    force_.assign(static_cast<size_t>(nframes) * nall * 3, 0.0);
+    virial.assign(static_cast<size_t>(nframes) * 9, 0.0);
+    atom_energy_.assign(static_cast<size_t>(nframes) * nall, 0.0);
+    atom_virial_.assign(static_cast<size_t>(nframes) * nall * 9, 0.0);
     return;
   }
 
@@ -1061,7 +1083,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
       padding_for_nloc = nloc_real;
     }
     while (padding_to_nall < nall_real) {
-      padding_to_nall *= PADDING_FACTOR;
+      // Grow by at least one atom: below 20 atoms, int(n * 1.05) == n and
+      // the loop would never terminate.
+      padding_to_nall =
+          std::max(padding_to_nall + 1,
+                   static_cast<int>(padding_to_nall * PADDING_FACTOR));
     }
     nall_model = padding_to_nall;
   }
