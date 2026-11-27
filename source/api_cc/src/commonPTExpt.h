@@ -510,6 +510,94 @@ class GraphReplay {
 #endif
 };
 
+// Per-model state for canonical device calls. Domain captures use a stable
+// output buffer and read the current ownership count on every replay.
+class CanonicalExecution {
+ public:
+  void prepare(bool independent,
+               std::int64_t local,
+               std::int64_t total,
+               void* stream,
+               const torch::TensorOptions& options) {
+    domain_ = independent && local < total;
+    rows = domain_ ? bucket_.update(local, total) : local;
+    if (domain_) {
+      if (!count_.defined() || stream_ != stream || energy_.numel() != rows) {
+        domain_graph_.invalidate();
+        count_ = torch::empty({1}, options);
+        energy_ = torch::empty({rows}, options.dtype(torch::kFloat64));
+        stream_ = stream;
+      }
+      count_.fill_(local);
+    }
+  }
+
+  torch::Tensor count(std::int64_t local,
+                      const torch::TensorOptions& options) const {
+    return domain_ ? count_ : torch::full({1}, local, options);
+  }
+
+  double* energy(double* output) const {
+    return domain_ ? energy_.data_ptr<double>() : output;
+  }
+
+  void copy_energy(double* output, std::int64_t local) const {
+    if (domain_ && local > 0) {
+      torch::from_blob(output, {local}, energy_.options())
+          .copy_(energy_.narrow(0, 0, local));
+    }
+  }
+
+  GraphReplay::Key key(double* atom_energy,
+                       const void* force,
+                       const void* virial,
+                       const void* atom_virial,
+                       const void* atype,
+                       const void* source,
+                       const void* edge_vec,
+                       const void* dst_rows,
+                       const void* src_rows,
+                       const void* src_order) const {
+    return {address_key(energy(atom_energy)),
+            address_key(force),
+            address_key(virial),
+            address_key(atom_virial),
+            address_key(atype),
+            address_key(source),
+            address_key(edge_vec),
+            address_key(dst_rows),
+            address_key(src_rows),
+            address_key(src_order)};
+  }
+
+  void invalidate() {
+    full_graph_.invalidate();
+    domain_graph_.invalidate();
+  }
+
+  bool domain() const { return domain_; }
+
+  template <class Evaluate>
+  void run(GraphReplay::Key key,
+           std::int64_t total,
+           std::int64_t edges,
+           int index_width,
+           int device,
+           Evaluate&& evaluate) {
+    key.insert(key.end(), {rows, total, edges, index_width});
+    (domain_ ? domain_graph_ : full_graph_).run(key, device, evaluate);
+  }
+
+  std::int64_t rows = 0;
+
+ private:
+  bool domain_ = false;
+  CanonicalNodeBucket bucket_;
+  const void* stream_ = nullptr;
+  torch::Tensor count_, energy_;
+  GraphReplay full_graph_, domain_graph_;
+};
+
 // ============================================================================
 // Minimal JSON value parser for reading metadata from .pt2 archives.
 // Supports: strings, numbers, booleans, arrays, objects.

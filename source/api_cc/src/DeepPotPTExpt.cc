@@ -548,11 +548,8 @@ void DeepPotPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
       if (gpu_enabled) {
         ptexpt::synchronize_device(gpu_id);
       }
-      if (canonical_replay_) {
-        canonical_replay_->invalidate();
-      }
-      if (domain_replay_) {
-        domain_replay_->invalidate();
+      if (canonical_execution_) {
+        canonical_execution_->invalidate();
       }
       charge_state_fold_->apply(charge_spin,
                                 gpu_enabled
@@ -2987,28 +2984,13 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         long_range ? long_range_cell_->hold(long_range_box, gpu_id)
                    : torch::Tensor();
 
-    // The host already supplied nloc through the canonical C API. Only
-    // independent short-range domains may replay without an MPI exchange.
-    const bool domain = nloc != nall_nodes && !reads_halo && !long_range &&
-                        !canonical_requires_source_csr_;
-    const std::int64_t rows =
-        domain ? canonical_local_bucket_.update(nloc, nall_nodes) : nloc;
-    if (domain) {
-      if (!canonical_local_count_.defined() ||
-          canonical_local_stream_ != stream ||
-          canonical_local_energy_.numel() != rows) {
-        if (domain_replay_) {
-          domain_replay_->invalidate();
-        }
-        canonical_local_count_ = torch::empty({1}, opt_i64);
-        canonical_local_energy_ =
-            torch::empty({rows}, opt_i64.dtype(torch::kFloat64));
-        canonical_local_stream_ = stream;
-      }
-      // Update outside capture, including calls replayed with a new local
-      // count.
-      canonical_local_count_.fill_(nloc);
+    if (!canonical_execution_) {
+      canonical_execution_ = std::make_unique<ptexpt::CanonicalExecution>();
     }
+    auto& execution = *canonical_execution_;
+    execution.prepare(!reads_halo && !long_range, nloc, nall_nodes, stream,
+                      opt_i64);
+    const auto rows = execution.rows;
     // The tensors over the caller's buffers are built inside the evaluation,
     // which a replay skips: wrapping a device buffer queries the driver for
     // the device that holds it.
@@ -3039,10 +3021,9 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
       // The node counts are allocated inside the evaluation, so that a
       // captured graph owns them.
       auto n_node = torch::full({1}, nall_nodes, opt_i64);
-      auto n_local =
-          domain ? canonical_local_count_ : torch::full({1}, nloc, opt_i64);
-      const deepmd::LocalNodeExtent local_extent(n_local.data_ptr(),
-                                                 domain ? rows : nall_nodes);
+      auto n_local = execution.count(nloc, opt_i64);
+      const deepmd::LocalNodeExtent local_extent(
+          n_local.data_ptr(), execution.domain() ? rows : nall_nodes);
       const auto coord = d_coord != nullptr
                              ? torch::from_blob(const_cast<double*>(d_coord),
                                                 {nall_nodes, 3}, opt_f64)
@@ -3075,8 +3056,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
       }
       if (rows > 0) {
         targets.push_back(
-            domain ? canonical_local_energy_
-                   : torch::from_blob(d_atom_energy, {nloc}, opt_f64));
+            torch::from_blob(execution.energy(d_atom_energy), {rows}, opt_f64));
         results.push_back(atom_energy);
       }
       ptexpt::copy_results(targets, results, nall_nodes);
@@ -3089,8 +3069,8 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     // node extent, and owned bucket stay stable. Their exact ownership mask
     // and final copy length are updated outside capture. Models that exchange
     // halo features or long-range messages between kernels still run eagerly.
-    bool replay = (domain || nloc == nall_nodes) && halo == nullptr &&
-                  !(long_range && world != nullptr);
+    bool replay = (execution.domain() || nloc == nall_nodes) &&
+                  halo == nullptr && !(long_range && world != nullptr);
     std::array<std::int64_t, 3> mesh = {};
     if (long_range) {
       if (!long_range_box.empty()) {
@@ -3103,9 +3083,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         long_range_mesh_calls_ =
             long_range_mesh_.has_value() ? 0 : kStableMeshCalls;
         long_range_mesh_ = mesh;
-        if (canonical_replay_) {
-          canonical_replay_->invalidate();
-        }
+        execution.invalidate();
       }
       if (long_range_mesh_calls_ < kStableMeshCalls) {
         ++long_range_mesh_calls_;
@@ -3115,38 +3093,19 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     if (!replay) {
       evaluate();
     } else {
-      auto& runner = domain ? domain_replay_ : canonical_replay_;
-      if (!runner) {
-        runner = std::make_unique<ptexpt::GraphReplay>();
-      }
-      ptexpt::GraphReplay::Key key = {
-          ptexpt::address_key(domain ? canonical_local_energy_.data_ptr()
-                                     : d_atom_energy),
-          ptexpt::address_key(d_force),
-          ptexpt::address_key(d_virial),
-          ptexpt::address_key(d_atom_virial),
-          ptexpt::address_key(d_atype),
-          ptexpt::address_key(d_source),
-          ptexpt::address_key(d_edge_vec),
-          ptexpt::address_key(d_destination_row_ptr),
-          ptexpt::address_key(source_row_data),
-          ptexpt::address_key(source_order_data),
-          ptexpt::address_key(long_range ? d_coord : nullptr),
-          domain,
-          rows,
-          nall_nodes,
-          edge_storage,
-          index_width};
+      auto key =
+          execution.key(d_atom_energy, d_force, d_virial, d_atom_virial,
+                        d_atype, d_source, d_edge_vec, d_destination_row_ptr,
+                        source_row_data, source_order_data);
       if (long_range) {
+        key.push_back(ptexpt::address_key(d_coord));
         key.push_back(ptexpt::address_key(cell.data_ptr()));
         key.insert(key.end(), mesh.begin(), mesh.end());
       }
-      runner->run(key, gpu_id, evaluate);
+      execution.run(std::move(key), nall_nodes, edge_storage, index_width,
+                    gpu_id, evaluate);
     }
-    if (domain && nloc > 0) {
-      torch::from_blob(d_atom_energy, {nloc}, opt_i64.dtype(torch::kFloat64))
-          .copy_(canonical_local_energy_.narrow(0, 0, nloc));
-    }
+    execution.copy_energy(d_atom_energy, nloc);
     if (long_range_periodic_) {
       long_range_cell_->record();
     }

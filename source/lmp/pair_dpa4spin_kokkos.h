@@ -87,7 +87,7 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   // Gather the per-node magnetic moment from the Kokkos ``sp`` array. Public
   // because it launches an extended device lambda, which CUDA forbids inside
   // non-public members.
-  void gather_moment_device();
+  void gather_moment_device(int rows);
 
  protected:
   // Model node set and the compact canonical graph over it.

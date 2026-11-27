@@ -27,7 +27,7 @@
 namespace deepmd::ptexpt {
 class TempFile;
 class ChargeStateFold;
-class GraphReplay;
+class CanonicalExecution;
 class PinnedCell;
 struct HaloTensors;
 }  // namespace deepmd::ptexpt
@@ -540,12 +540,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   // CUDA-graph replay of repeated device-resident canonical evaluations,
   // declared after the loader, the cell and the condition so that the graph
   // is released before the constants, the cell and the condition it reads.
-  std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
-  CanonicalNodeBucket canonical_local_bucket_;
-  torch::Tensor canonical_local_count_;
-  torch::Tensor canonical_local_energy_;
-  const void* canonical_local_stream_ = nullptr;
-  std::unique_ptr<deepmd::ptexpt::GraphReplay> domain_replay_;
+  std::unique_ptr<deepmd::ptexpt::CanonicalExecution> canonical_execution_;
   // Serializes the runs of the model, which runs on a single-threaded runner,
   // the device-resident entry points, whose replay of canonical evaluations
   // keeps its graph across calls, and the replacement of the constants. The

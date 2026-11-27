@@ -44,15 +44,15 @@
 #include "expected_ref.h"
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+#include <ATen/record_function.h>
+#include <c10/util/ScopeExit.h>
 #include <torch/torch.h>
 
 #include "commonPT.h"
 #ifdef DEEPMD_TORCH_HAS_CUDA
 #include <ATen/cuda/Sleep.h>
-#include <ATen/record_function.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
-#include <c10/util/ScopeExit.h>
 #include <cuda_runtime_api.h>
 
 #include <condition_variable>
@@ -838,8 +838,7 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
              a_graph_with_halo_nodes_matches_the_host_entry) {
   // The unfolded graph gives every ghost atom a node, whose forces the caller
   // adds to those of its owner, as the reverse communication of domain
-  // decomposition does; the extents of such a graph change with every
-  // neighbor rebuild, so it is evaluated eagerly. Its rows are those of the
+  // decomposition does. Its rows are those of the
   // folded graph, so its energies, folded forces and virial agree with the
   // host entry points up to the summation order of the run, which the node
   // count of the graph configures. An archive whose blocks read features of
@@ -856,7 +855,7 @@ TYPED_TEST_P(TestInferDpa4cCanonicalPtExpt,
     this->expect_folded(this->evaluate(true, true, exchanges ? &plan : nullptr),
                         graph.owner);
   }
-  if constexpr (!TypeParam::kSpin && TypeParam::kSourceCsrOptional) {
+  if (TypeParam::kSourceCsrOptional && !exchanges) {
     const auto eager = [&](int count) {
       typename TypeParam::Evaluator fresh;
       fresh.init(TypeParam::kModelPath);

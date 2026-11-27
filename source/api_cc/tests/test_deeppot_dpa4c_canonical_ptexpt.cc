@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "../../op/pt/dpa4c/node_type_summary.h"
 #include "DeepPot.h"
 #include "DeepSpin.h"
 #include "canonical_graph.h"
@@ -16,6 +17,20 @@
 
 namespace deepmd_test {
 namespace dpa4c_canonical {
+
+TEST(CanonicalNodeTypes, padding_preserves_dispatch_and_ghosts_contribute) {
+  const auto dispatch = [](std::vector<long> types) {
+    unsigned bitmap[1] = {};
+    bool same = true;
+    for (long type : types) {
+      same &= deepmd::dpa4c::scan_node_type(type, types.front(), bitmap);
+    }
+    return std::make_pair(same, bitmap[0]);
+  };
+  EXPECT_EQ(dispatch({1, 1}), std::make_pair(true, 2u));
+  EXPECT_EQ(dispatch({1, 1, -1}), dispatch({1, 1}));
+  EXPECT_EQ(dispatch({1, 0, -1}), std::make_pair(false, 3u));
+}
 
 TEST(CanonicalNodeBucket, reuses_logical_extent_after_large_shrink) {
   deepmd::CanonicalNodeBucket bucket;

@@ -40,6 +40,7 @@
 #include "graph_compress.cuh"
 #include "graph_compress_launch.h"
 #include "local_node_extent.h"
+#include "node_type_summary.h"
 
 namespace {
 
@@ -656,19 +657,6 @@ struct NodeTypeWords {
   unsigned type_present[kTypeWords];
 };
 
-/// Set the bit of `type` in a bitmap of node types. A negative type, and a
-/// type beyond the words of the bitmap, which a launch of more types never
-/// reads, set none.
-__device__ __forceinline__ void mark_type(long type,
-                                          unsigned (&present)[kTypeWords]) {
-#pragma unroll
-  for (int word = 0; word < kTypeWords; ++word) {
-    if (type >> 5 == word) {
-      present[word] |= 1u << (type & 31);
-    }
-  }
-}
-
 /// Fold the node types that the threads of a block have scanned into `words`.
 /// Every thread of the block takes part: `same` tells whether all of the
 /// thread's nodes carry the type of node zero, and `present` the bitmap of
@@ -702,8 +690,7 @@ __global__ void node_type_kernel(long count,
   for (long node = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x;
        node < count; node += static_cast<long>(blockDim.x) * gridDim.x) {
     const long type = atype[node];
-    same &= type == first;
-    mark_type(type, present);
+    same &= deepmd::dpa4c::scan_node_type(type, first, present);
   }
   publish_node_types(same, present, words);
 }
@@ -1234,8 +1221,7 @@ __global__ void energy_force_prologue_kernel(
     const long raw = atype[node];
     const long type = raw < 0 ? 0 : raw;
     node_type[node] = type;
-    same &= type == first;
-    mark_type(type, present);
+    same &= deepmd::dpa4c::scan_node_type(raw, first, present);
     long frame = 0;
     long frame_begin = 0;
     if (frame_count > 1) {

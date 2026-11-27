@@ -1301,7 +1301,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
             double cutoff,
             double dist_unit_cvt_factor,
             bool source_csr,
-            bool pad_nodes = false) {
+            bool independent_domain = false) {
     refresh_nodes();
     auto* k_list = static_cast<NeighListKokkos<DeviceType>*>(list);
     const int inum = k_list->inum;
@@ -1342,7 +1342,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     // Only the model sees the extra rows; physical neighbor construction and
     // the scatter back to LAMMPS still use the exact node count.
     const std::size_t capacity =
-        pad_nodes && nloc_model < nnode_model
+        independent_domain && !source_csr && nloc_model < nnode_model
             ? node_bucket.update(node_count_int,
                                  std::numeric_limits<int>::max())
             : node_count;

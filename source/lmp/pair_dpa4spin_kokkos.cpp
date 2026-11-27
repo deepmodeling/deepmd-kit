@@ -225,11 +225,11 @@ void PairDPA4SpinKokkos<DeviceType>::init_style() {
 }
 
 template <class DeviceType>
-void PairDPA4SpinKokkos<DeviceType>::gather_moment_device() {
-  const int nall = atom->nlocal + atom->nghost;
+void PairDPA4SpinKokkos<DeviceType>::gather_moment_device(int rows) {
   const int nnode_model = compact_graph.nnode_model;
-  if ((int)d_moment.extent(0) < 3 * nnode_model) {
-    d_moment = Kokkos::View<float*, DeviceType>("dpa4spin/kk:moment", 3 * nall);
+  if (d_moment.extent(0) < 3 * static_cast<std::size_t>(rows)) {
+    d_moment = Kokkos::View<float*, DeviceType>(
+        "dpa4spin/kk:moment", 3 * static_cast<std::size_t>(rows));
   }
   // LAMMPS stores the moment as a unit direction and its magnitude; the
   // artifact consumes the product. Ghost rows repeat their owner's value,
@@ -240,8 +240,14 @@ void PairDPA4SpinKokkos<DeviceType>::gather_moment_device() {
   auto moment = d_moment;
   auto model2loc = compact_graph.d_model2loc;
   Kokkos::parallel_for(
-      "dpa4spin/kk:moment", Kokkos::RangePolicy<DeviceType>(0, nnode_model),
+      "dpa4spin/kk:moment", Kokkos::RangePolicy<DeviceType>(0, rows),
       KOKKOS_LAMBDA(const int m) {
+        if (m >= nnode_model) {
+          for (int d = 0; d < 3; ++d) {
+            moment(3 * m + d) = 0;
+          }
+          return;
+        }
         const int i = model2loc(m);
         const auto norm = sp(i, 3);
         moment(3 * m + 0) = static_cast<float>(sp(i, 0) * norm);
@@ -263,8 +269,10 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
   // The source CSR feeds the source-attributed per-atom virial, and every
   // force assembly of an artifact that groups edges by source.
   const bool source_csr = canonical_source_csr || cvflag_atom;
-  compact_graph.build(list, cutoff, dist_unit_cvt_factor, source_csr);
-  gather_moment_device();
+  const int rows =
+      compact_graph.build(list, cutoff, dist_unit_cvt_factor, source_csr,
+                          multi_rank && !canonical_halo);
+  gather_moment_device(rows);
   const int nloc_m = compact_graph.nloc_model;    // local nodes (energy)
   const int nnode_m = compact_graph.nnode_model;  // all nodes (force / virial)
 
@@ -281,13 +289,13 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
     d_atom_energy =
         Kokkos::View<double*, DeviceType>("dpa4spin/kk:atom_energy", nlocal);
   }
-  if ((int)d_out_force.extent(0) < 3 * nnode_m) {
-    d_out_force =
-        Kokkos::View<double*, DeviceType>("dpa4spin/kk:out_force", 3 * nnode_m);
+  if (d_out_force.extent(0) < 3 * static_cast<std::size_t>(rows)) {
+    d_out_force = Kokkos::View<double*, DeviceType>(
+        "dpa4spin/kk:out_force", 3 * static_cast<std::size_t>(rows));
     d_out_force_mag = Kokkos::View<double*, DeviceType>(
-        "dpa4spin/kk:out_force_mag", 3 * nnode_m);
-    d_atom_virial = Kokkos::View<double*, DeviceType>("dpa4spin/kk:atom_virial",
-                                                      9 * nnode_m);
+        "dpa4spin/kk:out_force_mag", 3 * static_cast<std::size_t>(rows));
+    d_atom_virial = Kokkos::View<double*, DeviceType>(
+        "dpa4spin/kk:atom_virial", 9 * static_cast<std::size_t>(rows));
   }
   // A model with further message-passing blocks refreshes the features of
   // the ghost nodes from the ranks that own them, through the communicator
@@ -336,7 +344,7 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
           compact_graph.d_destination_row_ptr.data(),
           source_csr ? compact_graph.d_source_row_ptr.data() : nullptr,
           source_csr ? compact_graph.d_source_order.data() : nullptr,
-          d_moment.data(), world_ptr, model_halo, nloc_m, nnode_m,
+          d_moment.data(), world_ptr, model_halo, nloc_m, rows,
           compact_graph.storage_count, model_stream);
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
