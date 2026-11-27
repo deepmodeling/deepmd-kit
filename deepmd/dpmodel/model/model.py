@@ -40,6 +40,7 @@ from deepmd.utils.bridging import (
 from deepmd.utils.spin import (
     Spin,
     normalize_spin_use_spin,
+    parse_spin_scheme,
 )
 
 _model_factory = BackendModelFactory(
@@ -89,11 +90,11 @@ def get_linear_model(data: dict) -> BaseModel:
 
     Children with a ``descriptor`` build as standard learned atomic
     models; ``pairtab`` children build as pair-tabulation atomic models;
-    an ``inner_potential`` child builds the analytical bridging term. The
-    composition is the ONE owner of the bridging coupling: it derives the
-    learned sibling descriptor's window from the ``inner_potential``
-    child's, so the window is written once in the config (issue #5948,
-    task 2).
+    an ``inner_potential`` child builds the analytical close-contact term.
+    The composition is the ONE owner of the bridging coupling: it derives
+    the learned sibling descriptor's ``contact_clamp`` from the
+    ``inner_potential`` child's ``clamp``, so the option is written once in
+    the config (issue #5948).
 
     A top-level ``spin`` section (scheme ``native``) wraps the composed
     atomic model as a :class:`NativeSpinEnergyModel`, with ``use_spin``
@@ -112,7 +113,8 @@ def get_linear_model(data: dict) -> BaseModel:
     spin = None
     if "spin" in data:
         spin_cfg = data.pop("spin")
-        if str(spin_cfg.get("scheme", "deepspin")) != "native":
+        spin_mode = parse_spin_scheme(spin_cfg.get("scheme", "deepspin"))
+        if spin_mode is None:
             raise NotImplementedError(
                 "Spin linear_ener models support only spin scheme 'native'."
             )
@@ -125,6 +127,7 @@ def get_linear_model(data: dict) -> BaseModel:
         for sub in data["models"]:
             if "descriptor" in sub:
                 sub["descriptor"]["use_spin"] = use_spin
+                sub["descriptor"]["spin_mode"] = spin_mode
     composed = _model_factory.get_linear_atomic_model(data)
     if spin is not None:
         if not composed.supports_native_spin():
@@ -187,6 +190,9 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     )
     data.setdefault("descriptor", {})
     data["descriptor"]["use_spin"] = use_spin
+    data["descriptor"]["spin_mode"] = parse_spin_scheme(
+        spin_cfg.get("scheme", "deepspin")
+    )
     try:
         backbone_model = get_standard_model(data)
     except TypeError as err:

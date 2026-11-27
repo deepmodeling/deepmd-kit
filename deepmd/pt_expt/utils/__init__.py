@@ -7,6 +7,9 @@ from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
 )
 
+from .contact_clamp import (
+    ContactClamp,
+)
 from .exclude_mask import (
     AtomExcludeMask,
     PairExcludeMask,
@@ -38,6 +41,7 @@ register_dpmodel_mapping(EnvMat, lambda v: v)
 
 __all__ = [
     "AtomExcludeMask",
+    "ContactClamp",
     "InnerPotential",
     "NetworkCollection",
     "PairExcludeMask",

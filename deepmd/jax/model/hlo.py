@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from copy import (
+    deepcopy,
+)
+from functools import (
+    partial,
+)
 from typing import (
     Any,
 )
@@ -53,6 +59,13 @@ OUTPUT_DEFS = {
         r_differentiable=False,
         c_differentiable=False,
     ),
+    "mask_mag": OutputVariableDef(
+        "mask_mag",
+        shape=[1],
+        reducible=False,
+        r_differentiable=False,
+        c_differentiable=False,
+    ),
 }
 
 
@@ -70,7 +83,7 @@ class HLO(BaseModel):
         dim_aparam: int,
         sel_type: list[int],
         is_aparam_nall: bool,
-        model_output_type: str,
+        model_output_type: list[str],
         mixed_types: bool,
         min_nbor_dist: float | None,
         sel: list[int],
@@ -82,6 +95,10 @@ class HLO(BaseModel):
         var_name: str | None = None,
         task_dim: int | None = None,
         intensive: bool = False,
+        is_spin: bool = False,
+        dim_chg_spin: int = 0,
+        default_chg_spin: list[float] | None = None,
+        full_neighbor_list: bool = False,
     ) -> None:
         self._call_lower = jax_export.deserialize(stablehlo).call
         self._call_lower_atomic_virial = jax_export.deserialize(
@@ -109,6 +126,10 @@ class HLO(BaseModel):
         self._var_name = var_name
         self._task_dim = task_dim
         self._intensive = intensive
+        self._is_spin = is_spin
+        self._dim_chg_spin = dim_chg_spin
+        self._default_chg_spin = default_chg_spin
+        self._full_neighbor_list = full_neighbor_list
         # Model-level pair_exclude_types, rebuilt from the training config so
         # the outer wrapper can fold it into the nlist at BUILD time (decision
         # #18/A4) — the serialized StableHLO lower consumes a pre-excluded
@@ -137,6 +158,8 @@ class HLO(BaseModel):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        spin: jnp.ndarray | None = None,
+        charge_spin: jnp.ndarray | None = None,
     ) -> Any:
         """Return model prediction.
 
@@ -163,7 +186,16 @@ class HLO(BaseModel):
             The keys are defined by the `ModelOutputDef`.
 
         """
-        return self.call(coord, atype, box, fparam, aparam, do_atomic_virial)
+        return self.call(
+            coord,
+            atype,
+            box,
+            fparam,
+            aparam,
+            do_atomic_virial,
+            spin=spin,
+            charge_spin=charge_spin,
+        )
 
     def call(
         self,
@@ -173,6 +205,8 @@ class HLO(BaseModel):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        spin: jnp.ndarray | None = None,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
 
@@ -199,8 +233,12 @@ class HLO(BaseModel):
             The keys are defined by the `ModelOutputDef`.
 
         """
+        from deepmd.jax.utils.neighbor_list import (
+            FullNeighborList,
+        )
+
         return model_call_from_call_lower(
-            call_lower=self.call_lower,
+            call_lower=partial(self.call_lower, spin=spin),
             rcut=self.get_rcut(),
             sel=self.get_sel(),
             mixed_types=self.mixed_types(),
@@ -211,9 +249,11 @@ class HLO(BaseModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
             # exclusion is a nlist-BUILD transform (decision #18/A4); the
             # serialized StableHLO lower consumes a pre-excluded nlist.
             pair_excl=self._pair_excl,
+            neighbor_list=FullNeighborList() if self._full_neighbor_list else None,
         )
 
     def model_output_def(self) -> ModelOutputDef:
@@ -227,9 +267,14 @@ class HLO(BaseModel):
         if name == "energy" and json.loads(self.model_def_script).get(
             "hessian_mode", False
         ):
-            return OUTPUT_DEFS["energy_hessian"]
+            definition = deepcopy(OUTPUT_DEFS["energy_hessian"])
+            definition.magnetic = self._is_spin
+            return definition
         if name in OUTPUT_DEFS:
-            return OUTPUT_DEFS[name]
+            definition = deepcopy(OUTPUT_DEFS[name])
+            if name == "energy":
+                definition.magnetic = self._is_spin
+            return definition
         # property models carry a user-defined output name (``var_name``) that
         # is not in the fixed table; rebuild its def from the persisted metadata.
         if self._var_name is not None and name == self._var_name:
@@ -253,7 +298,22 @@ class HLO(BaseModel):
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
         charge_spin: jnp.ndarray | None = None,
+        spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
+        extended_coord = jnp.asarray(extended_coord, dtype=jnp.float64)
+        extended_atype = jnp.asarray(extended_atype, dtype=jnp.int32)
+        nlist = jnp.asarray(nlist, dtype=jnp.int64)
+        if mapping is None:
+            if extended_atype.shape[1] != nlist.shape[1]:
+                raise ValueError("Ghost atoms require an extended-to-local mapping.")
+            mapping = jnp.broadcast_to(
+                jnp.arange(extended_atype.shape[1], dtype=jnp.int64),
+                extended_atype.shape,
+            )
+        else:
+            mapping = jnp.asarray(mapping, dtype=jnp.int64)
+        fparam = jnp.asarray(fparam, dtype=jnp.float64) if fparam is not None else None
+        aparam = jnp.asarray(aparam, dtype=jnp.float64) if aparam is not None else None
         if extended_coord.shape[1] > nlist.shape[1]:
             if do_atomic_virial:
                 call_lower = self._call_lower_atomic_virial
@@ -264,7 +324,7 @@ class HLO(BaseModel):
                 call_lower = self._call_lower_atomic_virial_no_ghost
             else:
                 call_lower = self._call_lower_no_ghost
-        return call_lower(
+        arguments = (
             extended_coord,
             extended_atype,
             nlist,
@@ -272,6 +332,44 @@ class HLO(BaseModel):
             fparam,
             aparam,
         )
+        if self._is_spin or self._dim_chg_spin:
+            nf, nall = extended_atype.shape
+            if self._is_spin:
+                if spin is None:
+                    raise ValueError(
+                        "A native-spin model requires per-atom spin vectors."
+                    )
+                spin = jnp.asarray(spin, dtype=extended_coord.dtype).reshape(nf, -1, 3)
+                spin = jnp.pad(spin, ((0, 0), (0, nall - spin.shape[1]), (0, 0)))
+            if self._dim_chg_spin and charge_spin is None:
+                if self._default_chg_spin is None:
+                    raise ValueError("The model requires charge_spin conditioning.")
+                charge_spin = jnp.broadcast_to(
+                    jnp.asarray(self._default_chg_spin, dtype=extended_coord.dtype),
+                    (nf, self._dim_chg_spin),
+                )
+            if charge_spin is not None:
+                charge_spin = jnp.asarray(charge_spin, dtype=jnp.float64)
+            arguments += (spin, charge_spin)
+        return call_lower(*arguments)
+
+    def has_spin(self) -> bool:
+        """Whether the artifact accepts per-atom native-spin vectors."""
+        return self._is_spin
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Whether the artifact accepts frame-level charge/spin conditioning."""
+        return self._dim_chg_spin > 0
+
+    def get_dim_chg_spin(self) -> int:
+        return self._dim_chg_spin
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        return self._default_chg_spin
+
+    def uses_full_neighbor_list(self) -> bool:
+        """Whether the artifact consumes every neighbor within the cutoff."""
+        return self._full_neighbor_list
 
     def get_type_map(self) -> list[str]:
         """Get the type map."""

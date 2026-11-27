@@ -84,7 +84,7 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
         edge_mask = torch.ones(src.shape[0], dtype=torch.bool, device=env.DEVICE)
         edge_vec = coord[src] - coord[dst]  # differentiable wrt coord
         energy = (torch.sin(edge_vec).sum(-1) ** 2).sum()  # toy scalar energy
-        force, av, gv = edge_energy_deriv(
+        force, av, gv, _ = edge_energy_deriv(
             energy, edge_vec, edge_index, edge_mask, n_node, do_atomic_virial=True
         )
         # reference physical force = -dE/d(coord)
@@ -113,13 +113,13 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
         edge_index = torch.tensor([[0, 1, 2, 0], [1, 2, 3, 0]], device=env.DEVICE)
         edge_mask = torch.tensor([True, True, True, False], device=env.DEVICE)
         energy = (edge_vec**2).sum()
-        force, av, gv = edge_energy_deriv(
+        force, av, gv, _ = edge_energy_deriv(
             energy, edge_vec, edge_index, edge_mask, n_node, do_atomic_virial=True
         )
         # run again with ONLY the real edges; results must match
         ev2 = edge_vec[:3].detach().requires_grad_(True)
         e2 = (ev2**2).sum()
-        f2, av2, gv2 = edge_energy_deriv(
+        f2, av2, gv2, _ = edge_energy_deriv(
             e2, ev2, edge_index[:, :3], edge_mask[:3], n_node, do_atomic_virial=True
         )
         torch.testing.assert_close(force, f2, rtol=1e-12, atol=1e-12)
@@ -154,8 +154,8 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
                 force_precision=force_precision,
             )
 
-        f64, av64, gv64 = deriv(None, False)
-        f32, av32, gv32 = deriv(torch.float32, False)
+        f64, av64, gv64, _ = deriv(None, False)
+        f32, av32, gv32, _ = deriv(torch.float32, False)
         # inference: force / virial are emitted in the requested precision ...
         self.assertEqual(f32.dtype, torch.float32)
         self.assertEqual(gv32.dtype, torch.float32)
@@ -165,7 +165,7 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
         torch.testing.assert_close(gv32.double(), gv64, rtol=1e-5, atol=1e-5)
         torch.testing.assert_close(av32.double(), av64, rtol=1e-5, atol=1e-5)
         # a retained graph keeps the fp64 leaf dtype (downcast suppressed).
-        f_train, _, _ = deriv(torch.float32, True)
+        f_train, _, _, _ = deriv(torch.float32, True)
         self.assertEqual(f_train.dtype, torch.float64)
 
     def test_atom_virial_optional(self) -> None:
@@ -179,7 +179,7 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
         edge_mask = torch.ones(2, dtype=torch.bool, device=env.DEVICE)
         edge_vec = coord[edge_index[0]] - coord[edge_index[1]]
         energy = (edge_vec**2).sum()
-        force, av, gv = edge_energy_deriv(
+        force, av, gv, _ = edge_energy_deriv(
             energy, edge_vec, edge_index, edge_mask, n_node, do_atomic_virial=False
         )
         self.assertIsNone(av)
@@ -229,7 +229,7 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
                     return_value=cutile_enabled,
                 ),
             ):
-                force, atom_virial, virial = edge_energy_deriv(
+                force, atom_virial, virial, _ = edge_energy_deriv(
                     energy,
                     edge_vec,
                     edge_index,
@@ -303,7 +303,7 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
                     "DP_CUTILE_INFER": cutile_level,
                 },
             ):
-                return edge_energy_deriv(
+                force, atom_virial, virial, _ = edge_energy_deriv(
                     energy,
                     edge_vec,
                     edge_index,
@@ -316,6 +316,7 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
                     node_capacity=n_nodes,
                     do_atomic_virial=do_atomic_virial,
                 )
+            return force, atom_virial, virial
 
         force_ref, atom_virial_ref, virial_ref = run("0", "0")
         edge_grad = torch.where(

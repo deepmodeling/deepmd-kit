@@ -9,11 +9,9 @@
 // end-to-end check drove the archive through the PYTHON DeepPot, which
 // never reaches DeepPotPTExpt.
 //
-// Single-rank only by construction: bridging enables the descriptor's
-// Source Freeze Propagation Gate, whose per-node eta folds a node's full
-// outgoing-edge set, and edges exist only for owned centres -- so the
-// generator asserts has_comm_artifact=false and multi-rank is out of scope
-// here.
+// The archive also carries the with-comm artifact; the multi-rank route is
+// pinned by the LAMMPS test (source/lmp/tests/test_lammps_dpa4_zbl_pt2.py),
+// so this test covers the single-rank C++ chain.
 //
 // The references come from the Python DeepEval of the SAME archive
 // (source/tests/infer/gen_dpa4_zbl.py), so a 1e-10 match validates the
@@ -66,7 +64,8 @@ template <class VALUETYPE>
 class TestInferDeepPotDpa4ZblPtExpt : public ::testing::Test {
  protected:
   // Fixed 6-atom system -- verbatim from gen_dpa4_zbl.py's _COORDS/_ATYPES.
-  // Atoms 0 and 1 sit 0.9 A apart, inside bridging_r_outer, so the
+  // Atoms 0 and 1 sit 0.9 A apart, inside the range of the truncated ZBL
+  // term and below the frozen radius of the contact clamp, so the
   // analytical ZBL term dominates their interaction.
   std::vector<VALUETYPE> coord = {1.0, 1.0, 1.0, 1.9, 1.0, 1.0, 1.3, 1.8, 1.0,
                                   0.4, 1.2, 1.6, 3.6, 2.0, 1.3, 3.4, 0.7, 1.7};

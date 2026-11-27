@@ -336,7 +336,7 @@ class TestSeZMDescriptorSelfCommParity(unittest.TestCase):
         sysm = _build_extended_system(model, device)
         comm = _self_comm_dict(sysm["mapping"], sysm["nloc"], sysm["nall"])
 
-        ref, _, ref_vacuum, _ = descriptor.forward_with_edges(
+        ref, _, ref_vacuum = descriptor.forward_with_edges(
             extended_coord=sysm["coord"][:, : sysm["nloc"], :],
             extended_atype=sysm["atype"],
             edge_index=sysm["edge_index"],
@@ -344,7 +344,7 @@ class TestSeZMDescriptorSelfCommParity(unittest.TestCase):
             edge_mask=sysm["edge_mask"],
             vacuum_conditions={},
         )
-        par, _, par_vacuum, _ = descriptor.forward_with_edges(
+        par, _, par_vacuum = descriptor.forward_with_edges(
             extended_coord=sysm["coord"],
             extended_atype=sysm["extended_atype"],
             edge_index=sysm["edge_scatter_index"],
@@ -440,8 +440,7 @@ class TestSeZMEdgeParallelCapability(unittest.TestCase):
     """The with-comm export predicate admits the edge_vec contract.
 
     Plain energy, native spin, and analytical bridging all use the edge_vec
-    lower interface and are rank-decomposable; bridging participates since
-    the SFPG cross-rank completion (issue #5906).
+    lower interface and are rank-decomposable.
     """
 
     def test_plain_model_supports_edge_parallel(self) -> None:
@@ -461,16 +460,14 @@ class TestSeZMEdgeParallelCapability(unittest.TestCase):
         self.assertEqual(model.export_lower_input_kind(), "edge_vec")
 
     def test_bridging_model_supports_edge_parallel(self) -> None:
-        """Bridging is multi-rank since the SFPG exchange (issue #5906);
-        parity is pinned in test_sezm_parallel_bridging_parity.py.
+        """A bridged model runs multi-rank; parity is pinned in
+        test_sezm_parallel_bridging_parity.py.
         """
         # ZBL needs real element symbols for its analytical pair potential.
         model = _build_model(
             torch.device("cpu"),
             type_map=["O", "H"],
             bridging_method="ZBL",
-            bridging_r_inner=0.5,
-            bridging_r_outer=1.0,
         )
         self.assertTrue(model.supports_edge_parallel())
 

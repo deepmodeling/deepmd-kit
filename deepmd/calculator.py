@@ -33,9 +33,15 @@ from ase.calculators.calculator import (
     PropertyNotImplementedError,
     all_changes,
 )
-from ase.filters import (
-    Filter,
-)
+
+try:
+    from ase.filters import (
+        Filter,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name != "ase.filters":
+        raise
+    from ase.constraints import Filter
 
 from deepmd.infer import (
     DeepPot,
@@ -284,7 +290,8 @@ class DP(Calculator):
                 "that avoid the upfront compilation overhead."
             )
         if self.dp.has_spin:
-            self.implemented_properties = self.implemented_properties + [
+            self.implemented_properties = [
+                *self.implemented_properties,
                 "magnetic_forces",
                 "magnetic_mask",
             ]
@@ -405,19 +412,24 @@ class SpinFilter(Filter):
         super().__init__(atoms, mask=mask)
         self._ncoords = len(atoms) if relax_positions else 0
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._ncoords + super().__len__()
 
-    def _pack(self, get_atomic, magnetic, **kwargs):
+    def _pack(
+        self,
+        get_atomic: "Callable[..., np.ndarray]",
+        magnetic: np.ndarray,
+        **kwargs: Any,
+    ) -> np.ndarray:
         if self._ncoords:
             return np.concatenate((get_atomic(**kwargs), magnetic))
         return magnetic
 
-    def get_positions(self):
+    def get_positions(self) -> np.ndarray:
         moments = self.atoms.get_initial_magnetic_moments()[self.index]
         return self._pack(self.atoms.get_positions, moments)
 
-    def set_positions(self, positions, **kwargs):
+    def set_positions(self, positions: np.ndarray, **kwargs: Any) -> None:
         if self._ncoords:
             self.atoms.set_positions(positions[: self._ncoords], **kwargs)
         moments = self.atoms.get_initial_magnetic_moments()
@@ -426,6 +438,6 @@ class SpinFilter(Filter):
 
     positions = property(get_positions, set_positions)
 
-    def get_forces(self, **kwargs):
+    def get_forces(self, **kwargs: Any) -> np.ndarray:
         magnetic = self.atoms.calc.get_property("magnetic_forces", self.atoms)
         return self._pack(self.atoms.get_forces, magnetic[self.index], **kwargs)

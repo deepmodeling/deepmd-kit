@@ -263,9 +263,10 @@ PyTorch-TorchScript backend:
 torchrun --nproc_per_node=4 --no-python dp --pt-expt train input.json
 ```
 
-Unlike the PyTorch-TorchScript backend, the ZeRO/FSDP2 memory-optimization
-options described above are not available here; PyTorch-Exportable uses
-standard DDP only.
+The ZeRO stages described above apply to this backend as well. With stage 0 or
+1, the training of a [mixture of experts](../model/dpa4.md#mixture-of-experts-moe)
+exchanges the gradients of the element weights only for the elements in the
+batches of the step; no setting is needed.
 
 ## Paddle Implementation {{ paddle_icon }}
 

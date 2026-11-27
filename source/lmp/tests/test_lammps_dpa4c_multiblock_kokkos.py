@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Kokkos halo exchange for an active two-block canonical energy model."""
+"""Kokkos halo exchange for active two-block canonical energy models.
+
+The fused operators of a compressed DPA4C evaluate one fixture and the graph
+forward of a DPA4 the other.
+"""
 
 import json
 import os
@@ -22,16 +26,21 @@ from write_lmp_data import (
 )
 
 
-def test_multiblock_halo_survives_neighbor_rebuild(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "fixture", ["deeppot_dpa4c_canonical_multiblock", "deeppot_dpa4_canonical"]
+)
+def test_multiblock_halo_survives_neighbor_rebuild(
+    tmp_path: Path, fixture: str
+) -> None:
     """Owned and ghost rows agree with one rank across rebuild and reuse."""
     if os.environ.get("DPA4SPIN_KOKKOS_REQUIRED") != "1":
         pytest.skip("Enable the dedicated CUDA Kokkos plugin regression explicitly")
     infer = Path(__file__).resolve().parents[2] / "tests/infer"
-    model = infer / "deeppot_dpa4c_canonical_multiblock.pt2"
+    model = infer / f"{fixture}.pt2"
     assert model.is_file(), f"Generate the multiblock canonical fixture: {model}"
     with zipfile.ZipFile(model) as archive:
         metadata = json.loads(archive.read("model/extra/metadata.json"))
-    assert metadata["lower_input_kind"] == "dpa4c_canonical"
+    assert metadata["lower_input_kind"] == "dpa_canonical"
     assert metadata["has_message_passing"]
     assert not metadata["has_comm_artifact"]
     system = read_expected_ref(model.with_suffix(".expected"))["system"]

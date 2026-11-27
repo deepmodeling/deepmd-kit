@@ -319,7 +319,7 @@ def main(*, compressed_only: bool = False) -> None:
                 _periodic(COMPRESSED_CONFIG) if periodic else COMPRESSED_CONFIG
             )
             _export_compressed(f"{compressed}.pt2", compressed_config)
-            _check_metadata(f"{compressed}.pt2", "dpa4c_canonical", periodic)
+            _check_metadata(f"{compressed}.pt2", "dpa_canonical", periodic)
             _write_ref(f"{compressed}.pt2", f"{compressed}.expected", periodic)
 
     print("\nDone!")  # noqa: T201

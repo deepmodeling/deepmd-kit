@@ -109,6 +109,10 @@ def test_lora_so3_call_matches_einsum_contract(n_focus) -> None:
 
     out_np = np.asarray(mod.call(x))
     np.testing.assert_allclose(out_np, ref, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(mod.call_scalar(x), ref[:, :1], rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(
+        mod.merge_into_base().call_scalar(x), ref[:, :1], rtol=1e-12, atol=1e-12
+    )
     out_torch = mod.call(torch.from_numpy(x))
     np.testing.assert_allclose(
         out_torch.detach().cpu().numpy(), ref, rtol=1e-12, atol=1e-12

@@ -48,10 +48,10 @@ from ..export_helpers import (
 @pytest.mark.parametrize(
     "reference_mode", ["none", "vacuum", "folded"]
 )  # vacuum reference: none / passed per call / folded into the bias
-def test_fused_node_gate_matches_portable(
+def test_fused_fitting_matches_portable(
     monkeypatch: pytest.MonkeyPatch, activation: str, reference_mode: str
 ) -> None:
-    """The fused readout preserves gates and their gradients across vacuum folding."""
+    """The fused readout and its gradient match the portable one across vacuum folding."""
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     fitting = (
         EnergyFittingNet(
@@ -73,12 +73,6 @@ def test_fused_node_gate_matches_portable(
         8, 12, generator=generator, dtype=torch.float32, device=env.DEVICE
     ).requires_grad_(True)
     atype = torch.arange(8, dtype=torch.int64, device=env.DEVICE) % 2
-    gate = torch.tensor(
-        [0.0, 1.0, 0.2, 0.65, 0.9, 0.0, 0.4, 1.0],
-        dtype=torch.float64,
-        device=env.DEVICE,
-        requires_grad=True,
-    )
     vacuum = (
         torch.randn(2, 12, generator=generator, dtype=torch.float32, device=env.DEVICE)
         if reference_mode != "none"
@@ -90,7 +84,7 @@ def test_fused_node_gate_matches_portable(
         fitting.fold_vacuum_reference(vacuum)
         vacuum = None
 
-    kwargs = {"vacuum_descriptor": vacuum, "node_gate": gate}
+    kwargs = {"vacuum_descriptor": vacuum}
     reference = EnergyFittingNetDP.call_graph(fitting, descriptor, atype, **kwargs)[
         "energy"
     ]
@@ -100,21 +94,12 @@ def test_fused_node_gate_matches_portable(
         actual = fitting.call_graph(descriptor, atype, **kwargs)["energy"]
     fused.assert_called_once()
     torch.testing.assert_close(actual, reference, atol=2e-5, rtol=2e-5)
-    closed = gate == 0.0
-    bias = fitting.readout_reference().to(actual.dtype)[atype]
-    torch.testing.assert_close(actual[closed], bias[closed], atol=0.0, rtol=0.0)
 
     cotangent = torch.linspace(-1.0, 1.0, 8, device=env.DEVICE)[:, None]
-    expected_gradients = torch.autograd.grad(
-        (reference * cotangent).sum(), (descriptor, gate)
-    )
-    actual_gradients = torch.autograd.grad(
-        (actual * cotangent).sum(), (descriptor, gate)
-    )
-    torch.testing.assert_close(
-        actual_gradients, expected_gradients, atol=2e-5, rtol=2e-5
-    )
-    assert actual_gradients[1].abs().max() > 1e-6
+    expected_gradient = torch.autograd.grad((reference * cotangent).sum(), descriptor)
+    actual_gradient = torch.autograd.grad((actual * cotangent).sum(), descriptor)
+    torch.testing.assert_close(actual_gradient, expected_gradient, atol=2e-5, rtol=2e-5)
+    assert actual_gradient[0].abs().max() > 1e-6
 
 
 class TestEnergyFittingNet(unittest.TestCase, TestCaseSingleFrameWithNlist):

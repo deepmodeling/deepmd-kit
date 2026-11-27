@@ -59,10 +59,17 @@ Fallback behaviour on an unresolved key depends on the family:
   separation matters on devices whose IEEE-fp32 throughput balance differs
   from H20.  Every swept tuple is checked through the whole stack against the
   fallback before registration because changing ``BLOCK_K`` may regroup fp32
-  partial sums.
+  partial sums.  ``stack_fp32_parity`` holds the same three launches for the
+  reflection-preserving (parity) weights, whose ``|m| = 1`` blocks are half as
+  wide and therefore favor other tiles; a parity convolution resolves its key
+  there first and otherwise through ``stack_fp32``.
 - ``stack_fp16x3`` is a validated win list: every entry passed the fp64
   exactness sweep for the exact kernel binary it launches, and an
-  unresolved key keeps the fp32 mixing stack.  These entries are
+  unresolved key keeps the fp32 mixing stack.  ``stack_fp16x3_parity`` is
+  the same list for the reflection-preserving (parity) weights, whose
+  ``|m| = 1`` blocks launch over two sign tiles and therefore form a
+  different kernel binary; a parity convolution resolves its key there only
+  and never through ``stack_fp16x3``.  These entries are
   load-bearing for correctness -- some ``(num_warps, num_stages)``
   combinations of the three-``tl.dot`` k-loop are miscompiled by the Triton
   software pipeliner into silent NaN rows at production edge counts, and
@@ -137,8 +144,10 @@ TILE_CONFIG_FAMILIES = (
     "flash_bwd_edge",
     "rotate_mix_bwd_block",
     "stack_fp32",
+    "stack_fp32_parity",
     "stack_m0_gate",
     "stack_fp16x3",
+    "stack_fp16x3_parity",
 )
 
 _POINTWISE_FALLBACK = (16, 8, 2)
@@ -462,7 +471,7 @@ def rotate_mix_bwd_block_config(c_wide: int, lmax: int) -> tuple[int, int, int] 
 
 
 def stack_fp32_configs(
-    focus_dim: int, lmax: int
+    focus_dim: int, lmax: int, parity: bool = False
 ) -> tuple[
     tuple[int, int, int, int, int],
     tuple[int, int, int, int, int],
@@ -476,20 +485,27 @@ def stack_fp32_configs(
         Per-focus channel width ``Cf``.
     lmax : int
         Maximum spherical harmonic degree.
+    parity : bool
+        Whether the convolution uses reflection-preserving weights, whose
+        ``|m| = 1`` blocks are half as wide.
 
     Returns
     -------
     tuple
         Three ``(BLOCK_M, BLOCK_N, BLOCK_K, num_warps, num_stages)``
         configurations in the order (forward ``m = 0``, forward
-        ``|m| = 1``, combined backward).  Unresolved keys use the
-        conservative configuration measured on H20.
+        ``|m| = 1``, combined backward).  Parity weights use the
+        ``stack_fp32_parity`` entry of the key when it exists.  Unresolved keys
+        use the conservative default configuration.
     """
-    return _lookup("stack_fp32", (focus_dim, lmax)) or _STACK_FP32_DEFAULT
+    key = (focus_dim, lmax)
+    if parity and has_tile_config("stack_fp32_parity", key):
+        return _lookup("stack_fp32_parity", key) or _STACK_FP32_DEFAULT
+    return _lookup("stack_fp32", key) or _STACK_FP32_DEFAULT
 
 
 def stack_fp16x3_configs(
-    focus_dim: int, lmax: int
+    focus_dim: int, lmax: int, parity: bool = False
 ) -> (
     tuple[
         tuple[int, int, int, int, int],
@@ -507,6 +523,12 @@ def stack_fp16x3_configs(
         Per-focus channel width ``Cf``.
     lmax : int
         Maximum spherical harmonic degree.
+    parity : bool
+        Whether the convolution uses reflection-preserving weights, whose
+        ``|m| = 1`` blocks are half as wide and launch over two sign tiles.
+        Their configurations come from the ``stack_fp16x3_parity`` family
+        only: the validation of a plain-layout configuration does not cover
+        that launch.
 
     Returns
     -------
@@ -518,7 +540,8 @@ def stack_fp16x3_configs(
         fallback configuration: an unvalidated configuration may be
         miscompiled into silent NaN (see the module docstring).
     """
-    return _lookup("stack_fp16x3", (focus_dim, lmax))
+    family = "stack_fp16x3_parity" if parity else "stack_fp16x3"
+    return _lookup(family, (focus_dim, lmax))
 
 
 def stack_m0_gate_config(focus_dim: int, lmax: int) -> tuple[int, int, int, int] | None:

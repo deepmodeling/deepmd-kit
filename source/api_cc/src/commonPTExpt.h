@@ -47,6 +47,12 @@
 namespace deepmd {
 namespace ptexpt {
 
+/// The ``lower_input_kind`` of an archive whose program reads the compact
+/// canonical graph. Its ``canonical_evaluator`` names what evaluates the
+/// model: the fused operators of compressed DPA1 (``dpa1``) or compressed
+/// DPA4C (``dpa4c``), or the graph forward of the model (``graph``).
+constexpr char kCanonicalLowerKind[] = "dpa_canonical";
+
 /** Validate source width before wrapping caller buffers or replaying a graph.
  */
 inline void check_canonical_index(const void* source,
@@ -244,6 +250,31 @@ class CallerStreamScope {
   std::optional<c10::cuda::CUDAStreamGuard> guard_;
 #endif
 };
+
+/**
+ * @brief Whether the AOTInductor package of ``model`` runs on a CUDA device.
+ *
+ * The package records the device it was compiled for. A package compiled for
+ * the CPU runs on the CPU whether or not a CUDA device is visible, and one
+ * compiled for a CUDA device needs one.
+ *
+ * @throws deepmd::deepmd_exception If the package was compiled for a CUDA
+ * device and none is available.
+ */
+inline bool package_runs_on_cuda(const std::string& model) {
+  const auto metadata =
+      torch::inductor::AOTIModelPackageLoader::load_metadata_from_package(
+          model, "model");
+  const auto device = metadata.find("AOTI_DEVICE_KEY");
+  const bool cuda = device != metadata.end() && device->second == "cuda";
+  if (cuda && !torch::cuda::is_available()) {
+    throw deepmd::deepmd_exception(
+        "The model " + model +
+        " was compiled for a CUDA device, and no CUDA device is available; "
+        "freeze it on the CPU to run it there.");
+  }
+  return cuda;
+}
 
 /**
  * @brief Lock of the operations of the backend that capture a CUDA graph or
@@ -708,6 +739,36 @@ class JsonParser {
 inline JsonValue parse_json(const std::string& s) {
   JsonParser parser(s);
   return parser.parse();
+}
+
+/**
+ * @brief Build the charge/spin input of a lower that reads the condition.
+ *
+ * The artifact consumes the condition in double precision, shaped
+ * ``(1, dim_chg_spin)``. A zero width means the forward has no such slot --
+ * either because the model carries no condition at all, or because
+ * compression moved it into frozen tables -- so the returned tensor is
+ * undefined and never marshalled.
+ */
+inline torch::Tensor make_chg_spin_tensor(
+    const std::vector<double>& charge_spin,
+    const int dim_chg_spin,
+    const torch::Device& device) {
+  if (dim_chg_spin == 0) {
+    return torch::Tensor();
+  }
+  if (static_cast<int>(charge_spin.size()) != dim_chg_spin) {
+    throw deepmd::deepmd_exception(
+        "the charge/spin condition holds " +
+        std::to_string(charge_spin.size()) +
+        " values but the model expects dim_chg_spin=" +
+        std::to_string(dim_chg_spin) + ".");
+  }
+  return torch::from_blob(const_cast<double*>(charge_spin.data()),
+                          {1, dim_chg_spin},
+                          torch::TensorOptions().dtype(torch::kFloat64))
+      .clone()
+      .to(device);
 }
 
 inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,

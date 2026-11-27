@@ -6,8 +6,9 @@ This module provides a tensor-core implementation of the SO(2) mixing stack
 that is numerically interchangeable with the fp32 ``sezm_triton::
 so2_mixing_stack`` operator while running the block GEMMs on fp16 tensor
 cores.  It is selected at ``DP_TRITON_INFER >= 3`` for ``(focus_dim, lmax)``
-keys resolved by :func:`~.tile_configs.stack_fp16x3_configs`; all other
-shapes keep the fp32 stack.
+keys of the plain or the reflection-preserving (parity) weight layout, resolved
+by :func:`~.tile_configs.stack_fp16x3_configs`; all other shapes keep the fp32
+stack.
 
 Numerical scheme
 ----------------
@@ -67,7 +68,8 @@ are miscompiled by the Triton software pipeliner into silent NaN rows at
 production edge counts, and the affected set shifts with any change to the
 kernel body.  Launch configurations therefore come exclusively from
 :func:`~.tile_configs.stack_fp16x3_configs`, whose entries are regenerated
-by the fp64-validated sweep (``sweep_tile_configs.py --kernels fp16x3``).
+by the fp64-validated sweeps (``sweep_tile_configs.py --kernels fp16x3`` for
+plain weights and ``--kernels fp16x3_parity`` for reflection-preserving ones).
 Any edit to a kernel body in this module invalidates every table entry.
 
 Layout and semantics are identical to ``sezm_triton::so2_mixing_stack``
@@ -210,10 +212,11 @@ if STACK_FP16X3_TRITON_AVAILABLE:
         w_off = (
             (layer * n_focus + fid) * M0 * M0 + offs_k[:, None] * M0 + offs_n[None, :]
         )
-        for _ in range(0, M0, BLOCK_K):
-            a = tl.load(a_ptrs, mask=mm, other=0.0)
-            bh = tl.load(wh_ptr + w_off, mask=n_mask[None, :], other=0.0)
-            bl = tl.load(wl_ptr + w_off, mask=n_mask[None, :], other=0.0)
+        for k0 in range(0, M0, BLOCK_K):
+            km = (k0 + offs_k) < M0
+            a = tl.load(a_ptrs, mask=mm & km[None, :], other=0.0)
+            bh = tl.load(wh_ptr + w_off, mask=km[:, None] & n_mask[None, :], other=0.0)
+            bl = tl.load(wl_ptr + w_off, mask=km[:, None] & n_mask[None, :], other=0.0)
             acc, acc2 = _dot_fp16x3(a, bh, bl, acc, acc2)
             a_ptrs += BLOCK_K
             w_off += BLOCK_K * M0
@@ -258,13 +261,15 @@ if STACK_FP16X3_TRITON_AVAILABLE:
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
+        PARITY: tl.constexpr = False,
     ):
         """``|m| = 1`` block GEMM with the gate / residual / alpha epilogue."""
         M0: tl.constexpr = (L + 1) * CF
-        M1: tl.constexpr = 2 * L * CF
+        M1: tl.constexpr = (1 if PARITY else 2) * L * CF
         ROW: tl.constexpr = (3 * L + 1) * CF
         LG: tl.constexpr = L * CF
-        NT: tl.constexpr = (M1 + BLOCK_N - 1) // BLOCK_N
+        NT_HALF: tl.constexpr = (M1 + BLOCK_N - 1) // BLOCK_N
+        NT: tl.constexpr = (2 if PARITY else 1) * NT_HALF
 
         pid = tl.program_id(0)
         fid = tl.program_id(1).to(tl.int64)
@@ -277,19 +282,22 @@ if STACK_FP16X3_TRITON_AVAILABLE:
         mm = m_mask[:, None]
         u_row = u_ptr + fid * n_edge * ROW + offs_m * ROW
         offs_k = tl.arange(0, BLOCK_K)
-        offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+        sign = pid_n // NT_HALF if PARITY else 0
+        offs_n = (pid_n % NT_HALF) * BLOCK_N + tl.arange(0, BLOCK_N)
+        out_n = sign * M1 + offs_n
         n_mask = offs_n < M1
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         acc2 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        a_ptrs = u_row[:, None] + (M0 + offs_k)[None, :]
+        a_ptrs = u_row[:, None] + (M0 + sign * M1 + offs_k)[None, :]
         w_off = (
             (layer * n_focus + fid) * M1 * M1 + offs_k[:, None] * M1 + offs_n[None, :]
         )
-        for _ in range(0, M1, BLOCK_K):
-            a = tl.load(a_ptrs, mask=mm, other=0.0)
-            bh = tl.load(wh_ptr + w_off, mask=n_mask[None, :], other=0.0)
-            bl = tl.load(wl_ptr + w_off, mask=n_mask[None, :], other=0.0)
+        for k0 in range(0, M1, BLOCK_K):
+            km = (k0 + offs_k) < M1
+            a = tl.load(a_ptrs, mask=mm & km[None, :], other=0.0)
+            bh = tl.load(wh_ptr + w_off, mask=km[:, None] & n_mask[None, :], other=0.0)
+            bl = tl.load(wl_ptr + w_off, mask=km[:, None] & n_mask[None, :], other=0.0)
             acc, acc2 = _dot_fp16x3(a, bh, bl, acc, acc2)
             a_ptrs += BLOCK_K
             w_off += BLOCK_K * M1
@@ -298,11 +306,11 @@ if STACK_FP16X3_TRITON_AVAILABLE:
         if SAVE_Z:
             z_row = z_ptr + (layer * n_focus + fid) * n_edge * ROW + offs_m * ROW
             tl.store(
-                z_row[:, None] + (M0 + offs_n)[None, :], acc, mask=mm & n_mask[None, :]
+                z_row[:, None] + (M0 + out_n)[None, :], acc, mask=mm & n_mask[None, :]
             )
         if HAS_GATE:
             # Both |m| = 1 stripes of degree group g share gate group g.
-            sig_cols = ((offs_n // CF) % L) * CF + (offs_n % CF)
+            sig_cols = ((out_n // CF) % L) * CF + (out_n % CF)
             sig = tl.load(
                 sig_ptr + (fid * n_edge + offs_m)[:, None] * LG + sig_cols[None, :],
                 mask=mm & n_mask[None, :],
@@ -310,7 +318,7 @@ if STACK_FP16X3_TRITON_AVAILABLE:
             )
             acc = acc * sig
         u_t = tl.load(
-            u_row[:, None] + (M0 + offs_n)[None, :],
+            u_row[:, None] + (M0 + out_n)[None, :],
             mask=mm & n_mask[None, :],
             other=0.0,
         )
@@ -322,9 +330,7 @@ if STACK_FP16X3_TRITON_AVAILABLE:
             v_row = v_ptr + fid * ROW + offs_m * (n_focus * ROW)
         else:
             v_row = v_ptr + fid * n_edge * ROW + offs_m * ROW
-        tl.store(
-            v_row[:, None] + (M0 + offs_n)[None, :], acc, mask=mm & n_mask[None, :]
-        )
+        tl.store(v_row[:, None] + (M0 + out_n)[None, :], acc, mask=mm & n_mask[None, :])
 
     @triton.jit
     def _stack_fp16x3_bwd_kernel(
@@ -345,6 +351,7 @@ if STACK_FP16X3_TRITON_AVAILABLE:
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
+        PARITY: tl.constexpr = False,
     ):
         """Backward GEMM ``g_u = residual + gz @ W^T`` for one ``|m|`` block.
 
@@ -353,10 +360,11 @@ if STACK_FP16X3_TRITON_AVAILABLE:
         compromise configuration.
         """
         M0: tl.constexpr = (L + 1) * CF
-        MB: tl.constexpr = (2 * L * CF) if IS_M1 else ((L + 1) * CF)
+        MB: tl.constexpr = ((1 if PARITY else 2) * L * CF) if IS_M1 else ((L + 1) * CF)
         OFF: tl.constexpr = M0 if IS_M1 else 0
         ROW: tl.constexpr = (3 * L + 1) * CF
-        NT: tl.constexpr = (MB + BLOCK_N - 1) // BLOCK_N
+        NT_HALF: tl.constexpr = (MB + BLOCK_N - 1) // BLOCK_N
+        NT: tl.constexpr = (2 if PARITY and IS_M1 else 1) * NT_HALF
 
         pid = tl.program_id(0)
         fid = tl.program_id(1).to(tl.int64)
@@ -368,7 +376,8 @@ if STACK_FP16X3_TRITON_AVAILABLE:
         m_mask = offs_m < n_edge
         mm = m_mask[:, None]
         offs_k = tl.arange(0, BLOCK_K)
-        offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+        sign = pid_n // NT_HALF if PARITY and IS_M1 else 0
+        offs_n = (pid_n % NT_HALF) * BLOCK_N + tl.arange(0, BLOCK_N)
         n_mask = offs_n < MB
 
         if G_EDGE_MAJOR:
@@ -381,22 +390,23 @@ if STACK_FP16X3_TRITON_AVAILABLE:
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         acc2 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        a_ptrs = gz_row[:, None] + (OFF + offs_k)[None, :]
+        a_ptrs = gz_row[:, None] + (OFF + sign * MB + offs_k)[None, :]
         w_off = (
             (layer * n_focus + fid) * MB * MB + offs_k[:, None] * MB + offs_n[None, :]
         )
-        for _ in range(0, MB, BLOCK_K):
-            a = tl.load(a_ptrs, mask=mm, other=0.0)
+        for k0 in range(0, MB, BLOCK_K):
+            km = (k0 + offs_k) < MB
+            a = tl.load(a_ptrs, mask=mm & km[None, :], other=0.0)
             if FOLD_ALPHA:
                 a = a * alpha[:, None]
-            bh = tl.load(wh_ptr + w_off, mask=n_mask[None, :], other=0.0)
-            bl = tl.load(wl_ptr + w_off, mask=n_mask[None, :], other=0.0)
+            bh = tl.load(wh_ptr + w_off, mask=km[:, None] & n_mask[None, :], other=0.0)
+            bl = tl.load(wl_ptr + w_off, mask=km[:, None] & n_mask[None, :], other=0.0)
             acc, acc2 = _dot_fp16x3(a, bh, bl, acc, acc2)
             a_ptrs += BLOCK_K
             w_off += BLOCK_K * MB
         acc = acc * 16.0 + acc2 * 0.0078125  # 2^4 head, 2^4 * 2^-11 tail unscale
 
-        col0 = OFF + offs_n
+        col0 = OFF + sign * MB + offs_n
         if FOLD_ALPHA:
             res = tl.load(
                 gz_row[:, None] + col0[None, :], mask=mm & n_mask[None, :], other=0.0
@@ -454,12 +464,13 @@ def _mixing_stack_fp16x3_impl(
     n_focus, n_edge, row = u0.shape
     lmax = int(lmax)
     focus_dim = int(focus_dim)
-    configs = stack_fp16x3_configs(focus_dim, lmax)
+    parity = w1_all.shape[-1] != 2 * lmax * focus_dim
+    configs = stack_fp16x3_configs(focus_dim, lmax, parity)
     if configs is None:
         raise RuntimeError(
             f"no validated fp16x3 configuration for (focus_dim={focus_dim}, "
-            f"lmax={lmax}); the caller must route unswept shapes to the fp32 "
-            "mixing stack"
+            f"lmax={lmax}, parity={parity}); the caller must route unswept "
+            "shapes to the fp32 mixing stack"
         )
     n_gated = gw_all.shape[0]
     z_all = torch.empty(
@@ -478,14 +489,17 @@ def _mixing_stack_fp16x3_impl(
         configs[1],
     )
     m0 = (lmax + 1) * focus_dim
-    m1 = 2 * lmax * focus_dim
+    m1 = int(w1_all.shape[-1])
     gate_bm, gate_w, gate_s = gate_config(focus_dim, lmax)
     sig_by_bmm = focus_dim >= GATE_BMM_MIN_FOCUS_DIM
     sig = torch.empty(
         (n_focus, n_edge, lmax * focus_dim), device=u0.device, dtype=torch.float32
     )
     grid_m0 = (triton.cdiv(n_edge, bm0) * triton.cdiv(m0, bn0), n_focus)
-    grid_m1 = (triton.cdiv(n_edge, bm1) * triton.cdiv(m1, bn1), n_focus)
+    grid_m1 = (
+        triton.cdiv(n_edge, bm1) * ((2 if parity else 1) * triton.cdiv(m1, bn1)),
+        n_focus,
+    )
 
     u = u0
     for layer in range(n_gated):
@@ -542,6 +556,7 @@ def _mixing_stack_fp16x3_impl(
             layer,
             L=lmax,
             CF=focus_dim,
+            PARITY=parity,
             HAS_GATE=True,
             V_EDGE_MAJOR=False,
             APPLY_ALPHA=False,
@@ -586,6 +601,7 @@ def _mixing_stack_fp16x3_impl(
         n_gated,
         L=lmax,
         CF=focus_dim,
+        PARITY=parity,
         HAS_GATE=False,
         V_EDGE_MAJOR=True,
         APPLY_ALPHA=apply_alpha,
@@ -632,12 +648,13 @@ def _mixing_stack_fp16x3_bwd_impl(
     n_gated, n_focus, n_edge, row = z_all.shape
     lmax = int(lmax)
     focus_dim = int(focus_dim)
-    configs = stack_fp16x3_configs(focus_dim, lmax)
+    parity = w1t_all.shape[-1] != 2 * lmax * focus_dim
+    configs = stack_fp16x3_configs(focus_dim, lmax, parity)
     if configs is None:
         raise RuntimeError(
             f"no validated fp16x3 configuration for (focus_dim={focus_dim}, "
-            f"lmax={lmax}); the caller must route unswept shapes to the fp32 "
-            "mixing stack"
+            f"lmax={lmax}, parity={parity}); the caller must route unswept "
+            "shapes to the fp32 mixing stack"
         )
     device, dtype = grad_out.device, grad_out.dtype
     grad_alpha = torch.empty((n_edge, n_focus), device=device, dtype=dtype)
@@ -649,13 +666,16 @@ def _mixing_stack_fp16x3_bwd_impl(
     w1h, w1l = _split_fp16(w1t_all)
 
     m0 = (lmax + 1) * focus_dim
-    m1 = 2 * lmax * focus_dim
+    m1 = int(w1t_all.shape[-1])
     (bm0, bn0, bk0, w0_warps, w0_stages), (bm1, bn1, bk1, w1_warps, w1_stages) = (
         configs[2],
         configs[3],
     )
     grid_bwd0 = (triton.cdiv(n_edge, bm0) * triton.cdiv(m0, bn0), n_focus)
-    grid_bwd1 = (triton.cdiv(n_edge, bm1) * triton.cdiv(m1, bn1), n_focus)
+    grid_bwd1 = (
+        triton.cdiv(n_edge, bm1) * ((2 if parity else 1) * triton.cdiv(m1, bn1)),
+        n_focus,
+    )
     point_schedule = _point_backward_schedule(focus_dim, lmax)
 
     def launch_bwd_gemms(gz, res, gu, layer, g_edge_major, fold, res_is_gz):
@@ -671,6 +691,7 @@ def _mixing_stack_fp16x3_bwd_impl(
             L=lmax,
             CF=focus_dim,
             IS_M1=False,
+            PARITY=False,
             G_EDGE_MAJOR=g_edge_major,
             FOLD_ALPHA=fold,
             RES_IS_GZ=res_is_gz,
@@ -692,6 +713,7 @@ def _mixing_stack_fp16x3_bwd_impl(
             L=lmax,
             CF=focus_dim,
             IS_M1=True,
+            PARITY=parity,
             G_EDGE_MAJOR=g_edge_major,
             FOLD_ALPHA=fold,
             RES_IS_GZ=res_is_gz,

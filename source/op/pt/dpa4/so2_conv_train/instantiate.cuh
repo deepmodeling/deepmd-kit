@@ -23,7 +23,7 @@ namespace dpa4_sezm_kernels {
   DPA4_SCT_EXTERN template cudaError_t launch_so2_value_fwd<T, DPA4_SCT_L>(    \
       const T*, const long*, const T*, const T*, const T*, const T*, const T*, \
       const T*, const T*, const T*, const T*, T*, T*, T*, acc_type<T>::type*,  \
-      long, long, long, int, int, int, bool, bool, acc_type<T>::type,          \
+      long, long, long, int, int, int, bool, bool, bool, acc_type<T>::type,    \
       acc_type<T>::type, acc_type<T>::type, int, int, long, size_t,            \
       cudaStream_t);
 

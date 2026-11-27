@@ -82,7 +82,6 @@ def _make_descriptor(
     sel: list[int],
     rcut: float,
     *,
-    source_gated: bool = False,
     precision: str = "float32",
 ) -> DescrptSeZM:
     """Build a small SeZM descriptor in the deployed layout."""
@@ -104,11 +103,6 @@ def _make_descriptor(
         random_gamma=False,
         precision=precision,
         seed=7,
-        # The absolute scale gives every pair the unit length scale, so the two
-        # fractions are the window radii in Å.
-        inner_clamp_f_inner=0.8 if source_gated else None,
-        inner_clamp_f_outer=1.2 if source_gated else None,
-        inner_clamp_scale="absolute",
     )
 
 
@@ -306,33 +300,82 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(output.sum(), coord)[0]
         return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
-    def test_source_gated_inference_takes_the_fused_convolution(
-        self, monkeypatch
-    ) -> None:
-        """A bridged descriptor runs the fused convolution and matches the dense path.
+    def test_bridged_inference_takes_the_fused_convolution(self, monkeypatch) -> None:
+        """A bridged model runs the fused convolution and matches the dense path.
 
-        The source gate is folded into the edge envelope, so the fused
-        convolution and the flash attention see it through the one factor they
-        already weight by, and the dense per-edge rotations are not built.
+        The contact clamp acts on the separation before the radial features
+        are formed, so the fused radial operator and convolution read the
+        clamped separation like the dense path, and the dense per-edge
+        rotations are not built. The data edges are raised above every pair of
+        the test geometry so that the clamp acts on all of them.
         """
         if not cuda_infer_available():
             pytest.skip("the DPA4 CUDA inference operators are unavailable")
         if not SO2_VALUE_PATH_TRITON_AVAILABLE:
             pytest.skip("Triton is unavailable")
+        from deepmd.pt.model.model import (
+            get_model,
+        )
 
         _clear_gates(monkeypatch)
-        data = _make_descriptor(
-            self.nt,
-            self.sel_mix,
-            self.rcut,
-            source_gated=True,
-        ).serialize()
-        dense = DescrptSeZM.deserialize(data).to(self.device).eval()
-        dense_output, dense_gradient = self._inference_step(dense)
+        config = {
+            "type": "dpa4",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                **_make_descriptor(self.nt, self.sel_mix, self.rcut).serialize()[
+                    "config"
+                ],
+                "type": "dpa4",
+            },
+            "fitting_net": {"type": "dpa4_ener", "neuron": [16], "seed": 7},
+            "bridging_method": "zbl",
+            "use_compile": False,
+        }
+        for key in ("ntypes", "type_map"):
+            config["descriptor"].pop(key)
+        coord = torch.tensor(
+            self.coord_ext.reshape(self.nf, self.nall, 3)[:1, : self.nloc],
+            dtype=torch.float32,
+            device=self.device,
+            requires_grad=True,
+        )
+        atype = torch.tensor(
+            self.atype_ext[:1, : self.nloc], dtype=torch.int64, device=self.device
+        )
+
+        def evaluate(model: torch.nn.Module) -> tuple[np.ndarray, np.ndarray]:
+            clamp = model.atomic_model.descriptor.contact_clamp
+            clamp.edges.fill_(2.0)
+            out = model(coord, atype)
+            return (
+                out["energy"].detach().cpu().numpy(),
+                out["force"].detach().cpu().numpy(),
+            )
+
+        dense = get_model(config).to(self.device).eval()
+        # A fresh DPA4 zero-initializes its residual projections, which makes
+        # the learned energy independent of the geometry; random weights make
+        # the comparison reach every path.
+        generator = torch.Generator(device="cpu").manual_seed(11)
+        with torch.no_grad():
+            for parameter in dense.parameters():
+                parameter.add_(
+                    0.1
+                    * torch.randn(
+                        parameter.shape,
+                        generator=generator,
+                        dtype=parameter.dtype,
+                        device="cpu",
+                    ).to(parameter.device)
+                )
+        state = dense.state_dict()
+        dense_energy, dense_force = evaluate(dense)
 
         monkeypatch.setenv("DP_TRITON_INFER", "1")
         monkeypatch.setenv("DP_CUDA_INFER", "2")
-        accelerated = DescrptSeZM.deserialize(data).to(self.device).eval()
+        accelerated = get_model(config).to(self.device)
+        accelerated.load_state_dict(state)
+        accelerated.eval()
         conv = next(
             module
             for module in accelerated.modules()
@@ -340,14 +383,24 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         )
         if conv._cuda_conv_fn is None:
             pytest.skip("the descriptor layout has no fused CUDA convolution")
-        assert conv._flash_atten_fn is not None
-        assert conv._cuda_value_train is None
-        assert accelerated._wigner_free_conv
-        assert not accelerated._build_full_wigner()
+        from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+            op_available as radial_available,
+        )
 
-        output, gradient = self._inference_step(accelerated)
-        np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)
-        np.testing.assert_allclose(gradient, dense_gradient, rtol=2e-4, atol=2e-5)
+        if not radial_available():
+            pytest.skip("the fused CUDA radial operator is unavailable")
+        assert conv._flash_atten_fn is not None
+        assert accelerated.atomic_model.descriptor._cuda_radial_fn is not None
+        assert accelerated.atomic_model.descriptor._wigner_free_conv
+        energy, force = evaluate(accelerated)
+        # Without the clamp the model reads other separations, so the
+        # comparison is not vacuous.
+        accelerated.atomic_model.descriptor.contact_clamp.edges.fill_(0.1)
+        unclamped = accelerated(coord, atype)["energy"].detach().cpu().numpy()
+        assert np.abs(unclamped - energy).max() > 1e-4
+        np.testing.assert_allclose(energy, dense_energy, rtol=2e-4, atol=2e-4)
+        assert np.isfinite(force).all() and np.isfinite(dense_force).all()
+        np.testing.assert_allclose(force, dense_force, rtol=2e-4, atol=2e-4)
 
     @pytest.mark.parametrize("path", ["triton", "cuda", "cuda-triton"])
     def test_training_step_matches_the_dense_path(self, monkeypatch, path) -> None:

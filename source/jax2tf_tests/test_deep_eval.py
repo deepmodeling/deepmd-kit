@@ -1,7 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from unittest.mock import (
+    patch,
+)
+
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    ModelOutputDef,
+)
 from deepmd.jax.infer.deep_eval import (
     DeepEval,
 )
@@ -10,6 +18,12 @@ from deepmd.jax.infer.deep_eval import (
 class _NoChargeSpinModel:
     def __init__(self) -> None:
         self.kwargs = None
+
+    def get_rcut(self) -> float:
+        return 4.0
+
+    def get_type_map(self) -> list[str]:
+        return ["H"]
 
     def get_dim_fparam(self) -> int:
         return 0
@@ -34,10 +48,18 @@ class _ChargeSpinModel(_NoChargeSpinModel):
         return True
 
 
+def _saved_model_evaluator(model: _NoChargeSpinModel) -> DeepEval:
+    with patch("deepmd.jax.jax2tf.tfmodel.TFModelWrapper", return_value=model):
+        return DeepEval(
+            "test.savedmodel",
+            ModelOutputDef(FittingOutputDef([])),
+            auto_batch_size=False,
+        )
+
+
 def test_eval_model_warns_and_ignores_charge_spin_without_embedding() -> None:
-    deep_eval = object.__new__(DeepEval)
     model = _NoChargeSpinModel()
-    deep_eval.dp = model
+    deep_eval = _saved_model_evaluator(model)
 
     with pytest.warns(UserWarning, match="will be ignored"):
         deep_eval._eval_model(
@@ -55,9 +77,8 @@ def test_eval_model_warns_and_ignores_charge_spin_without_embedding() -> None:
 
 
 def test_eval_model_forwards_charge_spin_with_embedding() -> None:
-    deep_eval = object.__new__(DeepEval)
     model = _ChargeSpinModel()
-    deep_eval.dp = model
+    deep_eval = _saved_model_evaluator(model)
 
     deep_eval._eval_model(
         np.zeros((1, 6)),
@@ -74,9 +95,8 @@ def test_eval_model_forwards_charge_spin_with_embedding() -> None:
 
 
 def test_eval_model_forwards_none_charge_spin_with_embedding() -> None:
-    deep_eval = object.__new__(DeepEval)
     model = _ChargeSpinModel()
-    deep_eval.dp = model
+    deep_eval = _saved_model_evaluator(model)
 
     deep_eval._eval_model(
         np.zeros((1, 6)),

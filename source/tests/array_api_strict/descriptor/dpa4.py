@@ -11,9 +11,7 @@ from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
     GridProduct,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-    BridgingSwitch,
     C3CutoffEnvelope,
-    InnerClamp,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator,
@@ -41,10 +39,8 @@ class DescrptDPA4(DescrptDPA4DP):
 
 
 for _stateless_cls in (
-    BridgingSwitch,
     C3CutoffEnvelope,
     GridProduct,
-    InnerClamp,
     SwiGLU,
     WignerDCalculator,
 ):

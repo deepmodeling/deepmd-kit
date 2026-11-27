@@ -234,16 +234,9 @@ class TestDescriptorGradParity:
         _assert_grad_trees_match(pt_mod, expt_mod, rtol=1e-10, atol=1e-12)
 
     def test_descriptor_grad_parity_native_spin(self) -> None:
-        # Native per-atom spin (``use_spin``) adds trainable Parameters that
-        # pt_expt must promote from dpmodel numpy->buffer:
-        # ``SpinEmbedding.{adam_spin_vec_weight, adam_spin_nbr_weight}``,
-        # its ``mag_layer1/2`` weights (NativeLayer auto-promotes), and
-        # ``EnvironmentInitialEmbedding.spin_scale``.  A missing promotion
-        # surfaces as the trainable-parameter-count mismatch asserted inside
-        # ``_assert_grad_trees_match`` (n_pt vs n_expt).  Type 0 carries spin;
-        # the fixture's local types include type-0 atoms that are also edge
-        # sources, so both the on-site (l=0 magnitude + l=1 direction) and the
-        # neighbor-aggregation (edge l=1, gated by ``spin_scale``) paths fire.
+        # Magnitude and pair projections must train in both backends, together
+        # with the independent environment spin projection. The parameter count and
+        # full gradient trees detect omitted trainable parameters.
         use_spin = [True, False]  # ntypes == 2; type 0 is spin-active
         pt_mod, expt_mod = self._build_pair(use_spin=use_spin)
         inp = self._inputs()

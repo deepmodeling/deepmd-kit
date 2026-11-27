@@ -83,6 +83,9 @@ import torch
 from deepmd.pt_expt.kernels.autotune import (
     register_autotuner,
 )
+from deepmd.pt_expt.utils.canonical_graph import (
+    CANONICAL_LOWER_KIND,
+)
 
 log = logging.getLogger(__name__)
 
@@ -799,5 +802,5 @@ register_autotuner(
     "dpa4c_fitting_routes",
     tune_fitting_routes,
     min_level=0,
-    lower_kinds=("dpa4c_canonical",),
+    lower_kinds=(CANONICAL_LOWER_KIND,),
 )
