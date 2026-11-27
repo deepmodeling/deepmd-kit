@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Actual CUDA /kk convention and MPI regression, separate from host FD tests.
+"""Actual CUDA /kk magnetic-force and MPI regression, separate from host FD tests.
 
 Run source/install/test_lammps_kokkos.sh after test_cc_local.sh on a CUDA host.
 That job supplies a compressed canonical fixture and a matching Kokkos LAMMPS
@@ -93,7 +93,7 @@ def kokkos_model(kokkos_runtime: None) -> Path:
         _unavailable(f"Generate the compressed canonical fixture first: {model}")
     with zipfile.ZipFile(model) as archive:
         meta = json.loads(archive.read("model/extra/metadata.json"))
-    assert meta["lower_input_kind"] == "dpa4c_canonical"
+    assert meta["lower_input_kind"] == "dpa_canonical"
     assert meta["canonical_index_dtype"] == "auto"
     assert meta["canonical_index_storage"] == "byte_words"
     assert meta["graph_edge_dtype"] == "float32"
@@ -116,7 +116,7 @@ def _run(
     cadence: bool = False,
 ) -> dict:
     output = tmp_path / f"{'kokkos' if kokkos else 'host'}-{ranks}.json"
-    runner = Path(__file__).with_name("run_mpi_dpa4spin_conventions.py")
+    runner = Path(__file__).with_name("run_mpi_dpa4spin.py")
     command = [
         os.environ.get("DPA4SPIN_KOKKOS_MPIEXEC", "mpirun"),
         "-n",
@@ -207,68 +207,75 @@ def _assert_snapshot(actual: dict, expected: dict, scale: float = 1.0) -> None:
     )
 
 
-def test_kokkos_conventions_and_mpi(samples):
+def _gradient(snapshot: dict) -> np.ndarray:
+    """Recover -dE/dS from the precession magnetic force of the moving moments."""
+    moments = np.array(snapshot["spin"])[:, 3]
+    finite = moments > 0
+    precession = np.array(snapshot["magnetic_force"])
+    # A zero moment stores exactly zero.
+    np.testing.assert_array_equal(precession[~finite], 0.0)
+    return precession[finite] * (HBAR_METAL / moments[finite, None])
+
+
+def test_kokkos_matches_host_and_mpi(samples):
     host, single, parallel = samples
-    reference = host["cartesian"]["snapshots"][0]
-    assert np.linalg.norm(np.array(reference["magnetic_force"])[0]) > 1e-7
+    reference = host["pair"]
+    assert np.linalg.norm(_gradient(reference["snapshots"][0])) > 1e-7
     for ranks, result in ((1, single), (2, parallel)):
-        cartesian = result["cartesian"]["snapshots"][0]
-        magnetic = np.array(cartesian["magnetic_force"])
-        # In particular, forcing the GPU kernel to precession at S=0 fails here.
-        assert np.linalg.norm(magnetic[0]) > 1e-7
-        np.testing.assert_array_equal(magnetic[3:], 0.0)
-        _assert_snapshot(cartesian, reference)
-        for selection in ("default", "precession", "cartesian"):
-            sample = result[selection]
-            assert sample["convention"] == int(selection == "cartesian")
-            assert sample["pair_style"] == "dpa4spin/kk"
-            assert sample["atom_style"] == "spin/kk"
-            assert sample["run_style_active"] == 1
-            assert sample["kokkos_active"] == sample["kokkos_ngpus"] == 1
-            assert sample["newton_pair"] == 0
-            assert len(sample["local_counts"]) == ranks
-            assert sum(sample["local_counts"]) == 6
-            assert min(sample["local_counts"]) > 0
-            if ranks == 2:
-                assert min(sample["ghost_counts"]) > 0
-            actual = sample["snapshots"][0]
-            _assert_snapshot(actual, host[selection]["snapshots"][0])
-            _assert_snapshot(actual, single[selection]["snapshots"][0])
-            if selection != "cartesian":
-                moments = np.array(actual["spin"])[:, 3]
-                finite = moments > 0
-                precession = np.array(actual["magnetic_force"])
-                # Normalize BEFORE comparing so the tiny-moment case cannot
-                # pass with zero force hidden by a fixed absolute tolerance.
-                np.testing.assert_allclose(
-                    precession[finite] * (HBAR_METAL / moments[finite, None]),
-                    magnetic[finite],
-                    rtol=5e-4,
-                    atol=5e-9,
-                )
-                np.testing.assert_array_equal(precession[~finite], 0.0)
-            for repeated in sample["snapshots"][1:]:
-                _assert_snapshot(repeated, actual)
-            virial_snapshots = sample["virial_snapshots"]
-            first = virial_snapshots[0]
-            _assert_snapshot(first, host[selection]["virial_snapshots"][0])
-            _assert_snapshot(first, single[selection]["virial_snapshots"][0])
-            # Requesting the per-atom virial changes no force or energy.
-            _assert_snapshot(first, actual)
-            _assert_snapshot(virial_snapshots[1], first)
-            _assert_snapshot(sample["scaled"], first, scale=2.75)
+        sample = result["pair"]
+        assert sample["pair_style"] == "dpa4spin/kk"
+        assert sample["atom_style"] == "spin/kk"
+        assert sample["run_style_active"] == 1
+        assert sample["kokkos_active"] == sample["kokkos_ngpus"] == 1
+        assert sample["newton_pair"] == 0
+        assert len(sample["local_counts"]) == ranks
+        assert sum(sample["local_counts"]) == 6
+        assert min(sample["local_counts"]) > 0
+        if ranks == 2:
+            assert min(sample["ghost_counts"]) > 0
+        actual = sample["snapshots"][0]
+        np.testing.assert_array_equal(np.array(actual["magnetic_force"])[3:], 0.0)
+        _assert_snapshot(actual, reference["snapshots"][0])
+        _assert_snapshot(actual, single["pair"]["snapshots"][0])
+        # Normalize BEFORE comparing so the tiny-moment case cannot pass with
+        # zero force hidden by a fixed absolute tolerance.
+        np.testing.assert_allclose(
+            _gradient(actual),
+            _gradient(reference["snapshots"][0]),
+            rtol=5e-4,
+            atol=5e-9,
+        )
+        for repeated in sample["snapshots"][1:]:
+            _assert_snapshot(repeated, actual)
+        virial_snapshots = sample["virial_snapshots"]
+        first = virial_snapshots[0]
+        _assert_snapshot(first, reference["virial_snapshots"][0])
+        _assert_snapshot(first, single["pair"]["virial_snapshots"][0])
+        # Requesting the per-atom virial changes no force or energy.
+        _assert_snapshot(first, actual)
+        _assert_snapshot(virial_snapshots[1], first)
+        _assert_snapshot(sample["scaled"], first, scale=2.75)
 
 
+@pytest.mark.parametrize(
+    "fixture",
+    ["deeppot_dpa4c_canonical_spin_multiblock", "deeppot_dpa4_canonical_spin"],
+)
 def test_multiblock_halo_survives_neighbor_rebuild(
     kokkos_runtime: None,
     tmp_path: Path,
+    fixture: str,
 ) -> None:
-    """Two ranks exchange active block features on rebuilt and reused lists."""
-    model = _MODEL.with_name("deeppot_dpa4c_canonical_spin_multiblock.pt2")
+    """Two ranks exchange active block features on rebuilt and reused lists.
+
+    The fused operators of a compressed DPA4C evaluate one fixture and the
+    graph forward of a DPA4 the other.
+    """
+    model = _MODEL.with_name(f"{fixture}.pt2")
     assert model.is_file(), f"Generate the multiblock canonical fixture: {model}"
     with zipfile.ZipFile(model) as archive:
         metadata = json.loads(archive.read("model/extra/metadata.json"))
-    assert metadata["lower_input_kind"] == "dpa4c_canonical"
+    assert metadata["lower_input_kind"] == "dpa_canonical"
     assert metadata["has_message_passing"]
     assert not metadata["has_comm_artifact"]
     data = tmp_path / "nio.lmp"
@@ -282,7 +289,7 @@ def test_multiblock_halo_survives_neighbor_rebuild(
         for atom in range(1, len(coord) + 1):
             stream.write(f"{atom} {150.0 if atom == 3 else 0.0} 0 0\n")
     single, parallel = (
-        _run(tmp_path, data, model, ranks=ranks, kokkos=True, cadence=True)["cartesian"]
+        _run(tmp_path, data, model, ranks=ranks, kokkos=True, cadence=True)["pair"]
         for ranks in (1, 2)
     )
     for ranks, result in ((1, single), (2, parallel)):
@@ -308,12 +315,10 @@ def test_multiblock_halo_survives_neighbor_rebuild(
 def test_kokkos_overlay_accumulates(samples):
     host, single, parallel = samples
     for result in (single, parallel):
-        for selection in ("precession", "cartesian"):
-            overlay = result[f"overlay_{selection}"]
-            assert overlay["pair_style"] == "hybrid/overlay/kk"
-            assert overlay["run_style_active"] == 1
-            assert overlay["convention"] == int(selection == "cartesian")
-            for key in ("snapshots", "virial_snapshots"):
-                for snapshot in overlay[key]:
-                    _assert_snapshot(snapshot, host[selection][key][0], scale=2.0)
-                    _assert_snapshot(snapshot, result[selection][key][0], scale=2.0)
+        overlay = result["overlay"]
+        assert overlay["pair_style"] == "hybrid/overlay/kk"
+        assert overlay["run_style_active"] == 1
+        for key in ("snapshots", "virial_snapshots"):
+            for snapshot in overlay[key]:
+                _assert_snapshot(snapshot, host["pair"][key][0], scale=2.0)
+                _assert_snapshot(snapshot, result["pair"][key][0], scale=2.0)

@@ -489,8 +489,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
           z_all.data_ptr<scalar_t>(), u_final.data_ptr<scalar_t>(),
           alpha.data_ptr<acc_t>(), n_edge, x.stride(0), x.stride(1), cf,
           (int)n_focus, (int)n_gated, apply_alpha, has_bias,
-          (acc_t)(1.0 / softmax_tau), (acc_t)label_smoothing, (acc_t)norm_eps,
-          (int)rank, te, n_blocks, smem_bytes, stream);
+          w1_all.size(-1) == lmax * cf, (acc_t)(1.0 / softmax_tau),
+          (acc_t)label_smoothing, (acc_t)norm_eps, (int)rank, te, n_blocks,
+          smem_bytes, stream);
     });
   });
   TORCH_CHECK(

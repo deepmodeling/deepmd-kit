@@ -27,6 +27,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as SO2LinearDP
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
+)
 from deepmd.tf2.common import (
     register_dpmodel_mapping,
     tf,
@@ -124,8 +127,6 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
         "focus_compete_bias",
     ),
     "SeZMTypeEmbedding": ("adam_type_embedding",),
-    "SpinEmbedding": ("adam_spin_vec_weight", "adam_spin_nbr_weight"),
-    "EnvironmentInitialEmbedding": ("spin_scale",),
     "DepthAttnRes": ("adamw_pseudo_query",),
     "S2GridNet": ("residual_scale",),
     "SO3GridNet": ("residual_scale",),
@@ -307,6 +308,7 @@ register_dpmodel_mapping(
 @tf2_module
 class DescrptDPA4(DescrptDPA4DP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        reject_moe(kwargs, "DPA4 descriptor")
         super().__init__(*args, **kwargs)
         self._tf2_training_mode = False
         _promote_trainable_tree(self)

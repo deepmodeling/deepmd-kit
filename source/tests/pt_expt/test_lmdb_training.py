@@ -14,6 +14,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from typing import (
+    Any,
+)
 from unittest.mock import (
     patch,
 )
@@ -1161,7 +1164,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         }
         return normalize(update_deepmd_input(config, warning=False))
 
-    def _config(self, descriptor: dict) -> dict:
+    def _config(self, descriptor: dict, **model_options: Any) -> dict:
         return self._config_for_model(
             {
                 "type_map": ["O", "H"],
@@ -1172,6 +1175,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
                     "seed": 1,
                 },
                 "data_stat_nbatch": 1,
+                **model_options,
             },
             {
                 "type": "ener",
@@ -1194,6 +1198,18 @@ class TestRaggedTrainingBatches(unittest.TestCase):
             "neuron": [8, 16],
             "axis_neuron": 4,
             "attn_layer": 0,
+            "precision": "float64",
+            "seed": 1,
+        }
+
+    @staticmethod
+    def _dpa4c() -> dict:
+        return {
+            "type": "dpa4c",
+            "rcut": 3.0,
+            "channels": 16,
+            "lmax": 2,
+            "n_radial": 4,
             "precision": "float64",
             "seed": 1,
         }
@@ -1316,7 +1332,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
                 np.asarray(batch["coord"]),
                 np.asarray(batch["box"]),
                 np.asarray(batch["atype"]),
-                pair_half_thresholds(1.0, "absolute", ntypes=2),
+                pair_half_thresholds(1.0, 2),
                 n_node=np.asarray(batch["n_node"]),
             )
             threshold = float(np.median(distances))
@@ -1355,6 +1371,31 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         self.assertTrue((batch["atype"] >= 0).all(), "nothing is padded")
         # Frame-level fields keep their frame axis.
         self.assertEqual(batch["energy"].shape[0], batch["n_node"].shape[0])
+
+    def test_bridged_graph_model_trains_on_a_flat_node_axis(self) -> None:
+        """A composition of graph-capable children takes the flat axis as well.
+
+        On the padded axis the sampler sorts the frames of a group by atom
+        count, so a bridged model would train on batches of one system size
+        each while the same learned model unbridged trains on shuffled ones.
+        """
+        config = self._config(self._dpa4c(), bridging_method="ZBL")
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
+            batch = trainer.training_data.get_batch()
+            trainer.run()
+        finally:
+            os.chdir(cwd)
+
+        self.assertEqual(
+            type(trainer.wrapper.model["Default"]).__name__, "LinearEnergyModel"
+        )
+        self.assertTrue(trainer.training_data._reader.ragged_batches)
+        self.assertEqual(batch["coord"].ndim, 2)
+        self.assertEqual(batch["coord"].shape[0], int(batch["n_node"].sum()))
 
     def test_loss_contract_can_require_rectangular_batches(self) -> None:
         """Generalized-force and Hessian labels keep their rectangular axes."""

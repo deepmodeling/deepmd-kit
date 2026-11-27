@@ -418,6 +418,13 @@ class TestDataLoaderIteration:
             batch = next(iter(ds.dataloaders[0]))
         assert batch["coord"].shape[0] == 2
 
+    def test_dataset_seed_matches_shared_sampler(self, lmdb_dir):
+        """The dataset's public seed controls the same pass as the shared reader."""
+        dataset = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2, seed=42)
+        reference = LmdbBatchSampler(dataset._reader, shuffle=True, seed=42)
+        assert list(dataset._batch_sampler) == list(reference)
+        assert list(dataset._batch_sampler) == list(reference)
+
     def test_parallel_batch_loader_has_finite_epoch(self, lmdb_dir):
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
         sampler = LmdbBatchSampler(ds._reader, shuffle=False)

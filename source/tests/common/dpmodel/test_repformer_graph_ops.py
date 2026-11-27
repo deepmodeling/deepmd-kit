@@ -690,14 +690,14 @@ def test_local_atten_float32_high_logit_backward_finite():
     sw_np = np.ones(nnei, dtype=np.float32)
 
     # graph route, torch float32, gradients w.r.t. g1 and gg1
-    g1_t = torch.ones(n_total, 1, dtype=torch.float32, requires_grad=True)
+    g1_t = torch.ones(n_total, 1, dtype=torch.float32, requires_grad=True, device="cpu")
     gg1_t = torch.from_numpy(gg1_np).clone().requires_grad_(True)
     out_g = la.call_graph(
         g1_t,
         gg1_t,
         torch.from_numpy(mask_np),
         torch.from_numpy(sw_np),
-        torch.zeros(nnei, dtype=torch.int64),
+        torch.zeros(nnei, dtype=torch.int64, device="cpu"),
         n_total,
         sel,
     )
@@ -706,7 +706,7 @@ def test_local_atten_float32_high_logit_backward_finite():
     assert torch.all(torch.isfinite(gg1_t.grad))
 
     # dense reference gradients on the same weights
-    g1_d = torch.ones(1, 1, 1, dtype=torch.float32, requires_grad=True)
+    g1_d = torch.ones(1, 1, 1, dtype=torch.float32, requires_grad=True, device="cpu")
     gg1_d = torch.from_numpy(gg1_np.reshape(1, 1, nnei, 1)).clone().requires_grad_(True)
     out_d = la.call(
         g1_d,

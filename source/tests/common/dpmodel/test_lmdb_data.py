@@ -1515,6 +1515,39 @@ class TestMixedNloc(unittest.TestCase):
         sampler = LmdbBatchSampler(reader, shuffle=False)
         self.assertEqual(len(sampler), len(list(sampler)))
 
+    def test_sampler_cache_retains_no_per_frame_python_lists(self) -> None:
+        """A cached pass exposes list batches without an epoch-sized GC traversal."""
+        nframes = 10_000
+        indices = np.arange(nframes, dtype=np.int64)
+        reader = SimpleNamespace(
+            data_requirements_revision=0,
+            mixed_nloc=False,
+            nloc_groups={2: indices},
+            frame_nlocs=np.full(nframes, 2, dtype=np.int32),
+            frame_system_ids=None,
+            availability_groups=lambda group: [group],
+            get_batch_size_for_nloc=lambda _nloc: 100,
+        )
+        batches = LmdbBatchSampler(reader, shuffle=True, seed=42).batches()
+
+        def retained_sequence_slots(value: object) -> int:
+            if isinstance(value, (list, tuple)):
+                return len(value) + sum(retained_sequence_slots(item) for item in value)
+            if isinstance(value, dict):
+                return sum(retained_sequence_slots(item) for item in value.values())
+            if not isinstance(value, np.ndarray) and hasattr(value, "__dict__"):
+                return retained_sequence_slots(vars(value))
+            return 0
+
+        self.assertLessEqual(retained_sequence_slots(batches), 2 * len(batches))
+        yielded = list(batches)
+        self.assertTrue(all(isinstance(batch, list) for batch in yielded))
+        self.assertTrue(all(type(index) is int for batch in yielded for index in batch))
+        self.assertEqual(
+            sorted(index for batch in yielded for index in batch), list(range(nframes))
+        )
+        self.assertEqual(list(batches[::3]), yielded[::3])
+
     def test_mix_batches_span_several_nlocs(self):
         """``mix:N`` puts frames of different atom counts in one batch.
 
@@ -3363,9 +3396,7 @@ class TestDerivedMinPairDist(unittest.TestCase):
     """A batch derives `pair_margin` as the frames of that batch carry it."""
 
     @staticmethod
-    def _requirement(
-        fraction: float, length_scale: str = "absolute"
-    ) -> list[DataRequirementItem]:
+    def _requirement(min_dist: float) -> list[DataRequirementItem]:
         return [
             DataRequirementItem(
                 "pair_margin",
@@ -3373,29 +3404,15 @@ class TestDerivedMinPairDist(unittest.TestCase):
                 atomic=False,
                 must=False,
                 high_prec=False,
-                default=fraction,
+                default=min_dist,
                 source_policy="derived",
-                length_scale=length_scale,
             )
         ]
 
-    def _margins(self, fraction: float, length_scale: str = "absolute") -> np.ndarray:
+    def _margins(self, min_dist: float) -> np.ndarray:
         reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
-        reader.add_data_requirement(self._requirement(fraction, length_scale))
+        reader.add_data_requirement(self._requirement(min_dist))
         return reader.decode_batch(list(range(6)))["pair_margin"].reshape(-1)
-
-    def _frame_margins(
-        self, fraction: float, length_scale: str = "absolute"
-    ) -> np.ndarray:
-        """Margins of the frame read path, which visits every pair.
-
-        The batch read bounds its scan at a margin of one, so a frame that
-        clears its window carries a value it reaches rather than its exact
-        margin; the frame read path has no such bound.
-        """
-        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
-        reader.add_data_requirement(self._requirement(fraction, length_scale))
-        return np.concatenate([reader[index]["pair_margin"] for index in range(6)])
 
     def setUp(self) -> None:
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -3429,19 +3446,19 @@ class TestDerivedMinPairDist(unittest.TestCase):
         )
 
     def test_a_threshold_keeps_the_side_of_every_frame(self) -> None:
-        """The window each frame is judged against is its own radius."""
+        """A frame is judged against the filter distance as a plain floor."""
         wide = 10.0
         distances = self._margins(wide) * wide
-        fraction = float(np.median(distances))
-        margins = self._margins(fraction)
+        threshold = float(np.median(distances))
+        margins = self._margins(threshold)
         self.assertTrue((margins < 1.0).any() and (margins >= 1.0).any())
-        np.testing.assert_array_equal(margins < 1.0, distances < fraction)
+        np.testing.assert_array_equal(margins < 1.0, distances < threshold)
 
-    def test_a_covalent_window_sizes_each_pair_by_its_elements(self) -> None:
-        """Oxygen and hydrogen carry different windows on the same geometry."""
+    def test_a_frame_margin_matches_the_direct_scan(self) -> None:
+        """The frame read path measures every pair against the filter distance."""
         reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
-        reader.add_data_requirement(self._requirement(0.5, "covalent"))
-        half = pair_half_thresholds(0.5, "covalent", ["O", "H"])
+        reader.add_data_requirement(self._requirement(0.5))
+        half = pair_half_thresholds(0.5, 2)
         for index in range(6):
             frame = reader[index]
             box = None if not frame["box"].any() else frame["box"]
@@ -3454,15 +3471,6 @@ class TestDerivedMinPairDist(unittest.TestCase):
                 ],
                 rtol=1e-12,
             )
-        # Half of the Pyykko single-bond radii puts the three pair thresholds
-        # at 0.63 Å for O-O, 0.475 Å for O-H and 0.32 Å for H-H, and an
-        # absolute window is one threshold for all three: no radius reproduces
-        # the covalent margins, which stay between the two extreme ones.
-        covalent = self._frame_margins(0.5, "covalent")
-        for threshold in (0.32, 0.475, 0.63):
-            self.assertFalse(np.allclose(covalent, self._frame_margins(threshold)))
-        self.assertTrue((covalent >= self._frame_margins(0.63)).all())
-        self.assertTrue((covalent <= self._frame_margins(0.32)).all())
 
 
 if __name__ == "__main__":

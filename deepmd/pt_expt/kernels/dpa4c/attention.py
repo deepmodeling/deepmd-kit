@@ -381,11 +381,16 @@ def build_block_artifacts(
 
 
 def _soft_saturate(value: torch.Tensor, knee: float) -> torch.Tensor:
-    scale = value.abs().clamp_min(knee)
+    knee_scalar = value.new_full((), knee)
+    scale = torch.where(
+        value >= knee_scalar,
+        value,
+        torch.where(value <= -knee_scalar, -value, knee_scalar),
+    )
     scaled_value = value / scale
-    scaled_knee = knee / scale
+    scaled_knee = knee_scalar / scale
     return (
-        knee
+        knee_scalar
         * scaled_value
         / torch.sqrt(scaled_value * scaled_value + scaled_knee * scaled_knee)
     )
@@ -448,7 +453,9 @@ def further_block_moments(
     envelope
         Masked first-block envelope with shape ``(E,)``.
     radius
-        Regularized edge lengths with shape ``(E,)`` in Å.
+        Separations every block reads with shape ``(E,)`` in Å: the
+        regularized edge lengths, through the contact clamp of a bridged
+        descriptor.
     source, destination
         Source and destination node of every edge with shape ``(E,)``.
     scalar_divisor, angular_divisor

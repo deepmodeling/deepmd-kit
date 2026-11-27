@@ -82,6 +82,9 @@ class _LinearModel(tf.Module):
         super().__init__()
         self.weight = tf.Variable(2.0, dtype=tf.float64)
 
+    def get_min_nbor_dist(self) -> None:
+        return None
+
     def call(
         self,
         coord: Any,
@@ -953,11 +956,53 @@ def test_model_ret_translation_only_uses_label_virial_when_not_requested() -> No
     assert "virial" not in requested_virial
 
 
+def test_periodic_checkpoint_restores_its_own_validation_history(
+    tmp_path: Path,
+) -> None:
+    def trainer_at(prefix: str | None) -> Trainer:
+        trainer, model = _make_minimal_trainer()
+        trainer.full_validation_state = {}
+        trainer.model_container = model
+        trainer.checkpoint = tf.train.Checkpoint(
+            step=trainer.step, model=model, optimizer=trainer.optimizer
+        )
+        trainer.save_ckpt = str(tmp_path / "model")
+        trainer.checkpoint_manager = tf.train.CheckpointManager(
+            trainer.checkpoint, trainer._checkpoint_directory(), max_to_keep=2
+        )
+        trainer.model_def_script = {}
+        trainer.shared_links = None
+        trainer.multi_task = False
+        trainer.model_keys = [DEFAULT_TASK_KEY]
+        if prefix is not None:
+            _, status = trainer._restore_checkpoint(prefix)
+            status.assert_existing_objects_matched()
+            trainer.start_step = int(trainer.step.numpy())
+        trainer._attach_validation_state(prefix)
+        return trainer
+
+    trainer = trainer_at(None)
+    for step in (1, 2):
+        trainer.full_validation_state = {
+            "full_validation_symm_virial": True,
+            "full_validation_best_step": step,
+        }
+        trainer.save_checkpoint(step)
+    for step in (1, 2):
+        restored = trainer_at(trainer.checkpoint_manager.checkpoints[step - 1])
+        assert restored.start_step == step
+        assert restored.full_validation_state == {
+            "full_validation_symm_virial": True,
+            "full_validation_best_step": step,
+        }
+
+
 def test_write_checkpoint_directory_does_not_mutate_training_step(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trainer = object.__new__(Trainer)
+    trainer.full_validation_state = {}
     trainer.step = tf.Variable(7, dtype=tf.int64, trainable=False)
     trainer.optimizer = tf.keras.optimizers.Adam()
     trainer.model_container = tf.Module()

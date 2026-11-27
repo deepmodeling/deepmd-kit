@@ -10,8 +10,7 @@ Section B.1) so the fixture is geometry-sensitive rather than the
 architecturally edge-independent output of a fresh, untrained DPA4.
 
 DPA4's SeZM descriptor reads ghost-neighbour features at every interaction
-block (``has_message_passing_across_ranks()`` returns ``self.bridging_switch
-is None`` -- true for the plain (non-bridging) config exercised here), so
+block (``has_message_passing_across_ranks()`` returns ``True``), so
 the GRAPH export auto-embeds a nested with-comm AOTI artifact
 (``forward_lower_with_comm.pt2``) alongside the plain graph forward, the
 same as DPA2's repformer. The DENSE (nlist) ``.pt2`` remains a single

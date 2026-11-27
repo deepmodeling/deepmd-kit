@@ -29,7 +29,6 @@ from unittest.mock import (
 )
 
 import numpy as np
-import optax
 import pytest
 
 from deepmd.dpmodel.output_def import (
@@ -60,15 +59,19 @@ from deepmd.jax.infer.deep_eval import (
 from deepmd.jax.model.hlo import (
     HLO,
 )
+from deepmd.jax.optimizer import (
+    build_adam,
+)
 from deepmd.jax.train.trainer import (
     DPTrainer,
     _copy_matching_state_tree,
-    _merge_descriptor_stats,
-    _merge_fitting_param_stats,
-    _scale_by_global_learning_rate,
 )
 from deepmd.jax.utils.finetune import (
     _load_model_params,
+)
+from deepmd.jax.utils.multi_task import (
+    _merge_descriptor_stats,
+    _merge_fitting_param_stats,
 )
 from deepmd.jax.utils.serialization import (
     _normalize_restored_state_keys,
@@ -135,7 +138,7 @@ def _lcurve_steps(path: Path) -> set[int]:
 
 def test_jax_optimizer_scales_updates_with_explicit_global_lr() -> None:
     """The optimizer LR comes from the loop step, not the per-task optax count."""
-    tx = optax.chain(optax.scale_by_adam(), _scale_by_global_learning_rate())
+    tx = build_adam()
     params = {"w": jnp.asarray(1.0)}
     grads = {"w": jnp.asarray(1.0)}
     state = tx.init(params)
@@ -166,7 +169,7 @@ def test_jax_finetune_load_model_params_accepts_loader_paths(
     serialize_from_file.return_value = {"model_def_script": model_params}
 
     assert _load_model_params("checkpoint") == model_params
-    serialize_from_file.assert_called_once_with("checkpoint")
+    serialize_from_file.assert_called_once_with("checkpoint", training=False)
 
 
 def _minimal_jax_config(model_params: dict) -> dict:
@@ -326,7 +329,12 @@ def test_jax_init_model_preserves_input_model_script(
     }
     build_losses.return_value = {"Default": SimpleNamespace(label_requirement=[])}
 
-    trainer = DPTrainer(_minimal_jax_config(input_model), init_model="model-1.jax")
+    loaded_model = deserialize_models.return_value["Default"]
+    with (
+        patch("deepmd.jax.train.trainer.get_model", return_value=loaded_model),
+        patch.object(DPTrainer, "_copy_initial_model_state", return_value=loaded_model),
+    ):
+        trainer = DPTrainer(_minimal_jax_config(input_model), init_model="model-1.jax")
 
     assert trainer.model_def_script == input_model
     assert trainer.model_params_by_task["Default"] == input_model
@@ -356,7 +364,8 @@ def test_jax_restart_uses_checkpoint_model_script(
     }
     build_losses.return_value = {"Default": SimpleNamespace(label_requirement=[])}
 
-    trainer = DPTrainer(_minimal_jax_config(input_model), restart="model-7.jax")
+    with patch.object(DPTrainer, "_restore_model_state"):
+        trainer = DPTrainer(_minimal_jax_config(input_model), restart="model-7.jax")
 
     assert trainer.model_def_script == checkpoint_model
     assert trainer.model_params_by_task["Default"] == checkpoint_model
@@ -622,6 +631,11 @@ def test_jax_shared_fitting_stats_merge_weighted_values() -> None:
     assert base._param_stats["aparam"][0].number == 3
 
 
+class _ValidationModel(nnx.Module):
+    def has_spin(self) -> bool:
+        return False
+
+
 def test_jax_full_validator_saves_directory_best_checkpoint(tmp_path: Path) -> None:
     """JAX full validation uses .jax directory checkpoints."""
     from deepmd.jax.train.validation import (
@@ -640,7 +654,7 @@ def test_jax_full_validator_saves_directory_best_checkpoint(tmp_path: Path) -> N
             "full_val_start": 0.0,
         },
         validation_data=SimpleNamespace(),
-        model=SimpleNamespace(),
+        model=_ValidationModel(),
         state_store=state_store,
         num_steps=2,
         rank=0,
@@ -687,7 +701,7 @@ def test_jax_full_validator_broadcasts_rank_zero_errors(tmp_path: Path) -> None:
             "full_val_start": 0.0,
         },
         validation_data=SimpleNamespace(),
-        model=SimpleNamespace(),
+        model=_ValidationModel(),
         state_store={},
         num_steps=2,
         rank=1,
@@ -723,6 +737,7 @@ def test_jax_full_validation_hook_uses_display_step() -> None:
 
     trainer = DPTrainer.__new__(DPTrainer)
     trainer.full_validator = FakeValidator()
+    trainer.ema_full_validator = None
 
     def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
         save_calls.append((path, lr, step))
@@ -911,9 +926,31 @@ class TestJAXTraining(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn(1, _lcurve_steps(self.work_dir / "lcurve.out"))
 
-    @patch("deepmd.jax.entrypoints.train.get_data")
+    def test_dense_model_trains_with_several_visible_devices(self) -> None:
+        """A dense-neighbor model trains on one of several visible devices."""
+        env = {
+            **os.environ,
+            "JAX_PLATFORMS": "cpu",
+            "XLA_FLAGS": "--xla_force_host_platform_device_count=2",
+        }
+        proc = subprocess.run(
+            [sys.executable, "-c", textwrap.dedent(TRAINING_SCRIPT)],
+            cwd=self.work_dir,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn(1, _lcurve_steps(self.work_dir / "lcurve.out"))
+
+    @patch("deepmd.jax.entrypoints.train.get_neighbor_stat_data")
     @patch("deepmd.jax.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_uses_jax_neighbor_stat(self, get_nbor_stat, get_data) -> None:
+    def test_update_sel_uses_jax_neighbor_stat(
+        self, get_nbor_stat, get_stat_data
+    ) -> None:
         """JAX update_sel should calculate neighbor statistics instead of skipping."""
         get_nbor_stat.return_value = 0.5, [10, 20]
         jdata = {
@@ -932,7 +969,7 @@ class TestJAXTraining(unittest.TestCase):
 
         self.assertEqual(updated["model"]["descriptor"]["sel"], [12, 24])
         self.assertEqual(min_nbor_dist, 0.5)
-        get_data.assert_called_once_with({}, 0, ["O", "H"], None)
+        get_stat_data.assert_called_once_with({}, ["O", "H"])
         get_nbor_stat.assert_called_once()
 
     def test_train_entrypoint_rejects_remaining_unsupported_features(self) -> None:
@@ -986,9 +1023,9 @@ class TestJAXTraining(unittest.TestCase):
             change_model_params=True,
         )
 
-    @patch("deepmd.jax.entrypoints.train.get_data")
+    @patch("deepmd.jax.entrypoints.train.get_neighbor_stat_data")
     @patch("deepmd.jax.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_supports_multitask(self, get_nbor_stat, get_data) -> None:
+    def test_update_sel_supports_multitask(self, get_nbor_stat, get_stat_data) -> None:
         """JAX update_sel updates each multi-task branch."""
         get_nbor_stat.return_value = 0.5, [10, 20]
         model_config = {
@@ -1026,7 +1063,7 @@ class TestJAXTraining(unittest.TestCase):
             min_nbor_dist,
             {"task_a": 0.5, "task_b": 0.5},
         )
-        self.assertEqual(get_data.call_count, 2)
+        self.assertEqual(get_stat_data.call_count, 2)
         self.assertEqual(get_nbor_stat.call_count, 2)
 
     @patch("deepmd.jax.entrypoints.freeze.deserialize_to_file")
@@ -1044,7 +1081,7 @@ class TestJAXTraining(unittest.TestCase):
             checkpoint_folder=str(checkpoint_dir), output="frozen_model", hessian=True
         )
 
-        serialize_from_file.assert_called_once_with(str(checkpoint_dir / "model-1.jax"))
+        serialize_from_file.assert_called_once_with(str(checkpoint_dir), training=False)
         deserialize_to_file.assert_called_once_with(
             "frozen_model.hlo", serialize_from_file.return_value, hessian=True
         )
@@ -1071,6 +1108,7 @@ class TestJAXTraining(unittest.TestCase):
         """HLO output definition should expose Hessian when requested."""
         hlo = object.__new__(HLO)
         hlo._model_output_type = ["energy"]
+        hlo._is_spin = False
         hlo.model_def_script = json.dumps({"hessian_mode": True})
 
         output_def = hlo.model_output_def()
@@ -1082,6 +1120,7 @@ class TestJAXTraining(unittest.TestCase):
         """Non-atomic JAX evaluation should request Hessian outputs."""
         hlo = object.__new__(HLO)
         hlo._model_output_type = ["energy"]
+        hlo._is_spin = False
         hlo.model_def_script = json.dumps({"hessian_mode": True})
         deep_eval = object.__new__(DeepEval)
         deep_eval.output_def = hlo.model_output_def()
@@ -1101,6 +1140,7 @@ class TestJAXTraining(unittest.TestCase):
         """Standard JAX evaluation should not request Hessian outputs."""
         hlo = object.__new__(HLO)
         hlo._model_output_type = ["energy"]
+        hlo._is_spin = False
         hlo.model_def_script = json.dumps({"hessian_mode": False})
         deep_eval = object.__new__(DeepEval)
         deep_eval.output_def = hlo.model_output_def()

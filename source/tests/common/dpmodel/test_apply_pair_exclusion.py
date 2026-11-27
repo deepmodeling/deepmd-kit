@@ -86,7 +86,7 @@ def test_torch_namespace_smoke() -> None:
         edge_vec=torch.from_numpy(g.edge_vec),
         edge_mask=torch.from_numpy(g.edge_mask),
     )
-    atype = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
+    atype = torch.tensor([0, 1, 0, 1], dtype=torch.int64, device="cpu")
     out = apply_pair_exclusion(gt, atype, PairExcludeMask(2, [(0, 1)]))
     np.testing.assert_array_equal(out.edge_mask.numpy(), [0, 1, 1, 0, 0])
 
@@ -140,7 +140,7 @@ def test_compact_torch_smoke() -> None:
         edge_vec=torch.from_numpy(g.edge_vec),
         edge_mask=torch.from_numpy(g.edge_mask),
     )
-    atype = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
+    atype = torch.tensor([0, 1, 0, 1], dtype=torch.int64, device="cpu")
     out = apply_pair_exclusion(gt, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
     np.testing.assert_array_equal(out.edge_mask.numpy(), [1, 1])
     assert out.edge_index.shape[1] == 2
@@ -292,7 +292,7 @@ def test_compact_angle_torch_smoke() -> None:
         angle_index=torch.from_numpy(g.angle_index),
         angle_mask=torch.from_numpy(g.angle_mask),
     )
-    atype = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
+    atype = torch.tensor([0, 1, 0, 1], dtype=torch.int64, device="cpu")
     out = apply_pair_exclusion(gt, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
     np.testing.assert_array_equal(out.angle_index.numpy(), [[0], [1]])
     np.testing.assert_array_equal(out.angle_mask.numpy(), [1])

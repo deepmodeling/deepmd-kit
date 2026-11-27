@@ -4,10 +4,11 @@
 Reference = the folded periodic graph, whose edge sources are the owners, so
 every source feature is complete by construction. Candidate = the unfolded
 LAMMPS layout, owners followed by ghost images with edges for owned
-destinations only, completed by a self-send ``border_op`` swap that maps every
-ghost slot to its owner. The ghost rows receive no edges, so without the
-exchange the second block would read zero moments for every neighbor across
-the cell boundary.
+destinations only, completed by one self-send swap that maps every ghost slot
+to its owner, through ``border_op`` or through the border plan of a lower that
+carries the exchange in its main program. The ghost rows receive no edges, so
+without the exchange the second block would read zero moments for every
+neighbor across the cell boundary.
 """
 
 import copy
@@ -26,6 +27,9 @@ from deepmd.dpmodel.utils.nlist import (
 )
 from deepmd.pt_expt.model.get_model import (
     get_model,
+)
+from deepmd.pt_expt.utils.canonical_graph import (
+    BorderPlan,
 )
 from deepmd.pt_expt.utils.comm import (
     ensure_comm_registered,
@@ -65,8 +69,7 @@ ZBL_CONFIG = {
     **CONFIG,
     "type_map": ["O", "He"],
     "bridging_method": "zbl",
-    "bridging_r_inner": 0.8,
-    "bridging_r_outer": 1.2,
+    "bridging_clamp": 0.75,
 }
 THREE_BLOCK_CONFIG = {
     **ZBL_CONFIG,
@@ -105,6 +108,18 @@ def _self_comm_dict(nloc: int, mapping: np.ndarray, keepalive: list) -> dict:
     }
 
 
+def _self_border_plan(nloc: int, mapping: np.ndarray) -> BorderPlan:
+    """Return the border plan of one self swap that copies every owner to its ghosts."""
+    nghost = len(mapping) - nloc
+    # swap columns: send rank, receive rank, send count, receive count, first
+    # receiving row
+    return BorderPlan(
+        send_nodes=torch.as_tensor(mapping[nloc:], dtype=torch.int32),
+        swaps=torch.tensor([[0, 0, nghost, nghost, nloc]], dtype=torch.int32),
+        communicator=torch.zeros(1, dtype=torch.int64),
+    )
+
+
 def _run_folded(model: torch.nn.Module, coord: np.ndarray) -> tuple:
     graph = build_neighbor_graph(
         coord, ATYPE, (BOX * np.eye(3)).reshape(1, 3, 3), RCUT, canonicalize=True
@@ -123,7 +138,7 @@ def _run_folded(model: torch.nn.Module, coord: np.ndarray) -> tuple:
     return energy, force
 
 
-def _run_self_comm(model: torch.nn.Module, coord: np.ndarray) -> tuple:
+def _run_self_comm(model: torch.nn.Module, coord: np.ndarray, exchange: str) -> tuple:
     nloc = ATYPE.shape[1]
     ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
         coord, ATYPE, (BOX * np.eye(3)).reshape(1, 9), RCUT
@@ -139,6 +154,11 @@ def _run_self_comm(model: torch.nn.Module, coord: np.ndarray) -> tuple:
     src = nlist[valid].astype(np.int64)
     dst = np.repeat(np.arange(nloc, dtype=np.int64), nlist.shape[1])[valid.ravel()]
     keepalive: list = []
+    comm_dict = (
+        _self_border_plan(nloc, mapping)
+        if exchange == "border_plan"
+        else _self_comm_dict(nloc, mapping, keepalive)
+    )
     out = model.forward_common_lower_graph(
         torch.tensor(np.asarray(ext_atype)[0], dtype=torch.int64),
         torch.tensor([ext_coord.shape[0]], dtype=torch.int64),
@@ -146,7 +166,7 @@ def _run_self_comm(model: torch.nn.Module, coord: np.ndarray) -> tuple:
         torch.tensor(np.stack([src, dst]), dtype=torch.int64),
         torch.tensor(ext_coord[src] - ext_coord[dst], dtype=torch.float64),
         torch.ones(len(src), dtype=torch.bool),
-        comm_dict=_self_comm_dict(nloc, mapping, keepalive),
+        comm_dict=comm_dict,
     )
     energy = out["energy_redu"].detach().numpy().reshape(-1)
     ghost_force = -out["energy_derv_r"].detach().numpy().reshape(-1, 3)
@@ -155,6 +175,7 @@ def _run_self_comm(model: torch.nn.Module, coord: np.ndarray) -> tuple:
     return energy, force
 
 
+@pytest.mark.parametrize("exchange", ["border_op", "border_plan"])
 @pytest.mark.parametrize(
     "config",
     [CONFIG, ZBL_CONFIG, THREE_BLOCK_CONFIG],
@@ -166,16 +187,22 @@ class TestMultiBlockSelfComm:
         ensure_comm_registered()
         self.model = _perturb(get_model(copy.deepcopy(config)).to("cpu").eval())
         # Atoms 0 and 1 face each other across the periodic x boundary at
-        # 0.9 Å, inside the window of the bridged model.
+        # 0.9 Å, inside the frozen zone of the contact clamp of the bridged
+        # model, which reads the true geometry of every edge and so needs no
+        # exchange of its own.
         self.coord = COORD
 
-    def test_exchange_matches_the_folded_graph(self) -> None:
+    def test_exchange_matches_the_folded_graph(self, exchange: str) -> None:
         energy, force = _run_folded(self.model, self.coord)
-        exchanged_energy, exchanged_force = _run_self_comm(self.model, self.coord)
+        exchanged_energy, exchanged_force = _run_self_comm(
+            self.model, self.coord, exchange
+        )
         np.testing.assert_allclose(exchanged_energy, energy, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(exchanged_force, force, rtol=1e-11, atol=1e-11)
 
-    def test_identity_exchange_diverges(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_identity_exchange_diverges(
+        self, monkeypatch: pytest.MonkeyPatch, exchange: str
+    ) -> None:
         """Without refreshing the ghost rows the parity breaks."""
         from deepmd.pt_expt.descriptor import dpa4c as module
 
@@ -185,26 +212,8 @@ class TestMultiBlockSelfComm:
             lambda self, values, comm_dict: values,
         )
         energy, _ = _run_folded(self.model, self.coord)
-        exchanged_energy, _ = _run_self_comm(self.model, self.coord)
+        exchanged_energy, _ = _run_self_comm(self.model, self.coord, exchange)
         assert np.abs(exchanged_energy - energy).max() > 1e-6
-
-
-def test_source_gate_needs_its_cross_rank_completion(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The close pair straddles the boundary, so its gate partials do too."""
-    from deepmd.pt_expt.descriptor import dpa4c as module
-
-    ensure_comm_registered()
-    model = _perturb(get_model(copy.deepcopy(ZBL_CONFIG)).to("cpu").eval())
-    energy, _ = _run_folded(model, COORD)
-    monkeypatch.setattr(
-        module.DescrptDPA4C,
-        "complete_node_partials",
-        lambda self, partials, comm_dict: partials,
-    )
-    exchanged_energy, _ = _run_self_comm(model, COORD)
-    assert np.abs(exchanged_energy - energy).max() > 1e-6
 
 
 @pytest.mark.parametrize("config", [CONFIG, ZBL_CONFIG], ids=["plain", "bridged"])
@@ -224,10 +233,7 @@ def test_with_comm_export_traces_the_exchange(config: dict) -> None:
         with_comm_dict=True,
         lower_kind="graph",
     )
-    code = str(exported.module().code)
-    assert "deepmd_export.border_op" in code
-    if "bridging_method" in config:
-        assert "deepmd_export.border_op_backward" in code
+    assert "deepmd_export.border_op" in str(exported.module().code)
 
 
 def test_single_block_needs_no_with_comm_artifact() -> None:

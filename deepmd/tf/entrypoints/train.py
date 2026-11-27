@@ -21,6 +21,9 @@ import numpy as np
 from deepmd.common import (
     j_loader,
 )
+from deepmd.dpmodel.train.task_sampling import (
+    validate_task_sampling_backend,
+)
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
 )
@@ -132,6 +135,7 @@ def train(
 
     # load json database
     jdata = j_loader(INPUT)
+    validate_task_sampling_backend(jdata.get("training", {}), "tf")
 
     origin_type_map = None
     if run_opt.finetune is not None:

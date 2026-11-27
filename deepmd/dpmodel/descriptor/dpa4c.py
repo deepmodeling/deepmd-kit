@@ -52,6 +52,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils import (
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.contact_clamp import (
+    ContactClamp,
+)
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
 )
@@ -65,13 +68,11 @@ from deepmd.utils.block_cutoff import (
     resolve_block_cutoffs,
 )
 from deepmd.utils.bridging import (
-    check_window_inside_cutoff,
+    DEFAULT_SUPPORT,
+    drop_retired_descriptor_options,
 )
 from deepmd.utils.charge_state import (
     validate_charge_state,
-)
-from deepmd.utils.element_radii import (
-    contact_radius_table,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -81,14 +82,10 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 from .dpa4_nn import (
-    BridgingClamp,
-    BridgingSwitch,
     C3CutoffEnvelope,
     RadialBasis,
     SeZMTypeEmbedding,
     SwiGLUMLP,
-    compute_source_gates,
-    pair_contact,
     resolve_swiglu_hidden_width,
 )
 from .dpa4c_nn import (
@@ -218,6 +215,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         given, the descriptor conditions on a per-node spin vector and
         declares :meth:`supports_native_spin`. ``None`` reproduces the
         spin-free descriptor exactly.
+    spin_mode
+        ``orbit`` includes symmetric spin-orbit couplings. ``exchange``
+        preserves independent rotations of the moments and the lattice.
     add_chg_spin_ebd
         Whether to condition on the frame-level total charge and spin
         multiplicity. This is unrelated to ``use_spin``, which carries a
@@ -229,22 +229,22 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     spin
         Reserved for descriptor API compatibility; only ``None`` is supported.
         Native spin is configured through ``use_spin``.
-    inner_clamp_f_inner
-        Inner radius of the zone-bridging window as a fraction of the pair's
-        length scale, under the name the bridging composition injects into
-        every DPA4-family descriptor. An edge at or below it leaves the
-        descriptor entirely, and the pair length the radial features read is
-        frozen at the window midpoint. Given together with
-        ``inner_clamp_f_outer`` or not at all.
-    inner_clamp_f_outer
-        Outer radius of the zone-bridging window as a fraction of the pair's
-        length scale. An edge at or beyond it contributes exactly as it does
-        without a window.
-    inner_clamp_scale
-        Length scale the two fractions are measured against: ``"covalent"``
-        sizes every pair by the sum of its covalent radii and therefore needs
-        ``type_map``, ``"absolute"`` gives every pair a unit scale so the
-        fractions are radii in Å.
+    contact_clamp
+        Fraction of each pair's data edge at and below which the separation the
+        descriptor reads is frozen; ``None`` reads every separation unchanged.
+        The bridging composition sets it beside its analytical potential (see
+        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`), and it needs
+        a ``type_map`` of element symbols.
+    contact_support
+        Rank, counted from the smallest, of the distinct per-frame shortest
+        separation of a pair that becomes its data edge (see
+        :class:`~deepmd.dpmodel.utils.contact_clamp.ContactClamp`).
+    density_floor
+        Floor of the two neighborhood normalizers in units of the mean
+        envelope mass of the training neighborhoods, or zero for the absolute
+        default ``1/4``. :meth:`compute_input_stats` measures the mass and
+        stores it with the model, so the normalizers read
+        ``(d + density_floor * m_bar)``.
 
     Raises
     ------
@@ -254,17 +254,16 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         If a cutoff, ``n_blocks``, ``ntypes``, or ``n_radial`` is not
         positive, if ``rcut`` lists a cutoff count other than ``n_blocks``,
         if the cutoffs increase, if ``radial_modes`` is negative, if
-        ``channels`` or ``lmax`` is outside its supported set, if only one
-        bridging radius is given, if
-        ``inner_clamp_scale`` is neither ``"covalent"`` nor ``"absolute"``, or
-        if a covalent window is asked for without a ``type_map`` covering every
-        type.
+        ``channels`` or ``lmax`` is outside its supported set, or if a contact
+        clamp is asked for without a ``type_map``.
     NotImplementedError
         If ``spin`` is given.
     """
 
     _update_sel_cls = UpdateSel
     _ENVELOPE_EXPONENT = 5
+    # Absolute floor of the neighborhood normalizers, read by the default and
+    # by a record written before ``density_floor`` existed.
     _DEGREE_NORM_FLOOR = 0.25
     _EPS = 1.0e-7
     _STAT_EPS = 1.0e-12
@@ -315,13 +314,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         use_spin: list[bool] | None = None,
+        spin_mode: str = "orbit",
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
         spin: None = None,
-        inner_clamp_f_inner: float | None = None,
-        inner_clamp_f_outer: float | None = None,
-        inner_clamp_scale: str = "covalent",
         n_blocks: int = 1,
+        contact_clamp: float | None = None,
+        contact_support: int = DEFAULT_SUPPORT,
+        density_floor: float = 0.0,
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
         if spin is not None:
@@ -344,15 +344,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             or radial_modes < 0
         ):
             raise ValueError("`radial_modes` must be a non-negative integer.")
-        if (inner_clamp_f_inner is None) != (inner_clamp_f_outer is None):
+        if contact_clamp is not None and type_map is None:
             raise ValueError(
-                "`inner_clamp_f_inner` and `inner_clamp_f_outer` must be given "
-                "together."
+                "A contact clamp starts every pair at its covalent bond length, "
+                "so it needs a `type_map` of element symbols."
             )
-        if inner_clamp_scale not in ("covalent", "absolute"):
+        if not 0.0 <= density_floor < math.inf:
             raise ValueError(
-                "`inner_clamp_scale` must be 'covalent' or 'absolute', got "
-                f"{inner_clamp_scale!r}."
+                f"`density_floor` must be non-negative and finite, got {density_floor}"
             )
         default_chg_spin = (
             None
@@ -384,6 +383,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.type_map = type_map
         self.seed = seed
         self.use_spin = None if use_spin is None else [bool(flag) for flag in use_spin]
+        self.spin_mode = spin_mode
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
         self.default_chg_spin = default_chg_spin
         # The spin branch reads the leading channels of the shared radial map,
@@ -439,35 +439,15 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             exponent=self._ENVELOPE_EXPONENT,
             precision=self.precision,
         )
-        # Every edge term carries the envelope and no node feature crosses an
-        # edge, so one inner switch on the envelope removes a close pair from
-        # the descriptor as completely as deleting its edge from the graph.
-        self.bridging_f_inner = (
-            None if inner_clamp_f_inner is None else float(inner_clamp_f_inner)
-        )
-        self.bridging_f_outer = (
-            None if inner_clamp_f_outer is None else float(inner_clamp_f_outer)
-        )
-        self.bridging_scale = str(inner_clamp_scale)
-        self.bridging_switch = (
+        self.contact_clamp = (
             None
-            if self.bridging_f_inner is None
-            else BridgingSwitch(self.bridging_f_inner, self.bridging_f_outer)
-        )
-        self.bridging_clamp = (
-            None
-            if self.bridging_f_inner is None
-            else BridgingClamp(self.bridging_f_inner, self.bridging_f_outer)
-        )
-        # The table sizes a window, so an unbridged descriptor needs none and
-        # is not asked for the element symbols the covalent scale reads.
-        self.contact_radius = None
-        if self.bridging_f_inner is not None:
-            table = contact_radius_table(
-                self.ntypes, self.type_map, self.bridging_scale
+            if contact_clamp is None
+            else ContactClamp(
+                self.type_map, inner=contact_clamp, support=contact_support
             )
-            check_window_inside_cutoff(table, self.bridging_f_outer, self.rcut)
-            self.contact_radius = table
+        )
+        if self.contact_clamp is not None:
+            self.contact_clamp.check_cutoff(min(self.block_rcut))
         self.pair_film = OrderedPairFiLM(
             self.channels,
             radial_modes=self.radial_modes,
@@ -490,6 +470,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 self.ntypes,
                 self.degree_channels,
                 self.use_spin,
+                spin_mode=self.spin_mode,
                 precision=self.precision,
                 trainable=self.trainable,
                 seed=child_seed(seed, 5),
@@ -545,13 +526,29 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.mean = mean
         self.stddev = np.ones_like(mean)
         self.compress = False
+        # Mean envelope mass of the training neighborhoods, set by
+        # ``compute_input_stats``; one neighbor until then. Only a descriptor
+        # whose floor reads the mass carries the buffer, so a record of the
+        # absolute default keeps the state it had before the floor existed.
+        self.density_floor = float(density_floor)
+        if self.density_floor > 0.0:
+            self.envelope_mass = np.ones(1, dtype=PRECISION_DICT[self.precision])
+            # Number of atoms the measured mass averages; it weights the
+            # masses of replicas merged by ``share_params``.
+            self.envelope_count = 0.0
         self.reinit_exclude(exclude_types)
 
-    def pair_contact(
-        self, center_type: Array, neighbor_type: Array, dtype: Any
-    ) -> Array:
-        """Length scale of each edge in Å, shape (E, 1); see :func:`pair_contact`."""
-        return pair_contact(self.contact_radius, center_type, neighbor_type, dtype)
+    def _degree_floor(self) -> Any:
+        """Floor of the two neighborhood normalizers.
+
+        With ``density_floor`` set, the floor is that multiple of the measured
+        mean envelope mass; zero keeps the absolute default of the record. The
+        mass stays a backend array so that a forward pass reads it without a
+        host synchronization.
+        """
+        if self.density_floor == 0.0:
+            return self._DEGREE_NORM_FLOOR
+        return self.density_floor * self.envelope_mass[0]
 
     # === Descriptor evaluation ===
 
@@ -584,8 +581,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             are the owned atoms followed by ghost images. A single-block
             descriptor reads no source-node feature and ignores it; every
             further block refreshes the ghost rows of the source features
-            from their owners through it, and a bridged multi-block descriptor
-            completes its source gate through it.
+            from their owners through it.
         spin
             Per-node spin vectors with shape ``(N, 3)`` on the same flat node
             axis as ``atype``, including ghost and padding rows. Mandatory
@@ -907,7 +903,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             pair_latent,
             edge_hidden_bias,
             conditioned_spin,
-            comm_dict,
         )
 
         # === Step 5. Reduce the degree-wise moments ===
@@ -927,6 +922,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         if self.attentions:
             moments = self.run_further_blocks(
                 graph,
+                atype,
                 moments,
                 center_type_embedding,
                 divisors,
@@ -949,6 +945,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def run_further_blocks(
         self,
         graph: Any,
+        atype: Array,
         moments: Array,
         center_type_embedding: Array,
         divisors: Array,
@@ -962,14 +959,18 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         Each block rescales the amplitudes of the first one by the attention
         of the edge source in the previous block, reduces every degree again
         under the envelope masses and normalizers of the first one, and adds
-        the transported keys of the neighbors. The ghost rows of a
-        domain-decomposed graph receive no edges, so their source features
-        are refreshed from the owners.
+        the transported keys of the neighbors. The envelope of every block
+        reads the separation of the first one, through the contact clamp of a
+        bridged descriptor. The ghost rows of a domain-decomposed graph
+        receive no edges, so their source features are refreshed from the
+        owners.
 
         Parameters
         ----------
         graph
             Neighbor graph in descriptor compute precision.
+        atype
+            Flat node types with shape ``(N,)``.
         moments
             Moments of the first block with shape ``(N, S')``.
         center_type_embedding
@@ -995,6 +996,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         distance = xp.sqrt(
             xp.sum(graph.edge_vec * graph.edge_vec, axis=-1) + self._EPS * self._EPS
         )
+        if self.contact_clamp is not None:
+            distance = self.contact_clamp.call(
+                distance,
+                self.gather_rows(atype, dst, xp),
+                self.gather_rows(atype, src, xp),
+            )
         for attention, block_envelope in zip(
             self.attentions, self.block_envelopes, strict=True
         ):
@@ -1108,7 +1115,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         pair_latent: tuple[Array, Array],
         edge_hidden_bias: Array | None = None,
         conditioned_spin: Array | None = None,
-        comm_dict: dict | None = None,
     ) -> tuple[Array, Array, Array, Array | None]:
         r"""Build the enveloped edge amplitudes, harmonics, and spin payload.
 
@@ -1144,10 +1150,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         conditioned_spin
             Conditioned per-node spin with shape ``(N, 3)``, or
             ``None`` for a spin-free descriptor.
-        comm_dict
-            Border-exchange tensors of a domain-decomposed graph, through
-            which a bridged multi-block descriptor completes its source gate, or
-            ``None``.
 
         Returns
         -------
@@ -1190,41 +1192,18 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # DPA4C requests the raw radial basis. One explicit C³ envelope gates
         # the combined radial and type feature, so the scalar edge amplitude
         # contains exactly one cutoff factor and vanishes smoothly at rcut.
-        # A bridging window closes the same envelope from the inside: the
-        # switch reads the true pair length, and the radial features read the
-        # clamped one, which moves at the rate the switch has opened. The
-        # direction keeps the true geometry.
-        #
-        # A further block reads the state of the edge source, so it would
-        # carry a close pair to third atoms: a neighbor C of A sees both A and
-        # B, and its features would return B to the environment of A. A
-        # multi-block descriptor therefore also mutes every edge that a frozen
-        # atom emits towards a third atom, through the leave-one-out source
-        # gate of DPA4, so a frozen atom leaves every other environment while
-        # its own pair edge is closed by the switch of that edge.
-        inner_switch = None
-        if self.bridging_switch is not None:
-            contact = self.pair_contact(center_type, neighbor_type, distance.dtype)
-            inner_switch = self.bridging_switch.call(distance, contact)
-            if self.attentions:
-                _, source_gate = compute_source_gates(
-                    edge_len=distance,
-                    edge_contact=contact,
-                    src=src,
-                    n_nodes=atype.shape[0],
-                    bridging_switch=self.bridging_switch.call,
-                    edge_keep_f=mask,
-                    node_partial_exchange=None
-                    if comm_dict is None
-                    else lambda partials: self.complete_node_partials(
-                        partials, comm_dict
-                    ),
-                )
-                inner_switch = inner_switch * source_gate
-            distance = self.bridging_clamp.call(distance, contact)
+        # A bridged model reads every separation through the contact clamp,
+        # which freezes it below the data edge of the pair (set by the contact
+        # record of the training frames, see `ContactClamp`) and
+        # is the identity at and above it; the direction keeps the true
+        # geometry. The envelope of every further
+        # block reads the same separation (see `run_further_blocks`), so every
+        # read of a closing pair's separation is frozen alike: below the clamp
+        # the learned energy no longer depends on that separation, and the
+        # analytical potential alone carries the repulsion.
+        if self.contact_clamp is not None:
+            distance = self.contact_clamp.call(distance, center_type, neighbor_type)
         envelope = self.evaluate_cutoff_envelope(distance)
-        if inner_switch is not None:
-            envelope = envelope * inner_switch
         envelope = envelope * mask
         radial_basis = self.radial_basis.call(distance)
         radial_hidden = self.radial_embedding.call_hidden(radial_basis)
@@ -1360,7 +1339,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         reduced = segment_sum(xp.concat(parts, axis=1), dst, n_total)
 
         scalar_end = 2 + self.channels
-        floor = self._DEGREE_NORM_FLOOR
+        floor = xp.asarray(self._degree_floor(), dtype=amplitude.dtype)
         divisors = xp.sqrt(reduced[:, :2] + floor)
         normalized = [
             reduced[:, 2:scalar_end] / divisors[:, :1],
@@ -1573,32 +1552,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "the dpmodel backend."
         )
 
-    def complete_node_partials(self, partials: Array, comm_dict: dict) -> Array:
-        """Sum per-node partials across ranks and broadcast the totals.
-
-        Parameters
-        ----------
-        partials
-            Per-node partial sums with shape ``(N, W)``.
-        comm_dict
-            Border-exchange tensors of the domain decomposition.
-
-        Returns
-        -------
-        Array
-            Completed sums on every owned and ghost row.
-
-        Raises
-        ------
-        NotImplementedError
-            Always in the backend-neutral reference, which runs on one
-            process.
-        """
-        raise NotImplementedError(
-            "Multi-rank DPA4C source gating (comm_dict) is not supported in "
-            "the dpmodel backend."
-        )
-
     def gather_rows(
         self,
         values: Array,
@@ -1674,12 +1627,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Sharing level. DPA4C supports only level ``0``, which shares the
             complete descriptor.
         model_prob
-            Model sampling probability accepted by the common multitask ABI;
-            unused because DPA4C has no mergeable input statistics.
+            Model sampling probability accepted by the common multitask ABI.
+            It weights the envelope mass this replica measured when the masses
+            of the replicas are merged.
         resume
-            Whether sharing occurs during checkpoint restoration; unused.
+            Whether sharing occurs during checkpoint restoration, in which
+            case the masses are already merged and are not merged again.
         """
-        del model_prob, resume
         if self.__class__ != base_class.__class__:
             raise TypeError("Only DPA4C descriptors can share parameters.")
         signature = self.structure_signature()
@@ -1691,6 +1645,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             )
         if shared_level != 0:
             raise NotImplementedError("DPA4C supports only shared_level=0.")
+        if self.density_floor > 0.0:
+            from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+                merge_envelope_mass,
+            )
+
+            if not resume:
+                merge_envelope_mass(base_class, self, model_prob)
         for name in (
             "type_embedding",
             "radial_basis",
@@ -1703,6 +1664,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "charge_spin_embedding",
         ):
             setattr(self, name, getattr(base_class, name))
+        if self.density_floor > 0.0:
+            # After the merge the mass is a shared statistic, like the
+            # calibration of the output.
+            self.envelope_mass = base_class.envelope_mass
+            self.envelope_count = base_class.envelope_count
         self.mean = base_class.mean
         self.stddev = base_class.stddev
 
@@ -1731,10 +1697,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         missing input rather than a property of the shared parameters, so two
         branches may legitimately default to different charge states.
 
-        Branch-local state is deliberately absent: ``exclude_types`` and the
-        bridging window configure the pair-exclusion mask and the inner
-        envelope switch, both parameter free, which each replica keeps for
-        itself.
+        ``density_floor`` is present, because it sets the scale of the
+        normalizers every shared module reads; only its measured mass is
+        merged across replicas.
+
+        Branch-local state is deliberately absent: ``exclude_types`` configures
+        the parameter-free pair-exclusion mask, and the contact clamp records
+        the data edges of the branch's own training data, which each replica
+        keeps for itself.
 
         Returns
         -------
@@ -1753,7 +1723,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             self.trainable,
             None if self.type_map is None else tuple(self.type_map),
             None if self.use_spin is None else tuple(self.use_spin),
+            self.spin_mode,
             self.add_chg_spin_ebd,
+            self.density_floor,
             np.dtype(PRECISION_DICT[self.precision]).name,
         )
 
@@ -1827,6 +1799,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         the first; the trainer calibrates a freshly built model, before any
         pretrained weights are loaded.
 
+        A descriptor with a ``density_floor`` additionally measures the mean
+        envelope mass of the sampled neighborhoods, which sets the floor of
+        its two normalizers.
+
         Parameters
         ----------
         merged
@@ -1835,7 +1811,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             moment on every system, under either ``model_spin`` or ``spin``.
         path
             Optional statistics path. Model-dependent calibration is always
-            recomputed and therefore does not consume this path.
+            recomputed and therefore does not consume this path; the envelope
+            mass of a ``density_floor`` is recorded there so that a later run
+            on the same data reads it back.
 
         Raises
         ------
@@ -1844,11 +1822,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             spin-conditioned descriptor is calibrated on a system that carries
             no moment.
         """
+        from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+            load_or_measure_envelope_mass,
+            store_envelope_mass,
+        )
         from deepmd.dpmodel.utils.neighbor_graph import (
             build_neighbor_graph,
         )
 
-        del path
         sampled = merged() if callable(merged) else merged
         if not sampled:
             return
@@ -1858,6 +1839,20 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # are measured.
         if self.spin is not None:
             self.spin.set_spin_reference(self._measure_spin_reference(sampled))
+
+        # The floor of the normalizers is a property of the architecture, not
+        # of the calibration, so it is measured before the identity
+        # calibration that the output measurement below requires.
+        if self.density_floor > 0.0:
+            mass, count = load_or_measure_envelope_mass(
+                sampled,
+                path,
+                radii=[self.rcut],
+                exponent=self._ENVELOPE_EXPONENT,
+                ntypes=self.ntypes,
+                exclude_types=self.exclude_types,
+            )
+            store_envelope_mass(self, mass, count)
 
         xp = array_api_compat.array_namespace(self.stddev)
         device = array_api_compat.device(self.stddev)
@@ -2172,7 +2167,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa4c",
-            "@version": 3,
+            "@version": 5,
             "rcut": (
                 self.rcut if len(set(self.block_rcut)) == 1 else list(self.block_rcut)
             ),
@@ -2189,12 +2184,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "type_map": self.type_map,
             "seed": self.seed,
             "use_spin": self.use_spin,
+            "spin_mode": self.spin_mode,
             "add_chg_spin_ebd": self.add_chg_spin_ebd,
             "default_chg_spin": self.default_chg_spin,
             "spin": None,
-            "inner_clamp_f_inner": self.bridging_f_inner,
-            "inner_clamp_f_outer": self.bridging_f_outer,
-            "inner_clamp_scale": self.bridging_scale,
+            "contact_clamp": (
+                None if self.contact_clamp is None else self.contact_clamp.serialize()
+            ),
+            "density_floor": self.density_floor,
             "spin_channels": (None if self.spin is None else self.spin.serialize()),
             "charge_spin_embedding": (
                 None
@@ -2215,6 +2212,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "@variables": {
                 "mean": to_numpy_array(self.mean),
                 "stddev": to_numpy_array(self.stddev),
+                **(
+                    {"envelope_mass": to_numpy_array(self.envelope_mass)}
+                    if self.density_floor > 0.0
+                    else {}
+                ),
             },
         }
         if self.compress:
@@ -2241,11 +2243,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Reconstructed descriptor with restored trainable components.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 3, 1)
+        version = data.pop("@version")
+        check_version_compatibility(version, 5, 1)
         data.pop("@class")
         data.pop("type")
         # Records of format 2 and earlier hold one block.
         data.setdefault("n_blocks", 1)
+        drop_retired_descriptor_options(data)
+        contact_clamp = data.pop("contact_clamp", None)
         compression = data.pop("compress", None)
         variables = data.pop("@variables")
         type_embedding = data.pop("type_embedding")
@@ -2259,7 +2264,15 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         spin_channels = data.pop("spin_channels")
         charge_spin_embedding = data.pop("charge_spin_embedding")
 
-        obj = cls(**data)
+        obj = cls(
+            **data,
+            contact_clamp=None if contact_clamp is None else contact_clamp["inner"],
+            contact_support=(
+                DEFAULT_SUPPORT if contact_clamp is None else contact_clamp["support"]
+            ),
+        )
+        if contact_clamp is not None:
+            obj.contact_clamp = ContactClamp.deserialize(contact_clamp)
         obj.type_embedding = SeZMTypeEmbedding.deserialize(type_embedding)
         obj.radial_basis = RadialBasis.deserialize(radial_basis)
         obj.radial_embedding = SwiGLUMLP.deserialize(radial_embedding)
@@ -2289,6 +2302,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             variables["mean"],
             variables["stddev"],
         )
+        # Records written before the floor was configurable carry no mass; the
+        # constructor has already put the unit mass the default floor reads.
+        if "envelope_mass" in variables:
+            obj.envelope_mass = np.asarray(
+                variables["envelope_mass"], dtype=PRECISION_DICT[obj.precision]
+            )
         if compression is not None:
             obj._load_compression(compression)
         return obj
@@ -2509,6 +2528,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def get_env_protection(self) -> float:
         """Return the direction regularization scale in Å."""
         return self._EPS
+
+    def requires_full_neighbor_list(self) -> bool:
+        """The graph retains every neighbor inside the cutoff."""
+        return True
 
     def supports_graph_vacuum(self) -> bool:
         """Isolated references use the graph core without a dense sel capacity."""

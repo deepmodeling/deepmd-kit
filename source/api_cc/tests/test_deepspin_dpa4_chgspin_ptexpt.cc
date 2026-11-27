@@ -3,7 +3,7 @@
 // (.pt2 / pt_expt) inference path.
 //
 // Every other spin fixture in this tree has dim_chg_spin == 0, so the
-// charge_spin argument threaded through DeepSpin::compute -> DeepSpinPTExpt
+// charge_spin argument threaded through DeepSpin::compute -> NativeSpinPTExpt
 // is inert on them: a dead ingestion seam would pass all of them. The model
 // here (source/tests/infer/gen_dpa4_spin_chgspin.py) is the only one that is
 // BOTH is_spin and dim_chg_spin == 2 -- a native-spin DPA4 whose descriptor
@@ -17,9 +17,9 @@
 //     every pre-existing caller passes nothing);
 //   * passing the default value explicitly equals passing nothing (the two
 //     ways of selecting the default agree);
-//   * both DeepSpinPTExpt::compute overloads are covered: the standalone
-//     (build-nlist) one and the LAMMPS (InputNlist) one, each of which does
-//     its own charge_spin -> tensor conversion.
+//   * both NativeSpinPTExpt::compute overloads are covered: the standalone
+//     (build-nlist) one and the LAMMPS (InputNlist) one, each of which
+//     passes charge_spin on to the model.
 //
 // Modeled on test_deepspin_dpa4_graph_ptexpt.cc (same native-spin graph
 // fixture conventions) and test_deeppot_chg_spin_ptexpt.cc (the non-spin
@@ -33,7 +33,7 @@
 
 #include "DeepPotPTExpt.h"
 #include "DeepSpin.h"
-#include "DeepSpinPTExpt.h"
+#include "NativeSpinPTExpt.h"
 #include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
@@ -44,8 +44,8 @@
 // PASSED while testing nothing (that exact regression cost 8 dead cases in
 // another suite). Turn that failure mode into a compile error.
 #ifdef BUILD_PYTORCH
-#ifndef BUILD_PT_EXPT_SPIN
-#error "BUILD_PT_EXPT_SPIN undefined -- DeepSpinPTExpt.h include was dropped"
+#ifndef BUILD_PT_EXPT_NATIVE_SPIN
+#error "BUILD_PT_EXPT_NATIVE_SPIN undefined -- NativeSpinPTExpt.h was dropped"
 #endif
 #ifndef BUILD_PT_EXPT
 #error "BUILD_PT_EXPT undefined -- DeepPotPTExpt.h include was dropped"
@@ -145,7 +145,7 @@ class TestInferDeepSpinDpa4ChgSpinPtExpt : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_NATIVE_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     std::ifstream model_file(kModelPath);
@@ -194,7 +194,7 @@ TYPED_TEST(TestInferDeepSpinDpa4ChgSpinPtExpt, test_get_use_spin) {
 }
 
 // ============================================================================
-// Standalone (build-nlist) path -- DeepSpinPTExpt::compute, no InputNlist
+// Standalone (build-nlist) path -- NativeSpinPTExpt::compute, no InputNlist
 // ============================================================================
 
 // THE core assertion: two different runtime charge_spin vectors must give two
@@ -306,7 +306,7 @@ TYPED_TEST(TestInferDeepSpinDpa4ChgSpinPtExpt,
 
 // ============================================================================
 // LAMMPS path (explicit InputNlist, nghost=0) -- the SECOND
-// DeepSpinPTExpt::compute overload, with its own charge_spin conversion.
+// NativeSpinPTExpt::compute overload, which passes charge_spin on itself.
 // NoPBC only (no ghost atoms needed for a nghost=0 InputNlist), matching
 // test_deepspin_dpa4_graph_ptexpt.cc.
 // ============================================================================

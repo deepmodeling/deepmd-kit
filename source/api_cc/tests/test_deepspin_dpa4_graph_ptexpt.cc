@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Test C++ NeighborGraph inference for pt_expt (.pt2) backend with native-spin
-// DPA4 (single-rank; no with-comm sibling -- has_comm_artifact=false always,
-// see source/tests/infer/gen_dpa4_spin.py). Modeled on
+// DPA4, which DeepSpin serves through NativeSpinPTExpt (the graph lower
+// carries its halo exchange, so the archive holds a single artifact; see
+// source/tests/infer/gen_dpa4_spin.py). Modeled on
 // test_deeppot_dpa_ptexpt_spin.cc (deepspin-scheme nlist route).
 #include <gtest/gtest.h>
 
@@ -11,7 +12,7 @@
 #include <vector>
 
 #include "DeepSpin.h"
-#include "DeepSpinPTExpt.h"
+#include "NativeSpinPTExpt.h"
 #include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
@@ -58,7 +59,7 @@ class TestInferDeepSpinDpa4GraphPtExpt : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_NATIVE_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     std::ifstream model_file(kModelPath);
@@ -107,8 +108,8 @@ TYPED_TEST(TestInferDeepSpinDpa4GraphPtExpt, type_map) {
   EXPECT_EQ(type_map, "Ni O");
 }
 
-// Standalone path (no InputNlist): exercises DeepSpinPTExpt::compute's
-// buildGraphTensors branch (source/api_cc/src/DeepSpinPTExpt.cc).
+// Standalone path (no InputNlist): exercises NativeSpinPTExpt::compute_frame's
+// buildGraphTensors branch (source/api_cc/src/NativeSpinPTExpt.cc).
 TYPED_TEST(TestInferDeepSpinDpa4GraphPtExpt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
@@ -210,7 +211,7 @@ class TestInferDeepSpinDpa4GraphPtExptNopbc : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_NATIVE_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     std::ifstream model_file(kModelPath);
@@ -319,7 +320,7 @@ TYPED_TEST(TestInferDeepSpinDpa4GraphPtExptNopbc, cpu_build_nlist_atomic) {
 }
 
 // LAMMPS path (explicit InputNlist, nghost=0): exercises
-// DeepSpinPTExpt::compute's graph branch under the LAMMPS-nlist overload.
+// NativeSpinPTExpt::compute's graph branch under the LAMMPS-nlist overload.
 // Only exercised NoPBC (no ghost atoms needed for a nghost=0 InputNlist).
 TYPED_TEST(TestInferDeepSpinDpa4GraphPtExptNopbc, cpu_lmp_nlist) {
   using VALUETYPE = TypeParam;

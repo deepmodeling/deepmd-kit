@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import copy
 import os
 from contextlib import (
     nullcontext,
@@ -32,6 +33,9 @@ from deepmd.pt_expt.utils.env import (
 from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
 )
+from ...dpa4_fixtures import (
+    jitter_zero_arrays,
+)
 
 
 def make_descriptor(nt, sel, rcut, **overrides) -> DescrptDPA4:
@@ -52,6 +56,50 @@ def make_descriptor(nt, sel, rcut, **overrides) -> DescrptDPA4:
     }
     kwargs.update(overrides)
     return DescrptDPA4(**kwargs)
+
+
+def active_descriptor(nt, sel, rcut, **overrides) -> DescrptDPA4:
+    """Return a descriptor whose zero-initialized residual projections are set.
+
+    A fresh descriptor reads out the type embedding alone, so outputs that
+    depend on the geometry and the options need populated projections.
+    """
+    data = make_descriptor(nt, sel, rcut, **overrides).serialize()
+    return DescrptDPA4.deserialize(jitter_zero_arrays(data, np.random.default_rng(29)))
+
+
+# Descriptor options of DPA4.5, alone and combined with the configurations
+# that inversion symmetry reaches through its own code paths.
+DPA45_OPTIONS = [
+    pytest.param({"l_schedule": [1, 2], "so3_readout": "glu"}, id="rising_l_schedule"),
+    pytest.param({"density_floor": 8.0}, id="density_floor"),
+    pytest.param({"mixing_layers": [1, 3]}, id="mixing_schedule"),
+    pytest.param({"readout_norm": True, "so3_readout": "glu"}, id="readout_norm"),
+    pytest.param({"rcut": [1.6, 2.2]}, id="block_cutoffs"),
+    pytest.param(
+        {"kmax": 0, "readout_kmax": 1, "so3_readout": "mlp", "ffn_so3_grid": True},
+        id="readout_kmax",
+    ),
+    pytest.param({"parity": True}, id="o3"),
+    pytest.param({"parity": True, "use_env_seed": False}, id="o3_no_env_seed"),
+    pytest.param({"parity": True, "ffn_so3_grid": True, "kmax": 1}, id="o3_ffn_so3"),
+    pytest.param(
+        {"parity": True, "so3_readout": "mlp", "readout_layers": 2}, id="o3_readout"
+    ),
+    pytest.param({"parity": True, "node_wise_so3": True}, id="o3_node_wise_so3"),
+    pytest.param({"parity": True, "message_node_so3": True}, id="o3_message_so3"),
+    pytest.param(
+        {"parity": True, "l_schedule": [1, 2], "extra_node_l": 1}, id="o3_extra_node_l"
+    ),
+    pytest.param(
+        {"parity": True, "edge_cartesian": True, "l_schedule": [1, 2]},
+        id="o3_edge_cartesian",
+    ),
+    pytest.param(
+        {"parity": True, "node_cartesian": "default:2", "l_schedule": [1, 2]},
+        id="o3_node_cartesian",
+    ),
+]
 
 
 class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
@@ -114,14 +162,65 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
     @pytest.mark.parametrize("use_env_seed", [True, False])  # env seed feature
     @pytest.mark.parametrize("use_mapping", [True, False])  # pass mapping vs None
     def test_consistency(self, use_env_seed, use_mapping) -> None:
-        dtype = PRECISION_DICT["float64"]
-        err_msg = f"use_env_seed={use_env_seed} use_mapping={use_mapping}"
         dd0 = make_descriptor(
             self.nt,
             self.sel_mix,
             self.rcut,
             use_env_seed=use_env_seed,
         ).to(self.device)
+        self._assert_consistent(
+            dd0, use_mapping, f"use_env_seed={use_env_seed} use_mapping={use_mapping}"
+        )
+
+    @pytest.mark.parametrize("options", DPA45_OPTIONS)
+    def test_consistency_with_options(self, options: dict) -> None:
+        """Each option matches dpmodel, survives the record and changes the output."""
+        options = {"rcut": self.rcut, **options}
+        dd0 = active_descriptor(self.nt, self.sel_mix, **options).to(self.device)
+        config = dd0.serialize()["config"]
+        for key, value in options.items():
+            assert config[key] == value, key
+        self._assert_consistent(dd0, True, str(options))
+        plain = active_descriptor(self.nt, self.sel_mix, self.rcut).to(self.device)
+        dtype = PRECISION_DICT["float64"]
+        inputs = (
+            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        difference = dd0(*inputs)[0] - plain(*inputs)[0]
+        assert difference.abs().max() > 1e-6
+
+    @pytest.mark.parametrize("readout_kmax", [None, 1])  # follow kmax or set it
+    def test_readout_kmax_sets_the_readout_frames(self, readout_kmax) -> None:
+        """Blocks keep ``kmax`` while the read-out takes its own frame order."""
+        dd0 = make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            kmax=0,
+            readout_kmax=readout_kmax,
+            so3_readout="mlp",
+            ffn_so3_grid=True,
+        )
+        assert all(ffn.kmax == 0 for block in dd0.blocks for ffn in block.ffns)
+        assert dd0.output_ffn.kmax == (0 if readout_kmax is None else 1)
+        assert dd0.serialize()["config"]["readout_kmax"] == readout_kmax
+
+    @pytest.mark.parametrize("native", [False, True])  # native spin or not
+    def test_record_without_parity_follows_native_spin(self, native: bool) -> None:
+        """A record written before ``parity`` existed preserves inversion with spin."""
+        dd0 = make_descriptor(
+            self.nt, self.sel_mix, self.rcut, use_spin=[True, False] if native else None
+        )
+        record = dd0.serialize()
+        record["config"].pop("parity")
+        for cls in (DescrptDPA4, DPDescrptDPA4):
+            assert cls.deserialize(copy.deepcopy(record)).parity == native
+
+    def _assert_consistent(self, dd0, use_mapping: bool, err_msg: str) -> None:
+        """Compare a descriptor with its round-trip copy and the dpmodel one."""
+        dtype = PRECISION_DICT["float64"]
         coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
         atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
         nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
@@ -364,6 +463,61 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             grad_traced.detach().cpu().numpy(),
             rtol=1e-12,
             atol=1e-12,
+        )
+
+    @pytest.mark.parametrize(
+        "options",  # learned pseudo-query vs input-dependent query
+        [{"block_attn_res": "independent"}, {"full_attn_res": "dependent"}],
+    )
+    def test_depth_attention_residual_keeps_symbolic_node_count(
+        self, options: dict
+    ) -> None:
+        """A depth-attention residual exported at one node count serves another."""
+        descriptor = make_descriptor(self.nt, self.sel_mix, self.rcut, **options)
+        attention = (
+            descriptor.final_block_attn_res
+            if "block_attn_res" in options
+            else descriptor.final_full_attn_res
+        ).cpu()
+        generator = torch.Generator().manual_seed(17)
+        with torch.no_grad():
+            for parameter in attention.parameters():
+                parameter.copy_(
+                    torch.randn(
+                        parameter.shape, generator=generator, dtype=torch.float64
+                    )
+                )
+
+        class Aggregate(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attention = attention
+
+            def forward(
+                self, first: torch.Tensor, second: torch.Tensor, third: torch.Tensor
+            ) -> torch.Tensor:
+                return self.attention(
+                    sources=[first, second, third],
+                    scalar_extractor=lambda value: value[:, 0, 0, :],
+                    current_x=third,
+                )
+
+        def values(n_node: int) -> tuple[torch.Tensor, ...]:
+            return tuple(
+                torch.randn(n_node, 9, 1, 16, generator=generator, dtype=torch.float64)
+                for _ in range(3)
+            )
+
+        n_node = torch.export.Dim("n_node", min=2)
+        exported = torch.export.export(
+            Aggregate(),
+            values(7),
+            dynamic_shapes=tuple({0: n_node} for _ in range(3)),
+            strict=False,
+        )
+        replay = values(5)
+        torch.testing.assert_close(
+            exported.module()(*replay), Aggregate()(*replay), rtol=1e-12, atol=1e-12
         )
 
     def test_trainable_parameters(self) -> None:

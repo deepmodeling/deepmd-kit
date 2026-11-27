@@ -1,25 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Issue #5906 Task 2 (pt backend): SFPG completion across ranks.
+"""Parallel parity of a bridged SeZM model in the pt backend.
 
-A BRIDGED SeZM model's parallel (comm_dict) path must reproduce the folded
-single-domain path. The Source Freeze Propagation Gate multiplies, into the
-envelope of an edge, the switching amplitudes of every pair of that edge's
-source other than its own, and hands the full per-node product to the model;
-under domain decomposition a rank only holds edges with owned destinations,
-so the src-keyed per-node partials are incomplete and must be completed by
-one reverse-accumulate + forward-broadcast border exchange before either
-gate is applied.
-
-Geometry is the load-bearing part: a sub-``r_outer`` pair STRADDLES the
-periodic x boundary so the close contact's src is a ghost image row.
-Before issue #5906's fix, pt's bridged parallel path had no guard: the
-descriptor computed the partial (rank-incomplete) gate silently, and the
-model-level ZBL injection crashed outright on extended src indices
-(``z_all[src]`` IndexError) -- this test's red run demonstrated both.
+A bridged model's parallel (``comm_dict``) path must reproduce its
+single-domain path. The analytical term reads the type of every edge source,
+which is a ghost image row under domain decomposition, and the contact clamp
+reads the types of both ends of every edge. Atoms 0 and 1 form a close pair
+that STRADDLES the periodic x boundary, so the close contact's source is a
+ghost row, and the gaps place the pair in the frozen zone and in the opening
+zone of the clamp.
 """
 
 import unittest
-import unittest.mock
 
 import numpy as np
 import torch
@@ -39,13 +30,11 @@ _L = 10.0  # box edge (= rcut * 2.5, matching the non-bridged parity file)
 
 def _bridged_model_params() -> dict:
     params = _tiny_parallel_model_params()
-    # ZBL bridging needs REAL element symbols (nuclear charges)
+    # ZBL bridging needs REAL element symbols (nuclear charges). The Ni-O
+    # pair starts its data edge at its covalent bond length, 1.73 Å, so with
+    # the default clamp fraction the read separation is frozen below 1.30 Å.
     params["type_map"] = ["Ni", "O"]
-    # bridging window: r_inner=0.8, r_outer=1.2 (matches the pt_expt twin
-    # test, source/tests/pt_expt/model/test_dpa4_zbl_parallel.py)
     params["bridging_method"] = "ZBL"
-    params["bridging_r_inner"] = 0.8
-    params["bridging_r_outer"] = 1.2
     return params
 
 
@@ -124,7 +113,7 @@ def _build_close_pair_system(
 
 
 class TestSeZMBridgingSelfCommParity(unittest.TestCase):
-    """Bridged parallel path == folded path once the SFPG exchange lands."""
+    """The bridged parallel path equals the single-domain path."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -184,28 +173,13 @@ class TestSeZMBridgingSelfCommParity(unittest.TestCase):
                 msg=f"mismatch in {key}",
             )
 
-    def test_parity_hard_freeze_pair_cpu(self) -> None:
-        """A gap < r_inner pair: the zero_count channel crosses the boundary."""
+    def test_parity_frozen_pair_cpu(self) -> None:
+        """A pair below the frozen radius of the clamp crosses the boundary."""
         self._assert_parity(0.4)
 
-    def test_parity_transition_pair_cpu(self) -> None:
-        """r_inner < gap < r_outer: the log_eta channel crosses the boundary."""
-        self._assert_parity(1.0)
-
-    def test_ablation_identity_exchange_diverges(self) -> None:
-        """Negative contract: stubbing the exchange to identity breaks the
-        parity -- proves the geometry actually exercises the gate.
-        """
-        from deepmd.pt.model.descriptor import sezm as pt_sezm
-
-        with unittest.mock.patch.object(
-            pt_sezm.DescrptSeZM,
-            "_gate_partial_exchange",
-            lambda self, partials, comm_dict: partials,
-        ):
-            ref, par = self._run_pair(0.4, torch.device("cpu"))
-        diff = (par["energy"] - ref["energy"]).abs().max().item()
-        self.assertGreater(diff, 1e-6)
+    def test_parity_opening_pair_cpu(self) -> None:
+        """A pair inside the opening zone of the clamp crosses the boundary."""
+        self._assert_parity(1.5)
 
 
 if __name__ == "__main__":

@@ -116,66 +116,47 @@ DPA4C_CPU_INLINE float cutoff_factor(float radius,
 /// Evaluate the radial state of one edge.
 ///
 /// A plain specialization reads the table at the true length and takes the
-/// cutoff factor as the envelope. A bridged specialization resolves the
-/// window of the pair, two fractions of its length scale \f$s\f$, through
-/// the window parameter \f$t=\mathrm{clamp}((r/s-f_\mathrm{inner})/
-/// (f_\mathrm{outer}-f_\mathrm{inner}),0,1)\f$: the inner bridging switch
-/// \f$h(t)=35t^4-84t^5+70t^6-20t^7\f$ multiplies the cutoff factor, and the
-/// table reads the clamped length
-/// \f$\tilde r=s\,(f_\mathrm{mid}+(f_\mathrm{outer}-f_\mathrm{inner})S(t))\f$
-/// with \f$S(t)=7t^5-14t^6+10t^7-2.5t^8\f$ and \f$f_\mathrm{mid}\f$ the window
-/// midpoint. Both are the polynomials of the portable descriptor in the same
-/// Horner forms. \f$S\f$ is the antiderivative of \f$h\f$ with \f$S(1)=1/2\f$,
-/// so the clamped length is frozen at the midpoint at and below the inner
-/// fraction, equals the true length at and beyond the outer fraction, and
-/// moves with it at the rate \f$h(t)\f$ in between; the envelope is then
-/// \f$c(\tilde r)\,h(t)\f$ with the cutoff factor \f$c\f$, differentiated by
-/// the product and chain rules. An edge at or beyond the outer fraction takes
-/// the plain path.
+/// cutoff factor as the envelope. A bridged specialization reads the separation
+/// of the pair through its contact clamp, whose data edge \f$e\f$ and inner
+/// fraction \f$a\f$ freeze it at and below \f$a e\f$: with the window
+/// parameter \f$t=\mathrm{clamp}((r-a e)/((1-a)e),0,1)\f$, a bond shorter than
+/// the edge is read at
+/// \f$\tilde r=\tfrac{1+a}{2}e+(1-a)\,e\,S(t)\f$ with
+/// \f$S(t)=7t^5-14t^6+10t^7-2.5t^8\f$, the antiderivative of the septic
+/// smootherstep \f$h(t)=35t^4-84t^5+70t^6-20t^7\f$, and a longer one at its
+/// true length. Both are the polynomials of the portable descriptor in the
+/// same Horner forms. The radial table and the cutoff factor \f$c\f$ read
+/// \f$\tilde r\f$, so the envelope is \f$c(\tilde r)\f$ and both slopes pass
+/// through \f$d\tilde r/dr=h(t)\f$, which is one outside the window.
 ///
 /// \param radius Regularized distance in Å.
-/// \param contact Length scale \f$s\f$ of the pair in Å.
+/// \param edge Data edge \f$e\f$ of the pair in Å.
 /// \param rcut Outer cutoff in Å.
-/// \param f_inner Inner fraction of the pair length scale.
-/// \param f_outer Outer fraction of the pair length scale.
-/// \param inverse_f_width Reciprocal difference of the two fractions.
-/// \return The radial state; the envelope is exactly zero at and beyond the
-///         cutoff and, when bridged, at and below the inner fraction.
+/// \param inner Inner fraction \f$a\f$ of the contact clamp.
+/// \return The radial state; the envelope is exactly zero when the cutoff
+///         factor of the separation that is read is.
 template <bool BRIDGED>
-DPA4C_CPU_INLINE EdgeEnvelope envelope(float radius,
-                                       float contact,
-                                       float rcut,
-                                       float f_inner,
-                                       float f_outer,
-                                       float inverse_f_width) {
+DPA4C_CPU_INLINE EdgeEnvelope
+envelope(float radius, float edge, float rcut, float inner) {
   EdgeEnvelope state;
-  if (!BRIDGED || radius >= f_outer * contact) {
+  if (!BRIDGED || radius >= edge) {
     state.chi = cutoff_factor(radius, rcut, &state.chi_slope);
     state.seen = radius;
     state.chain = 1.0f;
     return state;
   }
 
-  const float inverse_contact = 1.0f / contact;
-  const float reduced = radius * inverse_contact;
+  const float width = (1.0f - inner) * edge;
   const float t =
-      std::min(std::max((reduced - f_inner) * inverse_f_width, 0.0f), 1.0f);
+      std::min(std::max((radius - inner * edge) / width, 0.0f), 1.0f);
   const float t2 = t * t;
-  const float bridge =
-      t2 * t2 * (35.0f + t * (-84.0f + t * (70.0f - 20.0f * t)));
-  const float bump = t * (1.0f - t);
-  // dh/dr = h'(t) * dt/du * du/dr, the last factor being 1 / s.
-  const float bridge_slope =
-      140.0f * bump * bump * bump * inverse_f_width * inverse_contact;
   const float rise =
       t2 * t2 * t * (7.0f + t * (-14.0f + t * (10.0f - 2.5f * t)));
-  state.seen =
-      contact * (0.5f * (f_inner + f_outer) + (f_outer - f_inner) * rise);
-  state.chain = bridge;
+  state.seen = 0.5f * (1.0f + inner) * edge + width * rise;
+  state.chain = t2 * t2 * (35.0f + t * (-84.0f + t * (70.0f - 20.0f * t)));
   float cutoff_slope = 0.0f;
-  const float cutoff = cutoff_factor(state.seen, rcut, &cutoff_slope);
-  state.chi = cutoff * bridge;
-  state.chi_slope = cutoff_slope * bridge * bridge + cutoff * bridge_slope;
+  state.chi = cutoff_factor(state.seen, rcut, &cutoff_slope);
+  state.chi_slope = cutoff_slope * state.chain;
   return state;
 }
 
@@ -394,8 +375,8 @@ DPA4C_CPU_INLINE void mode_value_and_derivative(const float* __restrict modes,
 /// Everything one edge contributes, resolved once per direction.
 struct EdgeGeometry {
   float direction[3];
-  /// True regularized length in Å, which the direction, the analytical pair
-  /// potential and the bridging window read.
+  float squared_distance;  ///< Unregularized, in Å².
+  /// Descriptor-regularized length in Å.
   float radius;
   float chi;
   float chi_slope;
@@ -406,43 +387,12 @@ struct EdgeGeometry {
   int64_t pair;
 };
 
-/// Evaluate the screened Coulomb series of one edge and its radial slope.
-///
-/// Energy and slope share their exponentials:
-/// \f$V=r^{-1}\sum_k A_k e^{-c_k r}\f$ and
-/// \f$V'=-r^{-1}\sum_k A_k(c_k+r^{-1})e^{-c_k r}\f$. The exponent is held
-/// at eighty, where a term lies at least nineteen orders of magnitude below
-/// the float32 resolution of the sum it enters for every element pair within
-/// 6 Å, and fourteen within 10 Å; beyond it the exponential would reach the
-/// subnormal range, whose arithmetic stalls the core.
-///
-/// \param row The constants `[A_0..A_3, c_0..c_3]` of the ordered type pair.
-/// \param radius Regularized distance in Å.
-/// \param slope Receives dV/dr in eV/Å.
-/// \return The pair energy V in eV.
-DPA4C_CPU_INLINE float pair_series(const float* row,
-                                   float radius,
-                                   float* slope) {
-  const float inverse = 1.0f / radius;
-  float energy = 0.0f;
-  float derivative = 0.0f;
-  for (int term = 0; term < 4; ++term) {
-    const float rate = row[4 + term];
-    const float decayed =
-        row[term] * std::exp(-std::min(rate * radius, 80.0f)) * inverse;
-    energy += decayed;
-    derivative -= decayed * (rate + inverse);
-  }
-  *slope = derivative;
-  return energy;
-}
-
 /// Resolve one edge, returning false when it contributes nothing.
 ///
 /// A padding neighbor never contributes. In a bridged specialization an edge
-/// whose envelope vanishes, beyond the cutoff or inside the bridging window,
-/// still resolves: it leaves the descriptor, which the scans read off
-/// `chi == 0`, but an analytical pair potential keeps acting on it.
+/// whose envelope vanishes, beyond the cutoff, still resolves: it leaves the
+/// descriptor, which the scans read off `chi == 0`, but an analytical pair
+/// potential keeps acting on it.
 template <bool BRIDGED>
 DPA4C_CPU_INLINE bool resolve_edge(const Arguments& arguments,
                                    const Layout& layout,
@@ -458,12 +408,13 @@ DPA4C_CPU_INLINE bool resolve_edge(const Arguments& arguments,
   const float squared =
       vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2];
   const float radius = std::sqrt(squared + arguments.eps * arguments.eps);
-  const float contact = BRIDGED ? arguments.contact_radius[center_type] +
-                                      arguments.contact_radius[neighbor_type]
-                                : 0.0f;
-  const EdgeEnvelope state =
-      envelope<BRIDGED>(radius, contact, arguments.rcut, arguments.f_inner,
-                        arguments.f_outer, arguments.inverse_f_width);
+  const float contact_edge =
+      BRIDGED && arguments.contact_edges != nullptr
+          ? arguments
+                .contact_edges[center_type * layout.type_count + neighbor_type]
+          : 0.0f;
+  const EdgeEnvelope state = envelope<BRIDGED>(
+      radius, contact_edge, arguments.rcut, arguments.contact_inner);
   if (!BRIDGED && state.chi == 0.0f) {
     return false;
   }
@@ -471,6 +422,7 @@ DPA4C_CPU_INLINE bool resolve_edge(const Arguments& arguments,
   geometry->direction[0] = vector[0] * inverse;
   geometry->direction[1] = vector[1] * inverse;
   geometry->direction[2] = vector[2] * inverse;
+  geometry->squared_distance = squared;
   geometry->radius = radius;
   geometry->chi = state.chi;
   geometry->chi_slope = state.chi_slope;
@@ -516,10 +468,10 @@ Kernels bridging_kernels(int lmax, bool has_modes) {
 
 /// Return the entry points of this instruction-set level.
 ///
-/// Zone bridging is a compile-time specialization like the angular degree and
-/// the mode residual: a plain descriptor must not carry the switch arithmetic
-/// of the edge envelope, nor the accumulator and the branch of the analytical
-/// pair potential, of a bridged one.
+/// A bridged model is a compile-time specialization like the angular degree
+/// and the mode residual: a plain descriptor must not carry the contact clamp
+/// arithmetic of the edge envelope, nor the accumulator and the branch of the
+/// analytical pair potential, of a bridged one.
 Kernels kernels(int lmax, bool has_modes, bool bridged) {
   return bridged ? bridging_kernels<true>(lmax, has_modes)
                  : bridging_kernels<false>(lmax, has_modes);

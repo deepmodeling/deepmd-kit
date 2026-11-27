@@ -167,7 +167,7 @@ class TestDPFreezePtExpt(unittest.TestCase):
 
         captured: dict = {}
 
-        def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
+        def _fake_freeze(model, output, head=None, lower_kind="auto", **kw):
             captured["output"] = output
             captured["lower_kind"] = lower_kind
 
@@ -316,22 +316,24 @@ class TestDPFreezePtExpt(unittest.TestCase):
         pytest.param(True, id="native_spin"),  # native-spin variant of the same
     ],
 )
-def test_dpa4_variant_default_freeze_graph_with_comm(tmp_path, add_native_spin) -> None:
+def test_dpa4_variant_default_freeze_is_multi_rank(tmp_path, add_native_spin) -> None:
     """The default ``dp freeze`` invocation on a DPA4 VARIANT yields a
-    with-comm graph ``.pt2`` -- aligned with standard DPA4 (issue #5906
-    Task 12b).
+    multi-rank capable graph ``.pt2`` -- aligned with standard DPA4 (issue
+    #5906 Task 12b).
 
-    No ``--lower-kind`` flag means ``freeze()``'s ``lower_kind="nlist"``
-    default, which the nlist->graph auto-override in
-    ``deepmd/pt_expt/entrypoints/main.py`` must resolve to the graph lower
-    for every graph-capable model -- for the ZBL composition and the
-    native-spin variant exactly as for standard DPA4 (the plain native-spin
-    case is already pinned by ``test_native_spin_default_freeze_routes_to_
-    graph`` in ``model/test_dpa4_export.py``; these two cases pin the
-    variants).  Beyond the routing, the frozen archive must carry the nested
-    with-comm artifact (``has_comm_artifact is True``): a variant that
-    silently dropped it would freeze fine, pass every single-rank test, and
-    only fail (or worse, silently mis-answer) on multi-rank LAMMPS.
+    No ``--lower-kind`` flag means ``freeze()``'s ``lower_kind="auto"``
+    default, which ``deepmd/pt_expt/entrypoints/main.py`` must resolve to the
+    graph lower for every graph-capable model -- for the ZBL composition and
+    the native-spin variant exactly as for standard DPA4 (the plain
+    native-spin case is already pinned by ``test_native_spin_default_freeze_
+    routes_to_graph`` in ``model/test_dpa4_export.py``; these two cases pin
+    the variants).  Beyond the routing, the frozen archive must serve
+    multi-rank LAMMPS: the energy composition through the nested with-comm
+    artifact (``has_comm_artifact is True``), the native-spin variant through
+    the halo exchange its graph lower carries in its main program
+    (``has_comm_artifact is False``).  A variant that silently dropped either
+    would freeze fine, pass every single-rank test, and only fail (or worse,
+    silently mis-answer) on multi-rank LAMMPS.
     """
     import json
     import zipfile
@@ -357,7 +359,8 @@ def test_dpa4_variant_default_freeze_graph_with_comm(tmp_path, add_native_spin) 
     with zipfile.ZipFile(pt2) as zf:
         metadata = json.loads(zf.read("model/extra/metadata.json"))
     assert metadata["lower_input_kind"] == "graph"
-    assert metadata["has_comm_artifact"] is True
+    assert metadata["has_message_passing"] is True
+    assert metadata["has_comm_artifact"] is (not add_native_spin)
 
 
 if __name__ == "__main__":

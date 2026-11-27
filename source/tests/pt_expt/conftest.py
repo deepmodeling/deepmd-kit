@@ -11,7 +11,12 @@ This was fixed by moving the shared mixins to ``tests.common.test_mixins``
 so pt_expt tests no longer import from the ``tests.pt`` package.
 """
 
+from collections.abc import (
+    Iterator,
+)
+
 import pytest
+import torch
 import torch.utils._device as _device
 from torch.overrides import (
     _get_current_function_mode_stack,
@@ -49,3 +54,28 @@ def _clear_leaked_device_context_session():
 def _clear_leaked_device_context():
     """Pop any stale ``DeviceContext`` before each test (safety net)."""
     _pop_device_contexts()
+
+
+@pytest.fixture
+def tf32_disabled() -> Iterator[None]:
+    """Use IEEE float32 for cuBLAS and cuDNN and restore both backend flags."""
+    # The flags are dynamic attributes, not entries in the modules' dictionaries.
+    backends = (torch.backends.cuda.matmul, torch.backends.cudnn)
+    previous = [backend.allow_tf32 for backend in backends]
+    try:
+        for backend in backends:
+            backend.allow_tf32 = False
+        yield
+    finally:
+        for backend, allow_tf32 in zip(backends, previous, strict=True):
+            backend.allow_tf32 = allow_tf32
+
+
+@pytest.fixture
+def calibrated_so2_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the calibration GPU's compute-to-bandwidth ratio for SO(2) dispatch."""
+    from deepmd.pt_expt.kernels.cuda.dpa4 import (
+        so2_conv,
+    )
+
+    monkeypatch.setattr(so2_conv, "_device_ridge_scale", lambda: 1.0)
