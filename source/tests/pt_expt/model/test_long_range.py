@@ -946,9 +946,8 @@ def test_change_bias_keeps_the_graph_lower(
 ) -> None:
     """change-bias rewrites a frozen long-range model on its graph lower.
 
-    A .pt2 archive that records the compact canonical lower, a form of CUDA
-    devices, is rewritten on the lower that the host selects, the graph lower
-    for this uncompressed model on any device.
+    An archive marked canonical cannot be regenerated on that ABI from this
+    uncompressed model. Refuse it before creating a different output.
     """
     config = _config("les")
     model = get_model(config).to(env.DEVICE).eval()
@@ -967,6 +966,11 @@ def test_change_bias_keeps_the_graph_lower(
         )
     bias = [0.5, -1.25]
     updated = tmp_path / f"long_range_updated{suffix}"
+    if recorded != "graph":
+        with pytest.raises(ValueError, match=f"Cannot preserve the {recorded} ABI"):
+            change_bias(str(frozen), bias_value=bias, output=str(updated))
+        assert not updated.exists()
+        return
     change_bias(str(frozen), bias_value=bias, output=str(updated))
     before = DeepPot(str(frozen), auto_batch_size=False)
     after = DeepPot(str(updated), auto_batch_size=False)

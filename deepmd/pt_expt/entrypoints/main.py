@@ -755,6 +755,7 @@ def change_bias(
         DEVICE,
     )
     from deepmd.pt_expt.utils.serialization import (
+        _resolve_target_lower_kind,
         deserialize_to_file,
         serialize_from_file,
     )
@@ -777,6 +778,11 @@ def change_bias(
         model_params = extra_state["model_params"]
     elif input_file.endswith((".pte", ".pt2")):
         pte_data = serialize_from_file(input_file)
+        if pte_data["lower_input_kind"] == "edge_vec":
+            raise ValueError(
+                "pt_expt change-bias cannot reproduce the edge_vec input ABI; "
+                "change the bias on the training checkpoint before PT freeze."
+            )
         from deepmd.pt_expt.model.model import (
             BaseModel,
         )
@@ -884,19 +890,24 @@ def change_bias(
             )
         )
         model_dict = model_to_change.serialize()
-        # The updated archive keeps the lower and the per-atom virial of the
-        # input archive, so that only the bias changes. A compact canonical
-        # lower serves CUDA devices alone and is selected anew for the host,
-        # as compression selects it: it stays on a CUDA device, and a host
-        # without one exports the graph lower.
         lower_kind = pte_data["lower_input_kind"]
-        if lower_kind == CANONICAL_LOWER_KIND:
-            lower_kind = "auto"
+        export_data = {"model": model_dict, "model_def_script": model_params}
+        if lower_kind == CANONICAL_LOWER_KIND and (
+            DEVICE.type != "cuda"
+            or _resolve_target_lower_kind(output_path, export_data, "auto")
+            != lower_kind
+        ):
+            raise ValueError(
+                f"Cannot preserve the {lower_kind} ABI on this export target"
+            )
+        if pte_data.get("has_comm_artifact") and not output_path.endswith(".pt2"):
+            raise ValueError("Preserving the with-comm artifact requires a .pt2 output")
         deserialize_to_file(
             output_path,
-            {"model": model_dict, "model_def_script": model_params},
+            export_data,
             do_atomic_virial=pte_data["do_atomic_virial"],
             lower_kind=lower_kind,
+            with_comm=pte_data.get("has_comm_artifact", False),
         )
     log.info(f"Saved model to {output_path}")
 
