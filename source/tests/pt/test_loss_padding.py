@@ -332,11 +332,133 @@ class TestPTDOSLossGlobalGradAccum:
         }
         without_mask = {"dos": pred}
         label_dict = {"dos": label, "find_dos": 1.0}
-        loss_m = self._loss_fn(with_mask, label_dict, NB)
-        loss_nm = self._loss_fn(without_mask, label_dict, NB)
+        loss_obj = self._make_loss()
+        _, loss_m, more_m = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(with_mask),
+            label=label_dict,
+            natoms=NB,
+            learning_rate=1.0,
+        )
+        _, loss_nm, more_nm = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(without_mask),
+            label=label_dict,
+            natoms=NB,
+            learning_rate=1.0,
+        )
         assert torch.isclose(loss_m, loss_nm), (
             f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
         )
+        assert torch.isclose(more_m["rmse_global_dos"], more_nm["rmse_global_dos"])
+        assert torch.isclose(more_m["rmse_global_cdf"], more_nm["rmse_global_cdf"])
+
+    def test_global_rmse_normalizes_per_frame_for_mixed_sizes(self):
+        """Global DOS and CDF RMSE normalize each frame by its own real atom count."""
+        loss_obj = self._make_loss()
+        mask_A = torch.ones(1, NA, dtype=torch.float64, device="cpu")
+        mask_B = torch.ones(1, NB, dtype=torch.float64, device="cpu")
+        mask_pad = torch.tensor(
+            [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB],
+            dtype=torch.float64,
+            device="cpu",
+        )
+
+        # Extensive error of 1.0 per real atom in both frames: [3, 5] -> RMSE == 1.0
+        pred_A = torch.full((1, NUMB_DOS), float(NA), dtype=torch.float64, device="cpu")
+        pred_B = torch.full((1, NUMB_DOS), float(NB), dtype=torch.float64, device="cpu")
+        zeros = torch.zeros(1, NUMB_DOS, dtype=torch.float64, device="cpu")
+        _, _, more_A = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"dos": pred_A, "mask": mask_A}),
+            label={"dos": zeros, "find_dos": 1.0},
+            natoms=NA,
+            learning_rate=1.0,
+        )
+        _, _, more_B = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"dos": pred_B, "mask": mask_B}),
+            label={"dos": zeros, "find_dos": 1.0},
+            natoms=NB,
+            learning_rate=1.0,
+        )
+        pred_pad = torch.cat([pred_A, pred_B], dim=0).clone().requires_grad_(True)
+        _, loss_pad, more_pad = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"dos": pred_pad, "mask": mask_pad}),
+            label={
+                "dos": torch.zeros(2, NUMB_DOS, dtype=torch.float64, device="cpu"),
+                "find_dos": 1.0,
+            },
+            natoms=NP,
+            learning_rate=1.0,
+        )
+        assert torch.isclose(
+            more_A["rmse_global_dos"],
+            torch.tensor(1.0, dtype=torch.float64, device="cpu"),
+        )
+        assert torch.isclose(
+            more_B["rmse_global_dos"],
+            torch.tensor(1.0, dtype=torch.float64, device="cpu"),
+        )
+        assert torch.isclose(
+            more_pad["rmse_global_dos"],
+            torch.tensor(1.0, dtype=torch.float64, device="cpu"),
+        )
+        assert torch.isclose(more_pad["rmse_global_cdf"], more_A["rmse_global_cdf"])
+        assert torch.isclose(more_A["rmse_global_cdf"], more_B["rmse_global_cdf"])
+        assert not more_pad["rmse_global_dos"].requires_grad
+        assert not more_pad["rmse_global_cdf"].requires_grad
+
+        # Training objective and gradients remain unchanged from plain unmasked mean
+        loss_pad.backward()
+        assert pred_pad.grad is not None
+        pred_ref = torch.cat([pred_A, pred_B], dim=0).clone().requires_grad_(True)
+        _, loss_ref, _ = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"dos": pred_ref}),
+            label={
+                "dos": torch.zeros(2, NUMB_DOS, dtype=torch.float64, device="cpu"),
+                "find_dos": 1.0,
+            },
+            natoms=NP,
+            learning_rate=1.0,
+        )
+        loss_ref.backward()
+        assert torch.equal(loss_pad, loss_ref)
+        assert torch.equal(pred_pad.grad, pred_ref.grad)
+
+        # General frames: batch RMSE equals RMS of per-frame normalized RMSEs
+        r_pred_A, r_label_A = _rnd_t(1, NUMB_DOS), _rnd_t(1, NUMB_DOS)
+        r_pred_B, r_label_B = _rnd_t(1, NUMB_DOS), _rnd_t(1, NUMB_DOS)
+        _, _, mA = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"dos": r_pred_A, "mask": mask_A}),
+            label={"dos": r_label_A, "find_dos": 1.0},
+            natoms=NA,
+            learning_rate=1.0,
+        )
+        _, _, mB = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"dos": r_pred_B, "mask": mask_B}),
+            label={"dos": r_label_B, "find_dos": 1.0},
+            natoms=NB,
+            learning_rate=1.0,
+        )
+        _, _, mPad = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(
+                {"dos": torch.cat([r_pred_A, r_pred_B], dim=0), "mask": mask_pad}
+            ),
+            label={"dos": torch.cat([r_label_A, r_label_B], dim=0), "find_dos": 1.0},
+            natoms=NP,
+            learning_rate=1.0,
+        )
+        for key in ("rmse_global_dos", "rmse_global_cdf"):
+            ref = torch.sqrt(0.5 * (mA[key] ** 2 + mB[key] ** 2))
+            assert torch.isclose(mPad[key], ref), (
+                f"{key}: got {mPad[key].item()}, expected {ref.item()}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -517,11 +639,144 @@ class TestPTTensorLossGlobalGradAccum:
         }
         without_mask = {"global_dipole": pred}
         label_dict = {"dipole": label, "find_dipole": 1.0}
-        loss_m = self._loss_fn(with_mask, label_dict, NB)
-        loss_nm = self._loss_fn(without_mask, label_dict, NB)
+        loss_obj = self._make_loss()
+        _, loss_m, more_m = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(with_mask),
+            label=label_dict,
+            natoms=NB,
+            learning_rate=1.0,
+        )
+        _, loss_nm, more_nm = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(without_mask),
+            label=label_dict,
+            natoms=NB,
+            learning_rate=1.0,
+        )
         assert torch.isclose(loss_m, loss_nm), (
             f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
         )
+        assert torch.isclose(
+            more_m["rmse_global_dipole"], more_nm["rmse_global_dipole"]
+        )
+
+    def test_global_rmse_normalizes_per_frame_for_mixed_sizes(self):
+        """Global tensor RMSE normalizes each frame by its own real atom count."""
+        loss_obj = self._make_loss()
+        mask_A = torch.ones(1, NA, dtype=torch.float64, device="cpu")
+        mask_B = torch.ones(1, NB, dtype=torch.float64, device="cpu")
+        mask_pad = torch.tensor(
+            [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB],
+            dtype=torch.float64,
+            device="cpu",
+        )
+
+        # Extensive error of 1.0 per real atom in both frames: [3, 5] -> RMSE == 1.0
+        pred_A = torch.full(
+            (1, TENSOR_SIZE), float(NA), dtype=torch.float64, device="cpu"
+        )
+        pred_B = torch.full(
+            (1, TENSOR_SIZE), float(NB), dtype=torch.float64, device="cpu"
+        )
+        zeros = torch.zeros(1, TENSOR_SIZE, dtype=torch.float64, device="cpu")
+        _, _, more_A = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"global_dipole": pred_A, "mask": mask_A}),
+            label={"dipole": zeros, "find_dipole": 1.0},
+            natoms=NA,
+            learning_rate=1.0,
+        )
+        _, _, more_B = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"global_dipole": pred_B, "mask": mask_B}),
+            label={"dipole": zeros, "find_dipole": 1.0},
+            natoms=NB,
+            learning_rate=1.0,
+        )
+        pred_pad = torch.cat([pred_A, pred_B], dim=0).clone().requires_grad_(True)
+        _, loss_pad, more_pad = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"global_dipole": pred_pad, "mask": mask_pad}),
+            label={
+                "dipole": torch.zeros(
+                    2, TENSOR_SIZE, dtype=torch.float64, device="cpu"
+                ),
+                "find_dipole": 1.0,
+            },
+            natoms=NP,
+            learning_rate=1.0,
+        )
+        assert torch.isclose(
+            more_A["rmse_global_dipole"],
+            torch.tensor(1.0, dtype=torch.float64, device="cpu"),
+        )
+        assert torch.isclose(
+            more_B["rmse_global_dipole"],
+            torch.tensor(1.0, dtype=torch.float64, device="cpu"),
+        )
+        assert torch.isclose(
+            more_pad["rmse_global_dipole"],
+            torch.tensor(1.0, dtype=torch.float64, device="cpu"),
+        )
+        assert not more_pad["rmse_global_dipole"].requires_grad
+
+        # Training objective and gradients remain unchanged from plain unmasked mean
+        loss_pad.backward()
+        assert pred_pad.grad is not None
+        pred_ref = torch.cat([pred_A, pred_B], dim=0).clone().requires_grad_(True)
+        _, loss_ref, _ = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"global_dipole": pred_ref}),
+            label={
+                "dipole": torch.zeros(
+                    2, TENSOR_SIZE, dtype=torch.float64, device="cpu"
+                ),
+                "find_dipole": 1.0,
+            },
+            natoms=NP,
+            learning_rate=1.0,
+        )
+        loss_ref.backward()
+        assert torch.equal(loss_pad, loss_ref)
+        assert torch.equal(pred_pad.grad, pred_ref.grad)
+
+        # General frames: batch RMSE equals RMS of per-frame normalized RMSEs
+        r_pred_A, r_label_A = _rnd_t(1, TENSOR_SIZE), _rnd_t(1, TENSOR_SIZE)
+        r_pred_B, r_label_B = _rnd_t(1, TENSOR_SIZE), _rnd_t(1, TENSOR_SIZE)
+        _, _, mA = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"global_dipole": r_pred_A, "mask": mask_A}),
+            label={"dipole": r_label_A, "find_dipole": 1.0},
+            natoms=NA,
+            learning_rate=1.0,
+        )
+        _, _, mB = loss_obj.forward(
+            input_dict={},
+            model=_MockModel({"global_dipole": r_pred_B, "mask": mask_B}),
+            label={"dipole": r_label_B, "find_dipole": 1.0},
+            natoms=NB,
+            learning_rate=1.0,
+        )
+        _, _, mPad = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(
+                {
+                    "global_dipole": torch.cat([r_pred_A, r_pred_B], dim=0),
+                    "mask": mask_pad,
+                }
+            ),
+            label={
+                "dipole": torch.cat([r_label_A, r_label_B], dim=0),
+                "find_dipole": 1.0,
+            },
+            natoms=NP,
+            learning_rate=1.0,
+        )
+        ref = torch.sqrt(
+            0.5 * (mA["rmse_global_dipole"] ** 2 + mB["rmse_global_dipole"] ** 2)
+        )
+        assert torch.isclose(mPad["rmse_global_dipole"], ref)
 
 
 # ---------------------------------------------------------------------------

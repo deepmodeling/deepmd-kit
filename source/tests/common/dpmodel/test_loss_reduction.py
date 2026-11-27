@@ -7,6 +7,7 @@ import pytest
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
     masked_atom_num,
+    masked_global_rmse,
     per_frame_component_mean,
 )
 
@@ -133,3 +134,31 @@ class TestMaskedAtomNum:
         got = masked_atom_num(torch.tensor(mask_np, device="cpu"), 3, torch.float32)
         ref = torch.tensor(mask_np, device="cpu").sum(-1).float().mean()
         assert got.item() == ref.item()
+
+
+class TestMaskedGlobalRmse:
+    """Display-only per-frame normalized global RMSE for mixed-size batches."""
+
+    def test_none_mask_matches_plain_rmse(self) -> None:
+        diff = np.array([[3.0, 6.0], [9.0, 12.0]])
+        got = masked_global_rmse(diff, None, 3)
+        np.testing.assert_allclose(got, np.sqrt(np.mean(diff**2)) / 3.0)
+
+    def test_mixed_sizes_normalizes_per_frame_numpy_and_torch(self) -> None:
+        diff = np.array([[3.0, 3.0, 3.0], [5.0, 5.0, 5.0]])
+        mask = np.array([[1.0, 1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0, 1.0]])
+        got_np = masked_global_rmse(diff, mask, 5)
+        got_pt = masked_global_rmse(
+            torch.tensor(diff, device="cpu"),
+            torch.tensor(mask, device="cpu"),
+            5,
+        )
+        np.testing.assert_allclose(got_np, 1.0, rtol=1e-14, atol=0)
+        np.testing.assert_allclose(got_pt.item(), 1.0, rtol=1e-14, atol=0)
+
+    def test_all_padding_frame_is_finite(self) -> None:
+        diff = np.array([[3.0, 3.0], [5.0, 5.0]])
+        mask = np.array([[0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0, 1.0]])
+        got = masked_global_rmse(diff, mask, 5)
+        assert np.isfinite(got)
+        np.testing.assert_allclose(got, np.sqrt(0.5), rtol=1e-14, atol=0)

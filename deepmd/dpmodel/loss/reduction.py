@@ -248,3 +248,45 @@ def masked_atom_num(mask: Array | None, natoms: Any, dtype: Any) -> Any:
         return natoms
     xp = array_api_compat.array_namespace(mask)
     return xp.mean(xp.astype(xp.sum(mask, axis=-1), dtype))
+
+
+def masked_global_rmse(diff: Array, mask: Array | None, natoms: Any) -> Array:
+    """Display-only per-atom RMSE for extensive global labels.
+
+    When ``mask`` is provided, each frame's mean squared error over components
+    is divided by its own real atom count squared before averaging across
+    frames and taking the square root:
+
+    ``sqrt(mean_over_frames(mean_over_components(diff**2) / real_natoms**2))``.
+
+    Frames with zero real atoms contribute a neutral ``0`` instead of ``inf``
+    or ``NaN``. When ``mask`` is ``None`` (or every frame has ``natoms`` real
+    atoms), this coincides with ``sqrt(mean(diff**2)) / natoms``.
+
+    Parameters
+    ----------
+    diff : Array
+        Per-frame residual tensor of shape ``[nf, k]``.
+    mask : Array or None
+        Per-atom mask of shape ``[nf, nloc]``, or ``None`` when not mixed_type.
+    natoms
+        Fallback atom count used when ``mask`` is ``None``.
+
+    Returns
+    -------
+    Array
+        Scalar per-atom RMSE display metric.
+    """
+    xp = (
+        array_api_compat.array_namespace(diff)
+        if mask is None
+        else array_api_compat.array_namespace(diff, mask)
+    )
+    if mask is None:
+        return xp.sqrt(xp.mean(xp.square(diff))) / natoms
+    real_natoms = xp.reshape(xp.astype(xp.sum(mask, axis=-1), diff.dtype), (-1,))
+    has_atoms = real_natoms > 0
+    safe_natoms = xp.where(has_atoms, real_natoms, xp.ones_like(real_natoms))
+    inv_natoms = xp.where(has_atoms, 1.0 / safe_natoms, xp.zeros_like(real_natoms))
+    per_frame_mse = per_frame_component_mean(xp.square(diff))
+    return xp.sqrt(xp.mean(per_frame_mse * xp.square(inv_natoms)))
