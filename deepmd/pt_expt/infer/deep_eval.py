@@ -2593,13 +2593,35 @@ class DeepEval(DeepEvalBackend):
             cc = torch.as_tensor(
                 coord_input, dtype=torch.float64, device=builder_device
             )
-            aa = torch.as_tensor(
-                np.asarray(atom_types), dtype=torch.int64, device=builder_device
-            )
             bb = (
                 torch.as_tensor(box_input, dtype=torch.float64, device=builder_device)
                 if box_input is not None
                 else None
+            )
+            if method == "vesin" and canonical and pair_excl is None:
+                from deepmd.pt_expt.utils.vesin_graph_builder import (
+                    build_canonical_graph_vesin,
+                )
+
+                # Only virtual-atom masking consumes types here. The caller
+                # transfers the model's own type input independently.
+                active = np.asarray(atom_types) >= 0
+                node_mask = (
+                    None
+                    if active.all()
+                    else torch.as_tensor(
+                        active, dtype=torch.bool, device=builder_device
+                    )
+                )
+                return build_canonical_graph_vesin(
+                    cc,
+                    bb.reshape(-1, 3, 3) if bb is not None else None,
+                    self._rcut,
+                    self._vesin_search,
+                    node_mask=node_mask,
+                )
+            aa = torch.as_tensor(
+                np.asarray(atom_types), dtype=torch.int64, device=builder_device
             )
             if method == "cell":
                 from deepmd.pt_expt.utils.cell_graph_builder import (
@@ -2616,20 +2638,9 @@ class DeepEval(DeepEvalBackend):
                 )
             if method == "vesin":
                 from deepmd.pt_expt.utils.vesin_graph_builder import (
-                    build_canonical_graph_vesin,
                     build_neighbor_graph_vesin,
                 )
 
-                if pair_excl is None and canonical:
-                    return build_canonical_graph_vesin(
-                        cc,
-                        bb.reshape(-1, 3, 3) if bb is not None else None,
-                        self._rcut,
-                        self._vesin_search,
-                        node_mask=aa >= 0
-                        if (np.asarray(atom_types) < 0).any()
-                        else None,
-                    )
                 return build_neighbor_graph_vesin(
                     cc,
                     aa,

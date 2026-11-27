@@ -564,13 +564,19 @@ def canonical_graph_from_pairs(
         All nodes are local; no coordinate differentiation is required.
     """
     edge_count = source.shape[0]
-    destination_order = torch.argsort(center, stable=True)
+    # Valid node ids fit signed int32 up through node_count == 2**31.
+    # Keep the public indices and permutation int64; narrow only radix keys.
+    destination_key = center.to(torch.int32) if node_count <= 2**31 else center
+    destination_order = torch.argsort(destination_key, stable=True)
+    del destination_key
     center = center.index_select(0, destination_order)
     source = source.index_select(0, destination_order)
     edge_vec = edge_vec.index_select(0, destination_order).to(torch.float32)
     boundaries = torch.arange(node_count + 1, dtype=torch.int64, device=source.device)
     destination_row_ptr = torch.searchsorted(center, boundaries)
-    source_order = torch.argsort(source, stable=True)
+    source_key = source.to(torch.int32) if node_count <= 2**31 else source
+    source_order = torch.argsort(source_key, stable=True)
+    del source_key
     source_row_ptr = torch.searchsorted(
         source.index_select(0, source_order), boundaries
     )

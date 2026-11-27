@@ -194,16 +194,62 @@ def test_edge_storage_range_is_independent_of_node_width(
 def test_pairs_choose_width_from_node_extent(
     node_count: int, expected_dtype: torch.dtype
 ) -> None:
-    graph = canonical_graph_from_pairs(
-        torch.empty(2, dtype=torch.int64, device="meta"),
-        torch.empty(2, dtype=torch.int64, device="meta"),
-        torch.empty(2, 3, dtype=torch.float32, device="meta"),
-        torch.empty(1, dtype=torch.int64, device="meta"),
-        node_count,
+    # Meta tensors check the 2**31 boundary without allocating a giant CSR.
+    with mock.patch.object(torch, "argsort", wraps=torch.argsort) as argsort:
+        graph = canonical_graph_from_pairs(
+            torch.empty(2, dtype=torch.int64, device="meta"),
+            torch.empty(2, dtype=torch.int64, device="meta"),
+            torch.empty(2, 3, dtype=torch.float32, device="meta"),
+            torch.empty(1, dtype=torch.int64, device="meta"),
+            node_count,
+        )
+    expected_key_dtype = torch.int32 if node_count <= INT32_MAX + 1 else torch.int64
+    assert len(argsort.call_args_list) == 2
+    assert all(
+        call.args[0].dtype == expected_key_dtype for call in argsort.call_args_list
     )
     assert graph.source.dtype == expected_dtype
     assert graph.source_order.dtype == torch.int64
     validate_canonical_graph_shapes(graph, node_count)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("edge_count", [0, 1, 2, 6])
+@pytest.mark.parametrize("strided", [False, True])
+def test_pairs_keep_stable_ties_and_int64_permutations(
+    device: str, edge_count: int, strided: bool
+) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+    center = torch.tensor([3, 1, 1, 3, 0, 1], device=device)[:edge_count]
+    source = torch.tensor([2, 2, 2, 0, 1, 2], device=device)[:edge_count]
+    if strided:
+        center = torch.stack((center, center), dim=1)[:, 0]
+        source = torch.stack((source, source), dim=1)[:, 0]
+    vector = torch.arange(edge_count * 3, dtype=torch.float64, device=device).reshape(
+        -1, 3
+    )
+    order = torch.argsort(center, stable=True)
+    sorted_source = source.index_select(0, order)
+    source_order = torch.argsort(sorted_source, stable=True)
+    graph = canonical_graph_from_pairs(
+        center, source, vector, torch.tensor([2, 2], device=device), 4
+    )
+    assert graph.source_order.dtype == torch.int64
+    assert torch.equal(graph.source[:edge_count].to(torch.int64), sorted_source)
+    assert torch.equal(
+        graph.edge_vec[:edge_count], vector.index_select(0, order).float()
+    )
+    assert torch.equal(graph.source_order[:edge_count], source_order)
+    boundaries = torch.arange(5, device=device)
+    assert torch.equal(
+        graph.destination_row_ptr,
+        torch.searchsorted(center.index_select(0, order), boundaries),
+    )
+    assert torch.equal(
+        graph.source_row_ptr,
+        torch.searchsorted(sorted_source.index_select(0, source_order), boundaries),
+    )
 
 
 @pytest.mark.parametrize("dtype", [torch.uint32, torch.int32, torch.int64])

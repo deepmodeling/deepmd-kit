@@ -248,6 +248,10 @@ def build_canonical_graph_vesin(
             center = center.index_select(0, indices)
             source = source.index_select(0, indices)
             edge_vec = edge_vec.index_select(0, indices)
+        # Deployment consumes FP32 geometry. Narrow after filtering but before
+        # concatenation/sorting, so neither discarded edges nor a sorted FP64
+        # copy need a separate conversion in canonical_graph_from_pairs.
+        edge_vec = edge_vec.to(torch.float32)
         if frame:
             center = center + frame * nloc
             source = source + frame * nloc
