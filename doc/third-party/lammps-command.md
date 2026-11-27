@@ -264,7 +264,7 @@ The model deviation of the force and the magnetic force is written as by [pair_s
 
 ### Restrictions
 
-- The `dpa4spin` pair style requires `atom_style spin`, and on a single MPI rank an atom map (`atom_modify map yes`).
+- The `dpa4spin` pair style requires `units metal`, `atom_style spin`, and on a single MPI rank an atom map (`atom_modify map yes`).
 - The `dpa4spin` pair style passes no frame or atomic parameters, so a native-spin model with atomic parameters, or with frame parameters that have no default, runs with [pair_style `deepspin`](#pair_style-deepspin), as does a spin model of the virtual-atom scheme.
 - `dpa4spin/kk` requires archives of the compact canonical lower, which a compressed DPA4C model and a single-precision DPA4 model frozen with `dp --pt-expt freeze` on a CUDA device carry, for every model of an ensemble, and LAMMPS 4 Jul 2026 or newer with the KOKKOS package on the GPU backend. Earlier releases can corrupt ghost spin-field communication and migrated atom velocities.
 - In [plugin mode](../install/install-lammps.md#install-lammps-plugin-mode), `dpa4spin/kk` requires a DeePMD-kit plugin built with `DEEPMD_LAMMPS_KOKKOS=ON`.

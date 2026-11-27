@@ -650,7 +650,7 @@ communication and host/device synchronization. Build the DeePMD-kit plugin
 against the same LAMMPS and Kokkos build used to run it; see the
 [Kokkos build instructions](../install/install-lammps.md#install-lammps-plugin-mode).
 
-The pair styles store the magnetic force in the convention of the LAMMPS SPIN
+Both pair styles require `units metal`. The pair styles store the magnetic force in the convention of the LAMMPS SPIN
 package: the negative energy gradient `-dE/dS` with respect to the moment, all
 three components of it, scaled by the moment magnitude over `hbar`.
 `min_style spin` reads this force and relaxes the moment directions. The TSPIN
