@@ -22,6 +22,53 @@ The {ref}`optimizer <optimizer>` section in `input.json` is given as follows
 - {ref}`adam_beta1 <optimizer[Adam]/adam_beta1>` and {ref}`adam_beta2 <optimizer[Adam]/adam_beta2>` control the Adam/AdamW moment decay.
 - {ref}`weight_decay <optimizer[Adam]/weight_decay>` applies L2 penalty in Adam, while {ref}`weight_decay <optimizer[AdamW]/weight_decay>` is decoupled in AdamW. TensorFlow does not support weight decay in Adam.
 
+### HybridMuon with PhysMuon
+
+For the PyTorch backends (`--pt` and `--pt-expt`), {ref}`HybridMuon <optimizer[HybridMuon]>` optionally supports [PhysMuon](https://github.com/Hyyu-Lab/PhysMuon) ([arXiv:2608.22994](https://arxiv.org/abs/2608.22994)) on its Muon route: two-mode relaxation memory, oscillation-gated readout, step-0 background tracking, an optional multi-rank DDP fluctuation-calibrated output budget, and an optional running-median spike guard. All PhysMuon options default to off (`"physmuon": false`), keeping baseline `HybridMuon` (including parameter routing, Newton-Schulz, Magma-lite, and CUDA graphs) bit-for-bit unchanged.
+
+Keep your tuned `HybridMuon` learning rate, schedule, `weight_decay`, and `momentum`, and enable it via:
+
+```json
+    "optimizer": {
+        "type": "HybridMuon",
+        "physmuon": true
+    }
+```
+
+| Option (`optimizer.*`)  | Default  | Description & tuning guidance                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `physmuon`              | `false`  | Master switch on the Muon route (`false` keeps baseline `HybridMuon` bit-for-bit unchanged).                                                                                                                                                                                                                                                                          |
+| `physmuon_start_ratio`  | `0.3077` | Fraction of `numb_steps` at which two-mode readout activates (~30% of training, after the early transient). Ignored if `physmuon_start_step` is set.                                                                                                                                                                                                                  |
+| `physmuon_start_step`   | `null`   | Explicit 0-based optimizer step to activate two-mode readout (overrides `physmuon_start_ratio`).                                                                                                                                                                                                                                                                      |
+| `physmuon_beta_fast`    | `0.90`   | Fast-mode EMA decay (mean memory $\beta / (1 - \beta) = 9$ steps). Keep `0.90` (try `0.85` on smaller batches).                                                                                                                                                                                                                                                       |
+| `physmuon_beta_slow`    | `0.995`  | Slow-mode EMA decay (mean memory $199$ steps). **Primary knob:** scales with effective batch size (e.g., `0.98` ≈ 49 steps for smaller batches; scan roughly 50–350 steps).                                                                                                                                                                                           |
+| `physmuon_gate`         | `true`   | Enable per-tensor oscillation-gated fast-mode readout. Set `false` with `physmuon_w_fast: 0.0` for a staged fast-to-slow schedule.                                                                                                                                                                                                                                    |
+| `physmuon_w_max`        | `0.3`    | Upper bound on the gated fast-mode weight when `physmuon_gate` is `true` (interatomic-potential default).                                                                                                                                                                                                                                                             |
+| `physmuon_w_fast`       | `0.3`    | Fixed fast-mode weight used only when `physmuon_gate` is `false` (`0.0` = slow mode only after switch).                                                                                                                                                                                                                                                               |
+| `physmuon_gate_beta`    | `0.9`    | EMA decay for gate oscillation/drift statistics (fixed default; nearly flat over `0.80–0.95`).                                                                                                                                                                                                                                                                        |
+| `physmuon_shadow`       | `true`   | Track fast/slow modes and gate statistics from step 0 before the switch step (eliminates cold-start mismatch).                                                                                                                                                                                                                                                        |
+| `physmuon_budget`       | `false`  | Enable fluctuation-calibrated output budget (change 2): weights Newton–Schulz inputs and outputs by diagonal channel metrics estimated via a DDP hook. Requires multi-rank DDP (`zero_stage` 0 or 1, >= 2 ranks).                                                                                                                                                     |
+| `physmuon_budget_lam`   | `0.5`    | Exponent $\lambda \ge 0$ for the output-budget channel metric `(heat / mean(heat)) ** lam`.                                                                                                                                                                                                                                                                           |
+| `physmuon_budget_clamp` | `2.0`    | Symmetric clamp bound $c \ge 1$ keeping output-budget channel metrics in $[1/c, c]$.                                                                                                                                                                                                                                                                                  |
+| `physmuon_budget_beta`  | `0.95`   | EMA decay in `[0, 1)` for row/column gradient-fluctuation statistics.                                                                                                                                                                                                                                                                                                 |
+| `physmuon_spike_guard`  | `0.0`    | Slow-mode spike threshold $K$ (`0.0` disables; negative values raise `ValueError`). Set e.g. `10.0` on large crystal datasets with rare extreme force spikes (e.g., MPtrj): non-finite norms are flagged immediately, and after `min(100, physmuon_spike_window)` finite steps with a positive median, steps exceeding $K\times$ running median freeze the slow mode. |
+| `physmuon_spike_window` | `1000`   | Sliding window length (steps) for the spike-guard running median.                                                                                                                                                                                                                                                                                                     |
+
+**Recommended starting presets** (on top of `"type": "HybridMuon", "physmuon": true`):
+
+- **General MLIP (default):** no extra keys (`0.90` / `0.995`, gated `w_max: 0.3`, switch at `30.77%`).
+- **Large crystal datasets with heavy-tailed force spikes (e.g., MPtrj, multi-GPU DDP):** add `"physmuon_budget": true, "physmuon_spike_guard": 10.0` (omit `"physmuon_budget"` on single-GPU or FSDP2 runs).
+- **Smaller-batch MLIP (~256 atoms/step):** add `"physmuon_beta_fast": 0.85, "physmuon_beta_slow": 0.98`.
+- **Large-batch staged (slow-only after switch):** add `"physmuon_gate": false, "physmuon_w_fast": 0.0` (e.g., `physmuon_beta_slow: 0.9942` for ~170 steps or `0.9959` for ~240 steps).
+
+**Quick tuning guide for a new task:**
+
+1. Keep your tuned `HybridMuon` `lr`, schedule, `weight_decay`, and baseline `momentum` unchanged.
+1. Keep the fixed and task-family defaults unchanged (`physmuon_gate_beta: 0.9`, `physmuon_shadow: true`, `physmuon_gate: true`, `physmuon_w_max: 0.3`, `physmuon_start_ratio: 0.3077`); add `physmuon_spike_guard: 10.0` if logs show rare extreme pre-clip gradient norms.
+1. Tune only `physmuon_beta_slow` to your task and effective batch size: mean memory length $L = \beta / (1 - \beta)$ steps (equivalently $\beta = L / (L + 1)$). Scan 3–4 values over roughly an order of magnitude—e.g., $L \in \{50, 100, 200, 350\}$ (`physmuon_beta_slow`: `0.9804`, `0.9901`, `0.9950`, `0.9972`); optimal $L$ grows with effective batch size.
+
+For the separate trainer-level fluctuation-calibrated budget and full paper benchmarks, see the [PhysMuon repository](https://github.com/Hyyu-Lab/PhysMuon).
+
 ## Training parameters
 
 Other training parameters are given in the {ref}`training <training>` section.

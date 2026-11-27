@@ -104,6 +104,15 @@ References
        Context Intelligence," 2026. Section 2.4 introduces the two-stage
        hybrid Newton-Schulz (8 fast + 2 polish iterations) and uses
        gamma=0.18 for update-RMS rescaling with AdamW ε=1e-20.
+.. [8] Y. Hu, H. Xiang, X. Gong, and H. Yu, "A Physical Response-and-Memory
+       Model for Muon Optimization," arXiv:2608.22994, 2026.
+       https://arxiv.org/abs/2608.22994
+       https://github.com/Hyyu-Lab/PhysMuon
+       Extends Muon with the two-timescale relaxation memory and optional
+       fluctuation-calibrated output budget from [8] together with the
+       extensions from the reference implementation (Hyyu-Lab/PhysMuon):
+       oscillation-gated readout, step-0 background tracking, and an optional
+       running-median spike guard for heavy-tailed gradients.
 """
 
 from __future__ import (
@@ -121,6 +130,7 @@ from typing import (
 
 import torch
 import torch._dynamo.config as _dynamo_config
+import torch.distributed as dist
 from torch.optim.optimizer import (
     Optimizer,
 )
@@ -135,6 +145,7 @@ if TYPE_CHECKING:
     from collections.abc import (
         Callable,
         Iterable,
+        Mapping,
         Sequence,
     )
 
@@ -225,6 +236,236 @@ MAGMA_EPS: float = 1e-12
 MAGMA_SIGMOID_MIN: float = 1.0 / (1.0 + math.exp(1.0 / MAGMA_TAU))
 MAGMA_SIGMOID_MAX: float = 1.0 / (1.0 + math.exp(-1.0 / MAGMA_TAU))
 CUDA_GRAPH_WARMUP_STEPS: int = 2
+# PhysMuon constants (two-mode relaxation memory, output budget, gated readout, spike guard)
+PHYSMUON_EPS: float = 1e-20
+PHYSMUON_BUDGET_EPS: float = 1e-30
+PHYSMUON_BUDGET_NORM_EPS: float = 1e-12
+PHYSMUON_SPIKE_WARMUP: int = 100
+_PHYSMUON_CONFIG_KEYS: tuple[str, ...] = (
+    "physmuon",
+    "physmuon_start_step",
+    "physmuon_beta_fast",
+    "physmuon_beta_slow",
+    "physmuon_w_fast",
+    "physmuon_gate",
+    "physmuon_w_max",
+    "physmuon_gate_beta",
+    "physmuon_shadow",
+    "physmuon_budget",
+    "physmuon_budget_lam",
+    "physmuon_budget_clamp",
+    "physmuon_budget_beta",
+    "physmuon_spike_guard",
+    "physmuon_spike_window",
+)
+
+
+def _compute_budget_inv_sqrt(
+    heat: torch.Tensor,
+    lam: float,
+    clamp: float,
+) -> torch.Tensor:
+    """Compute ``g^{-1/2}`` or ``h^{-1/2}`` diagonal budget metric factors.
+
+    Given row or column gradient-fluctuation EMA ``heat`` of shape
+    ``(batch_size, dim)``, normalizes by the per-slice channel mean, raises
+    to ``lam``, clamps to ``[1 / clamp, clamp]``, and returns the inverse
+    square root.
+    """
+    mean = heat.mean(dim=-1, keepdim=True).clamp_min(PHYSMUON_BUDGET_EPS)
+    metric = (heat / mean).clamp_min(PHYSMUON_BUDGET_EPS).pow(lam)
+    return metric.clamp(1.0 / clamp, clamp).rsqrt()
+
+
+def _apply_budget_post_scale(
+    orth_slice: torch.Tensor,
+    bi: torch.Tensor,
+    ai: torch.Tensor,
+    active_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Apply post-NS output-budget weighting ``B^{-1/2} P A^{-1/2}`` with norm preservation."""
+    p_fp32 = orth_slice.float()
+    d_fp32 = p_fp32 * bi[:, :, None] * ai[:, None, :]
+    p_norm = p_fp32.norm(dim=(-2, -1), keepdim=True)
+    d_norm = d_fp32.norm(dim=(-2, -1), keepdim=True)
+    scaled = (d_fp32 * (p_norm / (d_norm + PHYSMUON_BUDGET_NORM_EPS))).to(
+        dtype=orth_slice.dtype
+    )
+    return torch.where(active_mask, scaled, orth_slice)
+
+
+class DDPPhysMuonBudgetHook:
+    """DDP communication hook measuring per-channel gradient fluctuations for Change 2.
+
+    During DDP backward all-reduce, records each Muon-routed matrix parameter's
+    rank-local squared deviation ``(g_rank - g_mean)^2`` averaged across columns
+    and rows. Calling :meth:`sync_to_optimizer` before ``optimizer.step()``
+    averages these vectors across ranks in one collective and stages them into
+    the local ``HybridMuonOptimizer`` (compatible with both ``zero_stage=0``
+    and ``zero_stage=1`` / ``ZeroRedundancyOptimizer``).
+    """
+
+    def __init__(
+        self,
+        ddp_module: torch.nn.parallel.DistributedDataParallel,
+        optimizer: HybridMuonOptimizer,
+    ) -> None:
+        self.optimizer = optimizer
+        self.process_group = getattr(ddp_module, "process_group", None)
+        self._tracked_params: list[torch.nn.Parameter] = []
+        self._tracked_specs: dict[int, tuple[int, int, int]] = {}
+        self._raw: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+
+        param_modes: dict[int, str] = {}
+        for group in optimizer.param_groups:
+            mode = str(group.get("muon_mode", optimizer.defaults["muon_mode"]))
+            for param in group["params"]:
+                param_modes[id(param)] = mode
+        default_mode = str(optimizer.defaults["muon_mode"])
+
+        for name, param in ddp_module.module.named_parameters():
+            if not param.requires_grad:
+                continue
+            param_name = optimizer._param_name_map.get(id(param), name)
+            if get_adam_route(param_name) != "muon":
+                continue
+            eff_shape = get_effective_shape(param.shape)
+            if len(eff_shape) < 2:
+                continue
+            muon_mode = param_modes.get(id(param), default_mode)
+            mat_shape = get_matrix_view_shape(eff_shape, muon_mode)
+            if mat_shape is None or optimizer._matches_adam_pattern(param_name):
+                continue
+            self._tracked_params.append(param)
+            self._tracked_specs[id(param)] = mat_shape
+
+        ddp_module.register_comm_hook(state=self, hook=_ddp_physmuon_budget_comm_hook)
+
+    def sync_to_optimizer(self, optimizer: HybridMuonOptimizer | None = None) -> None:
+        """Average captured per-rank fluctuation estimates and stage them for ``step()``."""
+        target = self.optimizer if optimizer is None else optimizer
+        raw = self._raw
+        if not raw:
+            return
+        self._raw = {}
+        order = [p for p in self._tracked_params if id(p) in raw]
+        if not order:
+            return
+
+        pieces: list[torch.Tensor] = []
+        for param in order:
+            r_raw, c_raw = raw[id(param)]
+            pieces.append(r_raw.reshape(-1))
+            pieces.append(c_raw.reshape(-1))
+        flat = torch.cat(pieces)
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(flat, group=self.process_group)
+            flat.div_(dist.get_world_size(self.process_group))
+
+        owned = {id(p) for group in target.param_groups for p in group["params"]}
+        fluctuations: dict[torch.nn.Parameter, tuple[torch.Tensor, torch.Tensor]] = {}
+        off = 0
+        for param in order:
+            r_raw, c_raw = raw[id(param)]
+            rn, cn = r_raw.numel(), c_raw.numel()
+            if id(param) in owned:
+                fluctuations[param] = (
+                    flat[off : off + rn].view_as(r_raw),
+                    flat[off + rn : off + rn + cn].view_as(c_raw),
+                )
+            off += rn + cn
+        if fluctuations:
+            target.observe_grad_fluctuations(fluctuations)
+
+
+def _ddp_physmuon_budget_comm_hook(
+    state: DDPPhysMuonBudgetHook,
+    bucket: dist.GradBucket,
+) -> torch.futures.Future[torch.Tensor]:
+    """DDP allreduce hook that also captures per-rank gradient variance means."""
+    buf = bucket.buffer()
+    world = dist.get_world_size(state.process_group)
+    if not state.optimizer.should_track_grad_fluctuations():
+        return (
+            dist.all_reduce(buf.div_(world), group=state.process_group, async_op=True)
+            .get_future()
+            .then(lambda f: f.value()[0])
+        )
+
+    params = bucket.parameters()
+    grads = bucket.gradients()
+    tracked_items: list[
+        tuple[
+            int,
+            tuple[int, int, int],
+            int,
+            int,
+            torch.Tensor | None,
+            torch.Tensor | None,
+        ]
+    ] = []
+    needs_buf_clone = False
+    buf_offset = buf.storage_offset()
+    buf_numel = buf.numel()
+
+    for param, grad_view in zip(params, grads, strict=True):
+        spec = state._tracked_specs.get(id(param))
+        if spec is None:
+            continue
+        numel = param.numel()
+        rel_offset = grad_view.storage_offset() - buf_offset
+        if (
+            grad_view.is_contiguous()
+            and grad_view.dtype == buf.dtype
+            and 0 <= rel_offset
+            and rel_offset + numel <= buf_numel
+        ):
+            needs_buf_clone = True
+            tracked_items.append((id(param), spec, rel_offset, numel, None, None))
+        else:
+            tracked_items.append(
+                (id(param), spec, -1, numel, grad_view.detach().clone(), grad_view)
+            )
+
+    local_buf = buf.detach().clone() if needs_buf_clone else None
+    fut = dist.all_reduce(
+        buf.div_(world), group=state.process_group, async_op=True
+    ).get_future()
+    if not tracked_items:
+        return fut.then(lambda f: f.value()[0])
+
+    def _after(f: torch.futures.Future[torch.Tensor]) -> torch.Tensor:
+        mean = f.value()[0]
+        with torch.no_grad():
+            for pid, spec, offset, numel, local_g, mean_view in tracked_items:
+                if offset >= 0:
+                    assert local_buf is not None
+                    diff = (
+                        (
+                            local_buf[offset : offset + numel]
+                            - mean[offset : offset + numel]
+                        )
+                        .float()
+                        .view(spec)
+                    )
+                else:
+                    assert local_g is not None and mean_view is not None
+                    diff = (local_g - mean_view).float().view(spec)
+                sq = diff * diff
+                state._raw[pid] = (sq.mean(dim=-1), sq.mean(dim=-2))
+        return mean
+
+    return fut.then(_after)
+
+
+# PEP 563 (``from __future__ import annotations``) stringifies annotations,
+# which trips ``DDP._check_comm_hook`` unless the runtime annotation objects
+# match ``dist.GradBucket`` and ``torch.futures.Future[torch.Tensor]``.
+if hasattr(dist, "GradBucket"):
+    _ddp_physmuon_budget_comm_hook.__annotations__["bucket"] = dist.GradBucket
+    _ddp_physmuon_budget_comm_hook.__annotations__["return"] = torch.futures.Future[
+        torch.Tensor
+    ]
 
 
 _GradientSignature = tuple[int, ...]
@@ -953,6 +1194,81 @@ class HybridMuonOptimizer(Optimizer):
         Adam/AdamW paths are unchanged. Empirically beneficial for
         MLIP / SeZM training under heavy-tailed gradient noise from
         conservative-force (second-order) autograd.
+    physmuon : bool
+        Enable the optimizer-side PhysMuon extensions on the Muon route [8]:
+        two relaxation modes (change 1), oscillation-gated readout (change 3),
+        step-0 background tracking (change 4), and an optional spike guard.
+        When False (default), HybridMuon uses its standard single-EMA
+        momentum bit-for-bit. When True, from ``physmuon_start_step`` onward
+        the Muon momentum is replaced by a convex combination of a fast EMA
+        (``physmuon_beta_fast``) and a slow EMA (``physmuon_beta_slow``).
+        Parameter routing (including ``adam_``/``adamw_`` prefixes and
+        ``adam_patterns``), Adam/AdamW paths, Newton-Schulz orthogonalization,
+        Magma-lite damping, and weight decay are unchanged.
+    physmuon_start_step : int
+        Zero-based optimizer step at which the Muon readout switches from
+        the baseline single-EMA momentum to the two-mode memory. Default 0
+        when constructed directly; the DeePMD-kit trainer computes it from
+        ``physmuon_start_ratio * num_steps`` unless explicitly overridden.
+    physmuon_beta_fast : float
+        EMA decay of the fast relaxation mode. Default 0.90.
+    physmuon_beta_slow : float
+        EMA decay of the slow relaxation mode. Default 0.995.
+    physmuon_w_fast : float
+        Fixed fast-mode readout weight used when ``physmuon_gate=False``.
+        Setting ``physmuon_w_fast=0.0`` with ``physmuon_gate=False`` gives a
+        staged fast-to-slow schedule (baseline momentum before
+        ``physmuon_start_step``, slow mode alone afterward). Default 0.3.
+    physmuon_gate : bool
+        Enable oscillation-gated readout (change 3 in [8]) to adapt the
+        fast-mode weight per parameter tensor as
+        ``w = physmuon_w_max * clamp(1 - rho_f * o / d, 0, 1)``, where
+        ``rho_f = (1 - beta_fast) / (1 + beta_fast)``, ``o`` is the EMA of
+        ``max(0, -cos(g, m_fast))``, and ``d`` is the EMA of
+        ``||m_slow|| / ||g||``. Default True.
+    physmuon_w_max : float
+        Upper bound on the gated fast-mode weight when
+        ``physmuon_gate=True``. Default 0.3 (recommended for interatomic
+        potentials).
+    physmuon_gate_beta : float
+        EMA decay for the gate oscillation and drift statistics. Default 0.9.
+    physmuon_shadow : bool
+        Track the fast/slow modes and gate statistics from step 0 (change 4
+        in [8]). Before ``physmuon_start_step``, the parameter update stays
+        identical to baseline HybridMuon while the two modes warm up in the
+        background. When False, both modes are seeded from the live
+        single-EMA momentum buffer at ``physmuon_start_step``. Default True.
+    physmuon_budget : bool
+        Enable fluctuation-calibrated output budget (change 2 in [8]). When
+        True and gradient fluctuation statistics are supplied (automatically
+        via :meth:`register_ddp_budget_hook` under multi-rank DDP, or manually
+        via :meth:`observe_grad_fluctuations`), weights Newton-Schulz inputs
+        and outputs by diagonal channel metrics ``g^{-1/2}`` and ``h^{-1/2}``
+        built from row/column gradient-noise variance EMAs, preserving the
+        orthogonalized Frobenius norm. Requires ``physmuon=True``. Default
+        False.
+    physmuon_budget_lam : float
+        Exponent ``lambda >= 0`` for the output-budget channel metric
+        ``(heat / mean(heat)) ** lambda``. Default 0.5.
+    physmuon_budget_clamp : float
+        Symmetric clamp bound ``c >= 1`` restricting the output-budget metric
+        entries to ``[1 / c, c]``. Default 2.0.
+    physmuon_budget_beta : float
+        EMA decay in ``[0, 1)`` for the row and column gradient-fluctuation
+        statistics. Default 0.95.
+    physmuon_spike_guard : float
+        Optional heavy-tailed gradient safeguard threshold ``K`` (``0.0``
+        disables; negative values raise ``ValueError``). When ``> 0.0`` (e.g.,
+        ``10.0`` on large crystal datasets with heavy-tailed force gradients
+        such as MPtrj), non-finite norms are flagged immediately, and once
+        ``min(100, physmuon_spike_window)`` finite norms have been recorded
+        with a positive running median, any step whose pre-clip global
+        gradient norm exceeds ``K`` times that median leaves the slow mode
+        unchanged while the fast mode and Nesterov term proceed normally.
+        Default 0.0.
+    physmuon_spike_window : int
+        Sliding window size (in steps) for the spike-guard running median.
+        Default 1000.
 
     Examples
     --------
@@ -979,6 +1295,21 @@ class HybridMuonOptimizer(Optimizer):
         magma_muon: bool = True,
         use_foreach: bool | None = None,
         adam_patterns: Sequence[str] = (),
+        physmuon: bool = False,
+        physmuon_start_step: int = 0,
+        physmuon_beta_fast: float = 0.90,
+        physmuon_beta_slow: float = 0.995,
+        physmuon_w_fast: float = 0.3,
+        physmuon_gate: bool = True,
+        physmuon_w_max: float = 0.3,
+        physmuon_gate_beta: float = 0.9,
+        physmuon_shadow: bool = True,
+        physmuon_budget: bool = False,
+        physmuon_budget_lam: float = 0.5,
+        physmuon_budget_clamp: float = 2.0,
+        physmuon_budget_beta: float = 0.95,
+        physmuon_spike_guard: float = 0.0,
+        physmuon_spike_window: int = 1000,
     ) -> None:
         # === Step 1. Validate routing mode ===
         muon_mode = str(muon_mode).lower()
@@ -998,8 +1329,38 @@ class HybridMuonOptimizer(Optimizer):
             "muon_mode": muon_mode,
             "enable_gram": bool(enable_gram),
             "magma_muon": bool(magma_muon),
+            "physmuon": bool(physmuon),
+            "physmuon_start_step": int(physmuon_start_step),
+            "physmuon_beta_fast": float(physmuon_beta_fast),
+            "physmuon_beta_slow": float(physmuon_beta_slow),
+            "physmuon_w_fast": float(physmuon_w_fast),
+            "physmuon_gate": bool(physmuon_gate),
+            "physmuon_w_max": float(physmuon_w_max),
+            "physmuon_gate_beta": float(physmuon_gate_beta),
+            "physmuon_shadow": bool(physmuon_shadow),
+            "physmuon_budget": bool(physmuon_budget),
+            "physmuon_budget_lam": float(physmuon_budget_lam),
+            "physmuon_budget_clamp": float(physmuon_budget_clamp),
+            "physmuon_budget_beta": float(physmuon_budget_beta),
+            "physmuon_spike_guard": float(physmuon_spike_guard),
+            "physmuon_spike_window": int(physmuon_spike_window),
         }
         super().__init__(params, defaults)
+        for group in self.param_groups:
+            self._validate_physmuon_group(group)
+
+        # Optional pre-clip global gradient norm supplied by the trainer
+        # before step() (used only when physmuon_spike_guard > 0).
+        self._pending_grad_norm: torch.Tensor | float | None = None
+        # Optional per-parameter (row_var, col_var) fluctuation observations
+        # supplied before step() when physmuon_budget=True, plus persistent
+        # device staging buffers for CUDA-graph replay.
+        self._pending_fluctuations: (
+            Mapping[torch.nn.Parameter, tuple[torch.Tensor, torch.Tensor]] | None
+        ) = None
+        self._budget_inputs: dict[
+            int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ] = {}
 
         # === Step 3. Build parameter id -> name mapping ===
         # Name patterns, like the names themselves, are routing configuration
@@ -1076,6 +1437,209 @@ class HybridMuonOptimizer(Optimizer):
         }
         self._routing_built = False
 
+    @staticmethod
+    def _validate_physmuon_group(group: dict[str, Any]) -> None:
+        """Validate PhysMuon hyperparameters for a parameter group."""
+        if int(group.get("physmuon_start_step", 0)) < 0:
+            raise ValueError(
+                f"physmuon_start_step must be >= 0, got {group['physmuon_start_step']}."
+            )
+        for key in ("physmuon_beta_fast", "physmuon_beta_slow", "physmuon_gate_beta"):
+            val = float(group.get(key, 0.0))
+            if not (0.0 <= val < 1.0):
+                raise ValueError(f"{key} must be in [0, 1), got {val}.")
+        for key in ("physmuon_w_fast", "physmuon_w_max"):
+            val = float(group.get(key, 0.0))
+            if not (0.0 <= val <= 1.0):
+                raise ValueError(f"{key} must be in [0, 1], got {val}.")
+        budget_lam = float(group.get("physmuon_budget_lam", 0.5))
+        if not math.isfinite(budget_lam) or budget_lam < 0.0:
+            raise ValueError(
+                f"physmuon_budget_lam must be finite and >= 0, got {budget_lam}."
+            )
+        budget_clamp = float(group.get("physmuon_budget_clamp", 2.0))
+        if not math.isfinite(budget_clamp) or budget_clamp < 1.0:
+            raise ValueError(
+                f"physmuon_budget_clamp must be finite and >= 1, got {budget_clamp}."
+            )
+        budget_beta = float(group.get("physmuon_budget_beta", 0.95))
+        if not math.isfinite(budget_beta) or not (0.0 <= budget_beta < 1.0):
+            raise ValueError(
+                f"physmuon_budget_beta must be in [0, 1), got {budget_beta}."
+            )
+        spike_guard = float(group.get("physmuon_spike_guard", 0.0))
+        if not math.isfinite(spike_guard) or spike_guard < 0.0:
+            raise ValueError(
+                f"physmuon_spike_guard must be finite and >= 0, got {spike_guard}."
+            )
+        if int(group.get("physmuon_spike_window", 1000)) < 1:
+            raise ValueError(
+                "physmuon_spike_window must be >= 1, "
+                f"got {group['physmuon_spike_window']}."
+            )
+
+    @property
+    def needs_pre_clip_grad_norm(self) -> bool:
+        """Return whether any group enables the PhysMuon spike guard."""
+        return any(
+            group.get("physmuon", False)
+            and float(group.get("physmuon_spike_guard", 0.0)) > 0.0
+            for group in self.param_groups
+        )
+
+    @property
+    def needs_grad_fluctuations(self) -> bool:
+        """Return whether any group enables the PhysMuon output budget."""
+        return any(
+            group.get("physmuon", False) and group.get("physmuon_budget", False)
+            for group in self.param_groups
+        )
+
+    def should_track_grad_fluctuations(self) -> bool:
+        """Return whether the next step should capture gradient fluctuations."""
+        for group in self.param_groups:
+            if not (
+                group.get("physmuon", False) and group.get("physmuon_budget", False)
+            ):
+                continue
+            if group.get("physmuon_shadow", True):
+                return True
+            if int(group.get("pm_step", 0)) >= int(group["physmuon_start_step"]):
+                return True
+        return False
+
+    def observe_grad_fluctuations(
+        self,
+        fluctuations: Mapping[torch.nn.Parameter, tuple[torch.Tensor, torch.Tensor]],
+    ) -> None:
+        """Stage per-parameter ``(row_var, col_var)`` fluctuations for the next ``step()``.
+
+        Used only when ``physmuon=True`` and ``physmuon_budget=True``.
+        """
+        self._pending_fluctuations = fluctuations
+
+    @classmethod
+    def register_ddp_budget_hook(
+        cls,
+        ddp_module: torch.nn.parallel.DistributedDataParallel,
+        optimizer: HybridMuonOptimizer,
+    ) -> DDPPhysMuonBudgetHook:
+        """Attach a DDP communication hook that feeds Change 2 gradient fluctuations."""
+        return DDPPhysMuonBudgetHook(ddp_module, optimizer)
+
+    @staticmethod
+    def compute_global_grad_norm(
+        parameters: Iterable[torch.nn.Parameter],
+        *,
+        stable: bool = True,
+    ) -> torch.Tensor:
+        """Compute the model-wide L2 gradient norm without modifying gradients.
+
+        Used by trainers when ``physmuon_spike_guard > 0`` and gradient
+        clipping is disabled (``gradient_max_norm == 0``), ensuring that
+        ZeRO-1 ranks observe the same model-wide pre-clip norm rather than
+        their local parameter shard alone.
+        """
+        grads = [p.grad.detach() for p in parameters if p.grad is not None]
+        if not grads:
+            return torch.zeros((), dtype=torch.float64, device="cpu")
+        if not stable:
+            return torch.nn.utils.get_total_norm(grads, error_if_nonfinite=False)
+        first = grads[0]
+        if all(g.device == first.device and g.dtype == first.dtype for g in grads):
+            scale = torch.stack(torch._foreach_norm(grads, float("inf"))).max()
+            scale = torch.where(scale > 0, scale, scale.new_ones(()))
+            scaled = torch._foreach_norm(torch._foreach_div(grads, scale), 2.0)
+            return scale.double() * torch.linalg.vector_norm(
+                torch.stack(scaled).double()
+            )
+        target_dev = first.device
+        inf_norms = torch.stack(
+            [
+                torch.linalg.vector_norm(g, ord=float("inf")).to(
+                    device=target_dev, dtype=torch.float64
+                )
+                for g in grads
+            ]
+        )
+        scale = inf_norms.max()
+        scale = torch.where(scale > 0, scale, scale.new_ones(()))
+        scaled = torch.stack(
+            [
+                torch.linalg.vector_norm(
+                    g.to(device=target_dev, dtype=torch.float64) / scale
+                )
+                for g in grads
+            ]
+        )
+        return scale * torch.linalg.vector_norm(scaled)
+
+    def set_pre_clip_grad_norm(self, grad_norm: torch.Tensor | float | None) -> None:
+        """Supply the pre-clip global gradient norm for the next ``step()``.
+
+        Used only when ``physmuon=True`` and ``physmuon_spike_guard > 0``.
+        Accepting a device tensor avoids any host-device synchronization on
+        the training hot path.
+        """
+        self._pending_grad_norm = grad_norm
+
+    def snapshot_physmuon_configs(self) -> list[dict[str, Any]]:
+        """Snapshot requested PhysMuon config keys from each parameter group."""
+        return [
+            {key: group.get(key, self.defaults[key]) for key in _PHYSMUON_CONFIG_KEYS}
+            for group in self.param_groups
+        ]
+
+    def finalize_physmuon_state_load(
+        self,
+        prior_pm_configs: list[dict[str, Any]],
+        *,
+        wrapper_param_groups: list[dict[str, Any]] | None = None,
+        resume_step: int | None = None,
+    ) -> None:
+        """Re-apply newly enabled PhysMuon opt-in and invalidate runtime caches.
+
+        ``ZeroRedundancyOptimizer.load_state_dict`` populates ``self.state``
+        and copies saved group dicts directly without invoking
+        ``HybridMuonOptimizer.load_state_dict``. Calling this helper after
+        loading a wrapped state dict preserves the requested PhysMuon opt-in
+        when resuming a baseline checkpoint, preserves saved settings and
+        counters when resuming an already-enabled PhysMuon checkpoint, and
+        synchronizes migrated keys to ``wrapper_param_groups`` so the first
+        wrapper ``step()`` does not overwrite them.
+        """
+        for idx, (group, prior_cfg) in enumerate(
+            zip(self.param_groups, prior_pm_configs, strict=True)
+        ):
+            if not group.get("physmuon", False) and prior_cfg["physmuon"]:
+                # Resuming a non-PhysMuon (or pre-PhysMuon) checkpoint with
+                # PhysMuon newly enabled: keep the new PhysMuon configuration.
+                group.update(prior_cfg)
+            else:
+                for key in _PHYSMUON_CONFIG_KEYS:
+                    if key not in group:
+                        group[key] = prior_cfg[key]
+            self._validate_physmuon_group(group)
+            if (
+                resume_step is not None
+                and group.get("physmuon", False)
+                and "pm_step" not in group
+            ):
+                group["pm_step"] = int(resume_step)
+            if wrapper_param_groups is not None:
+                wgroup = wrapper_param_groups[idx]
+                for key in _PHYSMUON_CONFIG_KEYS:
+                    wgroup[key] = group[key]
+                if "pm_step" in group:
+                    wgroup["pm_step"] = group["pm_step"]
+        self._pending_grad_norm = None
+        self._pending_fluctuations = None
+        self._budget_inputs.clear()
+        self._adam_signature = None
+        self._per_parameter_adam_clock = False
+        self._bias_corrections_migrated = False
+        self._clear_cuda_graphs()
+
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """
         Load optimizer state and invalidate captured runtime state.
@@ -1085,11 +1649,9 @@ class HybridMuonOptimizer(Optimizer):
         state_dict : dict[str, Any]
             Optimizer state returned by :meth:`state_dict`.
         """
+        prior_pm_configs = self.snapshot_physmuon_configs()
         super().load_state_dict(state_dict)
-        self._adam_signature = None
-        self._per_parameter_adam_clock = False
-        self._bias_corrections_migrated = False
-        self._clear_cuda_graphs()
+        self.finalize_physmuon_state_load(prior_pm_configs)
 
     def _clear_cuda_graphs(self) -> None:
         """Discard captures whose tensor addresses or routing may be stale."""
@@ -1469,6 +2031,8 @@ class HybridMuonOptimizer(Optimizer):
         magma_scales_map: dict[int, torch.Tensor],
         out_params: list[torch.Tensor],
         out_deltas: list[torch.Tensor],
+        budget_scales_map: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
+        | None = None,
     ) -> None:
         """Column-pad merge across rectangular buckets sharing the same min_dim.
 
@@ -1585,6 +2149,15 @@ class HybridMuonOptimizer(Optimizer):
                 # Un-transpose back to original (rows, cols) orientation.
                 if was_transposed:
                     orth_slice = orth_slice.transpose(-2, -1)
+
+                # Optional PhysMuon Change 2 post-NS output-budget weighting.
+                if budget_scales_map:
+                    budget_entry = budget_scales_map.get(id(entry["param"]))
+                    if budget_entry is not None:
+                        bi, ai, budget_active = budget_entry
+                        orth_slice = _apply_budget_post_scale(
+                            orth_slice, bi, ai, budget_active
+                        )
 
                 # Per-entry scale (depends on original max(rows, cols)).
                 orig_rows, orig_cols = entry["rows"], entry["cols"]
@@ -1754,13 +2327,549 @@ class HybridMuonOptimizer(Optimizer):
                 device=device, dtype=torch.float32
             )
 
-        if self._per_parameter_adam_clock:
+        if not self._per_parameter_adam_clock:
+            for key in ("beta1_pow_device", "beta2_pow_device"):
+                if key not in group:
+                    group[key] = torch.ones((), dtype=torch.float32, device=device)
+                elif group[key].device != device or group[key].dtype != torch.float32:
+                    group[key] = group[key].to(device=device, dtype=torch.float32)
+
+        if not group.get("physmuon", False):
             return
-        for key in ("beta1_pow_device", "beta2_pow_device"):
+
+        group["pm_step"] = int(group.get("pm_step", 0))
+        if "pm_active_device" not in group:
+            group["pm_active_device"] = torch.zeros(
+                (), dtype=torch.float32, device=device
+            )
+        elif (
+            group["pm_active_device"].device != device
+            or group["pm_active_device"].dtype != torch.float32
+        ):
+            group["pm_active_device"] = group["pm_active_device"].to(
+                device=device, dtype=torch.float32
+            )
+
+        if float(group.get("physmuon_spike_guard", 0.0)) <= 0.0:
+            return
+
+        window = int(group.get("physmuon_spike_window", 1000))
+        ring = group.get("pm_spike_ring")
+        if ring is None or ring.ndim != 1 or ring.numel() != window:
+            group["pm_spike_ring"] = torch.full(
+                (window,), float("inf"), dtype=torch.float32, device=device
+            )
+            group["pm_spike_pos"] = torch.zeros((), dtype=torch.int64, device=device)
+            group["pm_spike_count"] = torch.zeros((), dtype=torch.int64, device=device)
+            group["pm_spike_frozen_steps"] = torch.zeros(
+                (), dtype=torch.int64, device=device
+            )
+        elif ring.device != device or ring.dtype != torch.float32:
+            group["pm_spike_ring"] = ring.to(device=device, dtype=torch.float32)
+
+        for key in ("pm_spike_pos", "pm_spike_count", "pm_spike_frozen_steps"):
             if key not in group:
-                group[key] = torch.ones((), dtype=torch.float32, device=device)
-            elif group[key].device != device or group[key].dtype != torch.float32:
-                group[key] = group[key].to(device=device, dtype=torch.float32)
+                group[key] = torch.zeros((), dtype=torch.int64, device=device)
+            elif group[key].device != device or group[key].dtype != torch.int64:
+                group[key] = group[key].to(device=device, dtype=torch.int64)
+
+        if "pm_spike_norm_in" not in group:
+            group["pm_spike_norm_in"] = torch.zeros(
+                (), dtype=torch.float32, device=device
+            )
+        elif (
+            group["pm_spike_norm_in"].device != device
+            or group["pm_spike_norm_in"].dtype != torch.float32
+        ):
+            group["pm_spike_norm_in"] = group["pm_spike_norm_in"].to(
+                device=device, dtype=torch.float32
+            )
+
+    def _compute_global_grad_norm(
+        self, grads: tuple[torch.Tensor, ...], device: torch.device
+    ) -> torch.Tensor:
+        """Compute global L2 gradient norm as a 0-dim float32 device tensor."""
+        if (
+            self._use_foreach
+            and len(grads) > 1
+            and all(g.dtype == torch.float32 for g in grads)
+        ):
+            per_param = torch._foreach_norm(list(grads))
+            return torch.linalg.vector_norm(
+                torch.stack(
+                    [n.to(device=device, dtype=torch.float32) for n in per_param]
+                )
+            )
+        return torch.linalg.vector_norm(
+            torch.stack([g.detach().float().norm().to(device=device) for g in grads])
+        )
+
+    @staticmethod
+    def _update_spike_guard(group: dict[str, Any]) -> torch.Tensor:
+        """Evaluate and update the GPU-resident running-median spike guard.
+
+        Returns a 0-dim float32 tensor equal to ``1.0`` when the current step
+        is flagged as a spike (non-finite norm or exceeding ``K`` times the
+        running median of the last ``window`` finite steps) and ``0.0``
+        otherwise. Pure tensor operations keep the guard CUDA-graph safe.
+        """
+        spike_k = float(group["physmuon_spike_guard"])
+        window = int(group["physmuon_spike_window"])
+        warmup = min(PHYSMUON_SPIKE_WARMUP, window)
+        v = group["pm_spike_norm_in"]
+        ring = group["pm_spike_ring"]
+        pos = group["pm_spike_pos"]
+        count = group["pm_spike_count"]
+        frozen = group["pm_spike_frozen_steps"]
+
+        finite = torch.isfinite(v)
+        sorted_ring = torch.sort(ring).values
+        med_idx = (count // 2).clamp(max=window - 1)
+        med = sorted_ring.index_select(0, med_idx.reshape(1)).squeeze(0)
+        ready = count >= warmup
+        is_spike = (~finite) | (ready & (med > 0.0) & (v > spike_k * med))
+
+        pos_idx = pos.reshape(1)
+        cur_val = ring.index_select(0, pos_idx).squeeze(0)
+        write_val = torch.where(finite, v, cur_val)
+        ring.scatter_(0, pos_idx, write_val.reshape(1))
+
+        finite_i64 = finite.to(torch.int64)
+        pos.copy_((pos + finite_i64) % window)
+        count.copy_(torch.clamp(count + finite_i64, max=window))
+        frozen.add_(is_spike.to(torch.int64))
+        return is_spike.to(torch.float32)
+
+    def _stage_budget_fluctuations(
+        self,
+        group: dict[str, Any],
+        route: dict[str, Any],
+        pending_by_id: dict[int, tuple[torch.Tensor, torch.Tensor]] | None,
+    ) -> None:
+        """Ensure persistent budget state & staging buffers and copy pending observations."""
+        for entry in route["muon_params"]:
+            p = entry["param"]
+            bs, rows, cols = entry["batch_size"], entry["rows"], entry["cols"]
+            dev = p.device
+            state = self.state[p]
+
+            row_ema = state.get("pm_budget_row")
+            col_ema = state.get("pm_budget_col")
+            init_flag = state.get("pm_budget_init")
+            if (
+                row_ema is None
+                or col_ema is None
+                or tuple(row_ema.shape) != (bs, rows)
+                or tuple(col_ema.shape) != (bs, cols)
+            ):
+                state["pm_budget_row"] = torch.ones(
+                    (bs, rows), dtype=torch.float32, device=dev
+                )
+                state["pm_budget_col"] = torch.ones(
+                    (bs, cols), dtype=torch.float32, device=dev
+                )
+                state["pm_budget_init"] = torch.zeros(
+                    (), dtype=torch.float32, device=dev
+                )
+            else:
+                if row_ema.device != dev or row_ema.dtype != torch.float32:
+                    state["pm_budget_row"] = row_ema.to(device=dev, dtype=torch.float32)
+                if col_ema.device != dev or col_ema.dtype != torch.float32:
+                    state["pm_budget_col"] = col_ema.to(device=dev, dtype=torch.float32)
+                if init_flag is None or init_flag.ndim != 0:
+                    state["pm_budget_init"] = torch.ones(
+                        (), dtype=torch.float32, device=dev
+                    )
+                elif init_flag.device != dev or init_flag.dtype != torch.float32:
+                    state["pm_budget_init"] = init_flag.to(
+                        device=dev, dtype=torch.float32
+                    )
+
+            staged = self._budget_inputs.get(id(p))
+            if (
+                staged is None
+                or tuple(staged[0].shape) != (bs, rows)
+                or tuple(staged[1].shape) != (bs, cols)
+                or staged[0].device != dev
+            ):
+                staged = (
+                    torch.zeros((bs, rows), dtype=torch.float32, device=dev),
+                    torch.zeros((bs, cols), dtype=torch.float32, device=dev),
+                    torch.zeros((), dtype=torch.float32, device=dev),
+                )
+                self._budget_inputs[id(p)] = staged
+
+            raw_r_buf, raw_c_buf, has_obs_buf = staged
+            if pending_by_id is not None and id(p) in pending_by_id:
+                raw_r, raw_c = pending_by_id[id(p)]
+                raw_r_buf.copy_(
+                    raw_r.detach().to(device=dev, dtype=torch.float32).reshape(bs, rows)
+                )
+                raw_c_buf.copy_(
+                    raw_c.detach().to(device=dev, dtype=torch.float32).reshape(bs, cols)
+                )
+                has_obs_buf.fill_(1.0)
+            else:
+                has_obs_buf.fill_(0.0)
+
+    def _update_and_apply_budget_pre_scale(
+        self,
+        *,
+        group: dict[str, Any],
+        active_entries: list[tuple[dict[str, Any], torch.Tensor]],
+        muon_updates: list[torch.Tensor],
+        is_spike: torch.Tensor | None,
+    ) -> tuple[
+        list[torch.Tensor],
+        dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    ]:
+        """Update fluctuation EMAs in-place and pre-scale NS inputs ``B^{-1/2} U A^{-1/2}``.
+
+        All operations are pure device tensor ops with zero host syncs so the
+        entire step remains CUDA-graph capture/replay safe. Flagged spike steps
+        and non-finite observations are skipped automatically.
+        """
+        lam = float(group.get("physmuon_budget_lam", 0.5))
+        clamp = float(group.get("physmuon_budget_clamp", 2.0))
+        beta = float(group.get("physmuon_budget_beta", 0.95))
+        pm_active = group["pm_active_device"] > 0.5
+
+        scaled_updates: list[torch.Tensor] = []
+        budget_scales_map: dict[
+            int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ] = {}
+        for idx, (entry, _) in enumerate(active_entries):
+            p = entry["param"]
+            bs, rows, cols = entry["batch_size"], entry["rows"], entry["cols"]
+            state = self.state[p]
+            raw_r, raw_c, has_obs = self._budget_inputs[id(p)]
+            row_ema = state["pm_budget_row"]
+            col_ema = state["pm_budget_col"]
+            init_flag = state["pm_budget_init"]
+
+            raw_finite = torch.isfinite(raw_r).all() & torch.isfinite(raw_c).all()
+            valid = (has_obs > 0.5) & raw_finite
+            if not group.get("physmuon_shadow", True):
+                valid = valid & pm_active
+            if is_spike is not None:
+                valid = valid & (is_spike < 0.5)
+
+            safe_r = torch.where(valid, raw_r.clamp_min(PHYSMUON_BUDGET_EPS), row_ema)
+            safe_c = torch.where(valid, raw_c.clamp_min(PHYSMUON_BUDGET_EPS), col_ema)
+            initialized = init_flag > 0.5
+            cand_r = torch.where(
+                initialized, torch.lerp(row_ema, safe_r, 1.0 - beta), safe_r
+            )
+            cand_c = torch.where(
+                initialized, torch.lerp(col_ema, safe_c, 1.0 - beta), safe_c
+            )
+            row_ema.copy_(torch.where(valid, cand_r, row_ema))
+            col_ema.copy_(torch.where(valid, cand_c, col_ema))
+            init_flag.copy_(torch.where(valid, init_flag.new_ones(()), init_flag))
+
+            budget_active = pm_active & (init_flag > 0.5)
+            bi = _compute_budget_inv_sqrt(row_ema, lam, clamp)
+            ai = _compute_budget_inv_sqrt(col_ema, lam, clamp)
+            budget_scales_map[id(p)] = (bi, ai, budget_active)
+
+            u = muon_updates[idx]
+            u_scaled = (
+                (u.float().reshape(bs, rows, cols) * bi[:, :, None] * ai[:, None, :])
+                .to(dtype=u.dtype)
+                .reshape(u.shape)
+            )
+            scaled_updates.append(torch.where(budget_active, u_scaled, u))
+
+        return scaled_updates, budget_scales_map
+
+    def _compute_physmuon_nesterov_updates(
+        self,
+        group: dict[str, Any],
+        active_entries: list[tuple[dict[str, Any], torch.Tensor]],
+        muon_grads: list[torch.Tensor],
+        muon_momentum_buffers: list[torch.Tensor],
+        is_spike: torch.Tensor | None,
+    ) -> list[torch.Tensor]:
+        """Update PhysMuon two-mode memory and return Nesterov Muon updates.
+
+        Implements the two-timescale relaxation memory from [8] together with
+        the oscillation-gated readout, step-0 tracking, and optional slow-mode
+        spike freezing from the Hyyu-Lab/PhysMuon reference implementation. Writes the effective memory back into
+        ``momentum_buffer`` so Magma-lite measures alignment against the memory
+        actually used on this step.
+
+        When ``self._use_foreach`` is enabled, tensors sharing
+        ``(device, dtype, numel)`` are processed in stacked buckets so gate
+        reductions, mode EMAs, and readout blending run in O(#buckets) fused
+        kernels instead of O(#tensors) per-parameter kernels.
+        """
+        momentum = float(group["momentum"])
+        beta_fast = float(group["physmuon_beta_fast"])
+        beta_slow = float(group["physmuon_beta_slow"])
+        use_gate = bool(group.get("physmuon_gate", True))
+        w_max = float(group.get("physmuon_w_max", 0.3))
+        w_fixed = float(group.get("physmuon_w_fast", 0.3))
+        gate_beta = float(group.get("physmuon_gate_beta", 0.9))
+        shadow = bool(group.get("physmuon_shadow", True))
+        rho_f = (1.0 - beta_fast) / (1.0 + beta_fast)
+
+        if not shadow:
+            t = int(group["pm_step"])
+            start_step = int(group["physmuon_start_step"])
+            if t < start_step:
+                return _compute_muon_nesterov_updates(
+                    gradients=muon_grads,
+                    momentum_buffers=muon_momentum_buffers,
+                    momentum=momentum,
+                    use_foreach=self._use_foreach,
+                )
+
+        active_mask = group["pm_active_device"] > 0.5
+        n_entries = len(active_entries)
+        muon_updates: list[torch.Tensor | None] = [None] * n_entries
+
+        # Prepare per-parameter state and group into (device, dtype, numel) buckets
+        # when multi-tensor vectorization is available.
+        buckets: dict[tuple[torch.device, torch.dtype, int], list[int]] = {}
+        scalar_indices: list[int] = []
+        for idx, ((entry, _), grad, buf) in enumerate(
+            zip(active_entries, muon_grads, muon_momentum_buffers, strict=True)
+        ):
+            state = self.state[entry["param"]]
+            if not shadow and "pm_m_fast" not in state:
+                # Without step-0 tracking: seed both modes from the live single-
+                # EMA momentum at start_step; this step matches baseline Muon.
+                # On a flagged spike step, seed pm_m_slow from the pre-update
+                # buffer so flagged / non-finite gradients cannot contaminate
+                # the slow memory.
+                prev_buf = buf.clone() if is_spike is not None else None
+                buf.lerp_(grad, 1.0 - momentum)
+                muon_updates[idx] = torch.lerp(grad, buf, momentum)
+                state["pm_m_fast"] = buf.clone()
+                if prev_buf is not None:
+                    state["pm_m_slow"] = torch.where(is_spike > 0.5, prev_buf, buf)
+                else:
+                    state["pm_m_slow"] = buf.clone()
+                continue
+
+            if "pm_m_fast" not in state:
+                state["pm_m_fast"] = buf.clone()
+                state["pm_m_slow"] = buf.clone()
+            elif (
+                state["pm_m_fast"].device != buf.device
+                or state["pm_m_fast"].dtype != buf.dtype
+            ):
+                state["pm_m_fast"] = state["pm_m_fast"].to(
+                    device=buf.device, dtype=buf.dtype
+                )
+                state["pm_m_slow"] = state["pm_m_slow"].to(
+                    device=buf.device, dtype=buf.dtype
+                )
+
+            if self._use_foreach and n_entries > 1 and grad.dtype == buf.dtype:
+                key = (buf.device, buf.dtype, buf.numel())
+                buckets.setdefault(key, []).append(idx)
+            else:
+                scalar_indices.append(idx)
+
+        for (_dev, dtype, _numel), idxs in buckets.items():
+            if len(idxs) == 1:
+                scalar_indices.append(idxs[0])
+                continue
+
+            gs = [muon_grads[i] for i in idxs]
+            bufs = [muon_momentum_buffers[i] for i in idxs]
+            states = [self.state[active_entries[i][0]["param"]] for i in idxs]
+            mfs = [st["pm_m_fast"] for st in states]
+            mss = [st["pm_m_slow"] for st in states]
+
+            g_b = torch.stack([g.reshape(-1) for g in gs], dim=0)
+            mf_b = torch.stack([m.reshape(-1) for m in mfs], dim=0)
+            ms_b = torch.stack([m.reshape(-1) for m in mss], dim=0)
+
+            w_b: torch.Tensor | None = None
+            if use_gate:
+                # Measure oscillation and drift before the modes absorb grad.
+                gf = g_b.float()
+                mff = mf_b.float()
+                msf = ms_b.float()
+                g_norm = gf.norm(dim=1).clamp_min(PHYSMUON_EPS)
+                mf_norm = mff.norm(dim=1).clamp_min(PHYSMUON_EPS)
+                osc = (-(gf * mff).sum(dim=1) / (g_norm * mf_norm)).clamp_min(0.0)
+                drift = msf.norm(dim=1) / g_norm
+
+                all_have_gate = all("pm_osc" in st for st in states)
+                if all_have_gate:
+                    osc_states: list[torch.Tensor] = []
+                    drift_states: list[torch.Tensor] = []
+                    for st, buf in zip(states, bufs, strict=True):
+                        if (
+                            st["pm_osc"].device != buf.device
+                            or st["pm_osc"].dtype != torch.float32
+                        ):
+                            st["pm_osc"] = st["pm_osc"].to(
+                                device=buf.device, dtype=torch.float32
+                            )
+                            st["pm_drift"] = st["pm_drift"].to(
+                                device=buf.device, dtype=torch.float32
+                            )
+                        osc_states.append(st["pm_osc"])
+                        drift_states.append(st["pm_drift"])
+                    torch._foreach_lerp_(
+                        osc_states, list(osc.unbind(0)), 1.0 - gate_beta
+                    )
+                    torch._foreach_lerp_(
+                        drift_states, list(drift.unbind(0)), 1.0 - gate_beta
+                    )
+                    osc_cur = torch.stack(osc_states)
+                    drift_cur = torch.stack(drift_states)
+                else:
+                    osc_vals = osc.unbind(0)
+                    drift_vals = drift.unbind(0)
+                    osc_states = []
+                    drift_states = []
+                    for st, buf, o_val, d_val in zip(
+                        states, bufs, osc_vals, drift_vals, strict=True
+                    ):
+                        if "pm_osc" not in st:
+                            st["pm_osc"] = o_val.detach().clone()
+                            st["pm_drift"] = d_val.detach().clone()
+                        else:
+                            if (
+                                st["pm_osc"].device != buf.device
+                                or st["pm_osc"].dtype != torch.float32
+                            ):
+                                st["pm_osc"] = st["pm_osc"].to(
+                                    device=buf.device, dtype=torch.float32
+                                )
+                                st["pm_drift"] = st["pm_drift"].to(
+                                    device=buf.device, dtype=torch.float32
+                                )
+                            st["pm_osc"].lerp_(o_val, 1.0 - gate_beta)
+                            st["pm_drift"].lerp_(d_val, 1.0 - gate_beta)
+                        osc_states.append(st["pm_osc"])
+                        drift_states.append(st["pm_drift"])
+                    osc_cur = torch.stack(osc_states)
+                    drift_cur = torch.stack(drift_states)
+
+                w_b = w_max * (
+                    1.0 - rho_f * osc_cur / drift_cur.clamp_min(PHYSMUON_EPS)
+                ).clamp(0.0, 1.0)
+
+            mf_next = torch.lerp(mf_b, g_b, 1.0 - beta_fast)
+            ms_cand = torch.lerp(ms_b, g_b, 1.0 - beta_slow)
+            if is_spike is None:
+                ms_next = ms_cand
+            else:
+                ms_next = torch.where(is_spike > 0.5, ms_b, ms_cand)
+
+            torch._foreach_copy_(
+                mfs,
+                [
+                    src.view_as(dst)
+                    for src, dst in zip(mf_next.unbind(0), mfs, strict=True)
+                ],
+            )
+            torch._foreach_copy_(
+                mss,
+                [
+                    src.view_as(dst)
+                    for src, dst in zip(ms_next.unbind(0), mss, strict=True)
+                ],
+            )
+
+            if use_gate:
+                assert w_b is not None
+                w_col = w_b.unsqueeze(1)
+                m_two_b = (w_col * mf_next + (1.0 - w_col) * ms_next).to(dtype=dtype)
+            else:
+                m_two_b = (w_fixed * mf_next + (1.0 - w_fixed) * ms_next).to(
+                    dtype=dtype
+                )
+
+            if shadow:
+                buf_b = torch.stack([b.reshape(-1) for b in bufs], dim=0)
+                m_single_b = torch.lerp(buf_b, g_b, 1.0 - momentum)
+                m_eff_b = torch.where(active_mask, m_two_b, m_single_b)
+            else:
+                m_eff_b = m_two_b
+
+            torch._foreach_copy_(
+                bufs,
+                [
+                    src.view_as(dst)
+                    for src, dst in zip(m_eff_b.unbind(0), bufs, strict=True)
+                ],
+            )
+            upd_b = torch.lerp(g_b, m_eff_b, momentum)
+            for idx, src, g in zip(idxs, upd_b.unbind(0), gs, strict=True):
+                muon_updates[idx] = src.view_as(g)
+
+        for idx in scalar_indices:
+            entry, _ = active_entries[idx]
+            grad = muon_grads[idx]
+            buf = muon_momentum_buffers[idx]
+            state = self.state[entry["param"]]
+            m_fast = state["pm_m_fast"]
+            m_slow = state["pm_m_slow"]
+
+            if use_gate:
+                # Measure oscillation and drift before the modes absorb grad.
+                gf = grad.float()
+                g_norm = gf.norm().clamp_min(PHYSMUON_EPS)
+                mf = m_fast.float()
+                osc = (
+                    -(gf * mf).sum() / (g_norm * mf.norm().clamp_min(PHYSMUON_EPS))
+                ).clamp_min(0.0)
+                drift = m_slow.float().norm() / g_norm
+                if "pm_osc" not in state:
+                    state["pm_osc"] = osc.detach().clone()
+                    state["pm_drift"] = drift.detach().clone()
+                else:
+                    if (
+                        state["pm_osc"].device != buf.device
+                        or state["pm_osc"].dtype != torch.float32
+                    ):
+                        state["pm_osc"] = state["pm_osc"].to(
+                            device=buf.device, dtype=torch.float32
+                        )
+                        state["pm_drift"] = state["pm_drift"].to(
+                            device=buf.device, dtype=torch.float32
+                        )
+                    state["pm_osc"].lerp_(osc, 1.0 - gate_beta)
+                    state["pm_drift"].lerp_(drift, 1.0 - gate_beta)
+
+            m_fast.lerp_(grad, 1.0 - beta_fast)
+            if is_spike is None:
+                m_slow.lerp_(grad, 1.0 - beta_slow)
+            else:
+                m_slow_next = torch.lerp(m_slow, grad, 1.0 - beta_slow)
+                m_slow.copy_(torch.where(is_spike > 0.5, m_slow, m_slow_next))
+
+            if use_gate:
+                w = w_max * (
+                    1.0
+                    - rho_f
+                    * state["pm_osc"]
+                    / state["pm_drift"].clamp_min(PHYSMUON_EPS)
+                ).clamp(0.0, 1.0)
+                m_two = (w * m_fast.float() + (1.0 - w) * m_slow.float()).to(
+                    dtype=buf.dtype
+                )
+            else:
+                m_two = (w_fixed * m_fast + (1.0 - w_fixed) * m_slow).to(
+                    dtype=buf.dtype
+                )
+
+            if shadow:
+                m_single = torch.lerp(buf, grad, 1.0 - momentum)
+                m_eff = torch.where(active_mask, m_two, m_single)
+                buf.copy_(m_eff)
+            else:
+                buf.copy_(m_two)
+            muon_updates[idx] = torch.lerp(grad, buf, momentum)
+
+        return [u for u in muon_updates if u is not None]
 
     def _adam_one(self, device: torch.device) -> torch.Tensor:
         """Return the cached scalar target for Adam correction recurrences."""
@@ -1887,6 +2996,7 @@ class HybridMuonOptimizer(Optimizer):
     def step(
         self,
         closure: Callable[[], torch.Tensor] | None = None,
+        grad_norm: torch.Tensor | float | None = None,
     ) -> torch.Tensor | None:
         """
         Perform a single optimization step.
@@ -1902,6 +3012,12 @@ class HybridMuonOptimizer(Optimizer):
         ----------
         closure : callable, optional
             A closure that reevaluates the model and returns the loss.
+        grad_norm : torch.Tensor | float, optional
+            Optional pre-clip global gradient norm for the PhysMuon spike
+            guard (used only when ``physmuon=True`` and
+            ``physmuon_spike_guard > 0``). If omitted, uses any norm passed
+            via :meth:`set_pre_clip_grad_norm` or computes the global L2 norm
+            of the live gradients.
 
         Returns
         -------
@@ -1912,6 +3028,16 @@ class HybridMuonOptimizer(Optimizer):
         if closure is not None:
             with torch.enable_grad():
                 loss = closure()
+
+        ext_grad_norm = grad_norm if grad_norm is not None else self._pending_grad_norm
+        self._pending_grad_norm = None
+        pending_fluct = self._pending_fluctuations
+        self._pending_fluctuations = None
+        pending_fluct_by_id = (
+            {id(k): v for k, v in pending_fluct.items()}
+            if pending_fluct is not None
+            else None
+        )
 
         # Build static parameter routing on first call.
         self._build_param_routing()
@@ -1924,31 +3050,83 @@ class HybridMuonOptimizer(Optimizer):
 
         # Host-driven scalars refresh outside every capture or replay.
         device = self.param_groups[0]["params"][0].device
-        for group in self.param_groups:
+        force_eager = False
+        fallback_grad_norm: torch.Tensor | None = None
+        for group, route in zip(self.param_groups, self._routing, strict=True):
             group_device = group["params"][0].device
             self._ensure_group_tensors(group, group_device)
             group["lr_device"].fill_(float(group["lr"]))
+            if not group.get("physmuon", False):
+                continue
+            if group.get("physmuon_budget", False):
+                self._stage_budget_fluctuations(group, route, pending_fluct_by_id)
+            t = int(group["pm_step"])
+            start_step = int(group["physmuon_start_step"])
+            group["pm_active_device"].fill_(1.0 if t >= start_step else 0.0)
+            if not group.get("physmuon_shadow", True) and t in (
+                start_step,
+                start_step + 1,
+            ):
+                force_eager = True
+            if float(group.get("physmuon_spike_guard", 0.0)) > 0.0:
+                if ext_grad_norm is not None:
+                    if torch.is_tensor(ext_grad_norm):
+                        norm_src = (
+                            ext_grad_norm.full_tensor()
+                            if hasattr(ext_grad_norm, "full_tensor")
+                            else ext_grad_norm
+                        )
+                        group["pm_spike_norm_in"].copy_(
+                            norm_src.detach()
+                            .to(device=group_device, dtype=torch.float32)
+                            .reshape(())
+                        )
+                    else:
+                        group["pm_spike_norm_in"].fill_(float(ext_grad_norm))
+                else:
+                    if fallback_grad_norm is None:
+                        fallback_grad_norm = self._compute_global_grad_norm(
+                            grads, device
+                        )
+                    group["pm_spike_norm_in"].copy_(
+                        fallback_grad_norm.to(device=group_device, dtype=torch.float32)
+                    )
+
+        def _advance_physmuon_steps() -> None:
+            for grp in self.param_groups:
+                if grp.get("physmuon", False):
+                    grp["pm_step"] = int(grp["pm_step"]) + 1
+
+        if force_eager:
+            self._clear_cuda_graphs()
+            self._step_impl(None)
+            _advance_physmuon_steps()
+            return loss
 
         if not self._graph_supported(device):
             self._step_impl(None)
+            _advance_physmuon_steps()
             return loss
 
         graph_step = self._graphs.get(signature)
         if graph_step is not None:
             torch._foreach_copy_(graph_step.static_grads, grads)
             graph_step.graph.replay()
+            _advance_physmuon_steps()
             return loss
 
         warmups = self._graph_warmups.get(signature, 0)
         if warmups < CUDA_GRAPH_WARMUP_STEPS:
             self._graph_warmups[signature] = warmups + 1
             self._step_impl(None)
+            _advance_physmuon_steps()
             return loss
 
         graph_step = self._capture_cuda_graph(signature, grads, device)
         self._graphs[signature] = graph_step
         self._graph_warmups.pop(signature)
         graph_step.graph.replay()
+        _advance_physmuon_steps()
         return loss
 
     def _graph_supported(self, device: torch.device) -> bool:
@@ -2306,16 +3484,44 @@ class HybridMuonOptimizer(Optimizer):
                     muon_params_for_decay, 1.0 - lr_device * weight_decay
                 )
 
+            is_spike = (
+                self._update_spike_guard(group)
+                if group.get("physmuon", False)
+                and float(group.get("physmuon_spike_guard", 0.0)) > 0.0
+                else None
+            )
+
             if not active_entries:
                 continue
 
-            # === Step 3.3. Momentum update (Nesterov) ===
-            muon_updates = _compute_muon_nesterov_updates(
-                gradients=muon_grads,
-                momentum_buffers=muon_momentum_buffers,
-                momentum=momentum,
-                use_foreach=self._use_foreach,
-            )
+            # === Step 3.3. Momentum update (Nesterov / PhysMuon) ===
+            budget_scales_map: dict[
+                int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            ] = {}
+            if group.get("physmuon", False):
+                muon_updates = self._compute_physmuon_nesterov_updates(
+                    group=group,
+                    active_entries=active_entries,
+                    muon_grads=muon_grads,
+                    muon_momentum_buffers=muon_momentum_buffers,
+                    is_spike=is_spike,
+                )
+                if group.get("physmuon_budget", False):
+                    muon_updates, budget_scales_map = (
+                        self._update_and_apply_budget_pre_scale(
+                            group=group,
+                            active_entries=active_entries,
+                            muon_updates=muon_updates,
+                            is_spike=is_spike,
+                        )
+                    )
+            else:
+                muon_updates = _compute_muon_nesterov_updates(
+                    gradients=muon_grads,
+                    momentum_buffers=muon_momentum_buffers,
+                    momentum=momentum,
+                    use_foreach=self._use_foreach,
+                )
 
             # === Step 3.4. Bucket by (rows, cols, device, dtype) ===
             # Merging across batch_sizes: entries with the same matrix
@@ -2399,6 +3605,7 @@ class HybridMuonOptimizer(Optimizer):
                     magma_scales_map=magma_scales_map,
                     out_params=muon_apply_params,
                     out_deltas=muon_apply_deltas,
+                    budget_scales_map=budget_scales_map or None,
                 )
 
             # --- 3.6b  Square buckets → standard / flash NS path ---
@@ -2445,6 +3652,13 @@ class HybridMuonOptimizer(Optimizer):
                 for idx, (entry, _, _, _) in enumerate(bucket_entries):
                     off, bs = entry_slices[idx]
                     orth_slice = orthogonalized[off : off + bs]
+                    if budget_scales_map:
+                        budget_entry = budget_scales_map.get(id(entry["param"]))
+                        if budget_entry is not None:
+                            bi, ai, budget_active = budget_entry
+                            orth_slice = _apply_budget_post_scale(
+                                orth_slice, bi, ai, budget_active
+                            )
                     magma_scale = magma_scales_map.get(id(entry["param"]))
                     if magma_scale is not None:
                         orth_slice = orth_slice * magma_scale.view(bs, 1, 1).to(

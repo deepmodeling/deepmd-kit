@@ -114,6 +114,7 @@ from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
 )
 from deepmd.pt.optimizer.hybrid_muon import (
+    DDPPhysMuonBudgetHook,
     adam_route_patterns,
 )
 from deepmd.pt.utils.compile_compat import (
@@ -2633,6 +2634,18 @@ class Trainer(AbstractTrainer):
             )
         else:
             adam_patterns = adam_route_patterns(self.models.values())
+            pm_start_step = optimizer_params.get("physmuon_start_step")
+            if pm_start_step is None:
+                pm_start_ratio = float(
+                    optimizer_params.get("physmuon_start_ratio", 0.3077)
+                )
+                if not (0.0 <= pm_start_ratio <= 1.0):
+                    raise ValueError(
+                        f"physmuon_start_ratio must be in [0, 1], got {pm_start_ratio}."
+                    )
+                pm_start_step = round(self.num_steps * pm_start_ratio)
+            else:
+                pm_start_step = int(pm_start_step)
             self.optimizer = self._create_optimizer(
                 HybridMuonOptimizer,
                 lr=initial_lr,
@@ -2649,6 +2662,37 @@ class Trainer(AbstractTrainer):
                 # Sharded parameters are DTensors, and several torch._foreach_*
                 # ops lack sharding propagation, so the per-tensor path applies.
                 use_foreach=False if self.sharding.shards_parameters else None,
+                physmuon=bool(optimizer_params.get("physmuon", False)),
+                physmuon_start_step=pm_start_step,
+                physmuon_beta_fast=float(
+                    optimizer_params.get("physmuon_beta_fast", 0.90)
+                ),
+                physmuon_beta_slow=float(
+                    optimizer_params.get("physmuon_beta_slow", 0.995)
+                ),
+                physmuon_w_fast=float(optimizer_params.get("physmuon_w_fast", 0.3)),
+                physmuon_gate=bool(optimizer_params.get("physmuon_gate", True)),
+                physmuon_w_max=float(optimizer_params.get("physmuon_w_max", 0.3)),
+                physmuon_gate_beta=float(
+                    optimizer_params.get("physmuon_gate_beta", 0.9)
+                ),
+                physmuon_shadow=bool(optimizer_params.get("physmuon_shadow", True)),
+                physmuon_budget=bool(optimizer_params.get("physmuon_budget", False)),
+                physmuon_budget_lam=float(
+                    optimizer_params.get("physmuon_budget_lam", 0.5)
+                ),
+                physmuon_budget_clamp=float(
+                    optimizer_params.get("physmuon_budget_clamp", 2.0)
+                ),
+                physmuon_budget_beta=float(
+                    optimizer_params.get("physmuon_budget_beta", 0.95)
+                ),
+                physmuon_spike_guard=float(
+                    optimizer_params.get("physmuon_spike_guard", 0.0)
+                ),
+                physmuon_spike_window=int(
+                    optimizer_params.get("physmuon_spike_window", 1000)
+                ),
             )
             # The parameter names route each tensor to Muon or Adam. They are
             # supplied after construction because a redundancy-sharded
@@ -2659,8 +2703,48 @@ class Trainer(AbstractTrainer):
                 tuple(self.wrapper.named_parameters())
             )
 
+        local_hm_opt = (
+            self._local_optimizer
+            if isinstance(self._local_optimizer, HybridMuonOptimizer)
+            else None
+        )
+        prior_pm_configs = (
+            local_hm_opt.snapshot_physmuon_configs()
+            if local_hm_opt is not None
+            and (optimizer_state_dict is not None or self.restart_training)
+            else None
+        )
         if optimizer_state_dict is not None:
             self._load_optimizer_state(optimizer_state_dict)
+        if prior_pm_configs is not None:
+            assert local_hm_opt is not None
+            local_hm_opt.finalize_physmuon_state_load(
+                prior_pm_configs,
+                wrapper_param_groups=(
+                    self.optimizer.param_groups
+                    if self.optimizer is not local_hm_opt
+                    else None
+                ),
+                resume_step=int(self.start_step) if self.restart_training else None,
+            )
+        self._physmuon_budget_hook: DDPPhysMuonBudgetHook | None = None
+        if local_hm_opt is not None and local_hm_opt.needs_grad_fluctuations:
+            if not (
+                isinstance(self.wrapper, torch.nn.parallel.DistributedDataParallel)
+                and dist.is_available()
+                and dist.is_initialized()
+                and dist.get_world_size() >= 2
+            ):
+                raise ValueError(
+                    "optimizer.physmuon_budget=True requires "
+                    "DistributedDataParallel (zero_stage 0 or 1) with at least "
+                    "2 ranks so per-channel gradient fluctuations can be "
+                    "measured across ranks. Disable physmuon_budget for "
+                    "single-rank or FSDP2 (zero_stage >= 2) runs."
+                )
+            self._physmuon_budget_hook = HybridMuonOptimizer.register_ddp_budget_hook(
+                self.wrapper, local_hm_opt
+            )
         for param_group in self.optimizer.param_groups:
             param_group["initial_lr"] = initial_lr
 
@@ -3753,17 +3837,30 @@ class Trainer(AbstractTrainer):
         )
         loss.backward()
 
+        total_norm: torch.Tensor | None = None
         if self.gradient_max_norm > 0.0:
-            self.nonfinite_grad_guard.update(
-                clip_grad_norm_(
+            total_norm = clip_grad_norm_(
+                self.wrapper.parameters(),
+                self.gradient_max_norm,
+                # A sharded gradient is a DTensor: the overflow-safe
+                # reduction would measure this rank's shard alone, so the
+                # distributed-native norm applies instead.
+                stable=not self.sharding.shards_parameters,
+            )
+            self.nonfinite_grad_guard.update(total_norm)
+        if (
+            isinstance(self._local_optimizer, HybridMuonOptimizer)
+            and self._local_optimizer.needs_pre_clip_grad_norm
+        ):
+            if total_norm is None:
+                total_norm = HybridMuonOptimizer.compute_global_grad_norm(
                     self.wrapper.parameters(),
-                    self.gradient_max_norm,
-                    # A sharded gradient is a DTensor: the overflow-safe
-                    # reduction would measure this rank's shard alone, so the
-                    # distributed-native norm applies instead.
                     stable=not self.sharding.shards_parameters,
                 )
-            )
+            self._local_optimizer.set_pre_clip_grad_norm(total_norm)
+        if self._physmuon_budget_hook is not None:
+            assert isinstance(self._local_optimizer, HybridMuonOptimizer)
+            self._physmuon_budget_hook.sync_to_optimizer(self._local_optimizer)
 
         self._optimizer_step()
         synchronize_contact_edges(self.wrapper)
