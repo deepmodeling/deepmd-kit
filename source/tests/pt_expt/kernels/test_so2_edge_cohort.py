@@ -176,6 +176,39 @@ def test_training_dispatch_preserved(monkeypatch, reason: str) -> None:
     assert calls == [True]
 
 
+def test_sm80_dispatch_matches_native(monkeypatch) -> None:
+    """The production SM80 fallback returns native values and gradients."""
+    args = operands(37)
+    go, out, z, uf, alpha, w0t, w1t, gw, *_ = args
+    ctx = SimpleNamespace(
+        saved_tensors=(
+            uf,
+            alpha,
+            out,
+            z,
+            uf,
+            w0t.transpose(2, 3).contiguous(),
+            w1t.transpose(2, 3).contiguous(),
+            gw,
+        ),
+        needs_input_grad=(True, True, False, False, False, False, False, False),
+        lmax=3,
+        focus_dim=32,
+        apply_alpha=True,
+    )
+    expected = sv._mixing_stack_bwd_impl(*args)
+
+    def forbidden(*unused):
+        raise AssertionError("SM80 entered ECS instead of native backward")
+
+    monkeypatch.setattr(ecs, "cohort_backward", forbidden)
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device: (8, 0))
+    with torch.no_grad():
+        actual = sv._mixing_stack_backward(ctx, go, None, None)
+    for got, reference in zip(actual[:2], expected, strict=True):
+        torch.testing.assert_close(got, reference, atol=0, rtol=0)
+
+
 def test_frozen_dispatch(monkeypatch) -> None:
     """The production dispatcher must enter ECS, not an equal native fallback."""
     args = operands(37)
