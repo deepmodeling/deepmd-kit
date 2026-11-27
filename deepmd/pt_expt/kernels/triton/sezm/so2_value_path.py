@@ -4982,13 +4982,19 @@ def _mixing_stack_backward(ctx, grad_out, grad_z, grad_u):
             supports_edge_cohort,
         )
 
-        if supports_edge_cohort(
-            grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
-        ) and all(
-            value.dtype == torch.float32
-            and value.device == grad_out.device
-            and value.is_contiguous()
-            for value in (alpha, w0_all, w1_all, gw_all)
+        if (
+            supports_edge_cohort(
+                grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
+            )
+            and all(
+                value.dtype == torch.float32
+                and value.device == grad_out.device
+                and value.is_contiguous()
+                for value in (alpha, w0_all, w1_all, gw_all)
+            )
+            # Paired A800 measurements regress with cohorts. Keep SM80 on
+            # native backward while retaining the existing path on other GPUs.
+            and torch.cuda.get_device_capability(grad_out.device) != (8, 0)
         ):
             backward_op = cohort_backward
     grad_u0, grad_alpha = backward_op(

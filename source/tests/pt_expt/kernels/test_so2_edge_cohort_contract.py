@@ -78,6 +78,54 @@ def test_existing_inference_levels(monkeypatch, backend, level):
             assert path._stack_op is not sv._mixing_stack_op
 
 
+@pytest.mark.parametrize("capability", [(8, 0), (8, 6), (9, 0), (12, 0)])
+@pytest.mark.skipif(
+    not torch.backends.cuda.is_built(),
+    reason="Fake CUDA views require a CUDA-enabled PyTorch build",
+)
+def test_device_dispatch_keeps_sm80_native(monkeypatch, capability):
+    """SM80 uses native; other architectures retain the existing selection."""
+    calls = []
+
+    def device_capability(device):
+        assert device == torch.device("cuda:1")
+        return capability
+
+    monkeypatch.setattr(torch.cuda, "get_device_capability", device_capability)
+    with FakeTensorMode():
+        u = torch.empty(2, 37, 320, device="cuda:1")
+        alpha = torch.empty(37, 2, device="cuda:1")
+        z = torch.empty(2, 2, 37, 320, device="cuda:1")
+        w0 = torch.empty(3, 2, 128, 128, device="cuda:1")
+        w1 = torch.empty(3, 2, 192, 192, device="cuda:1")
+        gw = torch.empty(2, 2, 32, 96, device="cuda:1")
+        ctx = SimpleNamespace(
+            saved_tensors=(u, alpha, u, z, u, w0, w1, gw),
+            needs_input_grad=(True, True, False, False, False, False, False, False),
+            lmax=3,
+            focus_dim=32,
+            apply_alpha=True,
+        )
+
+        def native(*args):
+            calls.append("native")
+            return torch.empty_like(u), torch.empty_like(alpha)
+
+        def cohort(*args):
+            calls.append("cohort")
+            return torch.empty_like(u), torch.empty_like(alpha)
+
+        monkeypatch.setattr(sv, "_mixing_stack_bwd_op", native)
+        monkeypatch.setattr(ecs, "cohort_backward", cohort)
+        with torch.no_grad():
+            result = sv._mixing_stack_backward(
+                ctx, torch.empty(37, 2, 320, device="cuda:1"), None, None
+            )
+        assert result[0].shape == u.shape
+        assert result[1].shape == alpha.shape
+    assert calls == ["native" if capability == (8, 0) else "cohort"]
+
+
 class _LaunchRecorder:
     def __init__(self):
         self.calls = []
