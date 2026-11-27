@@ -63,11 +63,6 @@ class Spin:
             The weights in the networks should be reused when get the variable.
         suffix
             Name suffix to identify this descriptor
-
-        Returns
-        -------
-        embedded_types
-            The computational graph for embedded types
         """
         name = "spin_attr" + suffix
         with tf.variable_scope(name, reuse=reuse):
