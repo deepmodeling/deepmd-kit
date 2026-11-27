@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Benchmark comparisons must use the same checkpoint and input frames."""
 
+import json
+import subprocess
+import sys
+from pathlib import (
+    Path,
+)
 from types import (
     SimpleNamespace,
 )
@@ -13,6 +19,54 @@ from .compare_so2_scalar_capture import (
     configure_capture_route,
     validate_identity,
 )
+
+
+@pytest.mark.parametrize(
+    "slots,missing",
+    [
+        (("TORCH", "BASE", "CSC5"), None),
+        (("TORCH", "BASE", "BASE"), None),
+        (("TORCH", "CSC5", "BASE"), None),
+        (("BASE", "TORCH", "CSC5"), None),
+        (("TORCH", "BASE", "CSC5"), "TORCH"),
+        (("TORCH", "BASE", "CSC5"), "BASE"),
+        (("TORCH", "BASE", "CSC5"), "CSC5"),
+    ],
+)
+def test_cli_validates_completed_routes(tmp_path, slots, missing):
+    """Reject reused/swapped/missing routes, allowing same-revision ablation."""
+    arrays = {
+        f"{repeat}_{frame}_{field}": np.ones(1)
+        for repeat in range(3)
+        for frame in range(3)
+        for field in ("energy", "forces", "virial", "stress")
+    }
+    for route in ("TORCH", "BASE", "CSC5"):
+        directory = tmp_path / route
+        directory.mkdir()
+        result = {"status": "completed", "input_sha256": "same-input"}
+        if route != missing:
+            result["route"] = route
+        (directory / "result.json").write_text(json.dumps(result))
+        (directory / "manifest.json").write_text(
+            json.dumps({"model_sha256": "same-model", "revision": "same-revision"})
+        )
+        np.savez(directory / "outputs.npz", **arrays)
+    command = [
+        sys.executable,
+        str(Path(__file__).with_name("compare_so2_scalar_capture.py")),
+    ]
+    for slot, route in zip(("torch", "base", "candidate"), slots, strict=True):
+        command.extend((f"--{slot}", str(tmp_path / route)))
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if slots == ("TORCH", "BASE", "CSC5") and missing is None:
+        assert completed.returncode == 0, completed.stderr
+        report = json.loads(completed.stdout)
+        assert all(row["passed"] for row in report["candidate"]["vs_base"].values())
+    else:
+        assert completed.returncode != 0
+        assert "requires route" in completed.stderr
+        assert not completed.stdout
 
 
 @pytest.mark.parametrize("route", ["BASE", "CSC5", "TORCH"])

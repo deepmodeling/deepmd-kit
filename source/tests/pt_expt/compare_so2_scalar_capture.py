@@ -92,6 +92,12 @@ def main():
         results[route] = json.loads((path / "result.json").read_text())
         out[route] = {"status": results[route]["status"]}
         if results[route]["status"] == "completed":
+            expected = {"torch": "TORCH", "base": "BASE", "candidate": "CSC5"}[route]
+            if results[route].get("route") != expected:
+                raise ValueError(
+                    f"--{route} requires route {expected}, "
+                    f"got {results[route].get('route')!r} in {path}"
+                )
             manifests[route] = json.loads((path / "manifest.json").read_text())
             arrays[route] = dict(np.load(path / "outputs.npz"))
             out[route]["repeat"] = compare(arrays[route], arrays[route])
