@@ -30,16 +30,24 @@ from ..dpa4_fixtures import (
 
 
 @pytest.mark.parametrize(
-    ("spin", "suffix"), [(False, "pt2"), (True, "pt2"), (True, "pte")]
+    ("spin", "suffix", "with_comm"),
+    [
+        (False, "pt2", False),
+        (False, "pt2", True),
+        (True, "pt2", True),
+        (True, "pte", True),
+    ],
 )
-def test_graph_round_trip(tmp_path, spin, suffix):
+def test_graph_round_trip(tmp_path, spin, suffix, with_comm):
     cfg = copy.deepcopy(NATIVE_SPIN_CONFIG)
     if not spin:
         del cfg["spin"]
     rng = np.random.default_rng(5959)
     model = jitter_zero_arrays(get_model(cfg).serialize(), rng)
     before, after = (str(tmp_path / name) for name in [f"before.{suffix}", "after.pt2"])
-    deserialize_to_file(before, {"model": model}, lower_kind="graph", with_comm=spin)
+    deserialize_to_file(
+        before, {"model": model}, lower_kind="graph", with_comm=with_comm
+    )
     change_bias(before, bias_value=[0.25, -0.5], output=after)
     atype = np.array([0, 1, 0, 1])
     coords = rng.uniform(1, 3, (1, 4, 3))
@@ -49,7 +57,7 @@ def test_graph_round_trip(tmp_path, spin, suffix):
         data = serialize_from_file(path)
         assert data["lower_input_kind"] == "graph"
         assert data["do_atomic_virial"]
-        expected_comm = spin and suffix == "pt2"
+        expected_comm = with_comm and not spin and suffix == "pt2"
         assert data.get("has_comm_artifact", False) == expected_comm
         with zipfile.ZipFile(path) as archive:
             assert (
