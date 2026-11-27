@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Run native-spin conventions through a real host or CUDA Kokkos plugin.
+"""Run the native-spin pair style through a real host or CUDA Kokkos plugin.
 
 Each MPI process uses the same GPU, so two-rank coverage needs only one device.
 Host-staged communication deliberately does not require CUDA-aware MPI.
@@ -91,12 +91,7 @@ def _cmdargs(kokkos):
     return cmdargs
 
 
-def _run(
-    lmp: lammps,
-    args: argparse.Namespace,
-    selection: str,
-    overlay: bool = False,
-) -> dict:
+def _run(lmp: lammps, args: argparse.Namespace, overlay: bool = False) -> dict:
     comm = MPI.COMM_WORLD
     assert lmp.get_mpi_comm().size == args.ranks
     pair = "dpa4spin/kk" if args.kokkos else "dpa4spin"
@@ -106,8 +101,7 @@ def _run(
     # magnetic-force DualViews. Kokkos NVE modifies only positions and velocities.
     nve_style = "nve/kk" if args.kokkos else "nve"
     assert lmp.has_style("pair", pair), f"Missing plugin pair style {pair}"
-    pair_args = "" if selection == "default" else f" magnetic_force {selection}"
-    substyle = f"{pair} {args.model.resolve()}{pair_args}"
+    substyle = f"{pair} {args.model.resolve()}"
     if overlay:
         style = "hybrid/overlay/kk" if args.kokkos else "hybrid/overlay"
         pair_command = f"pair_style {style} {substyle} {substyle}"
@@ -140,10 +134,7 @@ def _run(
         "run 0",
     ):
         lmp.command(command)
-    assert lmp.extract_pair_dimension("fm_cartesian_force") == 0
-    flag = _pair_pointer(lmp, "fm_cartesian_force", ctypes.POINTER(ctypes.c_int))[0]
     result = {
-        "convention": flag,
         "pair_style": lmp.extract_global("pair_style"),
         "run_style_active": lmp.eval(f"is_active(run_style,{integrator})"),
         "atom_style": lmp.extract_global("atom_style"),
@@ -199,7 +190,8 @@ def main():
     parser.add_argument(
         "--cadence",
         action="store_true",
-        help="Run only Cartesian forces over three steps with a two-step neighbor cadence.",
+        help="Run only the plain pair style over three steps with a two-step "
+        "neighbor cadence.",
     )
     args = parser.parse_args()
     assert MPI.COMM_WORLD.size == args.ranks, (
@@ -209,22 +201,10 @@ def main():
     results = {}
     library = None
     try:
-        cases = (
-            (("cartesian", False),)
-            if args.cadence
-            else (
-                ("default", False),
-                ("precession", False),
-                ("cartesian", False),
-                ("precession", True),
-                ("cartesian", True),
-            )
-        )
-        for selection, overlay in cases:
+        for overlay in (False,) if args.cadence else (False, True):
             with lammps(cmdargs=_cmdargs(args.kokkos), comm=MPI.COMM_WORLD) as lmp:
                 library = lmp.lib
-                key = f"overlay_{selection}" if overlay else selection
-                results[key] = _run(lmp, args, selection, overlay)
+                results["overlay" if overlay else "pair"] = _run(lmp, args, overlay)
         if MPI.COMM_WORLD.rank == 0:
             args.output.write_text(json.dumps(results))
     finally:

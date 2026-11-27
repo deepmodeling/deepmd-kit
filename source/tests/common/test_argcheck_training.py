@@ -53,6 +53,51 @@ def test_reset_data_progress_rejects_non_boolean_values(reset) -> None:
         training_argument.check_value(normalized, strict=True)
 
 
+@pytest.mark.parametrize("sampling", ["synchronized", "independent"])
+def test_task_sampling_is_optional_and_multitask_only(sampling) -> None:
+    argument = training_args(multi_task=True)
+    values = {
+        "numb_steps": 1,
+        "data_dict": {
+            key: {"training_data": {"systems": "dataset"}}
+            for key in ("first", "second")
+        },
+    }
+    normalized = argument.normalize_value(values)
+    argument.check_value(normalized, strict=True)
+    assert "task_sampling" not in normalized
+    normalized = argument.normalize_value(values | {"task_sampling": sampling})
+    argument.check_value(normalized, strict=True)
+    assert normalized["task_sampling"] == sampling
+
+    single = training_args()
+    normalized = single.normalize_value({"numb_steps": 1, "task_sampling": sampling})
+    with pytest.raises(ArgumentError, match="task_sampling"):
+        single.check_value(normalized, strict=True)
+
+    values["data_dict"].pop("second")
+    normalized = argument.normalize_value(values | {"task_sampling": sampling})
+    with pytest.raises(ValueError, match="at least two tasks"):
+        argument.check_value(normalized, strict=True)
+
+
+@pytest.mark.parametrize("sampling", ["uniform", "", None, 1])
+def test_task_sampling_rejects_invalid_modes(sampling) -> None:
+    argument = training_args(multi_task=True)
+    normalized = argument.normalize_value(
+        {
+            "numb_steps": 1,
+            "task_sampling": sampling,
+            "data_dict": {
+                key: {"training_data": {"systems": "dataset"}}
+                for key in ("first", "second")
+            },
+        }
+    )
+    with pytest.raises(ArgumentError, match="task_sampling"):
+        argument.check_value(normalized, strict=True)
+
+
 def _training_input(data: dict[str, Any] | list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "model": {

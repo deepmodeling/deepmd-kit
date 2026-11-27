@@ -6,6 +6,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.fitting.dpa4_ener import (
+    CaseFiLMConditioner as CaseFiLMConditionerDP,
+)
 from deepmd.dpmodel.fitting.dpa4_ener import GLUFittingNet as GLUFittingNetDP
 from deepmd.dpmodel.fitting.dpa4_ener import (
     SeZMEnergyFittingNet as SeZMEnergyFittingNetDP,
@@ -14,6 +17,7 @@ from deepmd.dpmodel.fitting.dpa4_ener import (
     SeZMNetworkCollection as SeZMNetworkCollectionDP,
 )
 from deepmd.pt_expt.common import (
+    promote_buffers,
     register_dpmodel_mapping,
     torch_module,
 )
@@ -21,6 +25,30 @@ from deepmd.pt_expt.common import (
 from .base_fitting import (
     BaseFitting,
 )
+from .invar_fitting import (
+    ExpertFittingParameters,
+    SharesInvarParams,
+)
+
+
+@torch_module
+class CaseFiLMConditioner(CaseFiLMConditionerDP):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._promote_parameters()
+
+    def _promote_parameters(self) -> None:
+        promote_buffers(self, self.PARAMETER_ATTRIBUTES, self.trainable)
+        for name in self.PARAMETER_LIST_ATTRIBUTES:
+            for parameter in getattr(self, name):
+                parameter.requires_grad_(self.trainable)
+
+    def set_variables(self, variables: dict[str, Any]) -> None:
+        super().set_variables(variables)
+        self._promote_parameters()
+
+    def forward(self, case_embd: torch.Tensor) -> torch.Tensor:
+        return self.call(case_embd)
 
 
 @torch_module
@@ -65,6 +93,8 @@ register_dpmodel_mapping(
 @BaseFitting.register("dpa4_ener")
 @BaseFitting.register("sezm_ener")
 @torch_module
-class SeZMEnergyFittingNet(SeZMEnergyFittingNetDP):
+class SeZMEnergyFittingNet(
+    SharesInvarParams, ExpertFittingParameters, SeZMEnergyFittingNetDP
+):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)

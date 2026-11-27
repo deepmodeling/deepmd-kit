@@ -119,8 +119,7 @@ static const char cite_user_deepmd_package[] =
     "}\n\n";
 
 PairDeepSpin::PairDeepSpin(LAMMPS* lmp)
-    : PairDeepBaseModel(
-          lmp, cite_user_deepmd_package, deep_spin, deep_spin_model_devi) {
+    : PairDeepBaseModel(lmp, cite_user_deepmd_package, deep_spin) {
   print_summary("  ");
 }
 
@@ -129,9 +128,6 @@ PairDeepSpin::~PairDeepSpin() {
 }
 
 void PairDeepSpin::compute(int eflag, int vflag) {
-  if (numb_models == 0) {
-    return;
-  }
   // See
   // https://docs.lammps.org/Developer_updating.html#use-ev-init-to-initialize-variables-derived-from-eflag-and-vflag
   ev_init(eflag, vflag);
@@ -231,21 +227,6 @@ void PairDeepSpin::compute(int eflag, int vflag) {
   }
 
   int ago = neighbor->ago;
-  if (numb_models > 1) {
-    if (multi_models_no_mod_devi &&
-        (out_freq > 0 && update->ntimestep % out_freq == 0)) {
-      ago = 0;
-    } else if (multi_models_mod_devi &&
-               (out_freq == 0 || update->ntimestep % out_freq != 0)) {
-      ago = 0;
-    }
-  }
-  // compute
-  single_model = (numb_models == 1);
-  multi_models_no_mod_devi =
-      (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
-  multi_models_mod_devi =
-      (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
     deepmd_compat::InputNlist lmp_list(
         list->inum, list->ilist, list->numneigh, list->firstneigh,
@@ -256,94 +237,28 @@ void PairDeepSpin::compute(int eflag, int vflag) {
     if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
       lmp_list.set_mapping(mapping_vec.data());
     }
-    if (single_model || multi_models_no_mod_devi) {
-      // cvflag_atom is the right flag for the cvatom matrix
-      if (!(eflag_atom || cvflag_atom)) {
-        try {
-          deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
-                            dtype, dbox, nghost, lmp_list, ago, fparam, daparam,
-                            charge_spin);
-        } catch (deepmd_compat::deepmd_exception& e) {
-          error->one(FLERR, e.what());
-        }
+    // cvflag_atom is the right flag for the cvatom matrix
+    if (!(eflag_atom || cvflag_atom)) {
+      try {
+        deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
+                          dtype, dbox, nghost, lmp_list, ago, fparam, daparam,
+                          charge_spin);
+      } catch (deepmd_compat::deepmd_exception& e) {
+        error->one(FLERR, e.what());
       }
-      // do atomic energy and virial
-      else {
-        vector<double> deatom(nall * 1, 0);
-        vector<double> dvatom(nall * 9, 0);
-        try {
-          deep_spin.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
-                            dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
-                            fparam, daparam, charge_spin);
-        } catch (deepmd_compat::deepmd_exception& e) {
-          error->one(FLERR, e.what());
-        }
-        if (eflag_atom) {
-          for (int ii = 0; ii < nlocal; ++ii) {
-            eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
-          }
-        }
-        // Map the 9-component DeePMD atomic virial onto the LAMMPS centroid
-        // per-atom virial (xx, yy, zz, xy, xz, yz, yx, zx, zy).
-        if (cvflag_atom) {
-          for (int ii = 0; ii < nall; ++ii) {
-            cvatom[ii][0] +=
-                scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
-            cvatom[ii][1] +=
-                scale[1][1] * dvatom[9 * ii + 4] * ener_unit_cvt_factor;  // yy
-            cvatom[ii][2] +=
-                scale[1][1] * dvatom[9 * ii + 8] * ener_unit_cvt_factor;  // zz
-            cvatom[ii][3] +=
-                scale[1][1] * dvatom[9 * ii + 3] * ener_unit_cvt_factor;  // xy
-            cvatom[ii][4] +=
-                scale[1][1] * dvatom[9 * ii + 6] * ener_unit_cvt_factor;  // xz
-            cvatom[ii][5] +=
-                scale[1][1] * dvatom[9 * ii + 7] * ener_unit_cvt_factor;  // yz
-            cvatom[ii][6] +=
-                scale[1][1] * dvatom[9 * ii + 1] * ener_unit_cvt_factor;  // yx
-            cvatom[ii][7] +=
-                scale[1][1] * dvatom[9 * ii + 2] * ener_unit_cvt_factor;  // zx
-            cvatom[ii][8] +=
-                scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
-          }
-        }
-      }
-    } else if (multi_models_mod_devi) {
+    }
+    // do atomic energy and virial
+    else {
       vector<double> deatom(nall * 1, 0);
       vector<double> dvatom(nall * 9, 0);
-      vector<vector<double>> all_virial;
-      vector<double> all_energy;
-      vector<vector<double>> all_atom_energy;
-      vector<vector<double>> all_atom_virial;
-      if (!(eflag_atom || cvflag_atom)) {
-        try {
-          deep_spin_model_devi.compute(
-              all_energy, all_force, all_force_mag, all_virial, dcoord, dspin,
-              dtype, dbox, nghost, lmp_list, ago, fparam, daparam, charge_spin);
-        } catch (deepmd_compat::deepmd_exception& e) {
-          error->one(FLERR, e.what());
-        }
-      } else {
-        try {
-          deep_spin_model_devi.compute(
-              all_energy, all_force, all_force_mag, all_virial, all_atom_energy,
-              all_atom_virial, dcoord, dspin, dtype, dbox, nghost, lmp_list,
-              ago, fparam, daparam, charge_spin);
-        } catch (deepmd_compat::deepmd_exception& e) {
-          error->one(FLERR, e.what());
-        }
+      try {
+        deep_spin.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
+                          dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
+                          fparam, daparam, charge_spin);
+      } catch (deepmd_compat::deepmd_exception& e) {
+        error->one(FLERR, e.what());
       }
-      // deep_spin_model_devi.compute_avg (dener, all_energy);
-      // deep_spin_model_devi.compute_avg (dforce, all_force);
-      // deep_spin_model_devi.compute_avg (dvirial, all_virial);
-      // deep_spin_model_devi.compute_avg (deatom, all_atom_energy);
-      // deep_spin_model_devi.compute_avg (dvatom, all_atom_virial);
-      dener = all_energy[0];
-      dforce = all_force[0];
-      dforce_mag = all_force_mag[0];
-      dvirial = all_virial[0];
       if (eflag_atom) {
-        deatom = all_atom_energy[0];
         for (int ii = 0; ii < nlocal; ++ii) {
           eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
         }
@@ -351,7 +266,6 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       // Map the 9-component DeePMD atomic virial onto the LAMMPS centroid
       // per-atom virial (xx, yy, zz, xy, xz, yz, yx, zx, zy).
       if (cvflag_atom) {
-        dvatom = all_atom_virial[0];
         for (int ii = 0; ii < nall; ++ii) {
           cvatom[ii][0] +=
               scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
@@ -373,138 +287,37 @@ void PairDeepSpin::compute(int eflag, int vflag) {
               scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
         }
       }
-      if (out_freq > 0 && update->ntimestep % out_freq == 0) {
-        int rank = comm->me;
-        // std force
-        if (newton_pair) {
-#if LAMMPS_VERSION_NUMBER >= 20220324
-          comm->reverse_comm(this);
-#else
-          comm->reverse_comm_pair(this);
-#endif
+    }
+    // The further models of the ensemble are evaluated on the same neighbor
+    // list at the steps that write the model deviation.
+    if (model_deviation.due()) {
+      model_deviation.store(0, dforce, dvirial, dforce_mag);
+      const int ensemble_ago = model_deviation.ensemble_ago();
+      for (std::size_t kk = 0; kk < ensemble.size(); ++kk) {
+        double energy = 0.0;
+        vector<double> model_force, model_force_mag, model_virial;
+        try {
+          ensemble[kk].compute(energy, model_force, model_force_mag,
+                               model_virial, dcoord, dspin, dtype, dbox, nghost,
+                               lmp_list, ensemble_ago, fparam, daparam,
+                               charge_spin);
+        } catch (deepmd_compat::deepmd_exception& e) {
+          error->one(FLERR, e.what());
         }
-        vector<double> std_f;
-        vector<double> tmp_avg_f;
-        vector<double> std_fm;
-        vector<double> tmp_avg_fm;
-        deep_spin_model_devi.compute_avg(tmp_avg_f, all_force);
-        deep_spin_model_devi.compute_std_f(std_f, tmp_avg_f, all_force);
-        if (out_rel == 1) {
-          deep_spin_model_devi.compute_relative_std_f(std_f, tmp_avg_f, eps);
-        }
-        double min = numeric_limits<double>::max(), max = 0, avg = 0;
-        ana_st(max, min, avg, std_f, nlocal);
-        double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
-        double all_fm_min = 0, all_fm_max = 0, all_fm_avg = 0;
-        MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
-        MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
-        MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-        all_f_avg /= double(atom->natoms);
-        deep_spin_model_devi.compute_avg(tmp_avg_fm, all_force_mag);
-        deep_spin_model_devi.compute_std_f(std_fm, tmp_avg_fm, all_force_mag);
-        if (out_rel == 1) {
-          deep_spin_model_devi.compute_relative_std_f(std_fm, tmp_avg_fm, eps);
-        }
-        min = numeric_limits<double>::max(), max = 0, avg = 0;
-        ana_st(max, min, avg, std_fm, nlocal);
-        MPI_Reduce(&min, &all_fm_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
-        MPI_Reduce(&max, &all_fm_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
-        MPI_Reduce(&avg, &all_fm_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-        // need modified for only spin atoms
-        all_fm_avg /= double(atom->natoms);
-        // std v
-        std::vector<double> send_v(9 * numb_models);
-        std::vector<double> recv_v(9 * numb_models);
-        for (int kk = 0; kk < numb_models; ++kk) {
-          for (int ii = 0; ii < 9; ++ii) {
-            send_v[kk * 9 + ii] = all_virial[kk][ii] / double(atom->natoms);
-          }
-        }
-        MPI_Reduce(&send_v[0], &recv_v[0], 9 * numb_models, MPI_DOUBLE, MPI_SUM,
-                   0, world);
-        std::vector<std::vector<double>> all_virial_1(numb_models);
-        std::vector<double> avg_virial, std_virial;
-        for (int kk = 0; kk < numb_models; ++kk) {
-          all_virial_1[kk].resize(9);
-          for (int ii = 0; ii < 9; ++ii) {
-            all_virial_1[kk][ii] = recv_v[kk * 9 + ii];
-          }
-        }
-        double all_v_min = numeric_limits<double>::max(), all_v_max = 0,
-               all_v_avg = 0;
-        if (rank == 0) {
-          deep_spin_model_devi.compute_avg(avg_virial, all_virial_1);
-          deep_spin_model_devi.compute_std(std_virial, avg_virial, all_virial_1,
-                                           1);
-          if (out_rel_v == 1) {
-            deep_spin_model_devi.compute_relative_std(std_virial, avg_virial,
-                                                      eps_v, 1);
-          }
-          for (int ii = 0; ii < 9; ++ii) {
-            if (std_virial[ii] > all_v_max) {
-              all_v_max = std_virial[ii];
-            }
-            if (std_virial[ii] < all_v_min) {
-              all_v_min = std_virial[ii];
-            }
-            all_v_avg += std_virial[ii] * std_virial[ii];
-          }
-          all_v_avg = sqrt(all_v_avg / 9);
-        }
-        if (rank == 0) {
-          all_v_max *= ener_unit_cvt_factor;
-          all_v_min *= ener_unit_cvt_factor;
-          all_v_avg *= ener_unit_cvt_factor;
-          all_f_max *= force_unit_cvt_factor;
-          all_f_min *= force_unit_cvt_factor;
-          all_f_avg *= force_unit_cvt_factor;
-          all_fm_max *= force_unit_cvt_factor;
-          all_fm_min *= force_unit_cvt_factor;
-          all_fm_avg *= force_unit_cvt_factor;
-          fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
-             << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
-             << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
-             << " " << setw(18) << all_f_avg << " " << setw(18) << all_fm_max
-             << " " << setw(18) << all_fm_min << " " << setw(18) << all_fm_avg;
-        }
-        if (out_each == 1) {
-          // Only the per-atom force deviation is gathered here.
-          vector<double> std_f_all(atom->natoms);
-          // Gather std_f and tags
-          tagint* tag = atom->tag;
-          int nprocs = comm->nprocs;
-          ensure_model_deviation_buffers();
-          for (int ii = 0; ii < nlocal; ii++) {
-            tagsend[ii] = tag[ii];
-            stdfsend[ii] = std_f[ii];
-          }
-          MPI_Gather(&nlocal, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
-          displacements[0] = 0;
-          for (int ii = 0; ii < nprocs - 1; ii++) {
-            displacements[ii + 1] = displacements[ii] + counts[ii];
-          }
-          MPI_Gatherv(tagsend, nlocal, MPI_LMP_TAGINT, tagrecv, counts,
-                      displacements, MPI_LMP_TAGINT, 0, world);
-          MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts,
-                      displacements, MPI_DOUBLE, 0, world);
-          if (rank == 0) {
-            for (int dd = 0; dd < atom->natoms; ++dd) {
-              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * force_unit_cvt_factor;
-            }
-            for (int dd = 0; dd < atom->natoms; ++dd) {
-              fp << " " << setw(18) << std_f_all[dd];
-            }
-          }
-        }
-        if (rank == 0) {
-          fp << endl;
-        }
+        model_deviation.store(kk + 1, model_force, model_virial,
+                              model_force_mag);
       }
-    } else {
-      error->all(FLERR, "unknown computational branch");
+      if (newton_pair) {
+#if LAMMPS_VERSION_NUMBER >= 20220324
+        comm->reverse_comm(this);
+#else
+        comm->reverse_comm_pair(this);
+#endif
+      }
+      model_deviation.write();
     }
   } else {
-    if (numb_models == 1) {
+    if (ensemble.empty()) {
       try {
         deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
                           dtype, dbox, vector<double>(), vector<double>(),
@@ -547,18 +360,16 @@ void PairDeepSpin::compute(int eflag, int vflag) {
 }
 
 static bool is_key(const string& input) {
+  if (ModelDeviation::is_option(input)) {
+    return true;
+  }
   vector<string> keys;
-  keys.push_back("out_freq");
-  keys.push_back("out_file");
   keys.push_back("fparam");
   keys.push_back("aparam");
   keys.push_back("fparam_from_compute");
   keys.push_back("aparam_from_compute");
   keys.push_back("charge_spin");
   keys.push_back("ttm");
-  keys.push_back("atomic");
-  keys.push_back("relative");
-  keys.push_back("relative_v");
   keys.push_back("virtual_len");
   keys.push_back("spin_norm");
 
@@ -586,46 +397,24 @@ void PairDeepSpin::settings(int narg, char** arg) {
   for (int ii = 0; ii < iarg; ++ii) {
     models.push_back(arg[ii]);
   }
-  numb_models = models.size();
-  if (numb_models == 1) {
-    try {
-      deep_spin.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-    } catch (deepmd_compat::deepmd_exception& e) {
-      error->one(FLERR, e.what());
-    }
-    cutoff = deep_spin.cutoff() * dist_unit_cvt_factor;
-    numb_types = deep_spin.numb_types();
-    numb_types_spin = deep_spin.numb_types_spin();
-    dim_fparam = deep_spin.dim_fparam();
-    dim_aparam = deep_spin.dim_aparam();
-    dim_chg_spin = deep_spin.dim_chg_spin();
-  } else {
-    try {
-      deep_spin.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-      deep_spin_model_devi.init(models, get_node_rank(),
-                                get_file_content(models));
-    } catch (deepmd_compat::deepmd_exception& e) {
-      error->one(FLERR, e.what());
-    }
-    cutoff = deep_spin_model_devi.cutoff() * dist_unit_cvt_factor;
-    numb_types = deep_spin_model_devi.numb_types();
-    numb_types_spin = deep_spin_model_devi.numb_types_spin();
-    dim_fparam = deep_spin_model_devi.dim_fparam();
-    dim_aparam = deep_spin_model_devi.dim_aparam();
-    dim_chg_spin = deep_spin_model_devi.dim_chg_spin();
-    assert(cutoff == deep_spin.cutoff() * dist_unit_cvt_factor);
-    assert(numb_types == deep_spin.numb_types());
-    assert(numb_types_spin == deep_spin.numb_types_spin());
-    assert(dim_fparam == deep_spin.dim_fparam());
-    assert(dim_aparam == deep_spin.dim_aparam());
-    assert(dim_chg_spin == deep_spin.dim_chg_spin());
-  }
+  const double ensemble_cutoff = load_ensemble(
+      models, deep_spin, ensemble,
+      [&](deepmd_compat::DeepSpin& model, const string& path) {
+        try {
+          model.init(path, get_node_rank(), get_file_content(path));
+        } catch (deepmd_compat::deepmd_exception& e) {
+          error->one(FLERR, e.what());
+        }
+      },
+      force->pair_style, error);
+  cutoff = ensemble_cutoff * dist_unit_cvt_factor;
+  numb_types = deep_spin.numb_types();
+  numb_types_spin = deep_spin.numb_types_spin();
+  dim_fparam = deep_spin.dim_fparam();
+  dim_aparam = deep_spin.dim_aparam();
+  dim_chg_spin = deep_spin.dim_chg_spin();
 
-  out_freq = 100;
-  out_file = "model_devi.out";
-  out_each = 0;
-  out_rel = 0;
-  eps = 0.;
+  model_deviation.reset();
   fparam.clear();
   aparam.clear();
   charge_spin.clear();
@@ -634,18 +423,9 @@ void PairDeepSpin::settings(int narg, char** arg) {
       error->all(FLERR,
                  "Illegal pair_style command\nwrong number of parameters\n");
     }
-    if (string(arg[iarg]) == string("out_freq")) {
-      if (iarg + 1 >= narg) {
-        error->all(FLERR, "Illegal out_freq, not provided");
-      }
-      out_freq = atoi(arg[iarg + 1]);
-      iarg += 2;
-    } else if (string(arg[iarg]) == string("out_file")) {
-      if (iarg + 1 >= narg) {
-        error->all(FLERR, "Illegal out_file, not provided");
-      }
-      out_file = string(arg[iarg + 1]);
-      iarg += 2;
+    if (const int used = model_deviation.parse(narg, arg, iarg,
+                                               ener_unit_cvt_factor, is_key)) {
+      iarg += used;
     } else if (string(arg[iarg]) == string("fparam")) {
       for (int ii = 0; ii < dim_fparam; ++ii) {
         if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
@@ -722,25 +502,6 @@ void PairDeepSpin::settings(int narg, char** arg) {
       do_compute_aparam = true;
       compute_aparam_id = arg[iarg + 1];
       iarg += 1 + 1;
-    } else if (string(arg[iarg]) == string("atomic")) {
-      out_each = 1;
-      iarg += 1;
-    } else if (string(arg[iarg]) == string("relative")) {
-      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
-        error->all(FLERR, "Illegal relative, not provided");
-      }
-      out_rel = 1;
-      eps = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
-            ener_unit_cvt_factor;
-      iarg += 2;
-    } else if (string(arg[iarg]) == string("relative_v")) {
-      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
-        error->all(FLERR, "Illegal relative_v, not provided");
-      }
-      out_rel_v = 1;
-      eps_v = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
-              ener_unit_cvt_factor;
-      iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
       parse_spin_vector_option(virtual_len, "virtual_len", iarg, narg, arg,
                                is_key);
@@ -749,9 +510,6 @@ void PairDeepSpin::settings(int narg, char** arg) {
     }
   }
 
-  if (out_freq < 0) {
-    error->all(FLERR, "Illegal out_freq, should be >= 0");
-  }
   if ((int)do_ttm + (int)do_compute_aparam + (int)(aparam.size() > 0) > 1) {
     error->all(FLERR,
                "aparam, aparam_from_compute, and ttm should NOT be set "
@@ -771,33 +529,21 @@ void PairDeepSpin::settings(int narg, char** arg) {
   if (!charge_spin.empty()) {
     try {
       deep_spin.set_charge_spin(charge_spin);
-      if (numb_models > 1) {
-        deep_spin_model_devi.set_charge_spin(charge_spin);
+      for (auto& model : ensemble) {
+        model.set_charge_spin(charge_spin);
       }
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
   }
 
+  model_deviation.setup(1 + ensemble.size(), true, is_restart,
+                        ener_unit_cvt_factor, force_unit_cvt_factor);
   if (comm->me == 0) {
-    if (numb_models > 1 && out_freq > 0) {
-      if (!is_restart) {
-        fp.open(out_file);
-        fp << scientific;
-        fp << "#" << setw(12 - 1) << "step" << setw(18 + 1) << "max_devi_v"
-           << setw(18 + 1) << "min_devi_v" << setw(18 + 1) << "avg_devi_v"
-           << setw(18 + 1) << "max_devi_fr" << setw(18 + 1) << "min_devi_fr"
-           << setw(18 + 1) << "avg_devi_fr" << setw(18 + 1) << "max_devi_fm"
-           << setw(18 + 1) << "min_devi_fm" << setw(18 + 1) << "avg_devi_fm"
-           << endl;
-      } else {
-        fp.open(out_file, std::ofstream::out | std::ofstream::app);
-        fp << scientific;
-      }
-    }
     string pre = "  ";
     cout << pre << ">>> Info of model(s):" << endl
-         << pre << "using " << setw(3) << numb_models << " model(s): ";
+         << pre << "using " << setw(3) << model_deviation.models()
+         << " model(s): ";
     if (narg == 1) {
       cout << arg[0] << " ";
     } else {
@@ -841,8 +587,7 @@ void PairDeepSpin::settings(int narg, char** arg) {
     }
   }
 
-  comm_reverse = numb_models * 3 * 2;
-  all_force.resize(numb_models);
+  comm_reverse = model_deviation.width();
 }
 
 /* ----------------------------------------------------------------------
@@ -942,6 +687,7 @@ void PairDeepSpin::coeff(int narg, char** arg) {
       }
     }
   }
+  check_ensemble_types(type_idx_map, deep_spin, ensemble, error);
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo, i); j <= jhi; j++) {
       setflag[i][j] = 1;
@@ -962,52 +708,11 @@ void PairDeepSpin::coeff(int narg, char** arg) {
 /* ---------------------------------------------------------------------- */
 
 int PairDeepSpin::pack_reverse_comm(int n, int first, double* buf) {
-  int i, m, last;
-
-  m = 0;
-  last = first + n;
-  if (!atom->sp_flag) {
-    error->all(
-        FLERR,
-        "Pair style 'deepspin' only supports spin atoms, please use pair style "
-        "'deepmd' instead.");
-  } else {
-    for (i = first; i < last; i++) {
-      for (int dd = 0; dd < numb_models; ++dd) {
-        buf[m++] = all_force[dd][3 * i + 0];
-        buf[m++] = all_force[dd][3 * i + 1];
-        buf[m++] = all_force[dd][3 * i + 2];
-        buf[m++] = all_force_mag[dd][3 * i + 0];
-        buf[m++] = all_force_mag[dd][3 * i + 1];
-        buf[m++] = all_force_mag[dd][3 * i + 2];
-      }
-    }
-  }
-  return m;
+  return model_deviation.pack_reverse(n, first, buf);
 }
 
 /* ---------------------------------------------------------------------- */
 
 void PairDeepSpin::unpack_reverse_comm(int n, int* list, double* buf) {
-  int i, j, m;
-
-  m = 0;
-  if (!atom->sp_flag) {
-    error->all(
-        FLERR,
-        "Pair style 'deepspin' only supports spin atoms, please use pair style "
-        "'deepmd' instead.");
-  } else {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      for (int dd = 0; dd < numb_models; ++dd) {
-        all_force[dd][3 * j + 0] += buf[m++];
-        all_force[dd][3 * j + 1] += buf[m++];
-        all_force[dd][3 * j + 2] += buf[m++];
-        all_force_mag[dd][3 * j + 0] += buf[m++];
-        all_force_mag[dd][3 * j + 1] += buf[m++];
-        all_force_mag[dd][3 * j + 2] += buf[m++];
-      }
-    }
-  }
+  model_deviation.unpack_reverse(n, list, buf);
 }

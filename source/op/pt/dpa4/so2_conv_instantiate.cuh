@@ -82,7 +82,8 @@ void conv_forward_launch(const ConvArgs& args,
                          float* pre_gate,
                          cudaStream_t stream) {
   using T = typename ConvLaunch<L, CF>::Tile;
-  const int smem = ConvSmem<L, CF, T>::bytes(args.kc_len, args.n_head, false);
+  const int smem =
+      ConvSmem<L, CF, T>::bytes(args.kc_len, args.n_head, false, args.parity);
   cudaError_t status =
       enable_dynamic_smem(so2_conv_fwd_kernel<L, CF, T>, smem, T::OCC);
   if (status == cudaSuccess) {
@@ -109,7 +110,8 @@ void conv_backward_launch(const ConvArgs& args,
                           float* g_alpha,
                           cudaStream_t stream) {
   using T = typename ConvLaunch<L, CF>::Tile;
-  const int smem = ConvSmem<L, CF, T>::bytes(args.kc_len, args.n_head, true);
+  const int smem =
+      ConvSmem<L, CF, T>::bytes(args.kc_len, args.n_head, true, args.parity);
   cudaError_t status =
       enable_dynamic_smem(so2_conv_bwd_kernel<L, CF, T>, smem, T::OCC);
   if (status == cudaSuccess) {

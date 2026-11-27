@@ -159,8 +159,9 @@ def edge_energy_deriv(
     force_precision: torch.dtype | None = None,
     topologies: Sequence[PairGraph | KGrid | MeshGrid] = (),
     n_local: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
-    """Return (force, atom_virial_or_None, virial) from a graph energy.
+    spin_leaf: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor, torch.Tensor | None]:
+    """Return (force, atom_virial_or_None, virial, spin_grad_or_None) from a graph energy.
 
     g_e = dE/d(edge_vec) via one torch.autograd.grad, then the shared
     edge_force_virial scatter. At ``DP_CUDA_INFER >= 1`` (and with the C++
@@ -185,7 +186,8 @@ def edge_energy_deriv(
     vectors of a pair topology are pulled back by the shared
     pair_force_virial scatter; a reciprocal-space topology carries the node
     positions, whose gradient is its force, and a zero strain, whose gradient
-    is its negative virial (see :func:`_cell_force_virial`).
+    is its negative virial (see :func:`_cell_force_virial`). The native-spin
+    leaf ``spin_leaf`` is differentiated by the same backward too.
 
     Parameters
     ----------
@@ -223,6 +225,8 @@ def edge_energy_deriv(
     n_local
         (nf,) per-frame owned node counts, or ``None`` when every node is
         owned; the owned nodes share the virial of a cell.
+    spin_leaf
+        (N, 3) per-node native-spin autograd leaf of ``energy``, or ``None``.
 
     Returns
     -------
@@ -232,16 +236,21 @@ def edge_energy_deriv(
         (N, 3, 3) per-node virial when ``do_atomic_virial`` else ``None``.
     virial
         (nf, 3, 3) per-frame virial (always computed).
+    spin_grad
+        (N, 3) gradient of ``energy`` with respect to ``spin_leaf``, or
+        ``None`` without it.
     """
     leaves = [
         getattr(topology, name) for topology in topologies for name in topology.LEAVES
     ]
+    spin_leaves = () if spin_leaf is None else (spin_leaf,)
     g_e, *g_leaves = torch.autograd.grad(
         energy.sum() if energy.dim() else energy,
-        (edge_vec, *leaves),
+        (edge_vec, *leaves, *spin_leaves),
         create_graph=create_graph,
         retain_graph=True,
     )
+    g_spin = g_leaves.pop() if spin_leaf is not None else None
     if (
         force_precision is not None
         and not create_graph
@@ -337,7 +346,7 @@ def edge_energy_deriv(
         virial = virial + leaf_virial.to(virial.dtype)
         if do_atomic_virial:
             atom_virial = atom_virial + leaf_atom_virial.to(atom_virial.dtype)
-    return force, (atom_virial if do_atomic_virial else None), virial
+    return force, (atom_virial if do_atomic_virial else None), virial, g_spin
 
 
 def fit_output_to_model_output_graph(
@@ -415,14 +424,9 @@ def fit_output_to_model_output_graph(
     spin_leaf
         Per-node native spin autograd leaf, flat ``(N, 3)``, or ``None``. When
         given, every ``r_differentiable`` reducible output additionally emits
-        ``<var>_derv_r_mag = -d<var>_redu/dspin`` (``(N, *shape, 3)``), via a
-        SECOND ``torch.autograd.grad`` call on the SAME reduced scalar that
-        the force grad differentiates (same energy, same backward family).
-        This deliberately differs from the pt backend
-        (``deepmd/pt/model/model/transform_output.py:288``), which computes
-        ``grad(E, [edge_vec, spin])`` jointly in one call; here the two grads
-        are separate so :func:`edge_energy_deriv`'s signature stays
-        untouched. ``None`` (default): unchanged, no mag output.
+        ``<var>_derv_r_mag = -d<var>_redu/dspin`` (``(N, *shape, 3)``), from
+        the backward that differentiates it with respect to ``edge_vec``.
+        ``None`` (default): no mag output.
     topologies
         Topologies read by the atomic model, by name. Their geometry leaves
         are autograd leaves of ``fit_ret`` next to ``graph.edge_vec``; force
@@ -523,7 +527,7 @@ def fit_output_to_model_output_graph(
         vir_list: list[torch.Tensor] = []
         mag_list: list[torch.Tensor] = []
         for c in range(size):
-            force, atom_vir, vir = edge_energy_deriv(
+            force, atom_vir, vir, g_s = edge_energy_deriv(
                 svv[:, c],
                 edge_vec,
                 edge_index,
@@ -540,6 +544,7 @@ def fit_output_to_model_output_graph(
                 force_precision=force_precision if not create_graph else None,
                 topologies=() if topologies is None else tuple(topologies.values()),
                 n_local=n_local,
+                spin_leaf=spin_leaf,
             )
             # force (N, 3) -> (N, 1, 3)  [flat; caller unravels at I/O boundary]
             ff_list.append(force.reshape(N, 1, 3))
@@ -550,17 +555,7 @@ def fit_output_to_model_output_graph(
                     assert atom_vir is not None
                     # atom_virial (N, 3, 3) -> (N, 1, 9)  [flat]
                     av_list.append(atom_vir.reshape(N, 1, 9))
-            if spin_leaf is not None:
-                # Second, separate backward on the SAME reduced scalar
-                # ``svv[:, c]`` the force grad above just differentiated --
-                # same energy, same backward family, different leaf. See the
-                # ``spin_leaf`` docstring entry for the pt-parity note.
-                (g_s,) = torch.autograd.grad(
-                    svv[:, c].sum(),
-                    spin_leaf,
-                    create_graph=create_graph,
-                    retain_graph=True,
-                )
+            if g_s is not None:
                 # force_mag (N, 3) -> (N, 1, 3)  [flat; caller unravels]
                 mag_list.append((-g_s).reshape(N, 1, 3))
         # (N, size, 3) -> (N, *shape, 3)

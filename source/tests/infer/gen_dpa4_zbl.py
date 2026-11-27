@@ -10,16 +10,13 @@ Before this fixture, ZBL bridging had NO C++ or LAMMPS coverage at all; its
 only end-to-end test drove the ``.pt2`` through the PYTHON ``DeepPot``, which
 never touches ``DeepPotPTExpt``.
 
-Multi-rank capable (issue #5906): bridging enables the descriptor's Source
-Freeze Propagation Gate, which folds into the envelope of an edge the
-amplitudes ``w`` of every pair of that edge's source OTHER than its own, and
-hands the full per-node product ``eta_j = prod_{e: src_e = j} w_e`` to the
-model as the readout gate.  Edges exist only for owned centres,
-so the per-node ``[log_eta, zero_count]`` partials are rank-incomplete; the
-with-comm artifact completes them via one reverse-accumulate
-(``border_op_backward``) + forward-broadcast (``border_op``) exchange before
-the gate is applied, so the nested ``forward_lower_with_comm.pt2`` is
-embedded (``has_comm_artifact=true``, asserted below).
+Multi-rank capable: the learned child exchanges its ghost features between
+blocks like any message-passing DPA4, and the analytical child and the
+contact clamp read only the types of the two ends of every edge, so the
+nested ``forward_lower_with_comm.pt2`` is embedded (``has_comm_artifact=true``,
+asserted below).  Several pairs of the fixed system lie below the frozen
+radius of the contact clamp of their pair, whose data edges start at the
+covalent bond lengths, so the frozen archive evaluates the clamp as well.
 
 Generation mirrors ``gen_dpa4_spin.py``: the dpmodel is built in-process from
 the inline config with a fixed weight-init seed, its zero-initialised
@@ -52,9 +49,9 @@ from gen_common import (
     write_expected_ref,
 )
 
-# Small fp64 DPA4 + ZBL config.  ``bridging_r_inner``/``r_outer`` feed the
-# descriptor's InnerClamp AND BridgingSwitch (they are built together from
-# the same radii), and the model-level InnerPotential term.
+# Small fp64 DPA4 + ZBL config.  ``bridging_method`` adds the truncated
+# analytical term and the contact clamp of the learned descriptor, both with
+# their default fractions.
 ZBL_CONFIG = {
     "type_map": ["Ni", "O"],
     "descriptor": {
@@ -77,15 +74,13 @@ ZBL_CONFIG = {
         "seed": 7,
     },
     "bridging_method": "ZBL",
-    "bridging_r_inner": 0.8,
-    "bridging_r_outer": 1.2,
 }
 
 _JITTER_SEED = 20260725
 
-# Fixed 6-atom system.  Atoms 0 and 1 sit 0.9 A apart -- inside
-# ``bridging_r_outer`` -- so the analytical ZBL term contributes a large,
-# unmistakable repulsion instead of a numerical afterthought.
+# Fixed 6-atom system.  Atoms 0 and 1 sit 0.9 A apart, far inside the range
+# of the analytical term (2.42 A for Ni-Ni), so the ZBL term contributes a
+# large, unmistakable repulsion instead of a numerical afterthought.
 _NATOMS = 6
 _ATYPES = np.array([0, 0, 0, 1, 1, 1], dtype=np.int32)  # Ni, Ni, Ni, O, O, O
 _COORDS = np.array(
@@ -155,8 +150,7 @@ def main():
     )
     assert md["type_map"] == ZBL_CONFIG["type_map"]
     assert md["lower_input_kind"] == "graph"
-    # Multi-rank capable (issue #5906): the SFPG per-node partials are
-    # completed across ranks, so the nested with-comm artifact is embedded.
+    # Multi-rank capable: the nested with-comm artifact is embedded.
     assert md["has_comm_artifact"] is True
     assert "model/extra/forward_lower_with_comm.pt2" in names
 

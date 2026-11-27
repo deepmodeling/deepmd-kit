@@ -52,6 +52,7 @@ class EnergyFittingNet(InvarFitting):
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         default_fparam: list | None = None,
+        moe: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             var_name="energy",
@@ -78,6 +79,7 @@ class EnergyFittingNet(InvarFitting):
             type_map=type_map,
             seed=seed,
             default_fparam=default_fparam,
+            moe=moe,
         )
 
     @classmethod

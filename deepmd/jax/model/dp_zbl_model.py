@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from deepmd.dpmodel.model.dp_zbl_model import DPZBLModel as DPZBLModelDP
-from deepmd.jax.atomic_model.linear_atomic_model import (  # noqa: F401
+from deepmd.jax.atomic_model.linear_atomic_model import (
     DPZBLLinearEnergyAtomicModel as _DPZBLLinearEnergyAtomicModel,
 )
 from deepmd.jax.common import (
@@ -14,11 +18,28 @@ from deepmd.jax.model.base_model import (
     BaseModel,
     forward_common_atomic,
 )
+from deepmd.jax.model.dp_model import (
+    validate_neighbor_contract,
+)
 
 
 @BaseModel.register("zbl")
 @flax_module
 class DPZBLModel(DPZBLModelDP):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        validate_neighbor_contract(self.atomic_model)
+
+    @staticmethod
+    def uses_full_neighbor_list() -> bool:
+        """The switched tabulation model uses a bounded neighbor list."""
+        return False
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DPZBLModel":
+        """Restore composed children with JAX parameter and adapter state."""
+        return cls(atomic_model_=_DPZBLLinearEnergyAtomicModel.deserialize(data))
+
     def forward_common_atomic(
         self,
         extended_coord: jnp.ndarray,

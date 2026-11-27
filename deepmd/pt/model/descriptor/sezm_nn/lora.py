@@ -36,11 +36,21 @@ from copy import (
     deepcopy,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import torch
 import torch.nn as nn
+
+from deepmd.dpmodel.fitting.dpa4_ener import (
+    _set_trainable_metadata,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Mapping,
+    )
 
 from .activation import (
     GatedActivation,
@@ -181,6 +191,18 @@ class LoRASO3(SO3Linear):
             out[:, 0, :, :] = out[:, 0, :, :] + bias.unsqueeze(0)
         return out
 
+    def forward_scalar(self, x: torch.Tensor) -> torch.Tensor:
+        """Project the scalar coefficient with the degree-zero adapter weight."""
+        delta = (self.B_by_l[0] @ self.A_by_l[0]).mT * self.scaling
+        weight = (self.weight[0] + delta).view(
+            self.in_channels, self.n_focus, self.out_channels
+        )
+        out = torch.einsum("ndfi,ifo->ndfo", x[:, :1], weight)
+        if self.mlp_bias:
+            bias = self.bias.view(self.n_focus, self.out_channels)
+            out = out + bias[None, None]
+        return out
+
     def merge_into_base(self) -> SO3Linear:
         """Build a plain ``SO3Linear`` whose weight has absorbed the LoRA delta."""
         base = SO3Linear(
@@ -208,7 +230,8 @@ class LoRASO2(SO2Linear):
     Per-``|m|``-group LoRA adapter for ``SO2Linear``.
 
     ``weight_m0`` (``(num_in_m0, F*num_out_m0)``) and each
-    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)``) get an independent 2D
+    ``weight_m[i]`` (``(num_in_m, F*2*num_out_m)`` for SO(2), or
+    ``(num_in_m, F*num_out_m)`` with reflection parity) get an independent 2D
     LoRA pair ``A``/``B``.  SO(2) equivariance is preserved because the
     ``|m|>0`` 2x2 complex block ``[[W_u, -W_v], [W_v, W_u]]`` stays intact
     when ``ΔW_m`` is absorbed into the concatenated ``[W_u | W_v]`` layout
@@ -244,6 +267,7 @@ class LoRASO2(SO2Linear):
         super().__init__(
             lmax=base.lmax,
             mmax=base.mmax,
+            parity=base.parity,
             in_channels=base.in_channels,
             out_channels=base.out_channels,
             n_focus=base.n_focus,
@@ -354,10 +378,10 @@ class LoRASO2(SO2Linear):
             ib = ni1 - ni0
             ob = no1 - no0
             w_eff = (w_base + self._compute_delta_m(m_idx)).view(
-                ib, self.n_focus, 2 * ob
+                ib, self.n_focus, (1 if self.parity else 2) * ob
             )
             w_u = w_eff[:, :, :ob]
-            w_v = w_eff[:, :, ob:]
+            w_v = torch.zeros_like(w_u) if self.parity else w_eff[:, :, ob:]
             weight[ni0:ni1, :, no0:no1] = w_u
             weight[ni0:ni1, :, po0:po1] = w_v
             weight[pi0:pi1, :, no0:no1] = -w_v
@@ -369,6 +393,7 @@ class LoRASO2(SO2Linear):
         base = SO2Linear(
             lmax=self.lmax,
             mmax=self.mmax,
+            parity=self.parity,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
             n_focus=self.n_focus,
@@ -395,11 +420,16 @@ class LoRASO2(SO2Linear):
 # Fine-tune policy: freeze / unfreeze rules
 # ---------------------------------------------------------------------------
 
-# Leaf parameter names that stay trainable during LoRA fine-tune.  These are small
-# scalar / per-l scales / attention gating weights whose full-rank update costs
-# are negligible but directly absorb the domain shift of the downstream dataset.
+# Adapter factors and small affine/gating parameters remain trainable during
+# LoRA fine-tuning, including when the policy is applied to existing adapters.
 _UNFREEZE_LEAF_NAMES: frozenset[str] = frozenset(
     {
+        "A_by_l",
+        "B_by_l",
+        "A_m0",
+        "B_m0",
+        "A_m",
+        "B_m",
         "adam_scale",
         "adam_so2_layer_scales",
         "adam_ffn_layer_scales",
@@ -522,6 +552,30 @@ def has_lora(module: nn.Module) -> bool:
     return any(isinstance(m, (LoRASO3, LoRASO2)) for m in module.modules())
 
 
+def restore_lora_from_variables(model: nn.Module, variables: Mapping[str, Any]) -> None:
+    """Construct adapters before loading the portable descriptor variables.
+
+    The adapter arrays determine each rank, and the stored scaling determines
+    its alpha. Base weights remain unfused so optimizer moments still refer
+    to the same trainable arrays after a backend checkpoint conversion.
+    """
+    for name, module in list(model.named_modules()):
+        adapter = None
+        prefix = name + "."
+        if type(module) is SO3Linear and prefix + "A_by_l" in variables:
+            rank = variables[prefix + "A_by_l"].shape[-2]
+            alpha = float(variables.get(prefix + "lora_scaling", 1.0)) * rank
+            adapter = LoRASO3(module, rank=rank, alpha=alpha)
+        elif type(module) is SO2Linear and prefix + "A_m0" in variables:
+            rank = variables[prefix + "A_m0"].shape[0]
+            alpha = float(variables.get(prefix + "lora_scaling", 1.0)) * rank
+            adapter = LoRASO2(module, rank=rank, alpha=alpha)
+        if adapter is not None:
+            parent_name, _, attribute = name.rpartition(".")
+            parent = model.get_submodule(parent_name) if parent_name else model
+            _swap_submodule(parent, attribute, adapter)
+
+
 def apply_lora_to_sezm(
     model: nn.Module,
     *,
@@ -578,6 +632,9 @@ def apply_lora_to_sezm(
         sub = _get_submodule_or_none(model, path)
         if sub is None:
             continue
+        if path.rsplit(".", 1)[-1] in ("fitting_net", "dens_fitting_net"):
+            for module in sub.modules():
+                _set_trainable_metadata(module, True)
         for p in sub.parameters():
             p.requires_grad_(True)
 

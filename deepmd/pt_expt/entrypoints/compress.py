@@ -240,7 +240,7 @@ def compress_model(
     model.min_nbor_dist = 0.0 if min_nbor_dist is None else min_nbor_dist
 
     # === Step 2. Fold deployment constants and build the compressed snapshot. ===
-    # The neutral vacuum reference must be resolved before a charge-conditioned
+    # The vacuum reference must be resolved before a charge-conditioned
     # descriptor specializes its tables to the deployment charge state.
     model.eval()
     model.fold_vacuum_reference()

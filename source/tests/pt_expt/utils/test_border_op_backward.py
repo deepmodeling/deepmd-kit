@@ -266,7 +266,7 @@ def test_border_op_export_autograd(dtype: torch.dtype) -> None:
 
 def test_export_backward_op_semantics_self_comm() -> None:
     """R then B on a self-comm dict: owner rows hold own+ghost sums, ghost
-    rows hold the completed owner value (the SFPG completion sequence).
+    rows hold the completed owner value (a reverse-accumulate completion).
     """
     from deepmd.pt_expt.utils.comm import (
         ensure_comm_registered,

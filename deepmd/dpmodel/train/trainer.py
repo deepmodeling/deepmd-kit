@@ -336,8 +336,29 @@ class TrainStepResult:
 class LearningCurveWriter:
     """Formatter for learning-curve files and per-task training logs."""
 
-    def __init__(self, task_keys: Sequence[str] | None = None) -> None:
+    def __init__(
+        self,
+        task_keys: Sequence[str] | None = None,
+        *,
+        symm_virial_tasks: Sequence[str] = (),
+    ) -> None:
         self.task_keys = list(task_keys or [])
+        self.symm_virial_tasks = frozenset(symm_virial_tasks)
+
+    def _display_metrics(
+        self, metrics: Mapping[str, Any], task_key: str | None = None
+    ) -> Mapping[str, Any]:
+        """Label symmetric comparisons without changing internal metric keys."""
+        if task_key is None:
+            task_key = (
+                self.task_keys[0] if len(self.task_keys) == 1 else DEFAULT_TASK_KEY
+            )
+        if task_key not in self.symm_virial_tasks:
+            return metrics
+        return {
+            key.replace("_v", "_symm_v") if key in {"rmse_v", "mae_v"} else key: value
+            for key, value in metrics.items()
+        }
 
     def write_header(
         self,
@@ -393,7 +414,7 @@ class LearningCurveWriter:
                     format_training_message_per_task(
                         batch=step,
                         task_name=f"{task_key}_trn",
-                        rmse=task_train,
+                        rmse=self._display_metrics(task_train, task_key),
                         learning_rate=learning_rate,
                         check_total_rmse_nan=task_key not in unsampled_tasks,
                     )
@@ -404,7 +425,7 @@ class LearningCurveWriter:
                         format_training_message_per_task(
                             batch=step,
                             task_name=f"{task_key}_val",
-                            rmse=task_valid,
+                            rmse=self._display_metrics(task_valid, task_key),
                             learning_rate=None,
                         )
                     )
@@ -414,7 +435,7 @@ class LearningCurveWriter:
                 format_training_message_per_task(
                     batch=step,
                     task_name="trn",
-                    rmse=train_results,
+                    rmse=self._display_metrics(train_results),
                     learning_rate=learning_rate,
                     check_total_rmse_nan=not unsampled_tasks,
                 )
@@ -425,7 +446,7 @@ class LearningCurveWriter:
                     format_training_message_per_task(
                         batch=step,
                         task_name="val",
-                        rmse=valid_results,
+                        rmse=self._display_metrics(valid_results),
                         learning_rate=None,
                     )
                 )
@@ -446,6 +467,7 @@ class LearningCurveWriter:
                 task_train = train_results.get(task_key)
                 if not task_train:
                     continue
+                task_train = self._display_metrics(task_train, task_key)
                 task_valid = valid_task_results.get(task_key)
                 if task_valid:
                     for key in task_train:
@@ -458,6 +480,7 @@ class LearningCurveWriter:
                         header += f"   {key + '_trn_' + task_key:>11s}"
         else:
             assert not self._is_multitask(train_results)
+            train_results = self._display_metrics(train_results)
             if valid_results is not None:
                 assert not self._is_multitask(valid_results)
                 for key in train_results:
@@ -551,7 +574,14 @@ class AbstractTrainer(ABC):
 
     def run(self, tasks: TrainingTaskCollection) -> None:
         """Run the common training loop."""
-        self.lcurve_writer = LearningCurveWriter(tasks.keys)
+        self.lcurve_writer = LearningCurveWriter(
+            tasks.keys,
+            symm_virial_tasks=[
+                key
+                for key, loss in getattr(self, "losses", {}).items()
+                if getattr(loss, "symm_virial", False)
+            ],
+        )
         start_step = self.trainer_config.start_step
         num_steps = self.trainer_config.num_steps
         fout: TextIO | None = None
@@ -560,6 +590,13 @@ class AbstractTrainer(ABC):
                 self.metric_accumulator.reset()
             self.on_train_begin(tasks)
             fout = self._open_learning_curve()
+            previous_header = ""
+            check_header = True
+            if fout is not None and fout.tell():
+                with Path(self.trainer_config.disp_file).open() as previous_curve:
+                    for line in previous_curve:
+                        if line.startswith("# step"):
+                            previous_header = line.rstrip()
             timer = TrainingTimer(
                 start_step=start_step,
                 num_steps=num_steps,
@@ -602,12 +639,13 @@ class AbstractTrainer(ABC):
                         )
                         self._log_interval(timer.record(display_step))
                         if fout is not None:
-                            if fout.tell() == 0:
-                                self.lcurve_writer.write_header(
-                                    fout,
-                                    train_results=train_results,
-                                    valid_results=valid_results,
+                            if check_header:
+                                check_header = False
+                                header = self.lcurve_writer.format_header(
+                                    train_results, valid_results
                                 )
+                                if header.splitlines()[0].rstrip() != previous_header:
+                                    fout.write(header)
                             self.lcurve_writer.write_row(
                                 fout,
                                 step=display_step,

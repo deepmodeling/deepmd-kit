@@ -939,7 +939,7 @@ def test_frozen_model_matches_direct_forward(
 
 
 @pytest.mark.parametrize(
-    ("suffix", "recorded"), [(".pte", "graph"), (".pt2", "dpa4c_canonical")]
+    ("suffix", "recorded"), [(".pte", "graph"), (".pt2", "dpa_canonical")]
 )
 def test_change_bias_keeps_the_graph_lower(
     tmp_path, monkeypatch, suffix: str, recorded: str
@@ -1086,9 +1086,9 @@ def test_compressed_frozen_model_matches_uncompressed(
         lower_kind="auto",
     )
     dp = DeepPot(str(frozen), auto_batch_size=False)
-    expected_lower = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
+    expected_lower = "dpa_canonical" if env.DEVICE.type == "cuda" else "graph"
     assert dp.deep_eval.metadata["lower_input_kind"] == expected_lower
-    if expected_lower == "dpa4c_canonical":
+    if expected_lower == "dpa_canonical":
         # The fused long-range operator serves the charge network of one
         # channel and reads the source CSR for the per-atom virial alone; the
         # composition of operators that serves three channels reads it always.
@@ -1103,7 +1103,7 @@ def test_compressed_frozen_model_matches_uncompressed(
     # graph lower the charges of this model amplify that error at a charged
     # state, to about 1e-4 of the scale at [1, 2]; the compact canonical lower
     # stays within a few 1e-6.
-    tolerance = 2e-5 if expected_lower == "dpa4c_canonical" else 5e-4
+    tolerance = 2e-5 if expected_lower == "dpa_canonical" else 5e-4
     states = [[0.0, 1.0], [1.0, 2.0], [0.0, 1.0]] if source == "charge_spin" else [None]
     for state in states:
         condition = {} if state is None else {"charge_spin": np.array([state])}
@@ -1191,7 +1191,7 @@ def test_compressed_further_blocks_with_long_range_match_uncompressed(
         lower_kind="auto",
     )
     dp = DeepPot(str(frozen), auto_batch_size=False)
-    expected_lower = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
+    expected_lower = "dpa_canonical" if env.DEVICE.type == "cuda" else "graph"
     assert dp.deep_eval.metadata["lower_input_kind"] == expected_lower
     rng = np.random.default_rng(3)
     atype = rng.integers(0, 2, (1, 40))
@@ -2001,9 +2001,9 @@ def test_periodic_compressed_frozen_model_matches_uncompressed(
         lower_kind="auto",
     )
     dp = DeepPot(str(frozen), auto_batch_size=False)
-    expected_lower = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
+    expected_lower = "dpa_canonical" if env.DEVICE.type == "cuda" else "graph"
     assert dp.deep_eval.metadata["lower_input_kind"] == expected_lower
-    if expected_lower == "dpa4c_canonical":
+    if expected_lower == "dpa_canonical":
         assert dp.deep_eval.metadata["canonical_requires_source_csr"] == (
             CHANNELS[kernel] > 1
         )
@@ -2600,7 +2600,7 @@ def test_library_without_the_fused_operator_keeps_the_composition(monkeypatch) -
     assert not canonical_long_range.fused_long_range_eligible(
         model.atomic_model.long_range
     )
-    assert _canonical_requires_source_csr(model, "dpa4c_canonical")
+    assert _canonical_requires_source_csr(model, "dpa4c")
 
 
 # ---------------------------------------------------------------------------
@@ -3066,7 +3066,7 @@ def test_periodic_pme_compiled_matches_eager(kernel: str) -> None:
     [
         ("2.11.0+cpu", "graph", ["all_pairs", "pme_mesh"], False),
         ("2.12.0", "graph", ["all_pairs", "pme_mesh"], True),
-        ("2.11.0+cpu", "dpa4c_canonical", ["all_pairs", "pme_mesh"], True),
+        ("2.11.0+cpu", "dpa_canonical", ["all_pairs", "pme_mesh"], True),
         ("2.11.0+cpu", "graph", ["all_pairs"], True),
     ],
 )
