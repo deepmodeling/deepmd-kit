@@ -319,11 +319,81 @@ class TestDOSLossGlobalGradAccum:
         with_mask = {"dos": pred, "mask": np.ones((2, NB), dtype=np.float64)}
         without_mask = {"dos": pred}
         label_dict = {"dos": label, "find_dos": 1.0}
-        loss_m, _ = self._make_loss().call(1.0, NB, with_mask, label_dict)
-        loss_nm, _ = self._make_loss().call(1.0, NB, without_mask, label_dict)
+        loss_m, more_m = self._make_loss().call(1.0, NB, with_mask, label_dict)
+        loss_nm, more_nm = self._make_loss().call(1.0, NB, without_mask, label_dict)
         assert np.isclose(float(loss_m), float(loss_nm)), (
             f"all-ones mask must be no-op: {float(loss_m)} vs {float(loss_nm)}"
         )
+        assert np.isclose(
+            float(more_m["rmse_global_dos"]), float(more_nm["rmse_global_dos"])
+        )
+        assert np.isclose(
+            float(more_m["rmse_global_cdf"]), float(more_nm["rmse_global_cdf"])
+        )
+
+    def test_global_rmse_normalizes_per_frame_for_mixed_sizes(self):
+        """Global DOS and CDF RMSE normalize each frame by its own real atom count."""
+        loss_obj = self._make_loss()
+        mask_A = np.ones((1, NA), dtype=np.float64)
+        mask_B = np.ones((1, NB), dtype=np.float64)
+        mask_pad = np.array(
+            [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB], dtype=np.float64
+        )
+
+        # Extensive error of 1.0 per real atom in both frames: [3, 5] -> RMSE == 1.0
+        pred_A = np.full((1, NUMB_DOS), float(NA), dtype=np.float64)
+        pred_B = np.full((1, NUMB_DOS), float(NB), dtype=np.float64)
+        zeros = np.zeros((1, NUMB_DOS), dtype=np.float64)
+        _, more_A = loss_obj.call(
+            1.0, NA, {"dos": pred_A, "mask": mask_A}, {"dos": zeros, "find_dos": 1.0}
+        )
+        _, more_B = loss_obj.call(
+            1.0, NB, {"dos": pred_B, "mask": mask_B}, {"dos": zeros, "find_dos": 1.0}
+        )
+        _, more_pad = loss_obj.call(
+            1.0,
+            NP,
+            {"dos": np.concatenate([pred_A, pred_B], axis=0), "mask": mask_pad},
+            {"dos": np.zeros((2, NUMB_DOS), dtype=np.float64), "find_dos": 1.0},
+        )
+        assert np.isclose(float(more_A["rmse_global_dos"]), 1.0)
+        assert np.isclose(float(more_B["rmse_global_dos"]), 1.0)
+        assert np.isclose(float(more_pad["rmse_global_dos"]), 1.0)
+        assert np.isclose(
+            float(more_pad["rmse_global_cdf"]),
+            float(more_A["rmse_global_cdf"]),
+        )
+        assert np.isclose(
+            float(more_A["rmse_global_cdf"]),
+            float(more_B["rmse_global_cdf"]),
+        )
+
+        # General frames: batch RMSE equals RMS of per-frame normalized RMSEs
+        r_pred_A, r_label_A = _rnd(1, NUMB_DOS), _rnd(1, NUMB_DOS)
+        r_pred_B, r_label_B = _rnd(1, NUMB_DOS), _rnd(1, NUMB_DOS)
+        _, mA = loss_obj.call(
+            1.0,
+            NA,
+            {"dos": r_pred_A, "mask": mask_A},
+            {"dos": r_label_A, "find_dos": 1.0},
+        )
+        _, mB = loss_obj.call(
+            1.0,
+            NB,
+            {"dos": r_pred_B, "mask": mask_B},
+            {"dos": r_label_B, "find_dos": 1.0},
+        )
+        _, mPad = loss_obj.call(
+            1.0,
+            NP,
+            {"dos": np.concatenate([r_pred_A, r_pred_B], axis=0), "mask": mask_pad},
+            {"dos": np.concatenate([r_label_A, r_label_B], axis=0), "find_dos": 1.0},
+        )
+        for key in ("rmse_global_dos", "rmse_global_cdf"):
+            ref = np.sqrt(0.5 * (float(mA[key]) ** 2 + float(mB[key]) ** 2))
+            assert np.isclose(float(mPad[key]), ref), (
+                f"{key}: got {float(mPad[key])}, expected {ref}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -460,11 +530,91 @@ class TestTensorLossGlobalGradAccum:
         with_mask = {"global_dipole": pred, "mask": np.ones((2, NB), dtype=np.float64)}
         without_mask = {"global_dipole": pred}
         label_dict = {"dipole": label, "find_dipole": 1.0}
-        loss_m, _ = self._make_loss().call(1.0, NB, with_mask, label_dict)
-        loss_nm, _ = self._make_loss().call(1.0, NB, without_mask, label_dict)
+        loss_m, more_m = self._make_loss().call(1.0, NB, with_mask, label_dict)
+        loss_nm, more_nm = self._make_loss().call(1.0, NB, without_mask, label_dict)
         assert np.isclose(float(loss_m), float(loss_nm)), (
             f"all-ones mask must be no-op: {float(loss_m)} vs {float(loss_nm)}"
         )
+        assert np.isclose(
+            float(more_m["rmse_global_dipole"]), float(more_nm["rmse_global_dipole"])
+        )
+
+    def test_global_rmse_normalizes_per_frame_for_mixed_sizes(self):
+        """Global tensor RMSE normalizes each frame by its own real atom count."""
+        loss_obj = self._make_loss()
+        mask_A = np.ones((1, NA), dtype=np.float64)
+        mask_B = np.ones((1, NB), dtype=np.float64)
+        mask_pad = np.array(
+            [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB], dtype=np.float64
+        )
+
+        # Extensive error of 1.0 per real atom in both frames: [3, 5] -> RMSE == 1.0
+        pred_A = np.full((1, TENSOR_SIZE), float(NA), dtype=np.float64)
+        pred_B = np.full((1, TENSOR_SIZE), float(NB), dtype=np.float64)
+        zeros = np.zeros((1, TENSOR_SIZE), dtype=np.float64)
+        _, more_A = loss_obj.call(
+            1.0,
+            NA,
+            {"global_dipole": pred_A, "mask": mask_A},
+            {"dipole": zeros, "find_dipole": 1.0},
+        )
+        _, more_B = loss_obj.call(
+            1.0,
+            NB,
+            {"global_dipole": pred_B, "mask": mask_B},
+            {"dipole": zeros, "find_dipole": 1.0},
+        )
+        _, more_pad = loss_obj.call(
+            1.0,
+            NP,
+            {
+                "global_dipole": np.concatenate([pred_A, pred_B], axis=0),
+                "mask": mask_pad,
+            },
+            {
+                "dipole": np.zeros((2, TENSOR_SIZE), dtype=np.float64),
+                "find_dipole": 1.0,
+            },
+        )
+        assert np.isclose(float(more_A["rmse_global_dipole"]), 1.0)
+        assert np.isclose(float(more_B["rmse_global_dipole"]), 1.0)
+        assert np.isclose(float(more_pad["rmse_global_dipole"]), 1.0)
+
+        # General frames: batch RMSE equals RMS of per-frame normalized RMSEs
+        r_pred_A, r_label_A = _rnd(1, TENSOR_SIZE), _rnd(1, TENSOR_SIZE)
+        r_pred_B, r_label_B = _rnd(1, TENSOR_SIZE), _rnd(1, TENSOR_SIZE)
+        _, mA = loss_obj.call(
+            1.0,
+            NA,
+            {"global_dipole": r_pred_A, "mask": mask_A},
+            {"dipole": r_label_A, "find_dipole": 1.0},
+        )
+        _, mB = loss_obj.call(
+            1.0,
+            NB,
+            {"global_dipole": r_pred_B, "mask": mask_B},
+            {"dipole": r_label_B, "find_dipole": 1.0},
+        )
+        _, mPad = loss_obj.call(
+            1.0,
+            NP,
+            {
+                "global_dipole": np.concatenate([r_pred_A, r_pred_B], axis=0),
+                "mask": mask_pad,
+            },
+            {
+                "dipole": np.concatenate([r_label_A, r_label_B], axis=0),
+                "find_dipole": 1.0,
+            },
+        )
+        ref = np.sqrt(
+            0.5
+            * (
+                float(mA["rmse_global_dipole"]) ** 2
+                + float(mB["rmse_global_dipole"]) ** 2
+            )
+        )
+        assert np.isclose(float(mPad["rmse_global_dipole"]), ref)
 
 
 # ---------------------------------------------------------------------------
