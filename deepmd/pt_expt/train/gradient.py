@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Numerical safeguards around the gradient of a training step.
 
-Two hazards are handled here, both of which have to be addressed without
+Three hazards are handled here, all of which have to be addressed without
 slowing the step down.
 
 A gradient that is large but still representable can overflow the sum of
@@ -13,6 +13,10 @@ A gradient that is genuinely non-finite must stop the run before it reaches
 a checkpoint, but reading that condition back on every step would serialize
 the host against the device. The condition is therefore accumulated on
 device and read only at a checkpoint boundary.
+
+Gradients of different parameters that share memory take every in-place update,
+such as the scaling of clipping, more than once. Copying one gradient of every
+such pair before it is accumulated separates them.
 """
 
 from __future__ import (
@@ -36,6 +40,7 @@ __all__ = [
     "NonFiniteGradGuard",
     "clip_grad_norm_",
     "raise_nonfinite_gradient_norm",
+    "separate_gradient_storage",
 ]
 
 
@@ -92,6 +97,26 @@ def clip_grad_norm_(
     # === Step 2. Rescale gradients by the clamped coefficient ===
     torch.nn.utils.clip_grads_with_norm_(params, max_norm, total_norm)
     return total_norm
+
+
+def separate_gradient_storage(parameters: Iterable[torch.nn.Parameter]) -> None:
+    """
+    Give the gradient of every parameter storage of its own.
+
+    The backward of a sum of two joined arrays hands slices of one buffer to
+    the parameters of both, in eager and in compiled execution, and autograd
+    stores such a slice as the gradient without a copy. The hook copies the
+    gradient of a parameter before it is accumulated; copying one side of every
+    pair suffices.
+
+    Parameters
+    ----------
+    parameters : Iterable[torch.nn.Parameter]
+        Parameters whose gradients may share memory with the gradient of
+        another parameter; those without gradients and repetitions are skipped.
+    """
+    for parameter in {id(p): p for p in parameters if p.requires_grad}.values():
+        parameter.register_hook(torch.clone)
 
 
 class NonFiniteGradGuard:

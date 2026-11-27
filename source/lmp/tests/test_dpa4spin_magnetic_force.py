@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Exercise magnetic-force conventions through the registered LAMMPS adapter.
+"""Check the stored magnetic force through the registered LAMMPS adapter.
+
+The native-spin pair styles store the precession magnetic force of the
+LAMMPS SPIN package, |m|/hbar times -dE/dS.
 
 Generate the CPU graph fixture with ``source/tests/infer/gen_dpa4c_spin_lmp.py``.
 PyTorch-enabled LAMMPS CI sets DPA4SPIN_LMP_REQUIRED=1 so missing fixtures,
@@ -93,17 +96,17 @@ def data_file(tmp_path: Path) -> Path:
 
 
 @contextmanager
-def _system(adapter, data_file: Path, pair_args: str = "", units: str = "metal"):
+def _system(adapter, data_file: Path, style: str = "dpa4spin"):
     lammps_cls, model = adapter
     with lammps_cls(cmdargs=["-log", "none", "-screen", "none"]) as lmp:
         for command in (
-            f"units {units}",
+            "units metal",
             "atom_style spin",
             "atom_modify map yes",
             f"read_data {data_file.resolve()}",
             "mass 1 58.6934",
             "mass 2 15.9994",
-            f"pair_style dpa4spin {model.resolve()} {pair_args}",
+            f"pair_style {style} {model.resolve()}",
             "pair_coeff * * Ni O",
             "neighbor 2.0 bin",
             "compute fmprop all property/atom fmx fmy fmz",
@@ -115,7 +118,7 @@ def _system(adapter, data_file: Path, pair_args: str = "", units: str = "metal")
 
 
 def _pair_pointer(lmp, name: str, pointer_type):
-    # extract_pair() assumes double values, whereas the convention flag is int.
+    # extract_pair() reads one double, whereas scale is a matrix of doubles.
     extract = lmp.lib.lammps_extract_pair
     previous = extract.restype
     extract.restype = pointer_type
@@ -127,32 +130,22 @@ def _pair_pointer(lmp, name: str, pointer_type):
     return pointer
 
 
-def _convention(lmp) -> int:
-    assert lmp.extract_pair_dimension("fm_cartesian_force") == 0
-    return _pair_pointer(lmp, "fm_cartesian_force", ctypes.POINTER(ctypes.c_int))[0]
-
-
 def _gather(lmp, name: str, columns: int) -> np.ndarray:
     return np.array(lmp.gather(name, 1, columns)).reshape(-1, columns)
 
 
 @pytest.mark.parametrize("magnitude", [0.0, 1e-8, 0.2], ids=["zero", "tiny", "finite"])
-def test_cartesian_matches_energy_gradient(adapter, data_file: Path, magnitude: float):
-    """Check every Cartesian component, including the derivative at S=0."""
+def test_precession_matches_energy_gradient(adapter, data_file: Path, magnitude: float):
+    """Check every component of |m|/hbar * (-dE/dS), including at S=0."""
     spin = _SPIN.copy()
     spin[0] = magnitude * np.array([2.0, -1.0, 2.0]) / 3.0
     write_lmp_data_spin(_BOX, _COORD, spin, _TYPE, data_file)
-    with _system(adapter, data_file, "magnetic_force cartesian") as lmp:
-        assert _convention(lmp) == 1
+    with _system(adapter, data_file) as lmp:
         analytic = _gather(lmp, "c_fmprop", 3)[0]
-        assert np.all(np.abs(analytic) > 1e-9), (
-            "Every tested spin component must be live",
-            analytic,
-        )
         initial = _gather(lmp, "c_spprop", 4)[0]
         moment = initial[:3] * initial[3]
         eps = 1e-5
-        finite_difference = np.empty(3)
+        gradient = np.empty(3)
         for component in range(3):
             energies = []
             for sign in (1, -1):
@@ -168,41 +161,37 @@ def test_cartesian_matches_energy_gradient(adapter, data_file: Path, magnitude: 
                 )
                 lmp.command("run 0")
                 energies.append(lmp.get_thermo("pe"))
-            finite_difference[component] = -(energies[0] - energies[1]) / (2 * eps)
-        # Check components separately: a norm-only comparison could hide a
-        # sign error in the small transverse component of the zero-spin atom.
-        np.testing.assert_allclose(finite_difference, analytic, rtol=5e-3, atol=1e-11)
+            gradient[component] = -(energies[0] - energies[1]) / (2 * eps)
+    assert np.all(np.abs(gradient) > 1e-9), (
+        "Every tested spin component must be live",
+        gradient,
+    )
+    # Check components separately: a norm-only comparison could hide a sign
+    # error in a small transverse component. A zero moment stores exactly zero.
+    factor = initial[3] / HBAR_METAL
+    np.testing.assert_allclose(
+        analytic, factor * gradient, rtol=5e-3, atol=1e-11 * factor
+    )
 
 
-def test_precession_default_and_explicit_match_cartesian(adapter, data_file: Path):
-    with _system(adapter, data_file, "magnetic_force cartesian") as lmp:
-        cartesian = _gather(lmp, "c_fmprop", 3)
-        moments = _gather(lmp, "c_spprop", 4)[:, 3]
-        force = _gather(lmp, "f", 3)
+def test_deepspin_matches_dpa4spin(adapter, data_file: Path):
+    """pair_style deepspin stores the outputs dpa4spin does."""
+    with _system(adapter, data_file) as lmp:
+        expected = {name: _gather(lmp, name, 3) for name in ("c_fmprop", "f")}
         energy = lmp.get_thermo("pe")
-    assert np.linalg.norm(cartesian[0]) > 1e-8
-    np.testing.assert_allclose(cartesian[3:], 0.0, atol=1e-14)
-    for selection in ("", "magnetic_force precession"):
-        with _system(adapter, data_file, selection) as lmp:
-            assert _convention(lmp) == 0
-            actual = _gather(lmp, "c_fmprop", 3)
+    assert np.linalg.norm(expected["c_fmprop"]) > 1e-8
+    np.testing.assert_array_equal(expected["c_fmprop"][0], 0.0)
+    with _system(adapter, data_file, style="deepspin") as lmp:
+        for name, value in expected.items():
             np.testing.assert_allclose(
-                actual,
-                cartesian * (moments / HBAR_METAL)[:, None],
-                rtol=1e-10,
-                atol=1e-14,
+                _gather(lmp, name, 3), value, rtol=1e-10, atol=1e-14
             )
-            np.testing.assert_array_equal(actual[0], 0.0)
-            np.testing.assert_allclose(
-                _gather(lmp, "f", 3), force, rtol=1e-12, atol=1e-14
-            )
-            assert lmp.get_thermo("pe") == pytest.approx(energy, rel=1e-12)
+        assert lmp.get_thermo("pe") == pytest.approx(energy, rel=1e-12)
 
 
-@pytest.mark.parametrize("selection", ["precession", "cartesian"])
-def test_pair_scale_and_repeated_compute(adapter, data_file: Path, selection: str):
+def test_pair_scale_and_repeated_compute(adapter, data_file: Path):
     """Exercise the actual extract/scale and force accumulation paths."""
-    with _system(adapter, data_file, f"magnetic_force {selection}") as lmp:
+    with _system(adapter, data_file) as lmp:
         magnetic_force = _gather(lmp, "c_fmprop", 3)
         force = _gather(lmp, "f", 3)
         energy = lmp.get_thermo("pe")
@@ -224,38 +213,13 @@ def test_pair_scale_and_repeated_compute(adapter, data_file: Path, selection: st
             assert lmp.get_thermo("pe") == pytest.approx(2.75 * energy, rel=1e-12)
 
 
-@pytest.mark.parametrize(
-    "pair_args, units, message",
-    [
-        ("magnetic_force", "metal", "takes one of precession or cartesian"),
-        ("magnetic_force unknown", "metal", "takes one of precession or cartesian"),
-        (
-            "magnetic_force cartesian magnetic_force precession",
-            "metal",
-            "magnetic_force may appear only once",
-        ),
-        ("", "real", "requires units metal"),
-        ("magnetic_force precession", "si", "requires units metal"),
-        ("magnetic_force cartesian", "real", "requires units metal"),
-    ],
-)
-def test_invalid_magnetic_force_settings(
-    adapter, data_file: Path, pair_args, units, message
-):
-    with (
-        pytest.raises(Exception, match=message),
-        _system(adapter, data_file, pair_args, units),
-    ):
-        pytest.fail("Invalid magnetic_force setting was accepted")
-
-
 @pytest.mark.parametrize("kokkos", [False, True], ids=["host", "kokkos"])
 def test_change_units_after_pair_style(tmp_path, kokkos):
     required = "DPA4SPIN_KOKKOS_REQUIRED" if kokkos else "DPA4SPIN_LMP_REQUIRED"
     if os.environ.get(required) != "1":
         pytest.skip(f"requires the matching LAMMPS build ({required}=1)")
     model = _MODEL.with_name("deeppot_dpa4c_spin_lmp_kokkos.pt2") if kokkos else _MODEL
-    lmp = shutil.which("lmp")
+    lmp = os.environ["DEEPMD_KOKKOS_LMP"] if kokkos else shutil.which("lmp")
     assert lmp and model.is_file()
     args = [lmp]
     if kokkos:

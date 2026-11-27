@@ -19,6 +19,9 @@ from unittest.mock import (
     patch,
 )
 
+from deepmd.dpmodel.train.checkpoint import (
+    CheckpointStore,
+)
 from deepmd.jax.train.trainer import (
     DPTrainer,
 )
@@ -37,9 +40,10 @@ class TestCheckpointPointer(unittest.TestCase):
     def _save(self, save_ckpt: str) -> None:
         trainer = DPTrainer.__new__(DPTrainer)
         trainer.save_ckpt = save_ckpt
+        trainer.checkpoint_store = CheckpointStore(save_ckpt, suffix=".jax")
+        trainer.enable_ema = False
         with (
             patch.object(DPTrainer, "_write_checkpoint"),
-            patch.object(DPTrainer, "_cleanup_old_checkpoints"),
             patch("deepmd.jax.train.trainer._link_checkpoint"),
         ):
             trainer._save_checkpoint(1)

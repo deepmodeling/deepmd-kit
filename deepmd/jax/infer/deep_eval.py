@@ -15,10 +15,16 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.dpmodel.model.transform_output import (
+    communicate_extended_output,
+)
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableCategory,
     OutputVariableDef,
+)
+from deepmd.dpmodel.utils.default_neighbor_list import (
+    DefaultNeighborList,
 )
 from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
@@ -51,11 +57,28 @@ from deepmd.infer.deep_wfc import (
 from deepmd.jax.common import (
     to_jax_array,
 )
+from deepmd.jax.env import (
+    jax,
+    jnp,
+    nnx,
+)
+from deepmd.jax.model.base_model import (
+    BaseModel,
+)
 from deepmd.jax.model.hlo import (
     HLO,
 )
 from deepmd.jax.utils.auto_batch_size import (
     AutoBatchSize,
+)
+from deepmd.jax.utils.graph_batch import (
+    prepare_graph_batch,
+)
+from deepmd.jax.utils.precision import (
+    MatmulPrecisionPolicy,
+)
+from deepmd.utils.charge_state import (
+    validate_charge_states,
 )
 
 if TYPE_CHECKING:
@@ -63,7 +86,7 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBackend):
-    """NumPy backend implementation of DeepEval.
+    """JAX checkpoint and frozen-artifact implementation of DeepEval.
 
     Parameters
     ----------
@@ -94,8 +117,68 @@ class DeepEval(DeepEvalBackend):
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
+        self._live_model = False
 
-        if model_file.endswith(".hlo"):
+        if model_file.endswith(".jax"):
+            from deepmd.jax.utils.serialization import (
+                _set_model_min_nbor_dist_from_data,
+                serialize_from_file,
+            )
+
+            data = serialize_from_file(model_file, training=False)
+            model_data = data["model"]
+            model_script = data["model_def_script"]
+            if "model_dict" in model_data:
+                head = kwargs.get("head")
+                if head is None:
+                    raise ValueError(
+                        "A multi-task checkpoint requires a head name; available heads: "
+                        + ", ".join(model_data["model_dict"])
+                    )
+                model_data = model_data["model_dict"][head]
+                model_script = model_script["model_dict"][head]
+            self.dp = BaseModel.deserialize(model_data)
+            _set_model_min_nbor_dist_from_data(
+                self.dp,
+                {**data, "model_def_script": model_script},
+            )
+            self.dp.model_def_script = json.dumps(model_script)
+            if model_script.get("hessian_mode", False):
+                self.dp.enable_hessian()
+            self.dp.eval()
+            self._live_model = True
+            precision = MatmulPrecisionPolicy()
+            graphdef, _ = nnx.split(self.dp)
+
+            def call_graph(
+                state: nnx.State,
+                inputs: dict[str, jax.Array | None],
+            ) -> dict[str, jax.Array]:
+                model = nnx.merge(graphdef, state)
+                with precision.applied(training=False):
+                    return model.call_common_lower_graph(**inputs)
+
+            def call_lower(
+                state: nnx.State,
+                inputs: dict[str, jax.Array | None],
+                *,
+                atomic_virial: bool,
+            ) -> dict[str, jax.Array | None]:
+                model = nnx.merge(graphdef, state)
+                with precision.applied(training=False):
+                    return model.call_common_lower(
+                        **inputs, do_atomic_virial=atomic_virial
+                    )
+
+            # Inference returns predictions only. Mutable NNX transforms also
+            # publish state outputs, which could replace healthy parameter
+            # arrays with failed asynchronous executions during OOM retries.
+            self._call_graph = jax.jit(call_graph)
+            self._call_lower = jax.jit(
+                call_lower,
+                static_argnames=("atomic_virial",),
+            )
+        elif model_file.endswith(".hlo"):
             model_data = load_dp_model(model_file)
             self.dp = HLO(
                 stablehlo=model_data["@variables"]["stablehlo"].tobytes(),
@@ -194,6 +277,24 @@ class DeepEval(DeepEvalBackend):
         """Get the number of spin atom types of this model."""
         return 0
 
+    def get_has_spin(self) -> bool:
+        """Whether this model accepts native-spin vectors."""
+        return self.dp.has_spin() if hasattr(self.dp, "has_spin") else False
+
+    def get_use_spin(self) -> list[bool]:
+        """Get the magnetic-type mask from the model configuration."""
+        if not self.get_has_spin():
+            return []
+        if self._live_model:
+            return self.dp.spin.use_spin.tolist()
+        from deepmd.utils.spin import (
+            normalize_spin_use_spin,
+        )
+
+        return normalize_spin_use_spin(
+            self.get_model_def_script()["spin"]["use_spin"], self.type_map
+        )
+
     def serialize(self) -> dict[str, Any]:
         """Serialize the loaded model as a model tree.
 
@@ -214,7 +315,7 @@ class DeepEval(DeepEvalBackend):
             serialize_from_file,
         )
 
-        data = serialize_from_file(self.model_path)
+        data = serialize_from_file(self.model_path, training=False)
         if "model" not in data:
             raise RuntimeError("Serialized model data does not contain key 'model'.")
         return data["model"]
@@ -271,6 +372,7 @@ class DeepEval(DeepEvalBackend):
         """
         # convert all of the input to numpy array
         charge_spin = kwargs.pop("charge_spin", None)
+        spin = kwargs.pop("spin", None)
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
         if cells is not None:
@@ -278,9 +380,30 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
+        if self.get_has_spin() and spin is None:
+            raise ValueError("This model requires eval(..., spin=spin_array).")
+        if not self.get_has_spin() and spin is not None:
+            raise ValueError("The model does not accept per-atom spin vectors.")
+        if spin is not None:
+            spin = np.asarray(spin, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(
+                -1, natoms, 3
+            )
+            spin = np.broadcast_to(spin, (numb_test, natoms, 3))
+        if self.has_chg_spin_ebd():
+            if charge_spin is None:
+                charge_spin = self.dp.get_default_chg_spin()
+            if charge_spin is None:
+                raise ValueError("The model requires charge_spin conditioning.")
+            charge_spin = np.asarray(
+                charge_spin, dtype=GLOBAL_NP_FLOAT_PRECISION
+            ).reshape(-1, self.get_dim_chg_spin())
+            charge_spin = np.broadcast_to(
+                charge_spin, (numb_test, self.get_dim_chg_spin())
+            )
+            validate_charge_states(charge_spin)
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, fparam, aparam, charge_spin, request_defs
+            coords, cells, atom_types, fparam, aparam, charge_spin, request_defs, spin
         )
         # ``AutoBatchSize.execute_all`` unwraps a single-output result out of
         # its tuple, which would make ``zip`` iterate over the array's frame
@@ -325,7 +448,9 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
                     OutputVariableCategory.DERV_R_DERV_R,
+                    OutputVariableCategory.DERV_R_MAG,
                 )
+                or x.name == "mask_mag"
             ]
         # Avoid allocating the quadratic Hessian placeholder when the frozen
         # model does not provide that output.
@@ -391,6 +516,7 @@ class DeepEval(DeepEvalBackend):
         aparam: np.ndarray | None,
         charge_spin: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp
 
@@ -437,7 +563,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         do_atomic_virial = any(
-            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+            x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
         model_kwargs = {
             "box": to_jax_array(box_input),
@@ -447,11 +573,25 @@ class DeepEval(DeepEvalBackend):
         }
         if self.has_chg_spin_ebd():
             model_kwargs["charge_spin"] = to_jax_array(charge_spin_input)
-        batch_output = model(
-            to_jax_array(coord_input),
-            to_jax_array(type_input),
-            **model_kwargs,
-        )
+        if self.get_has_spin():
+            model_kwargs["spin"] = to_jax_array(spin)
+        if self._live_model:
+            batch_output = self._eval_live_model(
+                coord_input,
+                type_input,
+                box_input,
+                fparam_input,
+                aparam_input,
+                spin,
+                charge_spin_input,
+                do_atomic_virial,
+            )
+        else:
+            batch_output = model(
+                to_jax_array(coord_input),
+                to_jax_array(type_input),
+                **model_kwargs,
+            )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
         for kk, vv in batch_output.items():
@@ -476,6 +616,86 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
+    def _eval_live_model(
+        self,
+        coord: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray | None,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        spin: np.ndarray | None,
+        charge_spin: np.ndarray | None,
+        atomic_virial: bool,
+    ) -> dict[str, np.ndarray | jax.Array | None]:
+        """Evaluate a checkpoint with a host-built sparse or dense neighbor set."""
+        nf, nloc = atype.shape
+        state = nnx.state(self.dp)
+        if self.dp.uses_full_neighbor_list():
+            batch = {
+                "coord": coord,
+                "type": atype,
+                "box": box,
+                "find_box": box is not None,
+                "fparam": fparam,
+                "aparam": aparam,
+                "spin": spin,
+                "charge_spin": charge_spin,
+            }
+            _, inputs = prepare_graph_batch(
+                batch,
+                rcut=self.rcut,
+                ntypes=len(self.type_map),
+                pair_exclude_types=self.dp.atomic_model.pair_exclude_types,
+            )
+            outputs = self._call_graph(
+                state,
+                jax.tree.map(jnp.asarray, inputs),
+            )
+            physical = atype.reshape(-1) >= 0
+            nphysical = np.count_nonzero(physical)
+            result = {}
+            for key, value in outputs.items():
+                array = np.asarray(value)
+                if key.endswith("_redu"):
+                    result[key] = array[:nf]
+                elif nphysical == nf * nloc:
+                    result[key] = array[:nphysical].reshape(nf, nloc, *array.shape[1:])
+                else:
+                    rectangular = np.zeros(
+                        (nf * nloc, *array.shape[1:]), dtype=array.dtype
+                    )
+                    rectangular[physical] = array[:nphysical]
+                    result[key] = rectangular.reshape(nf, nloc, *array.shape[1:])
+            return result
+        coord_ext, atype_ext, nlist, mapping = DefaultNeighborList().build(
+            coord,
+            atype,
+            box,
+            self.rcut,
+            self.dp.get_sel(),
+            pair_excl=self.dp.atomic_model.pair_excl,
+        )
+        inputs = {
+            "extended_coord": coord_ext,
+            "extended_atype": atype_ext,
+            "nlist": nlist,
+            "mapping": mapping,
+            "fparam": fparam,
+            "aparam": aparam,
+            "charge_spin": charge_spin,
+        }
+        outputs = self._call_lower(
+            state,
+            jax.tree.map(to_jax_array, inputs),
+            atomic_virial=atomic_virial,
+        )
+        return communicate_extended_output(
+            outputs,
+            self.dp.model_output_def(),
+            jnp.asarray(mapping),
+            do_atomic_virial=atomic_virial,
+        )
+
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int
     ) -> list[int]:
@@ -488,7 +708,10 @@ class DeepEval(DeepEvalBackend):
         elif odef.category == OutputVariableCategory.DERV_C:
             # atom_virial
             return [nframes, *odef.shape[:-1], natoms, 9]
-        elif odef.category == OutputVariableCategory.DERV_R:
+        elif odef.category in (
+            OutputVariableCategory.DERV_R,
+            OutputVariableCategory.DERV_R_MAG,
+        ):
             # force
             return [nframes, *odef.shape[:-1], natoms, 3]
         elif odef.category == OutputVariableCategory.OUT:

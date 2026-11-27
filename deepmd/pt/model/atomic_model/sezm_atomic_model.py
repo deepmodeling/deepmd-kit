@@ -48,6 +48,7 @@ from deepmd.utils.vacuum_reference import (
     reference_charge_spin,
     reference_spin,
     resolve_vacuum_ref,
+    store_reference_charge_spin,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -139,28 +140,50 @@ class SeZMAtomicModel(DPAtomicModel):
         """Build the conditioning inputs of the reference atoms for the type map.
 
         A table exists for every condition the descriptor takes when the
-        fitting references the isolated atoms; the type names must then be
-        element symbols.
+        fitting references the isolated atoms (see
+        :mod:`deepmd.utils.vacuum_reference`). With the native spin, a type
+        whose spin moment the preset does not name must be named by its
+        element symbol. A type whose charge/spin condition the preset does not
+        name is referenced to the default condition of the model; that
+        condition is stored with the preset, so it belongs to the model from
+        then on rather than following a later change of the default condition.
         """
         vacuum_ref = self.fitting_net.vacuum_ref
         dtype = env.GLOBAL_PT_FLOAT_PRECISION
-        self.vacuum_charge_spin = (
-            torch.as_tensor(
-                reference_charge_spin(self.type_map), dtype=dtype, device=env.DEVICE
+        conditions = (
+            reference_charge_spin(
+                self.type_map,
+                self.preset_out_bias,
+                self.get_default_chg_spin(),
+                self.fitting_net.var_name,
             )
             if vacuum_ref and self.add_chg_spin_ebd
             else None
         )
+        if conditions is not None:
+            store_reference_charge_spin(
+                self.type_map,
+                self.preset_out_bias,
+                conditions,
+                self.fitting_net.var_name,
+            )
+        self.vacuum_charge_spin = (
+            None
+            if conditions is None
+            else torch.as_tensor(conditions, dtype=dtype, device=env.DEVICE)
+        )
         self.vacuum_spin = (
             torch.as_tensor(
-                reference_spin(self.type_map), dtype=dtype, device=env.DEVICE
+                reference_spin(self.type_map, self.preset_out_bias),
+                dtype=dtype,
+                device=env.DEVICE,
             )
             if vacuum_ref and self.add_spin_ebd
             else None
         )
 
     def vacuum_conditions(self) -> dict[str, torch.Tensor]:
-        """Conditioning inputs of one isolated neutral ground-state atom per type.
+        """Conditioning inputs of the isolated reference atom of every type.
 
         Returns
         -------

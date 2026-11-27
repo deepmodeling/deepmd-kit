@@ -20,7 +20,7 @@ fixture has ``dim_chg_spin == 0``, so the whole argument was inert and a dead
 seam would have been invisible. The sibling non-spin fixture
 (``gen_chg_spin.py`` -> ``chg_spin.pt2``, DPA3) covers ``DeepPot`` only; the
 ``DeepSpin`` ingestion seam is a SEPARATE code path
-(``DeepSpinPTExpt::compute``, two overloads) and needs its own model.
+(``NativeSpinPTExpt::compute``, two overloads) and needs its own model.
 
 Generation mirrors ``gen_dpa4_spin.py`` exactly: the dpmodel is built
 in-process from ``NATIVE_SPIN_CONFIG`` (imported from that script -- this
@@ -92,7 +92,7 @@ from gen_dpa4_spin import (
 
 # Stored fallback used whenever the caller passes no charge_spin. Written to
 # the .pt2 metadata as ``default_chg_spin`` and read back by
-# ``DeepSpinPTExpt::init`` into ``default_chg_spin_``; an EMPTY runtime
+# ``NativeSpinPTExpt::init`` into ``default_chg_spin_``; an EMPTY runtime
 # charge_spin must reproduce exactly this. Same value as gen_chg_spin.py's
 # non-spin DPA3 fixture, for cross-fixture consistency.
 _DEFAULT_CHG_SPIN = [0.0, 1.0]
@@ -167,6 +167,7 @@ def _check_metadata(pt2_path: str) -> None:
     """Assert the frozen archive's metadata, including the charge-spin slot."""
     with zipfile.ZipFile(pt2_path) as zf:
         md = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
+        names = zf.namelist()
     print("\n// metadata:")  # noqa: T201
     print(  # noqa: T201
         json.dumps(
@@ -217,10 +218,11 @@ def _check_metadata(pt2_path: str) -> None:
         f"{pt2_path}: metadata default_chg_spin = {stored_default!r}, expected "
         f"{_DEFAULT_CHG_SPIN!r}"
     )
-    # Native spin rides the with-comm artifact on the graph lower, so the
-    # archive carries the nested forward_lower_with_comm.pt2 for the C++
-    # multi-rank path (a SECOND inductor compile).
-    assert md["has_comm_artifact"] is True
+    # The graph lower of native spin carries the halo exchange of its
+    # further blocks in its main program, so the archive holds no with-comm
+    # artifact for multi-rank runs.
+    assert md["has_comm_artifact"] is False
+    assert "model/extra/forward_lower_with_comm.pt2" not in names
     assert md["has_message_passing"] is True
     assert md["use_spin"] == [True, False]
     for key in ("atom_energy", "energy", "force", "force_mag", "virial"):

@@ -86,6 +86,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_matmul,
 )
 from deepmd.dpmodel.utils.network import (
     Identity,
@@ -402,6 +403,9 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
     supplies the cross-degree mixing that the local-frame ``SO2Linear`` provided,
     but in the global frame and without any Wigner-D rotation.
 
+    ``parity=True`` uses the projected anticommutator operator, so the
+    output obeys the natural inversion parity of each angular degree.
+
     Parameters
     ----------
     lmax : int
@@ -431,6 +435,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         self,
         *,
         lmax: int,
+        parity: bool = False,
         focus_dim: int,
         n_focus: int,
         n_layers: int,
@@ -452,6 +457,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
             seed=seed,
             trainable=trainable,
         )
+        self.parity = bool(parity)
         self.eps = float(eps)
 
         # Non-persistent: a deterministic constant rebuilt on construction, so it
@@ -462,7 +468,12 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         basis = build_cartesian_basis(
             self.lmax, dtype=PRECISION_DICT[self.precision.lower()]
         )
-        self.right_mult_proj = np.einsum("pij,dik->pdkj", basis, basis)
+        projection = np.einsum("pij,dik->pdkj", basis, basis)
+        if self.parity:
+            # Inversion transposes the Cartesian tensor. The projected
+            # anticommutator preserves this law without doubling runtime work.
+            projection = 0.5 * (projection + np.einsum("pki,dji->pdkj", basis, basis))
+        self.right_mult_proj = projection
 
     def call(
         self,
@@ -508,7 +519,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         # einsum "pdkj,ekj->epd" as a flattened matmul contracting the Cartesian
         # (k, j) entries against ``proj`` reshaped to ``(D * D, 3 * 3)``.
         k_op = xp.reshape(
-            xp.matmul(
+            xp_matmul(
                 xp.reshape(a_hat, (a_hat.shape[0], 9)),
                 xp.permute_dims(xp.reshape(proj, (d * d, 9)), (1, 0)),
             ),
@@ -517,7 +528,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         if self.lmax == 2:
             s_hat = s0 / math.sqrt(2.0 / 3.0)
             k_sym = xp.reshape(
-                xp.matmul(
+                xp_matmul(
                     xp.reshape(s_hat, (s_hat.shape[0], 9)),
                     xp.permute_dims(xp.reshape(proj, (d * d, 9)), (1, 0)),
                 ),
@@ -535,7 +546,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
 
         # === Step 3. Edge-tensor modulation, optionally refined by a mixing stack ===
         def apply_product(y: Any) -> Any:
-            ky = xp.matmul(k_op, y)  # (E, lmax * D, C_wide)
+            ky = xp_matmul(k_op, y)  # (E, lmax * D, C_wide)
             m = c_iso * y + c_aniso * ky[:, :d, :]
             if c_sym is not None:
                 m = m + c_sym * ky[:, d:, :]
@@ -557,6 +568,7 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "parity": self.parity,
                 "focus_dim": self.focus_dim,
                 "n_focus": self.n_focus,
                 "n_layers": self.n_layers,
@@ -692,7 +704,7 @@ class NodeCartesianTensorProduct(_CartesianTensorProduct):
         # per-(node, channel) 3x3 form once lets every layer reuse it.
         # einsum "ndc,dij->ncij" as a flattened matmul over the degree axis.
         node_cart = xp.reshape(
-            xp.matmul(
+            xp_matmul(
                 xp.permute_dims(node, (0, 2, 1)),
                 xp.reshape(basis, (basis.shape[0], -1)),
             ),
@@ -702,19 +714,19 @@ class NodeCartesianTensorProduct(_CartesianTensorProduct):
         def apply_product(y: Any) -> Any:
             # einsum "ndc,dij->ncij" as a flattened matmul over the degree axis.
             y_cart = xp.reshape(
-                xp.matmul(
+                xp_matmul(
                     xp.permute_dims(y, (0, 2, 1)),
                     xp.reshape(basis, (basis.shape[0], -1)),
                 ),
                 (y.shape[0], y.shape[2], 3, 3),
             )  # (N, C_wide, 3, 3)
-            m_cart = xp.matmul(y_cart, node_cart)
+            m_cart = xp_matmul(y_cart, node_cart)
             if self.symmetric:
-                m_cart = m_cart + xp.matmul(node_cart, y_cart)
+                m_cart = m_cart + xp_matmul(node_cart, y_cart)
             # einsum "ncij,dij->ndc" as a flattened matmul over the Cartesian
             # (i, j) entries, then transpose back to packed (N, D, C_wide).
             return xp.permute_dims(
-                xp.matmul(
+                xp_matmul(
                     xp.reshape(m_cart, (m_cart.shape[0], m_cart.shape[1], -1)),
                     xp.permute_dims(xp.reshape(basis, (basis.shape[0], -1)), (1, 0)),
                 ),

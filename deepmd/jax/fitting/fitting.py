@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 import deepmd.jax.utils.exclude_mask as _jax_exclude_mask  # noqa: F401
 import deepmd.jax.utils.network as _jax_network  # noqa: F401
 from deepmd.dpmodel.fitting.dipole_fitting import DipoleFitting as DipoleFittingNetDP
@@ -9,6 +13,9 @@ from deepmd.dpmodel.fitting.polarizability_fitting import (
 )
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet as PropertyFittingNetDP,
+)
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
 )
 from deepmd.jax.common import (
     flax_module,
@@ -21,7 +28,9 @@ from deepmd.jax.fitting.base_fitting import (
 @BaseFitting.register("ener")
 @flax_module
 class EnergyFittingNet(EnergyFittingNetDP):
-    pass
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        reject_moe(kwargs, "fitting network")
+        super().__init__(*args, **kwargs)
 
 
 @BaseFitting.register("property")

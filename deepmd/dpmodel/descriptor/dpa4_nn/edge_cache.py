@@ -14,6 +14,9 @@ from __future__ import (
     annotations,
 )
 
+import hashlib
+import json
+import logging
 import math
 from collections.abc import (
     Callable,
@@ -27,11 +30,16 @@ from typing import (
 )
 
 import array_api_compat
+import numpy as np
 
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
+    xp_hint_dynamic_size,
     xp_uniform,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 
 from .utils import (
@@ -43,6 +51,8 @@ from .wignerd import (
     quaternion_z_rotation,
 )
 
+log = logging.getLogger(__name__)
+
 WignerCalculatorFn = Callable[[Any], "tuple[Any, Any]"]
 # Distance and keep weight to the keep-weighted envelope and radial basis, the
 # fused replacement of applying the two modules separately.
@@ -52,7 +62,7 @@ FusedRadialFn = Callable[[Any, Any], "tuple[Any, Any]"]
 @dataclass
 class EdgeCache:
     """
-    Global edge feature cache created once per forward().
+    Edge feature cache for one cutoff within a forward evaluation.
 
     All per-edge arrays are aligned on the same edge axis (E).
 
@@ -66,24 +76,13 @@ class EdgeCache:
         Per-edge type embeddings with shape (E, C), computed as src+dst.
     edge_vec
         Edge vectors with shape (E, 3) in Å.
+    edge_len
+        Regularized read distances with shape (E, 1) in Å.
     edge_rbf
         Radial basis with shape (E, n_radial).
         The C^3 cutoff envelope is already baked in.
     edge_env
-        C^3 cutoff envelope weights with shape (E, 1). In bridging mode the
-        Source Freeze Propagation Gate is folded into it: the envelope of the
-        edge ``j -> k`` is multiplied by the product of the switching
-        amplitudes ``w(r_{jl})`` of every pair of the source ``j`` other than
-        the pair ``(j, k)`` itself, so an edge whose source has a third
-        neighbor in the frozen zone vanishes everywhere the envelope enters
-        (messages, environment seed, attention masses and degree), exactly as
-        an edge beyond the cutoff does, while the edge between the two atoms
-        of a frozen pair keeps its clamped geometry.
-    node_gate
-        Per-node source gate ``eta[j] = prod_{k in N(j)} w(r_{jk})`` with
-        shape (N,), the product over every pair of the node; ``None`` without
-        bridging. The atomic model fades the learned atomic energy of node
-        ``j`` with it.
+        C^3 cutoff envelope weights with shape (E, 1).
     deg
         Envelope-squared smooth degree with shape (N,), computed as
         ``sum(edge_env**2)`` over incoming edges.
@@ -120,6 +119,7 @@ class EdgeCache:
     dst: Any
     edge_type_feat: Any
     edge_vec: Any
+    edge_len: Any
     edge_rbf: Any
     edge_env: Any
     deg: Any
@@ -131,150 +131,125 @@ class EdgeCache:
     csr_cache: dict[str, Any] | None = field(default_factory=dict)
     edge_quat: Any = None
     edge_mask: Any = None
-    node_gate: Any = None
 
 
-def compute_source_gates(
-    *,
-    edge_len: Any,
-    edge_contact: Any,
-    src: Any,
-    n_nodes: int,
-    bridging_switch: Callable[[Any, Any], Any],
-    edge_keep_f: Any = None,
-    node_partial_exchange: Callable[[Any], Any] | None = None,
+def clamped_edge_geometry(
+    edge_vec: Any, read_distance: Callable[[Any], tuple[Any, Any]], eps: float
 ) -> tuple[Any, Any]:
+    """Map the physical radius while preserving each nonzero bond direction.
+
+    Coincident atoms have a zero direction and the same frozen read radius as
+    any other contact on the plateau. Regularize the radius after the clamp so
+    that angular and radial consumers see the same effective geometry.
     """
-    Compute the per-node and per-edge source gates of SFPG from edge lengths.
+    xp = array_api_compat.array_namespace(edge_vec)
+    squared = xp.sum(edge_vec * edge_vec, axis=-1, keepdims=True)
+    nonzero = squared > 0
+    denominator = xp.linalg.vector_norm(
+        xp.where(nonzero, edge_vec, xp.ones_like(edge_vec)), axis=-1, keepdims=True
+    )
+    length = xp.where(nonzero, denominator, xp.zeros_like(denominator))
+    read, unchanged = read_distance(length)
+    direction = xp.where(nonzero, edge_vec / denominator, xp.zeros_like(edge_vec))
+    mapped = xp.where(unchanged, edge_vec, direction * read)
+    # Keep the same squared norm as the unclamped path on identity edges.
+    read_squared = xp.where(unchanged, squared, read * read)
+    return mapped, xp.sqrt(read_squared + eps * eps)
 
-    The per-node gate is the "non-frozen confidence" of a node, the per-edge
-    gate the same product with the edge's own pair left out::
 
-        w_e      = bridging_switch(edge_len_e, edge_contact_e)   in [0, 1]
-        eta_j    = prod_{e: src_e = j} w_e                       in [0, 1]
-        gate_e   = eta_{src_e} / w_e = prod_{e': src_e' = src_e, e' != e} w_e'
+def restrict_edge_cache(
+    cache: EdgeCache,
+    rcut: float,
+    *,
+    deg_norm_floor: Any,
+    edge_envelope: Callable[..., Any],
+    radial_basis: Callable[..., Any],
+) -> EdgeCache:
+    """Restrict a cache to a smaller cutoff and evaluate its cutoff weights.
 
-    ``w_e = 0`` inside the inner radius of that edge's own pair ensures
-    ``eta_j = 0`` for any node with at least one neighbor in the frozen zone,
-    and ``gate_e = 0`` for every edge such a node emits except the edge to
-    that frozen neighbor. The cache builder multiplies ``gate_e`` into the
-    edge envelope, which every consumer weights by, so a muted edge is
-    indistinguishable from a deleted one: the frozen atom disappears from the
-    environment of every third atom, while the two atoms of a frozen pair
-    keep seeing each other at the clamped distance. The fitting scales the
-    deviation of its output from the bias of the type by ``eta_j``, so the
-    frozen atom contributes that bias alone. Masked edges (padding,
-    excluded type pairs) must contribute the multiplicative identity ``1`` so
-    they never spuriously mute a valid source node; callers supply
-    ``edge_keep_f`` for this.
-
-    The product is decomposed into a log-sum on non-zero contributions
-    combined with an explicit "any zero per group" indicator that routes the
-    frozen case through ``where``; the leave-one-out product subtracts the
-    edge's own log-amplitude and zero flag from the totals of its source.
-    Both branches use only shape-preserving standard ops, mirroring the pt
-    implementation so the two backends agree bitwise in float64.
-
-    The gradient consequence at the plateau is exact: ``BridgingSwitch``
-    places ``w'(r) = 0`` everywhere inside the inner radius, so the chain rule
-    ``d eta / d r = (leave-one-out factor) * w'(r) = anything * 0 = 0``
-    holds regardless of how the muted ``where`` branch treats the upstream
-    gradient. In the transition zone every edge has strictly positive ``w``
-    and the log-sum branch gives the standard product gradient.
+    The edges inside ``rcut`` are compacted in their existing order, and two
+    masked tail edges keep the symbolic edge axis at least two even for an
+    empty neighborhood. JAX, which compiles static shapes, keeps every edge
+    in place instead and masks those outside ``rcut`` like the tail edges.
+    Lazy CSR and Wigner views are local to this cache. Basis parameters
+    remain shared, while both envelopes use ``rcut``.
 
     Parameters
     ----------
-    edge_len
-        Per-edge distances with shape (E, 1).
-    edge_contact
-        Per-edge length scale with shape (E, 1) in Å, the sum of the two
-        endpoint radii. The switch measures the window against it, so every
-        element combination gets its own pair of radii.
-    src
-        Source node indices with shape (E,).
-    n_nodes
-        Total number of nodes N.
-    bridging_switch
-        Callable ``(r, contact) -> w`` with ``w: [0, ∞) -> [0, 1]``, typically
-        a :class:`BridgingSwitch` instance.
-    edge_keep_f
-        Optional per-edge keep weights with shape (E, 1), with ``0`` on
-        masked edges and ``1`` on kept edges. If provided, masked edges
-        are rewritten to ``w = 1`` before the product reduction.
-    node_partial_exchange
-        Optional cross-rank completion hook for the per-node partials
-        (issue #5906). Receives the ``(n_nodes, 2)`` float array
-        ``[log_eta, zero_count]`` and returns the globally completed one
-        (reverse-accumulate ghost rows into owners, then broadcast the
-        completed owner values back onto ghosts). ``None`` (the default)
-        is the single-process path where the local partials are already
-        complete.
+    cache : EdgeCache
+        Parent geometry cache covering the requested radius. Pair spin
+        conditioning is applied by the descriptor after restriction.
+    rcut : float
+        Cutoff radius in Å.
+    deg_norm_floor : float or 0-d array
+        Density floor already rescaled for this radius.
+    edge_envelope, radial_basis : Callable
+        Shared modules accepting distances with shape (E, 1) and a cutoff
+        override through the ``rcut`` keyword.
 
     Returns
     -------
-    node_gate : Array
-        Per-node source gate ``eta`` with shape (N,).
-    edge_gate : Array
-        Per-edge leave-one-out gate with shape (E, 1), aligned on the same
-        edge axis as the rest of the cache.
+    EdgeCache
+        Retained edges (under JAX, all edges with those outside ``rcut``
+        masked) followed by two masked slots, with local normalization and
+        independent lazy views. Geometry includes any contact clamp of the
+        parent cache.
     """
-    xp = array_api_compat.array_namespace(edge_len, src)
-    device = array_api_compat.device(edge_len)
-    # === Step 1. Per-edge switching amplitude w(r) in [0, 1] ===
-    edge_w = bridging_switch(edge_len, edge_contact)  # (E, 1)
-    if edge_keep_f is not None:
-        # Force w = 1 on masked edges so they are neutral for the product.
-        edge_w = edge_w * edge_keep_f + (1.0 - edge_keep_f)
+    xp = array_api_compat.array_namespace(cache.edge_vec)
+    device = array_api_compat.device(cache.edge_vec)
+    # === Step 1. Select active edges in their existing order ===
+    keep = (cache.edge_len[:, 0] < rcut) & (cache.edge_env[:, 0] != 0)
+    if array_api_compat.is_jax_array(keep):
+        # JAX traces static shapes: every edge keeps its position, and an edge
+        # outside ``rcut`` is zeroed into a masked slot identical to the tail.
+        retained = keep
 
-    edge_w_flat = edge_w[..., 0]  # (E,)
-    is_zero = edge_w_flat <= 0.0  # (E,) bool
+        def gather(value: Any) -> Any:
+            shape = (keep.shape[0],) + (1,) * (value.ndim - 1)
+            return xp.where(xp.reshape(keep, shape), value, xp.zeros_like(value))
 
-    # === Step 2. Log-sum reduction on non-zero contributions ===
-    # Replace exact zeros with the multiplicative identity 1 so their
-    # ``log`` contribution is 0 and the group-wise sum equals the log of
-    # the product of non-zero ``w`` values.
-    safe_w = xp.where(is_zero, xp.ones_like(edge_w_flat), edge_w_flat)
-    log_safe = xp.log(safe_w)
-    log_eta = xp_add_at(
-        xp.zeros((n_nodes,), dtype=edge_w.dtype, device=device), src, log_safe
+    else:
+        indices = xp.nonzero(keep)[0]
+        xp_hint_dynamic_size(indices)
+        retained = xp.ones_like(indices, dtype=xp.bool)
+
+        def gather(value: Any) -> Any:
+            return xp.take(value, indices, axis=0)
+
+    def select(value: Any) -> Any:
+        tail = xp.zeros((2, *value.shape[1:]), dtype=value.dtype, device=device)
+        return xp.concat((gather(value), tail), axis=0)
+
+    # === Step 2. Append masked slots and evaluate the local envelopes ===
+    src, dst = select(cache.src), select(cache.dst)
+    edge_vec = select(cache.edge_vec)
+    mask = xp.concat((retained, xp.zeros((2,), dtype=xp.bool, device=device)))
+    weight = xp.astype(mask[:, None], edge_vec.dtype)
+    zeros = xp.zeros((weight.shape[0], 2), dtype=edge_vec.dtype, device=device)
+    edge_vec = edge_vec + xp.concat((zeros, 1.0 - weight), axis=1)
+    # A coincident pair has a zero direction but a nonzero clamped radius.
+    length = select(cache.edge_len) + (1.0 - weight)
+    edge_env = edge_envelope(length, rcut=rcut) * weight
+    edge_rbf = radial_basis(length, rcut=rcut) * weight
+    edge_quat = None
+    if cache.edge_quat is not None:
+        zeros = xp.zeros((weight.shape[0], 3), dtype=edge_vec.dtype, device=device)
+        edge_quat = select(cache.edge_quat) + xp.concat((1.0 - weight, zeros), axis=1)
+    # === Step 3. Initialize normalization and cutoff-local lazy views ===
+    return _finalize_edge_cache(
+        n_nodes=cache.deg.shape[0],
+        src=src,
+        dst=dst,
+        edge_type_feat=select(cache.edge_type_feat),
+        edge_vec=edge_vec,
+        edge_len=length,
+        edge_rbf=edge_rbf,
+        edge_env=edge_env,
+        D_full=None if cache.D_full is None else select(cache.D_full),
+        Dt_full=None if cache.Dt_full is None else select(cache.Dt_full),
+        edge_quat=edge_quat,
+        deg_norm_floor=deg_norm_floor,
     )
-
-    # === Step 3. Exact-zero indicator per source node ===
-    # ``scatter_add`` over the zero mask counts how many frozen edges each
-    # source node owns. A strictly positive count means the product is 0 by
-    # the hard-freeze rule. Float count (values are small integers, exact
-    # in fp) so both partials ride ONE border-exchange tensor when
-    # completing across ranks.
-    is_zero_f = xp.astype(is_zero, edge_w.dtype)
-    zero_count = xp_add_at(
-        xp.zeros((n_nodes,), dtype=edge_w.dtype, device=device),
-        src,
-        is_zero_f,
-    )
-
-    # === Step 3b. Cross-rank completion of the per-node partials ===
-    # A rank only holds edges whose dst is owned, so the src-keyed sums
-    # above are PARTIAL for every node under domain decomposition. The hook
-    # (reverse-accumulate ghost->owner, then forward-broadcast owner->ghost)
-    # completes them; log-products are additive and each edge lives on
-    # exactly one rank, so nothing double-counts (issue #5906).
-    if node_partial_exchange is not None:
-        packed = xp.stack([log_eta, zero_count], axis=-1)  # (n_nodes, 2)
-        packed = node_partial_exchange(packed)
-        log_eta = packed[..., 0]
-        zero_count = packed[..., 1]
-
-    # === Step 4. Per-node gate ===
-    node_gate = xp.where(zero_count > 0.5, xp.zeros_like(log_eta), xp.exp(log_eta))
-
-    # === Step 5. Per-edge leave-one-out gate ===
-    # The edge's own factor is removed from its source's totals: its
-    # log-amplitude (0 when it is a frozen edge, because ``safe_w`` is 1 there)
-    # and its zero flag, so the remaining product is over the other pairs.
-    loo_log = xp.take(log_eta, src, axis=0) - log_safe  # (E,)
-    loo_zero = xp.take(zero_count, src, axis=0) - is_zero_f  # (E,)
-    edge_gate = xp.where(loo_zero > 0.5, xp.zeros_like(loo_log), xp.exp(loo_log))
-    return node_gate, edge_gate[:, None]
 
 
 def _edge_cache_from_arrays(
@@ -285,17 +260,14 @@ def _edge_cache_from_arrays(
     edge_mask: Any,
     compute_dtype: Any,
     eps: float,
-    deg_norm_floor: float,
-    bridging_clamp: Callable[[Any, Any], Any] | None,
-    bridging_switch: Callable[[Any, Any], Any] | None,
-    edge_contact: Any,
+    deg_norm_floor: Any,
+    read_distance: Callable[[Any], tuple[Any, Any]] | None,
     edge_envelope: Callable[[Any], Any],
     radial_basis: Callable[[Any], Any],
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_wigner: bool = True,
     gamma: Any = None,
-    node_partial_exchange: Callable[[Any], Any] | None = None,
     fused_radial: FusedRadialFn | None = None,
     fused_wigner: WignerCalculatorFn | None = None,
 ) -> EdgeCache:
@@ -325,22 +297,9 @@ def _edge_cache_from_arrays(
     deg_norm_floor
         Floor added to the envelope-squared degree before inverse-sqrt
         normalization (see :func:`_finalize_edge_cache`).
-    bridging_clamp
-        Optional distance clamp that freezes the geometry the descriptor sees
-        for a pair inside its bridging window (see :class:`InnerClamp`).
-    bridging_switch
-        Optional C3 switching amplitude ``w(r, contact) -> [0, 1]`` that drives
-        the Source Freeze Propagation Gate. When provided, the product of
-        ``w(r_{jl})`` over the true lengths of every pair of the source node
-        other than the edge's own pair is folded into the envelope of every
-        edge that node emits, and the full product is stored on the cache as
-        ``node_gate``. Masked
-        edges (``edge_keep=False``) are forced to ``w=1`` so they never
-        leak into the product.
-    edge_contact
-        Per-edge length scale with shape (E, 1) in Å that both window modules
-        measure their fractions against, or ``None`` when neither is given.
-        The descriptor owns the per-type radii and resolves it before the call.
+    read_distance
+        Optional contact-clamp map returning the read lengths and a mask of
+        edges at or above their data edge, both with shape (E, 1).
     edge_envelope
         C^3 edge envelope module.
     radial_basis
@@ -362,10 +321,6 @@ def _edge_cache_from_arrays(
         ``random_gamma`` is True. When None, drawn with the backend's RNG
         (:func:`~deepmd.dpmodel.array_api.xp_uniform`) uniformly in
         ``[0, 2*pi)``; callers may inject angles to pin a draw.
-    node_partial_exchange
-        Optional cross-rank completion hook forwarded to
-        :func:`compute_source_gates` (issue #5906); only meaningful when
-        ``bridging_switch`` is provided.
 
     Returns
     -------
@@ -392,13 +347,10 @@ def _edge_cache_from_arrays(
     edge_vec = edge_vec + xp.concat([zeros2, 1.0 - edge_keep_f], axis=-1)
 
     # === Step 3. Edge length, envelope, and radial basis ===
-    edge_len = safe_norm(edge_vec, eps)
-    edge_len_true = edge_len
-    if bridging_clamp is not None:
-        clamped = bridging_clamp(edge_len, edge_contact)
-        scale = clamped / edge_len
-        edge_vec = edge_vec * scale
-        edge_len = clamped
+    if read_distance is None:
+        edge_len = safe_norm(edge_vec, eps)
+    else:
+        edge_vec, edge_len = clamped_edge_geometry(edge_vec, read_distance, eps)
     if fused_radial is not None:
         edge_env, edge_rbf = fused_radial(edge_len, edge_keep_f)
     else:
@@ -420,44 +372,19 @@ def _edge_cache_from_arrays(
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)
     edge_type_feat = edge_type_feat * xp.astype(edge_keep_f, edge_type_feat.dtype)
 
-    # === Step 6. Source Freeze Propagation Gate (optional) ===
-    # The leave-one-out gate is folded into the envelope, the one factor every
-    # consumer of an edge weights by: the messages, the environment seed, the
-    # attention masses and the degree normalization all see a muted edge
-    # exactly as they see an edge beyond the cutoff. The gate reads the true
-    # pair length, so it closes where the clamp above has frozen the geometry.
-    # The radial basis stays ungated because it feeds networks whose output
-    # the envelope multiplies. The sparse-edge path packs masked dummy edges
-    # so the compiled graph sees a statically non-empty, non-singular edge
-    # tensor; ``edge_keep_f`` rewrites any such slot to ``w=1`` inside
-    # ``compute_source_gates``, keeping the product reduction unaffected by
-    # padding. The per-node product travels on the cache to the atomic model.
-    node_gate = None
-    if bridging_switch is not None:
-        node_gate, edge_gate = compute_source_gates(
-            edge_len=edge_len_true,
-            edge_contact=edge_contact,
-            src=src,
-            n_nodes=n_nodes,
-            bridging_switch=bridging_switch,
-            edge_keep_f=edge_keep_f,
-            node_partial_exchange=node_partial_exchange,
-        )
-        edge_env = edge_env * edge_gate
-
     return _finalize_edge_cache(
         n_nodes=n_nodes,
         src=src,
         dst=dst,
         edge_type_feat=edge_type_feat,
         edge_vec=edge_vec,
+        edge_len=edge_len,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
         edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
-        node_gate=node_gate,
     )
 
 
@@ -539,13 +466,13 @@ def _finalize_edge_cache(
     dst: Any,
     edge_type_feat: Any,
     edge_vec: Any,
+    edge_len: Any,
     edge_rbf: Any,
     edge_env: Any,
     D_full: Any,
     Dt_full: Any,
     edge_quat: Any,
-    deg_norm_floor: float,
-    node_gate: Any = None,
+    deg_norm_floor: Any,
 ) -> EdgeCache:
     """
     Assemble the shared `EdgeCache` layout.
@@ -562,6 +489,8 @@ def _finalize_edge_cache(
         Per-edge type features with shape (E, C).
     edge_vec
         Edge vectors with shape (E, 3).
+    edge_len
+        Regularized read distances with shape (E, 1) in Å.
     edge_rbf
         Radial basis features with shape (E, n_radial).
     edge_env
@@ -580,9 +509,6 @@ def _finalize_edge_cache(
         normalization. A tiny ``eps`` reproduces the legacy behavior; an
         ``O(1)`` value makes sparse-neighborhood features vanish smoothly at
         ``rcut`` instead of saturating and kinking.
-    node_gate
-        Per-node source gate with shape (N,) of a bridged descriptor, or
-        ``None``.
 
     Returns
     -------
@@ -604,6 +530,7 @@ def _finalize_edge_cache(
         dst=dst,
         edge_type_feat=edge_type_feat,
         edge_vec=edge_vec,
+        edge_len=edge_len,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
         deg=deg,
@@ -614,7 +541,6 @@ def _finalize_edge_cache(
         Dt_from_m_cache={},
         csr_cache={},
         edge_quat=edge_quat,
-        node_gate=node_gate,
     )
 
 
@@ -694,6 +620,7 @@ def edge_cache_to_dtype(cache: EdgeCache, dtype: Any) -> EdgeCache:
         dst=cache.dst,
         edge_type_feat=xp.astype(cache.edge_type_feat, dtype),
         edge_vec=xp.astype(cache.edge_vec, dtype),
+        edge_len=xp.astype(cache.edge_len, dtype),
         edge_rbf=xp.astype(cache.edge_rbf, dtype),
         edge_env=xp.astype(cache.edge_env, dtype),
         deg=xp.astype(cache.deg, dtype),
@@ -705,5 +632,299 @@ def edge_cache_to_dtype(cache: EdgeCache, dtype: Any) -> EdgeCache:
         csr_cache=None if cache.csr_cache is None else dict(cache.csr_cache),
         edge_quat=edge_quat,
         edge_mask=cache.edge_mask,
-        node_gate=cache.node_gate,
     )
+
+
+def _edge_distances(
+    coord: np.ndarray,
+    atype: np.ndarray,
+    box: np.ndarray | None,
+    rcut: float,
+    allowed: np.ndarray,
+) -> np.ndarray:
+    """Return the lengths of the neighbor-graph edges of one frame.
+
+    Parameters
+    ----------
+    coord : np.ndarray
+        Atom coordinates with shape (nloc, 3), in Å.
+    atype : np.ndarray
+        Atom types with shape (nloc,); a negative type marks a padding atom.
+    box : np.ndarray or None
+        Cell with shape (9,) in Å, or ``None`` for a non-periodic frame.
+    rcut : float
+        Cutoff radius in Å.
+    allowed : np.ndarray
+        Boolean matrix with shape (ntypes, ntypes); false for an excluded
+        type pair.
+
+    Returns
+    -------
+    np.ndarray
+        Lengths in Å of the edges from every real atom to every real neighbor
+        within ``rcut``, periodic images included and the atom itself left
+        out, with shape (nedges,).
+    """
+    from scipy.spatial import (
+        cKDTree,
+    )
+
+    from deepmd.dpmodel.utils.nlist import (
+        extend_coord_with_ghosts,
+    )
+    from deepmd.dpmodel.utils.region import (
+        normalize_coord,
+    )
+
+    if box is not None:
+        coord = normalize_coord(coord[None], box.reshape(1, 3, 3))[0]
+    # The images are ordered by shift length, so the first nloc extended
+    # atoms are the local atoms themselves.
+    ext_coord, ext_type, _ = extend_coord_with_ghosts(
+        coord[None], atype[None], None if box is None else box[None], rcut
+    )
+    ext_coord = ext_coord.reshape(-1, 3)
+    ext_type = ext_type[0]
+    centers = np.flatnonzero(atype >= 0)
+    neighbors = np.flatnonzero(ext_type >= 0)
+    pairs = cKDTree(coord[centers]).sparse_distance_matrix(
+        cKDTree(ext_coord[neighbors]), rcut, output_type="ndarray"
+    )
+    first = centers[pairs["i"]]
+    second = neighbors[pairs["j"]]
+    keep = (second != first) & allowed[atype[first], ext_type[second]]
+    return pairs["v"][keep]
+
+
+def mean_envelope_mass(
+    sampled: list[dict[str, Any]],
+    radii: list[float],
+    *,
+    exponent: int,
+    ntypes: int,
+    exclude_types: list[tuple[int, int]],
+    atoms_per_system: int = 1024,
+) -> tuple[np.ndarray, int]:
+    """Mean envelope mass of the sampled neighborhoods at every cutoff.
+
+    The envelope mass of atom ``i`` at cutoff ``r_c`` is the degree that the
+    neighborhood normalization reads, ``m_i = sum_j E(r_ij; r_c)^2``, with
+    ``E`` the C^3 edge envelope. The neighbors are those of the neighbor
+    graph the descriptor reads: every atom within the largest cutoff, with no
+    capacity limit, after the model-level and descriptor-level pair
+    exclusions. The mean runs over the real atoms; padding atoms (negative
+    type) are skipped.
+
+    A system contributes whole frames on a linear index grid over the system,
+    as many as fit in ``atoms_per_system`` atoms and at least one. The
+    statistics sample holds the same number of batches of every system, so
+    this keeps the systems' equal weight while bounding the number of frames.
+    The neighbor search of a frame runs on a k-d tree over the periodic images,
+    so its time and memory grow linearly with the atom count.
+
+    Parameters
+    ----------
+    sampled : list[dict[str, Any]]
+        Sampled systems carrying ``coord`` with shape (nf, nloc * 3),
+        ``atype`` with shape (nf, nloc), an optional ``box`` with shape
+        (nf, 9) and optional model-level ``pair_exclude_types``.
+    radii : list[float]
+        Cutoff radii in Å at which the mass is measured.
+    exponent : int
+        Exponent of the C^3 edge envelope.
+    ntypes : int
+        Number of atom types.
+    exclude_types : list[tuple[int, int]]
+        Descriptor-level excluded type pairs.
+    atoms_per_system : int
+        Atom budget of the frames read from one sampled system.
+
+    Returns
+    -------
+    np.ndarray
+        Mean envelope mass per atom at every radius, with shape
+        (len(radii),), in float64.
+    int
+        Number of atoms averaged, the weight of the mean when the
+        measurements of several datasets are merged.
+
+    Raises
+    ------
+    ValueError
+        If the sample holds no atom, or if the mean mass is not positive (no
+        sampled atom has a neighbor inside a cutoff).
+    """
+    from .radial import (
+        C3CutoffEnvelope,
+    )
+
+    rcut = max(radii)
+    envelope = C3CutoffEnvelope(rcut=rcut, exponent=exponent)
+    mass_sum = np.zeros(len(radii), dtype=np.float64)
+    atom_count = 0
+    for system in sampled:
+        atype = to_numpy_array(system["atype"]).astype(np.int64)
+        frames = np.unique(
+            np.linspace(
+                0,
+                atype.shape[0] - 1,
+                min(atype.shape[0], max(1, atoms_per_system // atype.shape[1])),
+                dtype=np.float64,
+            )
+            .round()
+            .astype(np.int64)
+        )
+        atype = atype[frames]
+        nframes, nloc = atype.shape
+        coord = to_numpy_array(system["coord"]).astype(np.float64)[frames]
+        box = system.get("box")
+        box = None if box is None else to_numpy_array(box).astype(np.float64)[frames]
+        allowed = np.ones((ntypes, ntypes), dtype=bool)
+        for first, second in [*exclude_types, *system.get("pair_exclude_types", [])]:
+            allowed[first, second] = allowed[second, first] = False
+        # === Step 1. Edge lengths of the training neighbor graph ===
+        distance = np.concatenate(
+            [
+                _edge_distances(
+                    coord[frame].reshape(nloc, 3),
+                    atype[frame],
+                    None if box is None else box[frame],
+                    rcut,
+                    allowed,
+                )
+                for frame in range(nframes)
+            ]
+        )
+        # === Step 2. Degree sum over the real atoms ===
+        # Every edge ends at a real atom, so the sum of the squared envelopes
+        # over the edges is the sum of the degrees over the real atoms.
+        atom_count += int((atype >= 0).sum())
+        for index, radius in enumerate(radii):
+            mass_sum[index] += float(np.sum(envelope.call(distance, rcut=radius) ** 2))
+    if atom_count == 0:
+        raise ValueError("The statistics sample holds no atom")
+    mass = mass_sum / atom_count
+    if not np.all(mass > 0.0):
+        raise ValueError(
+            f"The mean envelope mass at cutoffs {list(radii)} Å is {mass.tolist()}; "
+            "the sampled atoms need neighbors inside every cutoff"
+        )
+    return mass, atom_count
+
+
+def load_or_measure_envelope_mass(
+    merged: Callable[[], list[dict[str, Any]]] | list[dict[str, Any]],
+    path: Any | None,
+    *,
+    radii: list[float],
+    exponent: int,
+    ntypes: int,
+    exclude_types: list[tuple[int, int]],
+) -> tuple[np.ndarray, int]:
+    """Read the mean envelope mass from a statistics file or measure it.
+
+    The record is keyed by the descriptor settings the measurement depends on
+    (cutoffs, envelope exponent and descriptor-level exclusions), so a
+    statistics file shared by differently configured descriptors never
+    returns another descriptor's mass. Model-level pair exclusions act on the
+    sampled data, like the data themselves, so a statistics file belongs to
+    one data and model configuration, as for the other statistics it holds.
+
+    Parameters
+    ----------
+    merged : Callable[[], list[dict]] or list[dict]
+        Sampled systems (see :func:`mean_envelope_mass`), or a lazy callable
+        that returns them; it is called only when no record exists.
+    path : DPPath or None
+        Statistics file directory, or None to measure without a record.
+    radii, exponent, ntypes, exclude_types
+        As in :func:`mean_envelope_mass`.
+
+    Returns
+    -------
+    np.ndarray
+        Mean envelope mass at every radius, with shape (len(radii),).
+    int
+        Number of atoms averaged.
+    """
+    key = json.dumps([list(radii), exponent, sorted(map(list, exclude_types))])
+    record = (
+        None
+        if path is None
+        else path
+        / f"dpa4_envelope_mass_{hashlib.sha256(key.encode()).hexdigest()[:16]}"
+    )
+    if record is not None and record.is_file():
+        stored = record.load_numpy()
+        mass, count = stored[1:], int(stored[0])
+    else:
+        mass, count = mean_envelope_mass(
+            merged() if callable(merged) else merged,
+            radii,
+            exponent=exponent,
+            ntypes=ntypes,
+            exclude_types=exclude_types,
+        )
+        if record is not None:
+            path.mkdir(parents=True, exist_ok=True)
+            record.save_numpy(np.concatenate(([count], mass)))
+    log.info(
+        "Mean envelope mass of %d training atoms at cutoffs %s Å: %s",
+        count,
+        [float(radius) for radius in radii],
+        [round(float(value), 4) for value in mass],
+    )
+    return mass, count
+
+
+def store_envelope_mass(descriptor: Any, mass: np.ndarray, count: int) -> None:
+    """Write a measured mean envelope mass into a descriptor's buffer.
+
+    The buffer is a backend array, so the stored value takes its dtype and
+    device; the atom count is kept beside it as the weight of the mean when
+    the measurements of several replicas are merged.
+
+    Parameters
+    ----------
+    descriptor
+        DPA4-family descriptor carrying ``envelope_mass`` and
+        ``envelope_count``.
+    mass
+        Mean envelope mass at every radius the descriptor reads, with shape
+        ``(len(radii),)``.
+    count
+        Number of atoms averaged.
+    """
+    xp = array_api_compat.array_namespace(descriptor.envelope_mass)
+    descriptor.envelope_mass[...] = xp.asarray(
+        mass,
+        dtype=descriptor.envelope_mass.dtype,
+        device=array_api_compat.device(descriptor.envelope_mass),
+    )
+    descriptor.envelope_count = float(count)
+
+
+def merge_envelope_mass(descriptor: Any, replica: Any, weight: float) -> None:
+    """Merge the envelope mass measured by a sharing replica into a descriptor.
+
+    The masses average over the atoms each descriptor measured, the atoms of
+    the replica weighted by its sampling probability relative to this
+    descriptor, as the shared statistics of other descriptors.
+
+    Parameters
+    ----------
+    descriptor
+        Descriptor that owns the shared parameters and receives the merge.
+    replica
+        Descriptor whose measurement is merged in.
+    weight
+        Sampling probability of the replica relative to this descriptor.
+    """
+    total = descriptor.envelope_count + weight * replica.envelope_count
+    if total == 0.0:
+        return
+    descriptor.envelope_mass[...] = (
+        descriptor.envelope_count * descriptor.envelope_mass
+        + weight * replica.envelope_count * replica.envelope_mass
+    ) / total
+    descriptor.envelope_count = total

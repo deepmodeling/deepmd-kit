@@ -103,3 +103,29 @@ def get_promoted_dtype(dtype: Any) -> Any:
     if "float16" in name:  # matches float16 and bfloat16
         return np.dtype(np.float32)
     return dtype
+
+
+def layer_variables(layers: dict[str, Any]) -> dict[str, Any]:
+    """Variables of named sub-layers keyed by the pt ``state_dict`` key names."""
+    return {
+        f"{name}.{key}": value
+        for name, layer in layers.items()
+        for key, value in layer.serialize()["@variables"].items()
+    }
+
+
+def load_layer_variables(
+    owner: Any,
+    layers: dict[str, Any],
+    variables: dict[str, Any],
+) -> None:
+    """Rebuild named sub-layers of ``owner`` from prefixed variables."""
+    for name, layer in layers.items():
+        prefix = f"{name}."
+        data = layer.serialize()
+        data["@variables"] = {
+            key[len(prefix) :]: value
+            for key, value in variables.items()
+            if key.startswith(prefix)
+        }
+        setattr(owner, name, type(layer).deserialize(data))

@@ -14,6 +14,32 @@ from deepmd.env import (
 )
 
 
+def is_native_spin_scheme(scheme: str | None) -> bool:
+    """Whether a spin scheme belongs to the native family (``native[:mode]``)."""
+    return str(scheme).lower().split(":")[0] == "native"
+
+
+def parse_spin_scheme(scheme: str) -> str | None:
+    """Return the native interaction mode, or None for virtual-atom DeepSpin.
+
+    ``native`` selects ``orbit``. Explicit native schemes are
+    ``native:orbit`` and ``native:exchange``; all other suffixes are invalid.
+    """
+    schemes = {
+        "native": "orbit",
+        "native:orbit": "orbit",
+        "native:exchange": "exchange",
+        "deepspin": None,
+    }
+    scheme = str(scheme).lower()
+    if scheme not in schemes:
+        raise ValueError(
+            f"Unknown spin scheme {scheme!r}; expected deepspin, native, "
+            "native:orbit, or native:exchange"
+        )
+    return schemes[scheme]
+
+
 def env_protection_descriptors(
     descriptor: dict[str, Any], inherited_protection: float | None = None
 ) -> Iterator[dict[str, Any]]:

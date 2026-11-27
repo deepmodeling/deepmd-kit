@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 import torch
 
@@ -8,7 +12,21 @@ from deepmd.pt.utils.utils import (
 )
 
 
-class AtomExcludeMask(torch.nn.Module):
+class _ExcludeMask(torch.nn.Module):
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # TorchScript archives include nonpersistent buffers. The lookup table
+        # is derived from this model's exclusion list, not checkpoint state.
+        state_dict.pop(prefix + "type_mask", None)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+
+class AtomExcludeMask(_ExcludeMask):
     """Computes the type exclusion mask for atoms."""
 
     def __init__(
@@ -26,11 +44,15 @@ class AtomExcludeMask(torch.nn.Module):
     ) -> None:
         self.ntypes = ntypes
         self.exclude_types = exclude_types
-        self.type_mask = np.array(
+        type_mask = np.array(
             [1 if tt_i not in self.exclude_types else 0 for tt_i in range(ntypes)],
             dtype=np.int32,
         )
-        self.type_mask = to_torch_tensor(self.type_mask).view([-1])
+        # A buffer derived from the configuration: it moves with the module
+        # and stays out of the state dict.
+        self.register_buffer(
+            "type_mask", to_torch_tensor(type_mask).view([-1]), persistent=False
+        )
 
     def get_exclude_types(self) -> list[int]:
         return self.exclude_types
@@ -61,7 +83,7 @@ class AtomExcludeMask(torch.nn.Module):
         return self.type_mask[atype].view(nf, natom).to(atype.device)
 
 
-class PairExcludeMask(torch.nn.Module):
+class PairExcludeMask(_ExcludeMask):
     """Computes the type exclusion mask for atom pairs."""
 
     def __init__(
@@ -84,7 +106,7 @@ class PairExcludeMask(torch.nn.Module):
             self._exclude_types.add((tt[0], tt[1]))
             self._exclude_types.add((tt[1], tt[0]))
         # ntypes + 1 for nlist masks
-        self.type_mask = np.array(
+        type_mask = np.array(
             [
                 [
                     1 if (tt_i, tt_j) not in self._exclude_types else 0
@@ -94,8 +116,11 @@ class PairExcludeMask(torch.nn.Module):
             ],
             dtype=np.int32,
         )
-        # (ntypes+1 x ntypes+1)
-        self.type_mask = to_torch_tensor(self.type_mask).view([-1])
+        # (ntypes+1 x ntypes+1), a buffer derived from the configuration: it
+        # moves with the module and stays out of the state dict.
+        self.register_buffer(
+            "type_mask", to_torch_tensor(type_mask).view([-1]), persistent=False
+        )
         self.no_exclusion = len(self._exclude_types) == 0
 
     def get_exclude_types(self) -> set[tuple[int, int]]:

@@ -1,17 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""``force_mag`` autograd on the DPA4 pt_expt NeighborGraph lower.
+"""DPA4 physical symmetries, native spin, serialization and training contracts.
 
-Task 3 of the "DPA4 native spin on the NeighborGraph route" plan wires a
-SECOND autograd leaf (``spin``) alongside the existing ``edge_vec`` leaf in
-``forward_common_lower_graph``/``fit_output_to_model_output_graph``: every
-``r_differentiable`` reducible output additionally emits
-``<var>_derv_r_mag = -d<var>_redu/dspin``. This exercises the pt_expt
-BACKBONE energy model directly (a plain "dpa4" model config with
-``use_spin`` set on the descriptor) -- NOT the ``NativeSpinEnergyModel``
-wrapper (that is Task 4); ``get_sezm_model`` only rejects a top-level
-``"spin"`` key, so setting ``use_spin`` on the descriptor of an otherwise
-plain ``"dpa4"`` model config reaches this trunk directly via
-``model.call_common(coord, atype, box, spin=...)``.
+The graph backbone and native wrapper are checked through their public
+interfaces, including backend parity, export and magnetic-force training.
 """
 
 import copy
@@ -52,7 +43,9 @@ from deepmd.utils.compat import (
 )
 
 from ...dpa4_fixtures import (
+    four_atom_spin_inputs,
     jitter_zero_arrays,
+    tetrahedral_spin_configurations,
 )
 from ...seed import (
     GLOBAL_SEED,
@@ -209,10 +202,7 @@ class TestGraphForceMag:
         assert torch.max(torch.abs(scaled_hessian - hessian)).item() > 1e-6
 
     def test_force_unchanged_by_spin_leaf_wiring(self) -> None:
-        """``call_common`` WITHOUT ``spin`` has no ``energy_derv_r_mag`` key,
-        and the spin-less forward is deterministic (the new ``spin is not
-        None`` branch is a true no-op when ``spin`` is not supplied).
-        """
+        """Calls without spin omit magnetic derivatives and remain deterministic."""
         out0 = self.model.call_common(self.coord, self.atype, self.box)
         assert "energy_derv_r_mag" not in out0
         out1 = self.model.call_common(self.coord, self.atype, self.box)
@@ -245,16 +235,12 @@ class TestGraphForceMag:
 
 
 # =============================================================================
-# Task 4: the ``NativeSpinEnergyModel`` wrapper (top-level "spin" key, scheme
-# "native") -- public forward() keys/shapes and weight-copied parity vs the
-# pt ``SeZMNativeSpinModel`` reference.
+# Native wrapper outputs and weight-copied parity with the PyTorch model.
 # =============================================================================
 
-# Same shape as dpmodel's NATIVE_SPIN_CONFIG
-# (source/tests/common/dpmodel/test_dpa4_native_spin_model.py), plus the
-# top-level "type": "dpa4" that pt's ``get_model`` requires to dispatch into
-# ``get_sezm_spin_model`` (dpmodel's dispatch keys off `data["spin"]["scheme"]`
-# alone and does not need it).
+# The model-level type selects the SeZM factory in PyTorch; the portable
+# wrapper uses the same descriptor and fitting configuration.
+
 NATIVE_SPIN_CONFIG = {
     "type": "dpa4",
     "type_map": ["Ni", "O"],
@@ -509,24 +495,15 @@ class TestNativeSpinEnergyModelParity:
 
 
 # =============================================================================
-# Task 5: ``forward_lower_graph_exportable`` -- the graph-spin ``.pt2``
-# exportable ABI (spin at positional index 10). ``make_fx``/``torch.export``
-# tracing is CPU-only by design (``serialization.py:924`` moves the model
-# to CPU before tracing) -- both tests below build the model AND the sample
-# inputs on CPU explicitly, mirroring ``test_dpa4_graph_lower.py``'s
-# ``test_graph_lower_symbolic_trace``/``test_graph_lower_torch_export``.
+# Graph-lower export ABI: spin occupies positional input 10.
+# CPU tracing keeps model parameters and inputs on the same device.
 # =============================================================================
 
 
 def _build_native_spin_model_cpu(seed: int = 21) -> NativeSpinEnergyModel:
-    """Build the jittered pt_expt ``NativeSpinEnergyModel`` wrapper on CPU.
+    """Build a CPU model with nonzero residual and spin projections.
 
-    Mirrors ``_jittered_wrapper`` above but pinned to CPU from construction
-    (export tracing is CPU-only; the dpa1 CUDA lesson is that traced inputs
-    and params must share a device). DPA4 zero-initializes residual
-    projections, so jittering is needed to make ``force_mag`` genuinely
-    non-trivial -- otherwise the trace-vs-eager comparisons below would be
-    vacuous (both sides identically zero).
+    Nonzero projections ensure that exported magnetic forces depend on spin.
     """
     cpu = torch.device("cpu")
     model = get_model(NATIVE_SPIN_CONFIG)
@@ -583,7 +560,8 @@ def _build_spin_graph_sample(
 class TestDPA4NativeSpinGraphLowerExportable:
     """``forward_lower_graph_exportable`` establishes the positional ``.pt2``
     ABI for graph-spin models (spin at index 10, conditional ``charge_spin``
-    tail at slot 13, no with-comm variant) -- the C++/serialization seams
+    tail at slot 13, then the communicator and the border plan of a model
+    with further message-passing blocks) -- the C++/serialization seams
     mirror this ABI.
     """
 
@@ -873,24 +851,13 @@ class TestDPA4NativeSpinCompiledTraining:
 
 
 # =============================================================================
-# Task 11: training smoke -- native-spin DPA4 through the real pt_expt
-# trainer (data loading, ``ener_spin`` loss dispatch, ``ModelWrapper``,
-# graph-route autograd ``force_mag``), not a hand-rolled forward/backward.
+# Native-spin training through the production data, loss and model wrappers.
 # =============================================================================
 
-# Small fp64 native-spin DPA4/SeZM training config. Reuses the real NiO spin
-# dataset (``source/tests/pt/NiO/data``, type_map ["Ni", "O"], 32 atoms: 16
-# Ni carrying a magnetic moment, 16 O not) that ``source/tests/pt/
-# test_finetune_spin.py``'s ``TestSpinFinetuneSeA`` already exercises for the
-# (unrelated) virtual-atom scheme with ``rcut=4.0``, ``sel=[20, 20]`` -- rcut
-# reused verbatim here since it is known to see a sane number of neighbors on
-# this system; DPA4's ``sel`` is only an initial search-capacity hint (grows
-# on demand, never truncates the energy path), so a single scalar sel=40
-# (>= the se_e2_a per-type total of 40) is a safe, generous starting point.
-# The descriptor is intentionally tiny (channels=8, n_radial=4, lmax=1,
-# mmax=1, n_blocks=1) to keep the smoke test fast: this test proves the
-# training PLUMBING (data requirement, loss dispatch, wrapper spin
-# threading, autograd gradient flow), not model quality.
+# The NiO fixture has 32 atoms: magnetic Ni and nonmagnetic O. The small
+# float64 descriptor checks training behavior without fitting model accuracy.
+# The scalar sel is an initial neighbor-search capacity; the graph retains
+# every edge inside the cutoff.
 _TRAIN_MODEL_CONFIG = {
     "type": "dpa4",
     "type_map": ["Ni", "O"],
@@ -960,39 +927,10 @@ def _make_train_config(data_dir: str, numb_steps: int = 2) -> dict:
 
 
 class TestDPA4NativeSpinTrainingSmoke:
-    """End-to-end training smoke for the native-spin DPA4 trainer.
+    """Exercise native-spin training on the NiO dataset.
 
-    Exercises the FULL production training path -- data loading, the
-    ``ener_spin`` loss dispatch, ``ModelWrapper.forward``, and the
-    graph-route backbone's autograd ``force_mag`` -- on the real NiO spin
-    dataset, not a hand-rolled forward/backward.
-
-    Writing this test surfaced three real gaps (all in ``deepmd/dpmodel`` or
-    ``deepmd/pt_expt``, none in the read-only ``deepmd/pt``), fixed in the
-    same commit as this test:
-
-    1. ``ModelWrapper.forward`` (``deepmd/pt_expt/train/wrapper.py``) had no
-       ``spin`` parameter, so a spin-labeled batch's ``spin`` key made
-       ``self.wrapper(**input_dict, ...)`` raise ``TypeError``. Fixed by
-       mirroring ``deepmd.pt.train.wrapper.ModelWrapper.forward``'s
-       ``has_spin``-gated threading.
-    2. ``get_additional_data_requirement``
-       (``deepmd/pt_expt/train/training.py``) never declared ``spin`` as a
-       data requirement, so the data loader never learned to read
-       ``spin.npy`` in the first place. Fixed by mirroring
-       ``deepmd.pt.train.training.get_additional_data_requirement``'s
-       ``has_spin`` branch.
-    3. ``NativeSpinEnergyModel.forward`` (``deepmd/pt_expt/model/
-       dpa4_native_spin_model.py``) accepted no ``charge_spin`` keyword, but
-       ``ModelWrapper`` always forwards one -- fixed by accepting (and
-       passing through) ``charge_spin``, mirroring pt's
-       ``SeZMNativeSpinModel.forward``. Separately, ``EnergySpinLoss.call``
-       (``deepmd/dpmodel/loss/ener_spin.py``) diffed the flat
-       ``(nf, natoms * 3)`` data-loader label directly against the model's
-       ``(nf, natoms, 3)`` prediction for ``force``/``force_mag`` -- unlike
-       every sibling atomic-label loss (``dos.py``/``tensor.py``), which
-       reshape the label to the canonical atomic shape before use. Fixed by
-       adding the same reshape.
+    The checks cover spin data requirements, the energy/spin loss, model
+    wrapper arguments and magnetic-force parameter gradients.
     """
 
     def setup_method(self) -> None:
@@ -1089,37 +1027,6 @@ class TestDPA4NativeSpinFinetuneFromSpinFreePretrain:
             get_trainer(self._normalized(pretrain_config)).run()
             checkpoint = tmp_path / "model.ckpt.pt"
             assert checkpoint.is_file(), "pretraining wrote no checkpoint"
-            checkpoint_data = torch.load(
-                checkpoint,
-                map_location="cpu",
-                weights_only=True,
-            )
-            checkpoint_state = checkpoint_data["model"]
-            dormant_keys = [
-                key
-                for key, value in checkpoint_state.items()
-                if torch.is_tensor(value)
-                and (
-                    "spin_embedding.mag_layer2." in key
-                    or "spin_embedding.adam_spin_" in key
-                    or "env_seed_embedding.spin_scale" in key
-                )
-            ]
-            assert dormant_keys, "checkpoint exposes no dormant spin parameters"
-            for key in dormant_keys:
-                checkpoint_state[key] = torch.randn_like(checkpoint_state[key])
-            version_keys = [
-                key
-                for key in checkpoint_state
-                if key.endswith("descriptor.version_tensor")
-            ]
-            assert len(version_keys) == 1
-            version_key = version_keys[0]
-            checkpoint_state[version_key] = torch.full_like(
-                checkpoint_state[version_key], 1.1
-            )
-            torch.save(checkpoint_data, checkpoint)
-
             # Phase 2: fine-tune with Ni magnetic, through the production rules.
             finetune_config = self._normalized(
                 _make_train_config(self.data_dir, numb_steps=1)
@@ -1134,9 +1041,8 @@ class TestDPA4NativeSpinFinetuneFromSpinFreePretrain:
             )
             descriptor = trainer.models["Default"].atomic_model.descriptor
             assert torch.all(descriptor.spin_embedding.mag_layer2.w == 0.0)
-            assert torch.all(descriptor.spin_embedding.adam_spin_vec_weight == 0.0)
-            assert torch.all(descriptor.spin_embedding.adam_spin_nbr_weight == 0.0)
-            assert torch.all(descriptor.env_seed_embedding.spin_scale == 0.0)
+            assert torch.all(descriptor.spin_embedding.pair_layer.w == 0.0)
+            assert torch.all(descriptor.env_seed_embedding.spin_output_proj.w == 0.0)
 
             task = trainer.select_task(trainer._make_training_tasks())
             more_loss = trainer.train_step(task, 0).payload["more_loss"]
@@ -1157,7 +1063,7 @@ class TestDPA4DescriptorVersionPersistence:
     The backend rebuilds a module from its config before loading, so a
     version kept only as a python attribute would come back claiming the
     semantics of the running code and every checkpoint would silently skip
-    ``_migrate_variables``.
+    ``_migrate_version``.
     """
 
     def _descriptor(self, use_spin: list[bool] | None = None) -> DescrptDPA4:
@@ -1170,60 +1076,6 @@ class TestDPA4DescriptorVersionPersistence:
         descriptor = self._descriptor()
         assert "version_tensor" in descriptor.state_dict()
         assert float(descriptor.version_tensor.item()) == DescrptDPA4.LATEST_VERSION
-
-    def test_legacy_state_squares_the_env_seed_spin_gate(self) -> None:
-        """Version 1.2 stores the gate after the environment quadratic form.
-
-        The gate is a child parameter, so the rewrite has to land on the
-        incoming state: torch restores a module's own buffers before
-        descending into its children.
-        """
-        state = self._descriptor().state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        gate_key = "env_seed_embedding.spin_scale"
-        state[gate_key] = torch.full_like(state[gate_key], 2.0)
-
-        target = self._descriptor()
-        target.load_state_dict(state)
-        assert torch.all(target.env_seed_embedding.spin_scale == 4.0)
-        assert target.version == 1.3
-        assert float(target.version_tensor.item()) == 1.3
-
-    def test_legacy_spin_free_state_zeros_dormant_routes(self) -> None:
-        state = self._descriptor([False, False]).state_dict()
-        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
-        dormant_keys = (
-            "spin_embedding.mag_layer2.w",
-            "spin_embedding.adam_spin_vec_weight",
-            "spin_embedding.adam_spin_nbr_weight",
-            "env_seed_embedding.spin_scale",
-        )
-        for key in dormant_keys:
-            state[key] = torch.full_like(state[key], 3.0)
-        state["spin_embedding.mag_layer1.w"] = torch.full_like(
-            state["spin_embedding.mag_layer1.w"], 5.0
-        )
-
-        target = self._descriptor([False, False])
-        target.load_state_dict(state)
-
-        migrated = target.state_dict()
-        for key in dormant_keys:
-            assert torch.all(migrated[key] == 0.0)
-        assert torch.all(migrated["spin_embedding.mag_layer1.w"] == 5.0)
-        assert target.version == 1.3
-
-    def test_state_without_a_version_is_read_as_the_last_untagged_one(self) -> None:
-        """Checkpoints predating the buffer were written under version 1.1."""
-        state = self._descriptor().state_dict()
-        del state["version_tensor"]
-        gate_key = "env_seed_embedding.spin_scale"
-        state[gate_key] = torch.full_like(state[gate_key], 3.0)
-
-        target = self._descriptor()
-        target.load_state_dict(state)
-        assert torch.all(target.env_seed_embedding.spin_scale == 9.0)
-        assert target.version == 1.3
 
 
 class TestNativeSpinConfigFormsPtExpt:
@@ -1550,7 +1402,7 @@ class TestNativeSpinModelPairExcludeContract:
     Exclusion is a BUILD-time transform owned by the neighbor-graph
     construction (decision #18/A4): the exported lower consumes a pre-excluded
     ``edge_mask``, so every external feeder (Python ``DeepEval``, C++
-    ``DeepSpinPTExpt::compute``) must fold it in from the
+    ``NativeSpinPTExpt::compute``) must fold it in from the
     ``pair_exclude_types`` metadata field.  These tests pin the two properties
     the C++ regression
     (``source/api_cc/tests/test_deepspin_dpa4_pairexcl_ptexpt.cc``) depends on:
@@ -1649,3 +1501,462 @@ class TestNativeSpinModelPairExcludeContract:
             f"pair_exclude_types=[[0, 1]] left the energy unchanged (diff="
             f"{de:.3e}); the exclusion never reached the neighbor-graph build"
         )
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+def test_native_spin_resolves_zero_total_neighbor_correlations(
+    backend: str, spin_mode: str
+) -> None:
+    """Equal first spin moments retain distinct second-order correlations."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    config["spin"]["scheme"] = f"native:{spin_mode}"
+    model = (pt_get_model if backend == "pt" else get_model)(config)
+    model = model.to(device="cpu", dtype=torch.float64).eval()
+    generator = torch.Generator().manual_seed(37)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(
+                0.1
+                * torch.randn(
+                    parameter.shape, generator=generator, dtype=parameter.dtype
+                )
+            )
+    coord, atype, spin_a, spin_b = (
+        torch.from_numpy(value) for value in tetrahedral_spin_configurations()
+    )
+    first = model(coord, atype, spin_a)
+    second = model(coord, atype, spin_b)
+    zero = model(coord, atype, torch.zeros_like(spin_a))
+    assert (first["energy"] - zero["energy"]).abs().max() > 1e-8
+    assert (first["energy"] - second["energy"]).abs().max() > 1e-8
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+def test_native_spin_requires_environment_seed(backend: str) -> None:
+    """The native model retains its neighbor spin-correlation path."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    config["descriptor"]["use_env_seed"] = False
+    with pytest.raises(ValueError, match=r"Native spin requires.*use_env_seed=True"):
+        (pt_get_model if backend == "pt" else get_model)(config)
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+@pytest.mark.parametrize("spin_mode", ["exchange", "orbit"])
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "none",
+        "edge",
+        "node",
+        "node_so3",
+        "message_so3",
+        "ffn_so3",
+        "readout_glu",
+        "readout_mlp",
+    ],
+)
+def test_native_spin_physical_symmetries(
+    backend: str, spin_mode: str, variant: str
+) -> None:
+    """Energy and its gradients obey time reversal and axial O(3) transformations."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    config["spin"]["scheme"] = f"native:{spin_mode}"
+    config["descriptor"].update(
+        edge_cartesian=variant == "edge",
+        node_cartesian="default:1" if variant == "node" else "none",
+    )
+    grid_option = {
+        "node_so3": "node_wise_so3",
+        "message_so3": "message_node_so3",
+        "ffn_so3": "ffn_so3_grid",
+    }.get(variant)
+    if grid_option is not None:
+        config["descriptor"][grid_option] = True
+    if variant.startswith("readout_"):
+        config["descriptor"].update(
+            n_blocks=1,
+            so3_readout=variant.removeprefix("readout_"),
+            readout_layers=2,
+        )
+    model = (pt_get_model if backend == "pt" else get_model)(config)
+    descriptor = model.atomic_model.descriptor
+    state = jitter_zero_arrays(descriptor.serialize(), np.random.default_rng(517))
+    model.atomic_model.descriptor = type(descriptor).deserialize(state)
+    model = model.to(device="cpu", dtype=torch.float64).eval()
+    coord, atype, spin, _ = (
+        torch.from_numpy(value) for value in four_atom_spin_inputs()
+    )
+    original = model(coord, atype, spin)
+    flipped = model(coord, atype, -spin)
+    for key in ("energy", "force", "virial"):
+        torch.testing.assert_close(flipped[key], original[key], atol=0.0, rtol=0.0)
+    torch.testing.assert_close(
+        flipped["force_mag"], -original["force_mag"], atol=0.0, rtol=0.0
+    )
+    zero = model(coord, atype, torch.zeros_like(spin))
+    torch.testing.assert_close(
+        zero["force_mag"], torch.zeros_like(spin), atol=0.0, rtol=0.0
+    )
+    assert original["force_mag"].abs().max() > 1e-8
+    assert (original["energy"] - zero["energy"]).abs().max() > 1e-8
+    torch.testing.assert_close(
+        original["force_mag"][:, 2],
+        torch.zeros_like(spin[:, 2]),
+        atol=0.0,
+        rtol=0.0,
+    )
+
+    generator = torch.Generator().manual_seed(19)
+    rotation, _ = torch.linalg.qr(
+        torch.randn(3, 3, generator=generator, dtype=torch.float64)
+    )
+    rotation = rotation * torch.linalg.det(rotation)
+    for transform in (rotation, -rotation, -torch.eye(3, dtype=torch.float64)):
+        axial = torch.linalg.det(transform) * transform
+        transformed = model(coord @ transform.T, atype, spin @ axial.T)
+        torch.testing.assert_close(
+            transformed["energy"], original["energy"], atol=2e-10, rtol=2e-10
+        )
+        torch.testing.assert_close(
+            transformed["force"],
+            original["force"] @ transform.T,
+            atol=2e-9,
+            rtol=2e-9,
+        )
+        torch.testing.assert_close(
+            transformed["force_mag"],
+            original["force_mag"] @ axial.T,
+            atol=2e-9,
+            rtol=2e-9,
+        )
+    if spin_mode == "exchange":
+        rotated = model(coord, atype, spin @ rotation.T)
+        torch.testing.assert_close(
+            rotated["energy"], original["energy"], atol=2e-12, rtol=2e-12
+        )
+        torch.testing.assert_close(
+            rotated["force_mag"],
+            original["force_mag"] @ rotation.T,
+            atol=2e-11,
+            rtol=2e-11,
+        )
+    else:
+        rotated = model(coord, atype, spin @ rotation.T)
+        assert (rotated["energy"] - original["energy"]).abs().max() > 1e-8
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"use_env_seed": False},
+        {"s2_activation": [False, False], "glu_activation": False},
+        {"s2_activation": [True, True], "lebedev_quadrature": False},
+        {"s2_activation": [True, True], "grid_mlp": True},
+        {"s2_activation": [True, True], "grid_branch": [2, 2, 2]},
+        {"node_wise_s2": True, "message_node_s2": True},
+        {"node_wise_so3": True, "grid_mlp": True},
+        {"message_node_so3": True, "grid_branch": [0, 2, 0]},
+        {"ffn_so3_grid": True, "kmax": 1, "grid_mlp": True},
+        {"ffn_so3_grid": True, "kmax": 2, "grid_branch": [0, 0, 2]},
+        {"so3_readout": "glu", "readout_layers": 2, "readout_norm": True},
+        {"so3_readout": "mlp", "readout_layers": 2, "kmax": 2},
+        {"edge_cartesian": True},
+        {"node_cartesian": "default:2"},
+        {
+            "n_focus": 2,
+            "atten_f_mix": True,
+            "atten_v_proj": True,
+            "atten_o_proj": True,
+            "n_atten_head": 2,
+        },
+        {"radial_so2_mode": "degree", "radial_so2_rank": 0},
+        {"radial_so2_mode": "degree_channel", "radial_so2_rank": 0},
+        {"so2_attn_res": "dependent", "mixing_layers": 2},
+        {
+            "full_attn_res": "dependent",
+            "extra_node_l": 1,
+            "l_schedule": [2, 1],
+            "so3_readout": "mlp",
+        },
+        {"extra_node_l": 1, "l_schedule": [1, 2], "so3_readout": "mlp"},
+        {"block_attn_res": "independent", "l_schedule": [2, 1]},
+        {"n_blocks": 0, "extra_node_l": 1, "so3_readout": "mlp"},
+    ],
+)
+def test_o3_spin_free_physical_symmetries(options: dict) -> None:
+    """Every descriptor branch preserves inversion for nonzero trained weights."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    config.pop("spin")
+    config["descriptor"].update(parity=True, channels=8, **options)
+    model = get_model(config)
+    model = model.to(device="cpu", dtype=torch.float64).eval()
+    generator = torch.Generator().manual_seed(517)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape, generator=generator, dtype=parameter.dtype
+                )
+            )
+    coord, atype, _, _ = (torch.from_numpy(value) for value in four_atom_spin_inputs())
+    original = model(coord, atype)
+    inverted = model(-coord, atype)
+    assert original["force"].abs().max() > 1e-8
+    torch.testing.assert_close(
+        inverted["energy"], original["energy"], atol=2e-10, rtol=2e-10
+    )
+    torch.testing.assert_close(
+        inverted["force"], -original["force"], atol=2e-9, rtol=2e-9
+    )
+    torch.testing.assert_close(
+        inverted["virial"], original["virial"], atol=2e-9, rtol=2e-9
+    )
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("bridging", ["none", "zbl"])
+def test_o3_energy_force_with_bridging(native: bool, bridging: str) -> None:
+    """Inversion keeps axial moments fixed with and without analytical bridging."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    if not native:
+        config.pop("spin")
+    config["bridging_method"] = bridging
+    config["descriptor"].update(
+        parity=True,
+        channels=8,
+        l_schedule=[1, 2],
+        ffn_so3_grid=True,
+        so3_readout="mlp",
+    )
+    model = get_model(config).to(device="cpu", dtype=torch.float64).eval()
+    generator = torch.Generator().manual_seed(541)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape, generator=generator, dtype=parameter.dtype
+                )
+            )
+    coord, atype, spin, _ = (
+        torch.from_numpy(value) for value in four_atom_spin_inputs()
+    )
+    args = (atype, spin) if native else (atype,)
+    original = model(coord, *args)
+    inverted = model(-coord, *args)
+    assert original["force"].abs().max() > 1e-8
+    for key, sign in (("energy", 1), ("force", -1), ("virial", 1)):
+        torch.testing.assert_close(
+            inverted[key], sign * original[key], atol=2e-9, rtol=2e-9
+        )
+    if native:
+        assert original["force_mag"].abs().max() > 1e-8
+        torch.testing.assert_close(
+            inverted["force_mag"], original["force_mag"], atol=2e-9, rtol=2e-9
+        )
+        reversed_spin = model(coord, atype, -spin)
+        torch.testing.assert_close(
+            reversed_spin["energy"], original["energy"], atol=0.0, rtol=0.0
+        )
+        torch.testing.assert_close(
+            reversed_spin["force_mag"], -original["force_mag"], atol=0.0, rtol=0.0
+        )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.usefixtures("tf32_disabled", "calibrated_so2_device")
+@pytest.mark.parametrize(
+    "backend,native", [("pt_expt", False), ("pt_expt", True), ("pt", True)]
+)
+@pytest.mark.parametrize(
+    "gate,binding,training",
+    [
+        ("DP_CUDA_INFER", "_cuda_conv_fn", False),
+        ("DP_TRITON_INFER", "_triton_value_path", False),
+        ("DP_CUDA_TRAIN", "_cuda_value_train", True),
+        ("DP_TRITON_TRAIN", "_flash_atten_fn", True),
+    ],
+)
+def test_o3_accelerated_model_matches_dense(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    native: bool,
+    gate: str,
+    binding: str,
+    training: bool,
+) -> None:
+    """Fused value paths preserve parity and force-loss parameter gradients."""
+    config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+    if not native:
+        config.pop("spin")
+    config["enable_tf32"] = False
+    # The PyTorch backend preserves inversion through native spin alone and
+    # takes a constant degree schedule and mixing depth.
+    schedule = (
+        {"l_schedule": [1, 2], "mixing_layers": [2, 3]}
+        if backend == "pt_expt"
+        else {"l_schedule": [2, 2], "mixing_layers": 3}
+    )
+    config["descriptor"].update(
+        parity=True,
+        channels=48,
+        focus_dim=32,
+        **schedule,
+        precision="float32",
+        use_amp=False,
+        message_node_so3=True,
+        ffn_so3_grid=True,
+        grid_branch=[0, 0, 1],
+        so3_readout="mlp",
+    )
+    config["fitting_net"]["precision"] = "float32"
+    for name in (
+        "DP_CUDA_INFER",
+        "DP_TRITON_INFER",
+        "DP_CUDA_TRAIN",
+        "DP_TRITON_TRAIN",
+    ):
+        monkeypatch.setenv(name, "0")
+    factory = pt_get_model if backend == "pt" else get_model
+    dense = factory(config).to("cuda")
+    generator = torch.Generator(device="cuda").manual_seed(541)
+    with torch.no_grad():
+        for parameter in dense.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape,
+                    generator=generator,
+                    device="cuda",
+                    dtype=parameter.dtype,
+                )
+            )
+    monkeypatch.setenv(gate, "1" if training else "2")
+    fused = factory(config).to("cuda")
+    fused.load_state_dict(dense.state_dict())
+    assert all(
+        getattr(block.so2_conv, binding) is not None
+        for block in fused.atomic_model.descriptor.blocks
+    )
+    dense.train(training)
+    fused.train(training)
+    coord, atype, spin, _ = (
+        torch.from_numpy(value).to("cuda") for value in four_atom_spin_inputs()
+    )
+    args = (atype, spin.float()) if native else (atype,)
+    expected = dense(coord.float(), *args)
+    actual = fused(coord.float(), *args)
+    inverted = fused(-coord.float(), *args)
+    for key, sign in (("energy", 1), ("force", -1), ("virial", 1)):
+        torch.testing.assert_close(actual[key], expected[key], atol=2e-5, rtol=2e-4)
+        torch.testing.assert_close(
+            inverted[key], sign * actual[key], atol=2e-5, rtol=2e-4
+        )
+    if native:
+        assert expected["force_mag"].abs().max() > 1e-8
+        torch.testing.assert_close(
+            actual["force_mag"], expected["force_mag"], atol=2e-5, rtol=2e-4
+        )
+        torch.testing.assert_close(
+            inverted["force_mag"], actual["force_mag"], atol=2e-5, rtol=2e-4
+        )
+    if training:
+        from ..kernels.conditioning import (
+            assert_conditioned,
+            deviations,
+        )
+
+        monkeypatch.setenv(gate, "0")
+        gold_config = copy.deepcopy(config)
+        gold_config["descriptor"]["precision"] = "float64"
+        gold_config["fitting_net"]["precision"] = "float64"
+        gold = factory(gold_config).to("cuda").train()
+        gold.load_state_dict(dense.state_dict())
+        gold_args = (atype, spin) if native else (atype,)
+        gold_out = gold(coord, *gold_args)
+        (gold_out["energy"].sum() + gold_out["force"].square().sum()).backward()
+        for out in (expected, actual):
+            (out["energy"].sum() + out["force"].square().sum()).backward()
+        truth, reference, result = [], [], []
+        for (name, p), q, g in zip(
+            dense.named_parameters(), fused.parameters(), gold.parameters(), strict=True
+        ):
+            if p.grad is None:
+                assert q.grad is None and g.grad is None, name
+            else:
+                # Normalize each parameter tensor independently before the joint
+                # model-level comparison, retaining small gradient tensors while
+                # sharing the observed roundoff budget of the complete chain.
+                scale = g.grad.abs().max().clamp_min(1.0)
+                truth.append((g.grad / scale).flatten())
+                reference.append((p.grad / scale).flatten())
+                result.append((q.grad / scale).flatten())
+        assert_conditioned(
+            deviations(
+                ["force-loss parameter gradients"],
+                [torch.cat(truth)],
+                [torch.cat(reference)],
+                [torch.cat(result)],
+                factor=4.0,
+                working_dtype=torch.float32,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "scheme,expected",
+    [("native", "orbit"), ("native:orbit", "orbit"), ("native:exchange", "exchange")],
+)
+@pytest.mark.parametrize(
+    "backend,descriptor",
+    [
+        ("dpmodel", "dpa4"),
+        ("dpmodel", "dpa4c"),
+        ("pt", "dpa4"),
+        ("pt_expt", "dpa4"),
+        ("pt_expt", "dpa4c"),
+    ],
+)
+def test_native_scheme_builds_and_serializes_mode(
+    backend: str, descriptor: str, scheme: str, expected: str
+) -> None:
+    if backend == "pt":
+        from deepmd.pt.model.model import (
+            get_model,
+        )
+    elif backend == "pt_expt":
+        from deepmd.pt_expt.model.get_model import (
+            get_model,
+        )
+    else:
+        from deepmd.dpmodel.model.model import (
+            get_model,
+        )
+
+    config = {
+        "type": "dpa4" if backend == "pt" else "standard",
+        "type_map": ["Fe", "C"],
+        "descriptor": {
+            "type": descriptor,
+            "rcut": 3.0,
+            "channels": 8,
+            "n_radial": 4,
+            "lmax": 2,
+            "precision": "float64",
+            "seed": 7,
+        },
+        "fitting_net": {
+            "type": "dpa4_ener" if descriptor == "dpa4" else "ener",
+            "neuron": [4],
+        },
+        "spin": {"scheme": scheme, "use_spin": [True, False]},
+    }
+    if descriptor == "dpa4":
+        config["descriptor"].update(sel=8, n_blocks=1, mmax=1, random_gamma=False)
+    model = get_model(config)
+    assert model.atomic_model.descriptor.spin_mode == expected
+    restored = type(model).deserialize(model.serialize())
+    assert restored.atomic_model.descriptor.spin_mode == expected

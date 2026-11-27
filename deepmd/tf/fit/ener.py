@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.expert_route import (
+    reject_moe,
+)
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
@@ -194,6 +197,7 @@ class EnerFitting(Fitting):
         **kwargs: Any,
     ) -> None:
         """Constructor."""
+        reject_moe(kwargs, "fitting network")
         # model param
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt

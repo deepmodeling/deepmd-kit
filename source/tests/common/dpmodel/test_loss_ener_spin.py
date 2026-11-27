@@ -58,3 +58,28 @@ def test_no_magnetic_atoms(dtype, loss_func, find_force_mag) -> None:
             np.testing.assert_equal(more_loss[name], 0.0)
         else:
             assert np.isnan(more_loss[name])
+
+
+@pytest.mark.parametrize("loss_func", ["mse", "mae"])
+def test_magnetic_supervision_is_independent_of_atomic_energy_exclusion(
+    loss_func: str,
+) -> None:
+    """A spin-active atom remains supervised when its own energy is excluded."""
+    loss_fn = EnergySpinLoss(
+        starter_learning_rate=1.0,
+        start_pref_fm=1.0,
+        limit_pref_fm=1.0,
+        loss_func=loss_func,
+    )
+    prediction = {
+        "energy": np.zeros((1, 1)),
+        "force_mag": np.array([[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]]),
+        "mask": np.array([[0, 1]]),
+        "mask_mag": np.ones((1, 2, 1), dtype=bool),
+    }
+    labels = {
+        "force_mag": np.zeros((1, 2, 3)),
+        "find_force_mag": 1.0,
+    }
+    loss, _ = loss_fn(1.0, 2, prediction, labels)
+    np.testing.assert_allclose(loss, 1.0 / 6.0)

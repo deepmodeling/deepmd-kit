@@ -11,9 +11,13 @@ import time
 from collections.abc import (
     Callable,
     Mapping,
+    Sequence,
 )
 from copy import (
     deepcopy,
+)
+from dataclasses import (
+    replace,
 )
 from pathlib import (
     Path,
@@ -21,6 +25,7 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     Any,
+    NamedTuple,
 )
 
 if TYPE_CHECKING:
@@ -29,14 +34,19 @@ if TYPE_CHECKING:
     )
 
 import numpy as np
-import optax
 import orbax.checkpoint as ocp
-from packaging.version import (
-    Version,
-)
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
+)
+from deepmd.dpmodel.loss.ener_spin import (
+    EnergySpinLoss,
+)
+from deepmd.dpmodel.loss.loss import (
+    Loss,
+)
+from deepmd.dpmodel.loss.property import (
+    PropertyLoss,
 )
 from deepmd.dpmodel.model.transform_output import (
     communicate_extended_output,
@@ -46,21 +56,47 @@ from deepmd.dpmodel.train import (
     AbstractTrainer,
     RankContext,
     TrainerConfig,
+    TrainingMetricAccumulator,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    build_checkpoint_stores,
     change_model_out_bias_by_task,
+    resolve_step_schedule,
+)
+from deepmd.dpmodel.train.data import (
+    add_training_data_requirements,
+)
+from deepmd.dpmodel.train.data_progress import (
+    DATA_PROGRESS_CHECKPOINT_KEY,
+    collect_training_data_progress,
+    preserve_training_data_progress,
+    restore_training_data_progress,
+)
+from deepmd.dpmodel.train.ema import (
+    get_ema_checkpoint_prefix,
+    get_ema_validation_log_path,
+)
+from deepmd.dpmodel.train.inference import (
+    infer_env_defaults,
+    scoped_env_defaults,
 )
 from deepmd.dpmodel.train.validation import (
     resolve_best_checkpoint_dir,
+)
+from deepmd.dpmodel.utils.batch import (
+    normalize_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
     BaseLR,
     make_learning_rate_schedule,
 )
 from deepmd.dpmodel.utils.multi_task import (
-    apply_shared_links,
-    set_descriptor_component,
+    get_case_embd_config,
+    sanitize_shared_links,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
 )
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
@@ -69,11 +105,17 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
-from deepmd.dpmodel.utils.training_utils import (
-    resolve_model_prob,
+from deepmd.jax.common import (
+    as_pure,
+    from_flat_state,
+    iter_modules,
+    replace_by_pure_dict,
+    set_variable_value,
+    to_flat_state,
+    to_pure_dict,
 )
 from deepmd.jax.env import (
-    flax_version,
+    OptState,
     jax,
     jnp,
     nnx,
@@ -84,10 +126,34 @@ from deepmd.jax.model.base_model import (
 from deepmd.jax.model.model import (
     get_model,
 )
+from deepmd.jax.optimizer import (
+    update_optimizer,
+)
+from deepmd.jax.train.distributed import (
+    DistributedTraining,
+)
+from deepmd.jax.train.parameter_activity import (
+    parameter_activity,
+)
+from deepmd.jax.utils.checkpoint_state import (
+    pack_checkpoint_state,
+    restore_checkpoint_state,
+)
+from deepmd.jax.utils.finetune import (
+    merged_initialization_source,
+)
+from deepmd.jax.utils.graph_batch import (
+    prepare_graph_batches,
+)
 from deepmd.jax.utils.multi_task import (
     preprocess_shared_params,
+    share_jax_model_params,
+)
+from deepmd.jax.utils.precision import (
+    MatmulPrecisionPolicy,
 )
 from deepmd.jax.utils.serialization import (
+    resolve_checkpoint_path,
     serialize_from_file,
 )
 from deepmd.utils.argcheck import (
@@ -116,6 +182,13 @@ from deepmd.utils.stat_file import (
 log = logging.getLogger(__name__)
 
 
+class PreparedBatch(NamedTuple):
+    """Labels and fixed-shape model inputs consumed by a compiled training step."""
+
+    labels: dict[str, Any]
+    inputs: dict[str, Any]
+
+
 class DPTrainer(AbstractTrainer):
     """Train JAX DeePMD models on local devices."""
 
@@ -142,11 +215,14 @@ class DPTrainer(AbstractTrainer):
         self.shared_links = shared_links
         self.restart_training = restart is not None
         self.training_param = jdata["training"]
+        self.optimizer_params = deepcopy(jdata.get("optimizer", {"type": "Adam"}))
+        self._portable_training: dict[str, Any] | None = None
         self.validating_param = jdata.get("validating", {}) or {}
-        self.num_steps = self.training_param["numb_steps"]
+        self.num_steps = int(self.training_param.get("numb_steps") or 0)
         self.start_step = 0
 
         self.model_def_script = jdata["model"]
+        self.enable_tf32 = bool(self.training_param.get("enable_tf32", False))
         self.multi_task = "model_dict" in self.model_def_script
         if (
             self.multi_task
@@ -178,50 +254,94 @@ class DPTrainer(AbstractTrainer):
             self.model_keys,
         )
 
-        if init_model is not None or restart is not None:
-            checkpoint_path = init_model if init_model is not None else restart
-            assert checkpoint_path is not None
-            checkpoint_data = serialize_from_file(checkpoint_path)
-            checkpoint_multi_task = "model_dict" in checkpoint_data["model_def_script"]
-            if checkpoint_multi_task != self.multi_task:
-                raise ValueError(
-                    "JAX init/restart checkpoint task layout does not match input config."
+        with scoped_env_defaults(infer_env_defaults(self.validating_param)):
+            if init_model is not None or restart is not None:
+                checkpoint_path = init_model if init_model is not None else restart
+                assert checkpoint_path is not None
+                checkpoint_data = serialize_from_file(
+                    checkpoint_path, training=restart is not None
                 )
-            checkpoint_keys = list(
-                checkpoint_data["model_def_script"].get(
-                    "model_dict", {DEFAULT_TASK_KEY: None}
+                checkpoint_multi_task = (
+                    "model_dict" in checkpoint_data["model_def_script"]
                 )
-            )
-            if checkpoint_keys != self.model_keys:
-                raise ValueError(
-                    "JAX init/restart checkpoint task keys do not match input config."
-                )
-            self.models = self._deserialize_models(checkpoint_data)
-            if restart is not None:
-                self.model_def_script = checkpoint_data["model_def_script"]
-                self.model_params_by_task = self._model_params_by_task(
-                    self.model_def_script
-                )
-                self.start_step = int(
-                    checkpoint_data.get("model_def_script", {}).get(
-                        "current_step",
-                        checkpoint_data.get("@variables", {}).get("current_step", 0),
+                if checkpoint_multi_task != self.multi_task:
+                    raise ValueError(
+                        "JAX init/restart checkpoint task layout does not match input config."
+                    )
+                checkpoint_keys = list(
+                    checkpoint_data["model_def_script"].get(
+                        "model_dict", {DEFAULT_TASK_KEY: None}
                     )
                 )
-        else:
-            self.models = {
-                model_key: get_model(deepcopy(self.model_params_by_task[model_key]))
-                for model_key in self.model_keys
-            }
+                if checkpoint_keys != self.model_keys:
+                    raise ValueError(
+                        "JAX init/restart checkpoint task keys do not match input config."
+                    )
+                source_models = self._deserialize_models(checkpoint_data)
+                if init_model is not None:
+                    self.models = {
+                        key: self._copy_initial_model_state(
+                            get_model(deepcopy(self.model_params_by_task[key])),
+                            source_models[key],
+                        )
+                        for key in self.model_keys
+                    }
+                else:
+                    self.models = source_models
+                    self._restore_model_state(checkpoint_path)
+                if restart is not None:
+                    self._portable_training = checkpoint_data.get("training")
+                    if self._portable_training is not None:
+                        self.shared_links = self._portable_training.get(
+                            "shared_links", self.shared_links
+                        )
+                        self._adopt_checkpoint_optimizer(
+                            self._portable_training.get("optimizer", {}).get(
+                                "config", self.optimizer_params
+                            )
+                        )
+                    self.model_def_script = checkpoint_data["model_def_script"]
+                    self.model_params_by_task = self._model_params_by_task(
+                        self.model_def_script
+                    )
+                    self.start_step = int(
+                        checkpoint_data.get("model_def_script", {}).get(
+                            "current_step",
+                            checkpoint_data.get("@variables", {}).get(
+                                "current_step", 0
+                            ),
+                        )
+                    )
+                    if self._portable_training is not None:
+                        self.start_step = int(self._portable_training["step"])
+            else:
+                self.models = {
+                    model_key: get_model(deepcopy(self.model_params_by_task[model_key]))
+                    for model_key in self.model_keys
+                }
+                if self.multi_task:
+                    do_case_embd, case_indices = get_case_embd_config(
+                        self.model_def_script
+                    )
+                    if do_case_embd:
+                        for key, model in self.models.items():
+                            model.set_case_embd(case_indices[key])
+            self.matmul_precision = MatmulPrecisionPolicy(enable_tf32=self.enable_tf32)
         self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
+        self.distributed = DistributedTraining(
+            self.training_param, devices=self._training_devices()
+        )
 
         learning_rate_param = jdata["learning_rate"]
-        self.lr = self._get_lr_and_coef(learning_rate_param)
+        self.learning_rate_params = deepcopy(learning_rate_param)
+        self.lr = self._get_lr_and_coef(learning_rate_param) if self.num_steps else None
         self.losses = self._build_losses(jdata, learning_rate_param)
         self.data_requirements_by_task = {
             model_key: list(self.losses[model_key].label_requirement)
             for model_key in self.model_keys
         }
+        self.pair_filter_enabled_by_task: dict[str, bool] = {}
+        self.training_data_by_task: dict[str, Any] = {}
         for model_key, requirements in self.data_requirements_by_task.items():
             # Hessians are expensive and are only exposed by models whose task
             # loss requests the corresponding label. Enable each multi-task
@@ -249,7 +369,6 @@ class DPTrainer(AbstractTrainer):
         self.disp_freq = tr_data.get("disp_freq", 1000)
         self.save_freq = tr_data.get("save_freq", 1000)
         self.save_ckpt = tr_data.get("save_ckpt", "model.ckpt")
-        self.max_ckpt_keep = tr_data.get("max_ckpt_keep", 5)
         self.display_in_training = tr_data.get("disp_training", True)
         self.timing_in_training = tr_data.get("time_training", True)
         self.profiling = tr_data.get("profiling", False)
@@ -262,6 +381,11 @@ class DPTrainer(AbstractTrainer):
         self.change_bias_after_training = bool(
             tr_data.get("change_bias_after_training", False)
         )
+        self.enable_ema = bool(tr_data.get("enable_ema", False))
+        self.ema_decay = float(tr_data.get("ema_decay", 0.999))
+        self.ema_models: dict[str, BaseModel] = {}
+        self.ema_validation_state: dict[str, Any] = {}
+        self.ema_full_validator: Any | None = None
         self.numb_fparam = (
             {key: model.get_dim_fparam() for key, model in self.models.items()}
             if self.multi_task
@@ -271,8 +395,8 @@ class DPTrainer(AbstractTrainer):
         self.frz_model = None
         self.ckpt_meta = None
         self.model_type = None
-        self.optimizers: dict[str, nnx.Optimizer] = {}
         self.optimizer: nnx.Optimizer | None = None
+        self._active_parameters: dict[str, Any] = {}
         self._train_step_impls: dict[str, Any] = {}
         self._loss_fn_more_loss: dict[str, Any] = {}
         self._sample_funcs: dict[str, Any] = {}
@@ -290,7 +414,34 @@ class DPTrainer(AbstractTrainer):
                 rank=int(jax.process_index()),
                 world_size=int(jax.process_count()),
             ),
+            metric_accumulator=(
+                TrainingMetricAccumulator(
+                    {
+                        key: loss.training_metric_names
+                        for key, loss in self.losses.items()
+                    }
+                )
+                if tr_data.get("disp_avg", False)
+                else None
+            ),
         )
+
+    def _training_devices(self) -> list[jax.Device]:
+        """Return the local devices of data-parallel training.
+
+        Every device reads its own graph batch, so a model on a dense neighbor
+        list trains on one device.
+        """
+        devices = jax.local_devices()
+        if len(devices) > 1 and not all(
+            model.uses_full_neighbor_list() for model in self.models.values()
+        ):
+            log.info(
+                "A model on a dense neighbor list trains on one device: %s.",
+                devices[0],
+            )
+            return devices[:1]
+        return devices
 
     @staticmethod
     def _model_params_by_task(
@@ -306,13 +457,75 @@ class DPTrainer(AbstractTrainer):
     @staticmethod
     def _deserialize_models(model_data: dict[str, Any]) -> dict[str, BaseModel]:
         if "model_dict" in model_data["model_def_script"]:
-            return {
+            models = {
                 model_key: BaseModel.deserialize(
                     model_data["model"]["model_dict"][model_key]
                 )
                 for model_key in model_data["model_def_script"]["model_dict"]
             }
-        return {DEFAULT_TASK_KEY: BaseModel.deserialize(model_data["model"])}
+            params = model_data["model_def_script"]["model_dict"]
+        else:
+            models = {DEFAULT_TASK_KEY: BaseModel.deserialize(model_data["model"])}
+            params = {DEFAULT_TASK_KEY: model_data["model_def_script"]}
+        for key, model in models.items():
+            minimum = params[key].get("_min_nbor_dist")
+            if key == DEFAULT_TASK_KEY:
+                minimum = model_data.get("min_nbor_dist", minimum)
+            if minimum is not None:
+                model.min_nbor_dist = float(minimum)
+        return models
+
+    def _restore_model_state(self, checkpoint_path: str) -> None:
+        """Preserve native runtime variables, including random rotation state."""
+        state_path = resolve_checkpoint_path(checkpoint_path) / "state"
+        if not state_path.is_dir():
+            return
+        model_states = {key: nnx.state(model) for key, model in self.models.items()}
+        target = (
+            {
+                "models": {
+                    key: to_pure_dict(state) for key, state in model_states.items()
+                }
+            }
+            if self.multi_task
+            else to_pure_dict(model_states[DEFAULT_TASK_KEY])
+        )
+        with ocp.Checkpointer(ocp.StandardCheckpointHandler()) as checkpointer:
+            restored = checkpointer.restore(
+                state_path.absolute(),
+                args=ocp.args.StandardRestore(pack_checkpoint_state(target)),
+            )
+        restored = restore_checkpoint_state(restored, target)
+        restored_models = (
+            restored["models"] if self.multi_task else {DEFAULT_TASK_KEY: restored}
+        )
+        for key, state in model_states.items():
+            replace_by_pure_dict(state, restored_models[key])
+            nnx.update(self.models[key], state)
+        metadata_path = state_path.parent / "training_metadata"
+        if self.restart is not None and metadata_path.is_dir():
+            with ocp.Checkpointer(ocp.JsonCheckpointHandler()) as checkpointer:
+                metadata = checkpointer.restore(
+                    metadata_path.absolute(), args=ocp.args.JsonRestore()
+                )
+            self._adopt_checkpoint_optimizer(metadata["optimizer"])
+            self.shared_links = metadata.get("shared_links", self.shared_links)
+
+    def _adopt_checkpoint_optimizer(self, config: Mapping[str, Any]) -> None:
+        """Continue a restart with the optimizer settings of its checkpoint.
+
+        The saved moments belong to that optimizer, as a PyTorch restart
+        restores its parameter groups with the state.
+        """
+        config = deepcopy(dict(config))
+        if config != self.optimizer_params:
+            log.warning(
+                "The restart continues with the optimizer settings of the "
+                "checkpoint, %s, instead of the input settings %s.",
+                config,
+                self.optimizer_params,
+            )
+        self.optimizer_params = config
 
     def _get_lr_and_coef(self, lr_param: dict[str, Any]) -> BaseLR:
         """Construct the schema-selected shared learning-rate schedule."""
@@ -322,8 +535,8 @@ class DPTrainer(AbstractTrainer):
         self,
         jdata: dict[str, Any],
         learning_rate_param: dict[str, Any],
-    ) -> dict[str, EnergyLoss]:
-        losses: dict[str, EnergyLoss] = {}
+    ) -> dict[str, Loss]:
+        losses: dict[str, Loss] = {}
         for model_key in self.model_keys:
             loss_param = deepcopy(
                 jdata["loss_dict"][model_key]
@@ -332,9 +545,21 @@ class DPTrainer(AbstractTrainer):
             )
             loss_param["starter_learning_rate"] = learning_rate_param["start_lr"]
             loss_type = loss_param.get("type", "ener")
-            if loss_type != "ener":
+            loss_class = {
+                "ener": EnergyLoss,
+                "ener_spin": EnergySpinLoss,
+                "property": PropertyLoss,
+            }.get(loss_type)
+            if loss_class is None:
                 raise RuntimeError("unknown loss type " + loss_type)
-            losses[model_key] = EnergyLoss.get_loss(loss_param)
+            if loss_type == "property":
+                model = self.models[model_key]
+                loss_param.update(
+                    task_dim=model.get_task_dim(),
+                    var_name=model.get_var_name(),
+                    intensive=model.get_intensive(),
+                )
+            losses[model_key] = loss_class.get_loss(loss_param)
         return losses
 
     def _valid_numb_batch_by_task(self) -> dict[str, int]:
@@ -371,6 +596,7 @@ class DPTrainer(AbstractTrainer):
         )
 
         return JAXFullValidator(
+            symm_virial=getattr(self.losses[DEFAULT_TASK_KEY], "symm_virial", False),
             validating_params=validating_params,
             validation_data=validation_data,
             model=self.models[DEFAULT_TASK_KEY],
@@ -381,6 +607,36 @@ class DPTrainer(AbstractTrainer):
             checkpoint_dir=resolve_best_checkpoint_dir(
                 validating_params, self.save_ckpt
             ),
+            precision_policy=self.matmul_precision,
+        )
+
+    def _create_ema_full_validator(self, validation_data: Any) -> Any | None:
+        """Build an independent validator over the EMA parameter trajectory."""
+        if not self.enable_ema or not self._is_validation_requested(
+            self.validating_param, "full_validation_ema"
+        ):
+            return None
+        self._raise_if_full_validation_unsupported(validation_data)
+        from deepmd.jax.train.validation import (
+            JAXFullValidator,
+        )
+
+        params = dict(self.validating_param, full_validation=True)
+        return JAXFullValidator(
+            symm_virial=getattr(self.losses[DEFAULT_TASK_KEY], "symm_virial", False),
+            validating_params=params,
+            validation_data=validation_data,
+            model=self.ema_models[DEFAULT_TASK_KEY],
+            state_store=self.ema_validation_state,
+            num_steps=self.num_steps,
+            rank=self.rank_context.rank,
+            restart_training=self.restart_training,
+            checkpoint_dir=resolve_best_checkpoint_dir(params, self.save_ckpt),
+            full_val_file=get_ema_validation_log_path(
+                params.get("full_val_file", "val.log")
+            ),
+            best_checkpoint_prefix="best_ema.ckpt",
+            precision_policy=self.matmul_precision,
         )
 
     def _is_validation_requested(
@@ -408,7 +664,7 @@ class DPTrainer(AbstractTrainer):
                 "training; multi-task training is not supported."
             )
 
-        if not isinstance(self.loss, EnergyLoss):
+        if not isinstance(self.loss, (EnergyLoss, EnergySpinLoss)):
             raise ValueError(
                 "validating.full_validation only supports single-task energy training."
             )
@@ -482,26 +738,61 @@ class DPTrainer(AbstractTrainer):
         valid_data_by_task: Mapping[str, DeepmdDataSystem | None],
     ) -> None:
         """Initialize statistics, fine-tuning, optimizers, and JIT functions."""
+        self.training_data_by_task = dict(train_data_by_task)
         for model_key in self.model_keys:
-            train_data_by_task[model_key].add_data_requirements(
-                self.data_requirements_by_task[model_key]
+            requirements = self.data_requirements_by_task[model_key]
+            requirements.extend(
+                requirement
+                for requirement in get_additional_data_requirement(
+                    self.models[model_key]
+                )
+                if not has_data_requirement(requirements, requirement.key)
+            )
+            task_params = (
+                self.training_param["data_dict"][model_key]
+                if self.multi_task
+                else self.training_param
+            )
+            self.pair_filter_enabled_by_task[model_key] = (
+                add_training_data_requirements(
+                    train_data_by_task[model_key],
+                    task_params.get("training_data", {}),
+                    requirements,
+                    lambda data, items: data.add_data_requirements(items),
+                )
             )
             if valid_data_by_task[model_key] is not None:
                 valid_data_by_task[model_key].add_data_requirements(
                     self.data_requirements_by_task[model_key]
                 )
 
-        if self.multi_task:
-            self.model_prob = resolve_model_prob(
-                self.model_keys,
-                self.training_param.get("model_prob"),
-                dict(train_data_by_task),
-            )
+        schedule = resolve_step_schedule(
+            self.training_param,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+            training_data=train_data_by_task,
+            epoch_length=lambda key: self.distributed.epoch_length(
+                train_data_by_task[key]
+            ),
+            rank=self.rank_context.rank,
+        )
+        self.num_steps = schedule.num_steps
+        self.model_prob = schedule.model_prob
+        self.lr = self._get_lr_and_coef(self.learning_rate_params)
+        self.trainer_config = replace(self.trainer_config, num_steps=self.num_steps)
+        self.checkpoint_store, self.ema_checkpoint_store = build_checkpoint_stores(
+            self.training_param,
+            num_steps=self.num_steps,
+            ema_prefix=get_ema_checkpoint_prefix(self.save_ckpt),
+            rank=self.rank_context.rank,
+            suffix=".jax",
+        )
 
         for model_key in self.model_keys:
             self._sample_funcs[model_key] = self._make_sample_func(
                 train_data_by_task[model_key],
                 self.model_params_by_task[model_key].get("data_stat_nbatch", 10),
+                filter_enabled=self.pair_filter_enabled_by_task[model_key],
             )
 
         synchronize_model_state = False
@@ -534,21 +825,59 @@ class DPTrainer(AbstractTrainer):
             merge_shared_statistics=merge_shared_statistics,
         )
 
+        from deepmd.jax.optimizer import (
+            build_optimizer,
+        )
+
+        tx = build_optimizer(
+            self.models,
+            self.optimizer_params,
+            matrix_sharding=(
+                self.distributed.data_sharding()
+                if self.distributed.is_distributed
+                else None
+            ),
+        )
+        self.optimizer = nnx.Optimizer(self.models, tx, wrt=nnx.Param)
+        self.optimizer.nonfinite_gradient_seen = OptState(jnp.asarray(False))
+        self._active_parameters = _task_parameter_masks(self.models)
         for model_key in self.model_keys:
-            tx = optax.chain(
-                optax.scale_by_adam(),
-                _scale_by_global_learning_rate(),
-            )
-            self.optimizers[model_key] = nnx.Optimizer(
-                self.models[model_key], tx, wrt=nnx.Param
-            )
             (
                 self._train_step_impls[model_key],
                 self._loss_fn_more_loss[model_key],
-            ) = self._make_step_functions(self.losses[model_key])
-        self.optimizer = (
-            self.optimizers[DEFAULT_TASK_KEY] if not self.multi_task else None
+            ) = self._make_step_functions(self.losses[model_key], model_key)
+        restored_optimizer = self._restore_optimizer_state()
+        restored_ema = False
+        if self.enable_ema:
+            self.ema_models = nnx.clone(self.models)
+            for model in self.ema_models.values():
+                model.eval()
+            restored_ema = self._restore_ema_state()
+        if self._portable_training is not None:
+            from deepmd.jax.utils.checkpoint import (
+                import_training_state,
+            )
+
+            portable = dict(self._portable_training)
+            if restored_optimizer:
+                portable.pop("optimizer", None)
+            if restored_ema:
+                portable.pop("ema", None)
+            ema_validation = import_training_state(
+                self.models,
+                self.optimizer,
+                portable,
+                ema_models=self.ema_models if self.enable_ema else None,
+            )
+            if not restored_ema:
+                self.ema_validation_state = ema_validation
+        self.distributed.place_state(
+            self.models,
+            self.optimizer,
+            self.ema_models if self.enable_ema else None,
+            active=self._active_parameters,
         )
+        self._restore_data_progress()
         self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
         self.full_validator = self._create_full_validator(
             validating_params=self.validating_param,
@@ -556,15 +885,104 @@ class DPTrainer(AbstractTrainer):
             if not self.multi_task
             else None,
         )
+        self.ema_full_validator = self._create_ema_full_validator(
+            valid_data_by_task[DEFAULT_TASK_KEY] if not self.multi_task else None
+        )
+
+    def _restore_optimizer_state(self) -> bool:
+        """Restore optimizer moments and counts for native JAX restarts."""
+        if self.restart is None:
+            return False
+        training_path = resolve_checkpoint_path(self.restart) / "training_state"
+        if not training_path.is_dir():
+            if not self._portable_training:
+                log.warning(
+                    "Checkpoint %s has no optimizer state; optimizer moments start at zero.",
+                    self.restart,
+                )
+            return False
+        state = nnx.state(self.optimizer, OptState)
+        target = to_pure_dict(state)
+        with ocp.Checkpointer(ocp.StandardCheckpointHandler()) as checkpointer:
+            restored = checkpointer.restore(
+                training_path.absolute(),
+                args=ocp.args.StandardRestore(pack_checkpoint_state(target)),
+            )
+        replace_by_pure_dict(state, restore_checkpoint_state(restored, target))
+        nnx.update(self.optimizer, state)
+        return True
+
+    def _restore_data_progress(self) -> None:
+        """Continue the training data streams and task selection of a restart.
+
+        The checkpoint stores the next-batch cursor of every data source that
+        supports one and the DeePMD random state that selects tasks and
+        systems. ``training.reset_data_progress`` keeps the freshly initialized
+        streams instead.
+        """
+        if self.restart is None:
+            return
+        metadata_path = resolve_checkpoint_path(self.restart) / "training_metadata"
+        if not metadata_path.is_dir():
+            return
+        with ocp.Checkpointer(ocp.JsonCheckpointHandler()) as checkpointer:
+            metadata = checkpointer.restore(metadata_path.absolute())
+        progress = metadata.get(DATA_PROGRESS_CHECKPOINT_KEY)
+        if progress is None:
+            return
+        if self.training_param.get("reset_data_progress", False):
+            log.warning(
+                "training.reset_data_progress is true. Model, optimizer and step "
+                "are restored, but training data order and selection RNG restart "
+                "from their newly initialized state; batches may repeat."
+            )
+            return
+        restore_training_data_progress(self.training_data_by_task, progress)
+
+    def _restore_ema_state(self) -> bool:
+        """Restore the EMA trajectory and its independent validation records."""
+        if self.restart is None:
+            return False
+        checkpoint_path = resolve_checkpoint_path(self.restart)
+        ema_path = checkpoint_path / "ema_state"
+        if not ema_path.is_dir():
+            if not (self._portable_training or {}).get("ema"):
+                log.warning(
+                    "Checkpoint %s has no EMA state; EMA starts from the restored model.",
+                    self.restart,
+                )
+            return False
+        state = nnx.state(self.ema_models)
+        target = to_pure_dict(state)
+        with ocp.Checkpointer(ocp.StandardCheckpointHandler()) as checkpointer:
+            restored = checkpointer.restore(
+                ema_path.absolute(),
+                args=ocp.args.StandardRestore(pack_checkpoint_state(target)),
+            )
+        replace_by_pure_dict(state, restore_checkpoint_state(restored, target))
+        nnx.update(self.ema_models, state)
+        with ocp.Checkpointer(ocp.JsonCheckpointHandler()) as checkpointer:
+            metadata = checkpointer.restore(
+                (checkpoint_path / "training_metadata").absolute(),
+                args=ocp.args.JsonRestore(),
+            )
+        self.ema_validation_state = metadata["ema_validation_state"]
+        return True
 
     @staticmethod
     def _make_sample_func(
         train_data: DeepmdDataSystem,
         data_stat_nbatch: int,
+        filter_enabled: bool = False,
     ) -> Any:
         @functools.lru_cache
         def sample() -> list[dict[str, Any]]:
-            stat_data = make_stat_input(train_data, data_stat_nbatch)
+            # Statistics must not advance the training cursors or the
+            # selection RNG.
+            with preserve_training_data_progress({"statistics": train_data}):
+                stat_data = make_stat_input(
+                    train_data, data_stat_nbatch, filter_enabled
+                )
             return [
                 {
                     key: jnp.asarray(value) if isinstance(value, np.ndarray) else value
@@ -578,7 +996,7 @@ class DPTrainer(AbstractTrainer):
     def _apply_finetune(self) -> None:
         if self.finetune_model is None or self.finetune_links is None:
             return
-        pretrained_data = serialize_from_file(self.finetune_model)
+        pretrained_data = serialize_from_file(self.finetune_model, training=False)
         pretrained_params = pretrained_data["model_def_script"]
         pretrained_models = self._deserialize_models(pretrained_data)
         for model_key in self.model_keys:
@@ -671,7 +1089,7 @@ class DPTrainer(AbstractTrainer):
         for model_key in self.model_keys:
             _, state = nnx.split(self.models[model_key])
             state = multihost_utils.broadcast_one_to_all(
-                state.to_pure_dict(),
+                to_pure_dict(state),
                 is_source=self.rank_context.is_chief,
             )
             nnx.update(self.models[model_key], state)
@@ -746,124 +1164,196 @@ class DPTrainer(AbstractTrainer):
             )
 
     @staticmethod
+    def _copy_initial_model_state(
+        target_model: BaseModel, source_model: BaseModel
+    ) -> BaseModel:
+        """Load matching model state while preserving target runtime configuration.
+
+        Initialization resets the random stream and optimizer step. A plain
+        checkpoint may initialize freshly constructed LoRA factors; every
+        other mathematical state slot must exist with the expected shape.
+        """
+        source_model = merged_initialization_source(source_model)
+        target = dict(to_flat_state(nnx.state(target_model)))
+        source = dict(to_flat_state(nnx.state(source_model)))
+        if target_model.get_type_map() != source_model.get_type_map():
+            raise ValueError(
+                "Init-model requires the same type_map; use fine-tuning to remap types."
+            )
+        adapter_fields = {
+            "A_by_l",
+            "B_by_l",
+            "A_m0",
+            "B_m0",
+            "A_m",
+            "B_m",
+            "lora_scaling",
+        }
+        unexpected = source.keys() - target.keys()
+        if unexpected:
+            names = sorted(".".join(map(str, path)) for path in unexpected)
+            raise ValueError(f"Init-model checkpoint has unexpected state: {names}.")
+        for path, variable in target.items():
+            if path[-1] == "rotation_key":
+                continue
+            name = ".".join(map(str, path))
+            if path not in source:
+                if adapter_fields.intersection(path):
+                    continue
+                raise ValueError(f"Init-model checkpoint is missing state {name!r}.")
+            value = as_pure(source[path])
+            expected = as_pure(variable)
+            if value.shape != expected.shape:
+                raise ValueError(
+                    f"Init-model state {name!r} expects shape {expected.shape}, "
+                    f"got {value.shape}; use fine-tuning for architecture changes."
+                )
+            target[path] = variable.replace(
+                value=jnp.asarray(value, dtype=expected.dtype)
+            )
+        nnx.update(target_model, from_flat_state(target))
+        target_model.min_nbor_dist = source_model.get_min_nbor_dist()
+        return target_model
+
+    @staticmethod
     def _copy_finetune_state(
         target_model: BaseModel,
         source_model: BaseModel,
         *,
         random_fitting: bool,
     ) -> BaseModel:
+        source_model = merged_initialization_source(source_model)
         graphdef, target_state = nnx.split(target_model)
         _, source_state = nnx.split(source_model)
         copied = _copy_matching_state_tree(
-            target_state.to_pure_dict(),
-            source_state.to_pure_dict(),
+            to_pure_dict(target_state),
+            to_pure_dict(source_state),
             random_fitting=random_fitting,
         )
-        target_state.replace_by_pure_dict(copied)
+        replace_by_pure_dict(target_state, copied)
         return nnx.merge(graphdef, target_state)
 
-    def _make_step_functions(self, loss_obj: EnergyLoss) -> tuple[Any, Any]:
+    def _make_step_functions(self, loss_obj: Loss, task_key: str) -> tuple[Any, Any]:
+        ema_decay = self.ema_decay
+        precision = self.matmul_precision
+        gradient_max_norm = self.training_param.get("gradient_max_norm", 0.0)
+        distributed = self.distributed
+
         def loss_fn(
-            model: BaseModel,
+            models: dict[str, BaseModel],
             lr: float,
-            label_dict: dict[str, jnp.ndarray],
-            extended_coord: jnp.ndarray,
-            extended_atype: jnp.ndarray,
-            nlist: jnp.ndarray,
-            mapping: jnp.ndarray | None,
-            fp: jnp.ndarray | None,
-            ap: jnp.ndarray | None,
-        ) -> jnp.ndarray:
-            model_dict = _evaluate_model_dict(
-                model, extended_coord, extended_atype, nlist, mapping, fp, ap
-            )
-            loss, _ = loss_obj(
+            batch: PreparedBatch,
+        ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
+            with precision.applied(training=True):
+                model_dict = _evaluate_inputs(models[task_key], batch.inputs)
+            return distributed.evaluate_loss(
+                loss_obj,
                 learning_rate=lr,
-                natoms=label_dict["type"].shape[1],
+                natoms=_batch_atom_capacity(batch.inputs),
                 model_dict=model_dict,
-                label_dict=label_dict,
+                label_dict=batch.labels,
             )
-            return loss
 
         @nnx.jit
         def loss_fn_more_loss(
             model: BaseModel,
             lr: float,
-            label_dict: dict[str, jnp.ndarray],
-            extended_coord: jnp.ndarray,
-            extended_atype: jnp.ndarray,
-            nlist: jnp.ndarray,
-            mapping: jnp.ndarray | None,
-            fp: jnp.ndarray | None,
-            ap: jnp.ndarray | None,
+            batch: PreparedBatch,
         ) -> dict[str, jnp.ndarray]:
-            model_dict = _evaluate_model_dict(
-                model, extended_coord, extended_atype, nlist, mapping, fp, ap
-            )
-            _, more_loss = loss_obj(
+            with precision.applied(training=False):
+                model_dict = _evaluate_inputs(model, batch.inputs)
+            _, more_loss = distributed.evaluate_loss(
+                loss_obj,
                 learning_rate=lr,
-                natoms=label_dict["type"].shape[1],
+                natoms=_batch_atom_capacity(batch.inputs),
                 model_dict=model_dict,
-                label_dict=label_dict,
+                label_dict=batch.labels,
             )
             return more_loss
 
-        @nnx.jit
+        @distributed.jit_step
         def train_step(
-            model: BaseModel,
+            models: dict[str, BaseModel],
             optimizer: nnx.Optimizer,
             lr: float,
-            label_dict: dict[str, jnp.ndarray],
-            extended_coord: jnp.ndarray,
-            extended_atype: jnp.ndarray,
-            nlist: jnp.ndarray,
-            mapping: jnp.ndarray | None,
-            fp: jnp.ndarray | None,
-            ap: jnp.ndarray | None,
-        ) -> None:
-            grads = nnx.grad(loss_fn)(
-                model,
-                lr,
-                label_dict,
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
-                fp,
-                ap,
+            batch: PreparedBatch,
+            active: Any,
+            ema_models: dict[str, BaseModel] | None,
+        ) -> dict[str, jnp.ndarray]:
+            # One rotation realization is shared by every derivative and
+            # reference-energy evaluation within the optimization step.
+            for _, module in iter_modules(models[task_key]):
+                advance_random_state = getattr(module, "advance_random_state", None)
+                if advance_random_state is not None:
+                    advance_random_state()
+            (_, metrics), grads = nnx.value_and_grad(loss_fn, has_aux=True)(
+                models, lr, batch
             )
-            if Version(flax_version) >= Version("0.11.0"):
-                optimizer.update(model, grads, learning_rate=lr)
-            else:
-                _legacy_optimizer_update(optimizer, grads, lr)
+            structural = parameter_activity(
+                lambda current: loss_fn(current, lr, batch)[0], models
+            )
+            active = jax.tree.map(jnp.logical_and, active, structural)
+            grads = distributed.constrain_gradients(grads)
+            if gradient_max_norm > 0:
+                total_norm = _global_gradient_norm(grads)
+                set_variable_value(
+                    optimizer.nonfinite_gradient_seen,
+                    optimizer.nonfinite_gradient_seen[...] | ~jnp.isfinite(total_norm),
+                )
+                grads = _clip_gradients(grads, gradient_max_norm, total_norm=total_norm)
+            update_optimizer(optimizer, models, grads, learning_rate=lr, active=active)
+            if ema_models is not None:
+                parameters = nnx.state(models, nnx.Param)
+                shadow = nnx.state(ema_models, nnx.Param)
+                shadow = jax.tree_util.tree_map(
+                    lambda average, value: (
+                        average + (1.0 - ema_decay) * (value - average)
+                    ),
+                    shadow,
+                    parameters,
+                )
+                nnx.update(ema_models, shadow)
+            return metrics
 
         return train_step, loss_fn_more_loss
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
         """Select a task using DeePMD's seeded random helper."""
-        if len(tasks) == 1:
-            return tasks[tasks.keys[0]]
         from deepmd.utils import random as dp_random
 
-        model_index = dp_random.choice(
-            np.arange(len(tasks), dtype=np.int_),
-            p=tasks.probabilities,
+        return tasks.select(dp_random.choice)
+
+    def get_training_batch(self, task: TrainingTask) -> tuple[dict[str, Any], ...]:
+        """Fetch the next globally valid group of per-device batches."""
+        return self.distributed.get_batch_group(
+            task.training_data,
+            filter_enabled=self.pair_filter_enabled_by_task[task.key],
+            task_key=task.key,
         )
-        return tasks[tasks.keys[int(model_index)]]
 
     def train_step(self, task: TrainingTask, step: int) -> TrainStepResult:
         """Run one JAX optimizer step."""
         task_key = task.key
-        if task_key not in self.optimizers or task_key not in self._train_step_impls:
+        if self.optimizer is None or task_key not in self._train_step_impls:
             raise RuntimeError("JAX trainer has not been initialized.")
-        prepared = self._prepare_batch(task.training_data.get_batch(), task_key)
-        self._train_step_impls[task_key](
-            self.models[task_key],
-            self.optimizers[task_key],
-            self.lr.value(step),
-            *prepared,
+        prepared = self._prepare_batch(
+            self.get_training_batch(task), task_key, observe_contacts=True
         )
-        return TrainStepResult(task_key=task_key, step=step, payload=prepared)
+        self.models[task_key].train()
+        metrics = self._train_step_impls[task_key](
+            self.models,
+            self.optimizer,
+            self.lr.value(step),
+            prepared,
+            self._active_parameters[task_key],
+            self.ema_models if self.enable_ema else None,
+        )
+        return TrainStepResult(
+            task_key=task_key,
+            step=step,
+            payload=prepared,
+            train_results=metrics,
+        )
 
     def evaluate_training(
         self,
@@ -875,7 +1365,10 @@ class DPTrainer(AbstractTrainer):
         prepared = (
             step_result.payload
             if step_result is not None and step_result.task_key == task.key
-            else self._prepare_batch(task.training_data.get_batch(), task.key)
+            else self._prepare_batch(
+                self.get_training_batch(task),
+                task.key,
+            )
         )
         return self._evaluate_prepared_batch(task.key, step, prepared)
 
@@ -888,18 +1381,27 @@ class DPTrainer(AbstractTrainer):
         """Evaluate validation loss terms for display."""
         if task.validation_data is None:
             return None
-        valid_more_loss_list = [
-            self._evaluate_prepared_batch(
-                task.key,
-                step,
-                self._prepare_batch(task.validation_data.get_batch(), task.key),
+        results = []
+        weights = []
+        for _ in range(task.valid_numb_batch):
+            batches = self.distributed.get_batch_group(
+                task.validation_data, task_key=task.key
             )
-            for _ in range(task.valid_numb_batch)
-        ]
+            weights.append(int(np.count_nonzero(batches[0]["atype"] >= 0)))
+            results.append(
+                self._evaluate_prepared_batch(
+                    task.key,
+                    step,
+                    self._prepare_batch(batches, task.key, bucket_subdivisions=1),
+                )
+            )
         return {
-            key: sum(loss[key] for loss in valid_more_loss_list)
-            / len(valid_more_loss_list)
-            for key in valid_more_loss_list[0]
+            key: sum(
+                result[key] * weight
+                for result, weight in zip(results, weights, strict=True)
+            )
+            / sum(weights)
+            for key in results[0]
         }
 
     def learning_rate(self, step: int) -> float:
@@ -939,74 +1441,134 @@ class DPTrainer(AbstractTrainer):
         learning_rate: float,
     ) -> None:
         """Run optional full validation for one step."""
-        if self.full_validator is None:
-            return None
-        self.full_validator.run(
-            step_id=display_step,
-            display_step=display_step,
-            lr=learning_rate,
-            save_checkpoint=self._save_full_validation_checkpoint,
-        )
-        return None
+        if self.ema_full_validator is not None and self.ema_full_validator.should_run(
+            display_step
+        ):
+            self._synchronize_ema_buffers()
+        for validator, save_checkpoint in (
+            (self.full_validator, self._save_full_validation_checkpoint),
+            (self.ema_full_validator, self._save_ema_validation_checkpoint),
+        ):
+            if validator is not None:
+                validator.run(
+                    step_id=display_step,
+                    display_step=display_step,
+                    lr=learning_rate,
+                    save_checkpoint=save_checkpoint,
+                )
+
+    def _synchronize_ema_buffers(self) -> None:
+        """Combine EMA parameters with the live model's current non-parameter state."""
+        if self.ema_models:
+            nnx.update(self.ema_models, nnx.state(self.models, nnx.Not(nnx.Param)))
 
     def _prepare_batch(
         self,
-        batch_data: dict[str, np.ndarray | np.floating],
+        batch_data: dict[str, Any] | Sequence[dict[str, Any]],
         task_key: str,
-    ) -> tuple[
-        dict[str, jnp.ndarray | bool],
-        jnp.ndarray,
-        jnp.ndarray,
-        jnp.ndarray,
-        jnp.ndarray | None,
-        jnp.ndarray | None,
-        jnp.ndarray | None,
-    ]:
-        """Convert one data-system batch into JAX model inputs."""
+        *,
+        bucket_subdivisions: int = 8,
+        observe_contacts: bool = False,
+    ) -> PreparedBatch:
+        """Convert original device batches into labels and fixed-shape inputs.
+
+        Parameters
+        ----------
+        batch_data : dict or sequence of dict
+            One NumPy batch, or one batch per logical device.
+        task_key : str
+            Task whose model and data requirements apply.
+        bucket_subdivisions : int
+            Number of node/edge capacity buckets per power-of-two interval.
+        observe_contacts : bool
+            Record the contacts of the batch in the contact clamps of the
+            model before it is evaluated, which a training batch does.
+
+        Returns
+        -------
+        PreparedBatch
+            Labels and model inputs placed on the training devices.
+        """
         model = self.models[task_key]
-        jax_data = convert_numpy_data_to_jax_data(batch_data)
+        batches = (
+            (batch_data,) if isinstance(batch_data, Mapping) else tuple(batch_data)
+        )
+        if model.uses_full_neighbor_list():
+            labels, inputs = prepare_graph_batches(
+                tuple(normalize_batch(batch) for batch in batches),
+                rcut=model.get_rcut(),
+                ntypes=model.get_ntypes(),
+                data_requirements=self.data_requirements_by_task[task_key],
+                pair_exclude_types=model.atomic_model.pair_exclude_types,
+                bucket_subdivisions=bucket_subdivisions,
+            )
+            if observe_contacts:
+                # The host graph holds every device batch, so the record
+                # covers all of them before the step reads the edges.
+                model.atomic_model.observe_contacts(
+                    NeighborGraph(
+                        n_node=inputs["n_node"],
+                        edge_index=inputs["edge_index"],
+                        edge_vec=inputs["edge_vec"],
+                        edge_mask=inputs["edge_mask"],
+                    ),
+                    inputs["atype"],
+                )
+            return PreparedBatch(
+                *self.distributed.prepare_batch(
+                    labels,
+                    inputs,
+                    data_requirements=self.data_requirements_by_task[task_key],
+                )
+            )
+        if len(batches) != 1:
+            raise NotImplementedError(
+                "Per-device JAX batches require a model with sparse graph training, such as DPA4."
+            )
+        jax_data = convert_numpy_data_to_jax_data(normalize_batch(batches[0]))
         extended_coord, extended_atype, nlist, mapping, fp, ap = prepare_input(
             rcut=model.get_rcut(),
             sel=model.get_sel(),
             coord=jax_data["coord"],
-            atype=jax_data["type"],
-            box=jax_data["box"] if jax_data["find_box"] else None,
-            fparam=jax_data.get("fparam", None),
-            aparam=jax_data.get("aparam", None),
+            atype=jax_data["atype"],
+            box=jax_data.get("box") if jax_data.get("find_box", True) else None,
+            fparam=jax_data.get("fparam"),
+            aparam=jax_data.get("aparam"),
             pair_excl=model.atomic_model.pair_excl,
         )
-        return jax_data, extended_coord, extended_atype, nlist, mapping, fp, ap
+        inputs = {
+            "extended_coord": extended_coord,
+            "extended_atype": extended_atype,
+            "nlist": nlist,
+            "mapping": mapping,
+            "fp": fp,
+            "ap": ap,
+            "spin": jax_data.get("spin"),
+            "charge_spin": jax_data.get("charge_spin"),
+        }
+        return PreparedBatch(*self.distributed.prepare_batch(jax_data, inputs))
 
     def _evaluate_prepared_batch(
         self,
         task_key: str,
         step: int,
-        prepared: tuple[
-            dict[str, jnp.ndarray | bool],
-            jnp.ndarray,
-            jnp.ndarray,
-            jnp.ndarray,
-            jnp.ndarray | None,
-            jnp.ndarray | None,
-            jnp.ndarray | None,
-        ],
+        prepared: PreparedBatch,
     ) -> dict[str, float]:
         if task_key not in self._loss_fn_more_loss:
             raise RuntimeError("JAX trainer has not been initialized.")
+        self.models[task_key].eval()
         more_loss = self._loss_fn_more_loss[task_key](
-            self.models[task_key],
-            self.lr.value(step),
-            *prepared,
+            self.models[task_key], self.lr.value(step), prepared
         )
         return {key: float(value) for key, value in more_loss.items()}
 
     def _save_checkpoint(self, step: int) -> None:
         """Save a JAX checkpoint and update the stable checkpoint pointer."""
-        ckpt_path = Path(f"{self.save_ckpt}-{step}.jax")
+        ckpt_path = self.checkpoint_store.path_for(step)
         self._write_checkpoint(ckpt_path, step=step)
         log.info(f"Trained model has been saved to: {ckpt_path!s}")
         _link_checkpoint(ckpt_path, Path(f"{self.save_ckpt}.jax"))
-        self._cleanup_old_checkpoints()
+        self.checkpoint_store.prune(ckpt_path)
         # Write the pointer next to the checkpoint prefix, with a value relative
         # to that directory (basename only). The freeze entrypoint looks for the
         # pointer inside the folder it is given and resolves the value relative
@@ -1015,6 +1577,11 @@ class DPTrainer(AbstractTrainer):
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         with open(ckpt_dir / "checkpoint", "w") as fp:
             fp.write(f"{Path(self.save_ckpt).name}.jax")
+        if self.enable_ema:
+            ema_path = self.ema_checkpoint_store.path_for(step)
+            self._write_checkpoint(ema_path, step=step, ema=True)
+            _link_checkpoint(ema_path, Path(f"{self.ema_checkpoint_store.prefix}.jax"))
+            self.ema_checkpoint_store.prune(ema_path)
 
     def _save_full_validation_checkpoint(
         self,
@@ -1024,50 +1591,221 @@ class DPTrainer(AbstractTrainer):
     ) -> None:
         """Save a full-validation-selected JAX checkpoint."""
         del lr
-        self._write_checkpoint(save_path, step=step)
+        self._write_checkpoint(save_path, step=step, merge_adapters=True)
 
-    def _write_checkpoint(self, ckpt_path: Path, *, step: int) -> None:
+    def _save_ema_validation_checkpoint(
+        self,
+        save_path: Path,
+        lr: float = 0.0,
+        step: int = 0,
+    ) -> None:
+        """Save an EMA model selected by its independent full validator."""
+        del lr
+        self._write_checkpoint(save_path, step=step, ema=True, merge_adapters=True)
+
+    def _write_checkpoint(
+        self,
+        ckpt_path: Path,
+        *,
+        step: int,
+        ema: bool = False,
+        merge_adapters: bool = False,
+    ) -> None:
         """Write a JAX checkpoint directory to an explicit path."""
+        if self.optimizer is not None and bool(
+            self.optimizer.nonfinite_gradient_seen[...]
+        ):
+            nonfinite = [
+                ".".join(map(str, path))
+                for path, variable in to_flat_state(nnx.state(self.models, nnx.Param))
+                if not np.isfinite(np.asarray(as_pure(variable))).all()
+            ]
+            detail = ", ".join(nonfinite) or "current parameters are finite"
+            raise RuntimeError(
+                "A non-finite gradient norm occurred during training; "
+                f"checkpoint {ckpt_path} was not written. Parameter state: {detail}."
+            )
+        self._synchronize_ema_buffers()
+        models = self.ema_models if ema else self.models
+        merged = False
+        if merge_adapters:
+            from deepmd.jax.descriptor.lora import (
+                has_lora,
+                serialize_merged_model,
+            )
+
+            merged = has_lora(models)
+            if merged:
+                models = {
+                    key: BaseModel.deserialize(serialize_merged_model(model))
+                    for key, model in models.items()
+                }
         if self.multi_task:
             state = {
                 "models": {
-                    model_key: nnx.split(model)[1].to_pure_dict()
-                    for model_key, model in self.models.items()
+                    model_key: to_pure_dict(nnx.split(model)[1])
+                    for model_key, model in models.items()
                 }
             }
         else:
-            _, single_state = nnx.split(self.models[DEFAULT_TASK_KEY])
-            state = single_state.to_pure_dict()
+            _, single_state = nnx.split(models[DEFAULT_TASK_KEY])
+            state = to_pure_dict(single_state)
         if ckpt_path.is_dir():
             shutil.rmtree(ckpt_path)
         model_def_script_cpy = deepcopy(self.model_def_script)
         model_def_script_cpy["current_step"] = step
+        for key, model in self.models.items():
+            minimum = model.get_min_nbor_dist()
+            if minimum is not None:
+                params = (
+                    model_def_script_cpy["model_dict"][key]
+                    if self.multi_task
+                    else model_def_script_cpy
+                )
+                params["_min_nbor_dist"] = float(minimum)
+        if merged:
+            model_def_script_cpy.pop("lora", None)
+            for params in model_def_script_cpy.get("model_dict", {}).values():
+                params.pop("lora", None)
+        checkpoint_items = {
+            "state": ocp.args.StandardSave(pack_checkpoint_state(state)),
+            "model_def_script": ocp.args.JsonSave(model_def_script_cpy),
+        }
+        if not ema and not merged:
+            checkpoint_items["training_state"] = ocp.args.StandardSave(
+                pack_checkpoint_state(to_pure_dict(nnx.state(self.optimizer, OptState)))
+            )
+            checkpoint_items["training_metadata"] = ocp.args.JsonSave(
+                {
+                    "optimizer": self.optimizer_params,
+                    "shared_links": sanitize_shared_links(self.shared_links),
+                    "lr": self.lr.value(max(step - 1, 0)),
+                    "gradient_max_norm": self.training_param.get(
+                        "gradient_max_norm", 0.0
+                    ),
+                    "ema_decay": self.ema_decay,
+                    "ema_validation_state": self.ema_validation_state,
+                    DATA_PROGRESS_CHECKPOINT_KEY: collect_training_data_progress(
+                        self.training_data_by_task
+                    ),
+                }
+            )
+            if self.enable_ema:
+                checkpoint_items["ema_state"] = ocp.args.StandardSave(
+                    pack_checkpoint_state(to_pure_dict(nnx.state(self.ema_models)))
+                )
         with ocp.Checkpointer(
-            ocp.CompositeCheckpointHandler("state", "model_def_script")
+            ocp.CompositeCheckpointHandler(*checkpoint_items)
         ) as checkpointer:
             checkpointer.save(
                 ckpt_path.absolute(),
-                ocp.args.Composite(
-                    state=ocp.args.StandardSave(state),
-                    model_def_script=ocp.args.JsonSave(model_def_script_cpy),
-                ),
+                ocp.args.Composite(**checkpoint_items),
             )
 
-    def _cleanup_old_checkpoints(self) -> None:
-        """Remove old checkpoint directories beyond the retention limit."""
-        if self.max_ckpt_keep <= 0:
-            return
-        ckpt_parent = Path(self.save_ckpt).parent
-        ckpt_prefix = Path(self.save_ckpt).name
-        checkpoints = []
-        for path in ckpt_parent.glob(f"{ckpt_prefix}-*.jax"):
-            if not path.is_dir() or path.is_symlink():
-                continue
-            step_text = path.name.removeprefix(f"{ckpt_prefix}-").removesuffix(".jax")
-            if step_text.isdigit():
-                checkpoints.append((int(step_text), path))
-        for _, path in sorted(checkpoints)[: -self.max_ckpt_keep]:
-            shutil.rmtree(path)
+
+def _task_parameter_masks(models: Mapping[str, BaseModel]) -> dict[str, Any]:
+    """Select each task's unique variables within the shared parameter tree."""
+    parameters = {
+        path: variable
+        for path, variable in nnx.iter_graph(models)
+        if isinstance(variable, nnx.Param)
+    }
+    state = to_flat_state(nnx.state(models, nnx.Param))
+    masks = {}
+    for key, model in models.items():
+        identities = {
+            id(variable)
+            for _, variable in nnx.iter_graph(model)
+            if isinstance(variable, nnx.Param)
+        }
+        masks[key] = from_flat_state(
+            [
+                (
+                    path,
+                    variable.replace(
+                        value=jnp.asarray(id(parameters[path]) in identities)
+                    ),
+                )
+                for path, variable in state
+            ]
+        )
+    return masks
+
+
+def _global_gradient_norm(grads: Any) -> jnp.ndarray:
+    """Compute the global L2 norm without overflowing finite gradient squares."""
+    leaves = [value for value in jax.tree.leaves(grads) if value.size]
+    if not leaves:
+        return jnp.asarray(0.0, dtype=jnp.float64)
+    maximum = jnp.max(
+        jnp.stack([jnp.max(jnp.abs(value)).astype(jnp.float64) for value in leaves])
+    )
+    scale = jnp.where(maximum > 0, maximum, jnp.ones_like(maximum))
+    scaled = [value / scale.astype(value.dtype) for value in leaves]
+    # Low-precision gradients accumulate their squared norm in float32, then
+    # round the scalar back to their own dtype before the float64 global norm.
+    normalized = []
+    for value in scaled:
+        norm = jnp.linalg.vector_norm(
+            value.astype(jnp.promote_types(value.dtype, jnp.float32)).reshape(-1)
+        ).astype(value.dtype)
+        if value.dtype in (jnp.float16, jnp.bfloat16):
+            # The intervening low-precision rounding is part of the reduction
+            # contract; GPU cast folding must not replace it by a float32 norm.
+            norm = jax.lax.optimization_barrier(norm)
+        normalized.append(norm.astype(jnp.float64))
+    normalized = jnp.stack(normalized)
+    return scale * jnp.linalg.vector_norm(normalized)
+
+
+def _clip_gradients(
+    grads: Any, max_norm: float, *, total_norm: jnp.ndarray | None = None
+) -> Any:
+    """Apply PyTorch-compatible global-norm clipping to one gradient tree."""
+    if total_norm is None:
+        total_norm = _global_gradient_norm(grads)
+    scale = jnp.minimum(1.0, max_norm / (total_norm + 1e-6))
+    return jax.tree.map(lambda gradient: gradient * scale.astype(gradient.dtype), grads)
+
+
+def _batch_atom_capacity(inputs: dict[str, Any]) -> int:
+    """Return the static atom axis used by loss terms without a physical mask."""
+    if "edge_index" in inputs:
+        return inputs["atype"].shape[0]
+    return inputs["nlist"].shape[1]
+
+
+def _evaluate_inputs(
+    model: BaseModel, inputs: dict[str, Any]
+) -> dict[str, jnp.ndarray]:
+    """Evaluate the model's dense or graph lower interface for training losses."""
+    if "edge_index" not in inputs:
+        return _evaluate_model_dict(model, **inputs)
+    model_dict = model.call_common_lower_graph(**inputs)
+    model_dict["n_node"] = inputs["n_node"]
+    return _adapt_model_outputs(model, model_dict)
+
+
+def _adapt_model_outputs(
+    model: BaseModel, model_dict: dict[str, jnp.ndarray]
+) -> dict[str, jnp.ndarray]:
+    """Expose frame properties or energies and derivatives for shared losses."""
+    var_name = model.get_var_name()
+    if var_name is not None:
+        model_dict[f"atom_{var_name}"] = model_dict[var_name]
+        model_dict[var_name] = model_dict[f"{var_name}_redu"]
+        model_dict["_out_std"] = model.atomic_model.out_std[0, 0]
+        model_dict["_out_bias"] = model.atomic_model.out_bias[0, 0]
+        return model_dict
+    model_dict["atom_energy"] = model_dict["energy"]
+    model_dict["energy"] = model_dict["energy_redu"]
+    model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
+    model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
+    if model_dict.get("energy_derv_r_mag") is not None:
+        model_dict["force_mag"] = model_dict["energy_derv_r_mag"].squeeze(-2)
+    if model_dict.get("energy_derv_r_derv_r") is not None:
+        model_dict["hessian"] = model_dict["energy_derv_r_derv_r"].squeeze(-3)
+    return model_dict
 
 
 def _evaluate_model_dict(
@@ -1078,7 +1816,20 @@ def _evaluate_model_dict(
     mapping: jnp.ndarray | None,
     fp: jnp.ndarray | None,
     ap: jnp.ndarray | None,
+    *,
+    spin: jnp.ndarray | None = None,
+    charge_spin: jnp.ndarray | None = None,
 ) -> dict[str, jnp.ndarray]:
+    model_kwargs = {}
+    if spin is not None:
+        local_spin = spin.reshape(nlist.shape[0], nlist.shape[1], 3)
+        model_kwargs["spin"] = (
+            jnp.take_along_axis(local_spin, mapping[..., None], axis=1)
+            if mapping is not None
+            else local_spin
+        )
+    if charge_spin is not None:
+        model_kwargs["charge_spin"] = charge_spin
     model_dict_lower = model.call_common_lower(
         extended_coord,
         extended_atype,
@@ -1086,6 +1837,7 @@ def _evaluate_model_dict(
         mapping,
         fp,
         ap,
+        **model_kwargs,
     )
     model_dict = communicate_extended_output(
         model_dict_lower,
@@ -1093,294 +1845,58 @@ def _evaluate_model_dict(
         mapping,
         do_atomic_virial=False,
     )
-    model_dict["atom_energy"] = model_dict["energy"]
-    model_dict["energy"] = model_dict["energy_redu"]
-    model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
-    model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
-    if model_dict.get("energy_derv_r_derv_r") is not None:
-        model_dict["hessian"] = model_dict["energy_derv_r_derv_r"].squeeze(-3)
-    return model_dict
+    # Loss normalization counts physical atoms, excluding padded type -1 rows.
+    model_dict["mask"] = model_dict["mask"].reshape(nlist.shape[:2])
+    return _adapt_model_outputs(model, model_dict)
 
 
-def share_jax_model_params(
-    models: dict[str, BaseModel],
-    shared_links: dict[str, Any],
-    *,
-    model_key_prob_map: dict[str, float],
-    data_stat_protect: float = 1e-2,
-    resume: bool = False,
-) -> None:
-    """Share JAX model parameters following ``preprocess_shared_params`` links."""
-    apply_shared_links(
-        models,
-        shared_links,
-        share_descriptor=_share_jax_descriptor,
-        share_fitting=_share_jax_fitting,
-        model_key_prob_map=model_key_prob_map,
-        data_stat_protect=data_stat_protect,
-        resume=resume,
-        logger=log,
-    )
-
-
-def _share_jax_descriptor(
-    link_model: BaseModel,
-    link_type: str,
-    link_class: Any,
-    base_class: Any,
-    shared_level: int,
-    model_prob: float,
-    *,
-    resume: bool,
-) -> None:
-    _share_descriptor_component(
-        base_class,
-        link_class,
-        shared_level,
-        model_prob=model_prob,
-        resume=resume,
-    )
-    if shared_level == 0:
-        set_descriptor_component(link_model, link_type, base_class)
-
-
-def _share_jax_fitting(
-    link_class: Any,
-    base_class: Any,
-    shared_level: int,
-    model_prob: float,
-    *,
-    protection: float,
-    resume: bool,
-) -> None:
-    _share_fitting_component(
-        base_class,
-        link_class,
-        shared_level,
-        model_prob=model_prob,
-        protection=protection,
-        resume=resume,
-    )
-
-
-def _share_descriptor_component(
-    base_class: Any,
-    link_class: Any,
-    shared_level: int,
-    *,
-    model_prob: float,
-    resume: bool,
-) -> None:
-    if type(link_class) is not type(base_class):
-        raise AssertionError("Only descriptors of the same type can share params!")
-    if shared_level == 0:
-        if not resume:
-            _merge_descriptor_stats(base_class, link_class, model_prob)
-        return
-    if shared_level == 1 and hasattr(base_class, "type_embedding"):
-        link_class.type_embedding = base_class.type_embedding
-        return
-    raise NotImplementedError(
-        f"JAX shared_dict does not support descriptor shared_level={shared_level} "
-        f"for {type(base_class).__name__}."
-    )
-
-
-def _merge_descriptor_stats(
-    base_class: Any,
-    link_class: Any,
-    model_prob: float,
-) -> None:
-    from deepmd.dpmodel.utils.env_mat_stat import (
-        merge_env_stat,
-    )
-
-    merge_env_stat(base_class, link_class, model_prob)
-    for attr in (
-        "se_atten",
-        "seat",
-        "se_ttebd",
-        "repinit",
-        "repinit_three_body",
-        "repformers",
-        "repflows",
-    ):
-        if hasattr(base_class, attr) and hasattr(link_class, attr):
-            _merge_descriptor_stats(
-                getattr(base_class, attr),
-                getattr(link_class, attr),
-                model_prob,
+def get_additional_data_requirement(model: BaseModel) -> list[DataRequirementItem]:
+    """Return conditioning fields required by the model's input contract."""
+    requirements = []
+    if model.get_dim_fparam() > 0:
+        has_default = model.has_default_fparam()
+        requirements.append(
+            DataRequirementItem(
+                "fparam",
+                model.get_dim_fparam(),
+                atomic=False,
+                must=not has_default,
+                default=np.asarray(model.get_default_fparam()) if has_default else 0.0,
+                source_policy="default" if has_default else "tracked",
             )
-    if hasattr(base_class, "descrpt_list") and hasattr(link_class, "descrpt_list"):
-        for base_item, link_item in zip(
-            base_class.descrpt_list,
-            link_class.descrpt_list,
-            strict=True,
-        ):
-            _merge_descriptor_stats(base_item, link_item, model_prob)
-
-
-def _share_fitting_component(
-    base_class: Any,
-    link_class: Any,
-    shared_level: int,
-    *,
-    model_prob: float,
-    protection: float,
-    resume: bool,
-) -> None:
-    if type(link_class) is not type(base_class):
-        raise AssertionError("Only fitting nets of the same type can share params!")
-    if shared_level != 0:
-        raise NotImplementedError(
-            f"JAX shared_dict does not support fitting_net shared_level={shared_level}."
         )
-    if not resume:
-        _merge_fitting_param_stats(
-            base_class,
-            link_class,
-            model_prob=model_prob,
-            protection=protection,
+    if model.get_dim_aparam() > 0:
+        requirements.append(
+            DataRequirementItem(
+                "aparam", model.get_dim_aparam(), atomic=True, must=True
+            )
         )
-    link_class.nets = base_class.nets
-    for attr in (
-        "fparam_avg",
-        "fparam_inv_std",
-        "aparam_avg",
-        "aparam_inv_std",
-        "default_fparam_tensor",
-    ):
-        if getattr(base_class, attr, None) is not None:
-            setattr(link_class, attr, getattr(base_class, attr))
-
-
-def _merge_fitting_param_stats(
-    base_class: Any,
-    link_class: Any,
-    *,
-    model_prob: float,
-    protection: float,
-) -> None:
-    _merge_one_fitting_stat(
-        base_class,
-        link_class,
-        name="fparam",
-        avg_attr="fparam_avg",
-        inv_std_attr="fparam_inv_std",
-        numb_attr="numb_fparam",
-        model_prob=model_prob,
-        protection=protection,
-    )
-    _merge_one_fitting_stat(
-        base_class,
-        link_class,
-        name="aparam",
-        avg_attr="aparam_avg",
-        inv_std_attr="aparam_inv_std",
-        numb_attr="numb_aparam",
-        model_prob=model_prob,
-        protection=protection,
-    )
-
-
-def _merge_one_fitting_stat(
-    base_class: Any,
-    link_class: Any,
-    *,
-    name: str,
-    avg_attr: str,
-    inv_std_attr: str,
-    numb_attr: str,
-    model_prob: float,
-    protection: float,
-) -> None:
-    if getattr(base_class, numb_attr, 0) <= 0:
-        return
-    base_stats = base_class.get_param_stats().get(name, [])
-    link_stats = link_class.get_param_stats().get(name, [])
-    if not base_stats or not link_stats:
-        return
-    if len(base_stats) != getattr(base_class, numb_attr):
-        raise AssertionError(f"{name} statistics length mismatch!")
-    merged = [
-        base_stats[ii] + link_stats[ii] * model_prob
-        for ii in range(getattr(base_class, numb_attr))
-    ]
-    avg = np.array([stat.compute_avg() for stat in merged], dtype=np.float64)
-    inv_std = 1.0 / np.array(
-        [stat.compute_std(protection=protection) for stat in merged],
-        dtype=np.float64,
-    )
-    setattr(base_class, avg_attr, _as_backend_array(getattr(base_class, avg_attr), avg))
-    setattr(
-        base_class,
-        inv_std_attr,
-        _as_backend_array(getattr(base_class, inv_std_attr), inv_std),
-    )
-    base_class._param_stats[name] = merged
-
-
-def _as_backend_array(reference: Any, value: np.ndarray) -> Any:
-    import array_api_compat
-
-    ref_value = getattr(reference, "value", reference)
-    xp = array_api_compat.array_namespace(ref_value)
-    return xp.asarray(
-        value,
-        dtype=ref_value.dtype,
-        device=array_api_compat.device(ref_value),
-    )
-
-
-def _init_empty_state(params: Any) -> optax.EmptyState:
-    """Initialize an empty Optax state without requiring optax.init_empty_state.
-
-    Older Optax releases expose ``EmptyState`` but not the convenience helper
-    ``init_empty_state``. Constructing the state locally keeps this transform
-    compatible with the Optax versions selected by the current JAX/Flax pins.
-    """
-    del params
-    return optax.EmptyState()
-
-
-def _scale_by_global_learning_rate() -> optax.GradientTransformationExtraArgs:
-    """Scale optimizer updates by the learning rate from the global step."""
-
-    def update_fn(
-        updates: Any,
-        state: optax.EmptyState,
-        params: Any = None,
-        **kwargs: Any,
-    ) -> tuple[Any, optax.EmptyState]:
-        del params
-        learning_rate = kwargs["learning_rate"]
-        updates = jax.tree_util.tree_map(
-            lambda update: -learning_rate * update, updates
+    if model.has_spin():
+        allow_missing = model.spin.allow_missing_label
+        requirements.append(
+            DataRequirementItem(
+                "spin",
+                ndof=3,
+                atomic=True,
+                must=not allow_missing,
+                default=0.0,
+                source_policy="default" if allow_missing else "tracked",
+            )
         )
-        return updates, state
-
-    return optax.GradientTransformationExtraArgs(_init_empty_state, update_fn)
-
-
-def _legacy_optimizer_update(optimizer: Any, grads: Any, lr: float) -> None:
-    """Run an NNX optimizer update with extra args on Flax before 0.11."""
-    from flax.nnx.training.optimizer import (
-        _opt_state_variables_to_state,
-        _update_opt_state,
-    )
-
-    params = nnx.state(optimizer.model, optimizer.wrt)
-    opt_state = _opt_state_variables_to_state(optimizer.opt_state)
-    updates, new_opt_state = optimizer.tx.update(
-        grads,
-        opt_state,
-        params,
-        learning_rate=lr,
-    )
-    new_params = optax.apply_updates(params, updates)
-    optimizer.step.value += 1
-    nnx.update(optimizer.model, new_params)
-    _update_opt_state(optimizer.opt_state, new_opt_state)
+    if model.has_chg_spin_ebd():
+        default_charge_spin = model.get_default_chg_spin()
+        has_default = default_charge_spin is not None
+        requirements.append(
+            DataRequirementItem(
+                "charge_spin",
+                ndof=2,
+                atomic=False,
+                must=not has_default,
+                default=np.asarray(default_charge_spin) if has_default else 0.0,
+                source_policy="default" if has_default else "tracked",
+            )
+        )
+    return requirements
 
 
 def _copy_matching_state_tree(
@@ -1404,10 +1920,12 @@ def _copy_matching_state_tree(
         }
     if source is None:
         return target
+    if path and path[-1] == "rotation_key":
+        return target
     if random_fitting and not any("descriptor" in str(part) for part in path):
         return target
     if _same_state_leaf(target, source):
-        return source
+        return source.astype(target.dtype) if source.dtype != target.dtype else source
     return target
 
 
@@ -1420,7 +1938,13 @@ def _same_state_leaf(target: Any, source: Any) -> bool:
         target_shape is not None
         and source_shape is not None
         and target_shape == source_shape
-        and target_dtype == source_dtype
+        and (
+            target_dtype == source_dtype
+            or (
+                jnp.issubdtype(target_dtype, jnp.floating)
+                and jnp.issubdtype(source_dtype, jnp.floating)
+            )
+        )
     )
 
 
@@ -1503,7 +2027,8 @@ def convert_numpy_data_to_jax_data(
     """
     # numpy to jax
     jax_data = {
-        kk: jnp.asarray(vv) if not kk.startswith("find_") else bool(vv.item())
+        kk: (bool(vv) if kk.startswith("find_") else jnp.asarray(vv))
         for kk, vv in numpy_data.items()
+        if vv is not None
     }
     return jax_data
