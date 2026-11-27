@@ -5083,6 +5083,9 @@ def _mixing_stack_backward(ctx, grad_out, grad_z, grad_u):
             supports_edge_cohort(
                 grad_out, z_all, ctx.lmax, ctx.focus_dim, ctx.apply_alpha
             )
+            # Cohorts use the full m=+/-1 block, not master's half-width
+            # parity weights, which retain the native traversal.
+            and w1_all.shape[-1] == 2 * ctx.lmax * ctx.focus_dim
             and all(
                 value.dtype == torch.float32
                 and value.device == grad_out.device

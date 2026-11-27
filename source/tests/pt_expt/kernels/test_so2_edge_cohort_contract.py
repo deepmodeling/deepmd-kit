@@ -79,12 +79,13 @@ def test_existing_inference_levels(monkeypatch, backend, level):
 
 
 @pytest.mark.parametrize("capability", [(8, 0), (8, 6), (9, 0), (12, 0)])
+@pytest.mark.parametrize("parity", [False, True])
 @pytest.mark.skipif(
     not torch.backends.cuda.is_built(),
     reason="Fake CUDA views require a CUDA-enabled PyTorch build",
 )
-def test_device_dispatch_keeps_sm80_native(monkeypatch, capability):
-    """SM80 uses native; other architectures retain the existing selection."""
+def test_device_dispatch_keeps_sm80_native(monkeypatch, capability, parity):
+    """SM80 and parity use native; other inputs retain existing selection."""
     calls = []
 
     def device_capability(device):
@@ -97,7 +98,8 @@ def test_device_dispatch_keeps_sm80_native(monkeypatch, capability):
         alpha = torch.empty(37, 2, device="cuda:0")
         z = torch.empty(2, 2, 37, 320, device="cuda:0")
         w0 = torch.empty(3, 2, 128, 128, device="cuda:0")
-        w1 = torch.empty(3, 2, 192, 192, device="cuda:0")
+        width = 96 if parity else 192
+        w1 = torch.empty(3, 2, width, width, device="cuda:0")
         gw = torch.empty(2, 2, 32, 96, device="cuda:0")
         ctx = SimpleNamespace(
             saved_tensors=(u, alpha, u, z, u, w0, w1, gw),
@@ -123,7 +125,7 @@ def test_device_dispatch_keeps_sm80_native(monkeypatch, capability):
             )
         assert result[0].shape == u.shape
         assert result[1].shape == alpha.shape
-    assert calls == ["native" if capability == (8, 0) else "cohort"]
+    assert calls == ["native" if capability == (8, 0) or parity else "cohort"]
 
 
 class _LaunchRecorder:

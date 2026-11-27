@@ -20,7 +20,7 @@ from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as sv
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 
-def operands(edges: int, mode: str = "random") -> tuple:
+def operands(edges: int, mode: str = "random", *, parity: bool = False) -> tuple:
     """Generate well-conditioned operands without a downloaded checkpoint."""
     torch.manual_seed(719)
     u = torch.randn(2, edges, 320, device="cuda") * 0.1
@@ -30,7 +30,8 @@ def operands(edges: int, mode: str = "random") -> tuple:
     if mode == "tiny":
         alpha.fill_(1e-5)
     w0 = torch.randn(3, 2, 128, 128, device="cuda") * 0.01
-    w1 = torch.randn(3, 2, 192, 192, device="cuda") * 0.01
+    width = 96 if parity else 192
+    w1 = torch.randn(3, 2, width, width, device="cuda") * 0.01
     gw = torch.randn(2, 2, 32, 96, device="cuda") * 0.01
     out, z, uf = sv._mixing_stack_impl(u, alpha, w0, w1, gw, 3, 32, True)
     go = torch.randn_like(out) * 0.1
@@ -176,9 +177,10 @@ def test_training_dispatch_preserved(monkeypatch, reason: str) -> None:
     assert calls == [True]
 
 
-def test_sm80_dispatch_matches_native(monkeypatch) -> None:
-    """The production SM80 fallback returns native values and gradients."""
-    args = operands(37)
+@pytest.mark.parametrize("reason", ["sm80", "parity"])
+def test_native_fallback_matches_native(monkeypatch, reason) -> None:
+    """Production SM80/parity fallbacks return native values and gradients."""
+    args = operands(37, parity=reason == "parity")
     go, out, z, uf, alpha, w0t, w1t, gw, *_ = args
     ctx = SimpleNamespace(
         saved_tensors=(
@@ -199,10 +201,14 @@ def test_sm80_dispatch_matches_native(monkeypatch) -> None:
     expected = sv._mixing_stack_bwd_impl(*args)
 
     def forbidden(*unused):
-        raise AssertionError("SM80 entered ECS instead of native backward")
+        raise AssertionError("Unsupported inference entered ECS instead of native")
 
     monkeypatch.setattr(ecs, "cohort_backward", forbidden)
-    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device: (8, 0))
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_capability",
+        lambda device: (8, 0) if reason == "sm80" else (12, 0),
+    )
     with torch.no_grad():
         actual = sv._mixing_stack_backward(ctx, go, None, None)
     for got, reference in zip(actual[:2], expected, strict=True):
