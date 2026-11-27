@@ -41,6 +41,16 @@ PairDPA4SpinKokkos<DeviceType>::PairDPA4SpinKokkos(LAMMPS* lmp)
 }
 
 template <class DeviceType>
+int PairDPA4SpinKokkos<DeviceType>::model_device() {
+#ifdef KOKKOS_ENABLE_CUDA
+  if (std::is_same<DeviceType, LMPDeviceType>::value) {
+    return Kokkos::Cuda().cuda_device();
+  }
+#endif
+  return PairDPA4Spin::model_device();
+}
+
+template <class DeviceType>
 int PairDPA4SpinKokkos<DeviceType>::pack_reverse_comm(int n,
                                                       int first,
                                                       double* buf) {

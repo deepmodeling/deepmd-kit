@@ -97,6 +97,7 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   std::vector<double> output_virial();
 
  protected:
+  int model_device() override;
   // Model node set and, for a compact canonical artifact, the graph itself.
   CompactCanonicalGraphKokkos<DeviceType> compact_graph;
   Kokkos::View<int*, DeviceType>

@@ -94,6 +94,7 @@ class PairDPA4Spin : public Pair {
   void read_restart(FILE*) override { is_restart = true; }
 
  protected:
+  virtual int model_device() { return get_node_rank(); }
   void allocate();
   // Emit the DeePMD-kit and LAMMPS module banner through the LAMMPS logger.
   void print_summary(const std::string& pre) const;

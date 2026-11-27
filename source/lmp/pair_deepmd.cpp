@@ -506,7 +506,7 @@ void PairDeepMD::settings(int narg, char** arg) {
       models, deep_pot, ensemble,
       [&](deepmd_compat::DeepPot& model, const string& path) {
         try {
-          model.init(path, get_node_rank(), get_file_content(path));
+          model.init(path, model_device(), get_file_content(path));
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }

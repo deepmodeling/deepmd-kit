@@ -247,7 +247,7 @@ void PairDPA4Spin::settings(int narg, char** arg) {
       models, deep_spin, ensemble,
       [&](deepmd_compat::DeepSpin& model, const std::string& path) {
         try {
-          model.init(path, get_node_rank());
+          model.init(path, model_device());
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }

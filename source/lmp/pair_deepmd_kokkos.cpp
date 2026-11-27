@@ -78,6 +78,16 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
 }
 
 template <class DeviceType>
+int PairDeepMDKokkos<DeviceType>::model_device() {
+#ifdef KOKKOS_ENABLE_CUDA
+  if (std::is_same<DeviceType, LMPDeviceType>::value) {
+    return Kokkos::Cuda().cuda_device();
+  }
+#endif
+  return PairDeepMD::model_device();
+}
+
+template <class DeviceType>
 int PairDeepMDKokkos<DeviceType>::pack_reverse_comm(int n,
                                                     int first,
                                                     double* buf) {

@@ -53,6 +53,7 @@ class PairDeepMD : public PairDeepBaseModel {
   double eval_energy_with_fparam(const std::vector<double>& fparam_override);
 
  protected:
+  virtual int model_device() { return get_node_rank(); }
   // The first model of the ensemble, which drives the dynamics, and the
   // others, evaluated at the steps that write the model deviation.
   deepmd_compat::DeepPot deep_pot;
