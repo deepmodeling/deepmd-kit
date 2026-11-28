@@ -95,17 +95,17 @@ def _wigner_d_assemble_impl(
     poly_lmin: int,
     n_regular: int,
 ) -> torch.Tensor:
-    """Assemble the dense block-diagonal matrix; the transpose stays a view.
+    """Assemble the dense block-diagonal matrix ``D_full``.
 
     In-place slice assignments are exactly what Inductor's functionalization
     cannot keep in place: traced, they expand into a chain of full-size
     ``zeros + index_put + add`` tensors plus a realized transpose (~4 GB of
     HBM traffic at the SeZM N=4096 workload).  Behind a custom op the eager
     scatter stays a scatter.  Only ``D_full`` is produced here; the caller
-    makes ``Dt_full`` a plain transpose view outside the op, and every
-    consumer addresses it through strides (the flash and rotation kernels
-    take explicit stride arguments; the eager consumers are strided torch
-    operators).
+    derives ``Dt_full`` outside the op, as a transpose view that torch 2.11
+    materializes into a contiguous copy, and every consumer addresses it
+    through strides (the flash and rotation kernels take explicit stride
+    arguments; the eager consumers are strided torch operators).
     """
     ref = blocks[0]
     n_edge = ref.shape[0]
@@ -161,9 +161,10 @@ def _wigner_d_assemble_setup(ctx: Any, inputs: Any, output: Any) -> None:
 def _wigner_d_assemble_backward(
     ctx: Any, grad_d_full: torch.Tensor
 ) -> tuple[list[torch.Tensor], None, None, None]:
-    # The transpose view's gradient reaches D_full through the ordinary
-    # autograd of aten.transpose, so only D-slices arrive here.  The [0, 0]
-    # constant receives no gradient.
+    # The inverse rotation's gradient reaches D_full through the ordinary
+    # autograd of the transpose (and of the copy that materializes it on
+    # torch 2.11), so only D-slices arrive here.  The [0, 0] constant
+    # receives no gradient.
     grads = []
     off = 1
     for size in ctx.block_widths:
@@ -691,8 +692,10 @@ class WignerDCalculator(nn.Module):
         # behind the opaque wigner_d_assemble operator under tracing (where
         # functionalization would otherwise expand the in-place scatter into
         # a chain of full-size zeros/index_put adds plus a realized
-        # transpose).  The operator hands the graph one contiguous tensor;
-        # the inverse rotation leaves through the shared transpose-view exit.
+        # transpose).  Export traces reach it directly as well: the export
+        # seam suppresses the operator there, because an AOTI archive cannot
+        # resolve it.  The operator hands the graph one contiguous tensor;
+        # the inverse rotation leaves through the shared exit below.
         blocks: list[torch.Tensor] = []
         poly_block: torch.Tensor | None = None
 
@@ -771,13 +774,11 @@ class WignerDCalculator(nn.Module):
                 )
 
         # ``is_compiling`` alone is not enough: the production eval trace
-        # goes through make_fx fake tensors, where the flag stays False, and
-        # under current dynamo the assembly graph-breaks out of torch.compile
-        # regions (the flag is False in the fallback too).  A fake tensor
-        # carries its mode, so probe for that as well; the ``is_compiling``
-        # disjunct stays for compiled regions that enclose this code.  On
-        # torch older than 2.3 the callable does not exist and the fake-tensor
-        # probe carries the decision alone.
+        # goes through make_fx fake tensors, where the flag stays False.  A
+        # fake tensor carries its mode, so probe for that as well, and keep
+        # the ``is_compiling`` term for traced regions.  On torch older than
+        # 2.3 the callable does not exist and the fake-tensor probe carries
+        # the decision alone.
         compiling = (
             _COMPILER_IS_COMPILING() if _COMPILER_IS_COMPILING is not None else False
         )

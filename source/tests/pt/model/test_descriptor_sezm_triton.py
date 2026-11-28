@@ -2071,10 +2071,6 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         self.assertTrue(tc.has_tile_config("flash_bwd_block", key))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestSeZMWignerDAssembleOp(unittest.TestCase):
     """Focused coverage for the op-bound dense Wigner-D assembly."""
 
@@ -2118,11 +2114,6 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
     )
     def test_op_matches_reference_with_grads(self):
         """Pure-PyTorch operator math; runs wherever the CPU CI runs."""
-        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-            _wigner_d_assemble_impl,
-            _wigner_d_assemble_op,
-        )
-
         device = "cuda" if _CUDA else "cpu"
         n_edge = 64
         for widths, poly_lmin in ((self.WIDTHS, None), ((3, 5), 3)):
@@ -2145,12 +2136,14 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                     b.clone().requires_grad_(True)
                     for b in (blocks + ([poly] if poly is not None else []))
                 ]
-                dense_op = _wigner_d_assemble_op(leaves_op, args[1], args[2], args[3])
+                dense_op = wignerd_mod._wigner_d_assemble_op(
+                    leaves_op, args[1], args[2], args[3]
+                )
                 leaves_ref = [
                     b.clone().requires_grad_(True)
                     for b in (blocks + ([poly] if poly is not None else []))
                 ]
-                dense_ref = _wigner_d_assemble_impl(
+                dense_ref = wignerd_mod._wigner_d_assemble_impl(
                     leaves_ref, args[1], args[2], args[3]
                 )
                 self.assertTrue(torch.equal(dense_op.detach(), dense_ref.detach()))
@@ -2177,7 +2170,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                 ]
                 self.assertTrue(
                     torch.autograd.gradcheck(
-                        lambda *bs: _wigner_d_assemble_op(
+                        lambda *bs: wignerd_mod._wigner_d_assemble_op(
                             list(bs), args[1], args[2], args[3]
                         ),
                         small,
@@ -2190,10 +2183,6 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
     )
     def test_opcheck_schema_fake_autograd(self):
         """Schema/fake/autograd contract; pure PyTorch, CPU CI included."""
-        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-            _wigner_d_assemble_op,
-        )
-
         device = "cuda" if _CUDA else "cpu"
         for widths, poly_lmin in ((self.WIDTHS, None), ((3, 5), 3)):
             with self.subTest(widths=widths, tail=poly_lmin is not None):
@@ -2209,7 +2198,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                 try:
                     with torch.device(device):
                         torch.library.opcheck(
-                            _wigner_d_assemble_op,
+                            wignerd_mod._wigner_d_assemble_op,
                             (blocks, dim_full, poly_lmin or 11, n_regular),
                         )
                 finally:
@@ -2224,20 +2213,16 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
 
         The production eval path lowers through make_fx, whose fake
         tensors carry the mode this check exercises (``is_compiling``
-        stays False there; under current dynamo the assembly graph-breaks
-        out of torch.compile regions, so the fake-mode disjunct is the
-        live one today).  The graph-node assertion locks in the mechanism:
-        with the probe silently false, the traced route would fall back to
-        the raw scatter and every value comparison would still pass.
+        stays False there).  The graph-node assertion locks in the
+        mechanism: with the probe silently false, the traced route would
+        fall back to the raw scatter and every value comparison would
+        still pass.
         """
-        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-            WignerDCalculator,
-        )
 
         def _run(quat):
             return calc.forward(quat)
 
-        calc = WignerDCalculator(lmax=3, dtype=torch.float32).cpu()
+        calc = wignerd_mod.WignerDCalculator(lmax=3, dtype=torch.float32).cpu()
         calc.eval()
         quat = torch.randn(8, 4, dtype=torch.float32, device="cpu")
         quat = quat / quat.norm(dim=-1, keepdim=True)
@@ -2274,9 +2259,6 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         the operator fails to load.  Under the freeze seam's suppression
         context the traced graph must carry the eager scatter instead.
         """
-        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-            assemble_op_suppressed_for_export,
-        )
 
         def _run(quat):
             return calc.forward(quat)
@@ -2289,14 +2271,98 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         plain = make_fx(_run, tracing_mode="symbolic", _allow_non_fake_inputs=True)(
             quat
         )
-        self.assertIn("sezm_nn.wigner_d_assemble", plain.code)
+        # Unsuppressed, the trace follows the registration: the op where the
+        # torch release accepts its schema, the eager scatter where it does not.
+        if _WIGNER_OP_REGISTERED:
+            self.assertIn("sezm_nn.wigner_d_assemble", plain.code)
+        else:
+            self.assertNotIn("sezm_nn.wigner_d_assemble", plain.code)
 
-        with assemble_op_suppressed_for_export():
+        with wignerd_mod.assemble_op_suppressed_for_export():
             suppressed = make_fx(
                 _run, tracing_mode="symbolic", _allow_non_fake_inputs=True
             )(quat)
         self.assertNotIn("sezm_nn.wigner_d_assemble", suppressed.code)
         torch.testing.assert_close(suppressed(quat), plain(quat), atol=0.0, rtol=0.0)
+
+    def test_export_suppression_is_thread_local(self):
+        """Two overlapping suppression contexts must not see each other.
+
+        The flag is thread-local.  While one thread is inside the context,
+        another thread outside it must read False, and inside its own
+        context True; the first thread leaving must neither clear the
+        other's context nor leak the flag to later callers.  A process-global
+        boolean fails the first of these, which is the failure this
+        context exists to prevent: a trace that silently keeps the operator
+        ends up in an archive the C++ runtime cannot load.
+        """
+        import threading
+
+        suppressed_for_export = wignerd_mod._assemble_op_suppressed_for_export
+        suppress_for_export = wignerd_mod.assemble_op_suppressed_for_export
+
+        seen = {}
+        holder_entered = threading.Event()
+        reader_done = threading.Event()
+
+        def hold_context():
+            try:
+                with suppress_for_export():
+                    holder_entered.set()
+                    reader_done.wait(timeout=60)
+                    seen["holder_while_other_inside"] = suppressed_for_export()
+                seen["holder_after_exit"] = suppressed_for_export()
+            except Exception as exc:  # reported to the main thread below
+                seen["holder_error"] = repr(exc)
+
+        holder = threading.Thread(target=hold_context)
+        holder.start()
+        try:
+            self.assertTrue(holder_entered.wait(timeout=60))
+            # This thread is outside the holder's context.
+            seen["reader_before"] = suppressed_for_export()
+            with suppress_for_export():
+                seen["reader_inside"] = suppressed_for_export()
+            seen["reader_after"] = suppressed_for_export()
+        finally:
+            reader_done.set()
+            holder.join(timeout=60)
+        self.assertNotIn("holder_error", seen)
+        self.assertFalse(seen["reader_before"])
+        self.assertTrue(seen["reader_inside"])
+        self.assertFalse(seen["reader_after"])
+        self.assertTrue(seen["holder_while_other_inside"])
+        self.assertFalse(seen["holder_after_exit"])
+
+    @unittest.skipIf(
+        Version(torch.__version__).release < (2, 7),
+        "the schema is only accepted from torch 2.7",
+    )
+    def test_traced_export_keeps_the_operator_unless_suppressed(self):
+        """A Dynamo-traced export keeps the operator; the export seam drops it.
+
+        The production freeze traces through make_fx, which has its own
+        graph-node test.  This one goes through ``torch.export`` (non-strict,
+        Dynamo-traced), so the compiled route is pinned there as well: the
+        node must be present, and must be gone inside the export suppression.
+        The two terms of the probe are not separated here;
+        ``test_is_compiling_half_of_the_probe_selects_the_operator`` pins the
+        ``is_compiling`` term on its own.
+        """
+        calc = wignerd_mod.WignerDCalculator(lmax=3, dtype=torch.float32).cpu()
+        calc.eval()
+        quat = torch.randn(8, 4, dtype=torch.float32, device="cpu")
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+
+        exported = torch.export.export(calc, (quat,), strict=False)
+        with wignerd_mod.assemble_op_suppressed_for_export():
+            suppressed = torch.export.export(calc, (quat,), strict=False)
+        self.assertIn("sezm_nn.wigner_d_assemble", str(exported.graph_module.code))
+        self.assertNotIn("sezm_nn.wigner_d_assemble", str(suppressed.graph_module.code))
+        d_eager, dt_eager = calc.forward(quat)
+        d_traced, dt_traced = exported.module()(quat)
+        torch.testing.assert_close(d_traced, d_eager, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(dt_traced, dt_eager, atol=1e-5, rtol=1e-5)
 
     @unittest.skipUnless(
         _WIGNER_OP_REGISTERED,
@@ -2309,11 +2375,9 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         the other disjunct directly -- a truthy ``is_compiling`` against
         real (non-fake) tensors routes the assembly through the operator,
         which a dropped disjunct or a broken callable lookup silently
-        reverts to the scatter.  (Under the *current* dynamo the assembly
-        sits in a graph-break region and torch.compile leaves the flag
-        False there, so the compiled route itself does not reach this
-        disjunct yet; the mock pins the mechanism, not dynamo's region
-        placement.)
+        reverts to the scatter.  The mock pins the mechanism on every torch
+        release; ``test_traced_export_keeps_the_operator_unless_suppressed``
+        inspects a real traced graph without separating the two terms.
         """
         calls = []
         real_op = wignerd_mod._wigner_d_assemble_op
@@ -2340,17 +2404,23 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
     def test_import_and_tracing_fall_back_when_registration_fails(self):
         """Unsupported torches must import the module and stay eager.
 
-        Two emulations run in subprocesses, one per incompatible class:
-        ``hide`` removes ``torch.library.custom_op`` for the module's
-        re-execution (torch 2.1-2.3, where the API is absent -- on a torch
-        that really lacks it the attribute is already gone and nothing is
-        deleted), and ``reject`` replaces it with a stub raising the
-        schema-inference error (torch 2.4-2.6, where the API exists but
+        Three emulations run in subprocesses.  Two stand for incompatible
+        classes: ``hide`` removes ``torch.library.custom_op`` for the
+        module's re-execution (torch 2.1-2.3, where the API is absent -- on
+        a torch that really lacks it the attribute is already gone and
+        nothing is deleted), and ``reject`` replaces it with a stub raising
+        the schema-inference error (torch 2.4-2.6, where the API exists but
         rejects a ``list[torch.Tensor]`` parameter). In both, torch's own
         lazily importing users of the API stay intact (the change is scoped
         to the reload window), the operator stays unregistered, the eager
         forward/backward works, and make_fx tracing keeps the eager
         implementation instead of the operator node.
+
+        The third, ``hide_no_is_compiling``, stands for torch 2.1-2.2,
+        which ship neither ``custom_op`` nor ``torch.compiler.is_compiling``:
+        the import must resolve the absent callable to ``None`` instead of
+        failing.  The absence is emulated on the installed torch; those
+        releases themselves are not run.
 
         The child first imports the module untouched and asserts the
         registration state its parent observed (passed as an argument), so
@@ -2416,6 +2486,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                 assert wd._wigner_d_assemble_op is None, "control: import fallback"
 
             saved_custom_op = getattr(torch.library, "custom_op", None)
+            saved_is_compiling = getattr(torch.compiler, "is_compiling", None)
             if mode == "hide":
                 if saved_custom_op is not None:
                     del torch.library.custom_op
@@ -2426,15 +2497,29 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
                     )
 
                 torch.library.custom_op = _rejected
+            elif mode == "hide_no_is_compiling":
+                if saved_custom_op is not None:
+                    del torch.library.custom_op
+                # Taken away only for the reload: later torch internals
+                # import the callable by name, so it goes back as soon as
+                # the module has resolved it for itself.
+                if saved_is_compiling is not None:
+                    del torch.compiler.is_compiling
             else:
                 raise AssertionError(f"unknown mode {mode}")
             wd = importlib.reload(wd)
+            if saved_is_compiling is not None and mode == "hide_no_is_compiling":
+                torch.compiler.is_compiling = saved_is_compiling
             if saved_custom_op is not None:
                 torch.library.custom_op = saved_custom_op
             elif mode == "reject":
                 # The stub was injected over a missing attribute; remove it.
                 del torch.library.custom_op
             assert wd._wigner_d_assemble_op is None, "fallback: op stays out"
+            if mode == "hide_no_is_compiling":
+                assert wd._COMPILER_IS_COMPILING is None, (
+                    "torch 2.1-2.2: the absent callable resolves to None"
+                )
 
             calc = wd.WignerDCalculator(lmax=1, dtype=torch.float64).cpu()
             calc.eval()
@@ -2458,7 +2543,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             """
         )
         registered = wignerd_mod._wigner_d_assemble_op is not None
-        for mode in ("hide", "reject"):
+        for mode in ("hide", "reject", "hide_no_is_compiling"):
             with self.subTest(emulation=mode, registered=registered):
                 result = subprocess.run(
                     [
@@ -2483,14 +2568,10 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
 
     @_GPU_KERNELS
     def test_traced_matches_eager_and_layout_policy(self):
-        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-            WignerDCalculator,
-        )
-
         generator = torch.Generator(device="cuda").manual_seed(21)
         quat = torch.randn(32, 4, device="cuda", generator=generator)
         quat = quat / quat.norm(dim=-1, keepdim=True)
-        calc = WignerDCalculator(lmax=3, dtype=torch.float32).cuda()
+        calc = wignerd_mod.WignerDCalculator(lmax=3, dtype=torch.float32).cuda()
         calc.eval()
 
         saved_device = torch.get_default_device()
@@ -2532,13 +2613,9 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
 
     @_GPU_KERNELS
     def test_lmax_zero_and_empty_edges(self):
-        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-            WignerDCalculator,
-        )
-
         quat = torch.randn(8, 4, device="cuda")
         quat = quat / quat.norm(dim=-1, keepdim=True)
-        calc0 = WignerDCalculator(lmax=0, dtype=torch.float32).cuda()
+        calc0 = wignerd_mod.WignerDCalculator(lmax=0, dtype=torch.float32).cuda()
         calc0.eval()
         d0, dt0 = calc0.forward(quat)
         expected = torch.zeros(8, 1, 1, dtype=torch.float32, device="cuda")
@@ -2546,7 +2623,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         self.assertTrue(torch.equal(d0, expected))
         self.assertTrue(torch.equal(dt0, expected))
 
-        calc3 = WignerDCalculator(lmax=3, dtype=torch.float32).cuda()
+        calc3 = wignerd_mod.WignerDCalculator(lmax=3, dtype=torch.float32).cuda()
         calc3.eval()
         d_empty, dt_empty = calc3.forward(
             torch.empty(0, 4, dtype=torch.float32, device="cuda")
