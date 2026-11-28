@@ -31,6 +31,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     is_lmdb,
     make_neighbor_stat_data,
 )
+from deepmd.dpmodel.utils.lmdb_data_system import LmdbDataSystem as NativeLmdbDataSystem
 from deepmd.entrypoints.test import test as run_model_test
 from deepmd.utils import (
     data_conversion,
@@ -245,14 +246,6 @@ class TestDpdataFormatConversion(unittest.TestCase):
             LabeledSystem=_FakeLabeledSystem,
         )
 
-    def _expected_lmdb_write(self, output: str) -> tuple[str, str, dict]:
-        """Windows stages a new database; POSIX uses dpdata's overwrite path."""
-        if os.name == "nt":
-            path = Path(output)
-            staged = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-            return "deepmd/lmdb", str(staged), {}
-        return "deepmd/lmdb", output, {"overwrite": True}
-
     def test_process_systems_defaults_to_deepmd_lmdb_and_reuses_cache(self) -> None:
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
             systems = process_systems(str(self.source), fmt="extxyz")
@@ -268,7 +261,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.assertEqual(Path(systems[0]).parent, self.root / ".deepmd_dpdata_cache")
         self.assertEqual(
             _FakeMultiSystems.to_calls,
-            [self._expected_lmdb_write(systems[0])],
+            [("deepmd/lmdb", systems[0], {})],
         )
 
     def test_process_systems_cache_is_scoped_to_cwd(self) -> None:
@@ -297,13 +290,11 @@ class TestDpdataFormatConversion(unittest.TestCase):
             os.utime(self.source, (refreshed_mtime, refreshed_mtime))
             systems_again = process_systems(str(self.source), fmt="extxyz")
 
-        self.assertEqual(systems, systems_again)
+        self.assertNotEqual(systems, systems_again)
         self.assertEqual(_FakeMultiSystems.write_count, 2)
-        self.assertTrue(
-            all(
-                call == self._expected_lmdb_write(systems[0])
-                for call in _FakeMultiSystems.to_calls
-            )
+        self.assertEqual(
+            _FakeMultiSystems.to_calls,
+            [("deepmd/lmdb", output, {}) for output in systems + systems_again],
         )
 
     def test_lmdb_alias_uses_canonical_dpdata_writer(self) -> None:
@@ -313,11 +304,11 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
         self.assertEqual(
             _FakeMultiSystems.to_calls,
-            [self._expected_lmdb_write(systems[0])],
+            [("deepmd/lmdb", systems[0], {})],
         )
 
-    def test_real_dpdata_lmdb_writer_is_deepmd_compatible(self) -> None:
-        """Verify dpdata 1.1 writes the schema consumed by DeePMD's LMDB reader."""
+    def test_lmdb_refresh_keeps_active_readers_on_their_generation(self) -> None:
+        """Verify real dpdata output, including a refresh with live readers."""
         extxyz = (
             "1\n"
             "Properties=species:S:1:pos:R:3:forces:R:3 energy=0.0 "
@@ -327,23 +318,31 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.source.write_text(extxyz)
 
         systems = process_systems(str(self.source), fmt="extxyz")
-        # Refresh must retain dpdata's transactional overwrite on POSIX and
-        # stage a fresh database on Windows, where overwrite is unsupported.
+        (old_path,) = systems
+        original = LmdbDataSystem(old_path, ["H"], batch_size=1)
+        self.addCleanup(original.close)
+        requirement = DataRequirementItem("energy", 1, atomic=False, must=True)
+        original.add_data_requirements([requirement])
+        self.assertEqual(float(original.get_batch()["energy"].item()), 0.0)
+
         original_stat = self.source.stat()
         self.source.write_text(extxyz.replace("energy=0.0", "energy=42.0"))
         os.utime(self.source, (original_stat.st_atime, original_stat.st_mtime - 86400))
         systems_again = process_systems(str(self.source), fmt="extxyz")
 
-        self.assertEqual(len(systems), 1)
-        self.assertEqual(systems_again, systems)
-        self.assertTrue(is_lmdb(systems[0]))
-        data = LmdbDataSystem(systems[0], ["H"], batch_size=1)
+        (new_path,) = systems_again
+        self.assertNotEqual(new_path, old_path)
+        self.assertEqual(process_systems(str(self.source), fmt="extxyz"), [new_path])
+        data = LmdbDataSystem(new_path, ["H"], batch_size=1)
         self.addCleanup(data.close)
-        data.add_data_requirements(
-            [DataRequirementItem("energy", 1, atomic=False, must=True)]
-        )
+        data.add_data_requirements([requirement])
         batch = data.get_batch()
         self.assertEqual(float(batch["energy"].item()), 42.0)
+        self.assertEqual(float(original.get_batch()["energy"].item()), 0.0)
+        original.close()
+        with LmdbDataSystem(old_path, ["H"], batch_size=1) as reopened:
+            reopened.add_data_requirements([requirement])
+            self.assertEqual(float(reopened.get_batch()["energy"].item()), 0.0)
         self.assertEqual(batch["coord"].shape, (1, 3))
         self.assertEqual(batch["type"].shape, (1, 1))
 
@@ -547,6 +546,35 @@ class TestDpdataFormatConversion(unittest.TestCase):
                         )
                     )
                 self.assertEqual(observed, expected_groups)
+
+    def test_native_lmdb_defers_stat_groups_until_requirements_are_registered(
+        self,
+    ) -> None:
+        """Skip the box-only scan when the trainer adds labels before use."""
+        path = self.root / "lazy-native-groups.lmdb"
+        _write_repeated_lmdb(str(path), 4)
+        with patch.object(
+            LmdbDataReader,
+            "_scan_exact_availability",
+            autospec=True,
+            side_effect=LmdbDataReader._scan_exact_availability,
+        ) as scan:
+            data = NativeLmdbDataSystem(str(path), ["H"], batch_size=1, num_workers=0)
+            self.addCleanup(data.close)
+            data.add_data_requirements([DataRequirementItem("energy", 1)])
+            scan.assert_not_called()
+
+            self.assertEqual(data.get_stat_nsystems(), 1)
+            self.assertEqual(scan.call_args.args[1], ("box", "energy"))
+            self.assertEqual(scan.call_count, 1)
+
+            groups = data._stat_groups
+            data.add_data_requirements(
+                [DataRequirementItem("energy", 1, high_prec=True)]
+            )
+            self.assertIs(data._stat_groups, groups)
+            np.testing.assert_array_equal(data.get_stat_batch(0)["energy"], [[0.0]])
+            self.assertEqual(scan.call_count, 1)
 
     def test_mix_batch_pads_different_atom_counts(self) -> None:
         lmdb_path = self.root / "mixed.lmdb"
@@ -896,12 +924,13 @@ class TestDpdataFormatConversion(unittest.TestCase):
             ),
             patch.object(
                 data_conversion,
-                "_is_conversion_current",
-                return_value=True,
+                "_current_conversion",
+                return_value=output,
             ) as is_current,
         ):
-            self.assertTrue(
-                data_conversion._wait_for_conversion(self.source, output, lock_path)
+            self.assertEqual(
+                data_conversion._wait_for_conversion(self.source, output, lock_path),
+                output,
             )
 
         self.assertEqual(waits, 301)
@@ -1027,44 +1056,43 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.assertNotEqual(unlabeled, labeled)
         self.assertEqual(_FakeMultiSystems.write_count, 2)
 
-    def test_windows_lmdb_refresh_uses_a_new_directory(self) -> None:
-        """Exercise dpdata's Windows overwrite rejection without a Windows host."""
+    def test_failed_lmdb_manifest_publication_preserves_the_last_generation(
+        self,
+    ) -> None:
+        """Exercise rollback with dpdata's no-overwrite rule on Windows."""
         from dpdata.formats.deepmd.lmdb import format as lmdb_format
 
         self.source.write_text(
             "1\nProperties=species:S:1:pos:R:3:forces:R:3 energy=0.0\nH 0 0 0 0 0 0\n"
         )
-        with (
-            patch.object(
-                data_conversion, "os", Mock(wraps=os, name="windows_os")
-            ) as windows_os,
-            patch.object(lmdb_format, "_IS_WINDOWS", True),
-        ):
-            windows_os.name = "nt"
-            systems = process_systems(str(self.source), fmt="extxyz")
+        with patch.object(lmdb_format, "_IS_WINDOWS", True):
+            (original,) = process_systems(str(self.source), fmt="extxyz")
+            output = data_conversion._conversion_cache_path(
+                self.source, "extxyz", "deepmd/lmdb"
+            )
+            manifest = data_conversion._conversion_manifest_path(output)
+            previous_manifest = manifest.read_bytes()
             self.source.write_text(
                 self.source.read_text().replace("energy=0.0", "energy=42.0")
             )
             with patch.object(
                 data_conversion,
-                "_publish_conversion_output",
+                "_write_conversion_manifest",
                 side_effect=OSError("publication failed"),
             ):
                 with self.assertRaisesRegex(OSError, "publication failed"):
                     process_systems(str(self.source), fmt="extxyz")
-            self.assertTrue(Path(systems[0]).is_dir())
-            self.assertFalse(
-                data_conversion._conversion_manifest_path(Path(systems[0])).exists()
-            )
-            self.assertEqual(process_systems(str(self.source), fmt="extxyz"), systems)
-        data = LmdbDataSystem(systems[0], ["H"], batch_size=1)
+            self.assertEqual(manifest.read_bytes(), previous_manifest)
+            self.assertEqual(list(output.parent.glob("*.lmdb")), [Path(original)])
+            (refreshed,) = process_systems(str(self.source), fmt="extxyz")
+            self.assertNotEqual(refreshed, original)
+        data = LmdbDataSystem(refreshed, ["H"], batch_size=1)
         self.addCleanup(data.close)
         data.add_data_requirements(
             [DataRequirementItem("energy", 1, atomic=False, must=True)]
         )
         np.testing.assert_array_equal(data.get_batch()["energy"], [[42.0]])
-        self.assertFalse(list(Path(systems[0]).parent.glob("*.tmp")))
-        self.assertFalse(list(Path(systems[0]).parent.glob("*.backup")))
+        self.assertFalse(list(output.parent.glob("*.tmp")))
 
     def test_cache_path_changes_with_dpdata_version(self) -> None:
         with patch.object(
@@ -1159,11 +1187,12 @@ class TestDpdataFormatConversion(unittest.TestCase):
                             0 if preserve_mtime else 86400 * 10**9
                         )
                         os.utime(source_file, ns=(stat.st_atime_ns, mtime))
-                        self.assertEqual(
-                            process_systems(str(source), fmt="extxyz"), systems
-                        )
+                        refreshed = process_systems(str(source), fmt="extxyz")
+                        self.assertNotEqual(refreshed, systems)
                         self.assertEqual(_FakeMultiSystems.write_count, before + 1)
-                        process_systems(str(source), fmt="extxyz")
+                        self.assertEqual(
+                            process_systems(str(source), fmt="extxyz"), refreshed
+                        )
                         self.assertEqual(_FakeMultiSystems.write_count, before + 1)
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "requires named pipes")
@@ -1325,16 +1354,26 @@ class TestDpdataFormatConversion(unittest.TestCase):
         output = data_conversion._conversion_cache_path(
             self.source, "extxyz", "deepmd/lmdb"
         )
-        self.assertFalse(data_conversion._is_conversion_current(self.source, output))
+        self.assertIsNone(data_conversion._current_conversion(self.source, output))
         self.assertFalse(data_conversion._conversion_manifest_path(output).exists())
         self.assertFalse(output.with_suffix(".lmdb.lock").exists())
+        self.assertFalse(list(output.parent.glob("*.lmdb")))
 
     def test_missing_or_invalid_manifest_rebuilds_cache(self) -> None:
         """Legacy and interrupted conversions cannot validate via output mtime."""
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
-            systems = process_systems(str(self.source), fmt="extxyz")
-            manifest = data_conversion._conversion_manifest_path(Path(systems[0]))
-            for invalid in (None, "bad json", "null", "{}"):
+            process_systems(str(self.source), fmt="extxyz")
+            output = data_conversion._conversion_cache_path(
+                self.source, "extxyz", "deepmd/lmdb"
+            )
+            manifest = data_conversion._conversion_manifest_path(output)
+            for invalid in (
+                None,
+                "bad json",
+                "null",
+                "{}",
+                '{"generation": "../untrusted.lmdb"}',
+            ):
                 if invalid is None:
                     manifest.unlink()
                 else:

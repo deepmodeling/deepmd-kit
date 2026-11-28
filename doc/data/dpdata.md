@@ -48,9 +48,10 @@ separate cache entry, and cannot provide supervised training or validation
 targets. Repair incomplete labels or preconvert them with an explicit
 missing-label policy rather than disabling labels to bypass a read failure.
 
-On Windows, refreshed LMDB output is written to a new sibling directory before
-replacing the cache, with rollback if publication fails. Close readers of the
-old cache before refreshing it: Windows cannot replace open memory-mapped files.
+An LMDB refresh publishes a new directory and switches the cache manifest to it
+only after conversion succeeds. Readers already using an older directory can
+continue to use it. Old LMDB generations are retained; remove the cache to
+reclaim space only when no readers or conversions are using it.
 
 LMDB datasets use mixed-type batches. In the TensorFlow backend, use `se_atten`
 or a hybrid whose components all support mixed-type data. Fixed-composition

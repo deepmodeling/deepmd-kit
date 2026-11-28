@@ -598,22 +598,20 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
                 batch_size="mix:30000",
                 seed=0,
             )
-            # Structural periodicity is always scanned exactly, before any
-            # loss labels arrive. Default-backed atom_pref must not add a
-            # partition or participate in the subsequent label scan.
-            self.assertEqual(inspect_availability.call_count, 8)
-            inspect_availability.reset_mock()
+            # Periodicity is scanned exactly once, after label registration.
+            # Default-backed atom_pref must not participate in that scan.
             ds.add_data_requirements(loss.label_requirement)
+            inspect_availability.assert_not_called()
+            self.assertEqual(ds.get_stat_nsystems(), 1)
 
         try:
-            self.assertLessEqual(inspect_availability.call_count, 8)
+            self.assertEqual(inspect_availability.call_count, 8)
             self.assertTrue(
                 all(
                     "atom_pref" not in call.args[1]
                     for call in inspect_availability.call_args_list
                 )
             )
-            self.assertEqual(len(ds._stat_groups), 1)
             batch = ds._reader.decode_batch([0, 1])
             np.testing.assert_array_equal(batch["atom_pref"][0], np.full(18, 2.0))
             np.testing.assert_array_equal(batch["atom_pref"][1], np.ones(18))

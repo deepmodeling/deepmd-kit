@@ -10,11 +10,13 @@ import importlib.metadata
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import tempfile
 import threading
 import time
+import uuid
 from collections.abc import (
     Callable,
 )
@@ -266,27 +268,52 @@ def _conversion_manifest_path(output: Path) -> Path:
     return output.with_name(output.name + ".source.json")
 
 
-def _is_conversion_current(source: Path, output: Path) -> bool:
-    """Reuse only a complete conversion with exactly matching source metadata."""
-    if not output.exists():
-        return False
+def _lmdb_generation_path(output: Path, generation: str) -> Path:
+    """Materialize an immutable LMDB path from the cache key and generation."""
+    return output.with_name(f"{output.stem}-{generation}.lmdb")
+
+
+def _current_conversion(source: Path, output: Path) -> Path | None:
+    """Return a complete conversion with exactly matching source metadata."""
     try:
         manifest = json.loads(_conversion_manifest_path(output).read_text())
-        return manifest == {"source_signature": _source_signature(source, output)}
+        if not isinstance(manifest, dict):
+            return None
+        if output.suffix == ".lmdb":
+            generation = manifest.get("generation")
+            if not isinstance(generation, str) or not re.fullmatch(
+                r"[0-9a-f]{32}", generation
+            ):
+                return None
+            published = _lmdb_generation_path(output, generation)
+            if not (published / "data.mdb").is_file():
+                return None
+        else:
+            published = output
+            if not published.exists():
+                return None
+        if manifest.get("source_signature") == _source_signature(source, output):
+            return published
     except (OSError, ValueError):
         # Missing, damaged, or legacy manifests require a fresh conversion.
-        return False
+        pass
+    return None
 
 
-def _write_conversion_manifest(output: Path, signature: str) -> None:
+def _write_conversion_manifest(
+    output: Path, signature: str, *, generation: str | None = None
+) -> None:
     """Atomically mark a successfully published conversion as reusable."""
+    manifest = {"source_signature": signature}
+    if generation is not None:
+        manifest["generation"] = generation
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="w", dir=output.parent, prefix=f".{output.name}.", delete=False
         ) as fp:
             temporary = Path(fp.name)
-            json.dump({"source_signature": signature}, fp)
+            json.dump(manifest, fp)
             fp.flush()
             os.fsync(fp.fileno())
         os.replace(temporary, _conversion_manifest_path(output))
@@ -443,14 +470,14 @@ def _recover_stale_conversion_lock(lock_path: Path) -> bool:
         return True
 
 
-def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> bool:
+def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> Path | None:
     """Wait without rescanning the source tree while a valid writer owns it."""
     while lock_path.exists():
         if _recover_stale_conversion_lock(lock_path):
             continue
         time.sleep(1.0)
     # Freshness is checked once after publication, not once per waiter-second.
-    return _is_conversion_current(source, output)
+    return _current_conversion(source, output)
 
 
 def _remove_path(path: Path) -> None:
@@ -491,11 +518,8 @@ def _write_dpdata_conversion(
 ) -> None:
     """Load *source* with dpdata and publish it in a DeePMD format.
 
-    dpdata 1.1.0 makes ``deepmd/lmdb`` writes transactional: it stages and
-    validates the complete database before atomically publishing it. Use that
-    writer directly on POSIX so DeePMD-kit does not weaken its overwrite
-    guarantees. Windows does not support that overwrite operation, so stage
-    a new LMDB and publish it with rollback, as for other output formats.
+    dpdata 1.1.0 stages and validates ``deepmd/lmdb`` before publishing it.
+    Every LMDB generation has a new path, so this never needs overwrite.
 
     Loading is labeled unless explicitly disabled by the user. A failed
     labeled read must never silently discard labels and cache unsupervised
@@ -525,8 +549,8 @@ def _write_dpdata_conversion(
     if len(multi_systems) == 0:
         raise RuntimeError(f"No frames were loaded by dpdata from {source}")
 
-    if _is_dpdata_lmdb_format(out_fmt) and os.name != "nt":
-        multi_systems.to(out_fmt, str(output), overwrite=True)
+    if _is_dpdata_lmdb_format(out_fmt):
+        multi_systems.to(out_fmt, str(output))
         return
 
     tmp_output = output.with_name(f".{output.name}.{os.getpid()}.tmp")
@@ -557,52 +581,63 @@ def _convert_system_by_dpdata(
     out_fmt = _canonical_dpdata_out_format(out_fmt)
     output = _conversion_cache_path(source, fmt, out_fmt, labeled=labeled)
     _ensure_private_conversion_cache(output.parent)
-    conversion_current = _is_conversion_current(source, output)
+    published = _current_conversion(source, output)
+    is_lmdb = _is_dpdata_lmdb_format(out_fmt)
 
     lock_path = output.with_suffix(output.suffix + ".lock")
     # Reuse only this pre-lock check. Waiting, acquiring the lock and writing
     # each require fresh scans because the source can change between phases.
-    if not conversion_current:
-        while True:
-            try:
-                conversion_lock = _ConversionLock(lock_path)
-            except FileExistsError:
-                if _wait_for_conversion(source, output, lock_path):
-                    break
-                continue
-            else:
-                try:
-                    if not _is_conversion_current(source, output):
-                        log.info(
-                            "Converting %s from dpdata format %s to %s at %s",
-                            source,
-                            fmt,
-                            out_fmt,
-                            output,
-                        )
-                        signature = _source_signature(source, output)
-                        # Invalidate before replacing output: a crash must never
-                        # pair a new dataset with an older source manifest.
-                        _conversion_manifest_path(output).unlink(missing_ok=True)
-                        _write_dpdata_conversion(
-                            source, fmt, out_fmt, output, labeled=labeled
-                        )
-                        if signature != _source_signature(source, output):
-                            raise RuntimeError(
-                                f"dpdata input changed during conversion: {source}. "
-                                "Retry with an unchanged input dataset."
-                            )
-                        _write_conversion_manifest(output, signature)
-                finally:
-                    conversion_lock.release()
+    while published is None:
+        try:
+            conversion_lock = _ConversionLock(lock_path)
+        except FileExistsError:
+            published = _wait_for_conversion(source, output, lock_path)
+            continue
+        try:
+            published = _current_conversion(source, output)
+            if published is not None:
                 break
+            signature = _source_signature(source, output)
+            generation = uuid.uuid4().hex if is_lmdb else None
+            if generation is not None:
+                # Existing LMDB readers and their workers reopen by path.
+                # Never replace a path another reader may still be using.
+                target = _lmdb_generation_path(output, generation)
+            else:
+                target = output
+                # A replaced dataset must not inherit an older manifest.
+                _conversion_manifest_path(output).unlink(missing_ok=True)
+            log.info(
+                "Converting %s from dpdata format %s to %s at %s",
+                source,
+                fmt,
+                out_fmt,
+                target,
+            )
+            try:
+                _write_dpdata_conversion(source, fmt, out_fmt, target, labeled=labeled)
+                if signature != _source_signature(source, output):
+                    raise RuntimeError(
+                        f"dpdata input changed during conversion: {source}. "
+                        "Retry with an unchanged input dataset."
+                    )
+                _write_conversion_manifest(output, signature, generation=generation)
+            except Exception:
+                if generation is not None:
+                    _remove_path(target)
+                raise
+            published = target
+        finally:
+            conversion_lock.release()
 
-    if _is_dpdata_lmdb_format(out_fmt):
-        converted_systems = [str(output)]
+    if is_lmdb:
+        converted_systems = [str(published)]
     else:
         # The manifest may describe a publication by another process, whose
         # system membership can differ from what a previous call discovered.
-        converted_systems = expand_systems(str(output))
+        converted_systems = expand_systems(str(published))
     if not converted_systems:
-        raise RuntimeError(f"No DeePMD systems were found in converted file {output}")
+        raise RuntimeError(
+            f"No DeePMD systems were found in converted file {published}"
+        )
     return converted_systems

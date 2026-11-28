@@ -184,9 +184,11 @@ inputs; it discards all labels and cannot supply a supervised loss. The two
 modes use separate cache entries, and older caches created by the implicit
 unlabeled fallback are not reused.
 
-New data readers see changes after a cache refresh finishes. This does not
-hot-reload an active training or validation iterator. On Windows, close readers
-of a cache before refreshing it, because open handles can prevent replacement.
+New data readers see changes after a cache refresh finishes. For LMDB, an
+active training or validation iterator continues reading the old generation.
+Old generations remain in the cache until removed manually while it is unused.
+On Windows, close HDF5 readers before refreshing their cache, since open handles
+can prevent replacement.
 
 Automatic conversion loads each input path eagerly through dpdata. Its supported
 scale is limited to inputs whose parsed arrays **and intermediate copies fit in
