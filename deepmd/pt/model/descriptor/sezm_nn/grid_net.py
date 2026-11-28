@@ -481,6 +481,12 @@ class GridBranch(nn.Module):
         pair_grid, project_pair, scalar_product : Callable, optional
             Optional fused full composition, paired forward projection, and
             direct scalar coefficient contraction.
+        grid_major : bool, optional
+            The layout ``to_grid`` returns and ``from_grid`` takes: ``True``
+            for grid-major ``(G, N, F, ...)`` operands, ``False`` (the
+            default) for node-major ``(N, G, F, ...)``.  It states a fact
+            about the supplied projectors and is not a request to optimize;
+            the branch does not re-derive it from its own mode.
 
         Returns
         -------
@@ -529,17 +535,21 @@ class GridBranch(nn.Module):
             )
             value = left_grid * right_grid  # (N|G, G|N, F, N_branches * C)
             router = torch.softmax(self.router(scalar_pair), dim=-1)  # (N, F, Nb)
-            # The operand layout is an explicit argument, not an
-            # environment-plus-identity inference: the owning grid net
-            # passes ``grid_major`` to match its own flag-aware projectors
-            # (which emit grid-major (G, N, F, ...) operands under the
-            # flag), while any other caller keeps the documented
-            # node-major (N, G, F, ...) layout.  Sniffing the projector
-            # identity is not Dynamo-safe: bound-method attributes resolve
-            # through Dynamo's hasattr path and silently read as absent,
-            # so an identity check always evaluates False under
-            # torch.compile while the projectors still emit grid-major.
-            if _grid_layout_infer(self) and grid_major:
+            # ``grid_major`` states the layout of the operands the projectors
+            # returned; it is not a request to optimize.  The owning grid net
+            # already gates its projector on the inference level and on its
+            # own module mode, and passes the layout it produced -- while any
+            # other caller keeps the documented node-major (N, G, F, ...)
+            # layout.  This boundary must not re-derive the layout from the
+            # branch's own mode: the two modes can differ (``net.eval()``
+            # followed by ``net.grid_op.train()``), and re-reading the
+            # branch's gate would take a grid-major (G, N, F, ...) operand
+            # for node-major.  Sniffing the projector identity is not an
+            # option either: bound-method attributes resolve through
+            # Dynamo's hasattr path and silently read as absent, so an
+            # identity check always evaluates False under torch.compile
+            # while the projectors still emit grid-major.
+            if grid_major:
                 # Grid-major operands from the projector (G, N, F, Nb * C):
                 # the broadcast weight aligns on the node axis and the whole
                 # combination stays grid-major for the from-grid projection.
