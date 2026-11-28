@@ -161,9 +161,11 @@ def test_gridbranch_s2_regression(n_branches) -> None:
     import torch
 
     from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import _grid_layout_infer
     from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridBranch as PTGridBranch
     from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+        _grid_layout_infer,
+    )
 
     lmax, channels, n_focus = 2, 4, 1
     # op_type='glu' makes grid_op a GridProduct; we reuse the nets only for
