@@ -21,6 +21,9 @@ from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
+from deepmd.utils.neighbor_stat import (
+    iter_neighbor_stat_batches,
+)
 
 
 @torch_module
@@ -71,25 +74,29 @@ class NeighborStat(BaseNeighborStat):
         str
             The directory of the data system
         """
-        for ii in range(len(data.system_dirs)):
-            for jj in data.data_systems[ii].dirs:
-                data_set = data.data_systems[ii]
-                data_set_data = data_set._load_set(jj)
-                minrr2, max_nnei = self.auto_batch_size.execute_all(
-                    self._execute,
-                    data_set_data["coord"].shape[0],
-                    data_set.get_natoms(),
-                    data_set_data["coord"],
-                    data_set_data["type"],
-                    data_set_data["box"] if data_set.pbc else None,
-                )
-                yield np.max(max_nnei, axis=0), np.min(minrr2), jj
+        for coord, atype, cell, set_path, nbuff in iter_neighbor_stat_batches(
+            data, self.rcut
+        ):
+            # Keep automatic OOM recovery inside the frame cap. Reduce each
+            # bounded chunk immediately instead of accumulating a whole set.
+            minrr2, max_nnei = self.auto_batch_size.execute_all(
+                self._execute,
+                coord.shape[0],
+                atype.shape[1],
+                coord,
+                atype,
+                cell,
+                # A 1-D array is shared, not frame-sliced, by execute_all.
+                nbuff,
+            )
+            yield np.max(max_nnei, axis=0), np.min(minrr2), set_path
 
     def _execute(
         self,
         coord: np.ndarray,
         atype: np.ndarray,
         cell: np.ndarray | None,
+        nbuff: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Execute the operation on DEVICE."""
         minrr2, max_nnei = self.op(
@@ -100,6 +107,11 @@ class NeighborStat(BaseNeighborStat):
                     device=DEVICE, dtype=GLOBAL_PT_FLOAT_PRECISION
                 )
                 if cell is not None
+                else None
+            ),
+            (
+                torch.from_numpy(nbuff).to(device=DEVICE, dtype=torch.long)
+                if nbuff is not None
                 else None
             ),
         )

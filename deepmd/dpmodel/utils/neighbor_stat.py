@@ -19,6 +19,9 @@ from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
+from deepmd.utils.neighbor_stat import (
+    iter_neighbor_stat_batches,
+)
 
 
 class NeighborStatOP(NativeOP):
@@ -49,6 +52,7 @@ class NeighborStatOP(NativeOP):
         coord: Array,
         atype: Array,
         cell: Array | None,
+        nbuff: Array | None = None,
     ) -> tuple[Array, Array]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
@@ -61,6 +65,9 @@ class NeighborStatOP(NativeOP):
             The atom types.
         cell
             The cell.
+        nbuff
+            Optional integer periodic-image bounds of shape [3]. Pass the
+            full-set bounds when calculating a subset of its frames.
 
         Returns
         -------
@@ -75,7 +82,7 @@ class NeighborStatOP(NativeOP):
         nloc = coord.shape[1]
         coord = xp.reshape(coord, (nframes, nloc * 3))
         extend_coord, extend_atype, _ = extend_coord_with_ghosts(
-            coord, atype, cell, self.rcut
+            coord, atype, cell, self.rcut, nbuff=nbuff
         )
 
         coord1 = xp.reshape(extend_coord, (nframes, -1))
@@ -159,13 +166,8 @@ class NeighborStat(BaseNeighborStat):
         str
             The directory of the data system
         """
-        for ii in range(len(data.system_dirs)):
-            for jj in data.data_systems[ii].dirs:
-                data_set = data.data_systems[ii]
-                data_set_data = data_set._load_set(jj)
-                minrr2, max_nnei = self.op(
-                    data_set_data["coord"],
-                    data_set_data["type"],
-                    data_set_data["box"] if data_set.pbc else None,
-                )
-                yield np.max(max_nnei, axis=0), np.min(minrr2), jj
+        for coord, atype, cell, set_path, nbuff in iter_neighbor_stat_batches(
+            data, self.rcut
+        ):
+            minrr2, max_nnei = self.op(coord, atype, cell, nbuff)
+            yield np.max(max_nnei, axis=0), np.min(minrr2), set_path
