@@ -2912,14 +2912,14 @@ class LmdbDataReader:
             raise RuntimeError(
                 "LMDB data requirements must be registered before reading any frame"
             )
-        previous_keys = _availability_requirement_keys(self._data_requirements)
+        previous_keys = self.availability_keys
         for item in data_requirement:
             self._data_requirements[item["key"]] = item
         self._data_requirements_revision += 1
         # Availability depends only on optional tracked field names. Reuse
         # the exact PBC partition when unrelated contracts change; otherwise
         # legacy per-key registration would scan the entire dataset each time.
-        if previous_keys != _availability_requirement_keys(self._data_requirements):
+        if previous_keys != self.availability_keys:
             self._uniform_availability = None
             self._availability_index = None
         self._per_atom_strides = None
@@ -2954,7 +2954,7 @@ class LmdbDataReader:
         """
         if len(indices) == 0:
             return []
-        availability_keys = _availability_requirement_keys(self._data_requirements)
+        availability_keys = self.availability_keys
         if not availability_keys:
             self._uniform_availability = True
             return [indices]
@@ -2987,8 +2987,13 @@ class LmdbDataReader:
         return list(self._data_requirements.values())
 
     @property
+    def availability_keys(self) -> tuple[str, ...]:
+        """Fields whose source presence must be uniform within each batch."""
+        return _availability_requirement_keys(self._data_requirements)
+
+    @property
     def data_requirements_revision(self) -> int:
-        """Monotonic revision used to invalidate dependent sampling plans."""
+        """Monotonic revision for consumers of the complete decoding contract."""
         return self._data_requirements_revision
 
     def print_summary(self, name: str, prob: Any) -> None:
@@ -3994,7 +3999,7 @@ class LmdbBatchSampler:
         self._pad_to_multiple = pad_to_multiple
         self._batches: _LmdbBatchPlan | None = None
         self._batch_frame_counts: np.ndarray | None = None
-        self._data_requirements_revision = -1
+        self._availability_keys: tuple[str, ...] | None = None
         self._ragged_batches: bool | None = None
 
     def batches(self) -> _LmdbBatchPlan:
@@ -4006,11 +4011,11 @@ class LmdbBatchSampler:
             Dataset indices grouped into batches. Each batch is materialized
             on access; changing that list does not alter the cached pass.
         """
-        revision = self._reader.data_requirements_revision
+        availability_keys = self._reader.availability_keys
         ragged = self._reader.mixed_nloc and self._reader.ragged_batches
         if (
             self._batches is None
-            or self._data_requirements_revision != revision
+            or self._availability_keys != availability_keys
             or self._ragged_batches != ragged
         ):
             self._batches = _build_all_batches(
@@ -4027,7 +4032,7 @@ class LmdbBatchSampler:
                 self._batches = self._batches.take(
                     np.arange(padded, dtype=np.int64) % count
                 )
-            self._data_requirements_revision = revision
+            self._availability_keys = availability_keys
             self._ragged_batches = ragged
             self._batch_frame_counts = None
         return self._batches

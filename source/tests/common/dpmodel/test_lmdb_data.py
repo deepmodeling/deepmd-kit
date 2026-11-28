@@ -1520,7 +1520,7 @@ class TestMixedNloc(unittest.TestCase):
         nframes = 10_000
         indices = np.arange(nframes, dtype=np.int64)
         reader = SimpleNamespace(
-            data_requirements_revision=0,
+            availability_keys=(),
             mixed_nloc=False,
             nloc_groups={2: indices},
             frame_nlocs=np.full(nframes, 2, dtype=np.int32),
@@ -2526,7 +2526,7 @@ class TestAutoProb(unittest.TestCase):
             """Minimal reader exposing two one-frame availability groups."""
 
             mixed_nloc = False
-            data_requirements_revision = 0
+            availability_keys = ("energy",)
 
             def __init__(self):
                 self.nloc_groups = {6: [0, 1]}

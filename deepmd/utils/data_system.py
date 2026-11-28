@@ -5,6 +5,9 @@ import warnings
 from collections.abc import (
     Callable,
 )
+from dataclasses import (
+    dataclass,
+)
 from functools import (
     cached_property,
 )
@@ -15,6 +18,7 @@ from types import (
     SimpleNamespace,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -61,6 +65,11 @@ from deepmd.utils.data_sampling import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.lmdb_data import (
+        LmdbTestDataNlocView,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -816,6 +825,18 @@ class DeepmdDataSystem:
         return ts
 
 
+@dataclass
+class _LmdbGroupViews:
+    """Shared statistics and validation views of one availability partition."""
+
+    groups: list[tuple[int, np.ndarray]]
+    offsets: list[int]
+    set_indices: dict[str, np.ndarray]
+    data_systems: list["LmdbTestDataNlocView"]
+    system_dirs: list[str]
+    pbc: bool
+
+
 class LmdbDataSystem:
     """A DeepmdDataSystem-compatible adapter for LMDB datasets.
 
@@ -926,20 +947,22 @@ class LmdbDataSystem:
             seed=seed,
             block_targets=block_targets,
         )
-        self.nbatches = [self._sampler.total_batches]
         self._batch_iterator = LmdbBatchIterator(self._reader, self._sampler, 0)
-        self._refresh_groups()
 
-    def _refresh_groups(self) -> None:
-        """Refresh bounded statistics chunks and full-validation views."""
+    @cached_property
+    def nbatches(self) -> list[int]:
+        """Return nominal training batch counts once requirements are known."""
+        return [self._sampler.total_batches]
+
+    @cached_property
+    def _group_views(self) -> _LmdbGroupViews:
+        """Build exact groups only when statistics or validation needs them."""
         from deepmd.dpmodel.utils.lmdb_data import (
             LmdbTestDataNlocView,
             collect_lmdb_sampling_groups,
         )
 
         groups = collect_lmdb_sampling_groups(self._reader)
-        self._stat_groups = groups
-        self._stat_offsets = [0] * len(groups)
 
         # Neighbor statistics are a bounded sample, matching the dedicated
         # LMDB path. Chunks additionally cap decoded atoms so one large-nloc
@@ -955,7 +978,7 @@ class LmdbDataSystem:
             )
             selected[np.asarray(chosen, dtype=np.int64)] = True
 
-        self._nloc_set_indices: dict[str, np.ndarray] = {}
+        set_indices: dict[str, np.ndarray] = {}
         data_systems = []
         system_dirs: list[str] = []
         any_pbc = False
@@ -974,7 +997,7 @@ class LmdbDataSystem:
             ):
                 chunk = sampled_indices[start : start + chunk_size]
                 set_name = f"{group_label}:chunk={chunk_idx}"
-                self._nloc_set_indices[set_name] = np.asarray(chunk, dtype=np.int64)
+                set_indices[set_name] = np.asarray(chunk, dtype=np.int64)
                 stat_groups[set_name] = self._reader.original_keys_array(chunk)
 
             data_systems.append(
@@ -991,25 +1014,44 @@ class LmdbDataSystem:
         # These views do not point back to this adapter, avoiding the
         # ``data_systems=[self]`` reference cycle while satisfying both the
         # neighbor-stat and JAX/TF2 full-validation contracts.
-        self.data_systems = data_systems
-        self.system_dirs = system_dirs
-        self.dirs = list(self._nloc_set_indices)
-        self.pbc = any_pbc
+        return _LmdbGroupViews(
+            groups, [0] * len(groups), set_indices, data_systems, system_dirs, any_pbc
+        )
+
+    @property
+    def data_systems(self) -> list["LmdbTestDataNlocView"]:
+        """Homogeneous views for bounded statistics and full validation."""
+        return [] if self._closed else self._group_views.data_systems
+
+    @property
+    def system_dirs(self) -> list[str]:
+        """Names of the validation views."""
+        return self._group_views.system_dirs
+
+    @property
+    def dirs(self) -> list[str]:
+        """Names of the bounded sets used for neighbor statistics."""
+        return list(self._group_views.set_indices)
+
+    @property
+    def pbc(self) -> bool:
+        """Whether any retained frame uses periodic boundary conditions."""
+        return self._group_views.pbc
 
     def add_data_requirements(
         self, data_requirements: list[DataRequirementItem]
     ) -> None:
         """Add label/auxiliary data requirements."""
+        previous_keys = self._reader.availability_keys
         self._reader.add_data_requirement(data_requirements)
         self._test_data.add_data_requirement(data_requirements)
         for item in data_requirements:
             self._data_dict[item.key] = item.dict
-        self._refresh_groups()
-        self.nbatches = [self._sampler.total_batches]
-        self._batch_iterator.close()
-        self._batch_iterator = type(self._batch_iterator)(
-            self._reader, self._sampler, 0
-        )
+        # Requirements with the same availability keys change how frames
+        # decode, not how they are grouped. Keep any already-built views.
+        if self._reader.availability_keys != previous_keys:
+            self.__dict__.pop("_group_views", None)
+            self.__dict__.pop("nbatches", None)
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Alias used by DataLoader-style backends."""
@@ -1048,7 +1090,7 @@ class LmdbDataSystem:
 
     def _load_set(self, set_name: str) -> dict[str, Any]:
         """Load one bounded same-nloc chunk for legacy neighbor statistics."""
-        indices = self._nloc_set_indices[str(set_name)]
+        indices = self._group_views.set_indices[str(set_name)]
         return self._legacy_batch(self._reader.decode_batch(indices, ragged=False))
 
     def _legacy_batch(self, batch: dict[str, Any]) -> dict[str, Any]:
@@ -1131,6 +1173,8 @@ class LmdbDataSystem:
 
     def get_batch(self, sys_idx: int | None = None) -> dict[str, Any]:
         del sys_idx
+        # Preserve the nominal count before the iterator advances its pass.
+        _ = self.nbatches
         return self._legacy_batch(next(self._batch_iterator))
 
     @property
@@ -1157,22 +1201,23 @@ class LmdbDataSystem:
 
     def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
         """Return one bounded batch from a homogeneous statistical group."""
-        if not 0 <= sys_idx < len(self._stat_groups):
+        views = self._group_views
+        if not 0 <= sys_idx < len(views.groups):
             raise IndexError(f"Statistical system index {sys_idx} is out of range")
-        nloc, indices = self._stat_groups[sys_idx]
+        nloc, indices = views.groups[sys_idx]
         batch_size = self._get_stat_batch_size(nloc)
-        start = self._stat_offsets[sys_idx]
+        start = views.offsets[sys_idx]
         if start >= len(indices):
             start = 0
         stop = min(start + batch_size, len(indices))
-        self._stat_offsets[sys_idx] = stop
+        views.offsets[sys_idx] = stop
         return self._legacy_batch(
             self._reader.decode_batch(indices[start:stop], ragged=False)
         )
 
     def get_stat_nsystems(self) -> int:
         """Return the number of stack-compatible statistical groups."""
-        return len(self._stat_groups)
+        return len(self._group_views.groups)
 
     def _get_stat_batch_size(self, nloc: int) -> int:
         """Cap model-stat decoding by both frames and decoded atom rows."""
@@ -1181,9 +1226,10 @@ class LmdbDataSystem:
 
     def get_stat_numb_batches(self, sys_idx: int) -> int:
         """Return the finite batch count of one statistical group."""
-        if not 0 <= sys_idx < len(self._stat_groups):
+        groups = self._group_views.groups
+        if not 0 <= sys_idx < len(groups):
             raise IndexError(f"Statistical system index {sys_idx} is out of range")
-        nloc, indices = self._stat_groups[sys_idx]
+        nloc, indices = groups[sys_idx]
         batch_size = self._get_stat_batch_size(nloc)
         return (len(indices) + batch_size - 1) // batch_size
 
@@ -1219,7 +1265,7 @@ class LmdbDataSystem:
         """Release LMDB readers idempotently."""
         if getattr(self, "_closed", True):
             return
-        self.data_systems = []
+        self.__dict__.pop("_group_views", None)
         iterator = getattr(self, "_batch_iterator", None)
         if iterator is not None:
             iterator.close()

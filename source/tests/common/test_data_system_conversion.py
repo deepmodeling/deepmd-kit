@@ -26,6 +26,8 @@ import msgpack
 import numpy as np
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbDataReader,
+    LmdbTestDataNlocView,
     is_lmdb,
     make_neighbor_stat_data,
 )
@@ -469,16 +471,82 @@ class TestDpdataFormatConversion(unittest.TestCase):
         data = LmdbDataSystem(str(lmdb_path), ["H"], batch_size=1000)
         self.addCleanup(data.close)
 
-        total_sampled = sum(len(indices) for indices in data._nloc_set_indices.values())
+        set_indices = data._group_views.set_indices
+        total_sampled = sum(len(indices) for indices in set_indices.values())
         self.assertEqual(total_sampled, 2000)
-        self.assertLessEqual(
-            max(len(indices) for indices in data._nloc_set_indices.values()), 128
-        )
+        self.assertLessEqual(max(len(indices) for indices in set_indices.values()), 128)
         first = data._load_set(data.dirs[0])
         self.assertLessEqual(first["coord"].shape[0], 128)
         self.assertEqual(data.get_stat_nsystems(), 1)
         self.assertEqual(data.get_stat_numb_batches(0), 17)
         self.assertEqual(data.get_stat_batch(0)["coord"].shape, (128, 3))
+
+    def test_legacy_lmdb_builds_views_once_per_used_availability_contract(self) -> None:
+        """Defer scans until needed, and keep views for unrelated registrations."""
+        path = self.root / "lazy-views.lmdb"
+        _write_repeated_lmdb(str(path), 4)
+        with lmdb.open(str(path)) as env, env.begin(write=True) as txn:
+            for frame_number, field in ((1, "energies"), (2, "forces"), (3, "cells")):
+                key = f"{frame_number:012d}".encode()
+                frame = msgpack.unpackb(txn.get(key), raw=False)
+                del frame[field]
+                txn.put(key, msgpack.packb(frame, use_bin_type=True))
+
+        for early_consumer in (False, True):
+            with (
+                self.subTest(early_consumer=early_consumer),
+                patch.object(
+                    LmdbDataReader,
+                    "_scan_exact_availability",
+                    autospec=True,
+                    side_effect=LmdbDataReader._scan_exact_availability,
+                ) as scan,
+                patch(
+                    "deepmd.dpmodel.utils.lmdb_data.LmdbTestDataNlocView",
+                    wraps=LmdbTestDataNlocView,
+                ) as rebuild,
+                LmdbDataSystem(str(path), ["H"], batch_size=4, seed=0) as data,
+            ):
+                if early_consumer:
+                    self.assertEqual(data.nbatches, [2])
+                    self.assertEqual(data.get_stat_nsystems(), 2)
+                expected_before = int(early_consumer)
+                data.add("energy", 1)
+                data.add("force", 3, atomic=True)
+                self.assertEqual(scan.call_count, expected_before)
+                self.assertEqual(rebuild.call_count, 2 * expected_before)
+
+                self.assertEqual(data.nbatches, [4])
+                views = data.data_systems
+                batches = data._sampler.batches()
+                self.assertEqual(len(views), 4)
+                self.assertEqual(scan.call_count, expected_before + 1)
+                self.assertEqual(rebuild.call_count, 2 * expected_before + 4)
+                self.assertEqual(scan.call_args.args[1], ("box", "energy", "force"))
+
+                data.add("energy", 1, high_prec=True)
+                self.assertTrue(data.get_data_dict()["energy"]["high_prec"])
+                self.assertIs(data.data_systems, views)
+                self.assertIs(data._sampler.batches(), batches)
+                self.assertEqual(scan.call_count, expected_before + 1)
+                self.assertEqual(rebuild.call_count, 2 * expected_before + 4)
+
+                expected_groups = {
+                    (True, True, True),
+                    (True, False, True),
+                    (True, True, False),
+                    (False, True, True),
+                }
+                observed = set()
+                for _ in range(4):
+                    batch = data.get_batch()
+                    observed.add(
+                        tuple(
+                            bool(batch[f"find_{key}"])
+                            for key in ("box", "energy", "force")
+                        )
+                    )
+                self.assertEqual(observed, expected_groups)
 
     def test_mix_batch_pads_different_atom_counts(self) -> None:
         lmdb_path = self.root / "mixed.lmdb"
@@ -1046,14 +1114,17 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.assertEqual([Path(path).name for path in seen], ["H1"])
 
         self.source.write_text(original + f"2\n{metadata}{frame}H 1 0 0 0 0 0\n")
+        convert_script = (
+            "import json, sys; from deepmd.utils.data_path import process_systems; "
+            "print(json.dumps(process_systems(sys.argv[1], fmt='extxyz', "
+            "out_fmt='deepmd/npy')))"
+        )
         result = subprocess.run(
             [
                 sys.executable,
                 *(["-S"] if sys.flags.no_site else []),
                 "-c",
-                "import json, sys; from deepmd.utils.data_path import process_systems; "
-                "print(json.dumps(process_systems(sys.argv[1], fmt='extxyz', "
-                "out_fmt='deepmd/npy')))",
+                convert_script,
                 str(self.source),
             ],
             capture_output=True,
