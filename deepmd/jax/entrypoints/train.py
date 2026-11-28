@@ -45,6 +45,7 @@ from deepmd.utils.data_config import (
     DataConfig,
 )
 from deepmd.utils.data_system import (
+    close_data_systems,
     get_data,
     get_neighbor_stat_data,
 )
@@ -241,34 +242,36 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
                 batch_multiple=jax.local_device_count(),
             )
             valid_data = None
-            if task_config.validation_data_params is not None:
-                valid_data = _build_data_system(
-                    task_config.validation_data_params,
-                    task_model.get_rcut(),
-                    train_data.type_map,
-                    seed,
-                    batch_multiple=jax.local_device_count(),
-                )
-            for data in (train_data, valid_data):
-                configure = getattr(data, "use_ragged_batches", None)
-                if configure is not None:
-                    configure(task_model.uses_full_neighbor_list())
-            return train_data, valid_data, None
+            try:
+                if task_config.validation_data_params is not None:
+                    valid_data = _build_data_system(
+                        task_config.validation_data_params,
+                        task_model.get_rcut(),
+                        train_data.type_map,
+                        seed,
+                        batch_multiple=jax.local_device_count(),
+                    )
+                for data in (train_data, valid_data):
+                    configure = getattr(data, "use_ragged_batches", None)
+                    if configure is not None:
+                        configure(task_model.uses_full_neighbor_list())
+                return train_data, valid_data, None
+            except BaseException:
+                # The factory owns the readers until make_task_maps records them.
+                close_data_systems(train_data, valid_data)
+                raise
 
         train_data_map, valid_data_map, _ = make_task_maps(config, factory)
-        print_data_summaries(train_data_map, valid_data_map)
-
-        start_time = time.time()
         try:
+            print_data_summaries(train_data_map, valid_data_map)
+
+            start_time = time.time()
             model.train(train_data_map, valid_data_map)
+            end_time = time.time()
+            log.info("finished training")
+            log.info(f"wall time: {(end_time - start_time):.3f} s")
         finally:
-            for data in (*train_data_map.values(), *valid_data_map.values()):
-                close = getattr(data, "close", None)
-                if close is not None:
-                    close()
-        end_time = time.time()
-        log.info("finished training")
-        log.info(f"wall time: {(end_time - start_time):.3f} s")
+            close_data_systems(train_data_map, valid_data_map)
 
 
 def train(
@@ -356,9 +359,12 @@ def update_sel(
             train_data = get_neighbor_stat_data(
                 task_config.training_data_params, type_map
             )
-            updated_model, task_min_nbor_dist = BaseModel.update_sel(
-                train_data, type_map, dict(task_config.model_params)
-            )
+            try:
+                updated_model, task_min_nbor_dist = BaseModel.update_sel(
+                    train_data, type_map, dict(task_config.model_params)
+                )
+            finally:
+                close_data_systems(train_data)
             if multi_task:
                 jdata_cpy["model"]["model_dict"][task_config.key] = updated_model
                 min_nbor_dist[task_config.key] = task_min_nbor_dist

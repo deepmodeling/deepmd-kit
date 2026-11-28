@@ -338,6 +338,10 @@ class DescrptSeAtten(DescrptSeA):
                 self.stat_descrpt *= tf.reshape(mask, tf.shape(self.stat_descrpt))
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
+    def mixed_types(self) -> bool:
+        """Attention descriptors accept arbitrary per-frame atom types."""
+        return True
+
     def compute_input_stats(
         self,
         data_coord: list,

@@ -5,15 +5,19 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from functools import (
-    lru_cache,
-)
 from pathlib import (
     Path,
+)
+from threading import (
+    Lock,
 )
 from typing import (
     Any,
     ClassVar,
+)
+from weakref import (
+    WeakKeyDictionary,
+    WeakValueDictionary,
 )
 
 import h5py
@@ -308,8 +312,6 @@ class DPH5Path(DPPath):
         # so we do not support file names containing #...
         s = path.split("#")
         self.root_path = s[0]
-        if not os.path.isfile(self.root_path):
-            raise FileNotFoundError(f"{self.root_path} not found")
         self.root = self._load_h5py(s[0], mode)
         # h5 path: default is the root path
         self._name = s[1] if len(s) > 1 else "/"
@@ -317,22 +319,33 @@ class DPH5Path(DPPath):
     def __getnewargs__(self) -> tuple[str, str]:
         return (self.root_path, self.mode)
 
-    @classmethod
-    @lru_cache(None)
-    def _load_h5py(cls, path: str, mode: str = "r") -> h5py.File:
-        """Load hdf5 file.
+    _open_files: ClassVar[WeakValueDictionary[tuple[str, str, int, int], h5py.File]] = (
+        WeakValueDictionary()
+    )
+    _open_lock = Lock()
 
-        Parameters
-        ----------
-        path : str
-            path to hdf5 file
-        mode : str, optional
-            mode, by default 'r'
-        """
-        # this method has cache to avoid duplicated
-        # loading from different DPH5Path
-        # However the file will be never closed?
-        return h5py.File(path, mode)
+    @classmethod
+    def _load_h5py(cls, path: str, mode: str = "r") -> h5py.File:
+        """Share a handle only for the current file and while paths own it."""
+        path = os.path.realpath(path)
+        with cls._open_lock:
+            info = os.stat(path)
+            # Atomic publication replaces the inode, not the existing handle.
+            key = (path, mode, info.st_dev, info.st_ino)
+            file = cls._open_files.get(key)
+            if file is None or not file:
+                file = h5py.File(path, mode)
+                cls._open_files[key] = file
+            return file
+
+    def _with_name(self, name: str) -> "DPH5Path":
+        """Keep descendants pinned to the parent's HDF5 snapshot."""
+        path = object.__new__(type(self))
+        path.mode = self.mode
+        path.root_path = self.root_path
+        path.root = self.root
+        path._name = name
+        return path
 
     def load_numpy(self) -> np.ndarray:
         """Load NumPy array.
@@ -393,7 +406,7 @@ class DPH5Path(DPPath):
             if ii.startswith(self._name)
         ]
         return [
-            type(self)(f"{self.root_path}#{pp}", mode=self.mode)
+            self._with_name(pp)
             for pp in globfilter(subpaths, self._connect_path(pattern), flags=GLOBSTAR)
         ]
 
@@ -416,23 +429,26 @@ class DPH5Path(DPPath):
     @property
     def _keys(self) -> list[str]:
         """Walk all groups and dataset."""
-        return self._file_keys(self.root)
+        if self.root not in self._file_keys:
+            keys = []
+            self.root.visit(lambda name: keys.append("/" + name))
+            self._file_keys[self.root] = keys
+        return self._file_keys[self.root]
 
-    __file_new_keys: ClassVar[dict[h5py.File, list[str]]] = {}
+    _file_keys: ClassVar[WeakKeyDictionary[h5py.File, list[str]]] = WeakKeyDictionary()
+    _file_new_keys: ClassVar[WeakKeyDictionary[h5py.File, list[str]]] = (
+        WeakKeyDictionary()
+    )
 
     @property
     def _new_keys(self) -> list[str]:
         """New keys that haven't been cached."""
-        self.__file_new_keys.setdefault(self.root, [])
-        return self.__file_new_keys[self.root]
+        return self._file_new_keys.setdefault(self.root, [])
 
-    @classmethod
-    @lru_cache(None)
-    def _file_keys(cls, file: h5py.File) -> list[str]:
-        """Walk all groups and dataset."""
-        l = []
-        file.visit(lambda x: l.append("/" + x))
-        return l
+    def _invalidate_keys(self) -> None:
+        """Forget cached names after a direct edit through the HDF5 handle."""
+        self._file_keys.pop(self.root, None)
+        self._file_new_keys.pop(self.root, None)
 
     def is_file(self) -> bool:
         """Check if self is file."""
@@ -450,7 +466,7 @@ class DPH5Path(DPPath):
 
     def __truediv__(self, key: str) -> "DPPath":
         """Used for / operator."""
-        return type(self)(f"{self.root_path}#{self._connect_path(key)}", mode=self.mode)
+        return self._with_name(self._connect_path(key))
 
     def _connect_path(self, path: str) -> str:
         """Connect self with path."""

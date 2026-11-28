@@ -4,6 +4,9 @@
 from collections.abc import (
     Callable,
 )
+from functools import (
+    cached_property,
+)
 from typing import (
     Any,
 )
@@ -85,6 +88,11 @@ class LmdbDataSystem:
         batch_multiple: int = 1,
     ) -> None:
         self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
+        # Training, statistics, and validation must not mix periodic frames
+        # with frames whose cell is missing or zero.
+        self._reader.add_data_requirement(
+            [DataRequirementItem("box", 9, atomic=False, must=False)]
+        )
         self._lmdb_path = lmdb_path
         self._test_data: LmdbTestData | None = None
         self._test_views: list[LmdbTestDataNlocView] | None = None
@@ -117,7 +125,6 @@ class LmdbDataSystem:
                 block_targets=block_targets,
                 pad_to_multiple=batch_multiple,
             )
-        self._refresh_stat_groups()
         num_workers = (
             get_lmdb_num_workers() if num_workers is None else int(num_workers)
         )
@@ -127,10 +134,15 @@ class LmdbDataSystem:
             num_workers,
         )
 
-    def _refresh_stat_groups(self) -> None:
-        """Build statistical systems from stack-compatible reader groups."""
-        self._stat_groups = collect_lmdb_sampling_groups(self._reader)
-        self._stat_offsets = [0] * len(self._stat_groups)
+    @cached_property
+    def _stat_groups(self) -> list[tuple[int, np.ndarray]]:
+        """Defer the exact scan until the trainer has registered its labels."""
+        return collect_lmdb_sampling_groups(self._reader)
+
+    @cached_property
+    def _stat_offsets(self) -> list[int]:
+        """Track independent read cursors for the current groups."""
+        return [0] * len(self._stat_groups)
 
     # ------------------------------------------------------------------
     # NumPy trainer surface
@@ -250,11 +262,15 @@ class LmdbDataSystem:
     def add_data_requirements(
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
+        """Register decoding requirements, regrouping only if availability changes."""
+        previous_keys = self._reader.availability_keys
         self._reader.add_data_requirement(data_requirement)
-        self._refresh_stat_groups()
+        if self._reader.availability_keys != previous_keys:
+            self.__dict__.pop("_stat_groups", None)
+            self.__dict__.pop("_stat_offsets", None)
+            self._test_views = None
         if self._test_data is not None:
             self._test_data.add_data_requirement(data_requirement)
-            self._test_views = None
 
     def set_frame_transform(
         self,

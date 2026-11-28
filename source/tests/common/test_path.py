@@ -68,8 +68,6 @@ class TestH5PathReadOnly(unittest.TestCase):
     def tearDown(self) -> None:
         assert isinstance(self.path, DPH5Path)
         self.path.root.close()
-        DPH5Path._load_h5py.cache_clear()
-        DPH5Path._file_keys.cache_clear()
         self.tempdir.cleanup()
 
     def test_write_operations_are_rejected(self) -> None:

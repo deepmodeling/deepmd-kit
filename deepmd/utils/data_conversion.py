@@ -1,0 +1,643 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Cached dpdata conversion independent of dataset discovery and loaders.
+
+This layer owns conversion manifests and writer locks. Path routing supplies
+native-format discovery after conversion, keeping the dependency graph acyclic.
+"""
+
+import hashlib
+import importlib.metadata
+import json
+import logging
+import os
+import re
+import shutil
+import socket
+import tempfile
+import threading
+import time
+import uuid
+from collections.abc import (
+    Callable,
+)
+from pathlib import (
+    Path,
+)
+from stat import (
+    S_ISDIR,
+    S_ISREG,
+)
+from typing import (
+    Any,
+)
+
+from filelock import (
+    FileLock,
+)
+
+log = logging.getLogger(__name__)
+
+_DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
+_DPDATA_DEFAULT_OUT_FORMAT = "deepmd/lmdb"
+_DPDATA_CONVERSION_SCHEMA_VERSION = "4"
+_DPDATA_SOURCE_HASH_LIMIT = 1024 * 1024
+_CONVERSION_LOCK_HEARTBEAT_SECONDS = 5.0
+# Allow for shared-filesystem attribute caching before diagnosing a stalled
+# heartbeat. Remote owner liveness still cannot be inferred from elapsed time.
+_CONVERSION_LOCK_STALE_SECONDS = 300.0
+
+
+def _is_deepmd_data_format(fmt: str) -> bool:
+    """Recognize native formats that bypass the external conversion layer."""
+    return fmt in {
+        "deepmd",
+        "deepmd/raw",
+        "deepmd/npy",
+        "deepmd/comp",
+        "deepmd/npy/mixed",
+        "deepmd/hdf5",
+        "deepmd/lmdb",
+        "lmdb",
+    }
+
+
+def _is_dpdata_lmdb_format(fmt: str) -> bool:
+    """Return whether *fmt* names dpdata's DeePMD-compatible LMDB format."""
+    return fmt in {"deepmd/lmdb", "lmdb"}
+
+
+def _canonical_dpdata_out_format(out_fmt: str | None) -> str:
+    """Return the canonical dpdata output format used by conversion caches."""
+    if out_fmt is None:
+        return _DPDATA_DEFAULT_OUT_FORMAT
+    out_fmt = out_fmt.lower()
+    return _DPDATA_DEFAULT_OUT_FORMAT if out_fmt == "lmdb" else out_fmt
+
+
+def conversion_will_write_lmdb(data_config: dict[str, Any]) -> bool:
+    """Whether a non-DeePMD input config will be converted to LMDB."""
+    data_format = data_config.get("format")
+    if data_format is None or _is_deepmd_data_format(data_format.lower()):
+        return False
+    out_format = data_config.get("out_format", data_config.get("output_format"))
+    return _is_dpdata_lmdb_format(_canonical_dpdata_out_format(out_format))
+
+
+def _looks_like_extxyz(path: Path) -> bool:
+    """Probe the XYZ comment line without requiring a valid text input."""
+    if not path.is_file():
+        return False
+    try:
+        with path.open(encoding="utf-8") as fp:
+            fp.readline()
+            comment = fp.readline()
+    except (OSError, UnicodeDecodeError):
+        return False
+    return "Properties=" in comment or "Lattice=" in comment
+
+
+def _normalize_dpdata_format(fmt: str, source: Path) -> str:
+    """Resolve aliases and infer common dpdata formats from the input path."""
+    fmt = fmt.lower()
+    if fmt == "ase":
+        return "ase/structure"
+    if fmt != "auto":
+        return fmt
+    suffix = source.suffix.lower().lstrip(".")
+    if suffix == "traj":
+        return "ase/traj"
+    if suffix == "extxyz" or (suffix == "xyz" and _looks_like_extxyz(source)):
+        return "extxyz"
+    return suffix or fmt
+
+
+def _iter_conversion_inputs(path: str, patterns: list[str] | None) -> list[str]:
+    """Discover external inputs without feeding our cached outputs back in."""
+    if patterns is None:
+        return [path]
+    root = Path(path)
+    if not root.is_dir():
+        return [path]
+    matches = []
+    for pattern in patterns:
+        matches.extend(
+            str(match)
+            for match in root.rglob(pattern)
+            if _DPDATA_CACHE_DIR not in match.parts
+            and _DPDATA_CACHE_DIR not in match.resolve().parts
+        )
+    return sorted(set(matches))
+
+
+def _conversion_cache_path(
+    source: Path, fmt: str, out_fmt: str, *, labeled: bool = True
+) -> Path:
+    source_resolved = source.resolve(strict=False)
+    try:
+        dpdata_version = importlib.metadata.version("dpdata")
+    except importlib.metadata.PackageNotFoundError:
+        dpdata_version = "unknown"
+    digest = hashlib.sha256(
+        (
+            f"{source_resolved}|{fmt}|{out_fmt}|"
+            f"schema={_DPDATA_CONVERSION_SCHEMA_VERSION}|dpdata={dpdata_version}|"
+            f"labeled={labeled}"
+        ).encode()
+    ).hexdigest()[:16]
+    stem = source_resolved.stem or source_resolved.name or "dataset"
+    safe_out_fmt = out_fmt.replace("/", "-")
+    suffix = ".lmdb" if _is_dpdata_lmdb_format(out_fmt) else ""
+    return Path.cwd() / _DPDATA_CACHE_DIR / f"{stem}-{safe_out_fmt}-{digest}{suffix}"
+
+
+def _ensure_private_conversion_cache(cache_dir: Path) -> None:
+    """Never trust a shared, foreign-owned or symlinked conversion cache.
+
+    The manifest authenticates freshness, not provenance. Protect the whole
+    directory before reading any output or manifest, including memoized paths.
+    Reject legacy shared permissions rather than trusting their old contents.
+    """
+    cache_dir.mkdir(mode=0o700, exist_ok=True)
+    metadata = cache_dir.lstat()
+    if not S_ISDIR(metadata.st_mode) or (
+        os.name == "posix"
+        and (metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077)
+    ):
+        raise PermissionError(
+            f"Unsafe dpdata cache {cache_dir}: use a private directory owned by "
+            "the current user (mode 0700); remove an untrusted existing cache."
+        )
+
+
+def _source_signature(source: Path, output: Path) -> str:
+    """Fingerprint source metadata, including restored files and tree changes.
+
+    Compare nanosecond timestamps and sizes for equality, never ordering.
+    ctime also detects a same-size rewrite whose mtime was preserved on Unix.
+    Hash small files as well, including on Windows where ctime is creation time,
+    without rereading large trajectory files on every routing call. Scan on
+    each call: a time-based memo can hide edits to directory children.
+    Exclude our cache subtree so publication cannot invalidate its own input.
+    """
+    digest = hashlib.sha256()
+    cache_dir = output.parent.resolve()
+
+    def add_file(path: Path, name: str) -> None:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            if not path.is_symlink():
+                # A disappearing regular file is an incomplete source scan.
+                raise
+            # Broken links may be unrelated to the files dpdata reads. Track
+            # the link itself, but keep following valid links so target edits
+            # still invalidate the converted dataset.
+            stat = path.lstat()
+            digest.update(
+                json.dumps(
+                    [
+                        "dangling_symlink",
+                        name,
+                        str(path.readlink()),
+                        stat.st_mode,
+                        stat.st_size,
+                        stat.st_mtime_ns,
+                        stat.st_ctime_ns,
+                    ]
+                ).encode()
+            )
+            return
+        digest.update(
+            json.dumps(
+                [name, stat.st_mode, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+            ).encode()
+        )
+        # Pipes, sockets and devices may appear beside genuine inputs. Their
+        # metadata is tracked, but opening them can block or have side effects.
+        if S_ISREG(stat.st_mode) and stat.st_size <= _DPDATA_SOURCE_HASH_LIMIT:
+            with path.open("rb") as fp:
+                # Bound the read even if a concurrent writer grows the input.
+                digest.update(
+                    hashlib.sha256(fp.read(_DPDATA_SOURCE_HASH_LIMIT + 1)).digest()
+                )
+
+    if source.is_file():
+        add_file(source, source.name)
+    elif source.is_dir():
+
+        def raise_walk_error(error: OSError) -> None:
+            # An incomplete scan must never validate an old conversion.
+            raise error
+
+        visited: set[tuple[int, int]] = set()
+        for root, dirs, files in os.walk(
+            source, onerror=raise_walk_error, followlinks=True
+        ):
+            directory = Path(root)
+            stat = directory.stat()
+            identity = (stat.st_dev, stat.st_ino)
+            relative_root = directory.relative_to(source)
+            # Track both retargeting and edits below directory links. Inode
+            # deduplication prevents cycles and repeated scans of aliases.
+            digest.update(
+                json.dumps(
+                    [
+                        str(relative_root),
+                        identity,
+                        str(directory.readlink()) if directory.is_symlink() else None,
+                    ]
+                ).encode()
+            )
+            if identity in visited:
+                dirs[:] = []
+                continue
+            visited.add(identity)
+            dirs[:] = sorted(
+                name for name in dirs if (Path(root) / name).resolve() != cache_dir
+            )
+            digest.update(json.dumps([str(relative_root), dirs]).encode())
+            for name in sorted(files):
+                add_file(Path(root) / name, str(relative_root / name))
+    else:
+        raise FileNotFoundError(f"dpdata input does not exist: {source}")
+    return digest.hexdigest()
+
+
+def _conversion_manifest_path(output: Path) -> Path:
+    """Return the sidecar recording the source used for a published output."""
+    return output.with_name(output.name + ".source.json")
+
+
+def _lmdb_generation_path(output: Path, generation: str) -> Path:
+    """Materialize an immutable LMDB path from the cache key and generation."""
+    return output.with_name(f"{output.stem}-{generation}.lmdb")
+
+
+def _current_conversion(source: Path, output: Path) -> Path | None:
+    """Return a complete conversion with exactly matching source metadata."""
+    try:
+        manifest = json.loads(_conversion_manifest_path(output).read_text())
+        if not isinstance(manifest, dict):
+            return None
+        if output.suffix == ".lmdb":
+            generation = manifest.get("generation")
+            if not isinstance(generation, str) or not re.fullmatch(
+                r"[0-9a-f]{32}", generation
+            ):
+                return None
+            published = _lmdb_generation_path(output, generation)
+            if not (published / "data.mdb").is_file():
+                return None
+        else:
+            published = output
+            if not published.exists():
+                return None
+        if manifest.get("source_signature") == _source_signature(source, output):
+            return published
+    except (OSError, ValueError):
+        # Missing, damaged, or legacy manifests require a fresh conversion.
+        pass
+    return None
+
+
+def _write_conversion_manifest(
+    output: Path, signature: str, *, generation: str | None = None
+) -> None:
+    """Atomically mark a successfully published conversion as reusable."""
+    manifest = {"source_signature": signature}
+    if generation is not None:
+        manifest["generation"] = generation
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=output.parent, prefix=f".{output.name}.", delete=False
+        ) as fp:
+            temporary = Path(fp.name)
+            json.dump(manifest, fp)
+            fp.flush()
+            os.fsync(fp.fileno())
+        os.replace(temporary, _conversion_manifest_path(output))
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _process_start_time(pid: int) -> str | None:
+    """Return Linux's stable process start token, if available."""
+    try:
+        stat_text = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    fields_after_name = stat_text.rsplit(")", 1)[1].split()
+    return fields_after_name[19] if len(fields_after_name) > 19 else None
+
+
+def _same_lock_file(lock_path: Path, expected: os.stat_result) -> bool:
+    """Whether *lock_path* still names the inode originally acquired/read."""
+    try:
+        current = lock_path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return (current.st_dev, current.st_ino) == (expected.st_dev, expected.st_ino)
+
+
+def _conversion_lock_guard(lock_path: Path) -> FileLock:
+    """Serialize all changes to the owner file with an OS-managed lock.
+
+    Filelock owns the guard's inode lifecycle; callers must never unlink it.
+    The OS releases the guard if a process crashes, so owner-file recovery
+    runs exclusively without implementing another stale-lock protocol.
+    """
+    return FileLock(str(lock_path) + ".guard")
+
+
+class _ConversionLock:
+    """Owned conversion lock with serialized creation, recovery and release."""
+
+    def __init__(self, lock_path: Path) -> None:
+        self.path = lock_path
+        with _conversion_lock_guard(lock_path), lock_path.open("x") as lock_file:
+            try:
+                self._stat = os.fstat(lock_file.fileno())
+                payload = {
+                    "hostname": socket.gethostname(),
+                    "pid": os.getpid(),
+                    "process_start": _process_start_time(os.getpid()),
+                    "created": time.time(),
+                }
+                # Publish a complete owner before a waiter can inspect it.
+                json.dump(payload, lock_file)
+                lock_file.flush()
+                os.fsync(lock_file.fileno())
+                self._stop = threading.Event()
+                self._thread = threading.Thread(
+                    target=self._heartbeat,
+                    name="deepmd-dpdata-conversion-lock",
+                    daemon=True,
+                )
+                self._thread.start()
+            except BaseException:
+                lock_file.close()
+                # Creation and cleanup share the guard, so no successor can
+                # have acquired this pathname even if initialization failed.
+                self.path.unlink(missing_ok=True)
+                raise
+
+    def _heartbeat(self) -> None:
+        while not self._stop.wait(_CONVERSION_LOCK_HEARTBEAT_SECONDS):
+            with _conversion_lock_guard(self.path):
+                if not _same_lock_file(self.path, self._stat):
+                    return
+                os.utime(self.path, None, follow_symlinks=False)
+
+    def release(self) -> None:
+        """Stop heartbeating and remove only the lock inode we own."""
+        self._stop.set()
+        self._thread.join()
+        with _conversion_lock_guard(self.path):
+            if _same_lock_file(self.path, self._stat):
+                self.path.unlink(missing_ok=True)
+
+
+def _lock_owner_is_alive(payload: dict[str, Any]) -> bool | None:
+    """Return owner liveness locally, or None for another host/invalid data."""
+    if payload.get("hostname") != socket.gethostname():
+        return None
+    try:
+        pid = int(payload["pid"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    # Signal zero is a liveness probe only on POSIX. On Windows, os.kill
+    # interprets it as CTRL_C_EVENT and can terminate the lock owner.
+    if os.name != "posix":
+        return None
+    expected_start = payload.get("process_start")
+    current_start = _process_start_time(pid)
+    if expected_start is not None and current_start is not None:
+        return str(expected_start) == current_start
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _recover_stale_conversion_lock(lock_path: Path) -> bool:
+    """Recover dead local owners and abandoned, uninitialized lock files.
+
+    A heartbeat may look stale because of filesystem caching or clock skew.
+    If a writer is identified but we cannot safely check whether it is alive,
+    report the stalled lock for verification rather than evicting the writer.
+    """
+    # Hold the same guard as creation/release across both the inode check
+    # and unlink. Another recovering waiter cannot publish a live successor
+    # into the check-to-unlink window.
+    with _conversion_lock_guard(lock_path):
+        try:
+            lock_stat = lock_path.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False
+        try:
+            payload = json.loads(lock_path.read_text())
+        except (OSError, ValueError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+
+        owner_alive = _lock_owner_is_alive(payload)
+        lease_expired = (
+            time.time() - lock_stat.st_mtime > _CONVERSION_LOCK_STALE_SECONDS
+        )
+        hostname = payload.get("hostname")
+        if owner_alive is None and lease_expired and hostname:
+            locality = "local" if hostname == socket.gethostname() else "remote"
+            raise RuntimeError(
+                f"Cannot verify the {locality} owner of stalled dpdata conversion "
+                f"lock {lock_path} on {hostname}. Check that the owner has stopped "
+                "before removing the lock and retrying."
+            )
+        stale = owner_alive is False or (owner_alive is None and lease_expired)
+        if not stale or not _same_lock_file(lock_path, lock_stat):
+            return False
+        log.warning("Recovering stale dpdata conversion lock %s", lock_path)
+        lock_path.unlink(missing_ok=True)
+        return True
+
+
+def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> Path | None:
+    """Wait without rescanning the source tree while a valid writer owns it."""
+    while lock_path.exists():
+        if _recover_stale_conversion_lock(lock_path):
+            continue
+        time.sleep(1.0)
+    # Freshness is checked once after publication, not once per waiter-second.
+    return _current_conversion(source, output)
+
+
+def _remove_path(path: Path) -> None:
+    # Check links before directories: Path.is_dir follows a directory symlink,
+    # while cache cleanup must never recurse into a target outside the cache.
+    if path.is_symlink():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _publish_conversion_output(tmp_output: Path, output: Path) -> None:
+    """Publish a staged conversion without discarding a valid old cache."""
+    if not output.exists() or output.is_symlink() or not output.is_dir():
+        os.replace(tmp_output, output)
+        backup = output.with_name(f".{output.name}.backup")
+        _remove_path(backup)
+        return
+
+    # POSIX cannot replace a non-empty directory directly. Preserve the old
+    # cache under a sibling name and restore it if the second rename fails.
+    backup = output.with_name(f".{output.name}.backup")
+    _remove_path(backup)
+    os.replace(output, backup)
+    try:
+        os.replace(tmp_output, output)
+    except Exception:
+        os.replace(backup, output)
+        raise
+    else:
+        _remove_path(backup)
+
+
+def _write_dpdata_conversion(
+    source: Path, fmt: str, out_fmt: str, output: Path, *, labeled: bool = True
+) -> None:
+    """Load *source* with dpdata and publish it in a DeePMD format.
+
+    dpdata 1.1.0 stages and validates ``deepmd/lmdb`` before publishing it.
+    Every LMDB generation has a new path, so this never needs overwrite.
+
+    Loading is labeled unless explicitly disabled by the user. A failed
+    labeled read must never silently discard labels and cache unsupervised
+    data, even when an unlabeled reader would accept the same input.
+    """
+    try:
+        import dpdata
+    except ImportError as exc:
+        raise ImportError(
+            "dpdata is required when training_data.format or "
+            "validation_data.format is specified. Install dpdata to enable "
+            "automatic dataset conversion."
+        ) from exc
+
+    multi_systems = dpdata.MultiSystems()
+    try:
+        multi_systems.load_systems_from_file(str(source), fmt=fmt, labeled=labeled)
+    except (NotImplementedError, ValueError) as load_error:
+        # Some formats implement the single-system reader but not the
+        # MultiSystems reader. Preserve the user's label contract here too.
+        system_class = dpdata.LabeledSystem if labeled else dpdata.System
+        try:
+            system = system_class(str(source), fmt=fmt)
+        except Exception:
+            raise load_error from None
+        multi_systems = dpdata.MultiSystems(system)
+    if len(multi_systems) == 0:
+        raise RuntimeError(f"No frames were loaded by dpdata from {source}")
+
+    if _is_dpdata_lmdb_format(out_fmt):
+        multi_systems.to(out_fmt, str(output))
+        return
+
+    tmp_output = output.with_name(f".{output.name}.{os.getpid()}.tmp")
+    _remove_path(tmp_output)
+    try:
+        multi_systems.to(out_fmt, str(tmp_output))
+        _publish_conversion_output(tmp_output, output)
+    except Exception:
+        _remove_path(tmp_output)
+        raise
+
+
+def _convert_system_by_dpdata(
+    source_path: str,
+    fmt: str,
+    out_fmt: str | None,
+    *,
+    expand_systems: Callable[[str], list[str]],
+    labeled: bool = True,
+) -> list[str]:
+    """Convert one source while keeping native discovery outside this module.
+
+    The caller supplies discovery for HDF5/NPY outputs so conversion does not
+    import loaders or their path-routing module, including during startup.
+    """
+    source = Path(source_path)
+    fmt = _normalize_dpdata_format(fmt, source)
+    out_fmt = _canonical_dpdata_out_format(out_fmt)
+    output = _conversion_cache_path(source, fmt, out_fmt, labeled=labeled)
+    _ensure_private_conversion_cache(output.parent)
+    published = _current_conversion(source, output)
+    is_lmdb = _is_dpdata_lmdb_format(out_fmt)
+
+    lock_path = output.with_suffix(output.suffix + ".lock")
+    # Reuse only this pre-lock check. Waiting, acquiring the lock and writing
+    # each require fresh scans because the source can change between phases.
+    while published is None:
+        try:
+            conversion_lock = _ConversionLock(lock_path)
+        except FileExistsError:
+            published = _wait_for_conversion(source, output, lock_path)
+            continue
+        try:
+            published = _current_conversion(source, output)
+            if published is not None:
+                break
+            signature = _source_signature(source, output)
+            generation = uuid.uuid4().hex if is_lmdb else None
+            if generation is not None:
+                # Existing LMDB readers and their workers reopen by path.
+                # Never replace a path another reader may still be using.
+                target = _lmdb_generation_path(output, generation)
+            else:
+                target = output
+                # A replaced dataset must not inherit an older manifest.
+                _conversion_manifest_path(output).unlink(missing_ok=True)
+            log.info(
+                "Converting %s from dpdata format %s to %s at %s",
+                source,
+                fmt,
+                out_fmt,
+                target,
+            )
+            try:
+                _write_dpdata_conversion(source, fmt, out_fmt, target, labeled=labeled)
+                if signature != _source_signature(source, output):
+                    raise RuntimeError(
+                        f"dpdata input changed during conversion: {source}. "
+                        "Retry with an unchanged input dataset."
+                    )
+                _write_conversion_manifest(output, signature, generation=generation)
+            except Exception:
+                if generation is not None:
+                    _remove_path(target)
+                raise
+            published = target
+        finally:
+            conversion_lock.release()
+
+    if is_lmdb:
+        converted_systems = [str(published)]
+    else:
+        # The manifest may describe a publication by another process, whose
+        # system membership can differ from what a previous call discovered.
+        converted_systems = expand_systems(str(published))
+    if not converted_systems:
+        raise RuntimeError(
+            f"No DeePMD systems were found in converted file {published}"
+        )
+    return converted_systems

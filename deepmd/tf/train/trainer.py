@@ -218,6 +218,7 @@ class DPTrainer:
         self.stop_batch = stop_batch
 
         if not self.is_compress and data.mixed_type:
+            self.model.descrpt.validate_mixed_type(data.mixed_type)
             assert isinstance(self.fitting, EnerFitting), (
                 "Data in mixed_type format must use ener fitting!"
             )

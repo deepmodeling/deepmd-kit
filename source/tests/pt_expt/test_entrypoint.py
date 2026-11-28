@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from unittest.mock import (
+    Mock,
+    patch,
+)
+
 import pytest
 
 from deepmd.dpmodel.train import (
@@ -7,8 +12,98 @@ from deepmd.dpmodel.train import (
 from deepmd.pt_expt.entrypoints.main import (
     PTExptTrainEntrypoint,
     _ensure_pt_expt_model_suffix,
+    get_trainer,
     train,
 )
+
+
+@pytest.mark.parametrize("failure", ["validation", "stat_file", "summary", "trainer"])
+def test_get_trainer_closes_data_on_setup_failure(failure: str) -> None:
+    """Release acquired datasets even when the factory has not returned yet."""
+    config = {
+        "model": {"type_map": ["H"]},
+        "training": {"training_data": {}, "validation_data": {}},
+    }
+    training_data, validation_data = Mock(), Mock()
+    build_results = [training_data, validation_data]
+    expected_error = RuntimeError
+    if failure == "validation":
+        build_results[1] = RuntimeError("validation failed")
+    elif failure == "stat_file":
+        # Exercise the real stat_file_spec property after both datasets open.
+        config["training"]["stat_file_mode"] = "invalid"
+        expected_error = ValueError
+    with (
+        patch(
+            "deepmd.pt_expt.entrypoints.main._build_data_system",
+            side_effect=build_results,
+        ),
+        patch(
+            "deepmd.pt_expt.entrypoints.main.print_data_summaries",
+            side_effect=RuntimeError("summary failed")
+            if failure == "summary"
+            else None,
+        ),
+        patch(
+            "deepmd.pt_expt.entrypoints.main.training.Trainer",
+            side_effect=RuntimeError("trainer failed")
+            if failure == "trainer"
+            else None,
+        ),
+    ):
+        with pytest.raises(expected_error, match=failure):
+            get_trainer(config)
+    training_data.close.assert_called_once_with()
+    if failure == "validation":
+        validation_data.close.assert_not_called()
+    else:
+        validation_data.close.assert_called_once_with()
+
+
+def test_get_trainer_closes_completed_and_partial_tasks() -> None:
+    """Factory-local cleanup complements make_task_maps cleanup of prior tasks."""
+    config = {
+        "model": {
+            "model_dict": {"first": {"type_map": ["H"]}, "second": {"type_map": ["H"]}}
+        },
+        "training": {
+            "data_dict": {
+                "first": {"training_data": {}, "validation_data": {}},
+                "second": {"training_data": {}, "validation_data": {}},
+            }
+        },
+    }
+    datasets = [Mock(), Mock(), Mock()]
+    with patch(
+        "deepmd.pt_expt.entrypoints.main._build_data_system",
+        side_effect=[*datasets, RuntimeError("second validation failed")],
+    ):
+        with pytest.raises(RuntimeError, match="second validation failed"):
+            get_trainer(config)
+    for dataset in datasets:
+        dataset.close.assert_called_once_with()
+
+
+def test_get_trainer_transfers_data_ownership_on_success() -> None:
+    """Successful setup keeps both datasets open for the training loop."""
+    config = {
+        "model": {"type_map": ["H"]},
+        "training": {"training_data": {}, "validation_data": {}},
+    }
+    training_data, validation_data = Mock(), Mock()
+    with (
+        patch(
+            "deepmd.pt_expt.entrypoints.main._build_data_system",
+            side_effect=[training_data, validation_data],
+        ),
+        patch("deepmd.pt_expt.entrypoints.main.print_data_summaries"),
+        patch("deepmd.pt_expt.entrypoints.main.training.Trainer") as trainer,
+    ):
+        assert get_trainer(config) is trainer.return_value
+    assert trainer.call_args.args[1] is training_data
+    assert trainer.call_args.kwargs["validation_data"] is validation_data
+    training_data.close.assert_not_called()
+    validation_data.close.assert_not_called()
 
 
 @pytest.mark.parametrize(

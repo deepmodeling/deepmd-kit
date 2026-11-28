@@ -566,8 +566,7 @@ def _replace_items(
                 ordered_items,
             )
         finally:
-            DPH5Path._file_keys.cache_clear()
-            path._new_keys.clear()
+            path._invalidate_keys()
         return
     if isinstance(path, DPOSPath):
         _replace_os_items(

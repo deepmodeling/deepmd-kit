@@ -71,7 +71,8 @@ from ..common.dpmodel.test_lmdb_data import (
 )
 
 
-def _write_directory(path: Path) -> None:
+def _write_directory(path: Path, *, mixed: bool = False) -> None:
+    """Write fixed composition, optionally in the mixed-type representation."""
     path.mkdir()
     np.savetxt(path / "type.raw", [0, 1, 1], fmt="%d")
     (path / "type_map.raw").write_text("O H\n")
@@ -83,6 +84,8 @@ def _write_directory(path: Path) -> None:
         np.save(target / "box.npy", np.tile(np.eye(3).reshape(1, 9) * 8, (2, 1)))
         np.save(target / "energy.npy", np.arange(index * 2, index * 2 + 2) * 0.01)
         np.save(target / "force.npy", rng.normal(size=(2, 9)) * 0.01)
+        if mixed:
+            np.save(target / "real_atom_types.npy", np.tile([0, 1, 1], (2, 1)))
 
 
 def _write_lmdb(path: Path, *, mixed: bool) -> None:
@@ -325,7 +328,7 @@ def test_restart_matches_uninterrupted_training(
     monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
     path = tmp_path / ("data" if mode in {"directory", "grouped"} else "data.lmdb")
     if mode in {"directory", "grouped"}:
-        _write_directory(path)
+        _write_directory(path, mixed=mode == "grouped")
     else:
         _write_lmdb(path, mixed=mode == "ragged")
     config = _config(path, mode="directory" if mode == "grouped" else mode)

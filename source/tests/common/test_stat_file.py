@@ -498,9 +498,6 @@ def test_scoped_cache_matches_legacy_hdf5_layout(tmp_path: Path) -> None:
         )
     finally:
         legacy_handle.close()
-        DPH5Path._load_h5py.cache_clear()
-        DPH5Path._file_keys.cache_clear()
-        DPH5Path._DPH5Path__file_new_keys.pop(legacy_handle, None)
 
     with open_stat_file(StatFileSpec(str(scoped_file))) as scoped_path:
         assert scoped_path is not None

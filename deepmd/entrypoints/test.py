@@ -32,6 +32,7 @@ from deepmd.utils.compat import (
     update_deepmd_input,
 )
 from deepmd.utils.data import (
+    DataRequirementItem,
     DeepmdData,
 )
 from deepmd.utils.data_config import (
@@ -121,6 +122,9 @@ def test(
                     group["systems"],
                     patterns=group.get("rglob_patterns"),
                     root_dir=Path(input_json).parent,
+                    fmt=group.get("format"),
+                    out_fmt=group.get("out_format", group.get("output_format")),
+                    labeled=group.get("labeled", True),
                 )
             )
     elif datafile is not None:
@@ -158,6 +162,11 @@ def test(
                 shuffle_test=shuffle_test,
                 max_frames=numb_test,
             )
+            # A single PBC flag controls each inference call. Equal atom
+            # counts do not imply equal boundary conditions in an LMDB.
+            lmdb_data.add_data_requirement(
+                [DataRequirementItem("box", 9, atomic=False, must=False)]
+            )
             # For mixed-nloc LMDB, test each nloc group separately
             nloc_keys = sorted(lmdb_data.nloc_groups.keys())
             if len(nloc_keys) > 1:
@@ -171,8 +180,15 @@ def test(
             data_items: list[tuple[Any, str]] = []
             for nloc_val in nloc_keys:
                 label = f"{system} [nloc={nloc_val}]" if len(nloc_keys) > 1 else system
-                # Create a thin wrapper that returns only this nloc group
-                data_items.append((LmdbTestDataNlocView(lmdb_data, nloc_val), label))
+                groups = lmdb_data.availability_groups(lmdb_data.nloc_groups[nloc_val])
+                for indices in groups:
+                    view = LmdbTestDataNlocView(
+                        lmdb_data, nloc_val, frame_indices=indices
+                    )
+                    group_label = (
+                        f"{label} [pbc={view.pbc}]" if len(groups) > 1 else label
+                    )
+                    data_items.append((view, group_label))
         else:
             data = DeepmdData(
                 system,
