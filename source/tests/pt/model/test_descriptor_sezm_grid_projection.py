@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 import unittest
 
 import torch
@@ -1250,6 +1251,348 @@ class TestSO3CounterExample(unittest.TestCase):
         solution = torch.linalg.lstsq(features, y).solution
         residual = features @ solution - y
         return float(residual.norm() / y.norm().clamp_min(1e-30))
+
+
+class TestGridLayoutSwitch(unittest.TestCase):
+    """Both layouts of the routed grid combination and the projector-pair rule.
+
+    The routed-combination branches must be exercised from the committed
+    suite (not a shell export), and the operand layout must be decided by
+    the projector pair actually supplied: the owning grid net emits
+    grid-major operands when the inference level admits them, while any
+    other projector keeps the documented node-major layout and must not be
+    reinterpreted.
+    """
+
+    def _run(self, branch, left, right, scalar_pair, to_grid, from_grid, grid_major):
+        from unittest import (
+            mock,
+        )
+
+        outs = {}
+        for flag in ("0", "1"):
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": flag}, clear=False):
+                outs[flag] = branch(
+                    left,
+                    right,
+                    scalar_pair,
+                    to_grid=to_grid,
+                    from_grid=from_grid,
+                    grid_major=grid_major and flag == "1",
+                )
+        return outs
+
+    def test_both_arms_match_for_own_and_custom_projectors(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+
+        torch.manual_seed(3)
+        n, g, d, f, c, nb = 5, 7, 6, 2, 8, 2
+        branch = GridBranch(
+            channels=c,
+            n_branches=nb,
+            n_frames=1,
+            dtype=torch.float32,
+            trainable=True,
+            seed=11,
+        )
+        branch = branch.cpu()
+        branch.eval()
+        left = torch.randn(n, d, f, c, device="cpu")
+        right = torch.randn(n, d, f, c, device="cpu")
+        scalar_pair = torch.randn(n, f, 2 * c, device="cpu")
+        a = torch.randn(g, d, device="cpu")
+        b = torch.randn(d, g, device="cpu")
+
+        def _to_grid_documented(x):  # (N, D, F, K) -> (N, G, F, K)
+            return torch.einsum("gd,ndfk->ngfk", a, x)
+
+        def _from_grid_documented(y):  # (N, G, F, K) -> (N, D, F, K)
+            return torch.einsum("dg,ngfk->ndfk", b, y)
+
+        from deepmd.pt_expt.kernels.utils import (
+            triton_infer_level,
+        )
+
+        class _Owner:
+            def _to_grid(self, x):  # grid-major (G, N, F, K) under the level
+                y = _to_grid_documented(x)
+                return y.transpose(0, 1) if triton_infer_level() >= 1 else y
+
+            def _from_grid(self, y):  # level-aware inverse of _to_grid
+                if triton_infer_level() >= 1:
+                    y = y.transpose(0, 1)
+                return _from_grid_documented(y)
+
+        owner = _Owner()
+
+        custom = self._run(
+            branch,
+            left,
+            right,
+            scalar_pair,
+            _to_grid_documented,
+            _from_grid_documented,
+            grid_major=False,
+        )
+        own = self._run(
+            branch,
+            left,
+            right,
+            scalar_pair,
+            owner._to_grid,
+            owner._from_grid,
+            grid_major=True,
+        )
+
+        torch.testing.assert_close(custom["0"], custom["1"], atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(own["0"], own["1"], atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(custom["1"], own["1"], atol=1e-6, rtol=1e-6)
+        # A projector pair the owner did not supply keeps the documented
+        # node-major layout under the flag: without the identity check the
+        # branch reinterprets the axes and (g != n) the router broadcast
+        # fails outright.
+        self.assertEqual(custom["1"].shape, own["1"].shape)
+
+    def test_real_grid_net_matches_across_switch_with_grads(self) -> None:
+        """A real S2GridNet forwards and backpropagates identically both ways.
+
+        The routed combination runs through the net's own projectors (the
+        flag-aware ``_to_grid``/``_from_grid``), exercising the grid-major
+        projection, its backward and the explicit ``grid_major`` hand-off
+        the branch now requires; values and input gradients must match the
+        node-major formulation at rounding level.
+        """
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            S2GridNet,
+        )
+
+        torch.manual_seed(11)
+        net = S2GridNet(
+            lmax=2,
+            channels=8,
+            n_focus=1,
+            mode="self",
+            op_type="branch",
+            dtype=torch.float32,
+            layout="ndfc",
+            grid_branches=2,
+            trainable=True,
+            seed=13,
+        ).cpu()
+        net.eval()
+        query = torch.randn(5, 9, 1, 16, device="cpu")
+
+        gen = torch.Generator(device="cpu").manual_seed(3)
+        seed_t = torch.randn(5, 9, 1, 8, device="cpu", generator=gen)
+        outs, grads = {}, {}
+        for flag in ("0", "1"):
+            q = query.clone().requires_grad_(True)
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": flag}, clear=False):
+                out = net(q)
+                grad = torch.autograd.grad(out, q, seed_t)[0]
+            outs[flag] = out.detach()
+            grads[flag] = grad
+        torch.testing.assert_close(outs["1"], outs["0"], atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(grads["1"], grads["0"], atol=1e-5, rtol=1e-5)
+
+    def test_branch_training_mode_does_not_override_the_parent_layout(self) -> None:
+        """``grid_major`` states the operand layout; the branch must not re-derive it.
+
+        The owning net gates its projector on the inference level and on its
+        own module mode, and the branch's mode can disagree with it: a net in
+        eval mode whose branch alone is back in training mode still hands the
+        branch grid-major ``(G, N, ...)`` operands.  Reading the branch's own
+        gate took them for node-major and failed in the router einsum.
+        """
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            S2GridNet,
+            _grid_layout_infer,
+        )
+
+        torch.manual_seed(11)
+        net = (
+            S2GridNet(
+                lmax=2,
+                channels=8,
+                n_focus=1,
+                mode="self",
+                op_type="branch",
+                dtype=torch.float32,
+                layout="ndfc",
+                grid_branches=2,
+                trainable=True,
+                seed=13,
+            )
+            .cpu()
+            .eval()
+        )
+        query = torch.randn(5, 9, 1, 16, device="cpu")
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            all_eval = net(query)
+            net.grid_op.train()
+            self.assertFalse(
+                _grid_layout_infer(net.grid_op),
+                "precondition: the branch's own gate is closed",
+            )
+            branch_training = net(query)
+            net.grid_op.eval()
+        torch.testing.assert_close(branch_training, all_eval, atol=1e-5, rtol=1e-5)
+
+    def test_stated_grid_major_is_honored_with_the_level_off(self) -> None:
+        """A custom grid-major projector is read as grid-major whatever the level.
+
+        The layout argument describes the projectors actually supplied, so a
+        pair that always emits grid-major is honored with the inference
+        level off, where the branch's own gate is closed.
+        """
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+            _grid_layout_infer,
+        )
+
+        torch.manual_seed(3)
+        n, g, d, f, c, nb = 5, 64, 6, 2, 8, 2
+        branch = GridBranch(
+            channels=c,
+            n_branches=nb,
+            n_frames=1,
+            dtype=torch.float32,
+            trainable=True,
+            seed=11,
+        ).cpu()
+        branch.eval()
+        left = torch.randn(n, d, f, c, device="cpu")
+        right = torch.randn(n, d, f, c, device="cpu")
+        scalar_pair = torch.randn(n, f, 2 * c, device="cpu")
+        a = torch.randn(g, d, device="cpu")
+        b = torch.randn(d, g, device="cpu")
+
+        def _to_grid_node_major(x):  # (N, D, F, K) -> (N, G, F, K)
+            return torch.einsum("gd,ndfk->ngfk", a, x)
+
+        def _from_grid_node_major(y):  # (N, G, F, K) -> (N, D, F, K)
+            return torch.einsum("dg,ngfk->ndfk", b, y)
+
+        def _to_grid_grid_major(x):  # (N, D, F, K) -> (G, N, F, K)
+            return _to_grid_node_major(x).transpose(0, 1)
+
+        def _from_grid_grid_major(y):  # (G, N, F, K) -> (N, D, F, K)
+            return _from_grid_node_major(y.transpose(0, 1))
+
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "0"}, clear=False):
+            self.assertFalse(
+                _grid_layout_infer(branch),
+                "precondition: the branch's own gate is closed",
+            )
+            reference = branch(
+                left,
+                right,
+                scalar_pair,
+                to_grid=_to_grid_node_major,
+                from_grid=_from_grid_node_major,
+            )
+            stated = branch(
+                left,
+                right,
+                scalar_pair,
+                to_grid=_to_grid_grid_major,
+                from_grid=_from_grid_grid_major,
+                grid_major=True,
+            )
+        torch.testing.assert_close(stated, reference, atol=1e-5, rtol=1e-5)
+
+    def test_compiled_forward_agrees_with_eager(self) -> None:
+        """What ``torch.compile`` traces reads the same layout as eager.
+
+        The layout used to be sniffed from the projector's identity.  Under
+        Dynamo that check read as absent, so the traced branch took the
+        owning net's grid-major operands for node-major: it failed in the
+        router einsum when the grid size differs from the batch size, and
+        returned wrong values without an error when the two are equal.
+        """
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            S2GridNet,
+        )
+
+        torch.manual_seed(11)
+        net = (
+            S2GridNet(
+                lmax=2,
+                channels=8,
+                n_focus=1,
+                mode="self",
+                op_type="branch",
+                dtype=torch.float32,
+                layout="ndfc",
+                grid_branches=2,
+                trainable=True,
+                seed=13,
+            )
+            .cpu()
+            .eval()
+        )
+        compiled = torch.compile(net, backend="eager")
+        for n_batch in (5, net.projector.grid_size):
+            with self.subTest(n_batch=n_batch):
+                query = torch.randn(n_batch, 9, 1, 16, device="cpu")
+                with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+                    eager = net(query)
+                    traced = compiled(query)
+                torch.testing.assert_close(traced, eager, atol=1e-5, rtol=1e-5)
+
+    def test_the_layout_follows_the_triton_level_and_training_mode(self) -> None:
+        """The layout rides the cumulative level and never trains.
+
+        With the level off the previous default layout must hold exactly;
+        with the level on, an eval forward takes the grid-major composition
+        while a training forward keeps the reference layout, like every
+        other level consumer.
+        """
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+            _grid_layout_infer,
+        )
+
+        branch = GridBranch(
+            channels=8,
+            n_branches=2,
+            n_frames=1,
+            dtype=torch.float32,
+            trainable=True,
+            seed=11,
+        ).cpu()
+        branch.eval()
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "0"}, clear=False):
+            self.assertFalse(_grid_layout_infer(branch))
+        with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "1"}, clear=False):
+            self.assertTrue(_grid_layout_infer(branch))
+            branch.train()
+            self.assertFalse(
+                _grid_layout_infer(branch),
+                "a training forward keeps the reference layout",
+            )
 
 
 if __name__ == "__main__":

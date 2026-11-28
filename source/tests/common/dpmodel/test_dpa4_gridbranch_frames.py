@@ -163,6 +163,9 @@ def test_gridbranch_s2_regression(n_branches) -> None:
     from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
     from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridBranch as PTGridBranch
     from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+        _grid_layout_infer,
+    )
 
     lmax, channels, n_focus = 2, 4, 1
     # op_type='glu' makes grid_op a GridProduct; we reuse the nets only for
@@ -230,6 +233,9 @@ def test_gridbranch_s2_regression(n_branches) -> None:
         torch.from_numpy(scalar_pair),
         to_grid=pt_net._to_grid,
         from_grid=pt_net._from_grid,
+        # State the layout the net's own projectors produce, rather than
+        # relying on the net still being in training mode.
+        grid_major=_grid_layout_infer(pt_net),
     )
     assert dp_out.shape == (5, coeff_dim, n_focus, channels)
     np.testing.assert_allclose(
